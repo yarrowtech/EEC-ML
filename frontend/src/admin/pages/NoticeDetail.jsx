@@ -23,6 +23,7 @@ const NoticeDetail = ({ setShowAdminHeader }) => {
   const [notices, setNotices] = useState([]);
   const [classes, setClasses] = useState([]);
   const [sections, setSections] = useState([]);
+  const [pdfHeader, setPdfHeader] = useState({ schoolName: '', schoolAddressLine: '', logoUrl: '' });
 
   const currentAdminId = useMemo(() => {
     try {
@@ -60,15 +61,21 @@ const NoticeDetail = ({ setShowAdminHeader }) => {
     (async () => {
       setLoading(true);
       try {
-        const [classData, sectionData, noticeData] = await Promise.all([
+        const [classData, sectionData, noticeData, template] = await Promise.all([
           apiRequest('/api/academic/classes'),
           apiRequest('/api/academic/sections'),
           apiRequest('/api/notifications'),
+          apiRequest('/api/reports/report-cards/template').catch(() => null),
         ]);
         if (cancelled) return;
         setClasses(Array.isArray(classData) ? classData : []);
         setSections(Array.isArray(sectionData) ? sectionData : []);
         setNotices(Array.isArray(noticeData) ? noticeData : []);
+        setPdfHeader({
+          schoolName: String(template?.schoolName || '').trim(),
+          schoolAddressLine: String(template?.schoolAddressLine || '').trim(),
+          logoUrl: String(template?.logoUrl || '').trim(),
+        });
       } catch (err) {
         toast.error(err.message || 'Failed to load notice');
       } finally {
@@ -215,6 +222,20 @@ const NoticeDetail = ({ setShowAdminHeader }) => {
                 <h2 className="text-sm font-semibold text-slate-900">Notice Details</h2>
               </div>
               <div className="px-5 py-5 space-y-4">
+                {Array.isArray(notice.examRoutine) && notice.examRoutine.length > 0 && pdfHeader.schoolName && (
+                  <div className="flex items-center gap-3 pb-3 border-b border-slate-100">
+                    {pdfHeader.logoUrl && (
+                      <img src={pdfHeader.logoUrl} alt="" className="h-12 w-12 rounded-lg object-contain border border-slate-100 shrink-0" />
+                    )}
+                    <div className="min-w-0">
+                      <p className="text-sm font-bold text-slate-800 truncate">{pdfHeader.schoolName}</p>
+                      {pdfHeader.schoolAddressLine && <p className="text-xs text-slate-400 truncate">{pdfHeader.schoolAddressLine}</p>}
+                    </div>
+                  </div>
+                )}
+                {Array.isArray(notice.examRoutine) && notice.examRoutine.length > 0 && (
+                  <p className="text-base font-bold text-slate-900">{notice.title}</p>
+                )}
                 <p className="text-sm text-slate-600 leading-relaxed whitespace-pre-line">{notice.message}</p>
                 <ExamRoutineTable rows={notice.examRoutine} />
               </div>

@@ -552,6 +552,9 @@ const ExaminationManagement = ({ setShowAdminHeader }) => {
   const [loading, setLoading] = useState(() => !cachedGroups);
   const [saving, setSaving] = useState(false);
   const [publishingGroupId, setPublishingGroupId] = useState('');
+  const [publishingAll, setPublishingAll] = useState(false);
+  const [publishAllProgress, setPublishAllProgress] = useState(0);
+  const [publishAllStatusText, setPublishAllStatusText] = useState('');
 
   /* ── UI state ── */
   const [search, setSearch] = useState('');
@@ -1319,7 +1322,7 @@ const ExaminationManagement = ({ setShowAdminHeader }) => {
     let y = 12;
 
     // ============================================================
-    // COLORS
+    // COLORS — matches the admin "Download Routine" batch PDF design
     // ============================================================
 
     const colors = {
@@ -1330,13 +1333,6 @@ const ExaminationManagement = ({ setShowAdminHeader }) => {
 
       border: [203, 213, 225],
       lightBorder: [226, 232, 240],
-
-      headerBg: [241, 243, 255],
-      headerBorder: [199, 210, 254],
-
-      badgeBg: [232, 221, 255],
-
-      instructionBg: [247, 249, 252],
     };
 
     // ============================================================
@@ -1346,35 +1342,17 @@ const ExaminationManagement = ({ setShowAdminHeader }) => {
     const headerTop = y;
     const headerHeight = 30;
 
-    // Logo container
     const logoDataUrl = await toDataUrl(pdfHeader.logoUrl);
 
     if (logoDataUrl) {
       try {
-        // White logo background
-        doc.setFillColor(255, 255, 255);
-
-        doc.setDrawColor(
-          ...colors.lightBorder
-        );
-
-        doc.roundedRect(
-          margin,
-          headerTop,
-          25,
-          25,
-          3,
-          3,
-          "FD"
-        );
-
         doc.addImage(
           logoDataUrl,
           "PNG",
-          margin + 1.5,
-          headerTop + 1.5,
-          22,
-          22
+          margin,
+          headerTop,
+          24,
+          24
         );
       } catch (error) {
         console.warn(
@@ -1384,14 +1362,6 @@ const ExaminationManagement = ({ setShowAdminHeader }) => {
       }
     }
 
-    // ------------------------------------------------------------
-    // School information
-    // ------------------------------------------------------------
-
-    const schoolTextX = logoDataUrl
-      ? margin + 31
-      : margin;
-
     const schoolName =
       pdfHeader.schoolName ||
       "School Name";
@@ -1400,97 +1370,60 @@ const ExaminationManagement = ({ setShowAdminHeader }) => {
       pdfHeader.schoolAddressLine ||
       "";
 
+    doc.setFont("helvetica", "bold");
+    doc.setFontSize(15);
     doc.setTextColor(...colors.navy);
 
-    doc.setFont(
-      "helvetica",
-      "bold"
-    );
-
-    doc.setFontSize(16);
-
     doc.text(
-      schoolName,
+      schoolName.toUpperCase(),
       pageWidth / 2,
       headerTop + 8,
-      {
-        align: "center",
-      }
-    );
-
-    // Address
-    doc.setFont(
-      "helvetica",
-      "normal"
-    );
-
-    doc.setFontSize(8);
-
-    doc.setTextColor(
-      ...colors.text
+      { align: "center" }
     );
 
     if (schoolAddress) {
-      const addressLines =
-        doc.splitTextToSize(
-          schoolAddress,
-          contentWidth - 35
-        );
+      doc.setFont("helvetica", "normal");
+      doc.setFontSize(7.5);
+      doc.setTextColor(...colors.text);
+
+      const addressLines = doc.splitTextToSize(
+        schoolAddress,
+        contentWidth - 45
+      );
 
       doc.text(
         addressLines,
         pageWidth / 2,
         headerTop + 14,
-        {
-          align: "center",
-          lineHeightFactor: 1.35,
-        }
+        { align: "center", lineHeightFactor: 1.3 }
       );
     }
 
-    // Academic year
-    if (yearName) {
-      doc.setFontSize(7.5);
+    // Academic session — top right
+    doc.setFont("helvetica", "normal");
+    doc.setFontSize(7);
+    doc.setTextColor(...colors.muted);
 
-      doc.setTextColor(
-        ...colors.muted
-      );
-
-      doc.text(
-        "Academic Year",
-        pageWidth - margin,
-        headerTop + 6,
-        {
-          align: "right",
-        }
-      );
-
-      doc.setFont(
-        "helvetica",
-        "bold"
-      );
-
-      doc.setFontSize(8.5);
-
-      doc.setTextColor(
-        ...colors.dark
-      );
-
-      doc.text(
-        yearName,
-        pageWidth - margin,
-        headerTop + 12,
-        {
-          align: "right",
-        }
-      );
-    }
-
-    // Header separator
-    doc.setDrawColor(
-      ...colors.dark
+    doc.text(
+      "ACADEMIC SESSION",
+      pageWidth - margin,
+      headerTop + 6,
+      { align: "right" }
     );
 
+    doc.setFont("helvetica", "bold");
+    doc.setFontSize(8);
+    doc.setTextColor(...colors.dark);
+
+    doc.text(
+      yearName || "—",
+      pageWidth - margin,
+      headerTop + 12,
+      { align: "right" }
+    );
+
+    // Header separator
+    doc.setDrawColor(...colors.dark);
     doc.setLineWidth(0.35);
 
     doc.line(
@@ -1506,93 +1439,76 @@ const ExaminationManagement = ({ setShowAdminHeader }) => {
     // EXAM TITLE
     // ============================================================
 
-    doc.setTextColor(
-      ...colors.navy
+    doc.setFont("helvetica", "bold");
+    doc.setFontSize(10);
+    doc.setTextColor(...colors.muted);
+
+    doc.text(
+      "EXAMINATION ROUTINE",
+      pageWidth / 2,
+      y,
+      { align: "center" }
     );
 
-    doc.setFont(
-      "helvetica",
-      "bold"
+    y += 5;
+
+    doc.setFont("helvetica", "normal");
+    doc.setFontSize(8);
+    doc.setTextColor(...colors.muted);
+
+    doc.text(
+      "for",
+      pageWidth / 2,
+      y,
+      { align: "center" }
     );
 
+    y += 6;
+
+    doc.setFont("helvetica", "bold");
     doc.setFontSize(14);
+    doc.setTextColor(...colors.navy);
 
     doc.text(
       title,
       pageWidth / 2,
       y,
-      {
-        align: "center",
-      }
+      { align: "center" }
     );
 
-    y += 6;
-
-    doc.setFont(
-      "helvetica",
-      "bold"
-    );
-
-    doc.setFontSize(11);
-
-    doc.text(
-      "Examination Routine",
-      pageWidth / 2,
-      y,
-      {
-        align: "center",
-      }
-    );
-
-    y += 7;
+    y += 5;
 
     // ============================================================
-    // CLASS / SECTION BADGE
+    // CLASS / SECTION
     // ============================================================
 
     const badgeText =
-      `${className} – Section ${sectionName}`;
+      `CLASS ${className}  •  SECTION ${sectionName}`;
 
-    const badgeWidth = 70;
-    const badgeHeight = 10;
-    const badgeX =
-      (pageWidth - badgeWidth) / 2;
-
-    doc.setFillColor(
-      ...colors.badgeBg
-    );
-
-    doc.roundedRect(
-      badgeX,
-      y,
-      badgeWidth,
-      badgeHeight,
-      2.5,
-      2.5,
-      "F"
-    );
-
-    doc.setTextColor(
-      ...colors.dark
-    );
-
-    doc.setFont(
-      "helvetica",
-      "bold"
-    );
-
-    doc.setFontSize(11);
+    doc.setFont("helvetica", "bold");
+    doc.setFontSize(9);
+    doc.setTextColor(...colors.dark);
 
     doc.text(
       badgeText,
       pageWidth / 2,
-      y + 6.7,
-      {
-        align: "center",
-      }
+      y,
+      { align: "center", baseline: "middle" }
     );
 
-    y += badgeHeight + 8;
+    const badgeTextWidth = doc.getTextWidth(badgeText);
+
+    doc.setDrawColor(...colors.dark);
+    doc.setLineWidth(0.35);
+
+    doc.line(
+      (pageWidth - badgeTextWidth) / 2,
+      y + 1.5,
+      (pageWidth + badgeTextWidth) / 2,
+      y + 1.5
+    );
+
+    y += 7;
 
     // ============================================================
     // TABLE CONFIGURATION
@@ -1609,16 +1525,7 @@ const ExaminationManagement = ({ setShowAdminHeader }) => {
       "Room",
     ];
 
-    const colWidths = [
-      22, // Date
-      17, // Day
-      36, // Subject
-      22, // Time
-      18, // Duration
-      28, // Building
-      17, // Floor
-      25, // Room
-    ];
+    const colWidths = [21, 16, 37, 25, 19, 29, 18, 27];
 
     const tableWidth = colWidths.reduce(
       (sum, width) => sum + width,
@@ -1685,15 +1592,16 @@ const ExaminationManagement = ({ setShowAdminHeader }) => {
         // DURATION
         // --------------------------------------------------------
 
-        let durationText =
-          exam?.duration || "—";
+        let durationText = "—";
 
         if (
-          exam?.durationMinutes &&
-          !exam?.duration
+          exam?.duration !== undefined &&
+          exam?.duration !== null &&
+          exam?.duration !== ""
         ) {
-          durationText =
-            `${exam.durationMinutes} min`;
+          durationText = formatDuration(exam.duration);
+        } else if (exam?.durationMinutes) {
+          durationText = formatDuration(exam.durationMinutes);
         }
 
         // --------------------------------------------------------
@@ -1769,25 +1677,18 @@ const ExaminationManagement = ({ setShowAdminHeader }) => {
     // TABLE HEADER
     // ============================================================
 
-    // const headerHeight = 9;
     const tableHeaderHeight = 9;
 
     doc.setFillColor(
-      ...colors.headerBg
+      ...colors.navy
     );
 
-    doc.setDrawColor(
-      ...colors.headerBorder
-    );
-
-    doc.roundedRect(
+    doc.rect(
       tableX,
       y,
       tableWidth,
       tableHeaderHeight,
-      2,
-      2,
-      "FD"
+      "F"
     );
 
     doc.setFont(
@@ -1795,11 +1696,9 @@ const ExaminationManagement = ({ setShowAdminHeader }) => {
       "bold"
     );
 
-    doc.setFontSize(7.5);
+    doc.setFontSize(7);
 
-    doc.setTextColor(
-      ...colors.dark
-    );
+    doc.setTextColor(255, 255, 255);
 
     let currentX = tableX;
 
@@ -1823,7 +1722,7 @@ const ExaminationManagement = ({ setShowAdminHeader }) => {
     // TABLE ROWS
     // ============================================================
 
-    const lineHeight = 3.8;
+    const lineHeight = 3.6;
 
     rows.forEach((row, rowIndex) => {
 
@@ -1858,9 +1757,18 @@ const ExaminationManagement = ({ setShowAdminHeader }) => {
       );
 
       const rowHeight = Math.max(
-        9,
-        maxLines * lineHeight + 4.5
+        10,
+        maxLines * lineHeight + 5
       );
+
+      // ----------------------------------------------------------
+      // Check page space
+      // ----------------------------------------------------------
+
+      if (y + rowHeight > pageHeight - 42) {
+        doc.addPage();
+        y = 15;
+      }
 
       // ----------------------------------------------------------
       // Alternating background
@@ -1868,7 +1776,7 @@ const ExaminationManagement = ({ setShowAdminHeader }) => {
 
       if (rowIndex % 2 === 0) {
         doc.setFillColor(
-          249,
+          248,
           250,
           252
         );
@@ -1950,7 +1858,7 @@ const ExaminationManagement = ({ setShowAdminHeader }) => {
           doc.setFontSize(
             index === 2
               ? 8
-              : 7.5
+              : 7
           );
 
           doc.setTextColor(
@@ -1999,105 +1907,47 @@ const ExaminationManagement = ({ setShowAdminHeader }) => {
     y += 8;
 
     const instructions = [
-      "Students must report 15 minutes before the examination time.",
-      "Carry the admit card and necessary stationery.",
-      "Follow all school rules and maintain discipline.",
-      "Any change in the routine will be notified by the school authority.",
+      "Students must report to the examination venue at least 15 minutes before the scheduled time.",
+      "Carry the valid admit card/identity card and all necessary stationery.",
+      "Occupy only the assigned seat/room and follow the instructions of the invigilator.",
+      "Mobile phones, smartwatches, electronic devices, notes, books, and unauthorized materials are strictly prohibited.",
+      "Maintain silence, discipline, and proper conduct throughout the examination.",
     ];
 
-    const instructionTitleHeight = 5;
-    const instructionLineHeight = 4;
+    // Only draw if enough room
+    if (y < pageHeight - 35) {
+      doc.setFont("helvetica", "bold");
+      doc.setFontSize(8);
+      doc.setTextColor(...colors.dark);
 
-    const instructionHeight =
-      instructionTitleHeight +
-      instructions.length *
-      instructionLineHeight +
-      7;
+      doc.text(
+        "Important Instructions",
+        margin,
+        y
+      );
 
-    // Prevent overflow
-    if (
-      y + instructionHeight >
-      pageHeight - 35
-    ) {
-      doc.addPage();
-      y = 15;
-    }
+      doc.setFont("helvetica", "normal");
+      doc.setFontSize(7);
+      doc.setTextColor(...colors.text);
 
-    doc.setFillColor(
-      ...colors.instructionBg
-    );
-
-    doc.setDrawColor(
-      ...colors.lightBorder
-    );
-
-    doc.roundedRect(
-      margin,
-      y,
-      contentWidth,
-      instructionHeight,
-      2,
-      2,
-      "FD"
-    );
-
-    doc.setFont(
-      "helvetica",
-      "bold"
-    );
-
-    doc.setFontSize(8);
-
-    doc.setTextColor(
-      ...colors.dark
-    );
-
-    doc.text(
-      "Important Instructions:",
-      margin + 4,
-      y + 6
-    );
-
-    doc.setFont(
-      "helvetica",
-      "normal"
-    );
-
-    doc.setFontSize(7.5);
-
-    instructions.forEach(
-      (instruction, index) => {
+      instructions.forEach((instruction, index) => {
+        const instructionY = y + 5 + index * 4;
 
         doc.text(
           `${index + 1}.`,
-          margin + 5,
-          y +
-          11 +
-          index *
-          instructionLineHeight
+          margin,
+          instructionY
         );
-
-        const instructionLines =
-          doc.splitTextToSize(
-            instruction,
-            contentWidth - 14
-          );
 
         doc.text(
-          instructionLines,
-          margin + 10,
-          y +
-          11 +
-          index *
-          instructionLineHeight,
-          {
-            lineHeightFactor: 1.25,
-          }
+          instruction,
+          margin + 5,
+          instructionY
         );
-      }
-    );
+      });
 
-    y += instructionHeight + 12;
+      y += 5 + instructions.length * 4;
+    }
 
     // ============================================================
     // FOOTER / SIGNATURE
@@ -2112,7 +1962,7 @@ const ExaminationManagement = ({ setShowAdminHeader }) => {
       "normal"
     );
 
-    doc.setFontSize(8);
+    doc.setFontSize(7.5);
 
     doc.setTextColor(
       ...colors.text
@@ -2129,14 +1979,14 @@ const ExaminationManagement = ({ setShowAdminHeader }) => {
       );
 
     doc.text(
-      `Date: ${generatedDate}`,
+      `Issued: ${generatedDate}`,
       margin,
       footerY
     );
 
     // Principal signature
 
-    const signatureWidth = 42;
+    const signatureWidth = 48;
 
     const signatureX =
       pageWidth -
@@ -2151,9 +2001,9 @@ const ExaminationManagement = ({ setShowAdminHeader }) => {
 
     doc.line(
       signatureX,
-      footerY - 7,
+      footerY - 8,
       pageWidth - margin,
-      footerY - 7
+      footerY - 8
     );
 
     doc.setFont(
@@ -2167,28 +2017,23 @@ const ExaminationManagement = ({ setShowAdminHeader }) => {
       ...colors.dark
     );
 
+    if (pdfHeader.principalName) {
+      doc.text(
+        pdfHeader.principalName,
+        signatureX +
+        signatureWidth / 2,
+        footerY - 11,
+        {
+          align: "center",
+        }
+      );
+    }
+
     doc.text(
       "Principal",
       signatureX +
       signatureWidth / 2,
       footerY - 3,
-      {
-        align: "center",
-      }
-    );
-
-    doc.setFont(
-      "helvetica",
-      "normal"
-    );
-
-    doc.setFontSize(6.5);
-
-    doc.text(
-      pdfHeader.schoolName || "",
-      signatureX +
-      signatureWidth / 2,
-      footerY + 1,
       {
         align: "center",
       }
@@ -3761,6 +3606,44 @@ const ExaminationManagement = ({ setShowAdminHeader }) => {
      upload it, then post one consolidated table-wise notice to the Notice
      Board for that class/section — replacing the old one-notice-per-subject
      behavior. */
+  // Core of publishing one group's routine — generate the PDF, upload it,
+  // PUT the group to Published with that PDF attached. No confirmation, no
+  // toast: shared by the single-group publish button and "Publish All".
+  const publishOneGroupRoutine = async (group) => {
+    const pdfResult = await generateExamSchedulePdf(group, { download: false });
+    let attachment = null;
+    if (pdfResult?.blob) {
+      const formData = new FormData();
+      formData.append('file', new File([pdfResult.blob], pdfResult.filename, { type: 'application/pdf' }));
+      formData.append('folder', 'exam-routines');
+      formData.append('tags', 'exam,routine,pdf');
+      const uploadRes = await fetch(`${API_BASE}/api/uploads/cloudinary/single`, {
+        method: 'POST',
+        headers: { Authorization: `Bearer ${localStorage.getItem('token')}` },
+        body: formData,
+      });
+      const uploadData = await uploadRes.json().catch(() => ({}));
+      if (!uploadRes.ok) throw new Error(uploadData?.message || 'Routine PDF upload failed');
+      const uploaded = uploadData?.files?.[0];
+      if (uploaded?.secure_url) {
+        attachment = {
+          name: uploaded.originalName || pdfResult.filename,
+          url: uploaded.secure_url,
+          size: uploaded.bytes || 0,
+          type: uploaded.format || 'pdf',
+        };
+      }
+    }
+
+    const res = await fetch(`${API_BASE}/api/exam/groups/${group._id}`, {
+      method: 'PUT',
+      headers: authH(),
+      body: JSON.stringify({ status: 'Published', attachment }),
+    });
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok) throw new Error(data?.error || 'Failed to publish routine');
+  };
+
   const handlePublishRoutine = async (group) => {
     const subCount = group.subjects?.length || 0;
     if (!subCount) { toast.error('Add at least one subject exam before publishing the routine'); return; }
@@ -3778,38 +3661,7 @@ const ExaminationManagement = ({ setShowAdminHeader }) => {
 
     setPublishingGroupId(group._id);
     try {
-      const pdfResult = await generateExamSchedulePdf(group, { download: false });
-      let attachment = null;
-      if (pdfResult?.blob) {
-        const formData = new FormData();
-        formData.append('file', new File([pdfResult.blob], pdfResult.filename, { type: 'application/pdf' }));
-        formData.append('folder', 'exam-routines');
-        formData.append('tags', 'exam,routine,pdf');
-        const uploadRes = await fetch(`${API_BASE}/api/uploads/cloudinary/single`, {
-          method: 'POST',
-          headers: { Authorization: `Bearer ${localStorage.getItem('token')}` },
-          body: formData,
-        });
-        const uploadData = await uploadRes.json().catch(() => ({}));
-        if (!uploadRes.ok) throw new Error(uploadData?.message || 'Routine PDF upload failed');
-        const uploaded = uploadData?.files?.[0];
-        if (uploaded?.secure_url) {
-          attachment = {
-            name: uploaded.originalName || pdfResult.filename,
-            url: uploaded.secure_url,
-            size: uploaded.bytes || 0,
-            type: uploaded.format || 'pdf',
-          };
-        }
-      }
-
-      const res = await fetch(`${API_BASE}/api/exam/groups/${group._id}`, {
-        method: 'PUT',
-        headers: authH(),
-        body: JSON.stringify({ status: 'Published', attachment }),
-      });
-      const data = await res.json().catch(() => ({}));
-      if (!res.ok) throw new Error(data?.error || 'Failed to publish routine');
+      await publishOneGroupRoutine(group);
       toast.success(alreadyPublished ? 'Routine republished' : 'Exam routine published to Notice Board');
       await loadGroups();
     } catch (err) {
@@ -3817,6 +3669,51 @@ const ExaminationManagement = ({ setShowAdminHeader }) => {
     } finally {
       setPublishingGroupId('');
     }
+  };
+
+  // Publish (or republish) every class/section group in a batch in one click,
+  // instead of clicking Publish once per class — same underlying per-group
+  // publish, just run across all of them together with one combined result.
+  const handlePublishAllRoutines = async (batch) => {
+    const eligibleGroups = (batch?.groups || []).filter((g) => (g.subjects?.length || 0) > 0);
+    if (!eligibleGroups.length) {
+      toast.error('Add at least one subject to a class before publishing.');
+      return;
+    }
+    const alreadyPublishedCount = eligibleGroups.filter((g) => g.status === 'Published').length;
+    const conf = await Swal.fire({
+      title: 'Publish All Routines?',
+      html: `This publishes the routine for all <strong>${eligibleGroups.length}</strong> class${eligibleGroups.length !== 1 ? 'es' : ''}/section${eligibleGroups.length !== 1 ? 's' : ''} in <strong>${batch.title}</strong> to the Notice Board in one go${alreadyPublishedCount ? ` (${alreadyPublishedCount} already published will be republished)` : ''}.`,
+      icon: 'question',
+      showCancelButton: true,
+      confirmButtonColor: '#059669',
+      confirmButtonText: 'Publish All',
+    });
+    if (!conf.isConfirmed) return;
+
+    setPublishAllProgress(0);
+    setPublishAllStatusText(`Publishing ${eligibleGroups.length} routine${eligibleGroups.length !== 1 ? 's' : ''}…`);
+    setPublishingAll(true);
+    let done = 0;
+    const results = await Promise.allSettled(eligibleGroups.map(async (g) => {
+      try {
+        await publishOneGroupRoutine(g);
+      } finally {
+        done += 1;
+        setPublishAllProgress(Math.round((done / eligibleGroups.length) * 100));
+      }
+    }));
+    setPublishingAll(false);
+
+    const failed = results.filter((r) => r.status === 'rejected');
+    const succeeded = eligibleGroups.length - failed.length;
+    if (succeeded) {
+      toast.success(`Published ${succeeded} routine${succeeded !== 1 ? 's' : ''} to the Notice Board`);
+    }
+    if (failed.length) {
+      toast.error(`${failed.length} of ${eligibleGroups.length} routine${eligibleGroups.length !== 1 ? 's' : ''} failed to publish — try those individually.`);
+    }
+    await loadGroups();
   };
 
   const handleDeleteGroup = async (g) => {
@@ -5178,6 +5075,16 @@ const ExaminationManagement = ({ setShowAdminHeader }) => {
                   {/* ── Routine (per class+section group, reuses every existing subject action) ── */}
                   {activeDetailTab === 'routine' && (
                     <div className="space-y-4">
+                      {selectedBatch.groups.length > 1 && (
+                        <div className="flex justify-end">
+                          <button type="button" onClick={() => handlePublishAllRoutines(selectedBatch)}
+                            disabled={publishingAll}
+                            className="flex items-center gap-1.5 px-3.5 py-2 rounded-xl bg-emerald-600 text-white text-xs font-semibold hover:bg-emerald-700 disabled:opacity-60 disabled:cursor-not-allowed shadow-sm shadow-emerald-200 transition-colors">
+                            {publishingAll ? <Loader2 size={13} className="animate-spin" /> : <CheckCircle2 size={13} />}
+                            {publishingAll ? 'Publishing All…' : 'Publish All Routines'}
+                          </button>
+                        </div>
+                      )}
                       {selectedBatch.groups.map((group) => {
                         const isOpen = expandedGroups.has(group._id);
                         const subCount = group.subjects?.length || 0;
@@ -6433,6 +6340,7 @@ const ExaminationManagement = ({ setShowAdminHeader }) => {
 
       <ProgressModal open={wizardSaving} title="Please wait, exam is creating…" percent={wizardCreateProgress} statusText={wizardCreateStatusText} />
       <ProgressModal open={isDeleting} title="Please wait, deleting…" accent="red" percent={deleteProgress} statusText={deleteStatusText} />
+      <ProgressModal open={publishingAll} title="Please wait, publishing all routines…" percent={publishAllProgress} statusText={publishAllStatusText} />
 
       {/* ══════════ BULK EDIT ROUTINE DEFAULTS MODAL ══════════ */}
       <Modal show={showBulkEditModal} onClose={() => setShowBulkEditModal(false)}

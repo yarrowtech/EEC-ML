@@ -10,6 +10,14 @@ const formatRoutineDate = (raw) => {
 
 const ExamRoutineTable = ({ rows }) => {
   if (!Array.isArray(rows) || rows.length === 0) return null;
+  // Newer notices split the venue into building/floor/room; older ones only
+  // ever stored one combined venue string — decide the column set once for
+  // the whole table rather than mixing shapes row to row.
+  const hasSplitVenue = rows.some((row) => row.building || row.floor || row.room);
+  const headers = hasSplitVenue
+    ? ['Date', 'Day', 'Subject', 'Time', 'Duration', 'Building', 'Floor', 'Room']
+    : ['Date', 'Day', 'Subject', 'Time', 'Duration', 'Venue'];
+
   return (
     <div className="rounded-xl border border-emerald-100 overflow-hidden">
       <div className="px-4 py-2.5 bg-emerald-600 text-white text-xs font-bold uppercase tracking-wide">
@@ -19,7 +27,7 @@ const ExamRoutineTable = ({ rows }) => {
         <table className="w-full text-sm">
           <thead>
             <tr>
-              {['Subject', 'Date', 'Time', 'Duration', 'Venue'].map((h) => (
+              {headers.map((h) => (
                 <th key={h} className="px-3 py-2 text-left text-[11px] font-bold uppercase tracking-wide whitespace-nowrap text-emerald-700 bg-emerald-100/60">
                   {h}
                 </th>
@@ -29,13 +37,14 @@ const ExamRoutineTable = ({ rows }) => {
           <tbody className="divide-y divide-emerald-100/70">
             {rows.map((row, idx) => (
               <tr key={`${row.subject}-${idx}`} className="odd:bg-white even:bg-emerald-50/30">
-                <td className="px-3 py-2 font-semibold text-slate-700 whitespace-nowrap">{row.subject || '—'}</td>
                 <td className="px-3 py-2 text-slate-600 whitespace-nowrap">
                   <span className="inline-flex items-center gap-1">
                     <Calendar className="h-3 w-3 text-slate-400" />
                     {formatRoutineDate(row.date)}
                   </span>
                 </td>
+                <td className="px-3 py-2 text-slate-600 whitespace-nowrap">{row.day || '—'}</td>
+                <td className="px-3 py-2 font-semibold text-slate-700 whitespace-nowrap">{row.subject || '—'}</td>
                 <td className="px-3 py-2 text-slate-600 whitespace-nowrap">
                   <span className="inline-flex items-center gap-1">
                     <Clock className="h-3 w-3 text-slate-400" />
@@ -43,12 +52,20 @@ const ExamRoutineTable = ({ rows }) => {
                   </span>
                 </td>
                 <td className="px-3 py-2 text-slate-600 whitespace-nowrap">{row.duration ? `${row.duration} min` : '—'}</td>
-                <td className="px-3 py-2 text-slate-600">
-                  <span className="inline-flex items-center gap-1">
-                    <MapPin className="h-3 w-3 text-slate-400 shrink-0" />
-                    {row.venue || '—'}
-                  </span>
-                </td>
+                {hasSplitVenue ? (
+                  <>
+                    <td className="px-3 py-2 text-slate-600 whitespace-nowrap">{row.building || '—'}</td>
+                    <td className="px-3 py-2 text-slate-600 whitespace-nowrap">{row.floor || '—'}</td>
+                    <td className="px-3 py-2 text-slate-600 whitespace-nowrap">{row.room || '—'}</td>
+                  </>
+                ) : (
+                  <td className="px-3 py-2 text-slate-600">
+                    <span className="inline-flex items-center gap-1">
+                      <MapPin className="h-3 w-3 text-slate-400 shrink-0" />
+                      {row.venue || '—'}
+                    </span>
+                  </td>
+                )}
               </tr>
             ))}
           </tbody>

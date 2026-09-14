@@ -96,6 +96,39 @@ class NotificationService {
   }
 
   /**
+   * Create the "exam scheduled" heads-up notice fired the moment an exam
+   * group is created for a class/section — before any subjects are added —
+   * distinct from notifyExamRoutinePublished, which fires later once the
+   * admin publishes the full subject-wise routine.
+   */
+  static async notifyExamGroupCreated({ schoolId, campusId = null, group, createdBy = null }) {
+    const className = group.classId?.name || group.grade || '';
+    const sectionName = group.sectionId?.name || group.section || '';
+    const scopeLabel = [
+      className && `Class ${className}`,
+      sectionName && `Section ${sectionName}`,
+    ].filter(Boolean).join(', ');
+    const dateRange = group.startDate
+      ? ` starting from ${group.startDate}${group.endDate && group.endDate !== group.startDate ? ` to ${group.endDate}` : ''}`
+      : '';
+
+    return await this.createNotification({
+      schoolId,
+      campusId,
+      title: `Exam Scheduled: ${group.title}`,
+      message: `${group.title}${scopeLabel ? ` for ${scopeLabel}` : ''} has been scheduled${dateRange}.`,
+      audience: 'All',
+      type: 'exam',
+      priority: 'medium',
+      category: 'academic',
+      classId: group.classId?._id || group.classId || null,
+      sectionId: group.sectionId?._id || group.sectionId || null,
+      createdBy,
+      relatedEntity: { entityType: 'exam', entityId: group._id },
+    });
+  }
+
+  /**
    * Create (or update, on republish) the consolidated exam-routine notice for
    * a published exam group — one notice with the full subject-wise schedule
    * table and the routine PDF attached, instead of a notice per subject.

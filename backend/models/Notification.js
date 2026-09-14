@@ -56,14 +56,22 @@ const notificationSchema = new mongoose.Schema(
     ],
 
     // Structured subject-wise schedule, populated when this notice is a
-    // published exam routine (see NotificationService.notifyExamRoutinePublished).
+    // published exam routine (see NotificationService.notifyExamRoutinePublished)
+    // or a consolidated teacher invigilation-duty notice (see
+    // createConsolidatedTeacherExamNotifications in examRoute.js). `venue` is
+    // kept for older notices that only ever stored the combined string;
+    // building/floor/room are the split-out fields new notices populate.
     examRoutine: [
       {
         subject: { type: String, default: '' },
         date: { type: String, default: '' },
+        day: { type: String, default: '' },
         time: { type: String, default: '' },
         duration: { type: Number, default: null },
         venue: { type: String, default: '' },
+        building: { type: String, default: '' },
+        floor: { type: String, default: '' },
+        room: { type: String, default: '' },
       },
     ],
     targetUserIds: [{ type: mongoose.Schema.Types.ObjectId, index: true }],

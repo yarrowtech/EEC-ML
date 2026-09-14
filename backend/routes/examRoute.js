@@ -353,6 +353,29 @@ const resolveExamTeacherRecipients = async ({ schoolId, campusId, exam = {} }) =
   return [...teacherIds];
 };
 
+const WEEKDAY_NAMES = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
+const getWeekdayLabel = (value) => {
+  if (!value) return '';
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return '';
+  return WEEKDAY_NAMES[date.getDay()];
+};
+
+// One row of a routine table — Date/Day/Subject/Time/Duration/Building/Floor/Room
+// — shared by the student/parent consolidated routine notice and the
+// per-teacher consolidated invigilation-duty notice below.
+const buildExamRoutineRow = (exam = {}) => ({
+  subject: String(exam?.subjectId?.name || exam?.subject || 'Subject').trim(),
+  date: exam?.date ? String(exam.date).slice(0, 10) : '',
+  day: getWeekdayLabel(exam?.date),
+  time: exam?.time || '',
+  duration: Number.isFinite(Number(exam?.duration)) ? Number(exam.duration) : null,
+  venue: getExamVenueLabel(exam),
+  building: exam?.roomId?.floorId?.buildingId?.name || '',
+  floor: exam?.roomId?.floorId?.name || '',
+  room: exam?.roomId?.roomNumber || '',
+});
+
 const createExamTeacherNotifications = async ({
   schoolId,
   campusId,
@@ -394,6 +417,52 @@ const createExamTeacherNotifications = async ({
   const notifications = targetUserIds.map((teacherId) => ({
     ...baseFields,
     targetUserIds: [teacherId],
+  }));
+
+  return Notification.insertMany(notifications, { ordered: false });
+};
+
+// One notice per teacher covering every subject they're invigilating in this
+// group's routine — replaces the old one-notice-per-subject behavior, where a
+// teacher covering 5 subjects got 5 separate notices instead of one.
+const createConsolidatedTeacherExamNotifications = async ({
+  schoolId,
+  campusId,
+  exams = [],
+  groupTitle = 'Exam',
+  groupId = null,
+  createdBy = null,
+  createdByName = '',
+  createdByType = 'admin',
+}) => {
+  const rowsByTeacher = new Map(); // teacherId -> routine rows[]
+  for (const exam of exams) {
+    const teacherIds = await resolveExamTeacherRecipients({ schoolId, campusId, exam });
+    if (!teacherIds.length) continue;
+    const row = buildExamRoutineRow(exam);
+    teacherIds.forEach((teacherId) => {
+      if (!rowsByTeacher.has(teacherId)) rowsByTeacher.set(teacherId, []);
+      rowsByTeacher.get(teacherId).push(row);
+    });
+  }
+  if (!rowsByTeacher.size) return [];
+
+  const notifications = Array.from(rowsByTeacher.entries()).map(([teacherId, rows]) => ({
+    schoolId,
+    campusId: campusId || null,
+    title: `Exam Duty Assigned: ${groupTitle}`,
+    message: `You have been assigned invigilation duty for ${rows.length} exam${rows.length !== 1 ? 's' : ''} in ${groupTitle}.`,
+    audience: 'Teacher',
+    createdBy,
+    createdByType,
+    createdByName,
+    type: 'exam',
+    typeLabel: 'exam_schedule_teacher',
+    priority: 'high',
+    category: 'academic',
+    examRoutine: rows,
+    targetUserIds: [teacherId],
+    relatedEntity: groupId ? { entityType: 'exam', entityId: groupId } : undefined,
   }));
 
   return Notification.insertMany(notifications, { ordered: false });
@@ -668,6 +737,18 @@ router.post('/groups', adminAuth, async (req, res) => {
       .lean();
 
     clearExamGroupsCache();
+
+    // Heads-up notice the moment the exam is scheduled for this class — fire
+    // and forget, a failed notice must never fail exam creation itself. Its
+    // id is saved onto routineNoticeId so that publishing the routine later
+    // UPGRADES this same notice in place (title/message/table/attachment)
+    // instead of leaving it stranded and creating a second, separate notice.
+    NotificationService.notifyExamGroupCreated({
+      schoolId, campusId: campusId || null, group: populated, createdBy: req.admin?.id || null,
+    })
+      .then((notice) => notice?._id && ExamGroup.findByIdAndUpdate(group._id, { routineNoticeId: notice._id }))
+      .catch((err) => console.error('Failed to send exam-created notice:', err.message));
+
     res.status(201).json({ message: 'Exam group created', group: { ...populated, subjects: [] } });
   } catch (err) {
     res.status(400).json({ error: err.message });
@@ -682,7 +763,7 @@ router.put('/groups/:groupId', adminAuth, async (req, res) => {
     const schoolId = resolveSchoolId(req, res);
     if (!schoolId) return;
     const campusId = resolveCampusId(req);
-    const { title, term, classId, sectionId, status, startDate, endDate, startTime } = req.body || {};
+    const { title, term, classId, sectionId, status, startDate, endDate, startTime, attachment } = req.body || {};
 
     const updates = {};
     if (title !== undefined) updates.title = title.trim();
@@ -719,6 +800,11 @@ router.put('/groups/:groupId', adminAuth, async (req, res) => {
     if (isPublishing) {
       examsForRoutine = await Exam.find({ groupId, schoolId, ...(campusId ? { campusId } : {}) })
         .populate('subjectId', 'name')
+        .populate({
+          path: 'roomId',
+          select: 'roomNumber floorId',
+          populate: { path: 'floorId', select: 'name floorCode buildingId', populate: { path: 'buildingId', select: 'name code' } },
+        })
         .sort({ date: 1, time: 1 })
         .lean();
       if (!examsForRoutine.length) {
@@ -745,18 +831,48 @@ router.put('/groups/:groupId', adminAuth, async (req, res) => {
 
     if (isPublishing) {
       const publishedAt = group.publishedAt || new Date();
-      const notificationJobs = examsForRoutine.map((exam) => createExamTeacherNotifications({
-        schoolId,
-        campusId: campusId || null,
-        exam,
-        createdBy: req.admin?.id || null,
-        createdByName: req.admin?.name || req.admin?.username || '',
-        createdByType: 'admin',
-      }));
-      await Promise.all(notificationJobs);
-      await ExamGroup.findByIdAndUpdate(groupId, { publishedAt, routineNoticeId: null });
+      const routineRows = examsForRoutine.map(buildExamRoutineRow);
+      const adminName = req.admin?.name || req.admin?.username || '';
+
+      // These two run independently — a problem resolving teacher recipients
+      // (bad allocation data, etc.) must never take down the student/parent
+      // notice with it, or leave the whole publish looking like it failed
+      // (Promise.all would reject the request even after the group's own
+      // status update had already been committed above). Promise.allSettled
+      // + per-job try/catch means each stands or falls on its own.
+      const [teacherResult, studentResult] = await Promise.allSettled([
+        createConsolidatedTeacherExamNotifications({
+          schoolId,
+          campusId: campusId || null,
+          exams: examsForRoutine,
+          groupTitle: group.title,
+          groupId: group._id,
+          createdBy: req.admin?.id || null,
+          createdByName: adminName,
+          createdByType: 'admin',
+        }),
+        NotificationService.notifyExamRoutinePublished({
+          schoolId,
+          campusId: campusId || null,
+          group,
+          examRoutine: routineRows,
+          attachment: attachment || null,
+          createdBy: req.admin?.id || null,
+          existingNoticeId: group.routineNoticeId || null,
+        }),
+      ]);
+
+      if (teacherResult.status === 'rejected') {
+        console.error('Failed to send teacher exam-duty notices:', teacherResult.reason?.message);
+      }
+      if (studentResult.status === 'rejected') {
+        console.error('Failed to publish student/parent exam-routine notice:', studentResult.reason?.message);
+      }
+
+      const studentNotice = studentResult.status === 'fulfilled' ? studentResult.value : null;
+      await ExamGroup.findByIdAndUpdate(groupId, { publishedAt, routineNoticeId: studentNotice?._id || group.routineNoticeId || null });
       group.publishedAt = publishedAt;
-      group.routineNoticeId = null;
+      group.routineNoticeId = studentNotice?._id || group.routineNoticeId || null;
     }
 
     clearExamGroupsCache();

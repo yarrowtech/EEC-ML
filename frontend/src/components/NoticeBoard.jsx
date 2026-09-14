@@ -54,11 +54,17 @@ const isExamNotice = (notice) => {
 };
 
 const findExamGroupForNotice = (notice, examGroups) => {
-  const examId = String(notice?.relatedEntity?.entityId || '').trim();
-  if (!examId || !Array.isArray(examGroups)) return null;
-  return examGroups.find((group) =>
-    (group?.subjects || []).some((subject) => String(subject?._id || '') === examId)
-  ) || null;
+  const entityId = String(notice?.relatedEntity?.entityId || '').trim();
+  if (!entityId || !Array.isArray(examGroups)) return null;
+  // relatedEntity.entityId is the ExamGroup's own _id for both the
+  // exam-created and routine-published notices (there's no separate
+  // "first exam" id) — match that directly, falling back to the old
+  // subject-id matching in case any older notice was ever stored differently.
+  return (
+    examGroups.find((group) => String(group?._id || '') === entityId) ||
+    examGroups.find((group) => (group?.subjects || []).some((subject) => String(subject?._id || '') === entityId)) ||
+    null
+  );
 };
 
 const getCreator = (notice) => {
@@ -96,7 +102,7 @@ const SkeletonCard = () => (
 /* ─── Notice detail (inline) ─── */
 const NoticeDetailsView = ({
   notice, onBack, examGroup, onDownloadRoutine, downloadingRoutine, onViewExams,
-  onPrev, onNext, hasPrev, hasNext,
+  onPrev, onNext, hasPrev, hasNext, pdfHeader,
 }) => {
   if (!notice) return null;
   const displayCategory = getDisplayCategory(notice);
@@ -110,6 +116,11 @@ const NoticeDetailsView = ({
   const subjectLabel = notice.subjectName || notice.subject || '';
   const attachments = Array.isArray(notice.attachments) ? notice.attachments : [];
   const showExamRoutine = isExamNotice(notice);
+  // An exam notice fired the moment the exam is scheduled (before any subject
+  // is added) never has a routine table or PDF yet — only the one posted when
+  // the admin actually publishes the routine does. Don't imply there's a
+  // table to view when there isn't one.
+  const hasExamRoutineData = Array.isArray(notice.examRoutine) && notice.examRoutine.length > 0;
 
   return (
     <div className="space-y-6">
@@ -172,38 +183,64 @@ const NoticeDetailsView = ({
               <h2 className="text-sm font-semibold text-slate-900">Notice Details</h2>
             </div>
             <div className="px-5 py-5 space-y-4">
-              {showExamRoutine && (
-                <div className="rounded-xl border border-indigo-100 bg-indigo-50/60 p-4">
-                  <div className="mb-2 flex items-center gap-2">
-                    <Calendar className="h-4 w-4 text-indigo-600" />
-                    <p className="text-sm font-semibold text-indigo-900">Exam Routine</p>
-                  </div>
-                  <p className="mb-3 text-xs text-indigo-700/80">
-                    {examGroup
-                      ? 'Download the full exam routine below, or see all your exams on the Exams page.'
-                      : 'View the full exam schedule on the Exams page.'}
-                  </p>
-                  <div className="flex flex-wrap gap-2">
-                    {examGroup && (
-                      <button
-                        type="button"
-                        onClick={onDownloadRoutine}
-                        disabled={downloadingRoutine}
-                        className="inline-flex items-center gap-1.5 rounded-full bg-linear-to-r from-indigo-500 to-purple-600 px-3.5 py-1.5 text-xs font-semibold text-white shadow-sm transition-opacity hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-60"
-                      >
-                        <Download className="h-3.5 w-3.5" />
-                        {downloadingRoutine ? 'Preparing…' : 'Download Routine PDF'}
-                      </button>
-                    )}
-                    <button
-                      type="button"
-                      onClick={onViewExams}
-                      className="inline-flex items-center gap-1.5 rounded-full border border-indigo-200 bg-white px-3.5 py-1.5 text-xs font-semibold text-indigo-700 hover:bg-indigo-50"
-                    >
-                      See Details <ArrowRight className="h-3.5 w-3.5" />
-                    </button>
+              {showExamRoutine && hasExamRoutineData && pdfHeader?.schoolName && (
+                <div className="flex items-center gap-3 pb-3 border-b border-slate-100">
+                  {pdfHeader.logoUrl && (
+                    <img src={pdfHeader.logoUrl} alt="" className="h-12 w-12 object-contain shrink-0" />
+                  )}
+                  <div className="min-w-0">
+                    <p className="text-sm font-bold text-slate-800 truncate">{pdfHeader.schoolName}</p>
+                    {pdfHeader.schoolAddressLine && <p className="text-xs text-slate-400 truncate">{pdfHeader.schoolAddressLine}</p>}
                   </div>
                 </div>
+              )}
+              {showExamRoutine && hasExamRoutineData && (
+                <p className="text-base font-bold text-slate-900">{notice.title}</p>
+              )}
+              {showExamRoutine && (
+                hasExamRoutineData ? (
+                  <div className="rounded-xl border border-indigo-100 bg-indigo-50/60 p-4">
+                    <div className="mb-2 flex items-center gap-2">
+                      <Calendar className="h-4 w-4 text-indigo-600" />
+                      <p className="text-sm font-semibold text-indigo-900">Exam Routine</p>
+                    </div>
+                    <p className="mb-3 text-xs text-indigo-700/80">
+                      {examGroup
+                        ? 'Download the full exam routine below, or see all your exams on the Exams page.'
+                        : 'View the full exam schedule on the Exams page.'}
+                    </p>
+                    <div className="flex flex-wrap gap-2">
+                      {examGroup && (
+                        <button
+                          type="button"
+                          onClick={onDownloadRoutine}
+                          disabled={downloadingRoutine}
+                          className="inline-flex items-center gap-1.5 rounded-full bg-linear-to-r from-indigo-500 to-purple-600 px-3.5 py-1.5 text-xs font-semibold text-white shadow-sm transition-opacity hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-60"
+                        >
+                          <Download className="h-3.5 w-3.5" />
+                          {downloadingRoutine ? 'Preparing…' : 'Download Routine PDF'}
+                        </button>
+                      )}
+                      <button
+                        type="button"
+                        onClick={onViewExams}
+                        className="inline-flex items-center gap-1.5 rounded-full border border-indigo-200 bg-white px-3.5 py-1.5 text-xs font-semibold text-indigo-700 hover:bg-indigo-50"
+                      >
+                        See Details <ArrowRight className="h-3.5 w-3.5" />
+                      </button>
+                    </div>
+                  </div>
+                ) : (
+                  <div className="rounded-xl border border-amber-100 bg-amber-50/60 p-4">
+                    <div className="mb-1 flex items-center gap-2">
+                      <Calendar className="h-4 w-4 text-amber-600" />
+                      <p className="text-sm font-semibold text-amber-900">Routine Not Published Yet</p>
+                    </div>
+                    <p className="text-xs text-amber-700/80">
+                      The subject-wise exam routine hasn&apos;t been published yet — check back here once it is, or keep an eye on the Exams page.
+                    </p>
+                  </div>
+                )
               )}
 
               <p className="text-sm text-slate-600 leading-relaxed whitespace-pre-line">{notice.message || 'No details available.'}</p>
@@ -547,6 +584,7 @@ const NoticeBoard = () => {
             onNext={() => nextNotice && setSelectedNoticeId(resolveId(nextNotice))}
             hasPrev={Boolean(prevNotice)}
             hasNext={Boolean(nextNotice)}
+            pdfHeader={pdfHeader}
             onShare={handleShare}
           />
         ) : (

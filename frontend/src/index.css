@@ -474,3 +474,24 @@ summary:focus-visible,
     transition-delay: 0ms !important;
   }
 }
+
+/*
+ * Chrome/Edge paint a yellow background on any input they think they can
+ * autofill (dates, names, numbers, etc. — common across the admin wizards),
+ * and it can reappear just from focusing the field again, not only after an
+ * actual autofill. `background-color` alone can't override this — Chrome
+ * applies its autofill fill as a UA layer above it — so the standard fix is
+ * to fake the input's own background with a huge inset box-shadow instead.
+ */
+input:-webkit-autofill,
+input:-webkit-autofill:hover,
+input:-webkit-autofill:focus,
+input:-webkit-autofill:active,
+select:-webkit-autofill,
+textarea:-webkit-autofill {
+  -webkit-box-shadow: 0 0 0 1000px #fff inset;
+  box-shadow: 0 0 0 1000px #fff inset;
+  -webkit-text-fill-color: inherit;
+  caret-color: inherit;
+  transition: background-color 0s 600000s, color 0s 600000s;
+}
