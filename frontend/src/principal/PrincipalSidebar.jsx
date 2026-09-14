@@ -26,7 +26,9 @@ const Tooltip = ({ label, sub, visible }) => (
   </div>
 );
 
-const PrincipalSidebar = ({ isOpen, setIsOpen, principalProfile }) => {
+const badgeLabel = (count) => (count > 99 ? '99+' : String(count));
+
+const PrincipalSidebar = ({ isOpen, setIsOpen, principalProfile, getNotificationCount = () => 0 }) => {
   const location = useLocation();
   const navigate = useNavigate();
   const [hoverId, setHoverId] = useState(null);
@@ -128,6 +130,7 @@ const PrincipalSidebar = ({ isOpen, setIsOpen, principalProfile }) => {
               const isActive = item.id === 'overview'
                 ? (location.pathname === '/principal' || location.pathname === '/principal/' || location.pathname === '/principal/overview')
                 : location.pathname.startsWith(item.path);
+              const notificationCount = getNotificationCount(item.path);
 
               return (
                 <div
@@ -147,16 +150,32 @@ const PrincipalSidebar = ({ isOpen, setIsOpen, principalProfile }) => {
                     }`}
                   >
                     <div
-                      className={`flex shrink-0 items-center justify-center rounded-full transition-all duration-200 ${
+                      className={`relative flex shrink-0 items-center justify-center rounded-full transition-all duration-200 ${
                         collapsed ? 'h-8 w-8' : 'h-7 w-7'
                       } ${isActive ? 'bg-indigo-600 text-white' : 'bg-slate-100 text-slate-500'}`}
                     >
                       <Icon size={collapsed ? 16 : 15} />
+                      {collapsed && notificationCount > 0 && (
+                        <span
+                          data-testid={`principal-sidebar-notification-${item.id}`}
+                          className="absolute -right-1.5 -top-1.5 flex h-3.5 min-w-3.5 items-center justify-center rounded-full bg-red-500 px-1 text-[9px] font-bold text-white"
+                        >
+                          {badgeLabel(notificationCount)}
+                        </span>
+                      )}
                     </div>
                     {!collapsed && (
                       <span className="min-w-0 flex-1 truncate text-left text-sm font-semibold">{item.label}</span>
                     )}
-                    {collapsed && isActive && (
+                    {!collapsed && notificationCount > 0 && (
+                      <span
+                        data-testid={`principal-sidebar-notification-${item.id}`}
+                        className="flex h-5 min-w-[1.25rem] items-center justify-center rounded-full bg-red-500 px-1.5 text-[10px] font-bold text-white"
+                      >
+                        {badgeLabel(notificationCount)}
+                      </span>
+                    )}
+                    {collapsed && isActive && notificationCount <= 0 && (
                       <span className="absolute right-0.5 top-0.5 h-2 w-2 rounded-full border border-white bg-indigo-500" />
                     )}
                   </button>

@@ -9,6 +9,7 @@ import {
   Menu,
   Activity,
   Gauge,
+  BookOpen,
   X,
   ChevronRight,
   ChevronLeft
@@ -18,6 +19,7 @@ import { AUTH_NOTICE, logoutAndRedirect } from '../utils/authSession';
 const navLinks = [
   { to: '/super-admin/overview', label: 'Overview', icon: LayoutDashboard },
   { to: '/super-admin/usage', label: 'Usage', icon: Gauge },
+  { to: '/super-admin/study-materials', label: 'Study Materials', icon: BookOpen },
   { to: '/super-admin/requests', label: 'Requests', icon: Building2 },
   { to: '/super-admin/feedback', label: 'Feedback', icon: MessageSquare },
   { to: '/super-admin/issues', label: 'Issues', icon: AlertTriangle },
@@ -27,7 +29,9 @@ const navLinks = [
   { to: '/super-admin/organizations/payment-status', label: 'Payment Status', icon: Activity }
 ];
 
-const SuperAdminLayout = ({ children, sidebarCollapsed, onToggleSidebar, insights, profile }) => {
+const badgeLabel = (count) => (count > 99 ? '99+' : String(count));
+
+const SuperAdminLayout = ({ children, sidebarCollapsed, onToggleSidebar, insights, profile, navCounts = {} }) => {
   const navigate = useNavigate();
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
 
@@ -42,6 +46,7 @@ const SuperAdminLayout = ({ children, sidebarCollapsed, onToggleSidebar, insight
   const renderNavItems = (showLabel = true) =>
     navLinks.map(({ to, label, icon }) => {
       const IconComponent = icon;
+      const count = navCounts[to] || 0;
       return (
       <NavLink
         key={to}
@@ -57,8 +62,26 @@ const SuperAdminLayout = ({ children, sidebarCollapsed, onToggleSidebar, insight
               ? 'bg-gradient-to-r from-amber-100 to-orange-50 text-amber-700 shadow-sm border-l-4 border-amber-500'
               : 'text-gray-600 hover:bg-gradient-to-r hover:from-amber-50 hover:to-orange-50 hover:text-gray-900 hover:shadow-sm hover:border-l-4 hover:border-amber-300'}
           `}>
-            <IconComponent size={20} className={`flex-shrink-0 transition-colors duration-200 ${isActive ? 'text-amber-600' : 'group-hover:text-amber-600'}`} />
+            <span className="relative flex-shrink-0">
+              <IconComponent size={20} className={`transition-colors duration-200 ${isActive ? 'text-amber-600' : 'group-hover:text-amber-600'}`} />
+              {!showLabel && count > 0 && (
+                <span
+                  data-testid={`super-admin-nav-count-${to}`}
+                  className="absolute -right-1.5 -top-1.5 flex h-3.5 min-w-3.5 items-center justify-center rounded-full bg-red-500 px-1 text-[9px] font-bold text-white"
+                >
+                  {badgeLabel(count)}
+                </span>
+              )}
+            </span>
             {showLabel && <span className="font-medium flex-1 opacity-100 transition-opacity duration-200">{label}</span>}
+            {showLabel && count > 0 && (
+              <span
+                data-testid={`super-admin-nav-count-${to}`}
+                className="flex h-5 min-w-[1.25rem] items-center justify-center rounded-full bg-red-500 px-1.5 text-[10px] font-bold text-white"
+              >
+                {badgeLabel(count)}
+              </span>
+            )}
           </div>
         )}
       </NavLink>

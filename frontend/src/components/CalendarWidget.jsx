@@ -177,7 +177,7 @@ const CalendarWidget = () => {
               <CalendarDays className="w-4.5 h-4.5 text-white" size={18} />
             </div>
             <div>
-              <h2 className="text-sm font-black text-white leading-none">Holiday Calendar</h2>
+              <h2 className="text-sm font-bold text-white leading-none">Holiday Calendar</h2>
               <p className="text-[11px] text-white/70 mt-0.5 leading-none">School holidays & breaks</p>
             </div>
           </div>
@@ -219,7 +219,7 @@ const CalendarWidget = () => {
           </button>
 
           <div className="text-center">
-            <h3 className="text-base font-black text-gray-900 leading-none">
+            <h3 className="text-base font-bold text-gray-900 leading-none">
               {monthNames[currentDate.getMonth()]}
             </h3>
             <p className="text-xs text-gray-400 mt-0.5">{currentDate.getFullYear()}</p>
@@ -326,7 +326,7 @@ const CalendarWidget = () => {
         {!loading && (
           <div>
             <div className="flex items-center justify-between mb-3">
-              <h4 className="text-xs font-black text-gray-700 uppercase tracking-wider">Upcoming Holidays</h4>
+              <h4 className="text-xs font-bold text-gray-700 uppercase tracking-wider">Upcoming Holidays</h4>
               {monthlyUpcomingHolidays.length > 0 && (
                 <span className="text-[11px] font-semibold text-purple-600 bg-purple-50 border border-purple-100 px-2 py-0.5 rounded-full">
                   {monthlyUpcomingHolidays.length}

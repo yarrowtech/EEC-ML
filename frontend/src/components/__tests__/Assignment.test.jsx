@@ -111,7 +111,7 @@ describe('student school assignment workflow', () => {
     await screen.findByText('PDF worksheet');
     await user.click(screen.getByRole('button', { name: /open assignment/i }));
     const file = new File(['pdf-data'], 'answer.pdf', { type: 'application/pdf' });
-    await user.upload(screen.getByLabelText(/upload pdf/i), file);
+    await user.upload(screen.getByLabelText(/upload a pdf or photo/i), file);
     await screen.findByText('answer.pdf');
     await user.click(screen.getByRole('button', { name: /turn in assignment/i }));
 
@@ -122,6 +122,50 @@ describe('student school assignment workflow', () => {
           assignmentId: 'assignment-pdf',
           submissionText: '',
           attachmentUrl: 'https://files.example.test/answer.pdf',
+        },
+        { headers: { Authorization: 'Bearer student-token' } }
+      );
+    });
+  });
+
+  test('uploads a photo and submits its returned URL', async () => {
+    const user = userEvent.setup();
+    fetchCachedJson.mockResolvedValue({
+      data: [{ ...baseAssignment, _id: 'assignment-photo', title: 'Photo worksheet', submissionFormat: 'pdf' }],
+    });
+    axios.post
+      .mockResolvedValueOnce({
+        data: {
+          files: [{
+            originalName: 'answer.jpg',
+            secure_url: 'https://files.example.test/answer.jpg',
+          }],
+        },
+      })
+      .mockResolvedValueOnce({
+        data: {
+          status: 'submitted',
+          submittedAt: '2026-08-21T10:00:00.000Z',
+          attachmentUrl: 'https://files.example.test/answer.jpg',
+        },
+      });
+
+    renderAssignment();
+
+    await screen.findByText('Photo worksheet');
+    await user.click(screen.getByRole('button', { name: /open assignment/i }));
+    const file = new File(['photo-data'], 'answer.jpg', { type: 'image/jpeg' });
+    await user.upload(screen.getByLabelText(/upload a pdf or photo/i), file);
+    await screen.findByText('answer.jpg');
+    await user.click(screen.getByRole('button', { name: /turn in assignment/i }));
+
+    await waitFor(() => {
+      expect(axios.post).toHaveBeenLastCalledWith(
+        expect.stringContaining('/api/assignment/submit'),
+        {
+          assignmentId: 'assignment-photo',
+          submissionText: '',
+          attachmentUrl: 'https://files.example.test/answer.jpg',
         },
         { headers: { Authorization: 'Bearer student-token' } }
       );

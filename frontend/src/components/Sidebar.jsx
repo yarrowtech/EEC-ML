@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import {
   Home, Calendar, Users, FileText, BookOpen, LogOut,
   ChevronDown, ChevronRight, ChevronLeft , Trophy, Bell,
@@ -10,6 +10,7 @@ import {
 import { useNavigate } from 'react-router-dom';
 import { useStudentDashboard } from './StudentDashboardContext';
 import { AUTH_NOTICE, logoutAndRedirect } from '../utils/authSession';
+import { getStudentModuleNotificationCount } from '../utils/moduleNotificationUtils';
 import ConfirmDialog from './ConfirmDialog';
 
 const API_URL = (import.meta.env.VITE_API_URL || 'http://localhost:5000').replace(/\/$/, '');
@@ -92,7 +93,15 @@ const Sidebar = ({ activeView, isOpen, setIsOpen }) => {
   const [openGroups, setOpenGroups] = useState({});
   const [hoverId, setHoverId]       = useState(null);
   const [showLogoutConfirm, setShowLogoutConfirm] = useState(false);
-  const { profile, classTeacher, unreadChatCount } = useStudentDashboard();
+  const {
+    profile,
+    classTeacher,
+    unreadChatCount,
+    notifications,
+    moduleSeenState,
+    chatSeenCount,
+    markModuleVisited,
+  } = useStudentDashboard();
 
   const collapsed = !isOpen; // desktop icon-only state
 
@@ -126,7 +135,17 @@ const Sidebar = ({ activeView, isOpen, setIsOpen }) => {
   const schoolName     = studentData.schoolName || 'Student Portal';
   const hasSchoolLogo  = typeof studentData.schoolLogo === 'string' && studentData.schoolLogo.trim() !== '';
   const schoolInitial  = (schoolName.trim()[0] || 'S').toUpperCase();
-  const unreadLabel = unreadChatCount > 99 ? '99+' : String(unreadChatCount);
+  const getModuleCount = (moduleId) => getStudentModuleNotificationCount(notifications, moduleId, unreadChatCount, moduleSeenState, chatSeenCount);
+  const groupCounts = useMemo(() => Object.fromEntries(
+    MENU_ITEMS.map((item) => [
+      item.id,
+      (item.children || []).reduce((total, child) => total + getModuleCount(child.id), 0),
+    ])
+  ), [notifications, unreadChatCount, moduleSeenState, chatSeenCount]);
+
+  useEffect(() => {
+    markModuleVisited(activeView);
+  }, [activeView, notifications, markModuleVisited]);
 
   const handleNavigation = (pageId) => {
     const path = pageId === 'dashboard' ? '/student' : `/student/${pageId}`;
@@ -267,8 +286,8 @@ const Sidebar = ({ activeView, isOpen, setIsOpen }) => {
             {MENU_ITEMS.map((item) => {
               const Icon = item.icon;
               const hasChildren = !!item.children?.length;
-              const isMessagesGroup = item.id === 'messages';
-              const hasUnread = isMessagesGroup && unreadChatCount > 0;
+              const moduleCount = hasChildren ? groupCounts[item.id] : getModuleCount(item.id);
+              const hasUnread = moduleCount > 0;
               const isActive = activeView === item.id ||
                 (item.id === 'learn' && LEARNING_HUB_VIEWS.includes(activeView)) ||
                 (hasChildren && item.children?.some((c) => c.id === activeView));
@@ -324,9 +343,9 @@ const Sidebar = ({ activeView, isOpen, setIsOpen }) => {
                           {hasUnread && (
                             <span
                               className="flex h-5 min-w-[20px] shrink-0 items-center justify-center rounded-full bg-red-500 px-1.5 text-[10px] font-semibold text-white"
-                              title={`${unreadLabel} unread messages`}
+                              title={`${moduleCount} unread item${moduleCount === 1 ? '' : 's'} in ${item.name}`}
                             >
-                              {unreadLabel}
+                              {moduleCount > 99 ? '99+' : moduleCount}
                             </span>
                           )}
                           {hasChildren && (
@@ -346,9 +365,9 @@ const Sidebar = ({ activeView, isOpen, setIsOpen }) => {
                       {collapsed && hasUnread && (
                         <span
                           className="absolute -right-0.5 -top-0.5 flex h-4 min-w-[16px] items-center justify-center rounded-full border border-white bg-red-500 px-1 text-[9px] font-semibold text-white"
-                          title={`${unreadLabel} unread messages`}
+                          title={`${moduleCount} unread item${moduleCount === 1 ? '' : 's'} in ${item.name}`}
                         >
-                          {unreadChatCount > 9 ? '9+' : unreadLabel}
+                          {moduleCount > 9 ? '9+' : moduleCount}
                         </span>
                       )}
                     </button>
@@ -363,7 +382,7 @@ const Sidebar = ({ activeView, isOpen, setIsOpen }) => {
                         const ChildIcon = child.icon;
                         const childActive = activeView === child.id ||
                           (child.id === 'learning' && LEARNING_HUB_VIEWS.includes(activeView));
-                        const isChatChild = child.id === 'chat';
+                        const childNotificationCount = getModuleCount(child.id);
                         return (
                           <button
                             key={child.id}
@@ -379,12 +398,16 @@ const Sidebar = ({ activeView, isOpen, setIsOpen }) => {
                               className={`shrink-0 transition-colors ${childActive ? 'text-violet-500' : 'text-slate-400 group-hover:text-violet-500'}`}
                             />
                             <span className="truncate">{child.name}</span>
-                            {isChatChild && unreadChatCount > 0 && (
-                              <span className="ml-auto flex h-5 min-w-[20px] items-center justify-center rounded-full bg-red-500 px-1.5 text-[10px] font-semibold text-white">
-                                {unreadLabel}
+                            {childNotificationCount > 0 && (
+                              <span
+                                data-testid={`student-module-notification-${child.id}`}
+                                title={`${childNotificationCount} unread item${childNotificationCount === 1 ? '' : 's'}`}
+                                className="ml-auto flex h-5 min-w-[20px] items-center justify-center rounded-full bg-red-500 px-1.5 text-[10px] font-semibold text-white"
+                              >
+                                {childNotificationCount > 99 ? '99+' : childNotificationCount}
                               </span>
                             )}
-                            {childActive && (!isChatChild || unreadChatCount <= 0) && (
+                            {childActive && childNotificationCount <= 0 && (
                               <span className="ml-auto h-1.5 w-1.5 shrink-0 rounded-full bg-violet-400" />
                             )}
                           </button>

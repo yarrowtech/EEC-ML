@@ -130,7 +130,7 @@ const assignmentMatchesStudentPlacement = ({ assignment, student, classDoc, sect
 
 const resolveStudentPlacement = async ({ studentId, schoolId, campusId }) => {
     const student = await StudentUser.findOne({ _id: studentId, schoolId })
-        .select('grade section campusId');
+        .select('name grade section campusId');
     if (!student) return { student: null, classDoc: null, sectionDoc: null };
 
     const resolvedCampusId = campusId || student.campusId || null;
@@ -795,6 +795,94 @@ router.post("/teacher/grade", authTeacher, async (req, res) => {
     }
 });
 
+// Teacher triggers (or re-triggers) an on-demand AI evaluation for one submission
+router.post("/teacher/ai-evaluate", authTeacher, async (req, res) => {
+  // #swagger.tags = ['Assignments']
+    try {
+        const { studentId, assignmentId } = req.body;
+        const schoolId = req.schoolId || req.teacher?.schoolId || null;
+        if (!schoolId) return res.status(400).json({ error: 'schoolId is required' });
+
+        const teacherId = req.teacher?.id || req.user?.id;
+        if (!teacherId) return res.status(400).json({ error: 'teacherId is required' });
+
+        if (!studentId || !assignmentId) {
+            return res.status(400).json({ error: 'studentId and assignmentId are required' });
+        }
+
+        // Verify assignment belongs to this teacher
+        const assignment = await Assignment.findOne({ _id: assignmentId, schoolId, teacherId });
+        if (!assignment) {
+            return res.status(404).json({ error: 'Assignment not found or unauthorized' });
+        }
+        if (!assignment.rubric || !assignment.rubric.trim()) {
+            return res.status(400).json({ error: 'Add a grading rubric to this assignment before requesting an AI evaluation.' });
+        }
+
+        const progress = await StudentProgress.findOne({ studentId, schoolId });
+        if (!progress) {
+            return res.status(404).json({ error: 'Student progress not found' });
+        }
+
+        const submissionIndex = progress.submissions.findIndex(
+            sub => String(sub.assignmentId) === String(assignmentId)
+        );
+        if (submissionIndex === -1) {
+            return res.status(404).json({ error: 'Submission not found' });
+        }
+
+        const submissionText = progress.submissions[submissionIndex].submissionText;
+        if (!submissionText || !submissionText.trim()) {
+            return res.status(400).json({ error: 'AI evaluation needs a written submission — this one has no text to evaluate.' });
+        }
+
+        progress.submissions[submissionIndex].aiGradingStatus = 'pending';
+        await progress.save();
+
+        try {
+            const evaluation = await require('../services/academicEvaluator').evaluateStoredAnswer({
+                questionText: assignment.description || assignment.title,
+                correctAnswer: assignment.rubric, studentAnswer: submissionText,
+                subject: assignment.subject, topicTitle: assignment.topicTitle || assignment.topic || assignment.title,
+                questionType: 'long_answer', context: 'Evaluate coverage against the teacher rubric. This is a proposed grade for teacher review.',
+            });
+            const totalScore = evaluation.score * assignment.marks;
+
+            const freshProgress = await StudentProgress.findOne({ studentId, schoolId });
+            const idx = freshProgress.submissions.findIndex((s) => String(s.assignmentId) === String(assignmentId));
+            if (idx === -1) return res.status(404).json({ error: 'Submission not found' });
+
+            freshProgress.submissions[idx].aiScore = Math.max(0, Math.min(totalScore, assignment.marks));
+            freshProgress.submissions[idx].aiGradingFeedback = String(evaluation.feedback).slice(0, 1000);
+            freshProgress.submissions[idx].aiGradingStatus = 'done';
+            freshProgress.submissions[idx].aiMissingConcepts = evaluation.missingConcepts;
+            freshProgress.submissions[idx].aiConfidenceScore = evaluation.confidenceScore;
+            freshProgress.submissions[idx].aiErrorType = evaluation.errorType;
+            freshProgress.submissions[idx].aiBloomLevel = evaluation.bloomLevel;
+            freshProgress.submissions[idx].aiEvaluation = evaluation;
+            await freshProgress.save();
+
+            return res.json({
+                aiScore: freshProgress.submissions[idx].aiScore,
+                aiGradingFeedback: freshProgress.submissions[idx].aiGradingFeedback,
+                aiGradingStatus: 'done',
+            });
+        } catch (aiErr) {
+            try {
+                const failProgress = await StudentProgress.findOne({ studentId, schoolId });
+                const failIdx = failProgress?.submissions?.findIndex((s) => String(s.assignmentId) === String(assignmentId));
+                if (failProgress && failIdx >= 0) {
+                    failProgress.submissions[failIdx].aiGradingStatus = 'failed';
+                    await failProgress.save();
+                }
+            } catch (_) { /* best-effort */ }
+            return res.status(502).json({ error: 'AI evaluation failed. Please grade this submission manually.' });
+        }
+    } catch (err) {
+        res.status(500).json({ error: err.message });
+    }
+});
+
 // Teachers publish grades so students can see their marks and feedback
 router.post("/teacher/publish-grades", authTeacher, async (req, res) => {
   // #swagger.tags = ['Assignments']
@@ -1191,6 +1279,22 @@ router.post("/submit", authStudent, async (req, res) => {
         progress.lastUpdated = new Date();
         await progress.save();
 
+        // Create a targeted teacher notification for the new submission. A
+        // submission is an actionable item in Evaluate Submissions, so it
+        // must enter the same notification hierarchy as other assignment
+        // updates instead of relying only on the page's local row count.
+        try {
+            await NotificationService.notifyAssignmentSubmitted({
+                schoolId,
+                campusId: req.campusId || null,
+                assignment,
+                student: placement.student,
+                submissionId: progress.submissions[progress.submissions.length - 1]?._id || null,
+            });
+        } catch (notifErr) {
+            logger.error('Failed to create assignment submission notification:', notifErr);
+        }
+
         // Fire-and-forget AI essay grading if this is an essay assignment with a rubric
         if (assignment.isEssay && assignment.rubric && submissionText?.trim()) {
             const submissionIdx = progress.submissions.findIndex(
@@ -1344,6 +1448,9 @@ router.get("/teacher/submissions", authTeacher, async (req, res) => {
                     aiGradingFeedback: sub.aiGradingFeedback || '',
                     aiGradingStatus: sub.aiGradingStatus || 'skipped',
                     aiCriteriaBreakdown: sub.aiCriteriaBreakdown || null,
+                    rubric: assignment.rubric || '',
+                    isEssay: assignment.isEssay === true,
+                    submissionFormat: assignment.submissionFormat || 'text',
                     dueDate: assignment.dueDate
                 });
             });

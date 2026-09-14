@@ -53,7 +53,7 @@ const StatCard = ({ stat, theme, loading }) => {
         </div>
 
         {/* Value */}
-        <p className={`text-2xl font-black leading-none ${theme.valueColor}`}>
+        <p className={`text-2xl font-bold leading-none ${theme.valueColor}`}>
           {loading ? <span className="inline-block h-7 w-14 rounded-lg bg-white/50 animate-pulse" /> : stat.value}
         </p>
         <p className={`mt-1 text-xs font-semibold ${theme.labelColor}`}>{stat.title}</p>

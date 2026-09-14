@@ -196,6 +196,10 @@ const teachingMaterialSchema = new mongoose.Schema({
     url: { type: String, required: true },
     size: { type: Number, required: true },
     type: { type: String, required: true },
+    storageProvider: { type: String, enum: ['cloudinary', 's3'], default: 'cloudinary' },
+    s3Key: String,
+    s3Bucket: String,
+    s3Region: String,
     cloudinaryPublicId: String, // For deletion if needed
     uploadedAt: { type: Date, default: Date.now }
   }],

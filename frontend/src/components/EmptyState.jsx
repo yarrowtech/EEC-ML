@@ -29,7 +29,7 @@ export default function EmptyState({ icon: Icon, title, description, action, com
           <Icon className={compact ? "h-5 w-5" : "h-7 w-7"} aria-hidden="true" />
         </div>
       )}
-      <p className={cn("font-semibold text-slate-800", compact ? "text-sm" : "text-base")}>{title}</p>
+      <p className={cn("font-semibold text-[#0f172a]", compact ? "text-sm" : "text-base")}>{title}</p>
       {description && (
         <p className={cn("max-w-sm text-slate-500", compact ? "text-xs" : "text-sm")}>{description}</p>
       )}

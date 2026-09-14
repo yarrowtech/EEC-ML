@@ -2,6 +2,7 @@ const express = require('express');
 const mongoose = require('mongoose');
 const Admin = require('../models/Admin');
 const School = require('../models/School');
+const TeachingMaterial = require('../models/TeachingMaterial');
 const StudentUser = require('../models/StudentUser');
 const TeacherUser = require('../models/TeacherUser');
 const ParentUser = require('../models/ParentUser');
@@ -16,6 +17,7 @@ const adminAuth = require('../middleware/adminAuth');
 const { isStrongPassword, passwordPolicyMessage } = require('../utils/passwordPolicy');
 const { deleteSchoolScopedData } = require('../utils/deleteSchoolCascade');
 const { recordPlatformAudit } = require('../utils/platformAudit');
+const { signAttachmentUrls } = require('../utils/s3Storage');
 const {
   ACTIVE_STUDENT_FILTER,
   ACTIVE_PARENT_FILTER,
@@ -25,6 +27,51 @@ const {
 } = require('../utils/studentStatus');
 
 const escapeRegex = (value = '') => String(value).replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+
+const stripHtml = (value = '') => String(value)
+  .replace(/<[^>]*>/g, ' ')
+  .replace(/&nbsp;/gi, ' ')
+  .replace(/\s+/g, ' ')
+  .trim();
+
+const studyMaterialSummary = async (material, schoolById) => {
+  const content = material.plainTextContent || stripHtml(material.content || '');
+  const schoolId = String(material.schoolId || '');
+  const school = schoolById.get(schoolId);
+  return {
+    id: String(material._id),
+    schoolId,
+    schoolName: school?.name || 'Unknown school',
+    schoolStatus: school?.status || 'unknown',
+    title: material.title || 'Untitled material',
+    materialType: material.materialType || 'note',
+    learningType: material.learningType || 'note',
+    typeLabel: material.typeLabel || 'Study Material',
+    status: material.status || 'draft',
+    publishedForStudentPortal: Boolean(material.publishedForStudentPortal),
+    isEnabled: material.isEnabled !== false,
+    className: material.className || '',
+    sectionName: material.sectionName || '',
+    subjectName: material.subjectName || '',
+    chapterTitle: material.chapterTitle || '',
+    topicTitle: material.topicTitle || '',
+    teacherName: material.teacherName || 'Unknown teacher',
+    attachmentCount: Array.isArray(material.attachments) ? material.attachments.length : 0,
+    attachments: await signAttachmentUrls((material.attachments || []).map((attachment) => ({
+      name: attachment.name || 'Attachment',
+      url: attachment.url || '',
+      type: attachment.type || '',
+      size: attachment.size || 0,
+      storageProvider: attachment.storageProvider,
+      s3Key: attachment.s3Key,
+      s3Bucket: attachment.s3Bucket,
+      s3Region: attachment.s3Region,
+    }))),
+    contentPreview: content.slice(0, 280),
+    createdAt: material.createdAt || null,
+    updatedAt: material.updatedAt || null,
+  };
+};
 
 const router = express.Router();
 
@@ -198,6 +245,125 @@ router.get('/schools', adminAuth, ensureSuperAdmin, async (req, res) => {
     res.json(schools);
   } catch (err) {
     res.status(500).json({ error: err.message });
+  }
+});
+
+// Cross-school study material browser (read-only, super admin only)
+router.get('/study-materials', adminAuth, ensureSuperAdmin, async (req, res) => {
+  // #swagger.tags = ['Super Admin']
+  try {
+    const {
+      schoolId,
+      status,
+      q,
+      page = 1,
+      pageSize = 20,
+    } = req.query || {};
+    const parsedPage = Math.max(1, Number.parseInt(page, 10) || 1);
+    const parsedPageSize = Math.min(50, Math.max(1, Number.parseInt(pageSize, 10) || 20));
+    const filter = {};
+
+    if (schoolId) {
+      if (!mongoose.isValidObjectId(schoolId)) {
+        return res.status(400).json({ error: 'Invalid schoolId' });
+      }
+      // Aggregation pipelines do not cast string query parameters to ObjectIds.
+      filter.schoolId = new mongoose.Types.ObjectId(String(schoolId));
+    }
+    if (status) {
+      if (!['draft', 'scheduled', 'published', 'archived'].includes(String(status))) {
+        return res.status(400).json({ error: 'Invalid study material status' });
+      }
+      filter.status = String(status);
+    }
+    if (q && String(q).trim()) {
+      const query = escapeRegex(String(q).trim());
+      filter.$or = [
+        { title: { $regex: query, $options: 'i' } },
+        { teacherName: { $regex: query, $options: 'i' } },
+        { className: { $regex: query, $options: 'i' } },
+        { subjectName: { $regex: query, $options: 'i' } },
+        { chapterTitle: { $regex: query, $options: 'i' } },
+        { topicTitle: { $regex: query, $options: 'i' } },
+        { plainTextContent: { $regex: query, $options: 'i' } },
+      ];
+    }
+
+    const [total, materials, schools, published, drafts, archived, schoolGroups] = await Promise.all([
+      TeachingMaterial.countDocuments(filter),
+      TeachingMaterial.find(filter)
+        .select('schoolId title materialType learningType typeLabel status publishedForStudentPortal isEnabled className sectionName subjectName chapterTitle topicTitle teacherName attachments content plainTextContent createdAt updatedAt')
+        .sort({ createdAt: -1, _id: -1 })
+        .skip((parsedPage - 1) * parsedPageSize)
+        .limit(parsedPageSize)
+        .lean(),
+      School.find({}, 'name status logo').sort({ name: 1 }).lean(),
+      TeachingMaterial.countDocuments({ ...filter, status: 'published' }),
+      TeachingMaterial.countDocuments({ ...filter, status: 'draft' }),
+      TeachingMaterial.countDocuments({ ...filter, status: 'archived' }),
+      TeachingMaterial.aggregate([
+        { $match: filter },
+        { $group: { _id: '$schoolId', count: { $sum: 1 } } },
+      ]),
+    ]);
+
+    const schoolById = new Map(schools.map((school) => [String(school._id), school]));
+    const materialCountBySchool = new Map(schoolGroups.map((group) => [String(group._id), group.count]));
+
+    return res.json({
+      materials: await Promise.all(materials.map((material) => studyMaterialSummary(material, schoolById))),
+      schools: schools.map((school) => ({
+        id: String(school._id),
+        name: school.name,
+        status: school.status,
+        logo: school.logo || null,
+        materialCount: materialCountBySchool.get(String(school._id)) || 0,
+      })),
+      stats: {
+        total,
+        published,
+        drafts,
+        archived,
+        schoolsWithMaterials: schoolGroups.length,
+      },
+      pagination: {
+        page: parsedPage,
+        pageSize: parsedPageSize,
+        total,
+        pages: Math.ceil(total / parsedPageSize),
+      },
+    });
+  } catch (err) {
+    return res.status(500).json({ error: err.message || 'Failed to fetch study materials' });
+  }
+});
+
+// Full material preview for the read-only browser.
+router.get('/study-materials/:id', adminAuth, ensureSuperAdmin, async (req, res) => {
+  // #swagger.tags = ['Super Admin']
+  try {
+    if (!mongoose.isValidObjectId(req.params.id)) {
+      return res.status(400).json({ error: 'Invalid study material id' });
+    }
+    const material = await TeachingMaterial.findById(req.params.id)
+      .select('-quiz.questions.correctAnswer -viewedBy -downloadedBy -completedBy -quizAttempts -poll.responses')
+      .lean();
+    if (!material) return res.status(404).json({ error: 'Study material not found' });
+
+    const school = await School.findById(material.schoolId, 'name status logo').lean();
+    return res.json({
+      material: {
+        ...(await studyMaterialSummary(material, new Map([[String(school?._id), school]]))),
+        content: material.content || '',
+        plainTextContent: material.plainTextContent || stripHtml(material.content || ''),
+        tags: material.tags || [],
+        views: material.views || 0,
+        downloads: material.downloads || 0,
+        publishedAt: material.publishedAt || null,
+      },
+    });
+  } catch (err) {
+    return res.status(500).json({ error: err.message || 'Failed to fetch study material' });
   }
 });
 

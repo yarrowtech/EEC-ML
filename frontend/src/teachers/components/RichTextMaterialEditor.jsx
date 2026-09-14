@@ -81,16 +81,14 @@ const RichTextMaterialEditor = ({ material, classId, sectionId, subjectId, chapt
 
         setAttachments(prev => [...prev, tempAttachment]);
 
-        // Upload to Cloudinary
+        // Study material files are stored in the private S3 bucket.
         const formData = new FormData();
         formData.append('file', file);
-        formData.append('folder', 'class_materials');
-        formData.append('tags', 'study_material,smart_teaching,teaching_material');
 
         try {
           const data = await new Promise((resolve, reject) => {
             const xhr = new XMLHttpRequest();
-            xhr.open('POST', `${import.meta.env.VITE_API_URL}/api/uploads/cloudinary/single`);
+            xhr.open('POST', `${import.meta.env.VITE_API_URL}/api/uploads/s3/study-material/single`);
             xhr.setRequestHeader('Authorization', `Bearer ${localStorage.getItem('token')}`);
 
             xhr.upload.onprogress = (event) => {
@@ -120,7 +118,8 @@ const RichTextMaterialEditor = ({ material, classId, sectionId, subjectId, chapt
           });
 
           const uploadedFile = data.files[0];
-          if (!uploadedFile?.secure_url) throw new Error('Upload completed without a file URL');
+          const storageUrl = uploadedFile?.storageUrl || uploadedFile?.url;
+          if (!storageUrl) throw new Error('Upload completed without a file URL');
 
           // Update attachment with URL
           setAttachments(prev =>
@@ -129,10 +128,13 @@ const RichTextMaterialEditor = ({ material, classId, sectionId, subjectId, chapt
                 ? {
                     id: tempId,
                     name: uploadedFile.originalName || file.name,
-                    url: uploadedFile.secure_url,
+                    url: storageUrl,
                     size: file.size,
                     type: file.type,
-                    cloudinaryPublicId: uploadedFile.public_id,
+                    storageProvider: uploadedFile.storageProvider || 's3',
+                    s3Key: uploadedFile.s3Key,
+                    s3Bucket: uploadedFile.s3Bucket,
+                    s3Region: uploadedFile.s3Region,
                     isUploading: false,
                     progress: 100
                   }

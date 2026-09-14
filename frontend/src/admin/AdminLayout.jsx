@@ -5,6 +5,7 @@ import AdminHeader from './AdminHeader';
 import AdminSidebar from './AdminSidebar';
 import AdminBottomNav from './AdminBottomNav';
 import { AUTH_NOTICE, logoutAndRedirect } from '../utils/authSession';
+import { useAdminNotifications } from './useAdminNotifications';
 
 const AdminLayout = ({
   children,
@@ -20,6 +21,8 @@ const AdminLayout = ({
   const navigate = useNavigate();
   const [mobileOpen, setMobileOpen] = useState(false);
   const [showLogoutConfirm, setShowLogoutConfirm] = useState(false);
+  const isSuperAdmin = String(adminUser?.role || '').toLowerCase() === 'super admin';
+  const notificationState = useAdminNotifications({ isSuperAdmin });
 
   const handleLogoutRequest = () => setShowLogoutConfirm(true);
   const confirmLogout = () => {
@@ -73,6 +76,7 @@ const AdminLayout = ({
         onMobileClose={() => setMobileOpen(false)}
         onLogoutRequest={handleLogoutRequest}
         showAdminHeader={showAdminHeader}
+        getNotificationCount={notificationState.getModuleCount}
       />
 
       <div className="flex-1 flex flex-col min-w-0 bg-gray-50">
@@ -81,6 +85,7 @@ const AdminLayout = ({
             adminUser={adminUser}
             onOpenMobileSidebar={() => setMobileOpen(true)}
             onLogoutRequest={handleLogoutRequest}
+            notificationState={notificationState}
           />
         )}
 
@@ -99,7 +104,7 @@ const AdminLayout = ({
       </div>
 
       {/* Mobile-only bottom tab bar — "More" opens the full sidebar drawer */}
-      <AdminBottomNav onOpenMore={() => setMobileOpen(true)} />
+      <AdminBottomNav onOpenMore={() => setMobileOpen(true)} getNotificationCount={notificationState.getModuleCount} />
     </div>
   );
 };

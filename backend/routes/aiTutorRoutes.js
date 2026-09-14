@@ -18,6 +18,7 @@ const StudentProgress = require('../models/StudentProgress');
 const { buildStudentContext } = require('../utils/studentContextBuilder');
 const { buildTeacherAllocationScope, studentIsWithinTeacherScope } = require('../utils/teacherAllocationScope');
 const { partitionMaterialsByEnabled } = require('../utils/teachingMaterialAccess');
+const { getAttachmentDownloadUrl } = require('../utils/s3Storage');
 
 const AI_SERVICE_URL = process.env.AI_SERVICE_URL || 'http://localhost:8000';
 const ALLOWED_MODES = ['custom', 'explain', 'visual_explain', 'summarize', 'quiz', 'visual_quiz', 'homework_help', 'notes', 'mind_map', 'flashcards', 'diagram', 'misconception', 'real_world', 'practice_basic', 'practice_intermediate', 'practice_advanced', 'engagement_swap', 'exam_explanation', 'exam_feedback', 'assignment_feedback', 'at_risk_summary', 'quiz_generate', 'short_answer', 'long_answer', 'bloom_question', 'hinge_question', 'explain_back'];
@@ -122,10 +123,11 @@ const ingestMaterialAttachments = async (material) => {
   const attachments = Array.isArray(material.attachments) ? material.attachments.filter(isVectorIngestible) : [];
   for (let index = 0; index < attachments.length; index += 1) {
     const attachment = attachments[index];
+    const attachmentUrl = await getAttachmentDownloadUrl(attachment);
     await axios.post(
       `${AI_SERVICE_URL}/ingest/material`,
       {
-        url: attachment.url,
+        url: attachmentUrl,
         material_id: String(material._id),
         source_id: buildSourceId(material, attachment, index),
         file_name: attachment.name || '',

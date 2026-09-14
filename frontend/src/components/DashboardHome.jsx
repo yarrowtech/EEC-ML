@@ -21,8 +21,8 @@ const API_BASE = (import.meta.env.VITE_API_URL || 'http://localhost:5000').repla
  *  card silently disappearing. */
 const CardError = ({ onRetry, label }) => (
   <div className="rounded-2xl border border-amber-100 bg-white p-4 shadow-sm">
-    <p className="text-sm font-semibold text-gray-700">{label}</p>
-    <p className="mt-1 text-xs text-gray-500">Couldn&apos;t load this right now.</p>
+    <p className="text-sm font-bold text-[#0f172a]">{label}</p>
+    <p className="mt-1 text-xs text-[#8e9aaf]">Couldn&apos;t load this right now.</p>
     <button
       type="button"
       onClick={onRetry}
@@ -78,7 +78,7 @@ const ProgressTrendChart = () => {
 
   return (
     <div className="rounded-2xl border border-amber-100 bg-gradient-to-br from-amber-50 to-orange-50 p-4 shadow-sm">
-      <p className="mb-3 text-sm font-black text-amber-900">Score Trend</p>
+      <p className="mb-3 text-sm font-bold text-[#0f172a]">Score Trend</p>
       <ResponsiveContainer width="100%" height={140}>
         <LineChart data={chartData} margin={{ top: 4, right: 8, left: -20, bottom: 0 }}>
           <CartesianGrid strokeDasharray="3 3" stroke="#fde68a" />
@@ -134,8 +134,8 @@ const ForgettingCurveChart = () => {
 
   return (
     <div className="rounded-2xl border border-violet-100 bg-gradient-to-br from-violet-50 to-purple-50 p-4 shadow-sm">
-      <p className="mb-1 text-sm font-black text-violet-900">Retention Forecast</p>
-      <p className="mb-3 text-xs text-violet-600">Estimated memory decay since your last review of each topic</p>
+      <p className="mb-1 text-sm font-bold text-[#0f172a]">Retention Forecast</p>
+      <p className="mb-3 text-xs text-[#64748b]">Estimated memory decay since your last review of each topic</p>
       <ResponsiveContainer width="100%" height={180}>
         <LineChart data={chartData} margin={{ top: 4, right: 8, left: -20, bottom: 0 }}>
           <CartesianGrid strokeDasharray="3 3" stroke="#e9d5ff" />
@@ -182,16 +182,16 @@ const ConfidenceCalibrationCard = () => {
   return (
     <div className="rounded-2xl border border-rose-100 bg-gradient-to-br from-rose-50 to-pink-50 p-4 shadow-sm">
       <div className="mb-3 flex items-center justify-between">
-        <p className="text-sm font-black text-rose-900">Confidence Calibration</p>
+        <p className="text-sm font-bold text-[#0f172a]">Confidence Calibration</p>
         <span className={`rounded-full px-2 py-0.5 text-[10px] font-bold ${overall.color}`}>{overall.label}</span>
       </div>
-      <p className="mb-3 text-xs text-rose-600">How your self-rated confidence compares to your actual mastery</p>
+      <p className="mb-3 text-xs text-[#64748b]">How your self-rated confidence compares to your actual mastery</p>
       <div className="space-y-2">
         {profile.topics.slice(0, 5).map((t) => {
           const meta = CALIBRATION_META[t.calibrationLabel] || CALIBRATION_META.insufficient_data;
           return (
             <div key={`${t.subject}-${t.topicId}`} className="flex items-center justify-between gap-2 rounded-lg bg-white/70 px-3 py-1.5">
-              <span className="truncate text-xs font-semibold text-gray-700">{t.topicTitle || t.topicId}</span>
+              <span className="truncate text-xs font-semibold text-[#0f172a]">{t.topicTitle || t.topicId}</span>
               <span className={`shrink-0 rounded-full px-2 py-0.5 text-[10px] font-bold ${meta.color}`}>{meta.label}</span>
             </div>
           );
@@ -224,17 +224,17 @@ const LearningStyleCard = () => {
 
   return (
     <div className="rounded-2xl border border-cyan-100 bg-gradient-to-br from-cyan-50 to-sky-50 p-4 shadow-sm">
-      <p className="mb-1 text-sm font-black text-cyan-900">Your Learning Style</p>
-      <p className="mb-3 text-xs text-cyan-600">Based on which study modes you actually use most</p>
+      <p className="mb-1 text-sm font-bold text-[#0f172a]">Your Learning Style</p>
+      <p className="mb-3 text-xs text-[#64748b]">Based on which study modes you actually use most</p>
       <div className="flex items-center gap-3 rounded-xl bg-white/70 px-3 py-2.5">
         <span className="text-2xl">{meta.emoji}</span>
         <div>
-          <p className="text-sm font-bold text-gray-800">{meta.label}</p>
-          <p className="text-[11px] text-gray-500">{profile.confidence}% of your recent sessions</p>
+          <p className="text-sm font-bold text-[#0f172a]">{meta.label}</p>
+          <p className="text-[11px] text-[#8e9aaf]">{profile.confidence}% of your recent sessions</p>
         </div>
       </div>
       {profile.selfReported && profile.agreesWithSelfReport === false && (
-        <p className="mt-2 text-[11px] text-cyan-700">
+        <p className="mt-2 text-[11px] text-[#64748b]">
           You told us you prefer <strong>{LEARNING_STYLE_META[profile.selfReported]?.label || profile.selfReported}</strong> — worth trying those modes more often!
         </p>
       )}
@@ -266,21 +266,21 @@ const BelongingCard = () => {
   return (
     <div className="rounded-2xl border border-fuchsia-100 bg-gradient-to-br from-fuchsia-50 to-pink-50 p-4 shadow-sm">
       <div className="mb-3 flex items-center justify-between">
-        <p className="text-sm font-black text-fuchsia-900">Community</p>
+        <p className="text-sm font-bold text-[#0f172a]">Community</p>
         <span className={`rounded-full px-2 py-0.5 text-[10px] font-bold ${meta.color}`}>{meta.label}</span>
       </div>
       <div className="grid grid-cols-3 gap-2 text-center">
         <div className="rounded-lg bg-white/70 px-2 py-2">
-          <p className="text-lg font-bold text-gray-800">{profile.postsAuthored}</p>
-          <p className="text-[10px] text-gray-500">Posts</p>
+          <p className="text-lg font-bold text-[#0f172a]">{profile.postsAuthored}</p>
+          <p className="text-[10px] text-[#8e9aaf]">Posts</p>
         </div>
         <div className="rounded-lg bg-white/70 px-2 py-2">
-          <p className="text-lg font-bold text-gray-800">{profile.commentsAuthored}</p>
-          <p className="text-[10px] text-gray-500">Comments</p>
+          <p className="text-lg font-bold text-[#0f172a]">{profile.commentsAuthored}</p>
+          <p className="text-[10px] text-[#8e9aaf]">Comments</p>
         </div>
         <div className="rounded-lg bg-white/70 px-2 py-2">
-          <p className="text-lg font-bold text-gray-800">{profile.likesReceived}</p>
-          <p className="text-[10px] text-gray-500">Likes received</p>
+          <p className="text-lg font-bold text-[#0f172a]">{profile.likesReceived}</p>
+          <p className="text-[10px] text-[#8e9aaf]">Likes received</p>
         </div>
       </div>
     </div>
@@ -301,24 +301,24 @@ const HelpSeekingCard = () => {
 
   return (
     <div className="rounded-2xl border border-teal-100 bg-gradient-to-br from-teal-50 to-emerald-50 p-4 shadow-sm">
-      <p className="mb-1 text-sm font-black text-teal-900">Asking For Help</p>
-      <p className="mb-3 text-xs text-teal-600">Last {profile.sinceDays} days — reaching out is a strength, not a weakness</p>
+      <p className="mb-1 text-sm font-bold text-[#0f172a]">Asking For Help</p>
+      <p className="mb-3 text-xs text-[#64748b]">Last {profile.sinceDays} days — reaching out is a strength, not a weakness</p>
       <div className="grid grid-cols-3 gap-2 text-center">
         <div className="rounded-lg bg-white/70 px-2 py-2">
-          <p className="text-lg font-bold text-gray-800">{profile.homeworkHelpUsed}</p>
-          <p className="text-[10px] text-gray-500">Homework help</p>
+          <p className="text-lg font-bold text-[#0f172a]">{profile.homeworkHelpUsed}</p>
+          <p className="text-[10px] text-[#8e9aaf]">Homework help</p>
         </div>
         <div className="rounded-lg bg-white/70 px-2 py-2">
-          <p className="text-lg font-bold text-gray-800">{profile.misconceptionExplainerUsed}</p>
-          <p className="text-[10px] text-gray-500">Mistakes explained</p>
+          <p className="text-lg font-bold text-[#0f172a]">{profile.misconceptionExplainerUsed}</p>
+          <p className="text-[10px] text-[#8e9aaf]">Mistakes explained</p>
         </div>
         <div className="rounded-lg bg-white/70 px-2 py-2">
-          <p className="text-lg font-bold text-gray-800">{profile.stuckSignals}</p>
-          <p className="text-[10px] text-gray-500">Times stuck</p>
+          <p className="text-lg font-bold text-[#0f172a]">{profile.stuckSignals}</p>
+          <p className="text-[10px] text-[#8e9aaf]">Times stuck</p>
         </div>
       </div>
       {profile.topSubjects?.length > 0 && (
-        <p className="mt-2 text-[11px] text-teal-600">Most often in {profile.topSubjects[0].subject}</p>
+        <p className="mt-2 text-[11px] text-[#64748b]">Most often in {profile.topSubjects[0].subject}</p>
       )}
     </div>
   );
@@ -365,8 +365,8 @@ const StreakTracker = () => {
           <span className="text-2xl leading-none select-none">{streak >= 7 ? '🏆' : streak >= 3 ? '🔥' : '✨'}</span>
         </div>
         <div>
-          <p className="font-black text-lg text-amber-900 leading-tight">{streakLabel}</p>
-          <p className="text-xs text-amber-700/70">
+          <p className="text-lg font-bold leading-tight text-[#0f172a]">{streakLabel}</p>
+          <p className="text-xs text-[#64748b]">
             {nextMilestone
               ? `${nextMilestone - streak} more day${nextMilestone - streak !== 1 ? 's' : ''} to reach ${nextMilestone}-day milestone`
               : 'Incredible consistency! Keep it up!'}
@@ -417,14 +417,14 @@ const MasteryTopicsCard = () => {
   if (loading || !data || !data.length) return null;
   return (
     <div className="rounded-2xl border border-amber-100 bg-white p-4 shadow-sm">
-      <p className="mb-3 text-sm font-black text-gray-800">Topic Mastery</p>
+      <p className="mb-3 text-sm font-bold text-[#0f172a]">Topic Mastery</p>
       <div className="space-y-2">
         {data.slice(0, 6).map((t) => (
           <div key={t.topicId}>
-            <div className="flex justify-between text-xs text-gray-600 mb-1">
+            <div className="flex justify-between text-xs text-[#64748b] mb-1">
               <span className="truncate max-w-[65%] font-medium">{t.topicTitle}</span>
               <div className="flex items-center gap-2">
-                <span className="text-[10px] text-gray-400">{t.subject}</span>
+                <span className="text-[10px] text-[#8e9aaf]">{t.subject}</span>
                 <span className={`font-bold ${tierText(t.score)}`}>{t.score}%</span>
               </div>
             </div>
@@ -451,8 +451,8 @@ const LearningStreakCard = () => {
         <span className="text-lg leading-none">{data.streak >= 7 ? '🏆' : data.streak >= 3 ? '⚡' : '📖'}</span>
       </div>
       <div>
-        <p className="text-sm font-black text-amber-900">{data.streak} day learning streak</p>
-        <p className="text-xs text-amber-700">{data.totalActiveDays} active days total</p>
+        <p className="text-sm font-bold text-[#0f172a]">{data.streak} day learning streak</p>
+        <p className="text-xs text-[#64748b]">{data.totalActiveDays} active days total</p>
       </div>
     </div>
   );
@@ -468,13 +468,13 @@ const TimeBySubjectCard = () => {
   const max = Math.max(...data.map((d) => d.totalMinutes), 1);
   return (
     <div className="rounded-2xl border border-emerald-100 bg-white p-4 shadow-sm">
-      <p className="mb-3 text-sm font-black text-gray-800">Time Spent by Subject</p>
+      <p className="mb-3 text-sm font-bold text-[#0f172a]">Time Spent by Subject</p>
       <div className="space-y-2">
         {data.slice(0, 5).map((d) => (
           <div key={d.subject}>
-            <div className="flex justify-between text-xs text-gray-600 mb-1">
+            <div className="flex justify-between text-xs text-[#64748b] mb-1">
               <span className="font-medium">{d.subject}</span>
-              <span className="text-gray-400">{d.totalMinutes}m</span>
+              <span className="text-[#8e9aaf]">{d.totalMinutes}m</span>
             </div>
             <div className="h-1.5 rounded-full bg-gray-100 overflow-hidden">
               <div className="h-full rounded-full bg-emerald-200" style={{ width: `${(d.totalMinutes / max) * 100}%` }} />
@@ -496,7 +496,7 @@ const FlashcardStatsCard = () => {
   return (
     <div className="rounded-2xl border border-amber-100 bg-white p-4 shadow-sm">
       <div className="flex items-center justify-between mb-3">
-        <p className="text-sm font-black text-gray-800">Flashcard Recall</p>
+        <p className="text-sm font-bold text-[#0f172a]">Flashcard Recall</p>
         <span className="rounded-full bg-amber-100 px-2.5 py-0.5 text-xs font-bold text-amber-700">{data.overallRate}% recall</span>
       </div>
       <div className="h-2 rounded-full bg-gray-100 overflow-hidden mb-3">
@@ -505,12 +505,12 @@ const FlashcardStatsCard = () => {
       <div className="space-y-1.5">
         {data.byTopic.slice(0, 3).map((t) => (
           <div key={t.topicId} className="flex items-center justify-between text-xs">
-            <span className="text-gray-600 truncate max-w-[65%]">{t.topicTitle}</span>
+            <span className="text-[#64748b] truncate max-w-[65%]">{t.topicTitle}</span>
             <span className={`font-semibold ${t.recallRate >= 70 ? 'text-emerald-600' : t.recallRate >= 40 ? 'text-amber-600' : 'text-red-500'}`}>{t.recallRate}%</span>
           </div>
         ))}
       </div>
-      <p className="mt-2 text-[10px] text-gray-400">{data.totalAttempts} total flashcard attempts</p>
+      <p className="mt-2 text-[10px] text-[#8e9aaf]">{data.totalAttempts} total flashcard attempts</p>
     </div>
   );
 };
@@ -563,7 +563,7 @@ const FirstRunDashboard = () => (
               <Icon className="h-4 w-4" aria-hidden="true" />
             </span>
             <span>
-              <span className="block text-sm font-semibold text-slate-800">{label}</span>
+              <span className="block text-sm font-semibold text-[#0f172a]">{label}</span>
               <span className="block text-xs text-slate-500">{desc}</span>
             </span>
           </Link>

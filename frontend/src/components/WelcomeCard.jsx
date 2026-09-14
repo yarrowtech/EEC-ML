@@ -177,7 +177,7 @@ const WelcomeCard = () => {
           />
         ) : (
           <div className="w-[130px] h-[130px] rounded-full border-[2px] border-gray-200 bg-[#eef2ff] flex items-center justify-center">
-            <span className="text-4xl font-black text-[#4f46e5] select-none">{initials.toUpperCase()}</span>
+            <span className="text-4xl font-bold text-[#4f46e5] select-none">{initials.toUpperCase()}</span>
           </div>
         )}
         {/* Online dot */}

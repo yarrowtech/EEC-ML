@@ -71,6 +71,7 @@ import { useDesktopNotificationBridge } from '../hooks/useDesktopNotificationBri
 import DesktopNotificationPermissionModal from '../components/DesktopNotificationPermissionModal';
 import NotificationPopover from '../components/NotificationPopover';
 import { AUTH_NOTICE, apiFetch, logoutAndRedirect } from '../utils/authSession';
+import { notificationId, readModuleSeenState, writeModuleSeenState } from '../utils/moduleNotificationUtils';
 
 const PORTAL_BASE = '/teacher';
 const API_BASE = (import.meta.env.VITE_API_URL || 'http://localhost:5000').replace(/\/$/, '');
@@ -187,6 +188,7 @@ const resolveTeacherNotificationPath = (notification) => {
   const type = String(notification?.type || notification?.typeLabel || '').toLowerCase();
   const blob = `${title} ${message} ${type}`;
   if (blob.includes('substitute') || blob.includes('attendance')) return '/teacher/attendance';
+  if (blob.includes('assignment_submission') || blob.includes('new submission') || blob.includes('submitted')) return '/teacher/evaluation';
   if (blob.includes('assignment')) return '/teacher/assignments';
   if (blob.includes('result') || blob.includes('exam')) return '/teacher/result-management';
   if (blob.includes('meeting') || blob.includes('parent')) return '/teacher/parent-meetings';
@@ -205,6 +207,144 @@ const notificationTypeMeta = (notification) => {
   if (type.includes('attendance')) return { label: 'Attendance', icon: UserCheck, tone: 'emerald' };
   if (type.includes('chat') || type.includes('message')) return { label: 'Message', icon: MessageSquare, tone: 'indigo' };
   return { label: notification?.typeLabel || 'General', icon: Bell, tone: 'slate' };
+};
+
+const teacherNotificationModuleKey = (notification) => {
+  const type = String(notification?.type || '').toLowerCase();
+  const typeLabel = String(notification?.typeLabel || '').toLowerCase();
+  const entity = String(notification?.relatedEntity?.entityType || '').toLowerCase();
+
+  if (typeLabel.includes('submission')) return 'assignments-evaluate';
+  if (typeLabel.includes('assignment_created') || typeLabel.includes('assignment_published')) return 'assignments-manage';
+  if (entity === 'assignment' || type === 'assignment' || (entity === 'result' && typeLabel.includes('assignment'))) return 'assignments';
+  if (entity === 'exam' || type === 'exam' || entity === 'result' || type === 'result') return 'assessments';
+  if (entity === 'meeting' || type === 'meeting' || typeLabel.includes('meeting') || typeLabel.includes('parent') || typeLabel.includes('ptm')) return 'ptm';
+  if (typeLabel.includes('feedback')) return 'feedback';
+  if (typeLabel.includes('excuse') || typeLabel.includes('leave')) return 'excuse';
+  if (typeLabel.includes('chat') || typeLabel.includes('message')) return 'chat';
+  if (typeLabel.includes('attendance') || typeLabel.includes('substitute')) return 'attendance';
+  if (typeLabel.includes('exam_schedule_teacher')) return 'assessments';
+  if (entity === 'learning_path' || entity === 'practice_question' || typeLabel.includes('lesson') || typeLabel.includes('planner') || typeLabel.includes('material')) return 'lesson-plan';
+  if (entity === 'mastery' || entity === 'mastery_badge' || entity === 'gap_detection' || entity === 'at_risk') return 'analytics';
+  if (typeLabel.includes('health')) return 'health';
+  if (typeLabel.includes('observation')) return 'observations';
+  if (typeLabel.includes('achievement')) return 'achievements';
+  if (typeLabel.includes('resource') || typeLabel.includes('alcove') || typeLabel.includes('wall')) return 'resource-library';
+  if (typeLabel.includes('timetable') || typeLabel.includes('routine') || typeLabel.includes('calendar') || typeLabel.includes('holiday')) return 'timetable';
+  if (typeLabel.includes('profile') || typeLabel.includes('account') || typeLabel.includes('work')) return 'settings';
+  return null;
+};
+
+const teacherNotificationModuleKeyForLabel = (label) => {
+  const text = String(label || '').toLowerCase();
+  if (text === 'student list') return 'students';
+  if (text.includes('attendance')) return 'attendance';
+  if (text.includes('health')) return 'health';
+  if (text.includes('observation')) return 'observations';
+  if (text.includes('achievement')) return 'achievements';
+  if (text.includes('analytics')) return 'analytics';
+  if (text === 'exam') return 'assessments';
+  if (text.includes('chat')) return 'chat';
+  if (text.includes('meeting') || text.includes('parent')) return 'ptm';
+  if (text.includes('feedback')) return 'feedback';
+  if (text.includes('excuse')) return 'excuse';
+  if (text.includes('ai') || text.includes('video')) return 'ai-tools';
+  if (text.includes('lesson') || text.includes('note') || text.includes('practice') || text.includes('language') || text.includes('study material')) return 'lesson-plan';
+  return 'classes';
+};
+
+const TEACHER_CLASS_MODULE_KEYS = new Set(['students', 'assignments', 'attendance', 'health', 'observations', 'achievements', 'analytics', 'assessments', 'chat', 'feedback', 'excuse', 'ptm']);
+
+// Notification keys are hierarchical. A notification belongs to one leaf
+// module, while its parent modules use the union of their child IDs for the
+// roll-up count (so the same notification is never double-counted).
+const TEACHER_MODULE_CHILDREN = {
+  overview: ['analytics', 'attendance'],
+  students: ['students', 'attendance', 'health', 'observations', 'achievements', 'analytics', 'assignments', 'assignments-manage', 'assignments-evaluate', 'assessments'],
+  teaching: ['lesson-plan', 'ai-tools'],
+  ai: ['lesson-plan', 'ai-tools'],
+  communication: ['chat', 'ptm', 'feedback', 'excuse'],
+  assignments: ['assignments-manage', 'assignments-evaluate'],
+  classes: [...TEACHER_CLASS_MODULE_KEYS, 'assignments-manage', 'assignments-evaluate', 'lesson-plan', 'ai-tools'],
+};
+
+const teacherModuleKeys = (moduleKey, seen = new Set()) => {
+  if (seen.has(moduleKey)) return [];
+  seen.add(moduleKey);
+  return [moduleKey, ...(TEACHER_MODULE_CHILDREN[moduleKey] || []).flatMap((child) => teacherModuleKeys(child, seen))];
+};
+
+const teacherNotificationBelongsToModule = (notification, moduleKey) => {
+  const notificationModuleKey = teacherNotificationModuleKey(notification);
+  return moduleKey === 'notifications'
+    || notificationModuleKey === moduleKey
+    || teacherModuleKeys(moduleKey).includes(notificationModuleKey);
+};
+
+const getTeacherModuleNotificationCount = (notifications, moduleKey, seenState = {}) => {
+  const seenKeys = teacherModuleKeys(moduleKey);
+  const seenIds = new Set(seenKeys.flatMap((key) => Array.isArray(seenState?.[key]) ? seenState[key] : []));
+  return (Array.isArray(notifications) ? notifications : [])
+    .filter((notification) => {
+      const id = notificationId(notification);
+      if (!id || seenIds.has(id)) return false;
+      return teacherNotificationBelongsToModule(notification, moduleKey);
+    })
+    .length;
+};
+
+const teacherNotificationModuleKeyForPath = (path) => {
+  const value = String(path || '').toLowerCase();
+  if (value.includes('notifications')) return 'notifications';
+  if (value.includes('/assignments/evaluate')) return 'assignments-evaluate';
+  if (value.includes('/assignments/manage')) return 'assignments-manage';
+  if (value.includes('/assignments')) return 'assignments';
+  if (/\/classes\/[^/]+\/students(?:\/|$)/.test(value)) return 'students';
+  if (value.includes('/students/attendance') || value.includes('/overview/attendance')) return 'attendance';
+  if (value.includes('/students/health')) return 'health';
+  if (value.includes('/students/observations')) return 'observations';
+  if (value.includes('/students/achievements')) return 'achievements';
+  if (value.includes('/students/analytics') || value.includes('/overview/analytics')) return 'analytics';
+  if (value.includes('/assessments')) return 'assessments';
+  if (value.includes('/teaching/ai-assistant') || value.includes('/teaching/video-lecture')) return 'ai-tools';
+  if (value.includes('/teaching/')) return 'lesson-plan';
+  if (value.includes('calendar')) return 'timetable';
+  if (value.includes('timetable')) return 'timetable';
+  if (value.includes('resource-library')) return 'resource-library';
+  if (value.includes('lesson-plan')) return 'lesson-plan';
+  if (value.includes('ai-tools')) return 'ai-tools';
+  if (value.includes('live-monitor')) return 'live-monitor';
+  if (value.includes('ptm')) return 'ptm';
+  if (value.includes('chat')) return 'chat';
+  if (value.includes('feedback')) return 'feedback';
+  if (value.includes('excuse')) return 'excuse';
+  if (value.includes('classes')) return 'classes';
+  if (value.includes('settings')) return 'settings';
+  return 'dashboard';
+};
+
+const isAssignmentSubmissionNotification = (notification) => (
+  String(notification?._id || notification?.id || '').startsWith('assignment-submission:')
+);
+
+const makeAssignmentSubmissionNotification = (submission) => {
+  const submissionId = String(submission?.submissionId || '').trim();
+  if (!submissionId) return null;
+  return {
+    _id: `assignment-submission:${submissionId}`,
+    id: `assignment-submission:${submissionId}`,
+    title: `New submission: ${submission.assignmentTitle || 'Assignment'}`,
+    message: `${submission.studentName || 'A student'} submitted ${submission.assignmentTitle || 'an assignment'}. Open Evaluate Submissions to review it.`,
+    type: 'assignment',
+    typeLabel: 'assignment_submission',
+    relatedEntity: { entityType: 'assignment', entityId: submission.assignmentId },
+    submissionId,
+    className: submission.className || submission.grade || '',
+    sectionName: submission.sectionName || submission.section || '',
+    createdAt: submission.submittedAt,
+    isRead: false,
+    isAssignmentSubmission: true,
+  };
 };
 
 const notificationTimeLabel = (value) => {
@@ -407,7 +547,7 @@ const TeacherNotifications = () => {
   );
 };
 
-const PlaceholderModule = ({ icon = FileText, title, description, actions = [] }) => {
+const PlaceholderModule = ({ icon = FileText, title, description, actions = [], notifications = [], seenState = {} }) => {
   const ModuleIcon = icon;
 
   return (
@@ -428,9 +568,14 @@ const PlaceholderModule = ({ icon = FileText, title, description, actions = [] }
             <NavLink
               key={action.to}
               to={action.to}
-              className="rounded-lg border border-slate-200 px-3 py-2 text-xs font-semibold text-slate-700 hover:border-indigo-300 hover:bg-indigo-50 hover:text-indigo-700"
+              className="inline-flex items-center gap-2 rounded-lg border border-slate-200 px-3 py-2 text-xs font-semibold text-slate-700 hover:border-indigo-300 hover:bg-indigo-50 hover:text-indigo-700"
             >
               {action.label}
+              {getTeacherModuleNotificationCount(notifications, teacherNotificationModuleKeyForLabel(action.label), seenState) > 0 && (
+                <span className="flex min-h-5 min-w-5 items-center justify-center rounded-full bg-red-500 px-1.5 text-[10px] font-bold leading-none text-white">
+                  {getTeacherModuleNotificationCount(notifications, teacherNotificationModuleKeyForLabel(action.label), seenState) > 99 ? '99+' : getTeacherModuleNotificationCount(notifications, teacherNotificationModuleKeyForLabel(action.label), seenState)}
+                </span>
+              )}
             </NavLink>
           ))}
         </div>
@@ -727,11 +872,12 @@ const CW_TABS = [
       rel.startsWith('assessments'),
     firstPath: 'students/health-records',
     subTabs: [
-      { label: 'Student Health Records', path: 'students/health-records' },
-      { label: 'Attendance',             path: 'students/attendance' },
-      { label: 'Assignments',            path: 'assignments/manage' },
-      { label: 'Achievements',           path: 'students/achievements' },
-      { label: 'Exam',                   path: 'assessments/exam' },
+      { label: 'Student Health Records', path: 'students/health-records', notificationKey: 'health' },
+      { label: 'Attendance',             path: 'students/attendance', notificationKey: 'attendance' },
+      { label: 'Assignments',            path: 'assignments/manage', notificationKey: 'assignments' },
+      { label: 'Evaluate Submissions',   path: 'assignments/evaluate', notificationKey: 'assignments-evaluate' },
+      { label: 'Achievements',           path: 'students/achievements', notificationKey: 'achievements' },
+      { label: 'Exam',                   path: 'assessments/exam', notificationKey: 'assessments' },
     ],
   },
   {
@@ -762,7 +908,7 @@ const CW_TABS = [
   },
 ];
 
-const ClassWorkspace = () => {
+const ClassWorkspace = ({ notifications = [], seenState = {} }) => {
   const { classId = 'current' } = useParams();
   const location = useLocation();
   const navigate = useNavigate();
@@ -921,6 +1067,33 @@ const ClassWorkspace = () => {
   return (
     <div className="space-y-4">
 
+      <nav aria-label="Class workspace breadcrumb" className="flex flex-wrap items-center gap-1.5 px-1 text-xs font-semibold text-slate-500">
+        {[
+          { label: 'Classes & Work', to: '/teacher/classes', key: 'classes' },
+          { label: 'Students', to: `${basePath}/students`, key: 'students' },
+          { label: 'Assignments', to: `${basePath}/assignments/manage`, key: 'assignments' },
+          ...(rel.startsWith('assignments/evaluate') ? [{ label: 'Evaluate Submissions', to: `${basePath}/assignments/evaluate`, key: 'assignments-evaluate', current: true }] : []),
+        ].map((item, index) => (
+          <React.Fragment key={item.key}>
+            {index > 0 && <ChevronRight size={13} className="text-slate-300" aria-hidden="true" />}
+            <NavLink
+              to={item.to}
+              aria-current={item.current ? 'page' : undefined}
+              className={({ isActive }) => `inline-flex items-center gap-1.5 rounded-full px-2.5 py-1 transition ${item.current || isActive ? 'bg-indigo-50 text-indigo-700' : 'hover:bg-slate-100 hover:text-slate-800'}`}
+            >
+              {item.label}
+              <span
+                data-testid={`teacher-breadcrumb-notification-${item.key}`}
+                title={`${getTeacherModuleNotificationCount(notifications, item.key, seenState)} unread notification${getTeacherModuleNotificationCount(notifications, item.key, seenState) === 1 ? '' : 's'}`}
+                className={`inline-flex min-h-4 min-w-4 items-center justify-center rounded-full px-1 text-[9px] font-bold leading-none ${getTeacherModuleNotificationCount(notifications, item.key, seenState) > 0 ? 'bg-red-500 text-white' : 'bg-slate-200 text-slate-500'}`}
+              >
+                {getTeacherModuleNotificationCount(notifications, item.key, seenState) > 99 ? '99+' : getTeacherModuleNotificationCount(notifications, item.key, seenState)}
+              </span>
+            </NavLink>
+          </React.Fragment>
+        ))}
+      </nav>
+
       {/* ══════════════════════════════════════════════════
           Card  — white, rounded-[20px], subtle shadow
       ══════════════════════════════════════════════════ */}
@@ -956,6 +1129,8 @@ const ClassWorkspace = () => {
               const Icon = tab.icon;
               const isActive = tab.id === activeTab.id;
               const to = `${basePath}/${tab.firstPath}`;
+              const notificationKey = tab.id === 'overview' ? 'overview' : tab.id;
+              const notificationCount = getTeacherModuleNotificationCount(notifications, notificationKey, seenState);
               return (
                 <NavLink
                   key={tab.id}
@@ -970,6 +1145,9 @@ const ClassWorkspace = () => {
                 >
                   <Icon size={15} strokeWidth={isActive ? 2.2 : 1.8} />
                   {tab.label}
+                  <span data-testid={`teacher-class-tab-notification-${tab.id}`} className={`inline-flex min-h-4 min-w-4 items-center justify-center rounded-full px-1 text-[9px] font-bold leading-none ${notificationCount > 0 ? 'bg-red-500 text-white' : 'bg-slate-200 text-slate-500'}`}>
+                    {notificationCount > 99 ? '99+' : notificationCount}
+                  </span>
                 </NavLink>
               );
             })}
@@ -1004,7 +1182,7 @@ const ClassWorkspace = () => {
             />
 
             {/* Sub-bar pill */}
-            <div className="inline-flex items-center gap-[5px] rounded-[22px] border border-[#D7DCFF] bg-[#F5F5FF] p-[5.5px]">
+            <div className="inline-flex max-w-full items-center gap-[5px] overflow-x-auto rounded-[22px] border border-[#D7DCFF] bg-[#F5F5FF] p-[5.5px]">
               {activeTab.subTabs.map((sub, idx) => (
                 <NavLink
                   key={sub.path + idx}
@@ -1022,6 +1200,11 @@ const ClassWorkspace = () => {
                   {/* Indigo bullet dot — r=2.5 from SVG */}
                   <span className="w-[5px] h-[5px] rounded-full bg-[#5363F5] shrink-0" />
                   {sub.label}
+                  {(() => {
+                    const subKey = sub.notificationKey || teacherNotificationModuleKeyForPath(sub.path);
+                    const subCount = getTeacherModuleNotificationCount(notifications, subKey, seenState);
+                    return <span data-testid={`teacher-subtab-notification-${subKey}`} className={`inline-flex min-h-4 min-w-4 items-center justify-center rounded-full px-1 text-[9px] font-bold leading-none ${subCount > 0 ? 'bg-red-500 text-white' : 'bg-slate-200 text-slate-500'}`}>{subCount > 99 ? '99+' : subCount}</span>;
+                  })()}
                 </NavLink>
               ))}
             </div>
@@ -1128,8 +1311,10 @@ const TeacherPortalShell = () => {
   const [profileOpen, setProfileOpen] = useState(false);
   const [showNotifications, setShowNotifications] = useState(false);
   const [notifications, setNotifications] = useState([]);
+  const [assignmentSubmissionNotifications, setAssignmentSubmissionNotifications] = useState([]);
   const [notifLoading, setNotifLoading] = useState(false);
   const [notifError, setNotifError] = useState('');
+  const [moduleSeenState, setModuleSeenState] = useState(() => readModuleSeenState('teacher'));
   const profileRef = useRef(null);
   const notificationsRef = useRef(null);
 
@@ -1196,15 +1381,31 @@ const TeacherPortalShell = () => {
     : (nameParts[0]?.[0] || 'T')
   ).toUpperCase();
   const hasProfileImage = typeof teacherProfile.profilePic === 'string' && teacherProfile.profilePic.trim() !== '';
+  const notificationItems = useMemo(() => {
+    const actualSubmissionIds = new Set(
+      notifications
+        .map((notification) => String(notification?.submissionId || '').trim())
+        .filter(Boolean)
+    );
+    const globalSeenIds = new Set(Array.isArray(moduleSeenState?.notifications) ? moduleSeenState.notifications : []);
+    const fallbackItems = assignmentSubmissionNotifications
+      .filter((notification) => !actualSubmissionIds.has(String(notification.submissionId || '').trim()))
+      .map((notification) => ({
+        ...notification,
+        isRead: globalSeenIds.has(notificationId(notification)),
+      }));
+    return [...notifications, ...fallbackItems];
+  }, [assignmentSubmissionNotifications, moduleSeenState, notifications]);
   const unreadCount = useMemo(
-    () => notifications.filter((item) => !item?.isRead).length,
-    [notifications]
+    () => notificationItems.filter((item) => !item?.isRead).length,
+    [notificationItems]
   );
 
   const fetchNotifs = useCallback(async () => {
     const token = localStorage.getItem('token');
     if (!token) {
       setNotifications([]);
+      setAssignmentSubmissionNotifications([]);
       return;
     }
     setNotifLoading(true);
@@ -1226,6 +1427,23 @@ const TeacherPortalShell = () => {
           .sort((a, b) => new Date(b?.createdAt || 0) - new Date(a?.createdAt || 0))
           .slice(0, 20)
       );
+      try {
+        const submissionsResponse = await apiFetch(`${API_BASE}/api/assignment/teacher/submissions`, {
+          cache: 'no-store',
+          headers: { 'Content-Type': 'application/json', authorization: `Bearer ${token}` },
+        }, navigate);
+        const submissions = submissionsResponse.ok
+          ? await submissionsResponse.json().catch(() => [])
+          : [];
+        setAssignmentSubmissionNotifications(
+          (Array.isArray(submissions) ? submissions : [])
+            .filter((submission) => submission?.score === null || submission?.score === undefined)
+            .map(makeAssignmentSubmissionNotification)
+            .filter(Boolean)
+        );
+      } catch {
+        // The main notification feed remains usable if the assignment feed is unavailable.
+      }
     } catch (err) {
       setNotifError(err.message || 'Failed to load notifications');
       setNotifications([]);
@@ -1253,6 +1471,16 @@ const TeacherPortalShell = () => {
     if (!id) return;
     const token = localStorage.getItem('token');
     if (!token) return;
+    if (isAssignmentSubmissionNotification({ id })) {
+      setModuleSeenState((previous) => {
+        const current = new Set(Array.isArray(previous?.notifications) ? previous.notifications : []);
+        current.add(String(id));
+        const next = { ...previous, notifications: [...current] };
+        writeModuleSeenState('teacher', next);
+        return next;
+      });
+      return;
+    }
     setNotifications((prev) =>
       prev.map((n) => (String(n?._id || n?.id || '') === String(id) ? { ...n, isRead: true } : n))
     );
@@ -1269,10 +1497,37 @@ const TeacherPortalShell = () => {
     }
   }, [fetchNotifs, navigate]);
 
+  const markTeacherModuleVisited = useCallback((moduleKey) => {
+    if (!moduleKey) return;
+    const candidates = moduleKey === 'notifications'
+      ? notificationItems
+      : notificationItems.filter((notification) => teacherNotificationBelongsToModule(notification, moduleKey));
+    const currentIds = new Set(Array.isArray(moduleSeenState[moduleKey]) ? moduleSeenState[moduleKey] : []);
+    const newIds = candidates.map(notificationId).filter((id) => id && !currentIds.has(id));
+    if (newIds.length > 0) {
+      const nextState = { ...moduleSeenState, [moduleKey]: [...currentIds, ...newIds] };
+      setModuleSeenState(nextState);
+      writeModuleSeenState('teacher', nextState);
+    }
+    candidates
+      .filter((notification) => !notification?.isRead && notificationId(notification) && !isAssignmentSubmissionNotification(notification))
+      .forEach((notification) => { markRead(notificationId(notification)); });
+  }, [markRead, moduleSeenState, notificationItems]);
+
   const markAllRead = useCallback(async () => {
     const token = localStorage.getItem('token');
     if (!token) return;
     setNotifications((prev) => prev.map((item) => ({ ...item, isRead: true })));
+    const submissionIds = assignmentSubmissionNotifications.map(notificationId).filter(Boolean);
+    if (submissionIds.length > 0) {
+      setModuleSeenState((previous) => {
+        const current = new Set(Array.isArray(previous?.notifications) ? previous.notifications : []);
+        submissionIds.forEach((id) => current.add(id));
+        const next = { ...previous, notifications: [...current] };
+        writeModuleSeenState('teacher', next);
+        return next;
+      });
+    }
     try {
       const res = await apiFetch(`${API_BASE}/api/notifications/user/read-all`, {
         method: 'POST',
@@ -1290,6 +1545,10 @@ const TeacherPortalShell = () => {
     if (!id) return;
     const token = localStorage.getItem('token');
     if (!token) return;
+    if (isAssignmentSubmissionNotification({ id })) {
+      await markRead(id);
+      return;
+    }
     setNotifications((previous) => previous.filter((item) => String(item?._id || item?.id || '') !== String(id)));
     try {
       const response = await apiFetch(`${API_BASE}/api/notifications/user/${id}/dismiss`, {
@@ -1311,6 +1570,10 @@ const TeacherPortalShell = () => {
     setShowNotifications(nextOpen);
     setProfileOpen(false);
   }, [markAllRead, showNotifications, unreadCount]);
+
+  useEffect(() => {
+    markTeacherModuleVisited(teacherNotificationModuleKeyForPath(location.pathname));
+  }, [location.pathname, markTeacherModuleVisited]);
 
   const timeAgo = useCallback((value) => {
     if (!value) return '';
@@ -1340,8 +1603,8 @@ const TeacherPortalShell = () => {
   });
 
   useEffect(() => {
-    syncNotifications(notifications);
-  }, [notifications, syncNotifications]);
+    syncNotifications(notificationItems);
+  }, [notificationItems, syncNotifications]);
 
   return (
     <>
@@ -1456,6 +1719,11 @@ const TeacherPortalShell = () => {
             {portalNavigation.map((item) => {
               const active = isItemActive(item.path);
               const Icon = item.icon;
+              const notificationCount = getTeacherModuleNotificationCount(
+                notifications,
+                item.label === 'Notifications' ? 'notifications' : teacherNotificationModuleKeyForPath(item.path),
+                moduleSeenState,
+              );
               return (
                 <Button
                   key={item.path}
@@ -1480,6 +1748,15 @@ const TeacherPortalShell = () => {
                       <Icon size={16} strokeWidth={1.9} className="shrink-0" />
                     </span>
                     {!sidebarCollapsed && <span className="truncate">{item.label}</span>}
+                    {notificationCount > 0 && (
+                      <span
+                        data-testid={`teacher-module-notification-${teacherNotificationModuleKeyForPath(item.path)}`}
+                        title={`${notificationCount} unread item${notificationCount === 1 ? '' : 's'} in ${item.label}`}
+                        className={`${sidebarCollapsed ? 'absolute -right-1 -top-1' : 'ml-auto'} flex min-h-5 min-w-5 items-center justify-center rounded-full border-2 border-white bg-red-500 px-1.5 text-[10px] font-bold leading-none text-white shadow-sm`}
+                      >
+                        {notificationCount > 99 ? '99+' : notificationCount}
+                      </span>
+                    )}
                   </MotionNavLink>
                 </Button>
               );
@@ -1592,7 +1869,7 @@ const TeacherPortalShell = () => {
                   <AnimatePresence>
                     {showNotifications && (
                       <NotificationPopover
-                        notifications={notifications}
+                        notifications={notificationItems}
                         unreadCount={unreadCount}
                         loading={notifLoading}
                         error={notifError}
@@ -1739,7 +2016,8 @@ const TeacherPortalShell = () => {
                 <AnimatePresence>
                   {showNotifications && (
                     <NotificationPopover
-                      notifications={notifications}
+                      notifications={notificationItems}
+                      seenState={moduleSeenState}
                       unreadCount={unreadCount}
                       loading={notifLoading}
                       error={notifError}
@@ -1773,7 +2051,7 @@ const TeacherPortalShell = () => {
               <Route index element={<Navigate to="/teacher/dashboard" replace />} />
               <Route path="dashboard" element={<TeacherDashboard />} />
               <Route path="classes" element={<ClassesHub />} />
-              <Route path="classes/:classId" element={<ClassWorkspace />}>
+              <Route path="classes/:classId" element={<ClassWorkspace notifications={notificationItems} seenState={moduleSeenState} />}>
                 <Route index element={<Navigate to="overview/analytics" replace />} />
                 <Route
                   path="students"
@@ -1783,6 +2061,8 @@ const TeacherPortalShell = () => {
                       title="Students"
                       description="Student list, attendance, health records, observations, achievements, analytics, and student-specific AI learning paths live here."
                       actions={studentSectionLinks}
+                      notifications={notificationItems}
+                      seenState={moduleSeenState}
                     />
                   }
                 />
@@ -1802,6 +2082,8 @@ const TeacherPortalShell = () => {
                       title="Teaching Workspace"
                       description="Lesson planning, notes, questions, materials, and AI teaching assistance are owned by this class workspace."
                       actions={teachingSectionLinks}
+                      notifications={notificationItems}
+                      seenState={moduleSeenState}
                     />
                   }
                 />
@@ -1814,8 +2096,8 @@ const TeacherPortalShell = () => {
                 <Route path="teaching/ai-assistant" element={<GenerateAIPathPortal />} />
                 <Route path="teaching/video-lecture" element={<VideoUnderstandingTool />} />
                 <Route path="assignments" element={<Navigate to="manage" replace />} />
-                <Route path="assignments/manage" element={<AssignmentPortal view="manage" />} />
-                <Route path="assignments/evaluate" element={<AssignmentPortal view="evaluate" />} />
+                <Route path="assignments/manage" element={<AssignmentPortal view="manage" notificationCount={getTeacherModuleNotificationCount(notificationItems, 'assignments-manage', moduleSeenState)} siblingNotificationCount={getTeacherModuleNotificationCount(notificationItems, 'assignments-evaluate', moduleSeenState)} />} />
+                <Route path="assignments/evaluate" element={<AssignmentPortal view="evaluate" notificationCount={getTeacherModuleNotificationCount(notificationItems, 'assignments-evaluate', moduleSeenState)} siblingNotificationCount={getTeacherModuleNotificationCount(notificationItems, 'assignments-manage', moduleSeenState)} />} />
                 <Route
                   path="assessments"
                   element={
@@ -1824,6 +2106,8 @@ const TeacherPortalShell = () => {
                       title="Assessments"
                       description="Formal exams, results, evaluations, and report cards are separated from practice assignments."
                       actions={assessmentSectionLinks}
+                      notifications={notificationItems}
+                      seenState={moduleSeenState}
                     />
                   }
                 />
@@ -1836,6 +2120,7 @@ const TeacherPortalShell = () => {
                       title="Communication"
                       description="Chat, parent meetings, student feedback, and excuse letters are centralized so other modules trigger communication instead of duplicating it."
                       actions={communicationSectionLinks}
+                      notifications={notificationItems}
                     />
                   }
                 />
@@ -1901,13 +2186,16 @@ const TeacherPortalShell = () => {
           <div className="mx-auto flex max-w-md items-center justify-around">
             {mobileNavigation.map((item) => {
               const Icon = item.icon;
+              const notificationCount = item.action === 'menu'
+                ? getTeacherModuleNotificationCount(notificationItems, 'notifications', moduleSeenState)
+                : getTeacherModuleNotificationCount(notificationItems, teacherNotificationModuleKeyForPath(item.path), moduleSeenState);
               const active = item.action === 'menu'
                 ? sidebarOpen
                 : isItemActive(item.path) || (item.label === 'Classes' && location.pathname.startsWith('/teacher/classes') && !location.pathname.includes('/communication/chat'));
               const itemClasses = `flex min-w-[58px] flex-col items-center rounded-xl px-2 py-1 text-[10px] font-semibold transition active:scale-95 ${active ? 'text-violet-600' : 'text-slate-400'}`;
               const content = (
                 <>
-                  <span className={`mb-0.5 flex h-8 w-8 items-center justify-center rounded-full ${active ? 'bg-purple-100' : ''}`}><Icon size={active ? 17 : 19} fill={active && item.icon === Home ? 'currentColor' : 'none'} /></span>
+                  <span className={`relative mb-0.5 flex h-8 w-8 items-center justify-center rounded-full ${active ? 'bg-purple-100' : ''}`}><Icon size={active ? 17 : 19} fill={active && item.icon === Home ? 'currentColor' : 'none'} />{notificationCount > 0 && <span className="absolute -right-1 -top-1 flex min-h-4 min-w-4 items-center justify-center rounded-full bg-red-500 px-1 text-[9px] font-bold leading-none text-white shadow">{notificationCount > 99 ? '99+' : notificationCount}</span>}</span>
                   {item.label}
                 </>
               );
@@ -1921,7 +2209,7 @@ const TeacherPortalShell = () => {
               }
 
               return (
-                <NavLink key={item.path} to={item.path} aria-label={item.label} className={itemClasses}>
+                <NavLink key={item.path} to={item.path} aria-label={`${item.label} mobile navigation`} className={itemClasses}>
                   {content}
                 </NavLink>
               );

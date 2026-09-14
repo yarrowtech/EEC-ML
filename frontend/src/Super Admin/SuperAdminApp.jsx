@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { Routes, Route, Navigate } from 'react-router-dom';
 import SuperAdminLayout from './SuperAdminLayout';
+import { getSuperAdminNavCounts } from './superAdminNotificationUtils';
 import Overview from './pages/Overview';
 import Requests from './pages/Requests';
 import Feedback from './pages/Feedback';
@@ -8,6 +9,7 @@ import Issues from './pages/Issues';
 import Credentials from './pages/Credentials';
 import Operations from './pages/Operations';
 import Usage from './pages/Usage';
+import StudyMaterials from './pages/StudyMaterials';
 import IDPass from './pages/IDPass';
 import ActiveSchools from './pages/ActiveSchools';
 import RequestDetails from './pages/RequestDetails';
@@ -178,6 +180,11 @@ const SuperAdminAppInner = () => {
       { label: 'Issues to resolve', value: openIssues, change: openIssues ? 'Prioritise today' : 'All clear' }
     ];
   }, [requests, activeSchools.length, issues, feedbackItems]);
+
+  const navCounts = useMemo(
+    () => getSuperAdminNavCounts({ requests, issues, feedbackItems }),
+    [requests, issues, feedbackItems]
+  );
 
   const fetchRequests = useCallback(async () => {
     const headers = authHeaders();
@@ -749,6 +756,7 @@ const SuperAdminAppInner = () => {
       onToggleSidebar={() => setSidebarCollapsed((prev) => !prev)}
       insights={insights}
       profile={profile}
+      navCounts={navCounts}
     >
       <Routes>
         <Route path="overview" element={
@@ -813,6 +821,7 @@ const SuperAdminAppInner = () => {
           />
         } />
         <Route path="usage" element={<Usage />} />
+        <Route path="study-materials" element={<StudyMaterials />} />
         <Route path="id-pass" element={<IDPass profile={profile} />} />
         <Route
           path="active-schools"

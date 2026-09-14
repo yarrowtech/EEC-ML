@@ -36,6 +36,8 @@ import ReportsPage from './ReportsPage';
 import CalendarPage from './CalendarPage';
 import { useDesktopNotificationBridge } from '../hooks/useDesktopNotificationBridge';
 import DesktopNotificationPermissionModal from '../components/DesktopNotificationPermissionModal';
+import { notificationId, readModuleSeenState, writeModuleSeenState } from '../utils/moduleNotificationUtils';
+import { getPrincipalModuleNotificationCount, normalizePrincipalPath, resolvePrincipalNotificationPath } from './principalNotificationUtils';
 
 const API_BASE = import.meta.env.VITE_API_URL;
 
@@ -71,6 +73,8 @@ const normalizeNotifications = (items) => {
       department: item.department || item.category || item.typeLabel || item.type || 'General',
       category: item.category || 'general',
       type: item.type || 'general',
+      typeLabel: item.typeLabel || '',
+      relatedEntity: item.relatedEntity || null,
       createdAt,
       timestamp: formatRelativeLabel(createdAt),
       audience: item.audience || 'All',
@@ -293,17 +297,43 @@ const PrincipalDashboard = () => {
 
   const criticalNotifications = notifications;
   const resolvedSchoolName = principalProfile?.schoolName || principalProfile?.campusName || 'Electronic Educare Center';
-  const resolvePrincipalNotificationPath = useCallback((notification) => {
-    const title = String(notification?.title || '').toLowerCase();
-    const type = String(notification?.type || '').toLowerCase();
-    const department = String(notification?.department || '').toLowerCase();
-    const blob = `${title} ${type} ${department}`;
-    if (blob.includes('finance') || blob.includes('fee') || blob.includes('payment')) return '/principal/finance';
-    if (blob.includes('staff') || blob.includes('teacher') || blob.includes('hr')) return '/principal/staff';
-    if (blob.includes('academic') || blob.includes('exam') || blob.includes('result')) return '/principal/academics';
-    if (blob.includes('student') || blob.includes('attendance')) return '/principal/students';
-    return '/principal/notifications';
-  }, []);
+
+  // Per-module sidebar badges are independent of `read` — opening the bell
+  // dropdown doesn't mark anything read here, but visiting a module page
+  // marks its matched notifications "seen" so that module's badge clears.
+  const [moduleSeenState, setModuleSeenState] = useState(() => readModuleSeenState('principal'));
+  const markModuleVisited = useCallback((path) => {
+    const target = normalizePrincipalPath(path);
+    const matches = notifications.filter(
+      (n) => normalizePrincipalPath(resolvePrincipalNotificationPath(n)) === target
+    );
+    const ids = matches.map(notificationId).filter(Boolean);
+    if (ids.length === 0) return;
+    setModuleSeenState((prev) => {
+      const current = new Set(Array.isArray(prev?.[target]) ? prev[target] : []);
+      let changed = false;
+      ids.forEach((id) => { if (!current.has(id)) { current.add(id); changed = true; } });
+      if (!changed) return prev;
+      const next = { ...prev, [target]: [...current] };
+      writeModuleSeenState('principal', next);
+      return next;
+    });
+  }, [notifications]);
+
+  useEffect(() => {
+    markModuleVisited(location.pathname === '/principal' ? '/principal/overview' : location.pathname);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [location.pathname, notifications]);
+
+  const getModuleNotificationCount = useCallback(
+    (path) => getPrincipalModuleNotificationCount(
+      notifications,
+      path,
+      new Set(Array.isArray(moduleSeenState?.[normalizePrincipalPath(path)]) ? moduleSeenState[normalizePrincipalPath(path)] : [])
+    ),
+    [notifications, moduleSeenState]
+  );
+
   const {
     showPermissionModal,
     pendingCount,
@@ -535,6 +565,7 @@ const PrincipalDashboard = () => {
         isOpen={sidebarOpen}
         setIsOpen={setSidebarOpen}
         principalProfile={principalProfile}
+        getNotificationCount={getModuleNotificationCount}
       />
 
       {/* Main Content */}

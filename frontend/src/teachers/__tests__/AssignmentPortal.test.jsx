@@ -1,4 +1,4 @@
-import { render, screen } from '@testing-library/react';
+import { render, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import axios from 'axios';
 import { MemoryRouter, Route, Routes, useLocation } from 'react-router-dom';
@@ -140,6 +140,7 @@ describe('AssignmentPortal workflow', () => {
     await user.click(screen.getByRole('button', { name: /Evaluate Submissions/i }));
 
     expect(screen.getByTestId('current-path')).toHaveTextContent('/teacher/classes/current/assignments/evaluate');
+    await user.click(await screen.findByRole('button', { name: /Review/i }));
     expect(await screen.findByText('My submitted answer about equivalent fractions.')).toBeInTheDocument();
   });
 
@@ -148,11 +149,65 @@ describe('AssignmentPortal workflow', () => {
     renderPortal('/teacher/classes/5-a/assignments/evaluate');
 
     expect(screen.getByTestId('current-path')).toHaveTextContent('/teacher/classes/5-a/assignments/evaluate');
+    await user.click(await screen.findByRole('button', { name: /Review/i }));
     expect(await screen.findByText('My submitted answer about equivalent fractions.')).toBeInTheDocument();
 
+    await user.click(screen.getByRole('button', { name: /Close/i }));
     await user.click(screen.getByRole('button', { name: /Manage Assignments/i }));
     expect(screen.getByTestId('current-path')).toHaveTextContent('/teacher/classes/5-a/assignments/manage');
     expect(await screen.findByText('No assignments found')).toBeInTheDocument();
+  });
+
+  test('shows notification badges for every evaluation module', async () => {
+    renderPortal('/teacher/classes/5-a/assignments/evaluate');
+
+    for (const moduleKey of ['assignment', 'worksheet', 'tryout', 'mcq', 'fill', 'writing']) {
+      expect(await screen.findByTestId(`module-notification-${moduleKey}`)).toBeInTheDocument();
+    }
+  });
+
+  test('adds a missing rubric before requesting AI evaluation', async () => {
+    const user = userEvent.setup();
+    axios.put.mockResolvedValue({
+      data: {
+        assignment: {
+          rubric: 'Content — 60%\nClarity — 40%',
+          isEssay: true,
+          submissionFormat: 'text',
+        },
+      },
+    });
+    axios.post.mockImplementation((url) => {
+      if (url.includes('/api/assignment/teacher/ai-evaluate')) {
+        return Promise.resolve({
+          data: {
+            aiScore: 16,
+            aiGradingFeedback: 'Good coverage of the key ideas.',
+            aiGradingStatus: 'done',
+          },
+        });
+      }
+      return Promise.resolve({ data: { publishedCount: 1 } });
+    });
+
+    renderPortal('/teacher/classes/5-a/assignments/evaluate');
+    await user.click(await screen.findByRole('button', { name: /^Review$/i }));
+
+    const rubric = screen.getByRole('textbox', { name: 'Grading rubric' });
+    await user.type(rubric, 'Content — 60%\nClarity — 40%');
+    await user.click(screen.getByRole('button', { name: /Save rubric & evaluate/i }));
+
+    await waitFor(() => expect(axios.put).toHaveBeenCalledWith(
+      expect.stringContaining('/api/assignment/teacher/update/assignment-1'),
+      { rubric: 'Content — 60%\nClarity — 40%', isEssay: true, submissionFormat: 'text' },
+      expect.objectContaining({ headers: { Authorization: 'Bearer teacher-token' } })
+    ));
+    await waitFor(() => expect(axios.post).toHaveBeenCalledWith(
+      expect.stringContaining('/api/assignment/teacher/ai-evaluate'),
+      { studentId: 'student-1', assignmentId: 'assignment-1' },
+      expect.objectContaining({ headers: { Authorization: 'Bearer teacher-token' } })
+    ));
+    expect(await screen.findByText('Good coverage of the key ideas.')).toBeInTheDocument();
   });
 
   test('opens the MCQ editor inside the manage page', async () => {

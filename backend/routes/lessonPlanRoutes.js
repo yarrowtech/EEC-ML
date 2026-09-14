@@ -27,6 +27,7 @@ const Assignment = require('../models/Assignment');
 const Notification = require('../models/Notification');
 const { logStudentPortalEvent, logStudentPortalError } = require('../utils/studentPortalLogger');
 const TryoutResult = require('../models/TryoutResult');
+const { getAttachmentDownloadUrl } = require('../utils/s3Storage');
 
 const AI_SERVICE_URL = process.env.AI_SERVICE_URL || 'http://localhost:8000';
 const SUPPORTED_VECTOR_EXTENSIONS = new Set(['pdf', 'docx', 'pptx']);
@@ -163,10 +164,11 @@ const ingestPublishedMaterialAttachments = async (material) => {
   for (let index = 0; index < attachments.length; index += 1) {
     const attachment = attachments[index];
     try {
+      const attachmentUrl = await getAttachmentDownloadUrl(attachment);
       const response = await axios.post(
         `${AI_SERVICE_URL}/ingest/material`,
         {
-          url: attachment.url,
+          url: attachmentUrl,
           material_id: String(material._id),
           source_id: buildVectorSourceId(material, attachment, index),
           file_name: attachment.name || '',

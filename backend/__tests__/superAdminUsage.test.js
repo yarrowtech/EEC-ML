@@ -8,6 +8,7 @@ const query = (result) => {
   p.sort = () => p;
   p.limit = () => p;
   p.select = () => p;
+  p.skip = () => p;
   p.lean = () => Promise.resolve(result);
   p.then = (resolve, reject) => Promise.resolve(result).then(resolve, reject);
   return p;
@@ -28,6 +29,7 @@ jest.mock('../models/StaffUser', () => usageModel());
 jest.mock('../models/Principal', () => usageModel());
 jest.mock('../models/Admin', () => usageModel());
 jest.mock('../models/School', () => usageModel());
+jest.mock('../models/TeachingMaterial', () => usageModel());
 
 jest.mock('../middleware/adminAuth', () => (req, _res, next) => {
   req.isSuperAdmin = true;
@@ -43,8 +45,9 @@ const StaffUser = require('../models/StaffUser');
 const Principal = require('../models/Principal');
 const Admin = require('../models/Admin');
 const School = require('../models/School');
+const TeachingMaterial = require('../models/TeachingMaterial');
 
-const ALL_MODELS = [StudentUser, TeacherUser, ParentUser, StaffUser, Principal, Admin, School];
+const ALL_MODELS = [StudentUser, TeacherUser, ParentUser, StaffUser, Principal, Admin, School, TeachingMaterial];
 
 const app = express();
 app.use(express.json());
@@ -60,6 +63,57 @@ beforeEach(() => {
     M.findById.mockReturnValue(query(null));
     M.countDocuments.mockResolvedValue(0);
     M.exists.mockResolvedValue(null);
+  });
+});
+
+describe('GET /api/super-admin/study-materials', () => {
+  test('returns materials with school context and platform counts', async () => {
+    const schoolId = new mongoose.Types.ObjectId();
+    const materialId = new mongoose.Types.ObjectId();
+    School.find.mockReturnValue(query([
+      { _id: schoolId, name: 'North School', status: 'active', logo: null },
+    ]));
+    TeachingMaterial.countDocuments.mockImplementation((filter = {}) => {
+      if (filter.status === 'published') return Promise.resolve(1);
+      if (filter.status === 'draft') return Promise.resolve(0);
+      if (filter.status === 'archived') return Promise.resolve(0);
+      return Promise.resolve(1);
+    });
+    TeachingMaterial.find.mockReturnValue(query([{
+      _id: materialId,
+      schoolId,
+      title: 'Fractions handout',
+      materialType: 'handout',
+      status: 'published',
+      publishedForStudentPortal: true,
+      className: 'Class 5',
+      sectionName: 'A',
+      subjectName: 'Mathematics',
+      teacherName: 'Asha Teacher',
+      plainTextContent: 'A short introduction to fractions.',
+      attachments: [{ name: 'fractions.pdf', url: 'https://example.com/fractions.pdf', size: 2048, type: 'application/pdf' }],
+      createdAt: new Date('2026-09-01'),
+    }]));
+    TeachingMaterial.aggregate.mockResolvedValue([{ _id: schoolId, count: 1 }]);
+
+    const res = await request(app).get('/api/super-admin/study-materials');
+
+    expect(res.status).toBe(200);
+    expect(res.body.stats).toMatchObject({ total: 1, published: 1, drafts: 0, schoolsWithMaterials: 1 });
+    expect(res.body.materials[0]).toMatchObject({
+      id: String(materialId),
+      schoolName: 'North School',
+      title: 'Fractions handout',
+      attachmentCount: 1,
+    });
+    expect(res.body.schools[0]).toMatchObject({ id: String(schoolId), materialCount: 1 });
+  });
+
+  test('rejects malformed school filters', async () => {
+    const res = await request(app)
+      .get('/api/super-admin/study-materials')
+      .query({ schoolId: 'not-an-id' });
+    expect(res.status).toBe(400);
   });
 });
 

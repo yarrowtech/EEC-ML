@@ -9,6 +9,8 @@ import { NavLink, useLocation } from 'react-router-dom';
 // other's very different sizes/positions).
 const ACTIVE_PILL_TRANSITION = { type: 'spring', stiffness: 400, damping: 32 };
 
+const badgeLabel = (count) => (count > 99 ? '99+' : String(count));
+
 const AdminSidebar = ({
   onMenuItemClick,
   collapsed = false,
@@ -20,6 +22,7 @@ const AdminSidebar = ({
   onMobileClose,
   onLogoutRequest,
   showAdminHeader = true,
+  getNotificationCount = () => 0,
 }) => {
   const [expandedMenus, setExpandedMenus] = useState({});
   const [skeletonTimedOut, setSkeletonTimedOut] = useState(false);
@@ -171,6 +174,12 @@ const AdminSidebar = ({
             );
             const isExpanded = expandedMenus[item.label] || hasActiveSubroute;
             const itemKey = `${item.label}:${item.path || 'root'}`;
+            const submenuCounts = item.hasSubmenu
+              ? (item.submenu || []).map((sub) => getNotificationCount(sub.path))
+              : [];
+            const itemNotificationCount = item.hasSubmenu
+              ? submenuCounts.reduce((total, count) => total + count, 0)
+              : getNotificationCount(item.path);
 
             return (
               <div key={itemKey || idx}>
@@ -180,20 +189,38 @@ const AdminSidebar = ({
                       onClick={() => toggleSubmenu(item.label)}
                       title={collapsed ? item.label : undefined}
                       className={`
-                        w-full flex items-center gap-3 px-3 py-2.5 rounded-xl
+                        relative w-full flex items-center gap-3 px-3 py-2.5 rounded-xl
                         text-gray-500 hover:text-gray-900 hover:bg-gray-50
                         transition-all duration-150 group
                         ${collapsed ? 'justify-center' : ''}
                         ${isExpanded && !collapsed ? 'text-gray-900 bg-gray-50' : ''}
                       `}
                     >
-                      <Icon
-                        size={18}
-                        className={`shrink-0 transition-colors ${isExpanded && !collapsed ? 'text-indigo-500' : 'text-gray-400 group-hover:text-indigo-500'}`}
-                      />
+                      <span className="relative shrink-0">
+                        <Icon
+                          size={18}
+                          className={`transition-colors ${isExpanded && !collapsed ? 'text-indigo-500' : 'text-gray-400 group-hover:text-indigo-500'}`}
+                        />
+                        {collapsed && itemNotificationCount > 0 && (
+                          <span
+                            data-testid={`admin-sidebar-notification-${item.label}`}
+                            className="absolute -right-1.5 -top-1.5 flex h-3.5 min-w-3.5 items-center justify-center rounded-full bg-red-500 px-1 text-[9px] font-bold text-white"
+                          >
+                            {badgeLabel(itemNotificationCount)}
+                          </span>
+                        )}
+                      </span>
                       {!collapsed && (
                         <>
                           <span className="flex-1 text-left text-sm font-semibold">{item.label}</span>
+                          {itemNotificationCount > 0 && (
+                            <span
+                              data-testid={`admin-sidebar-notification-${item.label}`}
+                              className="flex h-5 min-w-[1.25rem] items-center justify-center rounded-full bg-red-500 px-1.5 text-[10px] font-bold text-white"
+                            >
+                              {badgeLabel(itemNotificationCount)}
+                            </span>
+                          )}
                           {isExpanded
                             ? <ChevronDown size={14} className="text-indigo-400 shrink-0" />
                             : <ChevronRight size={14} className="text-gray-300 group-hover:text-indigo-400 shrink-0 transition-colors" />}
@@ -203,9 +230,10 @@ const AdminSidebar = ({
 
                     {isExpanded && !collapsed && (
                       <div className="mt-0.5 ml-4 pl-3 border-l-2 border-indigo-100 space-y-0.5">
-                        {item.submenu.map((sub) => {
+                        {item.submenu.map((sub, subIdx) => {
                           const SubIcon = sub.icon;
                           const subKey = `${sub.label}:${sub.path}`;
+                          const subCount = submenuCounts[subIdx] || 0;
                           return (
                             <NavLink
                               key={subKey}
@@ -229,7 +257,15 @@ const AdminSidebar = ({
                                   )}
                                   <SubIcon size={14} className={`relative z-10 shrink-0 ${isActive ? 'text-yellow-500' : 'text-gray-400'}`} />
                                   <span className="relative z-10">{sub.label}</span>
-                                  {isActive && <span className="relative z-10 ml-auto w-1.5 h-1.5 rounded-full bg-yellow-500 shrink-0 animate-pulse" />}
+                                  {subCount > 0 && (
+                                    <span
+                                      data-testid={`admin-sidebar-notification-${sub.label}`}
+                                      className="relative z-10 ml-auto flex h-4 min-w-[1rem] items-center justify-center rounded-full bg-red-500 px-1 text-[9px] font-bold text-white"
+                                    >
+                                      {badgeLabel(subCount)}
+                                    </span>
+                                  )}
+                                  {isActive && subCount <= 0 && <span className="relative z-10 ml-auto w-1.5 h-1.5 rounded-full bg-yellow-500 shrink-0 animate-pulse" />}
                                 </div>
                               )}
                             </NavLink>
@@ -263,13 +299,28 @@ const AdminSidebar = ({
                             transition={ACTIVE_PILL_TRANSITION}
                           />
                         )}
-                        <Icon
-                          size={22}
-                          className={`relative z-10 shrink-0 transition-colors p-1 ${isActive ? 'bg-yellow-500 rounded-full text-white' : 'bg-gray-100 rounded-full text-gray-400 group-hover:text-yellow-500'}`}
-                        />
+                        <span className="relative z-10 shrink-0">
+                          <Icon
+                            size={22}
+                            className={`transition-colors p-1 ${isActive ? 'bg-yellow-500 rounded-full text-white' : 'bg-gray-100 rounded-full text-gray-400 group-hover:text-yellow-500'}`}
+                          />
+                          {collapsed && itemNotificationCount > 0 && (
+                            <span
+                              data-testid={`admin-sidebar-notification-${item.label}`}
+                              className="absolute -right-1.5 -top-1.5 flex h-3.5 min-w-3.5 items-center justify-center rounded-full bg-red-500 px-1 text-[9px] font-bold text-white"
+                            >
+                              {badgeLabel(itemNotificationCount)}
+                            </span>
+                          )}
+                        </span>
                         {!collapsed && (
-                          <span className={`relative z-10 text-sm flex-1 ${isActive ? 'font-bold' : 'font-semibold'}`}>
+                          <span className={`relative z-10 flex-1 flex items-center gap-2 text-sm ${isActive ? 'font-bold' : 'font-semibold'}`}>
                             {item.label}
+                            {itemNotificationCount > 0 && (
+                              <span className="flex h-5 min-w-[1.25rem] items-center justify-center rounded-full bg-red-500 px-1.5 text-[10px] font-bold text-white">
+                                {badgeLabel(itemNotificationCount)}
+                              </span>
+                            )}
                           </span>
                         )}
                       </div>

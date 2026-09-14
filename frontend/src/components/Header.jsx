@@ -12,7 +12,6 @@ import {
 import { useNavigate } from 'react-router-dom';
 import { AnimatePresence } from 'framer-motion';
 import { useStudentDashboard } from './StudentDashboardContext';
-import { useNotifications } from '../hooks/useNotifications';
 import { useDesktopNotificationBridge } from '../hooks/useDesktopNotificationBridge';
 import DesktopNotificationPermissionModal from './DesktopNotificationPermissionModal';
 import NotificationPopover from './NotificationPopover';
@@ -24,7 +23,17 @@ const Header = ({ sidebarOpen, setSidebarOpen, onOpenProfile }) => {
   const [profileOpen, setProfileOpen] = useState(false);
   const [searchText, setSearchText] = useState('');
   const [showSearchSuggestions, setShowSearchSuggestions] = useState(false);
-  const { profile } = useStudentDashboard();
+  const {
+    profile,
+    notifications: allNotifications,
+    unreadNotificationCount: unreadCount,
+    markNotificationAsRead: markAsRead,
+    markAllNotificationsAsRead: markAllAsRead,
+    dismissNotification,
+    notificationsLoading,
+    notificationsError,
+    markModuleVisited,
+  } = useStudentDashboard();
 
   const notifRef = useRef(null);
   const profileRef = useRef(null);
@@ -48,16 +57,6 @@ const Header = ({ sidebarOpen, setSidebarOpen, onOpenProfile }) => {
     setShowNotifications(false);
   }, []);
 
-  // Use real notifications hook
-  const {
-    notifications: allNotifications,
-    unreadCount,
-    loading: notificationsLoading,
-    error: notificationsError,
-    markAsRead,
-    dismissNotification,
-    markAllAsRead
-  } = useNotifications();
   const resolveNotifPath = useCallback((notification) => {
     const type = notification?.type?.toLowerCase();
     const relatedEntity = notification?.relatedEntity?.entityType?.toLowerCase();
@@ -102,12 +101,13 @@ const Header = ({ sidebarOpen, setSidebarOpen, onOpenProfile }) => {
   // Toggle one dropdown, close the other
   const toggleNotifications = useCallback(async () => {
     const nextOpen = !showNotifications;
-    if (nextOpen && unreadCount > 0) {
-      await markAllAsRead();
+    if (nextOpen) {
+      markModuleVisited('notifications');
+      if (unreadCount > 0) await markAllAsRead();
     }
     setShowNotifications(nextOpen);
     setProfileOpen(false);
-  }, [markAllAsRead, showNotifications, unreadCount]);
+  }, [markAllAsRead, markModuleVisited, showNotifications, unreadCount]);
 
   const studentData = profile || {
     name: 'Student',

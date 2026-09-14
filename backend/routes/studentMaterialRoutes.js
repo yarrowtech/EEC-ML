@@ -4,6 +4,7 @@ const mongoose = require('mongoose');
 const TeachingMaterial = require('../models/TeachingMaterial');
 const StudentUser = require('../models/StudentUser');
 const authStudent = require('../middleware/authStudent');
+const { signAttachmentUrls } = require('../utils/s3Storage');
 
 const STUDENT_PLACEMENT_FIELDS = 'classId sectionId className sectionName grade section';
 
@@ -125,10 +126,16 @@ router.get('/', async (req, res, next) => {
       .lean();
 
     const total = await TeachingMaterial.countDocuments(filters);
+    const materialsWithSignedUrls = await Promise.all(
+      materials.map(async (material) => ({
+        ...material,
+        attachments: await signAttachmentUrls(material.attachments || []),
+      }))
+    );
 
     res.json({
       success: true,
-      materials,
+      materials: materialsWithSignedUrls,
       total,
       page: parseInt(page),
       limit: parseInt(limit),
@@ -181,7 +188,10 @@ router.get('/:id', async (req, res, next) => {
 
     res.json({
       success: true,
-      material
+      material: {
+        ...material,
+        attachments: await signAttachmentUrls(material.attachments || []),
+      }
     });
   } catch (error) {
     console.error('Error fetching material:', error);

@@ -1,7 +1,7 @@
-import React, { useMemo, useState } from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
 import { Bell, CheckCheck, Loader2, Clock, ArrowRight, Filter } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
-import { useNotifications } from '../hooks/useNotifications';
+import { useStudentDashboard } from './StudentDashboardContext';
 
 const FILTER_TABS = [
   { key: 'all', label: 'All' },
@@ -121,7 +121,18 @@ const NotificationRow = ({ notification, onRead, onNavigate }) => {
 const StudentNotificationCenter = () => {
   const navigate = useNavigate();
   const [activeFilter, setActiveFilter] = useState('all');
-  const { notifications, unreadCount, loading, markAsRead, markAllAsRead } = useNotifications();
+  const {
+    notifications,
+    unreadNotificationCount: unreadCount,
+    notificationsLoading: loading,
+    markNotificationAsRead: markAsRead,
+    markAllNotificationsAsRead: markAllAsRead,
+    markModuleVisited,
+  } = useStudentDashboard();
+
+  useEffect(() => {
+    markModuleVisited('notifications');
+  }, [markModuleVisited, notifications]);
 
   const filtered = useMemo(() => {
     return notifications.filter((n) => {

@@ -2,6 +2,16 @@ import React from 'react';
 import { render, screen, fireEvent, act } from '@testing-library/react';
 import { MemoryRouter } from 'react-router-dom';
 import AdminHeader from '../AdminHeader';
+import { useAdminNotifications } from '../useAdminNotifications';
+
+// AdminHeader now reads notification state from useAdminNotifications
+// (shared with AdminSidebar/AdminBottomNav for per-module badges) instead of
+// fetching on its own — this harness runs the real hook so the fetch/poll
+// behavior is still exercised end-to-end.
+const AdminHeaderHarness = (props) => {
+  const notificationState = useAdminNotifications({ isSuperAdmin: false });
+  return <AdminHeader notificationState={notificationState} {...props} />;
+};
 
 jest.mock('../../hooks/useDesktopNotificationBridge', () => ({
   useDesktopNotificationBridge: () => ({
@@ -34,7 +44,7 @@ beforeEach(() => {
 const renderHeader = (props = {}) =>
   render(
     <MemoryRouter>
-      <AdminHeader
+      <AdminHeaderHarness
         adminUser={{ name: 'Priya', role: 'School Admin', schoolName: 'Kelomal Santoshini High School' }}
         onOpenMobileSidebar={jest.fn()}
         onLogoutRequest={jest.fn()}

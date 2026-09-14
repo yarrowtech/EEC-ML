@@ -11,11 +11,13 @@ class NotificationService {
     message,
     audience = 'All',
     type = 'general',
+    typeLabel = '',
     priority = 'medium',
     category = 'general',
     targetUserIds = [],
     classId = null,
     sectionId = null,
+    submissionId = null,
     createdBy = null,
     relatedEntity = null,
     expiresAt = null
@@ -29,10 +31,12 @@ class NotificationService {
         audience,
         targetUserIds: Array.isArray(targetUserIds) ? targetUserIds : [],
         type,
+        typeLabel,
         priority,
         category,
         classId,
         sectionId,
+        submissionId,
         createdBy,
         relatedEntity: relatedEntity ? {
           entityType: relatedEntity.entityType,
@@ -61,6 +65,7 @@ class NotificationService {
       message: `A new ${assignment.subject} assignment has been posted for ${assignment.class}. Due date: ${dueDate}`,
       audience: 'Student',
       type: 'assignment',
+      typeLabel: 'assignment_created',
       priority: 'medium',
       category: 'academic',
       createdBy,
@@ -68,6 +73,36 @@ class NotificationService {
         entityType: 'assignment',
         entityId: assignment._id
       }
+    });
+  }
+
+  /**
+   * Notify the assignment owner when a student submits work.
+   * The notification is targeted to that teacher so it cannot appear in
+   * another teacher's portal or as a generic school-wide notification.
+   */
+  static async notifyAssignmentSubmitted({ schoolId, campusId, assignment, student, submissionId = null }) {
+    const studentName = student?.name || 'A student';
+    const assignmentLabel = assignment?.title || 'an assignment';
+
+    return await this.createNotification({
+      schoolId,
+      campusId,
+      title: `New submission: ${assignmentLabel}`,
+      message: `${studentName} submitted ${assignmentLabel}. Open Evaluate Submissions to review it.`,
+      audience: 'Teacher',
+      type: 'assignment',
+      typeLabel: 'assignment_submission',
+      priority: 'high',
+      category: 'academic',
+      targetUserIds: assignment?.teacherId ? [assignment.teacherId] : [],
+      classId: assignment?.classId || null,
+      sectionId: assignment?.sectionId || null,
+      submissionId,
+      relatedEntity: {
+        entityType: 'assignment',
+        entityId: assignment?._id,
+      },
     });
   }
 
@@ -85,6 +120,7 @@ class NotificationService {
       message: `${exam.subject} exam has been scheduled for ${examDate} ${examTime}. Venue: ${exam.venue || 'TBA'}`,
       audience: 'All',
       type: 'exam',
+      typeLabel: 'exam_scheduled',
       priority: 'high',
       category: 'academic',
       createdBy,
@@ -192,6 +228,7 @@ class NotificationService {
       message: `Fee payment of Rs. ${invoice.balanceAmount || invoice.totalAmount} is due ${dueDate}. Please pay on time to avoid late fees.`,
       audience: 'Student',
       type: 'fee',
+      typeLabel: 'fee_reminder',
       priority: 'high',
       category: 'general',
       createdBy,
@@ -215,6 +252,7 @@ class NotificationService {
       message: `The examination results for ${grade}${sectionText} have been published. Please check your results.`,
       audience: 'Student',
       type: 'result',
+      typeLabel: 'result_published',
       priority: 'high',
       category: 'academic',
       createdBy
@@ -232,6 +270,7 @@ class NotificationService {
       message: `Your marks for the ${assignment.subject} assignment "${assignment.title}" have been published. Check your submissions to see your score and feedback.`,
       audience: 'Specific',
       type: 'result',
+      typeLabel: 'assignment_result',
       priority: 'high',
       category: 'academic',
       targetUserIds: Array.isArray(studentIds) ? studentIds : [],
@@ -254,6 +293,7 @@ class NotificationService {
       message: `${teacherName || 'Your teacher'} has published a personalised learning path for you in ${subject}. Open your Learning Hub to get started.`,
       audience: 'Specific',
       type: 'general',
+      typeLabel: 'learning_path',
       priority: 'high',
       category: 'academic',
       targetUserIds: [studentId],
@@ -276,6 +316,7 @@ class NotificationService {
       audience: 'Parent',
       targetUserIds: meeting?.parentId ? [meeting.parentId] : [],
       type: 'announcement',
+      typeLabel: 'parent_teacher_meeting',
       priority: 'high',
       category: 'general',
       createdBy,
@@ -297,6 +338,7 @@ class NotificationService {
       message: `The weekly class routine for ${scope} has been updated. Open Class Routine to see the latest timetable.`,
       audience: 'All',
       type: 'general',
+      typeLabel: 'timetable_updated',
       priority: 'medium',
       category: 'academic',
       classId: classId || null,

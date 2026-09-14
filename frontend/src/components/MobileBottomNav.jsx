@@ -7,9 +7,9 @@ import {
 } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 import { AUTH_NOTICE, logoutAndRedirect } from '../utils/authSession';
-import { useNotifications } from '../hooks/useNotifications';
 import { useStudentDashboard } from './StudentDashboardContext';
 import ConfirmDialog from './ConfirmDialog';
+import { getStudentModuleNotificationCount } from '../utils/moduleNotificationUtils';
 
 /* ─── Sub-menu definitions ─────────────────────────────────────────────── */
 const subMenus = {
@@ -82,12 +82,12 @@ const isViewInSubMenu = (menuKey, activeView) => {
 /* ─── Component ─────────────────────────────────────────────────────────── */
 const MobileBottomNav = ({ activeView, onSaveJournal }) => {
   const navigate = useNavigate();
-  const { unreadCount: notifUnreadCount } = useNotifications();
   const [openMenu, setOpenMenu] = useState(null);
   const [showLogoutConfirm, setShowLogoutConfirm] = useState(false);
   // Shared with Sidebar via StudentDashboardContext — see its comment for why
   // this used to be a second independent poller.
-  const { unreadChatCount } = useStudentDashboard();
+  const { unreadChatCount, notifications, moduleSeenState, chatSeenCount } = useStudentDashboard();
+  const getModuleCount = (moduleId) => getStudentModuleNotificationCount(notifications, moduleId, unreadChatCount, moduleSeenState, chatSeenCount);
 
 
   const handleTabPress = (item) => {
@@ -152,6 +152,7 @@ const MobileBottomNav = ({ activeView, onSaveJournal }) => {
                 const Icon = item.icon;
                 const isActive =
                   activeView === item.id || activeView.startsWith(`${item.id}-`);
+                const notificationCount = item.action === 'logout' ? 0 : getModuleCount(item.id);
 
                 return (
                   <button
@@ -165,9 +166,14 @@ const MobileBottomNav = ({ activeView, onSaveJournal }) => {
                   >
                     {/* iOS-style app icon */}
                     <div
-                      className={`rounded-2xl ${item.color} flex items-center justify-center shadow-md w-13 h-13 sm:w-15 sm:h-15`}
+                      className={`relative rounded-2xl ${item.color} flex items-center justify-center shadow-md w-13 h-13 sm:w-15 sm:h-15`}
                     >
                       <Icon size={24} className="text-white sm:w-7 sm:h-7" strokeWidth={1.8} />
+                      {notificationCount > 0 && (
+                        <span className="absolute -right-1.5 -top-1.5 flex min-h-5 min-w-5 items-center justify-center rounded-full border-2 border-white bg-red-500 px-1 text-[10px] font-bold leading-none text-white shadow" title={`${notificationCount} unread item${notificationCount === 1 ? '' : 's'}`}>
+                          {notificationCount > 99 ? '99+' : notificationCount}
+                        </span>
+                      )}
                     </div>
 
                     <span
@@ -226,6 +232,9 @@ const MobileBottomNav = ({ activeView, onSaveJournal }) => {
           <div className="flex items-stretch h-16 sm:h-18 max-w-2xl mx-auto">
             {navItems.map((item) => {
               const Icon = item.icon;
+              const notificationCount = item.subMenu
+                ? subMenus[item.subMenu].items.reduce((total, child) => total + getModuleCount(child.id), 0)
+                : getModuleCount(item.id);
 
               const isActive = item.subMenu
                 ? openMenu === item.subMenu || isViewInSubMenu(item.subMenu, activeView)
@@ -251,14 +260,9 @@ const MobileBottomNav = ({ activeView, onSaveJournal }) => {
                       strokeWidth={isActive ? 2.3 : 1.75}
                       className={`sm:w-6 sm:h-6 transition-colors ${isActive ? 'text-amber-600' : 'text-gray-400'}`}
                     />
-                    {item.id === 'chat' && unreadChatCount > 0 && (
+                    {notificationCount > 0 && (
                       <span className="absolute -top-1 -right-1 min-w-[18px] h-[18px] px-1 rounded-full bg-red-500 text-white text-[10px] font-bold leading-[18px] text-center shadow">
-                        {unreadChatCount > 99 ? '99+' : unreadChatCount}
-                      </span>
-                    )}
-                    {item.id === 'more' && notifUnreadCount > 0 && (
-                      <span className="absolute -top-1 -right-1 min-w-[18px] h-[18px] px-1 rounded-full bg-red-500 text-white text-[10px] font-bold leading-[18px] text-center shadow">
-                        {notifUnreadCount > 99 ? '99+' : notifUnreadCount}
+                        {notificationCount > 99 ? '99+' : notificationCount}
                       </span>
                     )}
                   </div>

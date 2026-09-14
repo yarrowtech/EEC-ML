@@ -59,6 +59,15 @@ const SURFACE_CARD = 'rounded-3xl border border-violet-100 bg-white shadow-[0_2p
 const SURFACE_INNER = 'rounded-xl border border-violet-100 bg-violet-50/50';
 const SURFACE_HOVER = 'transition-all duration-200 ease-out hover:-translate-y-0.5 hover:shadow-[0_8px_24px_rgba(139,92,246,0.12)]';
 
+const ALLOWED_SUBMISSION_TYPES = new Set(['application/pdf', 'image/jpeg', 'image/png', 'image/webp', 'image/heic', 'image/heif']);
+const ALLOWED_SUBMISSION_EXTENSIONS = /\.(pdf|jpe?g|png|webp|heic|heif)$/i;
+
+// Some browsers/OSes (notably Windows) report an empty or generic MIME type
+// for HEIC photos instead of "image/heic" — fall back to the file extension
+// so a real photo isn't rejected just because the type went unrecognized.
+const isAllowedSubmissionFile = (file) =>
+  ALLOWED_SUBMISSION_TYPES.has(file.type) || ALLOWED_SUBMISSION_EXTENSIONS.test(file.name || '');
+
 const Assignment = ({ assignmentType }) => {
   const location = useLocation();
   const navigate = useNavigate();
@@ -334,7 +343,7 @@ const Assignment = ({ assignmentType }) => {
       return;
     }
     if (requiresPdfUpload && !submissionFileUrl) {
-      toast.error('PDF required: Please upload your PDF before submitting.');
+      toast.error('File required: Please upload a PDF or photo before submitting.');
       return;
     }
     try {
@@ -379,8 +388,8 @@ const Assignment = ({ assignmentType }) => {
   const uploadSubmissionFile = async (file) => {
     if (!file) return;
 
-    if (file.type !== 'application/pdf') {
-      toast.error('Invalid file: Please upload a PDF file.');
+    if (!isAllowedSubmissionFile(file)) {
+      toast.error('Invalid file: Please upload a PDF or a photo (JPG, PNG, WEBP, or HEIC).');
       return;
     }
 
@@ -1158,19 +1167,6 @@ const Assignment = ({ assignmentType }) => {
           )}
 
           {/* ─── Help Desk ─── */}
-          {activeSubject && (
-            <div className={`page-fade-in flex flex-col items-center gap-4 text-center ${SURFACE_CARD} p-5 sm:flex-row sm:justify-between sm:p-6 sm:text-left`}>
-              <div className="flex flex-col items-center gap-3 sm:flex-row">
-                <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl bg-sky-50 text-sky-600">
-                  <LifeBuoy className="h-5 w-5" />
-                </div>
-                <div>
-                  <h4 className="text-sm font-bold text-[#0b1c30]">Need a hand with your homework or chapter deadlines?</h4>
-                  <p className="mt-0.5 text-xs text-[#8e9aaf]">Ask your teacher directly from Class Wall or Messages.</p>
-                </div>
-              </div>
-            </div>
-          )}
         </div>
       )}
 
@@ -1423,9 +1419,9 @@ const Assignment = ({ assignmentType }) => {
                               >
                                 <input
                                   type="file"
-                                  accept="application/pdf"
+                                  accept="application/pdf,image/jpeg,image/png,image/webp,image/heic,image/heif,.heic,.heif"
                                   id={uploadInputId}
-                                  aria-label="Upload PDF"
+                                  aria-label="Upload a PDF or photo of your work"
                                   className="hidden"
                                   onChange={handleSubmissionFileUpload}
                                 />

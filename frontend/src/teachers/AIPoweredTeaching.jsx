@@ -181,12 +181,10 @@ const AIPoweredTeaching = () => {
   const uploadTeachingFile = async (file, onProgress) => {
     const formData = new FormData();
     formData.append('file', file);
-    formData.append('folder', 'smart_learning_materials');
-    formData.append('tags', 'smart_learning,lesson_plan,teaching_material');
 
     const data = await new Promise((resolve, reject) => {
       const xhr = new XMLHttpRequest();
-      xhr.open('POST', `${API_BASE}/api/uploads/cloudinary/single`);
+      xhr.open('POST', `${API_BASE}/api/uploads/s3/study-material/single`);
       xhr.setRequestHeader('Authorization', `Bearer ${localStorage.getItem('token') || ''}`);
 
       xhr.upload.onprogress = (event) => {
@@ -217,13 +215,17 @@ const AIPoweredTeaching = () => {
     });
 
     const uploaded = data?.files?.[0];
-    if (!uploaded?.secure_url) throw new Error('Upload completed without a file URL');
+    const storageUrl = uploaded?.storageUrl || uploaded?.url;
+    if (!storageUrl) throw new Error('Upload completed without a file URL');
     return {
       name: uploaded.originalName || file.name || 'Uploaded file',
-      url: uploaded.secure_url,
+      url: storageUrl,
       size: uploaded.bytes || file.size || 0,
       type: getFileType(uploaded.originalName || file.name || ''),
-      cloudinaryPublicId: uploaded.public_id || '',
+      storageProvider: uploaded.storageProvider || 's3',
+      s3Key: uploaded.s3Key || '',
+      s3Bucket: uploaded.s3Bucket || '',
+      s3Region: uploaded.s3Region || '',
     };
   };
 

@@ -10,10 +10,12 @@ const TABS = [
   { to: '/admin/dashboard', label: 'Dashboard', Icon: Home, match: (p) => p.startsWith('/admin/dashboard') },
   { to: '/admin/students', label: 'Students', Icon: GraduationCap, match: (p) => p.startsWith('/admin/students') },
   { to: '/admin/teachers', label: 'Teachers', Icon: Users, match: (p) => p.startsWith('/admin/teachers') },
-  { to: '/admin/fees/dashboard', label: 'Fees', Icon: IndianRupee, match: (p) => p.startsWith('/admin/fees') },
+  // Badge count is keyed off /fees/collection (where fee notifications resolve to),
+  // even though the tab itself links to the dashboard view.
+  { to: '/admin/fees/dashboard', badgePath: '/admin/fees/collection', label: 'Fees', Icon: IndianRupee, match: (p) => p.startsWith('/admin/fees') },
 ];
 
-const AdminBottomNav = ({ onOpenMore }) => {
+const AdminBottomNav = ({ onOpenMore, getNotificationCount = () => 0 }) => {
   const { pathname } = useLocation();
 
   return (
@@ -22,8 +24,9 @@ const AdminBottomNav = ({ onOpenMore }) => {
       aria-label="Primary navigation"
     >
       <div className="grid grid-cols-5 h-14">
-        {TABS.map(({ to, label, Icon, match }) => {
+        {TABS.map(({ to, badgePath, label, Icon, match }) => {
           const active = match(pathname);
+          const count = getNotificationCount(badgePath || to);
           return (
             <Link
               key={to}
@@ -33,7 +36,14 @@ const AdminBottomNav = ({ onOpenMore }) => {
                 active ? 'text-amber-600' : 'text-slate-400'
               }`}
             >
-              <Icon size={20} strokeWidth={active ? 2.5 : 2} />
+              <span className="relative">
+                <Icon size={20} strokeWidth={active ? 2.5 : 2} />
+                {count > 0 && (
+                  <span className="absolute -right-1.5 -top-1.5 flex h-3.5 min-w-3.5 items-center justify-center rounded-full bg-red-500 px-1 text-[8px] font-bold text-white">
+                    {count > 99 ? '99+' : count}
+                  </span>
+                )}
+              </span>
               <span className={`text-[10px] leading-none tracking-tight ${active ? 'font-bold' : 'font-medium'}`}>
                 {label}
               </span>

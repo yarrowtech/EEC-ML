@@ -40,7 +40,7 @@ const SnapItem = ({ icon, label, value, gradient, iconColor, labelColor, valueCo
         </div>
         <div className="min-w-0">
           <p className={`text-[11px] font-semibold uppercase tracking-wide ${labelColor}`}>{label}</p>
-          <p className={`text-lg font-black leading-tight ${valueColor}`}>{value}</p>
+          <p className={`text-lg font-bold leading-tight ${valueColor}`}>{value}</p>
         </div>
       </div>
     </div>
@@ -98,7 +98,7 @@ const CourseProgress = () => {
             <div className="flex h-9 w-9 items-center justify-center rounded-xl bg-white/70 border border-emerald-200 shadow-sm">
               <Activity size={16} className="text-emerald-700" />
             </div>
-            <h2 className="text-sm font-black text-emerald-900">Attendance Snapshot</h2>
+            <h2 className="text-sm font-bold text-emerald-900">Attendance Snapshot</h2>
           </div>
           <div className="flex items-center justify-center gap-1">
             {(displayClass || displaySection) && (
@@ -121,7 +121,7 @@ const CourseProgress = () => {
           <div className="relative shrink-0">
             <Ring pct={attPct ?? 0} size={104} stroke={10} color={ringColor} />
             <div className="absolute inset-0 flex flex-col items-center justify-center">
-              <span className="text-2xl font-black text-slate-800 leading-none">
+              <span className="text-2xl font-bold text-slate-800 leading-none">
                 {attPct !== null ? `${attPct}%` : '—'}
               </span>
               <span className={`mt-1.5 rounded-full border px-2 py-0.5 text-[9px] font-bold uppercase tracking-wide ${attPct !== null ? attBadge(attPct) : 'bg-slate-100 text-slate-500 border-slate-200'}`}>
@@ -134,8 +134,8 @@ const CourseProgress = () => {
             <p className="text-[11px] font-semibold uppercase tracking-wide text-slate-400">This term</p>
             {present !== null && total !== null ? (
               <p className="mt-1 text-sm text-slate-600">
-                Present <span className="font-black text-slate-800">{present}</span> out of{' '}
-                <span className="font-black text-slate-800">{total}</span> classes
+                Present <span className="font-bold text-slate-800">{present}</span> out of{' '}
+                <span className="font-bold text-slate-800">{total}</span> classes
               </p>
             ) : (
               <p className="mt-1 text-sm text-slate-400">No attendance recorded yet</p>

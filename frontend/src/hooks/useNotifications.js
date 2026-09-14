@@ -11,6 +11,12 @@ export const useNotifications = () => {
 
   const fetchNotifications = useCallback(async () => {
     try {
+      if (typeof fetch !== 'function') {
+        setNotifications([]);
+        setUnreadCount(0);
+        setLoading(false);
+        return;
+      }
       const token = localStorage.getItem('token');
       const userType = localStorage.getItem('userType');
 

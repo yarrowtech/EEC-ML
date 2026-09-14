@@ -59,7 +59,7 @@ const makeClassSlug = (className, sectionName) =>
   `${String(className || '').trim()}-${String(sectionName || '').trim()}`
     .toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '');
 
-const AssignmentPortal = ({ view = 'manage' }) => {
+const AssignmentPortal = ({ view = 'manage', notificationCount = 0, siblingNotificationCount = 0 }) => {
   const navigate = useNavigate();
   const location = useLocation();
   const { classId = 'current' } = useParams();
@@ -170,6 +170,11 @@ const AssignmentPortal = ({ view = 'manage' }) => {
   const [publishing, setPublishing] = useState(false);
   const [publishError, setPublishError] = useState('');
   const [publishSuccess, setPublishSuccess] = useState('');
+  const [aiEvaluatingId, setAiEvaluatingId] = useState('');
+  const [aiEvaluateError, setAiEvaluateError] = useState('');
+  const [rubricDraft, setRubricDraft] = useState('');
+  const [rubricSaving, setRubricSaving] = useState(false);
+  const [rubricSaveError, setRubricSaveError] = useState('');
 
   // ─── Tryout submissions state ───────────────────────────────────────────────
   const [tryoutSubmissions, setTryoutSubmissions] = useState([]);
@@ -875,9 +880,12 @@ const AssignmentPortal = ({ view = 'manage' }) => {
     setSelected(sub);
     setMarks(sub.score !== null && sub.score !== undefined ? String(sub.score) : '');
     setFeedback(sub.feedback || '');
+    setRubricDraft(sub.rubric || '');
     setSaveError('');
     setPublishError('');
     setPublishSuccess('');
+    setAiEvaluateError('');
+    setRubricSaveError('');
   };
 
   const closePanel = () => {
@@ -885,6 +893,69 @@ const AssignmentPortal = ({ view = 'manage' }) => {
     setSaveError('');
     setPublishError('');
     setPublishSuccess('');
+    setAiEvaluateError('');
+    setRubricDraft('');
+    setRubricSaveError('');
+  };
+
+  const handleAiEvaluate = async (submission) => {
+    if (!submission || aiEvaluatingId) return;
+    const id = submission.submissionId;
+    setAiEvaluatingId(id);
+    setAiEvaluateError('');
+    const applyStatus = (patch) => {
+      setSubmissions((prev) => prev.map((item) => (item.submissionId === id ? { ...item, ...patch } : item)));
+      setSelected((prev) => (prev && prev.submissionId === id ? { ...prev, ...patch } : prev));
+    };
+    applyStatus({ aiGradingStatus: 'pending' });
+    try {
+      const { data } = await axios.post(
+        `${API_BASE_URL}/api/assignment/teacher/ai-evaluate`,
+        { studentId: submission.studentId, assignmentId: submission.assignmentId },
+        { headers: { Authorization: `Bearer ${token()}` } }
+      );
+      applyStatus({ aiScore: data.aiScore, aiGradingFeedback: data.aiGradingFeedback, aiGradingStatus: data.aiGradingStatus });
+    } catch (err) {
+      applyStatus({ aiGradingStatus: 'failed' });
+      setAiEvaluateError(err.response?.data?.error || 'AI evaluation failed. Please try again.');
+    } finally {
+      setAiEvaluatingId('');
+    }
+  };
+
+  const handleSaveRubricAndEvaluate = async (submission) => {
+    const rubric = String(rubricDraft || '').trim();
+    if (!submission?.assignmentId) return;
+    if (!rubric) {
+      setRubricSaveError('Add at least one grading criterion before requesting AI evaluation.');
+      return;
+    }
+
+    setRubricSaving(true);
+    setRubricSaveError('');
+    try {
+      const { data } = await axios.put(
+        `${API_BASE_URL}/api/assignment/teacher/update/${submission.assignmentId}`,
+        { rubric, isEssay: true, submissionFormat: submission.submissionFormat || 'text' },
+        { headers: { Authorization: `Bearer ${token()}` } }
+      );
+      const assignment = data?.assignment || {};
+      const patch = {
+        rubric: assignment.rubric || rubric,
+        isEssay: assignment.isEssay ?? true,
+        submissionFormat: assignment.submissionFormat || submission.submissionFormat || 'text',
+      };
+      setSubmissions((prev) => prev.map((item) => (
+        item.submissionId === submission.submissionId ? { ...item, ...patch } : item
+      )));
+      setSelected((prev) => (prev && prev.submissionId === submission.submissionId ? { ...prev, ...patch } : prev));
+      setRubricDraft(patch.rubric);
+      await handleAiEvaluate({ ...submission, ...patch });
+    } catch (err) {
+      setRubricSaveError(err.response?.data?.error || 'Could not save the rubric. Please try again.');
+    } finally {
+      setRubricSaving(false);
+    }
   };
 
   const saveGrade = async () => {
@@ -1058,6 +1129,8 @@ const AssignmentPortal = ({ view = 'manage' }) => {
         {activeTab === 'manage' ? (
           <ManageAssignments
             onEvaluateSubmissions={() => navigate(`${assignmentBasePath}/evaluate`)}
+            notificationCount={notificationCount}
+            siblingNotificationCount={siblingNotificationCount}
             openActivityCreator={openActivityCreator}
             activityEditor={activityEditor}
             closeActivityEditor={() => setActivityEditor(null)}
@@ -1068,6 +1141,7 @@ const AssignmentPortal = ({ view = 'manage' }) => {
             subjects={subjects}
             activeAssignments={activeAssignments}
             draftAssignments={draftAssignments}
+            pendingCount={pendingCount}
             totalAssignments={totalAssignments}
             viewMode={viewMode}
             setViewMode={setViewMode}
@@ -1104,6 +1178,8 @@ const AssignmentPortal = ({ view = 'manage' }) => {
         ) : (
           <EvaluateSubmissions
             onManageAssignments={() => navigate(`${assignmentBasePath}/manage`)}
+            notificationCount={notificationCount}
+            siblingNotificationCount={siblingNotificationCount}
             loadingSubmissions={loadingSubmissions}
             submissions={submissions}
             filtered={filtered}
@@ -1122,11 +1198,20 @@ const AssignmentPortal = ({ view = 'manage' }) => {
             classOptions={classOptions}
             pendingCount={pendingCount}
             gradedCount={gradedCount}
+            draftAssignments={draftAssignments}
             assignments={assignments}
             openSubmission={openSubmission}
             closePanel={closePanel}
             saveGrade={saveGrade}
             evaluationMode={evaluationMode}
+            onAiEvaluate={handleAiEvaluate}
+            aiEvaluatingId={aiEvaluatingId}
+            aiEvaluateError={aiEvaluateError}
+            rubricDraft={rubricDraft}
+            setRubricDraft={setRubricDraft}
+            rubricSaving={rubricSaving}
+            rubricSaveError={rubricSaveError}
+            onSaveRubricAndEvaluate={handleSaveRubricAndEvaluate}
             bulkDraft={bulkDraft}
             updateBulkDraft={updateBulkDraft}
             saveBulkGrades={saveBulkGrades}
@@ -1442,7 +1527,9 @@ const TryoutSubmissionsPanel = ({ submissions, loading, grading, saving, saved, 
 const ManageAssignments = ({
   onEvaluateSubmissions, openActivityCreator, activityEditor, closeActivityEditor,
   loading, filteredAssignments, myClasses, subjects,
-  activeAssignments, draftAssignments, totalAssignments,
+  activeAssignments, draftAssignments, pendingCount, totalAssignments,
+  notificationCount = 0,
+  siblingNotificationCount = 0,
   viewMode, setViewMode, filterStatus, setFilterStatus,
   filterSubject, setFilterSubject, filterTopic, setFilterTopic, topics,
   searchTerm, setSearchTerm,
@@ -1462,8 +1549,8 @@ const ManageAssignments = ({
         <p className="mt-1 text-sm text-[#6f7a8c]">Manage assignments and evaluate student submissions</p>
       </div>
       <div className="flex rounded-full border border-black/[0.03] bg-[#f0f2f6] p-1">
-        <button type="button" aria-current="page" className="inline-flex items-center gap-1.5 rounded-full bg-white px-4 py-2 text-xs font-medium text-[#0b0e1a] shadow-[0_2px_10px_rgba(0,0,0,0.04),0_1px_4px_rgba(0,0,0,0.02)]"><Layers className="size-3.5" /> Manage Assignments</button>
-        <button type="button" onClick={onEvaluateSubmissions} className="inline-flex items-center gap-1.5 rounded-full px-4 py-2 text-xs font-medium text-[#6f7a8c] transition hover:bg-white/50 hover:text-[#1e2533]"><CheckCircle className="size-3.5" /> Evaluate Submissions</button>
+        <button type="button" aria-current="page" className="inline-flex items-center gap-1.5 rounded-full bg-white px-4 py-2 text-xs font-medium text-[#0b0e1a] shadow-[0_2px_10px_rgba(0,0,0,0.04),0_1px_4px_rgba(0,0,0,0.02)]"><Layers className="size-3.5" /> Manage Assignments{draftAssignments > 0 && <span className="rounded-full bg-red-500 px-1.5 py-0.5 text-[10px] font-bold leading-none text-white">{draftAssignments > 99 ? '99+' : draftAssignments}</span>}{notificationCount > 0 && <span data-testid="assignment-module-notification" title={`${notificationCount} unread assignment notification${notificationCount === 1 ? '' : 's'}`} className="rounded-full bg-red-500 px-1.5 py-0.5 text-[10px] font-bold leading-none text-white">{notificationCount > 99 ? '99+' : notificationCount}</span>}</button>
+        <button type="button" onClick={onEvaluateSubmissions} className="inline-flex items-center gap-1.5 rounded-full px-4 py-2 text-xs font-medium text-[#6f7a8c] transition hover:bg-white/50 hover:text-[#1e2533]"><CheckCircle className="size-3.5" /> Evaluate Submissions{pendingCount > 0 && <span className="rounded-full bg-red-500 px-1.5 py-0.5 text-[10px] font-bold leading-none text-white">{pendingCount > 99 ? '99+' : pendingCount}</span>}{siblingNotificationCount > 0 && <span data-testid="assignment-evaluate-notification" title={`${siblingNotificationCount} unread assignment notification${siblingNotificationCount === 1 ? '' : 's'}`} className="rounded-full bg-red-500 px-1.5 py-0.5 text-[10px] font-bold leading-none text-white">{siblingNotificationCount > 99 ? '99+' : siblingNotificationCount}</span>}</button>
       </div>
     </header>
 
@@ -1802,11 +1889,16 @@ const EvaluateSubmissions = ({
   assignmentFilter, setAssignmentFilter,
   classFilter, setClassFilter, assignmentTitles, classOptions,
   pendingCount, gradedCount, openSubmission,
+  notificationCount = 0,
+  siblingNotificationCount = 0,
   closePanel, saveGrade, evaluationMode,
+  onAiEvaluate, aiEvaluatingId, aiEvaluateError,
+  rubricDraft, setRubricDraft, rubricSaving, rubricSaveError, onSaveRubricAndEvaluate,
   bulkDraft, updateBulkDraft, saveBulkGrades, bulkSaving, bulkError, bulkSuccess,
   publishing, publishError, publishSuccess, publishSelectedGrade,
   formatDate,
   assignments = [],
+  draftAssignments = 0,
   tryoutSubmissions = [], loadingTryouts = false,
   tryoutGrading = {}, tryoutSaving = {}, tryoutSaved = {},
   onTryoutGradingChange, onTryoutSaveGrade,
@@ -1816,8 +1908,6 @@ const EvaluateSubmissions = ({
       .map((s) => new Date(s.submittedAt || s.createdAt || 0).getTime())
       .reduce((max, current) => Math.max(max, current), 0)
     : null;
-  const highlightedSubmission =
-    filtered.find((s) => s.score === null || s.score === undefined) || filtered[0] || null;
   const [typeFilter, setTypeFilter] = useState('all');
   const normalizeType = (submission) => String(submission?.type || submission?.assignmentType || 'Assignment').toLowerCase();
   const typeDefinitions = [
@@ -1839,7 +1929,7 @@ const EvaluateSubmissions = ({
     const days = (new Date(assignment.dueDate).getTime() - Date.now()) / 86400000;
     return days >= 0 && days <= 7;
   }).length;
-  const evaluationSubmission = selected || highlightedSubmission;
+  const evaluationSubmission = selected;
   const renderStatus = (submission) => {
     const isGraded = submission.score !== null && submission.score !== undefined;
     const status = isGraded ? 'graded' : submission.status === 'late' ? 'pending' : (submission.status || 'submitted');
@@ -1869,8 +1959,8 @@ const EvaluateSubmissions = ({
           <p className="mt-1 text-sm text-[#6f7a8c]">Multi-type assignments · detailed AI feedback for every format</p>
         </div>
         <div className="flex rounded-full border border-black/[0.03] bg-[#f0f2f6] p-1">
-          <button type="button" onClick={onManageAssignments} className="inline-flex items-center gap-1.5 rounded-full px-4 py-2 text-xs font-medium text-[#6f7a8c] transition hover:bg-white/50 hover:text-[#1e2533]"><Layers className="size-3.5" /> Manage Assignments</button>
-          <button type="button" aria-current="page" className="inline-flex items-center gap-1.5 rounded-full bg-white px-4 py-2 text-xs font-medium text-[#0b0e1a] shadow-[0_2px_10px_rgba(0,0,0,0.04),0_1px_4px_rgba(0,0,0,0.02)]"><CheckCircle className="size-3.5" /> Evaluate Submissions</button>
+          <button type="button" onClick={onManageAssignments} className="inline-flex items-center gap-1.5 rounded-full px-4 py-2 text-xs font-medium text-[#6f7a8c] transition hover:bg-white/50 hover:text-[#1e2533]"><Layers className="size-3.5" /> Manage Assignments{draftAssignments > 0 && <span className="rounded-full bg-red-500 px-1.5 py-0.5 text-[10px] font-bold leading-none text-white">{draftAssignments > 99 ? '99+' : draftAssignments}</span>}{siblingNotificationCount > 0 && <span data-testid="assignment-manage-notification" title={`${siblingNotificationCount} unread assignment notification${siblingNotificationCount === 1 ? '' : 's'}`} className="rounded-full bg-red-500 px-1.5 py-0.5 text-[10px] font-bold leading-none text-white">{siblingNotificationCount > 99 ? '99+' : siblingNotificationCount}</span>}</button>
+          <button type="button" aria-current="page" className="inline-flex items-center gap-1.5 rounded-full bg-white px-4 py-2 text-xs font-medium text-[#0b0e1a] shadow-[0_2px_10px_rgba(0,0,0,0.04),0_1px_4px_rgba(0,0,0,0.02)]"><CheckCircle className="size-3.5" /> Evaluate Submissions{notificationCount > 0 && <span data-testid="assignment-module-notification" title={`${notificationCount} unread assignment notification${notificationCount === 1 ? '' : 's'}`} className="rounded-full bg-red-500 px-1.5 py-0.5 text-[10px] font-bold leading-none text-white">{notificationCount > 99 ? '99+' : notificationCount}</span>}</button>
         </div>
       </header>
 
@@ -1910,7 +2000,7 @@ const EvaluateSubmissions = ({
             ? tryoutSubmissions.filter((s) => s.status !== 'graded').length
             : type.key === 'all' ? pendingCount : submissions.filter((submission) => normalizeType(submission).includes(type.key) && (submission.score === null || submission.score === undefined)).length;
           const isTryout = type.key === 'tryout';
-          return <button key={type.key} type="button" onClick={() => setTypeFilter(type.key)} className={`inline-flex items-center gap-2 rounded-full border px-4 py-1.5 text-xs font-medium transition ${typeFilter === type.key ? (isTryout ? 'border-pink-200 bg-white text-pink-700 shadow-sm' : 'border-[#c8d0dc] bg-white text-[#0b0e1a] shadow-sm') : 'border-[#edf0f5] bg-[#f6f8fc] text-[#2a3442] hover:border-[#d0d7e2] hover:bg-[#edf1f8]'}`}><Icon className="size-3.5 opacity-60" /> {type.label}<span className="text-[10px] font-semibold text-[#6f7a8c]">{count}</span></button>;
+          return <button key={type.key} type="button" onClick={() => setTypeFilter(type.key)} title={`${count} pending ${type.label.toLowerCase()} submission${count === 1 ? '' : 's'}`} className={`inline-flex items-center gap-2 rounded-full border px-4 py-1.5 text-xs font-medium transition ${typeFilter === type.key ? (isTryout ? 'border-pink-200 bg-white text-pink-700 shadow-sm' : 'border-[#c8d0dc] bg-white text-[#0b0e1a] shadow-sm') : 'border-[#edf0f5] bg-[#f6f8fc] text-[#2a3442] hover:border-[#d0d7e2] hover:bg-[#edf1f8]'}`}><Icon className="size-3.5 opacity-60" /> {type.label}<span data-testid={`module-notification-${type.key}`} aria-label={`${count} pending`} className={`inline-flex min-w-5 items-center justify-center rounded-full px-1.5 py-0.5 text-[10px] font-bold leading-none ${count > 0 ? 'bg-red-500 text-white shadow-sm shadow-red-500/25' : 'bg-[#e3e8f0] text-[#718096]'}`}>{count}</span></button>;
         })}
         <span className="ml-auto inline-flex items-center gap-2 rounded-full border border-[#e6eaf0] bg-[#f0f2f6] px-4 py-1.5 text-xs font-semibold text-[#2a3442]"><AlertCircle className="size-3.5 opacity-50" /> Total Pending <strong className="text-[#0b0e1a]">{pendingCount}</strong></span>
       </div>
@@ -1934,13 +2024,14 @@ const EvaluateSubmissions = ({
             {loadingSubmissions ? <tr><td colSpan="6" className="px-4 py-12 text-center text-sm text-[#5f738f]"><Loader className="mx-auto mb-2 size-5 animate-spin text-blue-600" />Loading submissions...</td></tr> : visibleSubmissions.length === 0 ? <tr><td colSpan="6" className="px-4 py-12 text-center text-sm text-[#5f738f]"><FileText className="mx-auto mb-2 size-8 opacity-30" />No submissions match the current filters.</td></tr> : visibleSubmissions.map((submission, index) => {
               const type = normalizeType(submission);
               const typeClass = type.includes('worksheet') ? 'bg-amber-100 text-amber-800' : type.includes('mcq') ? 'bg-emerald-100 text-emerald-800' : type.includes('fill') ? 'bg-rose-100 text-rose-800' : type.includes('writing') ? 'bg-purple-100 text-purple-800' : 'bg-indigo-100 text-indigo-800';
-              return <Motion.tr key={submission.submissionId} initial={{ opacity: 0, x: -8 }} animate={{ opacity: 1, x: 0 }} transition={{ delay: index * 0.035 }} onClick={() => openSubmission(submission)} className="cursor-pointer border-b border-[#f0f5fd] transition hover:bg-[#f8fbff] last:border-0">
+              const canAiEvaluate = Boolean(submission.rubric && submission.submissionText);
+              return <Motion.tr key={submission.submissionId} initial={{ opacity: 0, x: -8 }} animate={{ opacity: 1, x: 0 }} transition={{ delay: index * 0.035 }} onClick={() => openSubmission(submission)} className={`cursor-pointer border-b border-[#f0f5fd] transition last:border-0 ${selected?.submissionId === submission.submissionId ? 'bg-[#eef4ff]' : 'hover:bg-[#f8fbff]'}`}>
                 <td className="px-4 py-3"><div className="flex items-center gap-2.5 font-semibold"><span className="flex size-7 items-center justify-center rounded-full bg-[#e4ecf7] text-[10px] text-[#1e3b5a]">{String(submission.studentName || 'S').split(' ').map((part) => part[0]).join('').slice(0, 2)}</span>{submission.studentName || 'Student'}</div></td>
                 <td className="px-4 py-3 font-medium text-[#1a304a]">{submission.assignmentTitle || 'Assignment'}</td>
                 <td className="px-4 py-3"><span className={`rounded-full px-3 py-1 text-[10px] font-semibold ${typeClass}`}>{submission.type || submission.assignmentType || 'Assignment'}</span></td>
                 <td className="px-4 py-3">{renderStatus(submission)}</td>
                 <td className="px-4 py-3"><span className="rounded-full border border-[#e2eaf2] bg-[#f8fafc] px-3 py-1 text-xs font-semibold">{submission.score !== null && submission.score !== undefined ? `${submission.score}/${submission.totalMarks}` : '—'}</span></td>
-                <td className="px-4 py-3"><div className="flex gap-1.5"><button type="button" onClick={(event) => { event.stopPropagation(); openSubmission(submission); }} className="inline-flex items-center gap-1 rounded-full bg-[#f0f6ff] px-3 py-1.5 text-[10px] font-medium text-blue-600"><Edit3 className="size-3" /> {submission.score !== null && submission.score !== undefined ? 'Review' : 'Evaluate'}</button><button type="button" onClick={(event) => { event.stopPropagation(); openSubmission(submission); }} className="inline-flex items-center gap-1 rounded-full border border-green-200 bg-green-50 px-3 py-1.5 text-[10px] font-medium text-green-600"><Sparkles className="size-3" /> AI</button></div></td>
+                <td className="px-4 py-3"><div className="flex gap-1.5"><button type="button" onClick={(event) => { event.stopPropagation(); openSubmission(submission); }} className="inline-flex items-center gap-1 rounded-full bg-[#f0f6ff] px-3 py-1.5 text-[10px] font-medium text-blue-600"><Edit3 className="size-3" /> {submission.score !== null && submission.score !== undefined ? 'Review' : 'Evaluate'}</button><button type="button" onClick={(event) => { event.stopPropagation(); openSubmission(submission); if (canAiEvaluate) onAiEvaluate(submission); }} disabled={Boolean(aiEvaluatingId)} className="inline-flex items-center gap-1 rounded-full border border-green-200 bg-green-50 px-3 py-1.5 text-[10px] font-medium text-green-600 disabled:cursor-not-allowed disabled:opacity-50">{aiEvaluatingId === submission.submissionId ? <Loader className="size-3 animate-spin" /> : <Sparkles className="size-3" />} {aiEvaluatingId === submission.submissionId ? 'Evaluating…' : canAiEvaluate ? 'AI Evaluate' : 'Add rubric'}</button></div></td>
               </Motion.tr>;
             })}
           </tbody>
@@ -1953,75 +2044,159 @@ const EvaluateSubmissions = ({
           <div className="mt-4 overflow-x-auto rounded-2xl border border-[#e2eaf2] bg-white"><table className="w-full min-w-[700px] text-xs"><thead className="bg-[#f0f6ff]"><tr><th className="px-3 py-2 text-left">Student</th><th className="px-3 py-2 text-left">Assignment</th><th className="px-3 py-2 text-left">Marks</th><th className="px-3 py-2 text-left">Feedback</th></tr></thead><tbody>{visibleSubmissions.map((submission) => { const draft = bulkDraft[submission.submissionId] || {}; return <tr key={submission.submissionId} className="border-t border-[#eef3fa]"><td className="px-3 py-2 font-semibold">{submission.studentName}</td><td className="px-3 py-2">{submission.assignmentTitle}</td><td className="px-3 py-2"><input type="number" min="0" max={submission.totalMarks} value={draft.marks ?? submission.score ?? ''} onChange={(event) => updateBulkDraft(submission.submissionId, 'marks', event.target.value)} className="w-24 rounded-full border border-[#dce3ec] px-3 py-1.5" /></td><td className="px-3 py-2"><input value={draft.feedback ?? submission.feedback ?? ''} onChange={(event) => updateBulkDraft(submission.submissionId, 'feedback', event.target.value)} placeholder="Optional feedback" className="w-full min-w-[220px] rounded-full border border-[#dce3ec] px-3 py-1.5" /></td></tr>; })}</tbody></table></div>
           {bulkError && <p className="mt-3 rounded-xl bg-red-50 px-3 py-2 text-xs text-red-700">{bulkError}</p>}{bulkSuccess && <p className="mt-3 rounded-xl bg-green-50 px-3 py-2 text-xs text-green-700">{bulkSuccess}</p>}
         </Motion.section>
-      ) : typeFilter !== 'tryout' ? (
-        <div className="mb-7 grid gap-6 lg:grid-cols-2">
-          <Motion.section layout className="rounded-[1.25rem] border border-[#edf0f5] bg-white p-5 shadow-[0_2px_12px_rgba(0,0,0,0.02)] sm:p-7">
-            <h2 className="mb-5 flex items-center gap-2 text-xs font-semibold uppercase tracking-[0.04em] text-[#8e9aaf]"><User className="size-4 text-[#4f6f8f]" /> Teacher Evaluation</h2>
-            {evaluationSubmission ? <div className="space-y-3">
-              <div className="rounded-2xl border border-[#dce3ec] bg-white p-4">
-                <div className="mb-2 flex items-center justify-between gap-2">
-                  <p className="text-[10px] font-semibold uppercase tracking-wide text-[#5f738f]">Student submission</p>
-                  {evaluationSubmission.publishedByTeacher && (
-                    <span className="rounded-full bg-emerald-100 px-2.5 py-1 text-[10px] font-semibold text-emerald-700">Published</span>
-                  )}
-                </div>
-                {evaluationSubmission.submissionText ? (
-                  <p className="max-h-52 overflow-y-auto whitespace-pre-wrap text-sm leading-6 text-[#1a304a]">{evaluationSubmission.submissionText}</p>
-                ) : evaluationSubmission.attachmentUrl ? (
-                  <a href={evaluationSubmission.attachmentUrl} target="_blank" rel="noopener noreferrer" className="inline-flex items-center gap-2 rounded-xl border border-purple-200 bg-purple-50 px-4 py-2 text-xs font-semibold text-purple-700 hover:bg-purple-100">
-                    <ExternalLink className="size-3.5" /> Open submitted PDF
-                  </a>
-                ) : (
-                  <p className="text-xs text-[#6b7f9b]">No submitted text or file is available.</p>
-                )}
-              </div>
-              <label className="flex items-center gap-3 text-xs font-medium text-[#4b5b73]"><span className="w-20">Student</span><select value={evaluationSubmission.submissionId} onChange={(event) => { const next = submissions.find((item) => item.submissionId === event.target.value); if (next) openSubmission(next); }} className="min-w-0 flex-1 rounded-full border border-[#dce3ec] bg-white px-3 py-2 text-sm"><option value={evaluationSubmission.submissionId}>{evaluationSubmission.studentName}</option>{submissions.filter((item) => item.submissionId !== evaluationSubmission.submissionId).slice(0, 8).map((item) => <option key={item.submissionId} value={item.submissionId}>{item.studentName}</option>)}</select></label>
-              <label className="flex items-center gap-3 text-xs font-medium text-[#4b5b73]"><span className="w-20">Assignment</span><input value={evaluationSubmission.assignmentTitle || ''} readOnly className="min-w-0 flex-1 rounded-full border border-[#dce3ec] bg-white px-3 py-2 text-sm" /></label>
-              <label className="flex items-center gap-3 text-xs font-medium text-[#4b5b73]"><span className="w-20">Type</span><input value={evaluationSubmission.type || evaluationSubmission.assignmentType || 'Assignment'} readOnly className="min-w-0 flex-1 rounded-full border border-[#dce3ec] bg-white px-3 py-2 text-sm" /></label>
-              <label className="flex items-center gap-3 text-xs font-medium text-[#4b5b73]"><span className="w-20">Score</span><input type="number" min="0" max={evaluationSubmission.totalMarks} value={marks || (evaluationSubmission.score ?? '')} onChange={(event) => setMarks(event.target.value)} className="min-w-0 flex-1 rounded-full border border-[#dce3ec] bg-white px-3 py-2 text-sm" /></label>
-              <label className="flex items-start gap-3 text-xs font-medium text-[#4b5b73]"><span className="w-20 pt-2">Feedback</span><textarea value={feedback} onChange={(event) => setFeedback(event.target.value)} placeholder="Write your detailed feedback here..." rows="4" className="min-w-0 flex-1 resize-y rounded-2xl border border-[#dce3ec] bg-white px-3 py-2 text-sm" /></label>
-              {saveError && <p className="rounded-xl border border-red-200 bg-red-50 px-3 py-2 text-xs text-red-700">{saveError}</p>}
-              {publishError && <p className="rounded-xl border border-red-200 bg-red-50 px-3 py-2 text-xs text-red-700">{publishError}</p>}
-              {publishSuccess && <p className="rounded-xl border border-green-200 bg-green-50 px-3 py-2 text-xs text-green-700">{publishSuccess}</p>}
-              <div className="flex flex-wrap gap-2 pt-1">
-                <button type="button" onClick={saveGrade} disabled={saving || !selected || marks === ''} className="inline-flex items-center gap-2 rounded-full bg-blue-600 px-5 py-2.5 text-xs font-semibold text-white shadow-lg shadow-blue-600/15 disabled:opacity-50">{saving ? <Loader className="size-3.5 animate-spin" /> : <CheckCircle className="size-3.5" />} Apply & Save</button>
-                <button type="button" onClick={publishSelectedGrade} disabled={publishing || !selected || selected.score === null || selected.score === undefined || selected.publishedByTeacher} className="inline-flex items-center gap-2 rounded-full bg-emerald-600 px-5 py-2.5 text-xs font-semibold text-white shadow-lg shadow-emerald-600/15 disabled:opacity-50">{publishing ? <Loader className="size-3.5 animate-spin" /> : <Share2 className="size-3.5" />} {selected?.publishedByTeacher ? 'Published' : 'Publish Result'}</button>
-                <button type="button" onClick={closePanel} className="inline-flex items-center gap-2 rounded-full border border-[#dce3ec] bg-white px-5 py-2.5 text-xs font-semibold"><X className="size-3.5" /> Close</button>
-              </div>
-            </div> : <div className="rounded-2xl border border-dashed border-[#dce3ec] bg-white p-8 text-center text-sm text-[#5f738f]">Select a submission above to evaluate it.</div>}
-          </Motion.section>
+      ) : null}
 
-          <Motion.section layout className="rounded-[1.25rem] border border-[#edf0f5] bg-white p-5 shadow-[0_2px_12px_rgba(0,0,0,0.02)] sm:p-7">
-            <h2 className="mb-4 flex items-center gap-2 text-xs font-semibold uppercase tracking-[0.04em] text-[#8e9aaf]"><Sparkles className="size-4 text-[#4f6f8f]" /> AI Suggested Feedback</h2>
-            <div className="rounded-[1.1rem] border border-[#edf0f5] bg-[#fafcff] p-4 sm:p-5">
-              <div className="mb-4 flex flex-wrap items-center gap-2"><Sparkles className="size-5 text-green-500" /><strong className="text-sm text-green-900">Detailed AI Analysis</strong><span className="ml-auto rounded-full border border-[#e2eaf2] bg-white px-3 py-1 text-[10px] text-[#6b7f9b]">{evaluationSubmission ? formatDate(evaluationSubmission.submittedAt) : 'Ready'}</span></div>
-              {!evaluationSubmission ? (
-                <p className="text-xs leading-5 text-[#4b5b73]">Select a submission to see whether an AI rubric review is available.</p>
-              ) : evaluationSubmission.aiGradingStatus === 'done' ? (
-                <>
+      <AnimatePresence>
+        {typeFilter !== 'tryout' && evaluationSubmission && (
+          <Motion.div
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            className="fixed inset-0 z-50 flex items-center justify-center p-4"
+            style={{ background: 'rgba(11,14,26,0.45)', backdropFilter: 'blur(6px)' }}
+            onClick={closePanel}
+          >
+            <Motion.div
+              initial={{ opacity: 0, y: 16, scale: 0.98 }}
+              animate={{ opacity: 1, y: 0, scale: 1 }}
+              exit={{ opacity: 0, y: 16, scale: 0.98 }}
+              transition={{ duration: 0.2, ease: [0.16, 1, 0.3, 1] }}
+              role="dialog"
+              aria-modal="true"
+              aria-label={`Evaluate ${evaluationSubmission.studentName || 'student'}'s submission`}
+              onClick={(event) => event.stopPropagation()}
+              className="max-h-[90vh] w-full max-w-4xl overflow-y-auto rounded-[1.5rem] border border-[#edf0f5] bg-white p-5 shadow-2xl sm:p-7"
+            >
+              <div className="mb-5 flex items-start justify-between gap-3 border-b border-[#edf0f5] pb-4">
+                <div className="flex items-center gap-3">
+                  <span className="flex size-10 shrink-0 items-center justify-center rounded-full bg-[#e4ecf7] text-sm font-semibold text-[#1e3b5a]">
+                    {String(evaluationSubmission.studentName || 'S').split(' ').map((part) => part[0]).join('').slice(0, 2)}
+                  </span>
+                  <div>
+                    <h2 className="text-base font-semibold text-[#0b0e1a]">{evaluationSubmission.studentName || 'Student'}</h2>
+                    <p className="text-xs text-[#6f7a8c]">{evaluationSubmission.assignmentTitle || 'Assignment'} · {evaluationSubmission.type || evaluationSubmission.assignmentType || 'Assignment'}</p>
+                  </div>
+                </div>
+                <button type="button" onClick={closePanel} aria-label="Close" className="flex size-8 shrink-0 items-center justify-center rounded-full border border-[#dce3ec] bg-white text-[#4b5b73] hover:bg-[#f6f8fc]"><X className="size-4" /></button>
+              </div>
+
+              <div className="grid gap-6 lg:grid-cols-2">
+                <section>
+                  <h3 className="mb-5 flex items-center gap-2 text-xs font-semibold uppercase tracking-[0.04em] text-[#8e9aaf]"><User className="size-4 text-[#4f6f8f]" /> Teacher Evaluation</h3>
                   <div className="space-y-3">
-                    <div className="rounded-2xl border border-[#e8eef6] bg-white p-3">
-                      <p className="mb-1 text-[10px] font-semibold uppercase tracking-wide text-[#5f738f]"><Target className="mr-1 inline size-3 text-blue-600" /> Rubric feedback</p>
-                      <p className="whitespace-pre-wrap text-xs leading-5 text-[#1a304a]">{evaluationSubmission.aiGradingFeedback || 'No written AI feedback was returned.'}</p>
+                    <div className="rounded-2xl border border-[#dce3ec] bg-white p-4">
+                      <div className="mb-2 flex items-center justify-between gap-2">
+                        <p className="text-[10px] font-semibold uppercase tracking-wide text-[#5f738f]">Student submission</p>
+                        {evaluationSubmission.publishedByTeacher && (
+                          <span className="rounded-full bg-emerald-100 px-2.5 py-1 text-[10px] font-semibold text-emerald-700">Published</span>
+                        )}
+                      </div>
+                      {evaluationSubmission.submissionText ? (
+                        <p className="max-h-52 overflow-y-auto whitespace-pre-wrap text-sm leading-6 text-[#1a304a]">{evaluationSubmission.submissionText}</p>
+                      ) : evaluationSubmission.attachmentUrl ? (
+                        <a href={evaluationSubmission.attachmentUrl} target="_blank" rel="noopener noreferrer" className="inline-flex items-center gap-2 rounded-xl border border-purple-200 bg-purple-50 px-4 py-2 text-xs font-semibold text-purple-700 hover:bg-purple-100">
+                          <ExternalLink className="size-3.5" /> Open submitted PDF
+                        </a>
+                      ) : (
+                        <p className="text-xs text-[#6b7f9b]">No submitted text or file is available.</p>
+                      )}
                     </div>
-                    <div className="rounded-2xl border border-[#e8eef6] bg-[#f8fafc] p-3">
-                      <p className="mb-1 text-[10px] font-semibold uppercase tracking-wide text-[#5f738f]"><Award className="mr-1 inline size-3 text-amber-500" /> Suggested score</p>
-                      <span className="text-xl font-bold text-green-600">{evaluationSubmission.aiScore}/{evaluationSubmission.totalMarks || 100}</span>
+                    <label className="flex items-center gap-3 text-xs font-medium text-[#4b5b73]"><span className="w-20">Student</span><select value={evaluationSubmission.submissionId} onChange={(event) => { const next = submissions.find((item) => item.submissionId === event.target.value); if (next) openSubmission(next); }} className="min-w-0 flex-1 rounded-full border border-[#dce3ec] bg-white px-3 py-2 text-sm"><option value={evaluationSubmission.submissionId}>{evaluationSubmission.studentName}</option>{submissions.filter((item) => item.submissionId !== evaluationSubmission.submissionId).slice(0, 8).map((item) => <option key={item.submissionId} value={item.submissionId}>{item.studentName}</option>)}</select></label>
+                    <label className="flex items-center gap-3 text-xs font-medium text-[#4b5b73]"><span className="w-20">Assignment</span><input value={evaluationSubmission.assignmentTitle || ''} readOnly className="min-w-0 flex-1 rounded-full border border-[#dce3ec] bg-white px-3 py-2 text-sm" /></label>
+                    <label className="flex items-center gap-3 text-xs font-medium text-[#4b5b73]"><span className="w-20">Type</span><input value={evaluationSubmission.type || evaluationSubmission.assignmentType || 'Assignment'} readOnly className="min-w-0 flex-1 rounded-full border border-[#dce3ec] bg-white px-3 py-2 text-sm" /></label>
+                    <label className="flex items-center gap-3 text-xs font-medium text-[#4b5b73]"><span className="w-20">Score</span><input type="number" min="0" max={evaluationSubmission.totalMarks} value={marks || (evaluationSubmission.score ?? '')} onChange={(event) => setMarks(event.target.value)} className="min-w-0 flex-1 rounded-full border border-[#dce3ec] bg-white px-3 py-2 text-sm" /></label>
+                    <label className="flex items-start gap-3 text-xs font-medium text-[#4b5b73]"><span className="w-20 pt-2">Feedback</span><textarea value={feedback} onChange={(event) => setFeedback(event.target.value)} placeholder="Write your detailed feedback here..." rows="4" className="min-w-0 flex-1 resize-y rounded-2xl border border-[#dce3ec] bg-white px-3 py-2 text-sm" /></label>
+                    {saveError && <p className="rounded-xl border border-red-200 bg-red-50 px-3 py-2 text-xs text-red-700">{saveError}</p>}
+                    {publishError && <p className="rounded-xl border border-red-200 bg-red-50 px-3 py-2 text-xs text-red-700">{publishError}</p>}
+                    {publishSuccess && <p className="rounded-xl border border-green-200 bg-green-50 px-3 py-2 text-xs text-green-700">{publishSuccess}</p>}
+                    <div className="flex flex-wrap gap-2 pt-1">
+                      <button type="button" onClick={saveGrade} disabled={saving || !selected || marks === ''} className="inline-flex items-center gap-2 rounded-full bg-blue-600 px-5 py-2.5 text-xs font-semibold text-white shadow-lg shadow-blue-600/15 disabled:opacity-50">{saving ? <Loader className="size-3.5 animate-spin" /> : <CheckCircle className="size-3.5" />} Apply & Save</button>
+                      <button type="button" onClick={publishSelectedGrade} disabled={publishing || !selected || selected.score === null || selected.score === undefined || selected.publishedByTeacher} className="inline-flex items-center gap-2 rounded-full bg-emerald-600 px-5 py-2.5 text-xs font-semibold text-white shadow-lg shadow-emerald-600/15 disabled:opacity-50">{publishing ? <Loader className="size-3.5 animate-spin" /> : <Share2 className="size-3.5" />} {selected?.publishedByTeacher ? 'Published' : 'Publish Result'}</button>
                     </div>
                   </div>
-                  <button type="button" onClick={() => { setMarks(String(evaluationSubmission.aiScore ?? '')); setFeedback(evaluationSubmission.aiGradingFeedback || ''); }} className="mt-4 rounded-full border border-blue-200 bg-blue-600 px-4 py-1.5 text-xs font-medium text-white">Apply AI suggestion</button>
-                </>
-              ) : evaluationSubmission.aiGradingStatus === 'pending' ? (
-                <p className="flex items-center gap-2 text-xs text-[#4b5b73]"><Loader className="size-4 animate-spin text-green-600" /> AI rubric review is still processing. Refresh submissions shortly.</p>
-              ) : evaluationSubmission.aiGradingStatus === 'failed' ? (
-                <p className="text-xs leading-5 text-red-700">AI rubric review failed. Grade this submission manually.</p>
-              ) : (
-                <p className="text-xs leading-5 text-[#4b5b73]">AI review was not requested for this assignment. Enable essay rubric review when creating a text assignment to receive a suggestion.</p>
-              )}
-            </div>
-          </Motion.section>
-        </div>
-      ) : null}
+                </section>
+
+                <section>
+                  <h3 className="mb-4 flex items-center gap-2 text-xs font-semibold uppercase tracking-[0.04em] text-[#8e9aaf]"><Sparkles className="size-4 text-[#4f6f8f]" /> AI Suggested Feedback</h3>
+                  <div className="rounded-[1.1rem] border border-[#edf0f5] bg-[#fafcff] p-4 sm:p-5">
+                    <div className="mb-4 flex flex-wrap items-center gap-2"><Sparkles className="size-5 text-green-500" /><strong className="text-sm text-green-900">Detailed AI Analysis</strong><span className="ml-auto rounded-full border border-[#e2eaf2] bg-white px-3 py-1 text-[10px] text-[#6b7f9b]">{formatDate(evaluationSubmission.submittedAt)}</span></div>
+                    {aiEvaluateError && (
+                      <p className="mb-3 rounded-xl border border-red-200 bg-red-50 px-3 py-2 text-xs text-red-700">{aiEvaluateError}</p>
+                    )}
+                    {!evaluationSubmission.rubric && evaluationSubmission.submissionText && (
+                      <div className="mb-4 rounded-2xl border border-amber-200 bg-amber-50/80 p-3">
+                        <p className="text-xs font-semibold text-amber-900">Add a grading rubric before using AI</p>
+                        <p className="mt-1 text-[11px] leading-5 text-amber-800/80">
+                          AI will use these criteria to suggest a score. Add one criterion per line, with marks or percentages if needed.
+                        </p>
+                        <textarea
+                          aria-label="Grading rubric"
+                          value={rubricDraft}
+                          onChange={(event) => setRubricDraft(event.target.value)}
+                          rows={4}
+                          placeholder={'Content & ideas — 40%\nStructure & organisation — 30%\nLanguage & accuracy — 30%'}
+                          className="mt-3 w-full resize-y rounded-xl border border-amber-200 bg-white px-3 py-2 text-xs leading-5 text-[#1a304a] outline-none focus:border-amber-400 focus:ring-2 focus:ring-amber-200"
+                        />
+                        {rubricSaveError && <p className="mt-2 text-[11px] font-medium text-red-700">{rubricSaveError}</p>}
+                        <button
+                          type="button"
+                          onClick={() => onSaveRubricAndEvaluate(evaluationSubmission)}
+                          disabled={rubricSaving || Boolean(aiEvaluatingId)}
+                          className="mt-3 inline-flex items-center gap-1.5 rounded-full bg-amber-600 px-4 py-2 text-xs font-semibold text-white shadow-sm hover:bg-amber-700 disabled:cursor-not-allowed disabled:opacity-60"
+                        >
+                          {rubricSaving ? <Loader className="size-3.5 animate-spin" /> : <Target className="size-3.5" />}
+                          {rubricSaving ? 'Saving rubric…' : 'Save rubric & evaluate'}
+                        </button>
+                      </div>
+                    )}
+                    {evaluationSubmission.aiGradingStatus === 'done' ? (
+                      <>
+                        <div className="space-y-3">
+                          <div className="rounded-2xl border border-[#e8eef6] bg-white p-3">
+                            <p className="mb-1 text-[10px] font-semibold uppercase tracking-wide text-[#5f738f]"><Target className="mr-1 inline size-3 text-blue-600" /> Rubric feedback</p>
+                            <p className="whitespace-pre-wrap text-xs leading-5 text-[#1a304a]">{evaluationSubmission.aiGradingFeedback || 'No written AI feedback was returned.'}</p>
+                          </div>
+                          <div className="rounded-2xl border border-[#e8eef6] bg-[#f8fafc] p-3">
+                            <p className="mb-1 text-[10px] font-semibold uppercase tracking-wide text-[#5f738f]"><Award className="mr-1 inline size-3 text-amber-500" /> Suggested score</p>
+                            <span className="text-xl font-bold text-green-600">{evaluationSubmission.aiScore}/{evaluationSubmission.totalMarks || 100}</span>
+                          </div>
+                        </div>
+                        <button type="button" onClick={() => { setMarks(String(evaluationSubmission.aiScore ?? '')); setFeedback(evaluationSubmission.aiGradingFeedback || ''); }} className="mt-4 rounded-full border border-blue-200 bg-blue-600 px-4 py-1.5 text-xs font-medium text-white">Apply AI suggestion</button>
+                      </>
+                    ) : evaluationSubmission.aiGradingStatus === 'pending' ? (
+                      <p className="flex items-center gap-2 text-xs text-[#4b5b73]"><Loader className="size-4 animate-spin text-green-600" /> AI rubric review is still processing…</p>
+                    ) : evaluationSubmission.aiGradingStatus === 'failed' ? (
+                      <>
+                        <p className="text-xs leading-5 text-red-700">AI rubric review failed. Grade this submission manually, or try again.</p>
+                        <button
+                          type="button"
+                          onClick={() => onAiEvaluate(evaluationSubmission)}
+                          disabled={Boolean(aiEvaluatingId) || !evaluationSubmission.rubric || !evaluationSubmission.submissionText}
+                          className="mt-3 inline-flex items-center gap-1.5 rounded-full border border-blue-200 bg-blue-600 px-4 py-1.5 text-xs font-medium text-white disabled:cursor-not-allowed disabled:opacity-50"
+                        >
+                          {aiEvaluatingId === evaluationSubmission.submissionId ? <Loader className="size-3.5 animate-spin" /> : <Sparkles className="size-3.5" />} Retry AI evaluation
+                        </button>
+                      </>
+                    ) : (
+                      <>
+                        <p className="text-xs leading-5 text-[#4b5b73]">No AI review yet. This needs the assignment to have a grading rubric and a written submission.</p>
+                        <button
+                          type="button"
+                          onClick={() => onAiEvaluate(evaluationSubmission)}
+                          disabled={Boolean(aiEvaluatingId) || !evaluationSubmission.rubric || !evaluationSubmission.submissionText}
+                          className="mt-3 inline-flex items-center gap-1.5 rounded-full border border-blue-200 bg-blue-600 px-4 py-1.5 text-xs font-medium text-white disabled:cursor-not-allowed disabled:opacity-50"
+                        >
+                          {aiEvaluatingId === evaluationSubmission.submissionId ? <Loader className="size-3.5 animate-spin" /> : <Sparkles className="size-3.5" />} Evaluate with AI now
+                        </button>
+                      </>
+                    )}
+                  </div>
+                </section>
+              </div>
+            </Motion.div>
+          </Motion.div>
+        )}
+      </AnimatePresence>
 
       <section className="mb-5 flex flex-wrap items-center justify-between gap-3 rounded-3xl border border-[#eaf0f8] bg-white px-5 py-4 shadow-sm"><div className="flex items-center gap-2 text-sm font-semibold"><Calendar className="size-5 text-blue-600" /> Upcoming Deadlines</div><div className="flex flex-wrap gap-2">{assignments.filter((assignment) => assignment?.dueDate).slice(0, 4).map((assignment) => <span key={assignment._id} className="rounded-full bg-[#f1f5f9] px-3 py-1.5 text-[11px] font-medium">{formatDate(assignment.dueDate)} · {assignment.title}</span>)}{assignments.length === 0 && <span className="text-xs text-[#6b7f9b]">No upcoming assignments</span>}</div></section>
 
@@ -2148,8 +2323,9 @@ const CreateAssignmentModal = ({
         {/* ── Row 2: Class+Section | Subject ── */}
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-5 mb-5">
           <div>
-            <label className={FL}>Class & Section <span className="text-red-500">*</span></label>
+            <label htmlFor="assignment-class-section" className={FL}>Class & Section <span className="text-red-500">*</span></label>
             <select
+              id="assignment-class-section"
               name="classSection"
               value={newAssignment.classId && newAssignment.sectionId ? `${newAssignment.classId}-${newAssignment.sectionId}` : ''}
               onChange={(e) => {
@@ -2170,8 +2346,8 @@ const CreateAssignmentModal = ({
             </select>
           </div>
           <div>
-            <label className={FL}>Subject <span className="text-red-500">*</span></label>
-            <select name="subject" value={newAssignment.subject} onChange={handleChange}
+            <label htmlFor="assignment-subject" className={FL}>Subject <span className="text-red-500">*</span></label>
+            <select id="assignment-subject" name="subject" value={newAssignment.subject} onChange={handleChange}
               disabled={!newAssignment.classId || !newAssignment.sectionId || subjectOptions.length === 0}
               className={`${FS} disabled:opacity-50 disabled:cursor-not-allowed`} required>
               <option value="">{(!newAssignment.classId || !newAssignment.sectionId) ? 'Select Class First' : subjectOptions.length === 0 ? 'No Subjects Found' : 'Select Subject'}</option>
@@ -2183,9 +2359,11 @@ const CreateAssignmentModal = ({
         {/* ── Row 3: Lesson Plan | Chapter ── */}
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-5 mb-5">
           <div>
-            <label className={FL}>Lesson Plan</label>
+            <label htmlFor="assignment-lesson-plan" className={FL}>Lesson Plan</label>
             <div className="flex gap-2">
               <select
+                id="assignment-lesson-plan"
+                aria-label="Lesson Plan"
                 value={newAssignment.sourceLessonPlanId}
                 onChange={(e) => setNewAssignment(prev => ({ ...prev, sourceLessonPlanId: e.target.value, chapterId: '', chapterTitle: '', subTopicTitle: '' }))}
                 disabled={!newAssignment.subject || availableLessonPlans.length === 0}
@@ -2198,10 +2376,12 @@ const CreateAssignmentModal = ({
             <p className="mt-1 text-[10px]" style={{ color: '#a5b9cc' }}>Tags this activity to a published lesson plan</p>
           </div>
           <div>
-            <label className={FL}>Chapter {newAssignment.sourceLessonPlanId && <span className="text-red-500">*</span>}</label>
+            <label htmlFor="assignment-chapter" className={FL}>Chapter {newAssignment.sourceLessonPlanId && <span className="text-red-500">*</span>}</label>
             <select
+              id="assignment-chapter"
+              aria-label="Chapter"
               value={newAssignment.chapterId}
-              onChange={(e) => { const ch = availableLessonPlanChapters.find(c => c.id === e.target.value); setNewAssignment(prev => ({ ...prev, chapterId: ch?.id || '', chapterTitle: ch?.title || '' })); }}
+              onChange={(e) => { const ch = availableLessonPlanChapters.find(c => c.id === e.target.value); setNewAssignment(prev => ({ ...prev, chapterId: ch?.id || '', chapterTitle: ch?.title || '', topic: prev.topic || ch?.title || '', topicTitle: prev.topicTitle || ch?.title || '' })); }}
               disabled={!newAssignment.sourceLessonPlanId}
               required={Boolean(newAssignment.sourceLessonPlanId)}
               className={`${FS} disabled:opacity-50 disabled:cursor-not-allowed`}

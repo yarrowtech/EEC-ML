@@ -90,7 +90,7 @@ const AchievementCard = () => {
             <div className="flex h-9 w-9 items-center justify-center rounded-xl bg-white/70 border border-amber-200 shadow-sm">
               <Trophy size={16} className="text-amber-700" />
             </div>
-            <h2 className="text-sm font-black text-white">Achievements</h2>
+            <h2 className="text-sm font-bold text-white">Achievements</h2>
           </div>
           {!loading && !error && achievements.length > 0 && (
             <span className="rounded-full bg-white/70 border border-amber-200 px-2.5 py-1 text-[11px] font-bold text-amber-800 backdrop-blur-sm">

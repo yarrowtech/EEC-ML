@@ -16,6 +16,7 @@ const Subject = require('../models/Subject');
 const CurriculumMap = require('../models/CurriculumMap');
 const authTeacher = require('../middleware/authTeacher');
 const { logger } = require('../utils/logger');
+const { getAttachmentDownloadUrl } = require('../utils/s3Storage');
 
 const AI_SERVICE_URL = process.env.AI_SERVICE_URL || 'http://localhost:8000';
 
@@ -124,10 +125,11 @@ const triggerMaterialIngest = async (material, attachments = []) => {
 
   for (let index = 0; index < ingestible.length; index += 1) {
     const attachment = ingestible[index];
+    const attachmentUrl = await getAttachmentDownloadUrl(attachment);
     const { data: ingestData } = await axios.post(
       `${AI_SERVICE_URL}/ingest/material`,
       {
-        url: attachment.url,
+        url: attachmentUrl,
         material_id: String(material._id),
         source_id: buildSourceId(material, attachment, index),
         file_name: attachment.name || '',
@@ -889,10 +891,11 @@ router.post('/:id/reindex', authTeacher, async (req, res, next) => {
     let totalIndexed = 0;
     for (const attachment of ingestible) {
       try {
+        const attachmentUrl = await getAttachmentDownloadUrl(attachment);
         const { data: ingestData } = await axios.post(
           `${AI_SERVICE_URL}/ingest/material`,
           {
-            url: attachment.url,
+            url: attachmentUrl,
             material_id: String(material._id),
             source_id: String(attachment._id || attachment.url),
             file_name: attachment.name,
