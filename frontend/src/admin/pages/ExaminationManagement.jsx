@@ -1,5 +1,6 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
+import { motion, AnimatePresence } from 'framer-motion';
 import { jsPDF } from 'jspdf';
 import {
   AlertTriangle, Award, BookOpen, Building2, Calendar, Check, ChevronDown, ChevronLeft, ChevronRight,
@@ -166,6 +167,23 @@ const Field = ({ label, children }) => (
   </div>
 );
 
+// Locks the page's own scrollbar while at least one modal on this page is
+// open — reference-counted so it stays locked correctly even when one modal
+// opens another on top (e.g. the wizard opening Bulk Edit or Auto-Schedule
+// Settings) and they close in a different order than they opened.
+let modalScrollLockCount = 0;
+const useModalScrollLock = (active) => {
+  useEffect(() => {
+    if (!active) return undefined;
+    if (modalScrollLockCount === 0) document.body.style.overflow = 'hidden';
+    modalScrollLockCount += 1;
+    return () => {
+      modalScrollLockCount = Math.max(0, modalScrollLockCount - 1);
+      if (modalScrollLockCount === 0) document.body.style.overflow = '';
+    };
+  }, [active]);
+};
+
 // Full-screen, non-dismissible progress overlay used for both "creating" and
 // "deleting" — mirrors the bulk-student-upload progress modal (portal to
 // <body>, real percentage from completed requests, no close affordance).
@@ -173,32 +191,34 @@ const PROGRESS_MODAL_ACCENTS = {
   indigo: { ring: 'bg-indigo-50', spin: 'text-indigo-600', bar: 'bg-indigo-600' },
   red: { ring: 'bg-red-50', spin: 'text-red-600', bar: 'bg-red-600' },
 };
+// Shared open/close spring-like easing for every modal panel on this page.
+const MODAL_PANEL_TRANSITION = { duration: 0.22, ease: [0.16, 1, 0.3, 1] };
 const ProgressModal = ({ open, title, statusText, percent = 0, accent = 'indigo' }) => {
-  useEffect(() => {
-    if (!open) return undefined;
-    const prev = document.body.style.overflow;
-    document.body.style.overflow = 'hidden';
-    return () => { document.body.style.overflow = prev; };
-  }, [open]);
-
-  if (!open) return null;
+  useModalScrollLock(open);
   const a = PROGRESS_MODAL_ACCENTS[accent] || PROGRESS_MODAL_ACCENTS.indigo;
 
   return createPortal(
-    <div className="fixed inset-0 z-[2147483647] flex items-center justify-center bg-black/70 p-4">
-      <div className="w-full max-w-sm rounded-2xl bg-white p-6 shadow-2xl text-center">
-        <div className={`mx-auto mb-3 flex h-12 w-12 items-center justify-center rounded-full ${a.ring}`}>
-          <Loader2 className={`h-6 w-6 animate-spin ${a.spin}`} />
-        </div>
-        <h3 className="text-base font-bold text-gray-900">{title}</h3>
-        <p className="mt-1 text-xs text-gray-500">Do not refresh or close this window.</p>
-        <div className="mt-4 h-2 w-full overflow-hidden rounded-full bg-gray-100">
-          <div className={`h-full rounded-full transition-[width] duration-300 ${a.bar}`} style={{ width: `${percent}%` }} />
-        </div>
-        <p className="mt-2 text-sm font-semibold text-gray-800">{percent}%</p>
-        <p className="mt-1 text-xs text-slate-400">{statusText}</p>
-      </div>
-    </div>,
+    <AnimatePresence>
+      {open && (
+        <motion.div className="fixed inset-0 z-[2147483647] flex items-center justify-center bg-black/70 p-4"
+          initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} transition={{ duration: 0.18 }}>
+          <motion.div className="w-full max-w-sm rounded-2xl bg-white p-6 shadow-2xl text-center"
+            initial={{ opacity: 0, scale: 0.95 }} animate={{ opacity: 1, scale: 1 }} exit={{ opacity: 0, scale: 0.95 }}
+            transition={MODAL_PANEL_TRANSITION}>
+            <div className={`mx-auto mb-3 flex h-12 w-12 items-center justify-center rounded-full ${a.ring}`}>
+              <Loader2 className={`h-6 w-6 animate-spin ${a.spin}`} />
+            </div>
+            <h3 className="text-base font-bold text-gray-900">{title}</h3>
+            <p className="mt-1 text-xs text-gray-500">Do not refresh or close this window.</p>
+            <div className="mt-4 h-2 w-full overflow-hidden rounded-full bg-gray-100">
+              <div className={`h-full rounded-full transition-[width] duration-300 ${a.bar}`} style={{ width: `${percent}%` }} />
+            </div>
+            <p className="mt-2 text-sm font-semibold text-gray-800">{percent}%</p>
+            <p className="mt-1 text-xs text-slate-400">{statusText}</p>
+          </motion.div>
+        </motion.div>
+      )}
+    </AnimatePresence>,
     document.body
   );
 };
@@ -330,24 +350,34 @@ const toDataUrl = async (url) => {
 
 /* ── Modal shell ── */
 const Modal = ({ show, onClose, title, subtitle, icon: Icon, iconColor = 'bg-indigo-600', children, maxWidth = 'sm:max-w-2xl' }) => {
-  if (!show) return null;
+  // Lock the page's own scrollbar while this modal is open — otherwise the
+  // background keeps scrolling underneath it, which looks broken.
+  useModalScrollLock(show);
+
   return (
-    <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center p-0 sm:p-4">
-      <div className="absolute inset-0 bg-black/40 backdrop-blur-sm" onClick={onClose} />
-      <div className={`relative bg-white w-full ${maxWidth} rounded-t-3xl sm:rounded-2xl shadow-2xl max-h-[94vh] flex flex-col overflow-hidden border border-slate-100`}>
-        <div className="flex items-center justify-between px-6 py-4 border-b border-slate-100">
-          <div className="flex items-center gap-3">
-            {Icon && <div className={`h-9 w-9 rounded-xl ${iconColor} flex items-center justify-center shadow-sm`}><Icon size={16} className="text-white" /></div>}
-            <div>
-              <h3 className="font-bold text-slate-900 text-base leading-tight">{title}</h3>
-              {subtitle && <p className="text-xs text-slate-400">{subtitle}</p>}
+    <AnimatePresence>
+      {show && (
+        <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center p-0 sm:p-4">
+          <motion.div className="absolute inset-0 bg-black/40 backdrop-blur-sm" onClick={onClose}
+            initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} transition={{ duration: 0.18 }} />
+          <motion.div className={`relative bg-white w-full ${maxWidth} rounded-t-3xl sm:rounded-2xl shadow-2xl max-h-[94vh] flex flex-col overflow-hidden border border-slate-100`}
+            initial={{ opacity: 0, y: 24, scale: 0.97 }} animate={{ opacity: 1, y: 0, scale: 1 }} exit={{ opacity: 0, y: 16, scale: 0.97 }}
+            transition={MODAL_PANEL_TRANSITION}>
+            <div className="flex items-center justify-between px-6 py-4 border-b border-slate-100">
+              <div className="flex items-center gap-3">
+                {Icon && <div className={`h-9 w-9 rounded-xl ${iconColor} flex items-center justify-center shadow-sm`}><Icon size={16} className="text-white" /></div>}
+                <div>
+                  <h3 className="font-bold text-slate-900 text-base leading-tight">{title}</h3>
+                  {subtitle && <p className="text-xs text-slate-400">{subtitle}</p>}
+                </div>
+              </div>
+              <button onClick={onClose} className="h-8 w-8 flex items-center justify-center rounded-xl text-slate-400 hover:text-slate-600 hover:bg-slate-100 transition-colors"><X size={16} /></button>
             </div>
-          </div>
-          <button onClick={onClose} className="h-8 w-8 flex items-center justify-center rounded-xl text-slate-400 hover:text-slate-600 hover:bg-slate-100 transition-colors"><X size={16} /></button>
+            <div className="flex-1 overflow-y-auto px-6 py-5">{children}</div>
+          </motion.div>
         </div>
-        <div className="flex-1 overflow-y-auto px-6 py-5">{children}</div>
-      </div>
-    </div>
+      )}
+    </AnimatePresence>
   );
 };
 
@@ -556,6 +586,10 @@ const ExaminationManagement = ({ setShowAdminHeader }) => {
   /* ── create-exam wizard ── */
   const EMPTY_WIZARD_DETAILS = { title: '', term: 'Term 1', yearId: '', status: 'Scheduled', startDate: '', endDate: '' };
   const [showWizard, setShowWizard] = useState(false);
+  // Lock the page's own scrollbar while the Create Exam wizard is open — it's
+  // a bespoke fixed overlay (not the shared Modal component), so it needs the
+  // same background-scroll lock applied separately.
+  useModalScrollLock(showWizard);
   const [wizardStep, setWizardStep] = useState(1);
   const [wizardSaving, setWizardSaving] = useState(false);
   const [wizardCreateProgress, setWizardCreateProgress] = useState(0);
@@ -5578,10 +5612,14 @@ const ExaminationManagement = ({ setShowAdminHeader }) => {
       </Modal>
 
       {/* ══════════ CREATE EXAM WIZARD ══════════ */}
+      <AnimatePresence>
       {showWizard && (
         <div className="fixed inset-0 z-50 flex items-start sm:items-center justify-center p-3 sm:p-6 overflow-y-auto">
-          <div className="absolute inset-0 bg-black/40 backdrop-blur-sm" onClick={closeWizard} />
-          <div className="relative bg-white w-full my-4 sm:my-0 rounded-2xl shadow-2xl max-h-[92vh] flex flex-col overflow-hidden border border-slate-100">
+          <motion.div className="absolute inset-0 bg-black/40 backdrop-blur-sm" onClick={closeWizard}
+            initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} transition={{ duration: 0.18 }} />
+          <motion.div className="relative bg-white w-full my-4 sm:my-0 rounded-2xl shadow-2xl max-h-[92vh] flex flex-col overflow-hidden border border-slate-100"
+            initial={{ opacity: 0, y: 24, scale: 0.97 }} animate={{ opacity: 1, y: 0, scale: 1 }} exit={{ opacity: 0, y: 16, scale: 0.97 }}
+            transition={MODAL_PANEL_TRANSITION}>
             <button onClick={closeWizard} aria-label="Close"
               className="absolute right-4 top-4 z-10 h-8 w-8 flex items-center justify-center rounded-xl text-slate-400 hover:text-slate-600 hover:bg-slate-100 transition-colors">
               <X size={16} />
@@ -6388,9 +6426,10 @@ const ExaminationManagement = ({ setShowAdminHeader }) => {
                 )}
               </div>
             </div>
-          </div>
+          </motion.div>
         </div>
       )}
+      </AnimatePresence>
 
       <ProgressModal open={wizardSaving} title="Please wait, exam is creating…" percent={wizardCreateProgress} statusText={wizardCreateStatusText} />
       <ProgressModal open={isDeleting} title="Please wait, deleting…" accent="red" percent={deleteProgress} statusText={deleteStatusText} />
