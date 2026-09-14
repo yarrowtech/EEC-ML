@@ -1266,8 +1266,16 @@ const ExaminationManagement = ({ setShowAdminHeader }) => {
   // group in a batch into one PDF — one row per subject across every class and
   // section, sorted by date — instead of just the first group's subjects.
 
-  const generateExamSchedulePdf = async (group, { download = true } = {}) => {
+  const generateExamSchedulePdf = async (group, { download = true, header } = {}) => {
     if (!group?._id) return null;
+
+    // Publishing (single or bulk) passes a header it just fetched fresh —
+    // never fall back to the component's own `pdfHeader` state there, since
+    // that state can still be the pre-fetch placeholder (or a stale cached
+    // shape from before a field like principalName existed) if this runs
+    // before loadOptions() has resolved. Only unattributed/manual callers
+    // fall back to component state.
+    const effectiveHeader = header || pdfHeader;
 
     // ============================================================
     // BASIC DATA
@@ -1342,7 +1350,7 @@ const ExaminationManagement = ({ setShowAdminHeader }) => {
     const headerTop = y;
     const headerHeight = 30;
 
-    const logoDataUrl = await toDataUrl(pdfHeader.logoUrl);
+    const logoDataUrl = await toDataUrl(effectiveHeader.logoUrl);
 
     if (logoDataUrl) {
       try {
@@ -1363,11 +1371,11 @@ const ExaminationManagement = ({ setShowAdminHeader }) => {
     }
 
     const schoolName =
-      pdfHeader.schoolName ||
+      effectiveHeader.schoolName ||
       "School Name";
 
     const schoolAddress =
-      pdfHeader.schoolAddressLine ||
+      effectiveHeader.schoolAddressLine ||
       "";
 
     doc.setFont("helvetica", "bold");
@@ -1979,7 +1987,7 @@ const ExaminationManagement = ({ setShowAdminHeader }) => {
       );
 
     doc.text(
-      `Issued: ${generatedDate}`,
+      `Downloaded on: ${generatedDate}`,
       margin,
       footerY
     );
@@ -2017,9 +2025,9 @@ const ExaminationManagement = ({ setShowAdminHeader }) => {
       ...colors.dark
     );
 
-    if (pdfHeader.principalName) {
+    if (effectiveHeader.principalName) {
       doc.text(
-        pdfHeader.principalName,
+        effectiveHeader.principalName,
         signatureX +
         signatureWidth / 2,
         footerY - 11,
@@ -3314,7 +3322,7 @@ const ExaminationManagement = ({ setShowAdminHeader }) => {
         );
 
       doc.text(
-        `Issued: ${generatedDate}`,
+        `Downloaded on: ${generatedDate}`,
         margin,
         footerY
       );
@@ -3606,11 +3614,45 @@ const ExaminationManagement = ({ setShowAdminHeader }) => {
      upload it, then post one consolidated table-wise notice to the Notice
      Board for that class/section — replacing the old one-notice-per-subject
      behavior. */
+  // The published routine PDF must never use whatever's currently sitting in
+  // the `pdfHeader` component state — that can still be the pre-fetch empty
+  // placeholder, or a stale sessionStorage-cached shape from before a field
+  // (e.g. principalName) even existed, if this runs before loadOptions() has
+  // resolved. Always re-fetch template + signatories fresh right before
+  // generating a PDF that gets permanently attached to a notice.
+  const fetchFreshPdfHeader = async () => {
+    try {
+      const h = authH();
+      const [templateRes, signatoriesRes] = await Promise.all([
+        fetch(`${API_BASE}/api/reports/report-cards/template`, { headers: h }),
+        fetch(`${API_BASE}/api/reports/report-cards/signatories`, { headers: h }),
+      ]);
+      const [template, signatories] = await Promise.all([
+        templateRes.json().catch(() => ({})),
+        signatoriesRes.json().catch(() => ({})),
+      ]);
+      const fresh = {
+        schoolName: String(template?.schoolName || '').trim(),
+        schoolAddressLine: String(template?.schoolAddressLine || '').trim(),
+        logoUrl: String(template?.logoUrl || '').trim(),
+        principalName: String(signatories?.principalName || '').trim(),
+      };
+      setPdfHeader(fresh);
+      return fresh;
+    } catch (err) {
+      console.error('Failed to refresh PDF header, falling back to cached values:', err);
+      return pdfHeader;
+    }
+  };
+
   // Core of publishing one group's routine — generate the PDF, upload it,
   // PUT the group to Published with that PDF attached. No confirmation, no
   // toast: shared by the single-group publish button and "Publish All".
-  const publishOneGroupRoutine = async (group) => {
-    const pdfResult = await generateExamSchedulePdf(group, { download: false });
+  // `header` is the freshly-fetched pdfHeader the caller resolved via
+  // fetchFreshPdfHeader() — passed through so a bulk publish only fetches it
+  // once instead of once per group.
+  const publishOneGroupRoutine = async (group, header) => {
+    const pdfResult = await generateExamSchedulePdf(group, { download: false, header });
     let attachment = null;
     if (pdfResult?.blob) {
       const formData = new FormData();
@@ -3661,7 +3703,8 @@ const ExaminationManagement = ({ setShowAdminHeader }) => {
 
     setPublishingGroupId(group._id);
     try {
-      await publishOneGroupRoutine(group);
+      const freshHeader = await fetchFreshPdfHeader();
+      await publishOneGroupRoutine(group, freshHeader);
       toast.success(alreadyPublished ? 'Routine republished' : 'Exam routine published to Notice Board');
       await loadGroups();
     } catch (err) {
@@ -3695,9 +3738,10 @@ const ExaminationManagement = ({ setShowAdminHeader }) => {
     setPublishAllStatusText(`Publishing ${eligibleGroups.length} routine${eligibleGroups.length !== 1 ? 's' : ''}…`);
     setPublishingAll(true);
     let done = 0;
+    const freshHeader = await fetchFreshPdfHeader();
     const results = await Promise.allSettled(eligibleGroups.map(async (g) => {
       try {
-        await publishOneGroupRoutine(g);
+        await publishOneGroupRoutine(g, freshHeader);
       } finally {
         done += 1;
         setPublishAllProgress(Math.round((done / eligibleGroups.length) * 100));
