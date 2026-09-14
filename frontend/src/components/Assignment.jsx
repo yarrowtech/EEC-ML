@@ -35,7 +35,10 @@ import {
   Eye,
   Trash2,
   LifeBuoy,
-  CalendarClock
+  CalendarClock,
+  Camera,
+  MessageCircle,
+  PartyPopper
 } from "lucide-react";
 import * as THREE from 'three';
 import { GLTFLoader } from 'three/examples/jsm/loaders/GLTFLoader.js';
@@ -43,7 +46,7 @@ import { DRACOLoader } from 'three/examples/jsm/loaders/DRACOLoader.js';
 import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls.js';
 import { addPoints, hasAward, markAwarded } from '../utils/points';
 import axios from 'axios';
-import { useLocation } from 'react-router-dom';
+import { useLocation, useNavigate } from 'react-router-dom';
 import toast from 'react-hot-toast';
 import { fetchCachedJson, clearStudentApiCacheByUrl } from '../utils/studentApiCache';
 
@@ -58,6 +61,7 @@ const SURFACE_HOVER = 'transition-all duration-200 ease-out hover:-translate-y-0
 
 const Assignment = ({ assignmentType }) => {
   const location = useLocation();
+  const navigate = useNavigate();
   const [schoolSearch, setSchoolSearch] = useState("");
   const [assignments, setAssignments] = useState([]);
   const [loading, setLoading] = useState(false);
@@ -72,6 +76,7 @@ const Assignment = ({ assignmentType }) => {
   const [uploadingSubmissionFile, setUploadingSubmissionFile] = useState(false);
   const [submitting, setSubmitting] = useState(false);
   const [submitSuccess, setSubmitSuccess] = useState(false);
+  const [isDraggingFile, setIsDraggingFile] = useState(false);
 
   const API_BASE = (import.meta.env.VITE_API_URL || 'http://localhost:5000')
     .replace(/\/$/, '')
@@ -317,6 +322,7 @@ const Assignment = ({ assignmentType }) => {
     setSubmissionFileName('');
     setSubmissionFileSize(0);
     setSubmitSuccess(false);
+    setIsDraggingFile(false);
     setDetailBackLabel(chapterTitle);
   };
 
@@ -370,20 +376,16 @@ const Assignment = ({ assignmentType }) => {
     }
   };
 
-  const handleSubmissionFileUpload = async (event) => {
-    const input = event.target;
-    const file = input.files?.[0];
+  const uploadSubmissionFile = async (file) => {
     if (!file) return;
 
     if (file.type !== 'application/pdf') {
       toast.error('Invalid file: Please upload a PDF file.');
-      input.value = '';
       return;
     }
 
     if (file.size > 20 * 1024 * 1024) {
       toast.error('File too large: File size must be under 20MB.');
-      input.value = '';
       return;
     }
 
@@ -416,9 +418,33 @@ const Assignment = ({ assignmentType }) => {
       setSubmissionFileName('');
       setSubmissionFileSize(0);
     } finally {
-      input.value = '';
       setUploadingSubmissionFile(false);
     }
+  };
+
+  const handleSubmissionFileUpload = async (event) => {
+    const input = event.target;
+    const file = input.files?.[0];
+    await uploadSubmissionFile(file);
+    input.value = '';
+  };
+
+  const handleSubmissionDrop = async (event) => {
+    event.preventDefault();
+    setIsDraggingFile(false);
+    if (uploadingSubmissionFile) return;
+    const file = event.dataTransfer?.files?.[0];
+    await uploadSubmissionFile(file);
+  };
+
+  const handleSubmissionDragOver = (event) => {
+    event.preventDefault();
+    if (!isDraggingFile) setIsDraggingFile(true);
+  };
+
+  const handleSubmissionDragLeave = (event) => {
+    event.preventDefault();
+    setIsDraggingFile(false);
   };
 
   const removeSubmissionFile = () => {
@@ -1288,6 +1314,14 @@ const Assignment = ({ assignmentType }) => {
                         <p className="text-[11px] text-[#8e9aaf]">Send a quick message to {a.teacherName}</p>
                       </div>
                     </div>
+                    <button
+                      type="button"
+                      onClick={() => navigate('/student/chat')}
+                      className="flex shrink-0 items-center gap-1.5 rounded-lg px-3 py-1.5 text-xs font-bold text-sky-600 transition-colors duration-200 hover:bg-white"
+                    >
+                      <MessageCircle className="h-3.5 w-3.5" />
+                      Ask Teacher
+                    </button>
                   </div>
                 )}
               </div>
@@ -1363,17 +1397,29 @@ const Assignment = ({ assignmentType }) => {
 
                     {!isSubmitted && !isGraded && (
                       submitSuccess ? (
-                        <div className="flex items-center gap-3 rounded-xl border border-emerald-200 bg-emerald-50 p-4">
-                          <CheckCircle2 className="h-5 w-5 shrink-0 text-emerald-600" />
-                          <p className="text-sm font-semibold text-emerald-800">Turned in successfully!</p>
-                        </div>
+                        <button
+                          type="button"
+                          disabled
+                          className="flex w-full items-center justify-center gap-2.5 rounded-2xl bg-emerald-600 px-6 py-4 text-base font-bold text-white shadow-lg shadow-emerald-600/30"
+                        >
+                          <PartyPopper className="h-5.5 w-5.5" />
+                          Turned In Successfully! 🎉
+                        </button>
                       ) : (
                         <>
                           {requiresPdfUpload ? (
                             <>
                               <label
                                 htmlFor={uploadInputId}
-                                className="group relative flex cursor-pointer flex-col items-center justify-center gap-1 rounded-xl border-2 border-dashed border-violet-300 bg-violet-50/50 p-6 text-center transition-all duration-200 hover:border-violet-400 hover:bg-violet-50"
+                                onDragEnter={handleSubmissionDragOver}
+                                onDragOver={handleSubmissionDragOver}
+                                onDragLeave={handleSubmissionDragLeave}
+                                onDrop={handleSubmissionDrop}
+                                className={`group relative flex cursor-pointer flex-col items-center justify-center gap-1 rounded-xl border-2 border-dashed p-6 text-center transition-all duration-200 ${
+                                  isDraggingFile
+                                    ? 'border-violet-500 bg-violet-100'
+                                    : 'border-violet-300 bg-violet-50/50 hover:border-violet-400 hover:bg-violet-50'
+                                }`}
                               >
                                 <input
                                   type="file"
@@ -1466,10 +1512,19 @@ const Assignment = ({ assignmentType }) => {
                             type="button"
                             onClick={handleSubmit}
                             disabled={submitting || !canSubmitAssignment}
-                            className="flex w-full items-center justify-center gap-2 rounded-xl bg-violet-600 px-6 py-3.5 text-sm font-bold text-white shadow-md shadow-violet-600/25 transition-all duration-200 hover:bg-violet-700 active:scale-[0.99] disabled:cursor-not-allowed disabled:opacity-50"
+                            className="flex w-full items-center justify-center gap-2.5 rounded-2xl bg-violet-600 px-6 py-4 text-base font-bold text-white shadow-lg shadow-violet-600/30 transition-all duration-200 hover:bg-violet-700 active:scale-[0.99] disabled:cursor-not-allowed disabled:opacity-50"
                           >
-                            <SendHorizonal className="h-4.5 w-4.5" />
-                            {submitting ? 'Submitting…' : 'Turn In Assignment'}
+                            {submitting ? (
+                              <>
+                                <Loader2 className="h-5 w-5 animate-spin" />
+                                Submitting your awesome work...
+                              </>
+                            ) : (
+                              <>
+                                <SendHorizonal className="h-5 w-5" />
+                                Turn In Assignment
+                              </>
+                            )}
                           </button>
                         </>
                       )

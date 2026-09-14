@@ -11,6 +11,7 @@ import { slugifyForUrl, deslugifyFromUrl } from '../utils/urlSlug';
 const API_BASE = (import.meta.env.VITE_API_URL || 'http://localhost:5000').replace(/\/$/, '');
 const SMART_LEARNING_MAP_ENDPOINT = `${API_BASE}/api/lesson-plans/student/smart-learning-map`;
 const SUBMIT_ENDPOINT = `${API_BASE}/api/lesson-plans/student/tryout-submit`;
+const RESULTS_ENDPOINT = `${API_BASE}/api/lesson-plans/student/tryout-results`;
 
 // "Kinetic Campus" design tokens: calm indigo/sky/amber flat-card system —
 // white surfaces, soft indigo-tinted shadows, no glass/blur. Scoped to this
@@ -673,6 +674,7 @@ const AILearningTryoutSection = ({ assignedSubjectName = '', assignedTopicName =
   const [submitting, setSubmitting] = useState(false);
   const [submitted, setSubmitted] = useState(false);
   const [submitResult, setSubmitResult] = useState(null);
+  const [checkingExisting, setCheckingExisting] = useState(true);
   const [answeredIndexes, setAnsweredIndexes] = useState(() => new Set());
   const [lastSavedAt, setLastSavedAt] = useState(null);
   const [, setSaveTick] = useState(0);
@@ -714,6 +716,38 @@ const AILearningTryoutSection = ({ assignedSubjectName = '', assignedTopicName =
 
     loadAssignedTryouts();
   }, []);
+
+  // A student can only submit a given tryout once — check for a prior
+  // submission up front so re-visiting/refreshing this page shows the
+  // recorded result instead of letting them redo (and re-submit) it.
+  useEffect(() => {
+    const checkExistingSubmission = async () => {
+      try {
+        const token = localStorage.getItem('token');
+        const userType = localStorage.getItem('userType');
+        if (!token || userType !== 'Student') return;
+
+        const res = await fetch(`${RESULTS_ENDPOINT}?topicTitle=${encodeURIComponent(topicSlug)}`, {
+          headers: { Authorization: `Bearer ${token}` },
+        });
+        const data = await res.json().catch(() => ({}));
+        if (!res.ok) return;
+
+        const existing = asArray(data?.results).find(
+          (r) => normalize(r.subjectName) === normalize(subjectSlug) && normalize(r.topicTitle) === normalize(topicSlug),
+        );
+        if (existing) {
+          setSubmitResult(existing);
+          setSubmitted(true);
+          try { localStorage.removeItem(storageKey); } catch { /* best-effort cleanup */ }
+        }
+      } finally {
+        setCheckingExisting(false);
+      }
+    };
+
+    checkExistingSubmission();
+  }, [subjectSlug, topicSlug]);
 
   // Restore any locally auto-saved progress for this tryout.
   useEffect(() => {
@@ -840,6 +874,14 @@ const AILearningTryoutSection = ({ assignedSubjectName = '', assignedTopicName =
         }),
       });
       const data = await res.json().catch(() => ({}));
+      if (res.status === 409) {
+        // Already submitted (e.g. from another tab, or a resubmit race) —
+        // show the recorded result instead of surfacing this as an error.
+        setSubmitted(true);
+        setSubmitResult(data.result);
+        try { localStorage.removeItem(storageKey); } catch { /* best-effort cleanup */ }
+        return;
+      }
       if (!res.ok) throw new Error(data?.error || 'Submission failed');
       setSubmitted(true);
       setSubmitResult(data.result);
@@ -854,7 +896,7 @@ const AILearningTryoutSection = ({ assignedSubjectName = '', assignedTopicName =
   if (submitted) {
     const autoScore = submitResult?.autoScore;
     const autoCount = submitResult?.autoGradedCount ?? 0;
-    const total = assignedTryouts.length;
+    const total = submitResult?.totalQuestions ?? assignedTryouts.length;
     const manualCount = total - autoCount;
     return (
       <div className="w-full min-h-screen bg-[#f8fafc] p-4 text-slate-900 sm:p-6 md:p-8">
@@ -889,6 +931,7 @@ const AILearningTryoutSection = ({ assignedSubjectName = '', assignedTopicName =
     );
   }
 
+  const isLoading = loading || checkingExisting;
   const totalQuestions = assignedTryouts.length;
   const answeredCount = answeredIndexes.size;
   const progressPct = totalQuestions > 0 ? Math.round((answeredCount / totalQuestions) * 100) : 0;
@@ -985,15 +1028,15 @@ const AILearningTryoutSection = ({ assignedSubjectName = '', assignedTopicName =
         </section>
 
         {error && <div className="mb-4 rounded-xl border border-red-200 bg-red-50 p-4 text-sm font-semibold text-red-700">{error}</div>}
-        {loading && <div className={`${CARD} p-6 text-sm font-semibold text-slate-500`}>Loading assigned tryout...</div>}
-        {!loading && !error && assignedTryouts.length === 0 && (
+        {isLoading && <div className={`${CARD} p-6 text-sm font-semibold text-slate-500`}>Loading assigned tryout...</div>}
+        {!isLoading && !error && assignedTryouts.length === 0 && (
           <div className={`${CARD} p-8 text-center`}>
             <CheckCircle2 className="mx-auto mb-3 text-slate-300" size={34} />
             <h2 className="text-lg font-bold text-slate-800">No tryout assigned</h2>
             <p className="mt-1 text-sm text-slate-500">Your teacher has not assigned a tryout for this topic yet.</p>
           </div>
         )}
-        {!loading && !error && assignedTryouts.length > 0 && (
+        {!isLoading && !error && assignedTryouts.length > 0 && (
           <div className="space-y-4">
             {assignedTryouts.map((question, index) => (
               <div key={question.id || index} ref={(node) => { questionRefs.current[index] = node; }} data-q-index={index}>
@@ -1008,7 +1051,7 @@ const AILearningTryoutSection = ({ assignedSubjectName = '', assignedTopicName =
         )}
       </div>
 
-      {!loading && !error && totalQuestions > 0 && (
+      {!isLoading && !error && totalQuestions > 0 && (
         <div className="fixed inset-x-0 bottom-0 z-30 border-t border-slate-200 bg-white/95 px-4 py-3 shadow-[0_-4px_20px_rgba(15,23,42,0.06)] backdrop-blur-sm sm:px-6">
           <div className="mx-auto flex w-full max-w-[950px] flex-wrap items-center justify-between gap-3">
             <button

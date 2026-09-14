@@ -3020,6 +3020,22 @@ router.post('/student/tryout-submit', authStudent, async (req, res) => {
       return res.status(400).json({ error: 'questions and answers arrays are required' });
     }
 
+    const normalizedSubjectName = normalizeString(subjectName);
+    const normalizedTopicTitle = normalizeString(topicTitle);
+
+    const existing = await TryoutResult.findOne({
+      studentId: req.userId,
+      schoolId,
+      subjectName: normalizedSubjectName,
+      topicTitle: normalizedTopicTitle,
+    }).lean();
+    if (existing) {
+      return res.status(409).json({
+        error: 'You have already submitted this tryout.',
+        result: existing,
+      });
+    }
+
     const answerDocs = questions.map((q, i) => {
       const studentAnswer = answers[i];
       let isCorrect = null;
@@ -3049,9 +3065,9 @@ router.post('/student/tryout-submit', authStudent, async (req, res) => {
     const result = await TryoutResult.create({
       studentId: req.userId,
       schoolId,
-      subjectName: normalizeString(subjectName),
+      subjectName: normalizedSubjectName,
       chapterTitle: normalizeString(chapterTitle),
-      topicTitle: normalizeString(topicTitle),
+      topicTitle: normalizedTopicTitle,
       answers: answerDocs,
       totalQuestions: questions.length,
       autoGradedCount: autoGradedAnswers.length,
@@ -3059,7 +3075,7 @@ router.post('/student/tryout-submit', authStudent, async (req, res) => {
       status: 'submitted',
     });
 
-    return res.status(201).json({ success: true, result: { _id: result._id, autoScore, autoGradedCount: autoGradedAnswers.length } });
+    return res.status(201).json({ success: true, result: { _id: result._id, autoScore, autoGradedCount: autoGradedAnswers.length, totalQuestions: questions.length } });
   } catch (err) {
     return res.status(500).json({ error: err.message });
   }
