@@ -777,12 +777,17 @@ const ExaminationManagement = ({ setShowAdminHeader }) => {
       });
     }
     return rooms.filter(r => {
+      // This exam's own currently-assigned room must always stay selectable —
+      // otherwise editing an exam that happens to share its date/time/duration
+      // with some unrelated exam elsewhere silently hides the room it's
+      // already booked in, making the field look empty/never-fetched.
+      if (subjectForm.roomId && String(r._id) === String(subjectForm.roomId)) return true;
       if (occupied.has(String(r._id))) return false;
       if (subjectForm.floorId) return String(r.floorId?._id || r.floorId) === String(subjectForm.floorId);
       if (subjectForm.buildingId) return String(r.floorId?.buildingId?._id || r.floorId?.buildingId) === String(subjectForm.buildingId);
       return true;
     });
-  }, [rooms, subjectForm.floorId, subjectForm.buildingId, subjectForm.date, subjectForm.time, subjectForm.duration, allExamsForConflict, editingSubjectId]);
+  }, [rooms, subjectForm.roomId, subjectForm.floorId, subjectForm.buildingId, subjectForm.date, subjectForm.time, subjectForm.duration, allExamsForConflict, editingSubjectId]);
 
   const modalTeachers = useMemo(() => {
     const occupied = new Set();
@@ -794,8 +799,12 @@ const ExaminationManagement = ({ setShowAdminHeader }) => {
         }
       });
     }
-    return teachers.filter(t => !occupied.has(t.name));
-  }, [teachers, subjectForm.date, subjectForm.time, subjectForm.duration, allExamsForConflict, editingSubjectId]);
+    // Same reasoning as modalRooms above: this exam's own currently-assigned
+    // invigilators must always stay selectable, even if flagged busy by an
+    // unrelated exam elsewhere at the same date/time/duration.
+    const currentNames = new Set([subjectForm.primaryInstructor, subjectForm.secondaryInstructor].filter(Boolean));
+    return teachers.filter(t => currentNames.has(t.name) || !occupied.has(t.name));
+  }, [teachers, subjectForm.date, subjectForm.time, subjectForm.duration, subjectForm.primaryInstructor, subjectForm.secondaryInstructor, allExamsForConflict, editingSubjectId]);
 
   const activeYears = useMemo(
     () => years.filter((y) => y?.isActive),
@@ -1419,16 +1428,16 @@ const ExaminationManagement = ({ setShowAdminHeader }) => {
       { align: "right" }
     );
 
-    // doc.setFont("helvetica", "bold");
-    // doc.setFontSize(8);
-    // doc.setTextColor(...colors.dark);
+    doc.setFont("helvetica", "bold");
+    doc.setFontSize(8);
+    doc.setTextColor(...colors.dark);
 
-    // doc.text(
-    //   yearName || "—",
-    //   pageWidth - margin,
-    //   headerTop + 12,
-    //   { align: "right" }
-    // );
+    doc.text(
+      yearName || "—",
+      pageWidth - margin,
+      headerTop + 12,
+      { align: "right" }
+    );
 
     // Header separator
     doc.setDrawColor(...colors.dark);
@@ -3724,13 +3733,14 @@ const ExaminationManagement = ({ setShowAdminHeader }) => {
       return;
     }
     const alreadyPublishedCount = eligibleGroups.filter((g) => g.status === 'Published').length;
+    const allAlreadyPublished = alreadyPublishedCount === eligibleGroups.length;
     const conf = await Swal.fire({
-      title: 'Publish All Routines?',
-      html: `This publishes the routine for all <strong>${eligibleGroups.length}</strong> class${eligibleGroups.length !== 1 ? 'es' : ''}/section${eligibleGroups.length !== 1 ? 's' : ''} in <strong>${batch.title}</strong> to the Notice Board in one go${alreadyPublishedCount ? ` (${alreadyPublishedCount} already published will be republished)` : ''}.`,
+      title: allAlreadyPublished ? 'Republish All Routines?' : 'Publish All Routines?',
+      html: `This ${allAlreadyPublished ? 'republishes' : 'publishes'} the routine for all <strong>${eligibleGroups.length}</strong> class${eligibleGroups.length !== 1 ? 'es' : ''}/section${eligibleGroups.length !== 1 ? 's' : ''} in <strong>${batch.title}</strong> to the Notice Board in one go${!allAlreadyPublished && alreadyPublishedCount ? ` (${alreadyPublishedCount} already published will be republished)` : ''}.`,
       icon: 'question',
       showCancelButton: true,
       confirmButtonColor: '#059669',
-      confirmButtonText: 'Publish All',
+      confirmButtonText: allAlreadyPublished ? 'Republish All' : 'Publish All',
     });
     if (!conf.isConfirmed) return;
 
@@ -5119,16 +5129,21 @@ const ExaminationManagement = ({ setShowAdminHeader }) => {
                   {/* ── Routine (per class+section group, reuses every existing subject action) ── */}
                   {activeDetailTab === 'routine' && (
                     <div className="space-y-4">
-                      {selectedBatch.groups.length > 1 && (
-                        <div className="flex justify-end">
-                          <button type="button" onClick={() => handlePublishAllRoutines(selectedBatch)}
-                            disabled={publishingAll}
-                            className="flex items-center gap-1.5 px-3.5 py-2 rounded-xl bg-emerald-600 text-white text-xs font-semibold hover:bg-emerald-700 disabled:opacity-60 disabled:cursor-not-allowed shadow-sm shadow-emerald-200 transition-colors">
-                            {publishingAll ? <Loader2 size={13} className="animate-spin" /> : <CheckCircle2 size={13} />}
-                            {publishingAll ? 'Publishing All…' : 'Publish All Routines'}
-                          </button>
-                        </div>
-                      )}
+                      {selectedBatch.groups.length > 1 && (() => {
+                        const eligibleGroups = selectedBatch.groups.filter((g) => (g.subjects?.length || 0) > 0);
+                        const allRoutinesPublished = eligibleGroups.length > 0
+                          && eligibleGroups.every((g) => g.status === 'Published');
+                        return (
+                          <div className="flex justify-end">
+                            <button type="button" onClick={() => handlePublishAllRoutines(selectedBatch)}
+                              disabled={publishingAll}
+                              className="flex items-center gap-1.5 px-3.5 py-2 rounded-xl bg-emerald-600 text-white text-xs font-semibold hover:bg-emerald-700 disabled:opacity-60 disabled:cursor-not-allowed shadow-sm shadow-emerald-200 transition-colors">
+                              {publishingAll ? <Loader2 size={13} className="animate-spin" /> : <CheckCircle2 size={13} />}
+                              {publishingAll ? 'Publishing All…' : allRoutinesPublished ? 'Republish All Routines' : 'Publish All Routines'}
+                            </button>
+                          </div>
+                        );
+                      })()}
                       {selectedBatch.groups.map((group) => {
                         const isOpen = expandedGroups.has(group._id);
                         const subCount = group.subjects?.length || 0;
