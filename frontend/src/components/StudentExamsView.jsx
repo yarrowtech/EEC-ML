@@ -428,6 +428,7 @@ const StudentExamsView = () => {
             const statusLabel = String(group?.status || 'Scheduled');
             const normalizedStatus = statusLabel.toLowerCase();
             const isCompleted = normalizedStatus === 'completed';
+            const isPublished = normalizedStatus === 'published' || isCompleted;
             const statusClass = isCompleted
               ? 'border-emerald-200/70 bg-emerald-50 text-emerald-700'
               : 'border-amber-200/70 bg-[#fffbeb] text-amber-700';
@@ -465,75 +466,90 @@ const StudentExamsView = () => {
                       {!isCompleted && days !== null && days >= 0 && (
                         <CountdownBadge date={group?.startDate} />
                       )}
-                      <span className="rounded-full border border-slate-200/70 bg-slate-50 px-2.5 py-1 text-xs font-bold text-[#64748b]">
-                        {subjects.length} Subjects
-                      </span>
+                      {isPublished ? (
+                        <span className="rounded-full border border-slate-200/70 bg-slate-50 px-2.5 py-1 text-xs font-bold text-[#64748b]">
+                          {subjects.length} Subjects
+                        </span>
+                      ) : (
+                        <span className="rounded-full border border-amber-200/70 bg-amber-50 px-2.5 py-1 text-xs font-bold text-amber-700">
+                          Routine not published yet
+                        </span>
+                      )}
                     </div>
                   </div>
 
-                  {/* action buttons */}
-                  <div className="flex flex-wrap gap-2">
-                    <button
-                      type="button"
-                      onClick={() => handleDownload(group)}
-                      disabled={downloadingGroupId === String(group._id)}
-                      className="inline-flex items-center gap-2 rounded-xl bg-[#8b5cf6] px-3.5 py-1.5 text-xs font-semibold text-white shadow-sm shadow-violet-200 transition-colors hover:bg-[#7c3aed] disabled:cursor-not-allowed disabled:opacity-60"
-                    >
-                      {downloadingGroupId === String(group._id) ? <Loader2 size={13} className="animate-spin" /> : <FileText size={13} />}
-                      {downloadingGroupId === String(group._id) ? 'Preparing…' : 'Download Routine'}
-                    </button>
-                    {subjects[0]?._id && (
-                      <button
-                        type="button"
-                        onClick={() => setMockExamOpen({
-                          examId: String(subjects[0]._id),
-                          examTitle: `${group.title} — Practice Mock`,
-                          durationMinutes: subjects[0]?.duration || 60,
-                          isMock: true,
-                        })}
-                        className="inline-flex items-center gap-1.5 rounded-xl border border-emerald-200/70 bg-emerald-50/70 px-3.5 py-1.5 text-xs font-semibold text-emerald-700 transition-colors hover:bg-emerald-100/70"
-                      >
-                        <PlayCircle size={13} /> Practice Mock
-                      </button>
-                    )}
-                  </div>
-
-                  {/* subject rows */}
-                  <div className="space-y-2 rounded-xl border border-[rgba(139,92,246,0.15)] bg-white/40 p-2">
-                    {subjects.slice(0, 5).map((exam) => {
-                      const subjectName = exam?.subjectId?.name || exam?.subject || exam?.title || 'Subject';
-                      const dot = getSubjectDot(subjectName);
-                      const room = buildRoomLabel(exam);
-                      return (
-                        <Motion.div
-                          key={exam?._id || subjectName}
-                          initial={{ opacity: 0, x: -6 }}
-                          animate={{ opacity: 1, x: 0 }}
-                          transition={{ duration: 0.2 }}
-                          className="flex items-center justify-between gap-3 rounded-lg bg-white/60 px-3 py-2.5"
+                  {isPublished ? (
+                    <>
+                      {/* action buttons */}
+                      <div className="flex flex-wrap gap-2">
+                        <button
+                          type="button"
+                          onClick={() => handleDownload(group)}
+                          disabled={downloadingGroupId === String(group._id)}
+                          className="inline-flex items-center gap-2 rounded-xl bg-[#8b5cf6] px-3.5 py-1.5 text-xs font-semibold text-white shadow-sm shadow-violet-200 transition-colors hover:bg-[#7c3aed] disabled:cursor-not-allowed disabled:opacity-60"
                         >
-                          <div className="flex min-w-0 items-center gap-2.5">
-                            <span className={`h-2 w-2 shrink-0 rounded-full ${dot}`} />
-                            <p className="truncate text-sm font-semibold text-[#0f172a]">{subjectName}</p>
-                          </div>
-                          <div className="flex shrink-0 flex-wrap items-center gap-2 text-xs text-[#64748b]">
-                            {exam?.date && <span>{formatDate(exam.date)}</span>}
-                            {exam?.time && (
-                              <span className="flex items-center gap-1 text-[#8e9aaf]">
-                                <Clock size={10} /> {exam.time}
-                              </span>
-                            )}
-                            {exam?.duration && <span className="hidden text-[#8e9aaf] sm:inline">{exam.duration} min</span>}
-                            {exam?.marks && <span className="hidden font-semibold text-[#64748b] sm:inline">{exam.marks} marks</span>}
-                            {room !== '—' && <span className="hidden text-[#8e9aaf] sm:inline">Room {room}</span>}
-                          </div>
-                        </Motion.div>
-                      );
-                    })}
-                    {subjects.length > 5 && (
-                      <p className="pl-1 text-xs font-medium text-[#8e9aaf]">+{subjects.length - 5} more subjects</p>
-                    )}
-                  </div>
+                          {downloadingGroupId === String(group._id) ? <Loader2 size={13} className="animate-spin" /> : <FileText size={13} />}
+                          {downloadingGroupId === String(group._id) ? 'Preparing…' : 'Download Routine'}
+                        </button>
+                        {subjects[0]?._id && (
+                          <button
+                            type="button"
+                            onClick={() => setMockExamOpen({
+                              examId: String(subjects[0]._id),
+                              examTitle: `${group.title} — Practice Mock`,
+                              durationMinutes: subjects[0]?.duration || 60,
+                              isMock: true,
+                            })}
+                            className="inline-flex items-center gap-1.5 rounded-xl border border-emerald-200/70 bg-emerald-50/70 px-3.5 py-1.5 text-xs font-semibold text-emerald-700 transition-colors hover:bg-emerald-100/70"
+                          >
+                            <PlayCircle size={13} /> Practice Mock
+                          </button>
+                        )}
+                      </div>
+
+                      {/* subject rows */}
+                      <div className="space-y-2 rounded-xl border border-[rgba(139,92,246,0.15)] bg-white/40 p-2">
+                        {subjects.slice(0, 5).map((exam) => {
+                          const subjectName = exam?.subjectId?.name || exam?.subject || exam?.title || 'Subject';
+                          const dot = getSubjectDot(subjectName);
+                          const room = buildRoomLabel(exam);
+                          return (
+                            <Motion.div
+                              key={exam?._id || subjectName}
+                              initial={{ opacity: 0, x: -6 }}
+                              animate={{ opacity: 1, x: 0 }}
+                              transition={{ duration: 0.2 }}
+                              className="flex items-center justify-between gap-3 rounded-lg bg-white/60 px-3 py-2.5"
+                            >
+                              <div className="flex min-w-0 items-center gap-2.5">
+                                <span className={`h-2 w-2 shrink-0 rounded-full ${dot}`} />
+                                <p className="truncate text-sm font-semibold text-[#0f172a]">{subjectName}</p>
+                              </div>
+                              <div className="flex shrink-0 flex-wrap items-center gap-2 text-xs text-[#64748b]">
+                                {exam?.date && <span>{formatDate(exam.date)}</span>}
+                                {exam?.time && (
+                                  <span className="flex items-center gap-1 text-[#8e9aaf]">
+                                    <Clock size={10} /> {exam.time}
+                                  </span>
+                                )}
+                                {exam?.duration && <span className="hidden text-[#8e9aaf] sm:inline">{exam.duration} min</span>}
+                                {exam?.marks && <span className="hidden font-semibold text-[#64748b] sm:inline">{exam.marks} marks</span>}
+                                {room !== '—' && <span className="hidden text-[#8e9aaf] sm:inline">Room {room}</span>}
+                              </div>
+                            </Motion.div>
+                          );
+                        })}
+                        {subjects.length > 5 && (
+                          <p className="pl-1 text-xs font-medium text-[#8e9aaf]">+{subjects.length - 5} more subjects</p>
+                        )}
+                      </div>
+                    </>
+                  ) : (
+                    <div className="flex items-center gap-2 rounded-xl border border-amber-200/70 bg-amber-50/70 px-3.5 py-3 text-xs font-medium text-amber-700">
+                      <AlertCircle size={14} className="shrink-0" />
+                      The subject-wise routine isn&apos;t published yet — check back once your school publishes it.
+                    </div>
+                  )}
                 </div>
               </Motion.div>
             );
