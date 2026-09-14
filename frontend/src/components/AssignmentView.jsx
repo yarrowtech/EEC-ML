@@ -1,29 +1,17 @@
-import React, { useEffect, useState, useRef, useCallback, useMemo, forwardRef, useImperativeHandle } from "react";
+import React, { useEffect, useState, useRef, useMemo, forwardRef, useImperativeHandle } from "react";
 import { useNavigate } from "react-router-dom";
 import {
   Plus, Trash2, BookOpen, FlaskConical, Layers, PenLine, GraduationCap,
-  ChevronRight, ChevronLeft, X, Sparkles, Save, Clock, Search, CheckCircle2,
+  ChevronRight, Save, Clock, Search, CheckCircle2,
 } from "lucide-react";
 import PointsBadge from "./PointsBadge";
 import Assignment from "./Assignment";
 import { fetchCachedJson, clearStudentApiCacheByUrl } from "../utils/studentApiCache";
 
-/* ═══════════════ TOUR STEPS CONFIG ═══════════════ */
-const TOUR_STEPS = [
-  { target: "tour-welcome", title: "Welcome to Your Learning Journal!", description: "This is your personal space to record what you learn every day. Let\u2019s take a quick tour!", emoji: "\u{1F4D6}", position: "center" },
-  { target: "tour-timeline", title: "Your Pages", description: "All your journal entries appear here as pages. Click any page to revisit it.", emoji: "\u{1F4C5}", position: "right" },
-  { target: "tour-new-entry", title: "Start a New Page", description: "Click \u201CNew Page\u201D to begin a fresh journal entry for today.", emoji: "\u2795", position: "right" },
-  { target: "tour-title", title: "Give It a Title", description: "Write a short title \u2014 like \u201CDiscovered photosynthesis\u201D or \u201CMath breakthrough!\u201D", emoji: "\u270F\uFE0F", position: "left" },
-  { target: "tour-content", title: "Write Your Notes", description: "This is your lined paper. Describe what you learned, questions you have, or anything interesting.", emoji: "\u{1F4DD}", position: "left" },
-  { target: "tour-mood-tags", title: "Mood & Tags", description: "Add tags to organize entries and pick an emoji that matches how you felt.", emoji: "\u{1F3F7}\uFE0F", position: "top" },
-  { target: "tour-save", title: "Auto-Save & Manual Save", description: "Your journal auto-saves as you type! You can also click Save anytime.", emoji: "\u{1F4BE}", position: "top" },
-  { target: "tour-done", title: "You\u2019re All Set!", description: "Start writing your first entry now. Happy writing!", emoji: "\u{1F389}", position: "center" },
-];
-const TOUR_STORAGE_KEY = "journal_tour_completed";
-
-/* Solid-surface primitives shared across the non-journal views (matches the app's real sidebar/header chrome — white cards, soft shadow, violet accent, no blur). */
-const SURFACE_CARD = 'rounded-3xl border border-violet-100 bg-white shadow-[0_2px_16px_rgba(79,70,229,0.06)]';
-const SURFACE_INNER = 'rounded-xl border border-violet-100 bg-violet-50/50';
+/* Glass primitives shared across the non-journal views — matches the Exams page
+   and the Journal folio: frosted white, soft purple border, blur + saturate. */
+const SURFACE_CARD = 'rounded-3xl border border-[rgba(139,92,246,0.35)] bg-white/60 backdrop-blur-[20px] backdrop-saturate-[180%] shadow-[0_4px_24px_rgba(15,23,42,0.05)]';
+const SURFACE_INNER = 'rounded-xl border border-[rgba(139,92,246,0.2)] bg-white/50 backdrop-blur-sm';
 
 const AssignmentView = forwardRef(({ defaultType = "school" }, ref) => {
   const API_BASE = (import.meta.env.VITE_API_URL || "http://localhost:5000").replace(/\/$/, "");
@@ -45,27 +33,8 @@ const AssignmentView = forwardRef(({ defaultType = "school" }, ref) => {
   const [showMobileIndex, setShowMobileIndex] = useState(false);
   const [journalSearch, setJournalSearch] = useState("");
 
-  /* Tour state */
-  const [tourStep, setTourStep] = useState(-1);
-  const [tourDismissed, setTourDismissed] = useState(() => {
-    try { return localStorage.getItem(TOUR_STORAGE_KEY) === "true"; } catch { return false; }
-  });
-
   useEffect(() => { setAssignmentType(defaultType); }, [defaultType]);
   useEffect(() => { if (assignmentType === "journal") loadJournalEntries(); }, [assignmentType]);
-  useEffect(() => {
-    if (assignmentType === "journal" && !tourDismissed && tourStep === -1) {
-      const t = setTimeout(() => setTourStep(0), 600);
-      return () => clearTimeout(t);
-    }
-  }, [assignmentType, tourDismissed]);
-
-  /* Tour helpers */
-  const tourNext = useCallback(() => setTourStep((s) => Math.min(s + 1, TOUR_STEPS.length - 1)), []);
-  const tourPrev = useCallback(() => setTourStep((s) => Math.max(s - 1, 0)), []);
-  const tourFinish = useCallback(() => { setTourStep(-1); setTourDismissed(true); try { localStorage.setItem(TOUR_STORAGE_KEY, "true"); } catch { } }, []);
-  const tourSkip = tourFinish;
-  const restartTour = useCallback(() => { setTourDismissed(false); setTourStep(0); try { localStorage.removeItem(TOUR_STORAGE_KEY); } catch { } }, []);
 
   /* Auth */
   const getAuthHeaders = () => {
@@ -215,7 +184,7 @@ const AssignmentView = forwardRef(({ defaultType = "school" }, ref) => {
 
       {/* ═══════════════ JOURNAL — FOLIO (glass / purple) ═══════════════ */}
       {assignmentType === "journal" && (
-        <div data-tour-root className="relative mx-auto h-full max-w-7xl overflow-y-auto custom-scrollbar px-1 pb-6">
+        <div className="relative mx-auto h-full max-w-7xl overflow-y-auto custom-scrollbar px-1 pb-6">
           {/* Ambient glow */}
           <div className="pointer-events-none absolute inset-0 -z-10 overflow-hidden rounded-2xl">
             <div className="absolute -top-24 -left-24 h-96 w-96 rounded-full bg-[#ede9fe]/70 blur-[100px]" />
@@ -235,14 +204,6 @@ const AssignmentView = forwardRef(({ defaultType = "school" }, ref) => {
               </div>
             </div>
             <div className="flex items-center gap-2 sm:gap-3">
-              {tourDismissed && (
-                <button
-                  onClick={restartTour}
-                  className="hidden items-center gap-1.5 rounded-full px-3 py-1.5 text-xs font-medium text-[#64748b] transition-colors hover:bg-[#f5f3ff] sm:flex"
-                >
-                  <Sparkles className="size-3.5" /> Tour
-                </button>
-              )}
               <div
                 className={`flex items-center gap-1.5 rounded-xl border px-2.5 py-1 text-[11px] font-semibold ${
                   autosaveLabel === "Saved"
@@ -262,7 +223,6 @@ const AssignmentView = forwardRef(({ defaultType = "school" }, ref) => {
             {/* ─── LEFT: Ledger ─── */}
             <aside className="flex w-full shrink-0 flex-col gap-3 lg:w-80">
               <button
-                data-tour="tour-new-entry"
                 onClick={() => { resetJournalForm(); setShowMobileIndex(false); }}
                 className="group flex w-full items-center justify-center gap-2 rounded-xl border border-[#8b5cf6]/25 bg-white/70 px-4 py-2.5 shadow-sm backdrop-blur-xl transition-all duration-200 hover:-translate-y-0.5 hover:bg-white/90"
               >
@@ -299,7 +259,6 @@ const AssignmentView = forwardRef(({ defaultType = "school" }, ref) => {
               </button>
 
               <div
-                data-tour="tour-timeline"
                 className={`${showMobileIndex ? "flex" : "hidden"} max-h-[560px] flex-col gap-3 overflow-y-auto pr-1 custom-scrollbar lg:flex`}
               >
                 {journalLoading && (
@@ -397,7 +356,6 @@ const AssignmentView = forwardRef(({ defaultType = "school" }, ref) => {
               {/* Title input */}
               <div className="pb-4 pt-5">
                 <input
-                  data-tour="tour-title"
                   type="text"
                   value={journalTitle}
                   onChange={(e) => setJournalTitle(e.target.value)}
@@ -407,7 +365,7 @@ const AssignmentView = forwardRef(({ defaultType = "school" }, ref) => {
               </div>
 
               {/* Body */}
-              <div data-tour="tour-content" className="relative">
+              <div className="relative">
                 <textarea
                   value={journalContent.replace(/<[^>]*>/g, "")}
                   onChange={(e) => setJournalContent(e.target.value)}
@@ -418,7 +376,7 @@ const AssignmentView = forwardRef(({ defaultType = "school" }, ref) => {
               </div>
 
               {/* Tags & Mood */}
-              <div data-tour="tour-mood-tags" className="mt-4 grid grid-cols-1 gap-6 border-t border-[#8b5cf6]/20 pt-5 md:grid-cols-2">
+              <div className="mt-4 grid grid-cols-1 gap-6 border-t border-[#8b5cf6]/20 pt-5 md:grid-cols-2">
                 <div className="space-y-3">
                   <label className="block text-[10px] font-bold uppercase tracking-widest text-[#94a3b8]">Categories &amp; Tags</label>
                   <div className="flex flex-wrap gap-2">
@@ -488,7 +446,6 @@ const AssignmentView = forwardRef(({ defaultType = "school" }, ref) => {
                   {autosaveLabel === "Saved" ? "✓ All changes saved" : autosaveLabel.includes("Saving") ? "Saving…" : "Unsaved changes"}
                 </span>
                 <button
-                  data-tour="tour-save"
                   onClick={handleSaveDraft}
                   className="flex items-center gap-2 rounded-xl bg-[#8b5cf6] px-5 py-2.5 text-[13px] font-semibold text-white shadow-md shadow-[#8b5cf6]/30 transition-all duration-200 ease-out hover:-translate-y-0.5 hover:bg-purple-600"
                 >
@@ -498,74 +455,6 @@ const AssignmentView = forwardRef(({ defaultType = "school" }, ref) => {
               </div>
             </section>
           </div>
-
-          {/* ═══════════════ TOUR OVERLAY ═══════════════ */}
-          {tourStep >= 0 && tourStep < TOUR_STEPS.length && (() => {
-            const step = TOUR_STEPS[tourStep];
-            const isCentered = step.position === "center";
-            const targetEl = !isCentered ? document.querySelector(`[data-tour="${step.target}"]`) : null;
-            const rect = targetEl?.getBoundingClientRect();
-            const parentRect = targetEl?.closest("[data-tour-root]")?.getBoundingClientRect();
-            const relTop = rect && parentRect ? rect.top - parentRect.top : 0;
-            const relLeft = rect && parentRect ? rect.left - parentRect.left : 0;
-
-            return (
-              <div className="absolute inset-0 z-50 rounded-2xl overflow-hidden">
-                <div className="absolute inset-0 bg-black/40 backdrop-blur-[1px]" onClick={tourSkip} />
-                {targetEl && rect && parentRect && (
-                  <div className="absolute rounded-lg ring-4 ring-[#8b5cf6]/60 shadow-lg shadow-[#8b5cf6]/30"
-                    style={{ top: relTop - 4, left: relLeft - 4, width: rect.width + 8, height: rect.height + 8, backgroundColor: "rgba(255,255,255,0.15)", pointerEvents: "none" }} />
-                )}
-                <div
-                  className={`absolute flex flex-col rounded-xl border bg-white p-5 shadow-2xl ${isCentered ? "left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2" : ""}`}
-                  style={{
-                    borderColor: "#ede9fe",
-                    width: "min(340px, 85vw)",
-                    zIndex: 60,
-                    ...(!isCentered && rect && parentRect ? {
-                      top: step.position === "top" ? Math.max(10, relTop - 180) : Math.min(Math.max(10, relTop + 10), parentRect.height - 220),
-                      left: Math.max(10, Math.min(step.position === "right" ? relLeft + rect.width + 16 : step.position === "left" ? relLeft - 356 : relLeft, parentRect.width - 360)),
-                    } : {}),
-                  }}
-                >
-                  <button onClick={tourSkip} className="absolute right-2 top-2 rounded-full p-1 text-gray-400 hover:bg-gray-100 transition">
-                    <X className="h-4 w-4" />
-                  </button>
-                  <div className="flex items-center gap-3 mb-2">
-                    <span className="text-3xl">{step.emoji}</span>
-                    <h3 className="text-base font-bold text-gray-900 pr-6">{step.title}</h3>
-                  </div>
-                  <p className="text-sm text-gray-600 leading-relaxed mb-4">{step.description}</p>
-                  <div className="flex items-center justify-between">
-                    <div className="flex gap-1.5">
-                      {TOUR_STEPS.map((_, i) => (
-                        <div key={i} className={`h-2 rounded-full transition-all ${i === tourStep ? "w-5 bg-[#8b5cf6]" : i < tourStep ? "w-2 bg-[#c4b5fd]" : "w-2 bg-gray-200"}`} />
-                      ))}
-                    </div>
-                    <div className="flex items-center gap-2">
-                      {tourStep > 0 && (
-                        <button onClick={tourPrev} className="flex items-center gap-1 rounded-lg border border-gray-200 px-3 py-1.5 text-xs font-medium text-gray-600 hover:bg-gray-50 transition">
-                          <ChevronLeft className="h-3 w-3" /> Back
-                        </button>
-                      )}
-                      {tourStep < TOUR_STEPS.length - 1 ? (
-                        <button onClick={tourNext} className="flex items-center gap-1 rounded-lg px-3 py-1.5 text-xs font-medium text-white shadow transition hover:brightness-110"
-                          style={{ backgroundColor: "#8b5cf6" }}>
-                          Next <ChevronRight className="h-3 w-3" />
-                        </button>
-                      ) : (
-                        <button onClick={tourFinish} className="flex items-center gap-1 rounded-lg px-4 py-1.5 text-xs font-medium text-white shadow transition hover:brightness-110"
-                          style={{ backgroundColor: "#8b5cf6" }}>
-                          Start Writing!
-                        </button>
-                      )}
-                    </div>
-                  </div>
-                  <div className="mt-2 text-center text-[10px] text-gray-400">{tourStep + 1} of {TOUR_STEPS.length}</div>
-                </div>
-              </div>
-            );
-          })()}
         </div>
       )}
 
@@ -575,10 +464,10 @@ const AssignmentView = forwardRef(({ defaultType = "school" }, ref) => {
           {/* ─── Tab Bar (switches between School / Practice / Lab / FlashCard) ─── */}
           <div className={`page-fade-in ${SURFACE_CARD} flex flex-wrap items-center justify-between gap-4 p-4 sm:px-6`}>
             <div>
-              <h1 className="text-xl font-bold tracking-tight text-[#0b1c30] sm:text-2xl">
+              <h1 className="text-xl font-bold tracking-tight text-[#0f172a] sm:text-2xl">
                 Assignments
               </h1>
-              <p className="mt-0.5 text-xs text-[#464555] sm:text-sm">
+              <p className="mt-0.5 text-xs text-[#64748b] sm:text-sm">
                 Manage your assignments and submissions
               </p>
             </div>
@@ -591,7 +480,7 @@ const AssignmentView = forwardRef(({ defaultType = "school" }, ref) => {
                   className={`flex items-center gap-1.5 rounded-lg px-3.5 py-2 text-sm font-semibold transition-all duration-200 ease-out sm:px-4 ${
                     assignmentType === t.key
                       ? 'bg-violet-600 text-white shadow-sm'
-                      : 'text-[#464555] hover:bg-white hover:text-violet-700'
+                      : 'text-[#64748b] hover:bg-white hover:text-violet-700'
                   }`}
                 >
                   <t.icon className="h-4 w-4" />

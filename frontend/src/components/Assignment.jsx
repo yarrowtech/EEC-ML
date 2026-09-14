@@ -54,10 +54,11 @@ const LAB_EXPERIMENTS = [
   // ... (your LAB_EXPERIMENTS array here - unchanged)
 ];
 
-/* Solid-surface primitives (white cards, soft shadow, violet accent — no blur, matches the app's real sidebar/header chrome). */
-const SURFACE_CARD = 'rounded-3xl border border-violet-100 bg-white shadow-[0_2px_16px_rgba(79,70,229,0.06)]';
-const SURFACE_INNER = 'rounded-xl border border-violet-100 bg-violet-50/50';
-const SURFACE_HOVER = 'transition-all duration-200 ease-out hover:-translate-y-0.5 hover:shadow-[0_8px_24px_rgba(139,92,246,0.12)]';
+/* Glass primitives — matches the Exams page, Journal folio, and the Lab/Practice
+   tabs below: frosted white, soft purple border, blur + saturate. */
+const SURFACE_CARD = 'rounded-3xl border border-[rgba(139,92,246,0.35)] bg-white/60 backdrop-blur-[20px] backdrop-saturate-[180%] shadow-[0_4px_24px_rgba(15,23,42,0.05)]';
+const SURFACE_INNER = 'rounded-xl border border-[rgba(139,92,246,0.2)] bg-white/50 backdrop-blur-sm';
+const SURFACE_HOVER = 'transition-all duration-200 ease-out hover:-translate-y-0.5 hover:shadow-[0_10px_32px_rgba(15,23,42,0.08)]';
 
 const ALLOWED_SUBMISSION_TYPES = new Set(['application/pdf', 'image/jpeg', 'image/png', 'image/webp', 'image/heic', 'image/heif']);
 const ALLOWED_SUBMISSION_EXTENSIONS = /\.(pdf|jpe?g|png|webp|heic|heif)$/i;
@@ -911,7 +912,7 @@ const Assignment = ({ assignmentType }) => {
           <div className={`page-fade-in ${SURFACE_CARD} p-5 sm:p-6`}>
             <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
               <div className="flex items-center gap-2">
-                <span className="text-xs font-bold uppercase tracking-wider text-[#464555]">Choose a Subject</span>
+                <span className="text-xs font-bold uppercase tracking-wider text-[#64748b]">Choose a Subject</span>
                 <span className="h-1.5 w-1.5 rounded-full bg-violet-500" />
               </div>
               <div className="relative w-full max-w-[220px]">
@@ -920,7 +921,7 @@ const Assignment = ({ assignmentType }) => {
                   value={schoolSearch}
                   onChange={(e) => setSchoolSearch(e.target.value)}
                   placeholder="Search assignments..."
-                  className={`w-full pl-8 pr-3 py-1.5 ${SURFACE_INNER} text-xs text-[#0b1c30] placeholder:text-[#8e9aaf] outline-none focus:border-violet-300`}
+                  className={`w-full pl-8 pr-3 py-1.5 ${SURFACE_INNER} text-xs text-[#0f172a] placeholder:text-[#8e9aaf] outline-none focus:border-violet-300`}
                 />
               </div>
             </div>
@@ -933,7 +934,7 @@ const Assignment = ({ assignmentType }) => {
             ) : subjects.length === 0 ? (
               <div className="flex flex-col items-center gap-2 rounded-2xl border-2 border-dashed border-violet-200 py-14 text-center">
                 <Inbox className="h-9 w-9 text-violet-300" />
-                <p className="text-sm font-bold text-[#0b1c30]">No assignments yet</p>
+                <p className="text-sm font-bold text-[#0f172a]">No assignments yet</p>
                 <p className="text-xs text-[#8e9aaf]">Your teachers haven&rsquo;t posted anything here yet.</p>
               </div>
             ) : (
@@ -950,7 +951,7 @@ const Assignment = ({ assignmentType }) => {
                       className={`page-fade-in group relative flex flex-col justify-between rounded-xl p-4 text-left transition-all duration-200 ease-out ${
                         active
                           ? 'scale-[1.01] bg-violet-600 text-white shadow-md shadow-violet-600/25'
-                          : `${SURFACE_INNER} text-[#0b1c30] hover:-translate-y-0.5 hover:shadow-sm`
+                          : `${SURFACE_INNER} text-[#0f172a] hover:-translate-y-0.5 hover:shadow-sm`
                       }`}
                     >
                       {s.pendingCount > 0 && (
@@ -965,11 +966,11 @@ const Assignment = ({ assignmentType }) => {
                           <Icon className="h-5 w-5" />
                         </div>
                         <div className="min-w-0">
-                          <span className={`block truncate text-sm font-bold ${active ? 'text-white' : 'text-[#0b1c30]'}`}>{s.name}</span>
+                          <span className={`block truncate text-sm font-bold ${active ? 'text-white' : 'text-[#0f172a]'}`}>{s.name}</span>
                           <span className={`block text-[11px] font-medium ${active ? 'text-white/70' : 'text-[#8e9aaf]'}`}>{s.items.length} task{s.items.length === 1 ? '' : 's'}</span>
                         </div>
                       </div>
-                      <div className={`flex items-center justify-between text-xs font-medium ${active ? 'text-white/80' : 'text-[#464555]'}`}>
+                      <div className={`flex items-center justify-between text-xs font-medium ${active ? 'text-white/80' : 'text-[#64748b]'}`}>
                         <span>{s.pendingCount === 0 ? 'Caught up' : `${s.pendingCount} to do`}</span>
                         <ChevronRight className={`h-4 w-4 transition-transform group-hover:translate-x-0.5 ${active ? 'text-white' : 'text-[#8e9aaf]'}`} />
                       </div>
@@ -990,7 +991,7 @@ const Assignment = ({ assignmentType }) => {
                   </div>
                   <div className="min-w-0">
                     <div className="flex items-center gap-2">
-                      <span className="truncate text-sm font-bold text-[#0b1c30]">{activeSubject.name}</span>
+                      <span className="truncate text-sm font-bold text-[#0f172a]">{activeSubject.name}</span>
                       <span className="shrink-0 rounded-full bg-violet-50 px-2 py-0.5 text-[11px] font-semibold text-violet-600">
                         {chapters.length} chapter{chapters.length === 1 ? '' : 's'}
                       </span>
@@ -1005,12 +1006,12 @@ const Assignment = ({ assignmentType }) => {
                       type="button"
                       onClick={() => setExpandedChapter(c.title)}
                       className={`flex shrink-0 items-center gap-1.5 whitespace-nowrap rounded-lg px-3 py-1.5 text-xs font-semibold transition-colors duration-200 ${
-                        expandedChapter === c.title ? 'bg-violet-600 text-white shadow-sm' : 'text-[#464555] hover:bg-white'
+                        expandedChapter === c.title ? 'bg-violet-600 text-white shadow-sm' : 'text-[#64748b] hover:bg-white'
                       }`}
                     >
                       <span className={`h-1.5 w-1.5 rounded-full ${c.done === c.total ? 'bg-emerald-400' : expandedChapter === c.title ? 'bg-sky-300' : 'bg-[#c7c4d8]'}`} />
                       {c.title}
-                      <span className={`rounded px-1 text-[10px] ${expandedChapter === c.title ? 'bg-white/20' : 'bg-white text-[#464555]'}`}>{c.done}/{c.total}</span>
+                      <span className={`rounded px-1 text-[10px] ${expandedChapter === c.title ? 'bg-white/20' : 'bg-white text-[#64748b]'}`}>{c.done}/{c.total}</span>
                     </button>
                   ))}
                 </div>
@@ -1041,7 +1042,7 @@ const Assignment = ({ assignmentType }) => {
                                 </span>
                               )}
                             </div>
-                            <h3 className="mt-0.5 text-sm font-bold text-[#0b1c30] sm:text-base">{chapter.title}</h3>
+                            <h3 className="mt-0.5 text-sm font-bold text-[#0f172a] sm:text-base">{chapter.title}</h3>
                           </div>
                         </div>
                         <div className="flex items-center gap-3 self-end sm:self-center">
@@ -1093,12 +1094,12 @@ const Assignment = ({ assignmentType }) => {
                                           </span>
                                         )}
                                         {task.maxMarks ? (
-                                          <span className="rounded-full border border-violet-100 bg-white px-2.5 py-1 text-[11px] font-semibold text-[#464555]">{task.maxMarks} marks</span>
+                                          <span className="rounded-full border border-violet-100 bg-white px-2.5 py-1 text-[11px] font-semibold text-[#64748b]">{task.maxMarks} marks</span>
                                         ) : null}
                                       </div>
-                                      <h4 className="text-base font-bold text-[#0b1c30] sm:text-lg">{task.title}</h4>
+                                      <h4 className="text-base font-bold text-[#0f172a] sm:text-lg">{task.title}</h4>
                                       {task.description && (
-                                        <p className="mt-1 text-xs leading-relaxed text-[#464555] line-clamp-2 sm:text-sm">{task.description}</p>
+                                        <p className="mt-1 text-xs leading-relaxed text-[#64748b] line-clamp-2 sm:text-sm">{task.description}</p>
                                       )}
                                     </div>
                                     <button
@@ -1123,7 +1124,7 @@ const Assignment = ({ assignmentType }) => {
                                   <div key={task.id} className={`flex flex-col justify-between gap-2 rounded-xl border border-violet-100 bg-violet-50/40 p-4`}>
                                     <div>
                                       <div className="mb-2 flex items-center justify-between gap-2">
-                                        <span className="inline-flex items-center gap-1 rounded-full border border-violet-100 bg-white px-2 py-0.5 text-[10px] font-bold text-[#464555]">
+                                        <span className="inline-flex items-center gap-1 rounded-full border border-violet-100 bg-white px-2 py-0.5 text-[10px] font-bold text-[#64748b]">
                                           {task.type || 'Assignment'}
                                         </span>
                                         {hasScore && (
@@ -1132,7 +1133,7 @@ const Assignment = ({ assignmentType }) => {
                                           </span>
                                         )}
                                       </div>
-                                      <h5 className="text-sm font-bold text-[#0b1c30]">{task.title}</h5>
+                                      <h5 className="text-sm font-bold text-[#0f172a]">{task.title}</h5>
                                       {task.submittedAt && (
                                         <p className="mt-1 text-xs text-[#8e9aaf]">
                                           Submitted {formatDate(task.submittedAt)}{task.submissionStatus === 'late' ? ' • Late' : ''}
@@ -1193,7 +1194,7 @@ const Assignment = ({ assignmentType }) => {
             <button
               type="button"
               onClick={() => setSelectedAssignment(null)}
-              className="group flex items-center gap-2 self-start text-sm font-semibold text-[#464555] transition-colors duration-200 hover:text-violet-700"
+              className="group flex items-center gap-2 self-start text-sm font-semibold text-[#64748b] transition-colors duration-200 hover:text-violet-700"
             >
               <span className={`flex h-7 w-7 items-center justify-center rounded-lg border border-violet-100 bg-white transition-all duration-200 group-hover:border-violet-300 group-hover:bg-violet-50`}>
                 <ArrowLeft className="h-4 w-4" />
@@ -1213,8 +1214,8 @@ const Assignment = ({ assignmentType }) => {
                   <span className="rounded-full bg-violet-50 px-3 py-1 text-xs font-bold text-violet-600">{a.type}</span>
                 )}
               </div>
-              <h1 className="mt-3 text-xl font-extrabold tracking-tight text-[#0b1c30] sm:text-2xl">{a.title}</h1>
-              <div className="mt-3 flex flex-wrap items-center gap-3 text-sm text-[#464555]">
+              <h1 className="mt-3 text-xl font-extrabold tracking-tight text-[#0f172a] sm:text-2xl">{a.title}</h1>
+              <div className="mt-3 flex flex-wrap items-center gap-3 text-sm text-[#64748b]">
                 {a.dueDate && (
                   <span className="flex items-center gap-1.5 font-medium">
                     <CalendarClock className="h-4 w-4 text-violet-500" />
@@ -1245,7 +1246,7 @@ const Assignment = ({ assignmentType }) => {
                   <div className="flex items-center gap-3 border-b border-violet-50 pb-3">
                     <span className="flex h-9 w-9 items-center justify-center rounded-xl bg-violet-600 text-sm font-bold text-white shadow-sm">{instructionsStep}</span>
                     <div>
-                      <h2 className="text-base font-bold text-[#0b1c30] sm:text-lg">Assignment Instructions</h2>
+                      <h2 className="text-base font-bold text-[#0f172a] sm:text-lg">Assignment Instructions</h2>
                       {(a.chapterTitle || a.topic) && (
                         <p className="text-xs text-[#8e9aaf]">{[a.chapterTitle, a.topic].filter(Boolean).join(' • ')}</p>
                       )}
@@ -1277,7 +1278,7 @@ const Assignment = ({ assignmentType }) => {
                   <div className={`${SURFACE_CARD} flex flex-col gap-3 p-5 sm:p-6`}>
                     <div className="flex items-center gap-3 border-b border-violet-50 pb-3">
                       <span className="flex h-9 w-9 items-center justify-center rounded-xl bg-violet-600 text-sm font-bold text-white shadow-sm">{attachmentsStep}</span>
-                      <h2 className="text-base font-bold text-[#0b1c30] sm:text-lg">Teacher&rsquo;s Worksheet</h2>
+                      <h2 className="text-base font-bold text-[#0f172a] sm:text-lg">Teacher&rsquo;s Worksheet</h2>
                     </div>
                     <div className="space-y-2">
                       {a.attachments.map((att, i) => (
@@ -1306,7 +1307,7 @@ const Assignment = ({ assignmentType }) => {
                         <LifeBuoy className="h-4.5 w-4.5" />
                       </div>
                       <div>
-                        <p className="text-xs font-bold text-[#0b1c30]">Need help or have a question?</p>
+                        <p className="text-xs font-bold text-[#0f172a]">Need help or have a question?</p>
                         <p className="text-[11px] text-[#8e9aaf]">Send a quick message to {a.teacherName}</p>
                       </div>
                     </div>
@@ -1328,7 +1329,7 @@ const Assignment = ({ assignmentType }) => {
                   <div className="flex items-center gap-3 border-b border-violet-50 pb-3">
                     <span className="flex h-9 w-9 items-center justify-center rounded-xl bg-violet-600 text-sm font-bold text-white shadow-sm">{submitStep}</span>
                     <div>
-                      <h2 className="text-base font-bold text-[#0b1c30] sm:text-lg">
+                      <h2 className="text-base font-bold text-[#0f172a] sm:text-lg">
                         {isGraded ? 'Result' : isSubmitted ? 'Your Submission' : 'Submit Assignment'}
                       </h2>
                       <p className="text-xs text-[#8e9aaf]">{requiresPdfUpload ? 'Photo or PDF of your work' : 'Type your answer online'}</p>
@@ -1435,13 +1436,13 @@ const Assignment = ({ assignmentType }) => {
                                     <span className="mb-1 flex h-14 w-14 items-center justify-center rounded-2xl bg-white text-violet-600 shadow-sm transition-transform group-hover:scale-105">
                                       <ImagePlus className="h-7 w-7" />
                                     </span>
-                                    <span className="text-sm font-bold text-[#0b1c30]">Take a photo or upload your work</span>
+                                    <span className="text-sm font-bold text-[#0f172a]">Take a photo or upload your work</span>
                                     <span className="mt-1 max-w-[220px] text-xs text-[#8e9aaf]">Tap here, take a picture with your phone/tablet, or drag files</span>
                                     <div className="mt-3 flex items-center gap-2">
-                                      <span className="inline-flex items-center gap-1 rounded-lg bg-white px-2.5 py-1 text-[11px] font-semibold text-[#464555] shadow-sm">
+                                      <span className="inline-flex items-center gap-1 rounded-lg bg-white px-2.5 py-1 text-[11px] font-semibold text-[#64748b] shadow-sm">
                                         <Camera className="h-3.5 w-3.5 text-violet-600" /> Camera
                                       </span>
-                                      <span className="inline-flex items-center gap-1 rounded-lg bg-white px-2.5 py-1 text-[11px] font-semibold text-[#464555] shadow-sm">
+                                      <span className="inline-flex items-center gap-1 rounded-lg bg-white px-2.5 py-1 text-[11px] font-semibold text-[#64748b] shadow-sm">
                                         <Upload className="h-3.5 w-3.5 text-violet-600" /> Files / PDF
                                       </span>
                                     </div>
@@ -1459,7 +1460,7 @@ const Assignment = ({ assignmentType }) => {
                                         <FileText className="h-5 w-5" />
                                       </div>
                                       <div className="min-w-0">
-                                        <p className="truncate text-sm font-bold text-[#0b1c30]">{submissionFileName || 'Uploaded file'}</p>
+                                        <p className="truncate text-sm font-bold text-[#0f172a]">{submissionFileName || 'Uploaded file'}</p>
                                         <p className="mt-0.5 text-[11px] font-medium text-[#8e9aaf]">
                                           {[formatFileSize(submissionFileSize), 'Added just now'].filter(Boolean).join(' • ')}
                                         </p>
@@ -1492,7 +1493,7 @@ const Assignment = ({ assignmentType }) => {
                                 onChange={(e) => setSubmissionText(e.target.value)}
                                 rows={2}
                                 placeholder="Add a note for your teacher (optional)..."
-                                className="w-full resize-none rounded-xl border border-violet-100 bg-violet-50/30 px-4 py-3 text-sm text-[#0b1c30] placeholder:text-[#8e9aaf] outline-none focus:border-violet-300"
+                                className="w-full resize-none rounded-xl border border-violet-100 bg-violet-50/30 px-4 py-3 text-sm text-[#0f172a] placeholder:text-[#8e9aaf] outline-none focus:border-violet-300"
                               />
                             </>
                           ) : (
@@ -1501,7 +1502,7 @@ const Assignment = ({ assignmentType }) => {
                               onChange={(e) => setSubmissionText(e.target.value)}
                               rows={6}
                               placeholder="Write your answer here..."
-                              className="w-full resize-none rounded-xl border border-violet-100 bg-violet-50/30 px-4 py-3 text-sm text-[#0b1c30] placeholder:text-[#8e9aaf] outline-none focus:border-violet-300"
+                              className="w-full resize-none rounded-xl border border-violet-100 bg-violet-50/30 px-4 py-3 text-sm text-[#0f172a] placeholder:text-[#8e9aaf] outline-none focus:border-violet-300"
                             />
                           )}
                           <button
