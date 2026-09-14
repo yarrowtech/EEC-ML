@@ -597,6 +597,7 @@ const TeacherDashboard = () => {
               </MotionSection>
             )}
 
+
             <MotionSection variants={itemVariants} className="grid gap-4 2xl:grid-cols-[1fr_360px]">
               <div className="space-y-4">
                 <CardShell>
@@ -673,7 +674,7 @@ const TeacherDashboard = () => {
                 </div>
               </div>
 
-            </MotionSection>
+            </MotionSection> 
           </MotionDiv>
       </div>
       </div>
