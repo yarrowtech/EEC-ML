@@ -335,6 +335,7 @@ const StudentExamsView = () => {
     schoolName: String(profile?.schoolName || '').trim(),
     schoolAddressLine: String(profile?.schoolAddress || '').trim(),
     logoUrl: String(profile?.schoolLogo || '').trim(),
+    principalName: String(profile?.principalName || '').trim(),
   }), [profile]);
 
   const handleDownload = async (group) => {

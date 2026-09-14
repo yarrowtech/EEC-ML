@@ -532,7 +532,8 @@ const NoticeBoard = () => {
     schoolName: String(profile?.schoolName || '').trim(),
     schoolAddressLine: String(profile?.schoolAddress || '').trim(),
     logoUrl: String(profile?.schoolLogo || '').trim(),
-  }), [profile?.schoolAddress, profile?.schoolLogo, profile?.schoolName]);
+    principalName: String(profile?.principalName || '').trim(),
+  }), [profile?.schoolAddress, profile?.schoolLogo, profile?.schoolName, profile?.principalName]);
 
   const matchedExamGroup = selectedNotice && isExamNotice(selectedNotice)
     ? findExamGroupForNotice(selectedNotice, examGroups)

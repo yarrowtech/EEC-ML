@@ -1411,16 +1411,16 @@ const ExaminationManagement = ({ setShowAdminHeader }) => {
       { align: "right" }
     );
 
-    doc.setFont("helvetica", "bold");
-    doc.setFontSize(8);
-    doc.setTextColor(...colors.dark);
+    // doc.setFont("helvetica", "bold");
+    // doc.setFontSize(8);
+    // doc.setTextColor(...colors.dark);
 
-    doc.text(
-      yearName || "—",
-      pageWidth - margin,
-      headerTop + 12,
-      { align: "right" }
-    );
+    // doc.text(
+    //   yearName || "—",
+    //   pageWidth - margin,
+    //   headerTop + 12,
+    //   { align: "right" }
+    // );
 
     // Header separator
     doc.setDrawColor(...colors.dark);

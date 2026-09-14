@@ -22,6 +22,7 @@ const SupportRequest = require('../models/SupportRequest');
 const StudentObservation = require('../models/StudentObservation');
 const StudentEnrollmentDraft = require('../models/StudentEnrollmentDraft');
 const Wellbeing = require('../models/Wellbeing');
+const Principal = require('../models/Principal');
 const bcrypt = require('bcryptjs');
 const jwt = require('jsonwebtoken');
 const adminAuth = require('../middleware/adminAuth');
@@ -1420,7 +1421,7 @@ router.get('/dashboard', authStudent, async (req, res) => {
       {
         $project: {
           name: 1, username: 1, email: 1, mobile: 1, grade: 1, section: 1, roll: 1,
-          academicYear: 1, profilePic: 1, campusName: 1, campusType: 1, schoolId: 1,
+          academicYear: 1, profilePic: 1, campusName: 1, campusType: 1, campusId: 1, schoolId: 1,
           onboardingCompleted: 1, learningPreferences: 1,
           totalAttendance: { $size: { $ifNull: ['$attendance', []] } },
           presentDays: {
@@ -1467,6 +1468,23 @@ router.get('/dashboard', authStudent, async (req, res) => {
 
     const schoolInfo = extractSchoolInfo(student.schoolId);
 
+    // Principal's name for document headers (exam routine PDFs, etc.) — same
+    // school-wide-with-campus-override lookup used for report card signatories.
+    // NOTE: student.schoolId was replaced by the populated School doc above —
+    // use schoolInfo.id (the raw ObjectId) here, not student.schoolId itself.
+    const principalFilter = student.campusId
+      ? {
+          schoolId: schoolInfo?.id,
+          $or: [{ campusId: student.campusId }, { campusId: null }, { campusId: { $exists: false } }],
+        }
+      : { schoolId: schoolInfo?.id };
+    const principal = schoolInfo?.id
+      ? await Principal.findOne(principalFilter)
+          .sort({ updatedAt: -1, createdAt: -1 })
+          .select('name')
+          .lean()
+      : null;
+
     const dashboardData = {
       profile: {
         name: student.name,
@@ -1488,6 +1506,7 @@ router.get('/dashboard', authStudent, async (req, res) => {
         schoolName: schoolInfo?.name || '',
         schoolAddress: schoolInfo?.address || '',
         schoolLogo: schoolInfo?.logo || null,
+        principalName: String(principal?.name || '').trim(),
         onboardingCompleted: student.onboardingCompleted || false,
         learningPreferences: student.learningPreferences || { subjects: [], learningStyle: '' },
       },

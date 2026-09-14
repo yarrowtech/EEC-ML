@@ -643,7 +643,11 @@ router.get('/groups/student-schedule', authStudent, async (req, res) => {
     const filter = { schoolId, ...(campusId ? { campusId } : {}) };
     const [groups, exams] = await Promise.all([
       ExamGroup.find(filter)
-        .populate('classId', 'name')
+        .populate({
+          path: 'classId',
+          select: 'name academicYearId',
+          populate: { path: 'academicYearId', select: 'name' },
+        })
         .populate('sectionId', 'name classId')
         .sort({ startDate: 1, createdAt: -1 })
         .lean(),
@@ -680,6 +684,7 @@ router.get('/groups/student-schedule', authStudent, async (req, res) => {
       return {
         ...group,
         subjects,
+        academicYearName: group.classId?.academicYearId?.name || '',
       };
     });
 
