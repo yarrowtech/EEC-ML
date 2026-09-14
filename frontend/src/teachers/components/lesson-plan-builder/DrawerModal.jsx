@@ -61,7 +61,7 @@ const STEPS = [
   { key: 'assessment', label: 'Assessment',         icon: ClipboardList,  color: 'rose'    },
   { key: 'language',   label: 'Language Practice',  icon: Mic,            color: 'indigo'  },
   { key: 'tryout',     label: 'Tryout',             icon: Play,           color: 'pink'    },
-  { key: 'publish',    label: 'Evaluate & Publish', icon: Send,           color: 'emerald' },
+  { key: 'publish',    label: 'Publish', icon: Send,           color: 'emerald' },
 ];
 
 const EVAL_TAGS = ['Excellent', 'Good', 'Needs Improvement'];
@@ -916,9 +916,14 @@ const DrawerModal = ({
           const url = mode === 'reading'
             ? `${base}/api/reading-assessment/teacher/materials/${id}`
             : `${base}/api/writing-assessment/teacher/prompts/${id}`;
-          await fetch(url, { method: 'DELETE', headers: authHdrs() }).catch(() => {});
-          setLangItems((prev) => ({ ...prev, [mode]: prev[mode].filter((x) => x._id !== id) }));
-          toast.success('Removed');
+          try {
+            const resp = await fetch(url, { method: 'DELETE', headers: authHdrs() });
+            if (!resp.ok) throw new Error('Delete failed');
+            setLangItems((prev) => ({ ...prev, [mode]: prev[mode].filter((x) => x._id !== id) }));
+            toast.success('Removed');
+          } catch {
+            toast.error('Failed to remove item. Please try again.');
+          }
         };
 
         const DIFF_COLORS = {

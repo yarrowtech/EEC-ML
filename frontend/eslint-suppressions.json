@@ -2022,7 +2022,7 @@
   },
   "src/teachers/components/lesson-plan-builder/ChapterItem.jsx": {
     "react/prop-types": {
-      "count": 21
+      "count": 24
     }
   },
   "src/teachers/components/lesson-plan-builder/DrawerModal.jsx": {
