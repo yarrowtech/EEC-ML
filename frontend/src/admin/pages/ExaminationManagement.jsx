@@ -7,6 +7,7 @@ import {
   Clock, CloudCheck, Copy, DoorOpen, Edit2, FileClock, FileText, Info, Layers,
   ListChecks, Loader2, MapPin, MoreVertical, Plus, RefreshCw, Rocket, RotateCcw, Search, Settings, Trash2,
   User, Users, X, CheckCircle2, Zap,
+  DownloadIcon,
 } from 'lucide-react';
 import Swal from 'sweetalert2';
 import toast from 'react-hot-toast';
@@ -4867,7 +4868,7 @@ const ExaminationManagement = ({ setShowAdminHeader }) => {
 
         <div className="grid grid-cols-1 lg:grid-cols-[380px_1fr] gap-4">
           {/* ══════════ LEFT: exam list ══════════ */}
-          <div className="rounded-2xl border border-slate-200 bg-white shadow-sm flex flex-col overflow-hidden">
+          <div className="rounded-2xl border border-slate-200 bg-white shadow-sm flex flex-col overflow-hidden self-start">
             <div className="p-4 space-y-3 border-b border-slate-100">
               <div>
                 <label className="text-xs font-semibold text-slate-500 flex items-center gap-1.5 mb-1.5">
@@ -5025,7 +5026,7 @@ const ExaminationManagement = ({ setShowAdminHeader }) => {
                             }}
                             className="w-full flex items-center gap-2 text-left px-3.5 py-2 text-sm text-slate-700 hover:bg-slate-50"
                           >
-                            <FileText size={14} /> Download Routine
+                            <DownloadIcon size={14} /> Download Routine
                           </button>
                           <button onClick={() => handleDeleteBatch(selectedBatch)}
                             className="w-full flex items-center gap-2 text-left px-3.5 py-2 text-sm text-rose-600 hover:bg-rose-50">
@@ -5364,7 +5365,7 @@ const ExaminationManagement = ({ setShowAdminHeader }) => {
                               </ScrollablePillRow>
                               <button type="button" onClick={() => generateSeatingPlanPdf(seatingPlanDisplay, selectedBatch)}
                                 className="shrink-0 flex items-center gap-1.5 px-3.5 py-2 rounded-xl bg-indigo-600 text-white text-xs font-semibold hover:bg-indigo-700 shadow-sm shadow-indigo-200 transition-colors">
-                                <FileText size={13} /> Download Seating Cards (PDF)
+                                <DownloadIcon size={13} /> Download Seating Arrangement
                               </button>
                             </div>
 
@@ -5408,7 +5409,7 @@ const ExaminationManagement = ({ setShowAdminHeader }) => {
 
                   {/* ── Settings ── */}
                   {activeDetailTab === 'settings' && (
-                    <div className="space-y-4 max-w-lg">
+                    <div className="space-y-4 w-full">
                       <InfoCard icon={FileText} iconColor="bg-indigo-600" title="Exam Details" onEdit={() => openEditBatch(selectedBatch)}>
                         <InfoRow label="Exam Title" value={selectedBatch.title} />
                         <InfoRow label="Exam Type / Term" value={selectedBatch.term} />
