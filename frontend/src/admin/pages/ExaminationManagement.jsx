@@ -5052,6 +5052,24 @@ const ExaminationManagement = ({ setShowAdminHeader }) => {
                   {/* ── Overview ── */}
                   {activeDetailTab === 'overview' && (
                     <div className="space-y-4">
+                      {(() => {
+                        const eligibleGroups = selectedBatch.groups.filter((g) => (g.subjects?.length || 0) > 0);
+                        const unpublishedCount = eligibleGroups.filter((g) => g.status !== 'Published').length;
+                        if (!eligibleGroups.length || !unpublishedCount) return null;
+                        return (
+                          <div className="rounded-xl bg-amber-50 border border-amber-100 px-4 py-3">
+                            <p className="text-sm text-amber-700 flex items-start gap-1.5">
+                              <AlertTriangle size={14} className="shrink-0 mt-0.5" />
+                              <span>
+                                {unpublishedCount === eligibleGroups.length
+                                  ? 'This routine is not published yet.'
+                                  : `${unpublishedCount} of ${eligibleGroups.length} class${eligibleGroups.length !== 1 ? 'es' : ''}/section${eligibleGroups.length !== 1 ? 's' : ''} in this exam are not published yet.`}
+                                {' '}Students and parents can only view the subject-wise exam routine on the Notice Board after you publish it from the Routine tab.
+                              </span>
+                            </p>
+                          </div>
+                        );
+                      })()}
                       <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
                         <StatMini icon={Users} iconBg="bg-emerald-50" iconColor="text-emerald-600" value={selectedBatch.totalClasses} label="Classes" />
                         <StatMini icon={Layers} iconBg="bg-blue-50" iconColor="text-blue-600" value={selectedBatch.totalSections} label="Sections" />

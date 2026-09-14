@@ -119,7 +119,9 @@ const toObjectIdIfPossible = (value) => (
   mongoose.isValidObjectId(value) ? new mongoose.Types.ObjectId(value) : value
 );
 
-const ADMIN_SELF_HIDDEN_TYPES = ['notice', 'announcement'];
+// 'exam' included so an admin who creates/publishes an exam routine never
+// sees their own action land back in their own notification feed/count.
+const ADMIN_SELF_HIDDEN_TYPES = ['notice', 'announcement', 'exam'];
 
 router.get('/push/public-key', authAnyUser, async (_req, res) => {
   // #swagger.tags = ['Notifications']
