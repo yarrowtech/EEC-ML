@@ -1644,6 +1644,18 @@ router.get('/parent/children', authParent, async (req, res) => {
         summary: buildSummary(attendance),
         monthlySummary: buildSummary(monthAttendance),
         attendance: monthAttendance,
+        // Full history (all months), for the overview/calendar/daily/weekly
+        // views — date normalized to "YYYY-MM-DD" since those views key
+        // records by plain date strings, not full ISO timestamps.
+        records: attendance
+          .map((item) => ({
+            _id: item._id,
+            date: item.date ? new Date(item.date).toISOString().slice(0, 10) : '',
+            subject: item.subject || '',
+            status: item.status || 'present',
+          }))
+          .filter((item) => item.date)
+          .sort((a, b) => b.date.localeCompare(a.date)),
       };
     });
 

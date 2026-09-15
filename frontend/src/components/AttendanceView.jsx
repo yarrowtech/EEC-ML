@@ -305,7 +305,7 @@ const TABS = [
 
 function TabNav({ activeTab, setActiveTab }) {
   return (
-    <nav className="bg-white p-1.5 rounded-2xl border border-slate-200/80 shadow-[0_2px_8px_-2px_rgba(0,0,0,0.03)] flex flex-wrap items-center gap-1.5 justify-center">
+    <nav className="bg-white p-1.5 rounded-full border border-slate-200/80 shadow-[0_2px_8px_-2px_rgba(0,0,0,0.03)] flex flex-wrap items-center gap-1.5 justify-center">
       {TABS.map(({ id, label, icon: Icon }) => {
         const active = activeTab === id;
         return (
@@ -319,7 +319,7 @@ function TabNav({ activeTab, setActiveTab }) {
             {active && (
               <motion.span
                 layoutId="tab-pill"
-                className="absolute inset-0 rounded-xl bg-gradient-to-br from-indigo-500 to-purple-500 shadow-[0_4px_12px_-2px_rgba(99,102,241,0.35)]"
+                className="absolute inset-0 rounded-full bg-gradient-to-br from-indigo-500 to-purple-500 shadow-[0_4px_12px_-2px_rgba(99,102,241,0.35)]"
                 transition={{ type: "spring", bounce: 0.2, duration: 0.5 }}
               />
             )}
@@ -392,10 +392,10 @@ function OverviewTab({ stats, streak, currentDate, records, subjectStats }) {
         {/* Left: circular progress */}
         <section className="lg:col-span-4 rounded-3xl p-6 sm:p-7 border border-slate-200/80 shadow-[0_2px_12px_-4px_rgba(0,0,0,0.04)] flex flex-col items-center justify-between text-center bg-gradient-to-br from-indigo-50/70 to-slate-50">
           <div className="w-full flex items-center justify-between">
-            <span className="text-xs font-semibold uppercase tracking-wider text-slate-400">
+            <span className="text-xs font-semibold uppercase tracking-wider text-slate-400 text-center">
               Total Rate
             </span>
-            <span className="inline-block w-2 h-2 rounded-full bg-slate-300" />
+            {/* <span className="inline-block w-2 h-2 rounded-full bg-slate-300" /> */}
           </div>
           <CircularProgress pct={stats.percentage} />
           <div className="w-full space-y-3">

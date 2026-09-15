@@ -782,7 +782,7 @@ const ParentPortal = () => {
         </header>
 
         <main id="parent-main-content" className="parent-route-canvas flex-1 overflow-y-auto bg-gradient-to-br from-slate-50 via-white to-violet-50/30 p-0 sm:p-3">
-          <div className="h-full min-h-full sm:rounded-[2rem] sm:border sm:border-white/80 sm:bg-white/40 sm:shadow-sm sm:backdrop-blur-sm">
+          <div className="h-full min-h-full sm:bg-white/40 sm:backdrop-blur-sm">
           <Suspense fallback={<PortalRouteFallback />}>
           <Routes>
             <Route
