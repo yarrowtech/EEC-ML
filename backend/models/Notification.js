@@ -73,6 +73,11 @@ const notificationSchema = new mongoose.Schema(
         building: { type: String, default: '' },
         floor: { type: String, default: '' },
         room: { type: String, default: '' },
+        // Which ExamGroup this row came from — lets a consolidated teacher
+        // duty notice (see createConsolidatedTeacherExamNotifications in
+        // examRoute.js) replace just that group's rows on republish instead
+        // of appending duplicates every time.
+        groupId: { type: String, default: '' },
       },
     ],
     targetUserIds: [{ type: mongoose.Schema.Types.ObjectId, index: true }],

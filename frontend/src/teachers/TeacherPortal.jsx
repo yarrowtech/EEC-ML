@@ -28,6 +28,7 @@ import {
   ThumbsUp,
   ChevronDown,
   ChevronRight,
+  ChevronLeft,
   CalendarDays,
   GraduationCap,
   Library,
@@ -70,6 +71,7 @@ import TryoutManagement from '../components/TryoutManagement';
 import { useDesktopNotificationBridge } from '../hooks/useDesktopNotificationBridge';
 import DesktopNotificationPermissionModal from '../components/DesktopNotificationPermissionModal';
 import NotificationPopover from '../components/NotificationPopover';
+import ExamRoutineTable from '../components/ExamRoutineTable';
 import { AUTH_NOTICE, apiFetch, logoutAndRedirect } from '../utils/authSession';
 import { notificationId, readModuleSeenState, writeModuleSeenState } from '../utils/moduleNotificationUtils';
 
@@ -190,6 +192,10 @@ const resolveTeacherNotificationPath = (notification) => {
   if (blob.includes('substitute') || blob.includes('attendance')) return '/teacher/attendance';
   if (blob.includes('assignment_submission') || blob.includes('new submission') || blob.includes('submitted')) return '/teacher/evaluation';
   if (blob.includes('assignment')) return '/teacher/assignments';
+  if (String(notification?.typeLabel || '').toLowerCase() === 'exam_schedule_teacher' || blob.includes('exam duty') || blob.includes('invigilat')) {
+    const id = String(notification?._id || notification?.id || '');
+    return id ? `/teacher/exam-duty/${id}` : '/teacher/result-management';
+  }
   if (blob.includes('result') || blob.includes('exam')) return '/teacher/result-management';
   if (blob.includes('meeting') || blob.includes('parent')) return '/teacher/parent-meetings';
   if (blob.includes('feedback')) return '/teacher/feedback';
@@ -541,6 +547,119 @@ const TeacherNotifications = () => {
               );
             })}
           </div>
+        )}
+      </div>
+    </div>
+  );
+};
+
+// "HH:mm" (24h) → "h:mm AM/PM"; anything else (already formatted, free text)
+// passes through unchanged.
+const teacherDutyTo12Hour = (value) => {
+  const raw = String(value || '').trim();
+  const match = raw.match(/^(\d{1,2}):(\d{2})$/);
+  if (!match) return raw;
+  const h = Number(match[1]);
+  const m = Number(match[2]);
+  if (!Number.isFinite(h) || !Number.isFinite(m)) return raw;
+  const period = h >= 12 ? 'PM' : 'AM';
+  const hh = ((h + 11) % 12) + 1;
+  return `${hh}:${String(m).padStart(2, '0')} ${period}`;
+};
+
+// Older notices (created before duty rows were deduped server-side) can still
+// carry the same slot more than once, e.g. one row per class/section sharing
+// a subject+date+time+room — collapse those here too so the table only ever
+// shows a duty slot once, regardless of when the notice was created.
+const teacherDutyRowKey = (row) => [row?.date, row?.subject, row?.time, row?.duration, row?.building, row?.floor, row?.room].join('|');
+
+const teacherDutyRows = (examRoutine = []) => {
+  const seen = new Set();
+  return (Array.isArray(examRoutine) ? examRoutine : [])
+    .filter((row) => {
+      const key = teacherDutyRowKey(row);
+      if (seen.has(key)) return false;
+      seen.add(key);
+      return true;
+    })
+    .map((row) => ({
+      ...row,
+      time: teacherDutyTo12Hour(row?.time),
+    }))
+    .sort((a, b) => new Date(a?.date || 0) - new Date(b?.date || 0));
+};
+
+// One notification per exam group ("Exam Duty Assigned: <group title>") — its
+// examRoutine array already carries every duty slot for the teacher, so the
+// duty table renders straight off the notification, no extra fetch needed.
+const TeacherExamDuty = () => {
+  const navigate = useNavigate();
+  const { notificationId } = useParams();
+  const [notification, setNotification] = useState(null);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState('');
+
+  useEffect(() => {
+    let cancelled = false;
+    const load = async () => {
+      setLoading(true);
+      setError('');
+      try {
+        const token = localStorage.getItem('token');
+        const response = await apiFetch(`${API_BASE}/api/notifications/user`, {
+          cache: 'no-store',
+          headers: { 'Content-Type': 'application/json', authorization: `Bearer ${token}` },
+        }, navigate);
+        const data = await response.json().catch(() => []);
+        if (!response.ok) throw new Error(data?.error || 'Unable to load exam duty');
+        const list = Array.isArray(data) ? data : [];
+        const match = list.find((item) => String(item?._id || item?.id || '') === String(notificationId)) || null;
+        if (!cancelled) {
+          if (!match) setError('This exam duty notice could not be found.');
+          setNotification(match);
+        }
+      } catch (err) {
+        if (!cancelled) setError(err.message || 'Unable to load exam duty');
+      } finally {
+        if (!cancelled) setLoading(false);
+      }
+    };
+    load();
+    return () => { cancelled = true; };
+  }, [notificationId, navigate]);
+
+  const rows = useMemo(() => teacherDutyRows(notification?.examRoutine), [notification]);
+
+  return (
+    <div className="min-h-full bg-slate-50 p-3 sm:p-5 lg:p-6">
+      <div className="mx-auto max-w-5xl space-y-5">
+        <button
+          type="button"
+          onClick={() => navigate('/teacher/notifications')}
+          className="inline-flex items-center gap-1.5 text-xs font-semibold text-slate-500 hover:text-slate-800"
+        >
+          <ChevronLeft size={14} />
+          Back to notifications
+        </button>
+
+        <section className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm sm:p-6">
+          <p className="text-xs font-semibold uppercase tracking-[0.18em] text-rose-600">Exam Duty</p>
+          <h1 className="mt-2 text-2xl font-semibold text-slate-950">{notification?.title || 'Exam Duty'}</h1>
+          {notification?.message && <p className="mt-2 max-w-2xl text-sm text-slate-500">{notification.message}</p>}
+        </section>
+
+        {loading ? (
+          <div className="rounded-2xl border border-slate-200 bg-white p-8 text-center text-sm text-slate-500">Loading exam duty…</div>
+        ) : error ? (
+          <div className="rounded-xl border border-rose-200 bg-rose-50 px-4 py-3 text-sm text-rose-700">{error}</div>
+        ) : rows.length === 0 ? (
+          <div className="rounded-2xl border border-dashed border-slate-300 bg-white p-10 text-center">
+            <div className="mx-auto flex h-12 w-12 items-center justify-center rounded-2xl bg-slate-100 text-slate-400"><GraduationCap size={22} /></div>
+            <h2 className="mt-4 text-base font-semibold text-slate-950">No duty slots found</h2>
+            <p className="mt-1 text-sm text-slate-500">This exam duty notice has no schedule attached.</p>
+          </div>
+        ) : (
+          <ExamRoutineTable rows={rows} />
         )}
       </div>
     </div>
@@ -2140,6 +2259,7 @@ const TeacherPortalShell = () => {
                 path="notifications"
                 element={<TeacherNotifications />}
               />
+              <Route path="exam-duty/:notificationId" element={<TeacherExamDuty />} />
               <Route path="resource-library" element={<TeacherAlcove />} />
               <Route path="lesson-plan" element={<AIPoweredTeaching />} />
               <Route path="tryout" element={<TryoutManagement />} />

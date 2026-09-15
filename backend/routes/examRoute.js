@@ -377,6 +377,7 @@ const buildExamRoutineRow = (exam = {}) => ({
   building: exam?.roomId?.floorId?.buildingId?.name || '',
   floor: exam?.roomId?.floorId?.name || '',
   room: exam?.roomId?.roomNumber || '',
+  groupId: exam?.groupId ? String(exam.groupId) : '',
 });
 
 const createExamTeacherNotifications = async ({
@@ -425,9 +426,20 @@ const createExamTeacherNotifications = async ({
   return Notification.insertMany(notifications, { ordered: false });
 };
 
+const slugifyDutyKey = (value) => String(value || '').trim().toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '');
+
 // One notice per teacher covering every subject they're invigilating in this
 // group's routine — replaces the old one-notice-per-subject behavior, where a
 // teacher covering 5 subjects got 5 separate notices instead of one.
+//
+// A single exam ("Third Summative Examination") is often split into several
+// ExamGroup docs — one per class/section — each published independently (see
+// "Publish All Routines"). A teacher invigilating across 5 of those classes
+// would otherwise get 5 separate "Exam Duty Assigned: Third Summative
+// Examination" notices, one per group-publish call. dedupeKey scopes identity
+// to (school, campus, teacher, exam title) instead of the group, so every
+// publish for the same named exam atomically merges its rows into the one
+// notice that teacher already has, rather than creating another.
 const createConsolidatedTeacherExamNotifications = async ({
   schoolId,
   campusId,
@@ -450,25 +462,88 @@ const createConsolidatedTeacherExamNotifications = async ({
   }
   if (!rowsByTeacher.size) return [];
 
-  const notifications = Array.from(rowsByTeacher.entries()).map(([teacherId, rows]) => ({
-    schoolId,
-    campusId: campusId || null,
-    title: `Exam Duty Assigned: ${groupTitle}`,
-    message: `You have been assigned invigilation duty for ${rows.length} exam${rows.length !== 1 ? 's' : ''} in ${groupTitle}.`,
-    audience: 'Teacher',
-    createdBy,
-    createdByType,
-    createdByName,
-    type: 'exam',
-    typeLabel: 'exam_schedule_teacher',
-    priority: 'high',
-    category: 'academic',
-    examRoutine: rows,
-    targetUserIds: [teacherId],
-    relatedEntity: groupId ? { entityType: 'exam', entityId: groupId } : undefined,
-  }));
+  // A duty row is "the same slot" if every displayed column matches — several
+  // class/sections can share one subject+date+time+room (a combined sitting),
+  // and a teacher invigilating all of them should see that slot once, not
+  // once per section. groupId is deliberately excluded from the key so rows
+  // carried over from a different group still collapse against it.
+  const rowKey = (row) => [row.date, row.subject, row.time, row.duration, row.building, row.floor, row.room].join('|');
+  const dedupeRows = (list) => {
+    const seen = new Set();
+    const out = [];
+    list.forEach((row) => {
+      const key = rowKey(row);
+      if (seen.has(key)) return;
+      seen.add(key);
+      out.push(row);
+    });
+    return out;
+  };
 
-  return Notification.insertMany(notifications, { ordered: false });
+  const title = `Exam Duty Assigned: ${groupTitle}`;
+  const results = [];
+  for (const [teacherId, rawRows] of rowsByTeacher.entries()) {
+    const rows = dedupeRows(rawRows);
+    const dedupeKey = `exam-duty:${schoolId}:${campusId || 'none'}:${teacherId}:${slugifyDutyKey(groupTitle)}`;
+
+    // Republishing the same group must replace its rows, not duplicate them —
+    // strip anything already recorded for this groupId before merging it back
+    // in, then dedupe against whatever other groups already contributed.
+    if (groupId) {
+      await Notification.updateOne({ dedupeKey }, { $pull: { examRoutine: { groupId: String(groupId) } } });
+    }
+
+    const buildMerge = (existingRows) => dedupeRows([...(existingRows || []), ...rows]);
+    const setOnInsert = {
+      schoolId,
+      campusId: campusId || null,
+      title,
+      audience: 'Teacher',
+      createdBy,
+      createdByType,
+      createdByName,
+      type: 'exam',
+      typeLabel: 'exam_schedule_teacher',
+      priority: 'high',
+      category: 'academic',
+      targetUserIds: [teacherId],
+      dedupeKey,
+    };
+
+    const existing = await Notification.findOne({ dedupeKey }).select('examRoutine').lean();
+    const mergedRows = buildMerge(existing?.examRoutine);
+    const messageFor = (count) => `You have been assigned invigilation duty for ${count} exam${count !== 1 ? 's' : ''} in ${groupTitle}.`;
+    const setFields = {
+      examRoutine: mergedRows,
+      message: messageFor(mergedRows.length),
+      relatedEntity: groupId ? { entityType: 'exam', entityId: groupId } : undefined,
+    };
+
+    // "Publish All Routines" fires one publish call per class/section group
+    // concurrently, and every one of those groups maps to the same dedupeKey
+    // for a shared teacher — the first insert wins the unique index, the rest
+    // race into it. On that race, re-read + re-merge against the doc that won
+    // and retry as a plain update instead of surfacing the duplicate-key error.
+    let updated;
+    try {
+      updated = await Notification.findOneAndUpdate(
+        { dedupeKey },
+        { $set: setFields, $setOnInsert: setOnInsert },
+        { upsert: true, new: true, setDefaultsOnInsert: true }
+      );
+    } catch (err) {
+      if (err?.code !== 11000) throw err;
+      const latest = await Notification.findOne({ dedupeKey }).select('examRoutine').lean();
+      const remerged = buildMerge(latest?.examRoutine);
+      updated = await Notification.findOneAndUpdate(
+        { dedupeKey },
+        { $set: { ...setFields, examRoutine: remerged, message: messageFor(remerged.length) } },
+        { new: true }
+      );
+    }
+    results.push(updated);
+  }
+  return results;
 };
 
 const isTeacherAssignedInvigilator = (examDoc = {}, teacherIdentitySet = new Set()) => {
