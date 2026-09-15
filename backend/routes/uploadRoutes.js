@@ -118,8 +118,11 @@ router.post("/s3/study-material/single", authTeacher, upload.single("file"), asy
       }],
     });
   } catch (e) {
-    console.error("S3 study material upload error:", e);
-    res.status(503).json({ message: "Study material storage is unavailable" });
+    console.error("S3 study material upload error:", e.name, e.message, e.$metadata?.httpStatusCode);
+    res.status(503).json({
+      message: "Study material storage is unavailable",
+      ...(process.env.NODE_ENV !== "production" && { detail: e.message }),
+    });
   }
 });
 

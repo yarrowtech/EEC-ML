@@ -63,6 +63,14 @@ const getAttachmentUrl = (item) => {
   return attachments.find((attachment) => attachment?.url)?.url || '';
 };
 
+const getAttachmentDownloadUrl = (item) => {
+  if (!item || typeof item !== 'object') return '';
+  if (item.downloadUrl) return item.downloadUrl;
+  const attachments = Array.isArray(item.attachments) ? item.attachments : [];
+  const match = attachments.find((attachment) => attachment?.url);
+  return match?.downloadUrl || getAttachmentUrl(item);
+};
+
 const getInlineDocumentUrl = (rawUrl = '') => {
   const url = String(rawUrl || '').trim();
   if (!url) return '';
@@ -99,7 +107,7 @@ const MaterialQuickActions = ({ material, onRead }) => {
             <ExternalLink size={12} />
             Open
           </a>
-          <a href={material.url} download title="Download" className="inline-flex items-center gap-1 rounded-lg bg-violet-500 px-2 py-1 text-[10px] font-bold text-white hover:bg-violet-600">
+          <a href={material.downloadUrl || material.url} download title="Download" className="inline-flex items-center gap-1 rounded-lg bg-violet-500 px-2 py-1 text-[10px] font-bold text-white hover:bg-violet-600">
             <Download size={12} />
             Download
           </a>
@@ -332,6 +340,7 @@ const AILearningCoursesReference = () => {
             description: String(m.typeLabel || m.category || m.subjectName || '').trim(),
             content: String(m.content || '').trim(),
             url: firstAttachment?.url || '',
+            downloadUrl: firstAttachment?.downloadUrl || firstAttachment?.url || '',
             publishedAt: m.publishedAt || m.createdAt || null,
             formatLabel: String(m.typeLabel || m.category || 'Material').trim(),
           };
@@ -419,6 +428,7 @@ const AILearningCoursesReference = () => {
       const title = buildResourceTitle(item, fallbackTitle);
       if (!title) return;
       const url = getAttachmentUrl(item);
+      const downloadUrl = getAttachmentDownloadUrl(item);
       const key = [group, title, url].map(normalizeKey).join('::');
       if (seen.has(key)) return;
       seen.add(key);
@@ -429,6 +439,7 @@ const AILearningCoursesReference = () => {
         description: item?.description || item?.typeLabel || item?.learningType || item?.paperType || item?.bucket || '',
         content: item?.content || item?.description || '',
         url,
+        downloadUrl,
         publishedAt: item?.publishedAt || item?.createdAt || item?.dueDate || null,
         formatLabel: normalizeLabel(item?.bucket || item?.typeLabel || item?.learningType || item?.materialType || item?.type || 'File'),
       });
@@ -456,6 +467,7 @@ const AILearningCoursesReference = () => {
       const title = buildResourceTitle(item, fallbackTitle);
       if (!title) return;
       const url = getAttachmentUrl(item);
+      const downloadUrl = getAttachmentDownloadUrl(item);
       const key = ['Assessment', title, url].map(normalizeKey).join('::');
       if (seen.has(key)) return;
       seen.add(key);
@@ -466,6 +478,7 @@ const AILearningCoursesReference = () => {
         description: item?.description || item?.typeLabel || item?.learningType || item?.paperType || 'Assessment',
         content: item?.content || item?.description || '',
         url,
+        downloadUrl,
         publishedAt: item?.publishedAt || item?.createdAt || item?.dueDate || null,
         formatLabel: normalizeLabel(item?.typeLabel || item?.learningType || item?.materialType || item?.paperType || 'Assessment'),
       });
@@ -675,6 +688,23 @@ const AILearningCoursesReference = () => {
 
   const goToTryoutSection = () => {
     navigate(`/student/smart-learning-courses/subject/${normalizedSubjectSlug}/topic/${normalizedTopicSlug}/assessment/tryout-section`);
+  };
+
+  const handleDownloadAllMaterials = () => {
+    const downloadable = learningMaterials.filter((material) => material.url || material.downloadUrl);
+    downloadable.forEach((material, idx) => {
+      const href = material.downloadUrl || material.url;
+      if (!href) return;
+      setTimeout(() => {
+        const link = document.createElement('a');
+        link.href = href;
+        link.download = material.title || 'lesson-material';
+        link.rel = 'noreferrer';
+        document.body.appendChild(link);
+        link.click();
+        link.remove();
+      }, idx * 400);
+    });
   };
 
   const handleDownloadPdf = async () => {
@@ -1271,6 +1301,11 @@ const AILearningCoursesReference = () => {
             </div>
           </div>
           <div className="flex items-center gap-2">
+            {learningMaterials.some((material) => material.url || material.downloadUrl) && (
+              <button type="button" onClick={handleDownloadAllMaterials} className={`inline-flex items-center gap-1.5 rounded-xl ${GLASS_INNER} px-3 py-2 text-sm font-bold text-slate-600 ${GLASS_HOVER}`}>
+                <Download size={16} className="text-violet-500" /> Download Lesson Materials
+              </button>
+            )}
             <button type="button" onClick={handleDownloadPdf} disabled={downloadingPdf} className={`inline-flex items-center gap-1.5 rounded-xl ${GLASS_INNER} px-3 py-2 text-sm font-bold text-slate-600 ${GLASS_HOVER} disabled:opacity-60`}>
               <Download size={16} className="text-violet-500" /> {downloadingPdf ? 'Preparing…' : 'Download PDF'}
             </button>
@@ -1553,18 +1588,6 @@ const AILearningCoursesReference = () => {
         )}
 
         {/* Need help footer */}
-        <section className={`mt-6 flex flex-col items-start gap-4 ${GLASS_CARD} p-5 sm:flex-row sm:items-center sm:justify-between sm:p-6`}>
-          <div className="flex items-center gap-3">
-            <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-amber-50 text-amber-600"><MessageCircle size={20} /></div>
-            <div>
-              <span className="block text-sm font-bold text-[#0f172a]">Need help with this topic?</span>
-              <span className="text-sm text-[#64748b]">Ask your teacher directly in the Class Wall.</span>
-            </div>
-          </div>
-          <button type="button" onClick={() => navigate('/student/assignments-academic-alcove')} className={`w-full shrink-0 rounded-xl ${GLASS_INNER} px-4 py-2 text-sm font-bold text-slate-700 ${GLASS_HOVER} sm:w-auto`}>
-            Open Class Wall
-          </button>
-        </section>
       </div>
 
       {/* ── Modals ── */}

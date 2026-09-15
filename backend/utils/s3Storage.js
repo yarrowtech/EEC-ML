@@ -1,6 +1,7 @@
 const crypto = require('crypto');
 const { GetObjectCommand, PutObjectCommand, S3Client } = require('@aws-sdk/client-s3');
 const { getSignedUrl } = require('@aws-sdk/s3-request-presigner');
+const { buildCloudinaryAttachmentUrl } = require('./cloudinaryUpload');
 
 const S3_URL_PREFIX = 's3://';
 const DEFAULT_SIGNED_URL_TTL_SECONDS = 15 * 60;
@@ -71,14 +72,20 @@ const uploadStudyMaterial = async ({ buffer, schoolId, originalName, contentType
   };
 };
 
-const getSignedS3Url = async ({ bucket, key, region, expiresIn = DEFAULT_SIGNED_URL_TTL_SECONDS }) => {
+const getSignedS3Url = async ({
+  bucket, key, region, expiresIn = DEFAULT_SIGNED_URL_TTL_SECONDS, responseContentDisposition,
+}) => {
   const config = requireS3Config();
   const resolvedBucket = bucket || config.bucket;
   const resolvedRegion = region || config.region;
   if (!key || !resolvedBucket || !resolvedRegion) return '';
   return getSignedUrl(
     getClient(resolvedRegion),
-    new GetObjectCommand({ Bucket: resolvedBucket, Key: key }),
+    new GetObjectCommand({
+      Bucket: resolvedBucket,
+      Key: key,
+      ...(responseContentDisposition && { ResponseContentDisposition: responseContentDisposition }),
+    }),
     { expiresIn }
   );
 };
@@ -98,11 +105,28 @@ const getAttachmentDownloadUrl = async (attachment, options = {}) => {
   });
 };
 
+// S3 objects here are stored with an inline Content-Disposition (see
+// uploadStudyMaterial) so "Open" links preview in-browser. A forced download
+// needs a signed URL that overrides that disposition to "attachment" —
+// otherwise, being cross-origin, the browser ignores <a download> and just
+// renders the file like the "Open" link would.
+const buildAttachmentDisposition = (name) => {
+  const safe = safeFileName(name || 'file');
+  return `attachment; filename="${safe}"; filename*=UTF-8''${encodeURIComponent(safe)}`;
+};
+
 const signAttachmentUrls = async (attachments = [], options = {}) => Promise.all(
-  attachments.map(async (attachment) => ({
-    ...attachment,
-    url: await getAttachmentDownloadUrl(attachment, options),
-  }))
+  attachments.map(async (attachment) => {
+    const url = await getAttachmentDownloadUrl(attachment, options);
+    const isS3 = attachment.storageProvider === 's3' || Boolean(attachment.s3Key);
+    const downloadUrl = isS3
+      ? await getAttachmentDownloadUrl(attachment, {
+        ...options,
+        responseContentDisposition: buildAttachmentDisposition(attachment.name),
+      })
+      : buildCloudinaryAttachmentUrl(url, attachment.name);
+    return { ...attachment, url, downloadUrl };
+  })
 );
 
 module.exports = {

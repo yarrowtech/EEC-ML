@@ -27,7 +27,8 @@ const Assignment = require('../models/Assignment');
 const Notification = require('../models/Notification');
 const { logStudentPortalEvent, logStudentPortalError } = require('../utils/studentPortalLogger');
 const TryoutResult = require('../models/TryoutResult');
-const { getAttachmentDownloadUrl } = require('../utils/s3Storage');
+const { getAttachmentDownloadUrl, signAttachmentUrls } = require('../utils/s3Storage');
+const { buildCloudinaryAttachmentUrl } = require('../utils/cloudinaryUpload');
 
 const AI_SERVICE_URL = process.env.AI_SERVICE_URL || 'http://localhost:8000';
 const SUPPORTED_VECTOR_EXTENSIONS = new Set(['pdf', 'docx', 'pptx']);
@@ -74,6 +75,11 @@ const inferAttachmentType = (value) => {
   return 'text';
 };
 
+// Uploaded-file resources are stored as "s3://bucket/key" (see uploadTeachingFile
+// in the teacher lesson-plan builder) alongside plain https:// links — both are
+// valid resource references and must survive round-tripping through this parser.
+const isResolvableResourceUrl = (value) => /^(https?|s3):\/\//i.test(value);
+
 const parseResourceRef = (value) => {
   const text = normalizeString(value);
   if (!text) return { title: '', url: '' };
@@ -82,18 +88,64 @@ const parseResourceRef = (value) => {
     const bucket = normalizeString(parts[0]);
     const title = normalizeString(parts[1]);
     const url = normalizeString(parts.slice(2).join('::'));
-    return { bucket, title: title || url, url: /^https?:\/\//i.test(url) ? url : '' };
+    return { bucket, title: title || url, url: isResolvableResourceUrl(url) ? url : '' };
   }
   const separator = text.indexOf('::');
   if (separator >= 0) {
     const title = normalizeString(text.slice(0, separator));
     const url = normalizeString(text.slice(separator + 2));
-    return { title: title || url, url: /^https?:\/\//i.test(url) ? url : '' };
+    return { title: title || url, url: isResolvableResourceUrl(url) ? url : '' };
   }
   return {
     title: text,
-    url: /^https?:\/\//i.test(text) ? text : '',
+    url: isResolvableResourceUrl(text) ? text : '',
   };
+};
+
+// Uploaded-file references are stored as a raw "s3://bucket/key" marker (private
+// bucket, no permanent public URL) or a Cloudinary link (public, permanent).
+// Resolve either into a browser-usable inline url plus a forced-download url.
+const resolveMaterialLink = async (url, name) => {
+  if (!url) return { url: '', downloadUrl: '' };
+  if (url.startsWith('s3://')) {
+    const [signed] = await signAttachmentUrls([{ url, storageProvider: 's3', name }]);
+    return { url: signed.url, downloadUrl: signed.downloadUrl };
+  }
+  return { url, downloadUrl: buildCloudinaryAttachmentUrl(url, name) };
+};
+
+// Walk the smart-learning-map response and resolve every stored resource
+// reference (chapter uploads, worksheet uploads, and real TeachingMaterial
+// attachments) into working, freshly-signed urls right before it's sent.
+const resolveSmartLearningLinks = async (subjects) => {
+  const tasks = [];
+  const resolveSingle = (item) => {
+    if (!item?.url) return;
+    tasks.push(resolveMaterialLink(item.url, item.title).then((resolved) => {
+      item.url = resolved.url;
+      item.downloadUrl = resolved.downloadUrl;
+    }));
+  };
+  const resolveAttachments = (material) => {
+    if (!Array.isArray(material?.attachments) || material.attachments.length === 0) return;
+    tasks.push(signAttachmentUrls(material.attachments).then((attachments) => {
+      material.attachments = attachments;
+    }));
+  };
+
+  (subjects || []).forEach((subject) => {
+    (subject.chapters || []).forEach((chapter) => {
+      (chapter.uploads || []).forEach(resolveSingle);
+      (chapter.topics || []).forEach((topic) => {
+        (topic.subtopics || []).forEach((subtopic) => {
+          (subtopic.worksheetUploads || []).forEach(resolveSingle);
+          (subtopic.materials || []).forEach(resolveAttachments);
+        });
+      });
+    });
+  });
+
+  await Promise.all(tasks);
 };
 
 const formatPlanDay = (dateValue) => {
@@ -2531,6 +2583,8 @@ router.get('/student/smart-learning-map', authStudent, async (req, res) => {
         tryoutSections: topic.tryoutSections,
       })),
     }));
+
+    await resolveSmartLearningLinks(subjects);
 
     return res.json({ subjects });
   } catch (err) {
