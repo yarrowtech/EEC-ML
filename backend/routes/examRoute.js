@@ -10,6 +10,8 @@ const ExamCreationDraft = require('../models/ExamCreationDraft');
 const StudentUser = require('../models/StudentUser');
 const TeacherUser = require('../models/TeacherUser');
 const ParentUser = require('../models/ParentUser');
+const School = require('../models/School');
+const Principal = require('../models/Principal');
 const Notification = require('../models/Notification');
 const ClassModel = require('../models/Class');
 const Section = require('../models/Section');
@@ -730,7 +732,10 @@ router.get('/groups/parent-schedule', authParent, async (req, res) => {
     }
 
     const filter = { schoolId, ...(campusId ? { campusId } : {}) };
-    const [groups, exams] = await Promise.all([
+    const principalFilter = campusId
+      ? { schoolId, $or: [{ campusId }, { campusId: null }, { campusId: { $exists: false } }] }
+      : { schoolId };
+    const [groups, exams, school, principal] = await Promise.all([
       ExamGroup.find(filter)
         .populate({
           path: 'classId',
@@ -755,6 +760,8 @@ router.get('/groups/parent-schedule', authParent, async (req, res) => {
         })
         .sort({ date: 1, createdAt: 1 })
         .lean(),
+      School.findById(schoolId).select('name code address logo').lean(),
+      Principal.findOne(principalFilter).sort({ updatedAt: -1, createdAt: -1 }).select('name').lean(),
     ]);
 
     const examsByGroup = new Map();
@@ -783,7 +790,15 @@ router.get('/groups/parent-schedule', authParent, async (req, res) => {
       };
     });
 
-    return res.status(200).json({ children: childrenSchedules });
+    return res.status(200).json({
+      children: childrenSchedules,
+      school: {
+        name: school?.name || '',
+        address: school?.address || '',
+        logo: school?.logo?.secure_url || school?.logo?.url || null,
+      },
+      principalName: String(principal?.name || '').trim(),
+    });
   } catch (err) {
     return res.status(500).json({ error: err.message || 'Failed to fetch exam schedule' });
   }

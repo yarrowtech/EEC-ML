@@ -91,6 +91,7 @@ const buildSessions = (groups) => {
 const ExamRoutine = () => {
   const navigate = useNavigate();
   const [children, setChildren] = useState([]);
+  const [pdfHeader, setPdfHeader] = useState({});
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
   const [isExporting, setIsExporting] = useState(false);
@@ -110,6 +111,12 @@ const ExamRoutine = () => {
     try {
       const data = await parentApiJson('/api/exam/groups/parent-schedule', {}, navigate);
       setChildren(Array.isArray(data?.children) ? data.children : []);
+      setPdfHeader({
+        schoolName: String(data?.school?.name || '').trim(),
+        schoolAddressLine: String(data?.school?.address || '').trim(),
+        logoUrl: String(data?.school?.logo || '').trim(),
+        principalName: String(data?.principalName || '').trim(),
+      });
     } catch (err) {
       setError(err.message || 'Unable to load exam routine');
     } finally {
@@ -156,7 +163,7 @@ const ExamRoutine = () => {
   const handleDownload = async (group) => {
     setIsExporting(true);
     try {
-      await generateExamSchedulePdf(group);
+      await generateExamSchedulePdf(group, pdfHeader);
     } catch (err) {
       toast.error('Failed to generate routine PDF');
     } finally {

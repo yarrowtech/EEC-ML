@@ -367,6 +367,10 @@ const ParentPortal = () => {
     if (blob.includes('health') || blob.includes('wellbeing')) return '/parents/health';
     if (blob.includes('complaint') || blob.includes('issue')) return '/parents/complaints';
     if (blob.includes('meeting') || blob.includes('ptm')) return '/parents/ptm';
+    if (
+      (blob.includes('exam') || blob.includes('examination')) &&
+      (blob.includes('routine') || blob.includes('schedule') || blob.includes('date sheet') || blob.includes('datesheet'))
+    ) return '/parents/exam-routine';
     if (blob.includes('result') || blob.includes('exam')) return '/parents/academic';
     if (blob.includes('chat') || blob.includes('message')) return '/parents/chat';
     if (blob.includes('holiday')) return '/parents/holidays';
