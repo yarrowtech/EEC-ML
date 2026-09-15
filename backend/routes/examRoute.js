@@ -28,6 +28,14 @@ const authStudent = require('../middleware/authStudent');
 const authParent = require('../middleware/authParent');
 const { logStudentPortalEvent, logStudentPortalError } = require('../utils/studentPortalLogger');
 
+// Cloudinary photo can be a plain URL string or an { secure_url | url | path } object.
+const resolveStudentPhoto = (value) => {
+  if (!value) return null;
+  if (typeof value === 'string') return value;
+  if (typeof value === 'object') return value.secure_url || value.url || value.path || null;
+  return null;
+};
+
 // Configure multer for bulk results upload (Excel/CSV only)
 const ALLOWED_BULK_RESULT_MIME_TYPES = new Set([
     'text/csv',
@@ -937,7 +945,7 @@ router.get('/groups/parent-schedule', authParent, async (req, res) => {
 
     if (Array.isArray(parent.childrenIds) && parent.childrenIds.length > 0) {
       students = await StudentUser.find({ ...studentFilter, _id: { $in: parent.childrenIds } })
-        .select('name grade section')
+        .select('name grade section profilePic')
         .lean();
     }
 
@@ -945,7 +953,7 @@ router.get('/groups/parent-schedule', authParent, async (req, res) => {
       const validNames = parent.children.map((name) => String(name || '').trim()).filter(Boolean);
       if (validNames.length > 0) {
         students = await StudentUser.find({ ...studentFilter, name: { $in: validNames } })
-          .select('name grade section')
+          .select('name grade section profilePic')
           .lean();
       }
     }
@@ -1009,6 +1017,7 @@ router.get('/groups/parent-schedule', authParent, async (req, res) => {
         studentName: student.name || 'Student',
         grade: student.grade || '',
         section: student.section || '',
+        profilePic: resolveStudentPhoto(student.profilePic),
         groups: payload,
       };
     });

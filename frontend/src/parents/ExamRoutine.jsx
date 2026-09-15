@@ -151,7 +151,8 @@ const ExamRoutine = () => {
         const id = group.academicYearId ? String(group.academicYearId) : `__unknown_${group.academicYearName || 'session'}`;
         return id === selectedSessionId;
       })
-      .sort((a, b) => new Date(a.startDate || 0) - new Date(b.startDate || 0));
+      // Latest routine first.
+      .sort((a, b) => new Date(b.startDate || 0) - new Date(a.startDate || 0));
   }, [groups, selectedSessionId]);
 
   // Accordion: only the first routine in the session is open by default —
@@ -180,7 +181,15 @@ const ExamRoutine = () => {
       {/* Student summary card */}
       <div className="flex flex-wrap items-center justify-between gap-4 rounded-2xl border border-violet-100 bg-white p-4 shadow-sm">
         <div className="flex items-center gap-3">
-          <UserCircle2 className="h-12 w-12 text-violet-300" strokeWidth={1.2} />
+          {selectedChild?.profilePic ? (
+            <img
+              src={selectedChild.profilePic}
+              alt={selectedChild.studentName || 'Student'}
+              className="h-12 w-12 shrink-0 rounded-full border border-violet-100 object-cover"
+            />
+          ) : (
+            <UserCircle2 className="h-12 w-12 shrink-0 text-violet-300" strokeWidth={1.2} />
+          )}
           <div>
             <p className="text-base font-bold text-slate-800">{selectedChild?.studentName || 'Student'}</p>
             <p className="text-sm text-slate-500">
@@ -242,6 +251,7 @@ const ExamRoutine = () => {
       {!error && sessionGroups.map((group) => {
         const groupId = String(group._id);
         const isOpen = openGroupId === groupId;
+        const isPublished = group.status === 'Published';
         return (
           <div key={groupId} className="overflow-hidden rounded-2xl border border-emerald-100 shadow-sm">
             <div
@@ -250,26 +260,29 @@ const ExamRoutine = () => {
               onClick={() => setOpenGroupId(isOpen ? '' : groupId)}
               onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); setOpenGroupId(isOpen ? '' : groupId); } }}
               aria-expanded={isOpen}
-              className="flex w-full flex-wrap items-center justify-between gap-2 bg-emerald-600 px-4 py-3 text-left text-white cursor-pointer select-none"
+              className={`flex w-full flex-wrap items-center justify-between gap-2 px-4 py-3 text-left text-white cursor-pointer select-none ${isPublished ? 'bg-emerald-600' : 'bg-slate-500'}`}
             >
               <div>
                 <h3 className="text-base font-bold">{group.title || 'Exam'}</h3>
-                <p className="text-xs text-emerald-50/90">
+                <p className={`text-xs ${isPublished ? 'text-emerald-50/90' : 'text-slate-100/90'}`}>
                   Session: {group.academicYearName || '—'}
                   {'  |  '}Class {group.classId?.name || '—'}
                   {'  |  '}Section {group.sectionId?.name || '—'}
+                  {!isPublished && '  |  Scheduled — subject-wise routine not published yet'}
                 </p>
               </div>
               <div className="flex items-center gap-2">
-                <button
-                  type="button"
-                  onClick={(e) => { e.stopPropagation(); handleDownload(group); }}
-                  disabled={isExporting}
-                  className="inline-flex items-center gap-1.5 rounded-lg bg-white px-3 py-1.5 text-xs font-semibold text-emerald-700 shadow-sm transition hover:bg-emerald-50 disabled:opacity-50"
-                >
-                  <Download size={14} />
-                  Download PDF
-                </button>
+                {isPublished && (
+                  <button
+                    type="button"
+                    onClick={(e) => { e.stopPropagation(); handleDownload(group); }}
+                    disabled={isExporting}
+                    className="inline-flex items-center gap-1.5 rounded-lg bg-white px-3 py-1.5 text-xs font-semibold text-emerald-700 shadow-sm transition hover:bg-emerald-50 disabled:opacity-50"
+                  >
+                    <Download size={14} />
+                    Download PDF
+                  </button>
+                )}
                 <ChevronDown
                   size={18}
                   className={`shrink-0 transition-transform duration-200 ${isOpen ? 'rotate-180' : ''}`}
@@ -285,7 +298,14 @@ const ExamRoutine = () => {
                   transition={{ duration: 0.2, ease: 'easeInOut' }}
                   style={{ overflow: 'hidden' }}
                 >
-                  <ExamRoutineTable rows={toRoutineRows(group)} />
+                  {isPublished ? (
+                    <ExamRoutineTable rows={toRoutineRows(group)} />
+                  ) : (
+                    <div className="flex items-start gap-2 bg-slate-50 px-4 py-3.5 text-sm text-slate-500">
+                      <Info className="mt-0.5 h-4 w-4 shrink-0 text-slate-400" />
+                      <p>This exam has been scheduled, but the school hasn&apos;t published the subject-wise routine yet. Check back once it&apos;s published.</p>
+                    </div>
+                  )}
                 </Motion.div>
               )}
             </AnimatePresence>

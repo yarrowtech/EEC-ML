@@ -392,11 +392,30 @@ const notificationToneClasses = {
   slate: 'bg-slate-100 text-slate-600',
 };
 
+// Cache the last-fetched list per browser tab so the page can paint instantly
+// on revisit instead of showing a blank "Loading…" state while the network
+// round trip is still in flight — the fetch below still runs and replaces it.
+const TEACHER_NOTIFICATIONS_CACHE_KEY = 'teacher_notifications_cache_v1';
+const readCachedNotifications = () => {
+  try {
+    const raw = sessionStorage.getItem(TEACHER_NOTIFICATIONS_CACHE_KEY);
+    const parsed = raw ? JSON.parse(raw) : null;
+    return Array.isArray(parsed) ? parsed : null;
+  } catch { return null; }
+};
+const writeCachedNotifications = (list) => {
+  try { sessionStorage.setItem(TEACHER_NOTIFICATIONS_CACHE_KEY, JSON.stringify(list)); } catch { /* ignore */ }
+};
+
+const NOTIFICATIONS_PAGE_SIZE = 10;
+
 const TeacherNotifications = () => {
   const navigate = useNavigate();
-  const [notifications, setNotifications] = useState([]);
+  const cached = useMemo(() => readCachedNotifications(), []);
+  const [notifications, setNotifications] = useState(cached || []);
   const [filter, setFilter] = useState('all');
-  const [loading, setLoading] = useState(true);
+  const [page, setPage] = useState(1);
+  const [loading, setLoading] = useState(!cached);
   const [refreshing, setRefreshing] = useState(false);
   const [error, setError] = useState('');
 
@@ -417,7 +436,9 @@ const TeacherNotifications = () => {
       if (response.status === 304) return;
       const data = await response.json().catch(() => []);
       if (!response.ok) throw new Error(data?.error || 'Unable to load notifications');
-      setNotifications(Array.isArray(data) ? data : []);
+      const list = Array.isArray(data) ? data : [];
+      setNotifications(list);
+      writeCachedNotifications(list);
     } catch (err) {
       setError(err.message || 'Unable to load notifications');
     } finally {
@@ -427,10 +448,12 @@ const TeacherNotifications = () => {
   }, [navigate]);
 
   useEffect(() => {
-    loadNotifications();
+    loadNotifications({ silent: Boolean(cached) });
     const poll = setInterval(() => loadNotifications({ silent: true }), 30_000);
     return () => clearInterval(poll);
   }, [loadNotifications]);
+
+  useEffect(() => { setPage(1); }, [filter]);
 
   const markRead = useCallback(async (id) => {
     if (!id) return;
@@ -465,28 +488,18 @@ const TeacherNotifications = () => {
     }
   };
 
-  const dismiss = async (id) => {
-    if (!id) return;
-    const token = localStorage.getItem('token');
-    setNotifications((previous) => previous.filter((item) => String(item?._id || item?.id || '') !== String(id)));
-    try {
-      const response = await apiFetch(`${API_BASE}/api/notifications/user/${id}/dismiss`, {
-        method: 'PATCH',
-        headers: { 'Content-Type': 'application/json', authorization: `Bearer ${token}` },
-      }, navigate);
-      if (!response.ok) throw new Error('Unable to dismiss notification');
-    } catch (err) {
-      setError(err.message || 'Unable to dismiss notification');
-      await loadNotifications({ silent: true });
-    }
-  };
-
   const unreadCount = notifications.filter((item) => !item?.isRead).length;
   const filteredNotifications = notifications.filter((item) => {
     if (filter === 'unread') return !item?.isRead;
     if (filter === 'read') return Boolean(item?.isRead);
     return true;
   });
+  const totalPages = Math.max(1, Math.ceil(filteredNotifications.length / NOTIFICATIONS_PAGE_SIZE));
+  const currentPage = Math.min(page, totalPages);
+  const pagedNotifications = filteredNotifications.slice(
+    (currentPage - 1) * NOTIFICATIONS_PAGE_SIZE,
+    currentPage * NOTIFICATIONS_PAGE_SIZE,
+  );
 
   return (
     <div className="min-h-full bg-slate-50 p-3 sm:p-5 lg:p-6">
@@ -531,12 +544,17 @@ const TeacherNotifications = () => {
             <p className="mt-1 text-sm text-slate-500">New school and teaching updates will appear here.</p>
           </div>
         ) : (
+          <>
           <div className="space-y-3">
-            {filteredNotifications.map((notification) => {
+            {pagedNotifications.map((notification) => {
               const id = String(notification?._id || notification?.id || notification?.title || 'notification');
               const meta = notificationTypeMeta(notification);
               const Icon = meta.icon;
               const isRead = Boolean(notification?.isRead);
+              // The "Exam Scheduled" heads-up has no detail page of its own
+              // (just a class-list summary) — offering "Open related page"
+              // for it only ever lands on a generic screen, so skip it.
+              const hasRelatedPage = String(notification?.typeLabel || '') !== 'exam_scheduled_teacher';
               return (
                 <article key={id} className={`rounded-2xl border bg-white p-4 shadow-sm transition hover:shadow-md sm:p-5 ${isRead ? 'border-slate-200' : 'border-indigo-200 ring-1 ring-indigo-50'}`}>
                   <div className="flex items-start gap-3">
@@ -555,16 +573,36 @@ const TeacherNotifications = () => {
                         {(notification?.className || notification?.sectionName) && <span>{[notification.className, notification.sectionName].filter(Boolean).join(' · ')}</span>}
                       </div>
                     </div>
-                    <button type="button" onClick={() => dismiss(id)} aria-label="Dismiss notification" className="rounded-lg p-1.5 text-slate-400 hover:bg-slate-100 hover:text-slate-700"><X size={16} /></button>
                   </div>
-                  <div className="mt-4 flex flex-wrap justify-end gap-2 border-t border-slate-100 pt-3">
-                    {!isRead && <button type="button" onClick={() => markRead(id)} className="rounded-lg border border-slate-200 px-3 py-1.5 text-xs font-semibold text-slate-600 hover:bg-slate-50">Mark as read</button>}
-                    <button type="button" onClick={async () => { await markRead(id); navigate(resolveTeacherNotificationPath(notification)); }} className="rounded-lg bg-slate-950 px-3 py-1.5 text-xs font-semibold text-white hover:bg-slate-800">Open related page</button>
-                  </div>
+                  {(!isRead || hasRelatedPage) && (
+                    <div className="mt-4 flex flex-wrap justify-end gap-2 border-t border-slate-100 pt-3">
+                      {!isRead && <button type="button" onClick={() => markRead(id)} className="rounded-lg border border-slate-200 px-3 py-1.5 text-xs font-semibold text-slate-600 hover:bg-slate-50">Mark as read</button>}
+                      {hasRelatedPage && (
+                        <button type="button" onClick={async () => { await markRead(id); navigate(resolveTeacherNotificationPath(notification)); }} className="rounded-lg bg-slate-950 px-3 py-1.5 text-xs font-semibold text-white hover:bg-slate-800">Open related page</button>
+                      )}
+                    </div>
+                  )}
                 </article>
               );
             })}
           </div>
+
+          {totalPages > 1 && (
+            <div className="flex items-center justify-between gap-3 rounded-2xl border border-slate-200 bg-white px-4 py-3">
+              <p className="text-xs text-slate-500">Page {currentPage} of {totalPages} · {filteredNotifications.length} notification{filteredNotifications.length !== 1 ? 's' : ''}</p>
+              <div className="flex items-center gap-2">
+                <button type="button" onClick={() => setPage((p) => Math.max(1, p - 1))} disabled={currentPage <= 1}
+                  className="rounded-lg border border-slate-200 px-3 py-1.5 text-xs font-semibold text-slate-600 hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-40">
+                  Previous
+                </button>
+                <button type="button" onClick={() => setPage((p) => Math.min(totalPages, p + 1))} disabled={currentPage >= totalPages}
+                  className="rounded-lg border border-slate-200 px-3 py-1.5 text-xs font-semibold text-slate-600 hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-40">
+                  Next
+                </button>
+              </div>
+            </div>
+          )}
+          </>
         )}
       </div>
     </div>

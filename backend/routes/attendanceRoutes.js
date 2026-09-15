@@ -16,6 +16,14 @@ const adminAuth = require('../middleware/adminAuth');
 const { logStudentPortalEvent, logStudentPortalError } = require('../utils/studentPortalLogger');
 const { buildTeacherAllocationScope, normalizeClassName } = require('../utils/teacherAllocationScope');
 
+// Cloudinary photo can be a plain URL string or an { secure_url | url | path } object.
+const resolveProfilePhoto = (value) => {
+  if (!value) return null;
+  if (typeof value === 'string') return value;
+  if (typeof value === 'object') return value.secure_url || value.url || value.path || null;
+  return null;
+};
+
 const VALID_STATUSES = new Set(['present', 'absent']);
 const SUBSTITUTE_SUBJECT_PREFIX = 'general::';
 const LOW_ATTENDANCE_THRESHOLD = 75;
@@ -1590,7 +1598,7 @@ router.get('/parent/children', authParent, async (req, res) => {
         ...studentFilter,
         _id: { $in: parent.childrenIds },
       })
-        .select('name grade section roll studentCode admissionNumber username academicYear attendance')
+        .select('name grade section roll studentCode admissionNumber username academicYear attendance profilePic')
         .lean();
     }
 
@@ -1601,7 +1609,7 @@ router.get('/parent/children', authParent, async (req, res) => {
           ...studentFilter,
           name: { $in: validNames },
         })
-          .select('name grade section roll studentCode admissionNumber username academicYear attendance')
+          .select('name grade section roll studentCode admissionNumber username academicYear attendance profilePic')
           .lean();
       }
     }
@@ -1630,6 +1638,7 @@ router.get('/parent/children', authParent, async (req, res) => {
           username: student.username || '',
           admissionNumber: student.admissionNumber || '',
           academicYear: student.academicYear || '',
+          profilePic: resolveProfilePhoto(student.profilePic),
         },
         month: monthRange.key,
         summary: buildSummary(attendance),

@@ -4190,14 +4190,22 @@ const ExaminationManagement = ({ setShowAdminHeader }) => {
       setWizardScheduleField(s.classId, s.sectionId, subjectId, { marks });
     });
   };
-  // "Auto-fill Full Marks": one click sets the same full marks value across every
-  // subject selected for this class, instead of typing it in one-by-one.
-  const handleAutoFillMarks = (classId) => {
-    const ids = wizardClassSubjects[classId] || [];
-    if (!ids.length) { toast.error('Select subjects first'); return; }
+  // "Auto-fill Full Marks": one click sets the same full marks value across
+  // every subject selected for every class in this exam — not just the one
+  // class currently being edited — so after "Auto-Select All" picks subjects
+  // for every class, typing the marks once and clicking this fills them all
+  // in one go instead of repeating it per class.
+  const handleAutoFillMarks = () => {
+    const targets = wizardSelectedClasses.filter((c) => (wizardClassSubjects[c.classId] || []).length > 0);
+    if (!targets.length) { toast.error('Select subjects first'); return; }
     const value = autoMarksValue.trim() || EMPTY_WIZARD_SCHEDULE.marks;
-    ids.forEach((subjectId) => setClassSubjectMarks(classId, subjectId, value));
-    toast.success(`Full marks set to ${value} for ${ids.length} subject${ids.length !== 1 ? 's' : ''}`);
+    let subjectCount = 0;
+    targets.forEach(({ classId }) => {
+      const ids = wizardClassSubjects[classId] || [];
+      ids.forEach((subjectId) => setClassSubjectMarks(classId, subjectId, value));
+      subjectCount += ids.length;
+    });
+    toast.success(`Full marks set to ${value} for ${subjectCount} subject${subjectCount !== 1 ? 's' : ''} across ${targets.length} class${targets.length !== 1 ? 'es' : ''}`);
   };
 
   // Is this teacher already booked (an existing published exam, or another row in this
@@ -4370,9 +4378,17 @@ const ExaminationManagement = ({ setShowAdminHeader }) => {
       toast.error('Add subjects in Step 3 first');
       return;
     }
+    if (!wizardDetails.startDate || !wizardDetails.endDate) {
+      toast.error('Set a Start Date and End Date first — Auto-Schedule fits every exam inside that window.');
+      return;
+    }
+    if (new Date(wizardDetails.endDate) < new Date(wizardDetails.startDate)) {
+      toast.error('End Date is before Start Date — fix the date range first.');
+      return;
+    }
     const confirm = await Swal.fire({
       title: 'Auto-schedule the routine?',
-      html: 'This fills in the date, time, room and a free teacher for every subject that doesn’t already have a date set — packing multiple classes into a shared room by seating capacity, and spreading exams across extra days if rooms run out. Rows you’ve already filled in manually are left untouched.',
+      html: 'This fills in the date, time, room and a free teacher for every subject that doesn’t already have a date set — packing multiple classes into a shared room by seating capacity, and spreading exams across extra days (within your Start/End Date range) if rooms run out. Rows you’ve already filled in manually are left untouched.',
       icon: 'question',
       showCancelButton: true,
       confirmButtonColor: '#4f46e5',
@@ -4443,6 +4459,10 @@ const ExaminationManagement = ({ setShowAdminHeader }) => {
 
       const startDate = wizardDetails.startDate ? new Date(wizardDetails.startDate) : new Date();
       const initialCursor = isWeekend(startDate) ? nextWeekday(startDate) : new Date(startDate);
+      // Hard boundary — Auto-Schedule must never place an exam after the
+      // routine's own End Date, even if rooms/teachers are still available.
+      const endDateLimit = new Date(wizardDetails.endDate);
+      endDateLimit.setHours(23, 59, 59, 999);
       // Each class/section's own "no exam before this day" cursor — pushed
       // forward by 1 + that subject's configured gap once it sits its paper.
       const earliestDay = new Map();
@@ -4455,7 +4475,8 @@ const ExaminationManagement = ({ setShowAdminHeader }) => {
 
       let day = new Date(initialCursor);
       let guard = 0;
-      while (guard < 120 && [...queues.values()].some((q) => q.length)) {
+      let ranOutOfDateRange = false;
+      while (guard < 120 && day <= endDateLimit && [...queues.values()].some((q) => q.length)) {
         guard += 1;
         const dateStr = toIsoDate(day);
 
@@ -4596,9 +4617,11 @@ const ExaminationManagement = ({ setShowAdminHeader }) => {
         day = nextWeekday(new Date(day.getTime() + 86400000));
       }
 
-      // Anything left in a queue after the guard rail ran out never found room capacity.
+      // Anything left in a queue after the loop stopped either ran out of
+      // room capacity (guard rail) or ran past the routine's own End Date.
       let unresolvedRooms = 0;
       queues.forEach((queue) => { unresolvedRooms += queue.length; });
+      ranOutOfDateRange = unresolvedRooms > 0 && day > endDateLimit;
 
       setWizardSeatingRooms(seatingRooms);
 
@@ -4613,7 +4636,11 @@ const ExaminationManagement = ({ setShowAdminHeader }) => {
         });
       } else {
         const lines = [`<li>Filled in <strong>${filled}</strong> subject row${filled !== 1 ? 's' : ''} — date, time, room and a free teacher, packing classes into shared rooms by seating capacity.</li>`];
-        if (unresolvedRooms) lines.push(`<li class="text-rose-600"><strong>${unresolvedRooms}</strong> row${unresolvedRooms !== 1 ? 's' : ''} couldn't find room capacity — add more rooms with a seating capacity set, or assign one manually.</li>`);
+        if (unresolvedRooms && ranOutOfDateRange) {
+          lines.push(`<li class="text-rose-600"><strong>${unresolvedRooms}</strong> row${unresolvedRooms !== 1 ? 's' : ''} didn't fit inside ${formatDateChip(wizardDetails.startDate)}–${formatDateChip(wizardDetails.endDate)} — extend the End Date, add more rooms, or assign the rest manually.</li>`);
+        } else if (unresolvedRooms) {
+          lines.push(`<li class="text-rose-600"><strong>${unresolvedRooms}</strong> row${unresolvedRooms !== 1 ? 's' : ''} couldn't find room capacity — add more rooms with a seating capacity set, or assign one manually.</li>`);
+        }
         if (unresolvedTeachers) lines.push(`<li class="text-rose-600"><strong>${unresolvedTeachers}</strong> row${unresolvedTeachers !== 1 ? 's' : ''} couldn't find a free teacher — assign one manually.</li>`);
         if (unresolvedAssociates) lines.push(`<li class="text-rose-600"><strong>${unresolvedAssociates}</strong> row${unresolvedAssociates !== 1 ? 's' : ''} couldn't find a free associated teacher — assign one manually.</li>`);
         await Swal.fire({
@@ -5908,9 +5935,9 @@ const ExaminationManagement = ({ setShowAdminHeader }) => {
                                     <div className="flex items-center gap-2">
                                       <input type="number" min="1" value={autoMarksValue} onChange={(e) => setAutoMarksValue(e.target.value)}
                                         className="w-16 rounded-lg border border-slate-200 px-2 py-1 text-xs text-center focus:border-indigo-400 focus:outline-none" />
-                                      <button type="button" onClick={() => handleAutoFillMarks(activeClass.classId)}
+                                      <button type="button" onClick={handleAutoFillMarks} title="Fills this value into every subject for every selected class, not just this one"
                                         className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg bg-indigo-600 text-white text-xs font-semibold hover:bg-indigo-700 transition-colors">
-                                        <Zap size={12} /> Auto-fill Full Marks
+                                        <Zap size={12} /> Auto-fill Full Marks (All Classes)
                                       </button>
                                     </div>
                                   </div>

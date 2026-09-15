@@ -515,13 +515,21 @@ const ParentDashboard = ({
               className="rounded-xl border border-slate-200 bg-white p-4 shadow-sm transition-shadow hover:shadow-md md:col-span-2"
             >
               <div className="mb-3 flex items-center gap-3">
-                <div className="flex h-12 w-12 shrink-0 items-center justify-center rounded-full bg-gradient-to-br from-violet-500 to-violet-600 text-base font-bold text-white shadow-md shadow-violet-500/20">
-                  {getInitials(child.name)}
-                </div>
+                {child.profilePic ? (
+                  <img
+                    src={child.profilePic}
+                    alt={child.name || 'Student'}
+                    className="h-12 w-12 shrink-0 rounded-full border border-violet-100 object-cover shadow-md shadow-violet-500/20"
+                  />
+                ) : (
+                  <div className="flex h-12 w-12 shrink-0 items-center justify-center rounded-full bg-gradient-to-br from-violet-500 to-violet-600 text-base font-bold text-white shadow-md shadow-violet-500/20">
+                    {getInitials(child.name)}
+                  </div>
+                )}
                 <div className="min-w-0">
                   <h3 className="truncate text-base font-bold text-slate-800">{child.name}</h3>
                   <p className="truncate text-xs text-slate-500">
-                    Class {child.grade} {child.section} · {formatStudentDisplay({ username: child.username, studentCode: child.studentCode, roll: child.roll })}
+                    Class {child.grade} · {formatStudentDisplay({ username: child.username, studentCode: child.studentCode, roll: child.section })} {child.section}
                   </p>
                 </div>
               </div>
