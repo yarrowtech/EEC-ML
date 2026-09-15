@@ -1841,9 +1841,20 @@ router.put('/teacher/:id', authTeacher, async (req, res) => {
     }
     await existing.save();
 
-    const publishResult = wasPublished
-      ? await publishPlanSmartLearningArtifacts({ schoolId, campusId, plan: existing })
-      : null;
+    let publishResult = null;
+    if (wasPublished) {
+      try {
+        publishResult = await publishPlanSmartLearningArtifacts({ schoolId, campusId, plan: existing });
+      } catch (publishError) {
+        // The lesson plan and its student-portal publication are already saved
+        // at this point. Smart Learning/vector enrichment is best-effort and
+        // must not turn a successful teacher update into a false HTTP 500.
+        console.error('[lesson-plan] post-publish enrichment failed', {
+          lessonPlanId: String(existing._id),
+          error: publishError?.message || publishError,
+        });
+      }
+    }
 
     res.json({
       message: wasPublished ? 'Lesson plan updated and republished to Smart Learning' : 'Lesson plan updated',

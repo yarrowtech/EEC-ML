@@ -290,11 +290,12 @@ const DrawerModal = ({
   };
 
   const goToStep = (nextStep) => {
-    setCurrentStep((previous) => {
-      const next = typeof nextStep === 'function' ? nextStep(previous) : nextStep;
-      onStepChange?.(next);
-      return next;
-    });
+    // Keep the state updater pure. Calling the parent callback from inside the
+    // updater causes React to update AIPoweredTeaching while DrawerModal is
+    // rendering, which triggers the setState-during-render warning.
+    const next = typeof nextStep === 'function' ? nextStep(currentStep) : nextStep;
+    setCurrentStep(next);
+    onStepChange?.(next);
   };
 
   // Load existing reading materials & writing prompts when language step becomes active
