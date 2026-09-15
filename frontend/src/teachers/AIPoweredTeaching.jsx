@@ -215,7 +215,10 @@ const AIPoweredTeaching = () => {
     });
 
     const uploaded = data?.files?.[0];
-    const storageUrl = uploaded?.storageUrl || uploaded?.url;
+    // `storageUrl` is the private s3:// key and cannot be opened by a browser.
+    // Prefer the short-lived signed HTTPS URL returned by the API for previews,
+    // saved attachments, and AI ingestion; retain the storage metadata below.
+    const storageUrl = uploaded?.secure_url || uploaded?.url || uploaded?.storageUrl;
     if (!storageUrl) throw new Error('Upload completed without a file URL');
     return {
       name: uploaded.originalName || file.name || 'Uploaded file',
