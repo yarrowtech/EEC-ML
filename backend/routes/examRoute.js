@@ -24,6 +24,8 @@ const ExamSeatingPlan = require('../models/ExamSeatingPlan');
 const adminAuth = require('../middleware/adminAuth');
 const teacherAuth = require('../middleware/authTeacher');
 const NotificationService = require('../utils/notificationService');
+const { sendPushForNotification } = require('../utils/webPushService');
+const examSchedulingEngine = require('../services/examSchedulingEngine');
 const authStudent = require('../middleware/authStudent');
 const authParent = require('../middleware/authParent');
 const { logStudentPortalEvent, logStudentPortalError } = require('../utils/studentPortalLogger');
@@ -489,19 +491,11 @@ const createConsolidatedTeacherExamNotifications = async ({
   };
 
   const title = `Exam Duty Assigned: ${groupTitle}`;
+  const messageFor = (count) => `You have been assigned invigilation duty for ${count} exam${count !== 1 ? 's' : ''} in ${groupTitle}.`;
   const results = [];
   for (const [teacherId, rawRows] of rowsByTeacher.entries()) {
     const rows = dedupeRows(rawRows);
     const dedupeKey = `exam-duty:${schoolId}:${campusId || 'none'}:${teacherId}:${slugifyDutyKey(groupTitle)}`;
-
-    // Republishing the same group must replace its rows, not duplicate them —
-    // strip anything already recorded for this groupId before merging it back
-    // in, then dedupe against whatever other groups already contributed.
-    if (groupId) {
-      await Notification.updateOne({ dedupeKey }, { $pull: { examRoutine: { groupId: String(groupId) } } });
-    }
-
-    const buildMerge = (existingRows) => dedupeRows([...(existingRows || []), ...rows]);
     const setOnInsert = {
       schoolId,
       campusId: campusId || null,
@@ -518,37 +512,43 @@ const createConsolidatedTeacherExamNotifications = async ({
       dedupeKey,
     };
 
-    const existing = await Notification.findOne({ dedupeKey }).select('examRoutine').lean();
-    const mergedRows = buildMerge(existing?.examRoutine);
-    const messageFor = (count) => `You have been assigned invigilation duty for ${count} exam${count !== 1 ? 's' : ''} in ${groupTitle}.`;
-    const setFields = {
-      examRoutine: mergedRows,
-      message: messageFor(mergedRows.length),
-      relatedEntity: groupId ? { entityType: 'exam', entityId: groupId } : undefined,
-    };
+    // "Create/Publish All" fires one call per class/section group CONCURRENTLY
+    // (Promise.all in the admin wizard), and every one of those groups maps to
+    // the SAME dedupeKey for a shared teacher. A read-latest → merge-in-JS →
+    // $set write (the previous approach here) is not atomic: two concurrent
+    // calls can both read the same "before" state and each overwrite the
+    // other's contribution, silently dropping rows. $pull + $addToSet are
+    // genuine atomic Mongo operators — each concurrent call is a self-contained
+    // write the database serializes correctly, no read-modify-write race
+    // possible, however many requests land at once.
+    const updateOps = { $set: { relatedEntity: groupId ? { entityType: 'exam', entityId: groupId } : undefined }, $setOnInsert: setOnInsert };
+    // Republishing the same group must replace its rows, not duplicate them.
+    if (groupId) {
+      await Notification.updateOne({ dedupeKey }, { $pull: { examRoutine: { groupId: String(groupId) } } });
+    }
+    if (rows.length) updateOps.$addToSet = { examRoutine: { $each: rows } };
 
-    // "Publish All Routines" fires one publish call per class/section group
-    // concurrently, and every one of those groups maps to the same dedupeKey
-    // for a shared teacher — the first insert wins the unique index, the rest
-    // race into it. On that race, re-read + re-merge against the doc that won
-    // and retry as a plain update instead of surfacing the duplicate-key error.
     let updated;
     try {
-      updated = await Notification.findOneAndUpdate(
-        { dedupeKey },
-        { $set: setFields, $setOnInsert: setOnInsert },
-        { upsert: true, new: true, setDefaultsOnInsert: true }
-      );
+      updated = await Notification.findOneAndUpdate({ dedupeKey }, updateOps, { upsert: true, new: true, setDefaultsOnInsert: true });
     } catch (err) {
       if (err?.code !== 11000) throw err;
-      const latest = await Notification.findOne({ dedupeKey }).select('examRoutine').lean();
-      const remerged = buildMerge(latest?.examRoutine);
-      updated = await Notification.findOneAndUpdate(
-        { dedupeKey },
-        { $set: { ...setFields, examRoutine: remerged, message: messageFor(remerged.length) } },
-        { new: true }
-      );
+      // Lost the upsert race to a concurrent call — the doc now exists, so
+      // the exact same atomic operators apply cleanly as a plain update.
+      updated = await Notification.findOneAndUpdate({ dedupeKey }, updateOps, { new: true });
     }
+
+    const finalCount = updated.examRoutine?.length || 0;
+    const message = messageFor(finalCount);
+    if (updated.message !== message) {
+      updated = await Notification.findOneAndUpdate({ dedupeKey }, { $set: { message } }, { new: true }) || updated;
+    }
+    // findOneAndUpdate never fires the Notification model's post('save')/
+    // post('insertMany') hooks (those are document/insertMany-only), so the
+    // web-push send that would normally follow a new notice has to be fired
+    // by hand here — otherwise duty notices reach the notifications page but
+    // never trigger an actual push alert.
+    sendPushForNotification(updated).catch(() => {});
     results.push(updated);
   }
   return results;
@@ -590,27 +590,10 @@ const upsertTeacherRoutinePublishedNotice = async ({
   const rows = dedupeRows((examRoutine || []).map((row) => ({ ...row, groupId: groupId ? String(groupId) : '' })));
   const dedupeKey = `exam-routine-published-teacher:${schoolId}:${campusId || 'none'}:${slugifyDutyKey(groupTitle)}`;
 
-  if (groupId) {
-    await Notification.updateOne({ dedupeKey }, { $pull: { examRoutine: { groupId: String(groupId) } } });
-  }
-
-  const buildMerge = (existing) => ({
-    rows: dedupeRows([...(existing?.examRoutine || []), ...rows]),
-    classes: Array.from(new Set([...(existing?.classesCovered || []), ...(classLabel ? [classLabel] : [])])),
-  });
-
   const title = `Exam Routine Published: ${groupTitle}`;
   const messageFor = (classes, rowCount) =>
     `The exam routine for ${groupTitle} has been published for ${classes.length} class${classes.length !== 1 ? 'es' : ''}`
     + `${classes.length ? ` (${classes.join('; ')})` : ''}. ${rowCount} subject exam${rowCount !== 1 ? 's' : ''} total. See the full schedule below.`;
-
-  const existing = await Notification.findOne({ dedupeKey }).select('examRoutine classesCovered').lean();
-  const merged = buildMerge(existing);
-  const setFields = {
-    examRoutine: merged.rows,
-    classesCovered: merged.classes,
-    message: messageFor(merged.classes, merged.rows.length),
-  };
   const setOnInsert = {
     schoolId,
     campusId: campusId || null,
@@ -625,22 +608,37 @@ const upsertTeacherRoutinePublishedNotice = async ({
     dedupeKey,
   };
 
+  // Atomic $pull + $addToSet instead of read-merge-write — see the matching
+  // comment in createConsolidatedTeacherExamNotifications for why: "Publish
+  // All Routines" fires these concurrently, one per class/section group, and
+  // a non-atomic merge silently drops rows/classes under that concurrency.
+  const addToSet = {};
+  if (rows.length) addToSet.examRoutine = { $each: rows };
+  if (classLabel) addToSet.classesCovered = classLabel;
+  const updateOps = { $setOnInsert: setOnInsert, ...(Object.keys(addToSet).length ? { $addToSet: addToSet } : {}) };
+
+  if (groupId) {
+    await Notification.updateOne({ dedupeKey }, { $pull: { examRoutine: { groupId: String(groupId) } } });
+  }
+
+  let updated;
   try {
-    return await Notification.findOneAndUpdate(
-      { dedupeKey },
-      { $set: setFields, $setOnInsert: setOnInsert },
-      { upsert: true, new: true, setDefaultsOnInsert: true }
-    );
+    updated = await Notification.findOneAndUpdate({ dedupeKey }, updateOps, { upsert: true, new: true, setDefaultsOnInsert: true });
   } catch (err) {
     if (err?.code !== 11000) throw err;
-    const latest = await Notification.findOne({ dedupeKey }).select('examRoutine classesCovered').lean();
-    const remerged = buildMerge(latest);
-    return Notification.findOneAndUpdate(
-      { dedupeKey },
-      { $set: { examRoutine: remerged.rows, classesCovered: remerged.classes, message: messageFor(remerged.classes, remerged.rows.length) } },
-      { new: true }
-    );
+    updated = await Notification.findOneAndUpdate({ dedupeKey }, updateOps, { new: true });
   }
+
+  const classes = updated.classesCovered || [];
+  const rowCount = updated.examRoutine?.length || 0;
+  const message = messageFor(classes, rowCount);
+  if (updated.message !== message) {
+    updated = await Notification.findOneAndUpdate({ dedupeKey }, { $set: { message } }, { new: true }) || updated;
+  }
+  // findOneAndUpdate skips the model's post('save') push hook — send it
+  // explicitly (see the matching comment in createConsolidatedTeacherExamNotifications).
+  sendPushForNotification(updated).catch(() => {});
+  return updated;
 };
 
 // One shared "Exam Scheduled" heads-up notice for every teacher at the
@@ -665,11 +663,6 @@ const upsertTeacherExamScheduledNotice = async ({ schoolId, campusId, group, cre
     `${groupTitle} has been scheduled for ${classes.length} class${classes.length !== 1 ? 'es' : ''}`
     + `${classes.length ? ` (${classes.join('; ')})` : ''}${dateRange}.`;
 
-  const mergeClasses = (existingClasses) => Array.from(new Set([...(existingClasses || []), ...(classLabel ? [classLabel] : [])]));
-
-  const existing = await Notification.findOne({ dedupeKey }).select('classesCovered').lean();
-  const mergedClasses = mergeClasses(existing?.classesCovered);
-  const setFields = { classesCovered: mergedClasses, message: messageFor(mergedClasses) };
   const setOnInsert = {
     schoolId,
     campusId: campusId || null,
@@ -684,22 +677,31 @@ const upsertTeacherExamScheduledNotice = async ({ schoolId, campusId, group, cre
     dedupeKey,
   };
 
+  // Atomic $addToSet instead of read-merge-write — "Create All" in the admin
+  // wizard fires one of these CONCURRENTLY per class/section (Promise.all),
+  // all hitting this same dedupeKey. A read-latest → merge-in-JS → $set write
+  // is not atomic: concurrent calls can each read the same "before" state and
+  // overwrite each other, so most classes silently never make it into
+  // classesCovered — this is the actual bug behind "notification not coming"
+  // reports after the admin's bulk exam-creation step. $addToSet is a single
+  // atomic operator the database serializes correctly under any concurrency.
+  const updateOps = { $setOnInsert: setOnInsert, ...(classLabel ? { $addToSet: { classesCovered: classLabel } } : {}) };
+
+  let updated;
   try {
-    return await Notification.findOneAndUpdate(
-      { dedupeKey },
-      { $set: setFields, $setOnInsert: setOnInsert },
-      { upsert: true, new: true, setDefaultsOnInsert: true }
-    );
+    updated = await Notification.findOneAndUpdate({ dedupeKey }, updateOps, { upsert: true, new: true, setDefaultsOnInsert: true });
   } catch (err) {
     if (err?.code !== 11000) throw err;
-    const latest = await Notification.findOne({ dedupeKey }).select('classesCovered').lean();
-    const remerged = mergeClasses(latest?.classesCovered);
-    return Notification.findOneAndUpdate(
-      { dedupeKey },
-      { $set: { classesCovered: remerged, message: messageFor(remerged) } },
-      { new: true }
-    );
+    updated = await Notification.findOneAndUpdate({ dedupeKey }, updateOps, { new: true });
   }
+
+  const classes = updated.classesCovered || [];
+  const message = messageFor(classes);
+  if (updated.message !== message) {
+    updated = await Notification.findOneAndUpdate({ dedupeKey }, { $set: { message } }, { new: true }) || updated;
+  }
+  sendPushForNotification(updated).catch(() => {});
+  return updated;
 };
 
 const isTeacherAssignedInvigilator = (examDoc = {}, teacherIdentitySet = new Set()) => {
@@ -3275,6 +3277,37 @@ Format your response strictly as JSON:
     });
   } catch (err) {
     return res.status(500).json({ error: err.message });
+  }
+});
+
+// POST /groups/generate-routine — constraint-based room + invigilator
+// auto-scheduler (services/examSchedulingEngine.js). Distinct from the
+// legacy frontend "Auto Schedule" wizard step: this runs server-side against
+// the full, live database (every existing exam/duty in the school, not just
+// what's in the admin's browser session), and validates + writes inside a
+// single transaction — either every exam instance gets a conflict-free room
+// and invigilator, or nothing is saved at all.
+router.post('/groups/generate-routine', adminAuth, async (req, res) => {
+  try {
+    const schoolId = resolveSchoolId(req, res);
+    if (!schoolId) return;
+    const campusId = resolveCampusId(req);
+
+    const { groupIds, config } = req.body || {};
+    const ids = Array.isArray(groupIds) ? groupIds.filter((id) => mongoose.isValidObjectId(id)) : [];
+    if (!ids.length) return res.status(400).json({ error: 'groupIds (array of ExamGroup ids) is required' });
+
+    const result = await examSchedulingEngine.generateRoutine({
+      schoolId,
+      campusId: campusId || null,
+      groupIds: ids,
+      config: config && typeof config === 'object' ? config : {},
+    });
+
+    clearExamGroupsCache();
+    return res.status(result.status === 'GENERATED' ? 200 : 409).json(result);
+  } catch (err) {
+    return res.status(500).json({ error: err.message || 'Failed to generate exam routine' });
   }
 });
 

@@ -4423,8 +4423,18 @@ const ExaminationManagement = ({ setShowAdminHeader }) => {
         !teacherBookings.some((b) => b.name === name && hasOverlap(dateStr, time, duration, b));
       // Pick at random among whoever's free, instead of always the first name in the
       // list — otherwise the same teacher ends up on nearly every subject.
-      const pickRandomFreeTeacher = (dateStr, time, duration, excludeName) => {
-        const free = teachers.filter((t) => t.name !== excludeName && isTeacherFree(dateStr, time, duration, t.name));
+      // `extraBusyNames` is a belt-and-braces guard on top of isTeacherFree:
+      // every room already assigned *today* (see roomTeachers below) feeds its
+      // names in here directly, so a teacher can never guard two different
+      // rooms on the same day even if their time-overlap bookkeeping somehow
+      // disagreed — this is not appended to `excludeName` for one reason: the
+      // secondary pick's own excludeName (the room's primary) must still work
+      // even when extraBusyNames is empty.
+      const pickRandomFreeTeacher = (dateStr, time, duration, excludeName, extraBusyNames) => {
+        const free = teachers.filter((t) =>
+          t.name !== excludeName
+          && !(extraBusyNames && extraBusyNames.has(t.name))
+          && isTeacherFree(dateStr, time, duration, t.name));
         if (!free.length) return null;
         return free[Math.floor(Math.random() * free.length)];
       };
@@ -4511,8 +4521,17 @@ const ExaminationManagement = ({ setShowAdminHeader }) => {
             // silently double-booking them.
             const existingPrimary = cand.existing.primaryInstructor || null;
             const existingSecondary = cand.existing.secondaryInstructor || null;
-            if (existingPrimary && !isTeacherFree(dateStr, time, duration, existingPrimary)) return;
-            if (existingSecondary && !isTeacherFree(dateStr, time, duration, existingSecondary)) return;
+            // Every name already guarding some OTHER room today, read straight
+            // from this day's own roomTeachers map — a same-day, room-scoped
+            // guard that doesn't depend on teacherBookings' date/time-overlap
+            // bookkeeping being exactly right, on top of isTeacherFree below.
+            const busyNamesToday = new Set();
+            roomTeachers.forEach((pair) => {
+              if (pair.primary) busyNamesToday.add(pair.primary);
+              if (pair.secondary) busyNamesToday.add(pair.secondary);
+            });
+            if (existingPrimary && (busyNamesToday.has(existingPrimary) || !isTeacherFree(dateStr, time, duration, existingPrimary))) return;
+            if (existingSecondary && (busyNamesToday.has(existingSecondary) || !isTeacherFree(dateStr, time, duration, existingSecondary))) return;
 
             let chosenRoom = null;
             for (const room of capacityRooms) {
@@ -4552,7 +4571,7 @@ const ExaminationManagement = ({ setShowAdminHeader }) => {
               let primary = existingPrimary;
               let secondary = existingSecondary;
               if (!primary) {
-                const teacher = pickRandomFreeTeacher(dateStr, time, duration);
+                const teacher = pickRandomFreeTeacher(dateStr, time, duration, undefined, busyNamesToday);
                 if (teacher) {
                   primary = teacher.name;
                 } else {
@@ -4560,7 +4579,7 @@ const ExaminationManagement = ({ setShowAdminHeader }) => {
                 }
               }
               if (!secondary) {
-                const associate = pickRandomFreeTeacher(dateStr, time, duration, primary);
+                const associate = pickRandomFreeTeacher(dateStr, time, duration, primary, busyNamesToday);
                 if (associate) {
                   secondary = associate.name;
                 } else {
@@ -5221,10 +5240,12 @@ const ExaminationManagement = ({ setShowAdminHeader }) => {
                                 <span className="text-xs font-semibold text-slate-400 shrink-0">{subCount} subject{subCount !== 1 ? 's' : ''}</span>
                               </button>
                               <div className="flex items-center gap-1.5 shrink-0">
-                                <button onClick={() => openAddSubject(group)}
-                                  className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg bg-indigo-600 text-white text-xs font-semibold hover:bg-indigo-700">
-                                  <Plus size={12} /> Add Subject
-                                </button>
+                                {subCount === 0 && (
+                                  <button onClick={() => openAddSubject(group)}
+                                    className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg bg-indigo-600 text-white text-xs font-semibold hover:bg-indigo-700">
+                                    <Plus size={12} /> Add Subject
+                                  </button>
+                                )}
                                 <button
                                   onClick={() => handlePublishRoutine(group)}
                                   disabled={!subCount || publishingGroupId === group._id}
@@ -5356,7 +5377,7 @@ const ExaminationManagement = ({ setShowAdminHeader }) => {
                                   <td className="py-2.5 pr-3 text-slate-500">{row.subjectNames.length ? row.subjectNames.join(', ') : 'No subjects selected'}</td>
                                   <td className="py-2.5 pr-3 font-semibold text-slate-700">{row.subjectNames.length}</td>
                                   <td className="py-2.5 text-right">
-                                    {firstGroup && (
+                                    {firstGroup && row.subjectNames.length === 0 && (
                                       <button onClick={() => openAddSubject(firstGroup)} className="text-xs font-semibold text-indigo-600 hover:text-indigo-700 whitespace-nowrap">
                                         + Add Subject
                                       </button>
