@@ -653,7 +653,6 @@ const AIPoweredTeaching = () => {
     if (!response.ok || data?.success !== true) {
       throw new Error(data?.detail?.detail || data?.detail || data?.error || 'AI indexing failed');
     }
-    toast.success(`Material indexed for AI (${data?.data?.chunks_indexed || 0} chunks)`);
     return true;
   };
 
@@ -703,7 +702,9 @@ const AIPoweredTeaching = () => {
       try {
         await ingestFileForAI(nextFile, chapterId);
       } catch (ingestError) {
-        toast.error(`File uploaded, but AI indexing failed: ${ingestError?.message || 'Unknown error'}`);
+        // AI indexing is best-effort. The uploaded file must remain usable
+        // when the AI service, allocation scope, or Qdrant is unavailable.
+        console.warn('AI indexing skipped after successful file upload:', ingestError?.message || ingestError);
       }
     } catch (err) {
       updateChapter(chapterId, (chapter) => ({
@@ -760,7 +761,9 @@ const AIPoweredTeaching = () => {
       try {
         await ingestFileForAI(nextFile, chapterId);
       } catch (ingestError) {
-        toast.error(`Worksheet uploaded, but AI indexing failed: ${ingestError?.message || 'Unknown error'}`);
+        // AI indexing is best-effort and must never make a successful upload
+        // look like a failed worksheet upload.
+        console.warn('AI indexing skipped after successful worksheet upload:', ingestError?.message || ingestError);
       }
     } catch (err) {
       updateChapter(chapterId, (chapter) => ({
