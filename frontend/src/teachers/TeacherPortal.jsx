@@ -192,7 +192,14 @@ const resolveTeacherNotificationPath = (notification) => {
   if (blob.includes('substitute') || blob.includes('attendance')) return '/teacher/attendance';
   if (blob.includes('assignment_submission') || blob.includes('new submission') || blob.includes('submitted')) return '/teacher/evaluation';
   if (blob.includes('assignment')) return '/teacher/assignments';
-  if (String(notification?.typeLabel || '').toLowerCase() === 'exam_schedule_teacher' || blob.includes('exam duty') || blob.includes('invigilat')) {
+  const typeLabel = String(notification?.typeLabel || '').toLowerCase();
+  if (
+    typeLabel === 'exam_schedule_teacher'
+    || typeLabel === 'exam_routine_published_teacher'
+    || blob.includes('exam duty')
+    || blob.includes('invigilat')
+    || blob.includes('exam routine published')
+  ) {
     const id = String(notification?._id || notification?.id || '');
     return id ? `/teacher/exam-duty/${id}` : '/teacher/result-management';
   }
@@ -215,11 +222,22 @@ const notificationTypeMeta = (notification) => {
   return { label: notification?.typeLabel || 'General', icon: Bell, tone: 'slate' };
 };
 
+// Consolidated, school-wide exam notices (one per exam title, not tied to a
+// single class) — they don't belong to any one class, so unlike a normal
+// "exam" notification they must NOT roll up into "Classes & Work"; they
+// should only ever surface as unread on the Notifications nav item itself.
+const TEACHER_NOTIFICATIONS_ONLY_TYPE_LABELS = new Set([
+  'exam_schedule_teacher',
+  'exam_scheduled_teacher',
+  'exam_routine_published_teacher',
+]);
+
 const teacherNotificationModuleKey = (notification) => {
   const type = String(notification?.type || '').toLowerCase();
   const typeLabel = String(notification?.typeLabel || '').toLowerCase();
   const entity = String(notification?.relatedEntity?.entityType || '').toLowerCase();
 
+  if (TEACHER_NOTIFICATIONS_ONLY_TYPE_LABELS.has(typeLabel)) return 'notifications-only';
   if (typeLabel.includes('submission')) return 'assignments-evaluate';
   if (typeLabel.includes('assignment_created') || typeLabel.includes('assignment_published')) return 'assignments-manage';
   if (entity === 'assignment' || type === 'assignment' || (entity === 'result' && typeLabel.includes('assignment'))) return 'assignments';
@@ -643,7 +661,9 @@ const TeacherExamDuty = () => {
         </button>
 
         <section className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm sm:p-6">
-          <p className="text-xs font-semibold uppercase tracking-[0.18em] text-rose-600">Exam Duty</p>
+          <p className="text-xs font-semibold uppercase tracking-[0.18em] text-rose-600">
+            {notification?.typeLabel === 'exam_routine_published_teacher' ? 'Exam Routine' : 'Exam Duty'}
+          </p>
           <h1 className="mt-2 text-2xl font-semibold text-slate-950">{notification?.title || 'Exam Duty'}</h1>
           {notification?.message && <p className="mt-2 max-w-2xl text-sm text-slate-500">{notification.message}</p>}
         </section>
@@ -2130,7 +2150,11 @@ const TeacherPortalShell = () => {
               <div className="relative" ref={notificationsRef}>
                 <button type="button" onClick={handleToggleNotifications} className="relative flex h-9 w-9 items-center justify-center rounded-full bg-white/10 transition active:scale-95" aria-label="Notifications">
                   <Bell size={19} />
-                  {unreadCount > 0 && <span className="absolute right-1.5 top-1.5 h-2 w-2 rounded-full bg-pink-400" />}
+                  {unreadCount > 0 && (
+                    <span className="absolute -right-1 -top-1 flex min-h-[17px] min-w-[17px] items-center justify-center rounded-full border-2 border-violet-600 bg-red-500 px-1 text-[10px] font-bold leading-none text-white">
+                      {unreadCount > 9 ? '9+' : unreadCount}
+                    </span>
+                  )}
                 </button>
                 <AnimatePresence>
                   {showNotifications && (

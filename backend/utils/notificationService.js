@@ -154,6 +154,11 @@ class NotificationService {
       title: `Exam Scheduled: ${group.title}`,
       message: `${group.title}${scopeLabel ? ` for ${scopeLabel}` : ''} has been scheduled${dateRange}.`,
       audience: 'All',
+      // Teachers get one consolidated notice per exam title instead of this
+      // per-class copy (see upsertTeacherExamScheduledNotice in
+      // examRoute.js) — this typeLabel lets the /user notifications query
+      // skip it for teachers so they don't see it once per class/section.
+      typeLabel: 'exam_scheduled_class',
       type: 'exam',
       priority: 'medium',
       category: 'academic',
@@ -195,6 +200,11 @@ class NotificationService {
       title: `Exam Routine Published: ${group.title}`,
       message: `The exam routine for ${group.title}${scopeLabel ? ` (${scopeLabel})` : ''} has been published. ${subjectCount} subject exam${subjectCount !== 1 ? 's' : ''} scheduled${dateRange}. See the full schedule below.`,
       audience: 'All',
+      // Teachers get their own consolidated notice instead (one per exam
+      // title covering every class, see upsertTeacherRoutinePublishedNotice
+      // in examRoute.js) — this typeLabel lets the /user notifications query
+      // skip this per-class copy for teachers so they don't see it twice.
+      typeLabel: 'exam_routine_published_class',
       type: 'exam',
       priority: 'high',
       category: 'academic',

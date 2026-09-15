@@ -4480,6 +4480,19 @@ const ExaminationManagement = ({ setShowAdminHeader }) => {
             const time = cand.existing.time || defaultTime;
             const duration = cand.existing.duration || defaultDuration;
 
+            // A teacher already typed in manually (subject teacher for this
+            // class, date just not set yet) still has to be free at the slot
+            // Auto-Schedule is about to give this class — otherwise the same
+            // teacher ends up "invigilating" two different rooms at once the
+            // moment two of their classes land on the same day/time. If
+            // they're already booked (by an earlier room in this same run, or
+            // an existing exam), defer this class to a later day instead of
+            // silently double-booking them.
+            const existingPrimary = cand.existing.primaryInstructor || null;
+            const existingSecondary = cand.existing.secondaryInstructor || null;
+            if (existingPrimary && !isTeacherFree(dateStr, time, duration, existingPrimary)) return;
+            if (existingSecondary && !isTeacherFree(dateStr, time, duration, existingSecondary)) return;
+
             let chosenRoom = null;
             for (const room of capacityRooms) {
               const key = String(room._id);
@@ -4515,13 +4528,12 @@ const ExaminationManagement = ({ setShowAdminHeader }) => {
             // room when two classes are mixed in together).
             const roomTeacherKey = String(chosenRoom._id);
             if (!roomTeachers.has(roomTeacherKey)) {
-              let primary = cand.existing.primaryInstructor || null;
-              let secondary = cand.existing.secondaryInstructor || null;
+              let primary = existingPrimary;
+              let secondary = existingSecondary;
               if (!primary) {
                 const teacher = pickRandomFreeTeacher(dateStr, time, duration);
                 if (teacher) {
                   primary = teacher.name;
-                  teacherBookings.push({ date: dateStr, time, duration, name: teacher.name });
                 } else {
                   unresolvedTeachers += 1;
                 }
@@ -4530,11 +4542,16 @@ const ExaminationManagement = ({ setShowAdminHeader }) => {
                 const associate = pickRandomFreeTeacher(dateStr, time, duration, primary);
                 if (associate) {
                   secondary = associate.name;
-                  teacherBookings.push({ date: dateStr, time, duration, name: associate.name });
                 } else {
                   unresolvedAssociates += 1;
                 }
               }
+              // Registered unconditionally — a manually pre-set name has to
+              // occupy this slot in teacherBookings too, or a later room in
+              // this same run (or this same class's own secondary check just
+              // above) won't see them as busy and could double-book them.
+              if (primary) teacherBookings.push({ date: dateStr, time, duration, name: primary });
+              if (secondary) teacherBookings.push({ date: dateStr, time, duration, name: secondary });
               roomTeachers.set(roomTeacherKey, { primary, secondary });
             }
             const teacherPair = roomTeachers.get(roomTeacherKey);

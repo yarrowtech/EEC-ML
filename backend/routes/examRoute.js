@@ -546,6 +546,154 @@ const createConsolidatedTeacherExamNotifications = async ({
   return results;
 };
 
+// One shared "Exam Routine Published" notice for every teacher at the
+// school, covering every class/section the exam was published for — instead
+// of the per-class notice everyone else gets, which would otherwise fire once
+// per class/section under the same exam title ("Publish All Routines").
+// dedupeKey scopes identity to (school, campus, exam title); each group's
+// publish call merges its rows/class label in, replacing what it contributed
+// last time so a republish doesn't duplicate.
+const upsertTeacherRoutinePublishedNotice = async ({
+  schoolId,
+  campusId,
+  group,
+  examRoutine = [],
+  createdBy = null,
+}) => {
+  const groupId = group?._id;
+  const groupTitle = group?.title || 'Exam';
+  const className = group?.classId?.name || group?.grade || '';
+  const sectionName = group?.sectionId?.name || group?.section || '';
+  const classLabel = [className && `Class ${className}`, sectionName && `Section ${sectionName}`].filter(Boolean).join(', ');
+
+  const rowKey = (row) => [row.date, row.subject, row.time, row.duration, row.building, row.floor, row.room].join('|');
+  const dedupeRows = (list) => {
+    const seen = new Set();
+    const out = [];
+    list.forEach((row) => {
+      const key = rowKey(row);
+      if (seen.has(key)) return;
+      seen.add(key);
+      out.push(row);
+    });
+    return out;
+  };
+
+  const rows = dedupeRows((examRoutine || []).map((row) => ({ ...row, groupId: groupId ? String(groupId) : '' })));
+  const dedupeKey = `exam-routine-published-teacher:${schoolId}:${campusId || 'none'}:${slugifyDutyKey(groupTitle)}`;
+
+  if (groupId) {
+    await Notification.updateOne({ dedupeKey }, { $pull: { examRoutine: { groupId: String(groupId) } } });
+  }
+
+  const buildMerge = (existing) => ({
+    rows: dedupeRows([...(existing?.examRoutine || []), ...rows]),
+    classes: Array.from(new Set([...(existing?.classesCovered || []), ...(classLabel ? [classLabel] : [])])),
+  });
+
+  const title = `Exam Routine Published: ${groupTitle}`;
+  const messageFor = (classes, rowCount) =>
+    `The exam routine for ${groupTitle} has been published for ${classes.length} class${classes.length !== 1 ? 'es' : ''}`
+    + `${classes.length ? ` (${classes.join('; ')})` : ''}. ${rowCount} subject exam${rowCount !== 1 ? 's' : ''} total. See the full schedule below.`;
+
+  const existing = await Notification.findOne({ dedupeKey }).select('examRoutine classesCovered').lean();
+  const merged = buildMerge(existing);
+  const setFields = {
+    examRoutine: merged.rows,
+    classesCovered: merged.classes,
+    message: messageFor(merged.classes, merged.rows.length),
+  };
+  const setOnInsert = {
+    schoolId,
+    campusId: campusId || null,
+    title,
+    audience: 'Teacher',
+    createdBy,
+    createdByType: 'admin',
+    type: 'exam',
+    typeLabel: 'exam_routine_published_teacher',
+    priority: 'high',
+    category: 'academic',
+    dedupeKey,
+  };
+
+  try {
+    return await Notification.findOneAndUpdate(
+      { dedupeKey },
+      { $set: setFields, $setOnInsert: setOnInsert },
+      { upsert: true, new: true, setDefaultsOnInsert: true }
+    );
+  } catch (err) {
+    if (err?.code !== 11000) throw err;
+    const latest = await Notification.findOne({ dedupeKey }).select('examRoutine classesCovered').lean();
+    const remerged = buildMerge(latest);
+    return Notification.findOneAndUpdate(
+      { dedupeKey },
+      { $set: { examRoutine: remerged.rows, classesCovered: remerged.classes, message: messageFor(remerged.classes, remerged.rows.length) } },
+      { new: true }
+    );
+  }
+};
+
+// One shared "Exam Scheduled" heads-up notice for every teacher at the
+// school, covering every class/section the exam wizard created — instead of
+// the per-class notice everyone else gets (fired once per class/section
+// group, "Publish/Create All" creates several groups at once for the same
+// exam title). Mirrors upsertTeacherRoutinePublishedNotice's dedupeKey/merge
+// approach; there is no per-subject data yet at this stage, just the class
+// list, so classesCovered is all this one tracks.
+const upsertTeacherExamScheduledNotice = async ({ schoolId, campusId, group, createdBy = null }) => {
+  const groupTitle = group?.title || 'Exam';
+  const className = group?.classId?.name || group?.grade || '';
+  const sectionName = group?.sectionId?.name || group?.section || '';
+  const classLabel = [className && `Class ${className}`, sectionName && `Section ${sectionName}`].filter(Boolean).join(', ');
+  const dateRange = group?.startDate
+    ? ` starting from ${group.startDate}${group.endDate && group.endDate !== group.startDate ? ` to ${group.endDate}` : ''}`
+    : '';
+
+  const dedupeKey = `exam-scheduled-teacher:${schoolId}:${campusId || 'none'}:${slugifyDutyKey(groupTitle)}`;
+  const title = `Exam Scheduled: ${groupTitle}`;
+  const messageFor = (classes) =>
+    `${groupTitle} has been scheduled for ${classes.length} class${classes.length !== 1 ? 'es' : ''}`
+    + `${classes.length ? ` (${classes.join('; ')})` : ''}${dateRange}.`;
+
+  const mergeClasses = (existingClasses) => Array.from(new Set([...(existingClasses || []), ...(classLabel ? [classLabel] : [])]));
+
+  const existing = await Notification.findOne({ dedupeKey }).select('classesCovered').lean();
+  const mergedClasses = mergeClasses(existing?.classesCovered);
+  const setFields = { classesCovered: mergedClasses, message: messageFor(mergedClasses) };
+  const setOnInsert = {
+    schoolId,
+    campusId: campusId || null,
+    title,
+    audience: 'Teacher',
+    createdBy,
+    createdByType: 'admin',
+    type: 'exam',
+    typeLabel: 'exam_scheduled_teacher',
+    priority: 'medium',
+    category: 'academic',
+    dedupeKey,
+  };
+
+  try {
+    return await Notification.findOneAndUpdate(
+      { dedupeKey },
+      { $set: setFields, $setOnInsert: setOnInsert },
+      { upsert: true, new: true, setDefaultsOnInsert: true }
+    );
+  } catch (err) {
+    if (err?.code !== 11000) throw err;
+    const latest = await Notification.findOne({ dedupeKey }).select('classesCovered').lean();
+    const remerged = mergeClasses(latest?.classesCovered);
+    return Notification.findOneAndUpdate(
+      { dedupeKey },
+      { $set: { classesCovered: remerged, message: messageFor(remerged) } },
+      { new: true }
+    );
+  }
+};
+
 const isTeacherAssignedInvigilator = (examDoc = {}, teacherIdentitySet = new Set()) => {
   const instructors = parseInstructorNames(examDoc?.instructor);
   if (!instructors.length || teacherIdentitySet.size === 0) return false;
@@ -939,6 +1087,10 @@ router.post('/groups', adminAuth, async (req, res) => {
       .then((notice) => notice?._id && ExamGroup.findByIdAndUpdate(group._id, { routineNoticeId: notice._id }))
       .catch((err) => console.error('Failed to send exam-created notice:', err.message));
 
+    upsertTeacherExamScheduledNotice({
+      schoolId, campusId: campusId || null, group: populated, createdBy: req.admin?.id || null,
+    }).catch((err) => console.error('Failed to send teacher exam-scheduled notice:', err.message));
+
     res.status(201).json({ message: 'Exam group created', group: { ...populated, subjects: [] } });
   } catch (err) {
     res.status(400).json({ error: err.message });
@@ -1030,7 +1182,7 @@ router.put('/groups/:groupId', adminAuth, async (req, res) => {
       // (Promise.all would reject the request even after the group's own
       // status update had already been committed above). Promise.allSettled
       // + per-job try/catch means each stands or falls on its own.
-      const [teacherResult, studentResult] = await Promise.allSettled([
+      const [teacherResult, studentResult, teacherRoutineResult] = await Promise.allSettled([
         createConsolidatedTeacherExamNotifications({
           schoolId,
           campusId: campusId || null,
@@ -1050,6 +1202,13 @@ router.put('/groups/:groupId', adminAuth, async (req, res) => {
           createdBy: req.admin?.id || null,
           existingNoticeId: group.routineNoticeId || null,
         }),
+        upsertTeacherRoutinePublishedNotice({
+          schoolId,
+          campusId: campusId || null,
+          group,
+          examRoutine: routineRows,
+          createdBy: req.admin?.id || null,
+        }),
       ]);
 
       if (teacherResult.status === 'rejected') {
@@ -1057,6 +1216,9 @@ router.put('/groups/:groupId', adminAuth, async (req, res) => {
       }
       if (studentResult.status === 'rejected') {
         console.error('Failed to publish student/parent exam-routine notice:', studentResult.reason?.message);
+      }
+      if (teacherRoutineResult.status === 'rejected') {
+        console.error('Failed to publish teacher exam-routine notice:', teacherRoutineResult.reason?.message);
       }
 
       const studentNotice = studentResult.status === 'fulfilled' ? studentResult.value : null;

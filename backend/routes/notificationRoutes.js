@@ -18,6 +18,13 @@ const { logStudentPortalEvent, logStudentPortalError } = require('../utils/stude
 
 const router = express.Router();
 
+// Per-class exam notices teachers must not see (they get one consolidated
+// notice per exam title instead — see upsertTeacherExamScheduledNotice /
+// upsertTeacherRoutinePublishedNotice in examRoute.js). Otherwise a school
+// with 12 class/sections would surface the same "Exam Scheduled" or "Exam
+// Routine Published" notice 12 times on the teacher's notifications page.
+const TEACHER_HIDDEN_PER_CLASS_TYPE_LABELS = ['exam_scheduled_class', 'exam_routine_published_class'];
+
 // Matches the typeLabels attendanceRoutes.js/meetingRoute.js stamp on
 // system-generated, per-recipient notifications (attendance marked,
 // substitute-class alerts, individual low-attendance alerts, PTM invites).
@@ -539,7 +546,20 @@ router.get('/user', authAnyUser, async (req, res) => {
             { targetUserIds: { $in: [normalizedUserId, userId] } },
           ],
         },
-        { $or: [{ audience: 'All' }, { audience: normalizedAudience }] },
+        {
+          $or: [
+            { audience: normalizedAudience },
+            {
+              audience: 'All',
+              // Teachers get one consolidated "Exam Routine Published" notice
+              // per exam covering every class (see
+              // upsertTeacherRoutinePublishedNotice in examRoute.js) instead
+              // of the per-class copy every other audience sees — otherwise
+              // a teacher would see the same publish once per class/section.
+              ...(normalizedAudience === 'Teacher' ? { typeLabel: { $nin: TEACHER_HIDDEN_PER_CLASS_TYPE_LABELS } } : {}),
+            },
+          ],
+        },
         {
           $or: [
             { expiresAt: { $exists: false } },
@@ -850,7 +870,13 @@ router.post('/user/read-all', authAnyUser, async (req, res) => {
           ],
         },
       ],
-      $or: [{ audience: 'All' }, { audience: normalizedAudience }],
+      $or: [
+        { audience: normalizedAudience },
+        {
+          audience: 'All',
+          ...(normalizedAudience === 'Teacher' ? { typeLabel: { $nin: TEACHER_HIDDEN_PER_CLASS_TYPE_LABELS } } : {}),
+        },
+      ],
       'readBy.userId': { $ne: normalizedUserId },
       'dismissedBy.userId': { $ne: normalizedUserId }
     };
@@ -926,7 +952,13 @@ router.get('/user/unread-count', authAnyUser, async (req, res) => {
           ],
         },
       ],
-      $or: [{ audience: 'All' }, { audience: normalizedAudience }],
+      $or: [
+        { audience: normalizedAudience },
+        {
+          audience: 'All',
+          ...(normalizedAudience === 'Teacher' ? { typeLabel: { $nin: TEACHER_HIDDEN_PER_CLASS_TYPE_LABELS } } : {}),
+        },
+      ],
       'readBy.userId': { $ne: normalizedUserId },
       'dismissedBy.userId': { $ne: normalizedUserId }
     };

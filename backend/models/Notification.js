@@ -80,6 +80,13 @@ const notificationSchema = new mongoose.Schema(
         groupId: { type: String, default: '' },
       },
     ],
+
+    // Display labels ("Class 11 - Science, Section A") for every class/section
+    // folded into a consolidated teacher exam-routine-published notice — see
+    // upsertTeacherRoutinePublishedNotice in examRoute.js. Lets one shared
+    // notice list every class an exam was published for instead of teachers
+    // getting a separate notice per class/section.
+    classesCovered: [{ type: String }],
     targetUserIds: [{ type: mongoose.Schema.Types.ObjectId, index: true }],
 
     // Read tracking
