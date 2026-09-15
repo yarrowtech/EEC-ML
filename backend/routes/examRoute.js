@@ -23,6 +23,7 @@ const adminAuth = require('../middleware/adminAuth');
 const teacherAuth = require('../middleware/authTeacher');
 const NotificationService = require('../utils/notificationService');
 const authStudent = require('../middleware/authStudent');
+const authParent = require('../middleware/authParent');
 const { logStudentPortalEvent, logStudentPortalError } = require('../utils/studentPortalLogger');
 
 // Configure multer for bulk results upload (Excel/CSV only)
@@ -689,6 +690,100 @@ router.get('/groups/student-schedule', authStudent, async (req, res) => {
     });
 
     return res.status(200).json(payload);
+  } catch (err) {
+    return res.status(500).json({ error: err.message || 'Failed to fetch exam schedule' });
+  }
+});
+
+// GET /groups/parent-schedule — exam schedule for every child linked to the logged-in parent
+router.get('/groups/parent-schedule', authParent, async (req, res) => {
+  try {
+    const parent = await ParentUser.findById(req.user.id)
+      .select('schoolId campusId childrenIds children')
+      .lean();
+    if (!parent) return res.status(404).json({ error: 'Parent not found' });
+
+    const schoolId = parent.schoolId || req.schoolId || null;
+    if (!schoolId) return res.status(400).json({ error: 'schoolId is required' });
+    const campusId = parent.campusId || req.campusId || null;
+
+    const studentFilter = { schoolId, ...(campusId ? { campusId } : {}) };
+    let students = [];
+
+    if (Array.isArray(parent.childrenIds) && parent.childrenIds.length > 0) {
+      students = await StudentUser.find({ ...studentFilter, _id: { $in: parent.childrenIds } })
+        .select('name grade section')
+        .lean();
+    }
+
+    if (students.length === 0 && Array.isArray(parent.children) && parent.children.length > 0) {
+      const validNames = parent.children.map((name) => String(name || '').trim()).filter(Boolean);
+      if (validNames.length > 0) {
+        students = await StudentUser.find({ ...studentFilter, name: { $in: validNames } })
+          .select('name grade section')
+          .lean();
+      }
+    }
+
+    if (students.length === 0) {
+      return res.status(200).json({ children: [] });
+    }
+
+    const filter = { schoolId, ...(campusId ? { campusId } : {}) };
+    const [groups, exams] = await Promise.all([
+      ExamGroup.find(filter)
+        .populate({
+          path: 'classId',
+          select: 'name academicYearId',
+          populate: { path: 'academicYearId', select: 'name isActive status' },
+        })
+        .populate('sectionId', 'name classId')
+        .sort({ startDate: 1, createdAt: -1 })
+        .lean(),
+      Exam.find({ ...filter, groupId: { $exists: true, $ne: null } })
+        .populate('subjectId', 'name code')
+        .populate('classId', 'name')
+        .populate('sectionId', 'name classId')
+        .populate({
+          path: 'roomId',
+          select: 'roomNumber floorId',
+          populate: {
+            path: 'floorId',
+            select: 'name floorCode buildingId',
+            populate: { path: 'buildingId', select: 'name code' },
+          },
+        })
+        .sort({ date: 1, createdAt: 1 })
+        .lean(),
+    ]);
+
+    const examsByGroup = new Map();
+    exams.forEach((exam) => {
+      const gid = String(exam.groupId || '');
+      if (!gid) return;
+      if (!examsByGroup.has(gid)) examsByGroup.set(gid, []);
+      examsByGroup.get(gid).push(exam);
+    });
+
+    const childrenSchedules = students.map((student) => {
+      const studentGroups = groups.filter((group) => studentMatchesExamScope(student, group));
+      const payload = studentGroups.map((group) => ({
+        ...group,
+        subjects: examsByGroup.get(String(group._id)) || [],
+        academicYearId: group.classId?.academicYearId?._id || null,
+        academicYearName: group.classId?.academicYearId?.name || '',
+        academicYearIsActive: Boolean(group.classId?.academicYearId?.isActive),
+      }));
+      return {
+        studentId: student._id,
+        studentName: student.name || 'Student',
+        grade: student.grade || '',
+        section: student.section || '',
+        groups: payload,
+      };
+    });
+
+    return res.status(200).json({ children: childrenSchedules });
   } catch (err) {
     return res.status(500).json({ error: err.message || 'Failed to fetch exam schedule' });
   }

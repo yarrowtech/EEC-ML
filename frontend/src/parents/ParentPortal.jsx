@@ -26,6 +26,7 @@ import {
   Home,
   LogOut,
   BarChart2,
+  CalendarClock,
 } from 'lucide-react';
 import { useDesktopNotificationBridge } from '../hooks/useDesktopNotificationBridge';
 import DesktopNotificationPermissionModal from '../components/DesktopNotificationPermissionModal';
@@ -40,6 +41,7 @@ const AttendanceReport = lazy(() => import('./AttendanceReport'));
 const AchievementsView = lazy(() => import('./AchievementsView'));
 const HealthReport = lazy(() => import('./HealthReport'));
 const ClassRoutine = lazy(() => import('./ClassRoutine'));
+const ExamRoutine = lazy(() => import('./ExamRoutine'));
 const HolidayList = lazy(() => import('./HolidayList'));
 const FeesPayment = lazy(() => import('./FeesPayment'));
 const ParentChat = lazy(() => import('./ParentChat'));
@@ -78,6 +80,7 @@ const NAV_GROUPS = [
     heading: 'Schedule',
     items: [
       { icon: Clock, label: 'Class Routine', description: 'Weekly timetable', path: '/parents/routine' },
+      { icon: CalendarClock, label: 'Exam Routine', description: 'Exam schedule & downloads', path: '/parents/exam-routine' },
       { icon: Sun, label: 'Holidays', description: 'School holiday list', path: '/parents/holidays' },
     ],
   },
@@ -791,6 +794,7 @@ const ParentPortal = () => {
             <Route path="attendance" element={<AttendanceReport />} />
             <Route path="holidays" element={<HolidayList />} />
             <Route path="routine" element={<ClassRoutine />} />
+            <Route path="exam-routine" element={<ExamRoutine />} />
             <Route path="academic" element={<AcademicReport />} />
             <Route path="fees" element={<FeesPayment />} />
             <Route path="health" element={<HealthReport />} />
