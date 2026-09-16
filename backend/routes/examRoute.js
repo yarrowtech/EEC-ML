@@ -521,7 +521,20 @@ const createConsolidatedTeacherExamNotifications = async ({
     // genuine atomic Mongo operators — each concurrent call is a self-contained
     // write the database serializes correctly, no read-modify-write race
     // possible, however many requests land at once.
-    const updateOps = { $set: { relatedEntity: groupId ? { entityType: 'exam', entityId: groupId } : undefined }, $setOnInsert: setOnInsert };
+    // Merging new rows into a notice a teacher already read/dismissed must
+    // re-surface it — otherwise the SAME long-lived notice (one per exam
+    // title) just silently grows in the background forever after the first
+    // time, which is exactly what "I don't get notified when a new exam is
+    // created" looks like from the teacher's side once a title gets reused
+    // (a common case: repeat testing, or an exam split across many
+    // class/section groups over several publish calls). Mongoose won't let a
+    // plain $set touch createdAt on an update (silently ignored), but it
+    // always bumps updatedAt — GET /user sorts by that, so this still
+    // resurfaces at the top, not just flips unread.
+    const updateOps = {
+      $set: { relatedEntity: groupId ? { entityType: 'exam', entityId: groupId } : undefined, readBy: [] },
+      $setOnInsert: setOnInsert,
+    };
     // Republishing the same group must replace its rows, not duplicate them.
     if (groupId) {
       await Notification.updateOne({ dedupeKey }, { $pull: { examRoutine: { groupId: String(groupId) } } });
@@ -615,7 +628,13 @@ const upsertTeacherRoutinePublishedNotice = async ({
   const addToSet = {};
   if (rows.length) addToSet.examRoutine = { $each: rows };
   if (classLabel) addToSet.classesCovered = classLabel;
-  const updateOps = { $setOnInsert: setOnInsert, ...(Object.keys(addToSet).length ? { $addToSet: addToSet } : {}) };
+  // Re-surface (unread + resorted via updatedAt) on every merge — see the
+  // matching comment in createConsolidatedTeacherExamNotifications.
+  const updateOps = {
+    $set: { readBy: [] },
+    $setOnInsert: setOnInsert,
+    ...(Object.keys(addToSet).length ? { $addToSet: addToSet } : {}),
+  };
 
   if (groupId) {
     await Notification.updateOne({ dedupeKey }, { $pull: { examRoutine: { groupId: String(groupId) } } });
@@ -682,10 +701,21 @@ const upsertTeacherExamScheduledNotice = async ({ schoolId, campusId, group, cre
   // all hitting this same dedupeKey. A read-latest → merge-in-JS → $set write
   // is not atomic: concurrent calls can each read the same "before" state and
   // overwrite each other, so most classes silently never make it into
-  // classesCovered — this is the actual bug behind "notification not coming"
-  // reports after the admin's bulk exam-creation step. $addToSet is a single
-  // atomic operator the database serializes correctly under any concurrency.
-  const updateOps = { $setOnInsert: setOnInsert, ...(classLabel ? { $addToSet: { classesCovered: classLabel } } : {}) };
+  // classesCovered. $addToSet is a single atomic operator the database
+  // serializes correctly under any concurrency.
+  //
+  // Separately: the SAME dedupeKey (one per exam TITLE) is reused every time
+  // that title comes up again, so without resetting readBy here, a teacher
+  // who already read an earlier exam under this title would never see it
+  // flip back to unread when a later batch of classes gets merged in —
+  // indistinguishable from "not notified at all". GET /user sorts by
+  // updatedAt (Mongoose bumps that automatically on every update), so it
+  // also re-surfaces at the top without needing to touch createdAt.
+  const updateOps = {
+    $set: { readBy: [] },
+    $setOnInsert: setOnInsert,
+    ...(classLabel ? { $addToSet: { classesCovered: classLabel } } : {}),
+  };
 
   let updated;
   try {

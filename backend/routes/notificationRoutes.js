@@ -692,8 +692,15 @@ router.get('/user', authAnyUser, async (req, res) => {
       }
     }
 
+    // updatedAt, not createdAt: a long-lived, merged/re-notified notice (see
+    // upsertTeacherExamScheduledNotice & co. in examRoute.js, which reuse one
+    // notice per exam title and just add to it as more classes/groups come
+    // in) must resurface at the top when it gains new content — Mongoose
+    // won't let a plain $set touch createdAt on an update, but it always
+    // bumps updatedAt, so that's the reliable "how recently did this change"
+    // signal for sorting.
     const items = await Notification.find(filter)
-      .sort({ createdAt: -1 })
+      .sort({ updatedAt: -1 })
       .lean();
 
     const unseenViewIds = items
