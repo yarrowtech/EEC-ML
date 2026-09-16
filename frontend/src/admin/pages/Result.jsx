@@ -1363,7 +1363,7 @@ const Result = ({ setShowAdminHeader }) => {
 
         {bulkStep === 2 && (
           <div className="space-y-3">
-            <div className="rounded-xl border border-slate-200 overflow-hidden h-[300px]">
+            <div className="rounded-xl border border-slate-200 overflow-hidden">
               <div className="flex flex-wrap items-center justify-between gap-2 px-4 py-2.5 bg-slate-50 border-b border-slate-200">
                 <p className="text-xs font-semibold text-slate-500 uppercase tracking-wide">Students ({searchedRows.length})</p>
                 <div className="flex items-center gap-2">
@@ -2003,7 +2003,7 @@ const Result = ({ setShowAdminHeader }) => {
       {/* ═══ ADD RESULT MODAL ═══ */}
       <Modal show={showAddResult} onClose={closeAddResultModal} title="Add Result" subtitle="Record and upload students' exam results" icon={Plus} iconColor="bg-indigo-600" maxWidth="sm:max-w-4xl">
         <div className="space-y-4">
-          <div className="inline-flex rounded-full border border-slate-200 p-1 bg-slate-50">
+          {/* <div className="inline-flex rounded-full border border-slate-200 p-1 bg-slate-50">
             <button
               type="button"
               onClick={() => setAddResultMode('single')}
@@ -2018,7 +2018,7 @@ const Result = ({ setShowAdminHeader }) => {
             >
               Bulk Entry
             </button>
-          </div>
+          </div> */}
 
           {addResultMode === 'single' ? (
             <form onSubmit={handleAddResult} className="space-y-4">
