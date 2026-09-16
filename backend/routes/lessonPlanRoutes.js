@@ -27,7 +27,7 @@ const Assignment = require('../models/Assignment');
 const Notification = require('../models/Notification');
 const { logStudentPortalEvent, logStudentPortalError } = require('../utils/studentPortalLogger');
 const TryoutResult = require('../models/TryoutResult');
-const { getAttachmentDownloadUrl, signAttachmentUrls } = require('../utils/s3Storage');
+const { getAttachmentDownloadUrl, signAttachmentUrls, parseS3Uri } = require('../utils/s3Storage');
 const { buildCloudinaryAttachmentUrl } = require('../utils/cloudinaryUpload');
 
 const AI_SERVICE_URL = process.env.AI_SERVICE_URL || 'http://localhost:8000';
@@ -159,12 +159,21 @@ const buildAttachmentList = (items) =>
   normalizeStringList(items)
     .map(parseResourceRef)
     .filter((item) => item.url)
-    .map((item, index) => ({
-      name: item.title || `Resource ${index + 1}`,
-      url: item.url,
-      size: 0,
-      type: inferAttachmentType(item.url),
-    }));
+    .map((item, index) => {
+      // Uploaded-file refs carry a permanent "s3://bucket/key" marker (see
+      // serializeResourceRef on the frontend). Preserve the bucket/key here so
+      // signAttachmentUrls/getAttachmentDownloadUrl can re-sign a fresh working
+      // url on every future read — without this, the stored url would be a
+      // dead string students can never open, since S3 objects aren't public.
+      const s3 = item.url.startsWith('s3://') ? parseS3Uri(item.url) : null;
+      return {
+        name: item.title || `Resource ${index + 1}`,
+        url: item.url,
+        size: 0,
+        type: inferAttachmentType(item.url),
+        ...(s3 ? { storageProvider: 's3', s3Bucket: s3.bucket, s3Key: s3.key } : {}),
+      };
+    });
 
 const getAttachmentExtension = (attachment) => {
   const type = normalizeString(attachment?.type).toLowerCase();
@@ -1799,14 +1808,25 @@ router.post('/teacher', authTeacher, async (req, res) => {
       }
     }
 
-    const publishResult = await publishPlanSmartLearningArtifacts({ schoolId, campusId, plan });
+    let publishResult = null;
+    try {
+      publishResult = await publishPlanSmartLearningArtifacts({ schoolId, campusId, plan });
+    } catch (publishError) {
+      // The lesson plan itself is already saved at this point. Smart Learning/
+      // vector enrichment is best-effort and must not turn a successful teacher
+      // submission into a false HTTP 500 (see PUT /teacher/:id for the same fix).
+      console.error('[lesson-plan] post-create enrichment failed', {
+        lessonPlanId: String(plan._id),
+        error: publishError?.message || publishError,
+      });
+    }
 
     res.status(updatedExistingPlan ? 200 : 201).json({
       message: updatedExistingPlan ? 'Lesson plan updated' : 'Lesson plan created',
       plan,
-      publishedCount: publishResult.publishedCount,
-      vectorIndexedAttachmentCount: publishResult.vectorIndexedAttachmentCount,
-      vectorFailedAttachmentCount: publishResult.vectorFailedAttachmentCount,
+      publishedCount: publishResult?.publishedCount || 0,
+      vectorIndexedAttachmentCount: publishResult?.vectorIndexedAttachmentCount || 0,
+      vectorFailedAttachmentCount: publishResult?.vectorFailedAttachmentCount || 0,
     });
   } catch (err) {
     res.status(500).json({ error: err.message });
@@ -1883,7 +1903,17 @@ router.post('/teacher/:id/publish', authTeacher, async (req, res) => {
     const plan = await LessonPlan.findOne(filter);
     if (!plan) return res.status(404).json({ error: 'Lesson plan not found' });
 
-    const publishResult = await publishPlanSmartLearningArtifacts({ schoolId, campusId, plan });
+    let publishResult = null;
+    try {
+      publishResult = await publishPlanSmartLearningArtifacts({ schoolId, campusId, plan });
+    } catch (publishError) {
+      // Smart Learning/vector enrichment is best-effort — the plan should still
+      // be marked published even if this step fails (see PUT /teacher/:id).
+      console.error('[lesson-plan] publish enrichment failed', {
+        lessonPlanId: String(plan._id),
+        error: publishError?.message || publishError,
+      });
+    }
 
     plan.status = 'published';
     plan.publishedAt = new Date();
@@ -1894,9 +1924,9 @@ router.post('/teacher/:id/publish', authTeacher, async (req, res) => {
     res.json({
       message: 'Lesson plan published to Smart Learning',
       plan,
-      publishedCount: publishResult.publishedCount,
-      vectorIndexedAttachmentCount: publishResult.vectorIndexedAttachmentCount,
-      vectorFailedAttachmentCount: publishResult.vectorFailedAttachmentCount,
+      publishedCount: publishResult?.publishedCount || 0,
+      vectorIndexedAttachmentCount: publishResult?.vectorIndexedAttachmentCount || 0,
+      vectorFailedAttachmentCount: publishResult?.vectorFailedAttachmentCount || 0,
     });
   } catch (err) {
     res.status(500).json({ error: err.message });

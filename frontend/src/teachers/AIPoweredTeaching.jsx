@@ -112,14 +112,27 @@ const normalizeLoadedChapter = (chapter, plan, index) => {
 const stripHtml = (value) => String(value || '').replace(/<[^>]*>/g, ' ').replace(/\s+/g, ' ').trim();
 const MATERIAL_BUCKETS = new Set(['Study Materials', 'Presentations', 'Images', 'Experiments', 'Report Upload', 'Additional Resources']);
 
+// Backend returns the full AI suggestion in one response; reveal it word-by-word
+// on the frontend so the editor feels like the AI is writing live.
+const STREAM_TOKEN_DELAY_MS = 22;
+const splitStreamTokens = (text) => String(text || '').match(/\S+\s*/g) || [];
+
 const serializeResourceRef = (file, bucket = '') => {
   if (file?.isUploading || !file?.url) return '';
   const name = String(file?.name || '').trim();
-  const url = String(file?.url || '').trim();
+  // uploadTeachingFile's `url` is a short-lived signed S3 link meant only for
+  // an immediate preview in the builder — it expires (DEFAULT_SIGNED_URL_TTL_SECONDS,
+  // 15 min) long before a student ever opens this material. Persist the permanent
+  // "s3://bucket/key" marker instead so the backend can re-sign a fresh working
+  // url on every future read (see resolveMaterialLink/signAttachmentUrls and the
+  // isResolvableResourceUrl comment in backend/routes/lessonPlanRoutes.js).
+  const permanentUrl = (file?.storageProvider === 's3' && file?.s3Bucket && file?.s3Key)
+    ? `s3://${file.s3Bucket}/${file.s3Key}`
+    : String(file?.url || '').trim();
   const safeBucket = String(bucket || '').trim();
-  if (name && url && safeBucket) return `${safeBucket}::${name}::${url}`;
-  if (name && url) return `${name}::${url}`;
-  return name || url;
+  if (name && permanentUrl && safeBucket) return `${safeBucket}::${name}::${permanentUrl}`;
+  if (name && permanentUrl) return `${name}::${permanentUrl}`;
+  return name || permanentUrl;
 };
 
 const readStoredSelection = () => {
@@ -362,6 +375,12 @@ const AIPoweredTeaching = () => {
   // Stable timer ref — one timer at a time, never lost across re-renders
   const autosaveTimerRef = useRef(null);
   const autosaveDirtyRef = useRef(false);
+
+  // Pending word-reveal timers for the AI Suggestion streaming effect, keyed by chapterId
+  const introStreamTimersRef = useRef({});
+  useEffect(() => () => {
+    Object.values(introStreamTimersRef.current).forEach((timers) => timers.forEach(clearTimeout));
+  }, []);
 
   const saveDraft = async () => {
     const { currentDraftId, chapters, selectedClass, selectedSection, selectedSubject } = autosaveStateRef.current;
@@ -782,15 +801,51 @@ const AIPoweredTeaching = () => {
     updateChapter(chapterId, (chapter) => ({ ...chapter, worksheetFiles: (chapter.worksheetFiles || []).filter((file) => file.id !== fileId) }));
   };
 
+  // Reveals `fullText` into chapter[field] one word at a time so the editor
+  // looks like the AI is writing live, instead of the text just appearing.
+  // `chapter.aiWriting` flips false once the last token lands.
+  const streamTextIntoChapter = (chapterId, field, fullText) => {
+    (introStreamTimersRef.current[chapterId] || []).forEach(clearTimeout);
+
+    const tokens = splitStreamTokens(fullText);
+    if (!tokens.length) {
+      updateChapter(chapterId, (ch) => ({ ...ch, [field]: '', aiWriting: false }));
+      delete introStreamTimersRef.current[chapterId];
+      return;
+    }
+
+    let tokenIndex = 0;
+    let streamedText = '';
+    const timers = [];
+    introStreamTimersRef.current[chapterId] = timers;
+
+    const pushNextToken = () => {
+      streamedText += tokens[tokenIndex];
+      tokenIndex += 1;
+      const isDone = tokenIndex >= tokens.length;
+
+      updateChapter(chapterId, (ch) => ({ ...ch, [field]: streamedText, aiWriting: !isDone }));
+
+      if (!isDone) {
+        timers.push(window.setTimeout(pushNextToken, STREAM_TOKEN_DELAY_MS));
+      } else {
+        delete introStreamTimersRef.current[chapterId];
+        toast.success('AI lesson content applied!');
+      }
+    };
+
+    pushNextToken();
+  };
+
   const applyAiSuggestion = async (chapterId) => {
     if (!chapterId) return;
     const chapter = chapters.find((ch) => ch.id === chapterId);
-    if (!chapter) return;
+    if (!chapter || chapter.aiWriting) return;
 
     const subject = selectedSubjectName || 'General';
     const topic = chapter.title || 'Lesson Topic';
 
-    const toastId = toast.loading('Generating AI lesson content…');
+    updateChapter(chapterId, (ch) => ({ ...ch, aiWriting: true }));
     try {
       const res = await fetch(`${API_BASE}/api/ai-teacher/lesson-content`, {
         method: 'POST',
@@ -817,10 +872,10 @@ const AIPoweredTeaching = () => {
       const firstPara = raw.split(/\n{2,}/)[0].trim();
       const introText = firstPara || raw;
 
-      updateChapter(chapterId, (ch) => ({ ...ch, introductionText: introText }));
-      toast.success('AI lesson content applied!', { id: toastId });
+      streamTextIntoChapter(chapterId, 'introductionText', introText);
     } catch (err) {
-      toast.error(err?.message || 'AI generation failed', { id: toastId });
+      updateChapter(chapterId, (ch) => ({ ...ch, aiWriting: false }));
+      toast.error(err?.message || 'AI generation failed');
     }
   };
 
