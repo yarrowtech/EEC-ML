@@ -1,3 +1,5 @@
+import PropTypes from 'prop-types';
+import AssessmentExplanation from '../features/language-review/AssessmentExplanation';
 import React, { useState } from 'react';
 import { motion as Motion, AnimatePresence } from 'framer-motion';
 import {
@@ -129,6 +131,8 @@ const ReadingScoreCard = ({ assessment, material, onRetry, onBack }) => {
   const overallScore = scores.overall || 0;
   const ringColor = overallScore >= 80 ? '#22c55e' : overallScore >= 60 ? '#f59e0b' : '#ef4444';
 
+  if (assessment.status && assessment.status !== 'completed') return <div role="status" className="rounded-xl border p-4">Assessment {assessment.status}. Scores are not available yet.{onBack && <button onClick={onBack}>Back</button>}</div>;
+
   const handleDownload = () => {
     const lines = [
       `Reading Assessment Report`,
@@ -167,6 +171,7 @@ const ReadingScoreCard = ({ assessment, material, onRetry, onBack }) => {
     a.href = URL.createObjectURL(blob);
     a.download = `reading-report-${Date.now()}.txt`;
     a.click();
+    setTimeout(() => URL.revokeObjectURL(a.href), 0);
   };
 
   return (
@@ -175,8 +180,9 @@ const ReadingScoreCard = ({ assessment, material, onRetry, onBack }) => {
       animate={{ opacity: 1, y: 0 }}
       className="max-w-3xl mx-auto space-y-6 pb-10"
     >
+      <AssessmentExplanation assessment={assessment} mode="reading" />
       {/* Header */}
-      <div className="flex items-center justify-between gap-4">
+      <div className="flex flex-wrap items-center justify-between gap-4">
         <div>
           <h2 className="text-2xl font-bold text-gray-900">Reading Report</h2>
           <p className="text-sm text-gray-500 mt-0.5">{material?.title}</p>
@@ -376,4 +382,9 @@ const ReadingScoreCard = ({ assessment, material, onRetry, onBack }) => {
   );
 };
 
+ScoreRing.propTypes = { score: PropTypes.number, size: PropTypes.number, strokeWidth: PropTypes.number, color: PropTypes.string };
+MetricCard.propTypes = { icon: PropTypes.elementType, label: PropTypes.string, value: PropTypes.node, color: PropTypes.string, sub: PropTypes.node };
+TagList.propTypes = { items: PropTypes.array, color: PropTypes.string, emptyText: PropTypes.string };
+PassageHighlight.propTypes = { passageText: PropTypes.string, wordScores: PropTypes.array };
+ReadingScoreCard.propTypes = { assessment: PropTypes.object.isRequired, material: PropTypes.object, onRetry: PropTypes.func, onBack: PropTypes.func };
 export default ReadingScoreCard;

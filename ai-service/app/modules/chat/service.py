@@ -1759,9 +1759,24 @@ def generate_tutor_response(req: TutorGenerateRequest) -> dict:
 
     messages.append(HumanMessage(content=user_prompt))
 
+    fallback_provider_used = False
     chain = create_chain(mode=req.mode)
     try:
-        content = chain.invoke(messages)
+        try:
+            content = chain.invoke(messages)
+        except Exception as primary_err:
+            # OpenRouter is the configured primary when set; Ollama is the only
+            # meaningful fallback target, and only worth trying if it wasn't
+            # already the one that just failed.
+            if not settings.openrouter_api_key:
+                raise
+            logger.warning(
+                "Primary provider failed for mode=%s (%s); retrying on Ollama fallback",
+                req.mode, type(primary_err).__name__,
+            )
+            chain = create_chain(mode=req.mode, force_provider="ollama")
+            content = chain.invoke(messages)
+            fallback_provider_used = True
 
         # Balance/swap exercise lock — applies to ALL modes including custom.
         # The LLM must teach the method, never perform the swap or state equalised totals.
@@ -1832,5 +1847,8 @@ def generate_tutor_response(req: TutorGenerateRequest) -> dict:
             "retrievalChunkCount": len(chunks),
             "citationCount": len(citations),
             "visualCount": len(visuals),
+            # True when the configured primary provider (OpenRouter) failed and
+            # this response came from the Ollama fallback instead.
+            "usedProviderFallback": fallback_provider_used,
         },
     }

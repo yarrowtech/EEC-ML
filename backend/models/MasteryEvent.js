@@ -9,7 +9,7 @@ const masteryEventSchema = new mongoose.Schema({
   topicTitle: { type: String, default: '' },
   chapterTitle: { type: String, default: '' },
   eventKey: { type: String },
-  source: { type: String, enum: ['baseline', 'tutor', 'practice', 'practice-paper', 'exam', 'assignment', 'decay', 'self-report'], required: true },
+  source: { type: String, enum: ['baseline', 'tutor', 'practice', 'practice-paper', 'exam', 'assignment', 'reading', 'writing', 'decay', 'self-report'], required: true },
   scoreBefore: { type: Number, min: 0, max: 100, default: null },
   assessmentScore: { type: Number, min: 0, max: 100, required: true },
   scoreAfter: { type: Number, min: 0, max: 100, required: true },

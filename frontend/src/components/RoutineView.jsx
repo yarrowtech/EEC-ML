@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useMemo, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { jsPDF } from 'jspdf';
 import { Calendar, Clock, MapPin, BookOpen, AlertCircle, RefreshCcw, Download } from 'lucide-react';
 import { useStudentDashboard } from './StudentDashboardContext';
@@ -460,7 +460,14 @@ const RoutineView = () => {
     return matrix;
   }, [filteredSchedule]);
 
+  // Only auto-pick a default day the first time the schedule loads — a manual
+  // refresh (or any silent background refetch) produces a new `filteredSchedule`
+  // reference and must not override a day the student has already selected.
+  const hasAutoSelectedDayRef = useRef(false);
   useEffect(() => {
+    if (hasAutoSelectedDayRef.current) return;
+    if (!dayOrder.some((day) => filteredSchedule[day]?.length)) return;
+    hasAutoSelectedDayRef.current = true;
     const firstAvailableDay = dayOrder.find((day) => filteredSchedule[day]?.length) || dayOrder[0];
     setSelectedDay(firstAvailableDay);
   }, [filteredSchedule]);

@@ -187,6 +187,10 @@ const Staff = ({ setShowAdminHeader }) => {
   useEffect(() => {
     setShowAdminHeader(false);
     fetchStaff();
+    // Restore the shell header on unmount — without this, navigating to a
+    // page that doesn't itself call setShowAdminHeader(true) leaves the
+    // admin shell's top header missing after leaving this page.
+    return () => setShowAdminHeader(true);
   }, [setShowAdminHeader]);
 
   const handleAddStaffChange = (e) => {

@@ -50,10 +50,18 @@ async function getStudentHelpSeekingProfile({ schoolId, studentId, sinceDays = 3
 
   const byType = { homework_help_used: 0, stuck_signal: 0, misconception_explainer_used: 0 };
   const bySubject = new Map();
+  const byTopic = new Map();
   for (const e of events) {
     byType[e.eventType] = (byType[e.eventType] || 0) + 1;
     bySubject.set(e.subject || 'General', (bySubject.get(e.subject || 'General') || 0) + 1);
+    if (e.topicTitle) {
+      const key = (e.subject || '') + '::' + e.topicTitle;
+      const prev = byTopic.get(key) || { subject: e.subject || '', topicTitle: e.topicTitle, count: 0 };
+      prev.count += 1;
+      byTopic.set(key, prev);
+    }
   }
+  const topTopics = [...byTopic.values()].sort((a, b) => b.count - a.count).slice(0, 3);
   const topSubjects = [...bySubject.entries()].sort((a, b) => b[1] - a[1]).slice(0, 3)
     .map(([subject, count]) => ({ subject, count }));
 
@@ -63,6 +71,10 @@ async function getStudentHelpSeekingProfile({ schoolId, studentId, sinceDays = 3
     stuckSignals: byType.stuck_signal,
     misconceptionExplainerUsed: byType.misconception_explainer_used,
     topSubjects,
+    topTopics,
+    recentEvents: events.slice(0, 10).map((e) => ({
+      at: e.createdAt, eventType: e.eventType, subject: e.subject || '', topicTitle: e.topicTitle || '',
+    })),
     lastEventAt: events[0]?.createdAt || null,
     sinceDays,
   };

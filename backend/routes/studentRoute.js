@@ -1,8 +1,11 @@
 const express = require('express');
+const { computeSessionAttendance, summarizeStudentAttendance } = require('../utils/sessionAttendance');
 const router = express.Router();
 const mongoose = require('mongoose');
 const StudentUser = require('../models/StudentUser');
+const { isLoginBlockedStudentStatus, STUDENT_BLOCKED_MESSAGE } = require('../utils/studentStatus');
 const ParentUser = require('../models/ParentUser');
+const { autoAssignFeeStructure } = require('../services/feeService');
 const Class = require('../models/Class');
 const AcademicYear = require('../models/AcademicYear');
 const Timetable = require('../models/Timetable');
@@ -17,6 +20,7 @@ const StudentProgress = require('../models/StudentProgress');
 const Assignment = require('../models/Assignment');
 const TeacherUser = require('../models/TeacherUser');
 const TeacherFeedback = require('../models/TeacherFeedback');
+const { normalizeClassName } = require('../utils/teacherAllocationScope');
 const School = require('../models/School');
 const SupportRequest = require('../models/SupportRequest');
 const StudentObservation = require('../models/StudentObservation');
@@ -794,6 +798,17 @@ router.post('/register', adminAuth, async (req, res) => {
       }
     }
 
+    // Best-effort: bill the student against whatever active fee structure
+    // matches their class this year, same as the admin's manual "assign"
+    // flow — never blocks registration if no structure exists yet.
+    autoAssignFeeStructure({
+      studentId: studentUser._id,
+      schoolId: resolvedSchoolId,
+      campusId: resolvedCampusId,
+      grade: resolvedGrade,
+      section: resolvedSection,
+    }).catch(() => {});
+
     res.status(201).json({
       message: 'Student registered successfully',
       username: payload.username,
@@ -866,7 +881,9 @@ router.post('/login', rateLimit({ windowMs: 60 * 1000, max: 20, keyGenerator: ra
       });
       return res.status(401).json({ error: 'Invalid credentials' });
     }
-    if (user.isArchived) {
+    // Archived, Left and Expelled students are blocked from signing in.
+    const leftSchool = isLoginBlockedStudentStatus(user.status);
+    if (user.isArchived || leftSchool) {
       logAuthEvent(req, {
         action: 'login',
         outcome: 'failure',
@@ -875,10 +892,10 @@ router.post('/login', rateLimit({ windowMs: 60 * 1000, max: 20, keyGenerator: ra
         userId: user._id,
         schoolId: user.schoolId,
         campusId: user.campusId,
-        reason: 'Account archived',
+        reason: leftSchool ? `Student status ${user.status}` : 'Account archived',
         statusCode: 403,
       });
-      return res.status(403).json({ error: 'You have been blocked by your organization.' });
+      return res.status(403).json({ error: STUDENT_BLOCKED_MESSAGE, code: 'ACCOUNT_BLOCKED' });
     }
     if (!user.campusId) {
       logAuthEvent(req, {
@@ -1455,9 +1472,17 @@ router.get('/dashboard', authStudent, async (req, res) => {
       return res.status(404).json({ error: 'Student not found' });
     }
 
-    const totalAttendance = student.totalAttendance || 0;
-    const presentDays = student.presentDays || 0;
-    const attendancePercentage = totalAttendance > 0 ? Math.round((presentDays / totalAttendance) * 100) : 0;
+    // Attendance over the active session (school days, not just marked days) —
+    // same calculation the parent dashboard uses.
+    const attendanceDoc = await StudentUser.findById(req.user.id).select('attendance.date attendance.status').lean();
+    const sessionAttendance = await computeSessionAttendance({
+      attendance: attendanceDoc?.attendance || [],
+      schoolId: student.schoolId?._id || student.schoolId,
+      campusId: student.campusId || null,
+    });
+    const totalAttendance = sessionAttendance.schoolDays;
+    const presentDays = sessionAttendance.presentDays;
+    const attendancePercentage = sessionAttendance.percentage;
     const totalAchievements = student.totalAchievements || 0;
 
     const resolvedGrade = student.grade || '';
@@ -1515,6 +1540,7 @@ router.get('/dashboard', authStudent, async (req, res) => {
         totalClasses: totalAttendance,
         presentDays,
         absentDays: totalAttendance - presentDays,
+        attendanceSession: sessionAttendance,
         activeCourses: courseInfo ? 1 : 0,
         achievements: totalAchievements,
         studyHours: 0, // Can be enhanced later
@@ -1871,7 +1897,7 @@ router.get('/attendance', authStudent, async (req, res) => {
       targetId: req.user?.id,
     });
     const student = await StudentUser.findById(req.user.id)
-      .select('attendance name grade section')
+      .select('attendance attendanceSummary name grade section')
       .lean();
 
     if (!student) {
@@ -1887,11 +1913,14 @@ router.get('/attendance', authStudent, async (req, res) => {
     }
 
     const attendance = student.attendance || [];
-    const totalClasses = attendance.length;
-    const presentDays = attendance.filter(a => a.status === 'present').length;
-    const absentDays = attendance.filter(a => a.status === 'absent').length;
+    // Academic-year basis: present days ÷ school days of the active session.
+    const yearSummary = (await summarizeStudentAttendance([student], { schoolId: req.schoolId, campusId: req.campusId || null }))
+      .get(String(student._id)) || {};
+    const totalClasses = yearSummary.schoolDays || 0;
+    const presentDays = yearSummary.presentDays || 0;
+    const absentDays = yearSummary.absentDays || 0;
     const leaveDays = attendance.filter(a => a.status === 'leave').length;
-    const attendancePercentage = totalClasses > 0 ? Math.round((presentDays / totalClasses) * 100) : 0;
+    const attendancePercentage = yearSummary.percentage ?? 0;
 
     res.json({
       attendance: attendance.sort((a, b) => new Date(b.date) - new Date(a.date)),
@@ -1900,6 +1929,8 @@ router.get('/attendance', authStudent, async (req, res) => {
         presentDays,
         absentDays,
         leaveDays,
+        notMarkedDays: yearSummary.notMarkedDays || 0,
+        sessionName: yearSummary.sessionName || '',
         attendancePercentage
       }
     });
@@ -2158,15 +2189,19 @@ router.get('/schedule', authStudent, async (req, res) => {
         .lean(),
     ]);
 
-    // Find class candidates by grade/class name (handle duplicate class names across years).
+    // Find class candidates by grade/class name (handle duplicate class names
+    // across years). Matched via normalizeClassName rather than a raw regex on
+    // resolvedGrade — schools store this inconsistently ("Class 8" vs "8" vs
+    // "class 8"), and an exact-anchored regex silently finds nothing the moment
+    // Class.name and StudentUser.grade disagree on the "Class " prefix, which
+    // shows up as an empty routine for every student in that class (see the
+    // same root cause already fixed for attendance/achievements in
+    // utils/teacherAllocationScope.js).
     const classFilter = { schoolId: student.schoolId };
     if (student.campusId) classFilter.campusId = student.campusId;
-    const classCandidates = await Class.find({
-      ...classFilter,
-      name: { $regex: `^${escapeRegex(resolvedGrade)}$`, $options: 'i' },
-    })
-      .sort({ createdAt: -1 })
-      .lean();
+    const normalizedResolvedGrade = normalizeClassName(resolvedGrade);
+    const classCandidates = (await Class.find(classFilter).sort({ createdAt: -1 }).lean())
+      .filter((doc) => normalizeClassName(doc.name) === normalizedResolvedGrade);
 
     let classDoc = null;
     if (Array.isArray(classCandidates) && classCandidates.length > 0) {
@@ -2403,7 +2438,7 @@ router.get('/teacher-feedback', authStudent, async (req, res) => {
       targetType: 'student',
       targetId: req.user?.id,
     });
-    const feedbackDocs = await TeacherFeedback.find({ studentId: req.user.id })
+    const feedbackDocs = await TeacherFeedback.find({ studentId: req.user.id, respondentType: { $ne: 'parent' } })
       .sort({ createdAt: -1 })
       .lean();
 
@@ -2623,13 +2658,14 @@ router.get('/system-badges', authStudent, async (req, res) => {
 
     const [masteryDocs, student] = await Promise.all([
       MasteryScore.find({ studentId }).lean(),
-      StudentUser.findById(studentId).select('attendance achievements').lean(),
+      StudentUser.findById(studentId).select('attendance attendanceSummary achievements').lean(),
     ]);
 
     const masteredCount = masteryDocs.filter((m) => m.score >= 75).length;
-    const totalAttendance = student?.attendance?.length || 0;
-    const presentDays = student?.attendance?.filter((a) => a.status === 'present').length || 0;
-    const attendancePct = totalAttendance > 0 ? Math.round((presentDays / totalAttendance) * 100) : 0;
+    const attendancePct = student
+      ? ((await summarizeStudentAttendance([{ ...student, _id: studentId }], { schoolId, campusId: req.campusId || null }))
+        .get(String(studentId))?.percentage ?? 0)
+      : 0;
     const teacherAwardsCount = Array.isArray(student?.achievements) ? student.achievements.length : 0;
 
     const SYSTEM_BADGE_DEFS = [
@@ -2738,3 +2774,5 @@ router.delete('/enrollment-drafts/:id', adminAuth, async (req, res) => {
 });
 
 module.exports = router;
+// Shared with the parent feedback routes (same window + teacher rules).
+module.exports.feedbackHelpers = { buildTeacherFeedbackContext, resolveTeacherFeedbackAvailability };

@@ -39,14 +39,22 @@ const getMaterialType = (name = '') => {
 const titleFromFileName = (name = '') => String(name || 'Uploaded Material').replace(/\.[^/.]+$/, '').trim() || 'Uploaded Material';
 
 const defaultContentUploads = {
-  'Upload Worksheet': [],
   'Upload Tryout': [],
-  Assessments: [],
   Experiments: [],
   'Report Upload': [],
   'Explanation Attachments': [],
   'Uploaded Material': [],
 };
+
+const LEGACY_WORKSHEET_BUCKETS = new Set([
+  'Practice Papers Basic',
+  'Practice Papers Intermediate',
+  'Practice Papers Advanced',
+]);
+
+const removeLegacyWorksheetBuckets = (uploads) => Object.fromEntries(
+  Object.entries(uploads || {}).filter(([bucket]) => !LEGACY_WORKSHEET_BUCKETS.has(bucket))
+);
 
 const enrichChapter = (chapter) => ({
   ...chapter,
@@ -54,9 +62,10 @@ const enrichChapter = (chapter) => ({
   introductionText: chapter.introductionText || chapter.description || '',
   explanation: chapter.explanation || '',
   recap: chapter.recap || '',
+  didYouKnow: chapter.didYouKnow || '',
   teacherNotes: chapter.teacherNotes || '',
   evaluation: chapter.evaluation || { participation: '', remarks: '', behaviour: '', progress: '', tag: '' },
-  contentUploads: { ...defaultContentUploads, ...(chapter.contentUploads || {}) },
+  contentUploads: { ...defaultContentUploads, ...removeLegacyWorksheetBuckets(chapter.contentUploads) },
   worksheetFiles: chapter.worksheetFiles || [],
   worksheetLink: chapter.worksheetLink || '',
   assessments: Array.isArray(chapter.assessments) ? chapter.assessments : [],
@@ -73,6 +82,47 @@ const getChapterTimestamp = (chapter) => {
   const localIdTimestamp = toIdString(chapter?.id).match(/^ch-(\d+)$/)?.[1];
   return Number(localIdTimestamp) || 0;
 };
+
+const parseResourceRef = (value) => {
+  const text = String(value || '').trim();
+  if (!text) return { bucket: '', title: '', url: '' };
+  const parts = text.split('::');
+  if (parts.length >= 3) {
+    const bucket = String(parts[0] || '').trim();
+    const title = String(parts[1] || '').trim();
+    const url = String(parts.slice(2).join('::') || '').trim();
+    return { bucket, title: title || url, url };
+  }
+  const separator = text.indexOf('::');
+  if (separator >= 0) {
+    return { bucket: '', title: String(text.slice(0, separator)).trim(), url: String(text.slice(separator + 2)).trim() };
+  }
+  return { bucket: '', title: text, url: '' };
+};
+
+// A published plan only ever persists uploads as flat "bucket::name::url" strings
+// on plan.materialsNeeded (see serializeResourceRef) — plannerContent never carries
+// contentUploads — so reopening a published chapter must rebuild the bucketed
+// upload-card state from that flat list, or every uploaded file silently
+// disappears from the builder even though it's still stored and indexed.
+const rebuildContentUploadsFromMaterialsNeeded = (materialsNeeded) => {
+  const buckets = {};
+  (Array.isArray(materialsNeeded) ? materialsNeeded : []).forEach((raw, index) => {
+    const { bucket, title, url } = parseResourceRef(raw);
+    if (!title || !MATERIAL_BUCKETS.has(bucket)) return;
+    buckets[bucket] = [...(buckets[bucket] || []), {
+      id: `material-${bucket}-${index}`,
+      name: title,
+      url,
+      type: getFileType(title),
+      isUploading: false,
+    }];
+  });
+  return buckets;
+};
+
+const hasAnyUploadedFile = (contentUploads) =>
+  Object.values(contentUploads || {}).some((files) => Array.isArray(files) && files.length > 0);
 
 const normalizeLoadedChapter = (chapter, plan, index) => {
   const source = chapter && typeof chapter === 'object' ? chapter : {};
@@ -100,7 +150,9 @@ const normalizeLoadedChapter = (chapter, plan, index) => {
     lessonDate,
     status,
     isDraft: status !== 'published',
-    contentUploads: source.contentUploads || defaultContentUploads,
+    contentUploads: hasAnyUploadedFile(source.contentUploads)
+      ? { ...defaultContentUploads, ...source.contentUploads }
+      : { ...defaultContentUploads, ...rebuildContentUploadsFromMaterialsNeeded(plan?.materialsNeeded) },
     worksheetFiles: Array.isArray(source.worksheetFiles) ? source.worksheetFiles : [],
     worksheetLink: source.worksheetLink || '',
     assessments: Array.isArray(source.assessments) ? source.assessments : [],
@@ -170,6 +222,9 @@ const AIPoweredTeaching = () => {
   const [searchQuery, setSearchQuery] = useState('');
   const [draggedChapterId, setDraggedChapterId] = useState(null);
   const [autosaveStatus, setAutosaveStatus] = useState('Not saved');
+  const [selectionChanging, setSelectionChanging] = useState(false);
+  const selectionChangingRef = useRef(false);
+  const savingRef = useRef(null);
   const [currentDraftId, setCurrentDraftId] = useState(null);
   const [classOptions, setClassOptions] = useState([]);
   const [sectionOptions, setSectionOptions] = useState([]);
@@ -185,6 +240,9 @@ const AIPoweredTeaching = () => {
   const selectedSubjectName = useMemo(() => (
     subjectOptions.find((option) => toIdString(option?.subjectId) === toIdString(selectedSubject))?.subjectName || ''
   ), [selectedSubject, subjectOptions]);
+  const selectedClassName = useMemo(() => (
+    classOptions.find((option) => toIdString(option?.id) === toIdString(selectedClass))?.name || ''
+  ), [selectedClass, classOptions]);
 
   const authHeaders = () => ({
     'Content-Type': 'application/json',
@@ -382,7 +440,7 @@ const AIPoweredTeaching = () => {
     Object.values(introStreamTimersRef.current).forEach((timers) => timers.forEach(clearTimeout));
   }, []);
 
-  const saveDraft = async () => {
+  const persistDraft = async () => {
     const { currentDraftId, chapters, selectedClass, selectedSection, selectedSubject } = autosaveStateRef.current;
 
     if (!selectedClass || !selectedSection || !selectedSubject) return;
@@ -413,7 +471,7 @@ const AIPoweredTeaching = () => {
         }
         autosaveDirtyRef.current = false;
         setAutosaveStatus('Draft saved');
-        return;
+        return true;
       }
 
       const res = await fetch(`${API_BASE}/api/lesson-plans/teacher/draft/${draftId}`, {
@@ -432,9 +490,37 @@ const AIPoweredTeaching = () => {
 
       autosaveDirtyRef.current = false;
       setAutosaveStatus('Saved just now');
+      return true;
     } catch (err) {
       setAutosaveStatus('Save failed');
       console.error('Autosave failed:', err?.message);
+      return false;
+    }
+  };
+
+  const saveDraft = async () => {
+    if (savingRef.current) await savingRef.current;
+    const request = persistDraft();
+    savingRef.current = request;
+    try { return await request; }
+    finally { if (savingRef.current === request) savingRef.current = null; }
+  };
+
+  const changeSelection = async (change) => {
+    if (selectionChangingRef.current) return;
+    selectionChangingRef.current = true;
+    setSelectionChanging(true);
+    try {
+      if (autosaveTimerRef.current) clearTimeout(autosaveTimerRef.current);
+      if (savingRef.current) await savingRef.current;
+      if (autosaveStateRef.current.selectedSubject && !(await saveDraft())) {
+        toast.error('Could not save your changes. Please try switching again.');
+        return;
+      }
+      await change();
+    } finally {
+      selectionChangingRef.current = false;
+      setSelectionChanging(false);
     }
   };
 
@@ -747,6 +833,16 @@ const AIPoweredTeaching = () => {
 
   const addWorksheetFile = async (chapterId, file) => {
     if (!chapterId || !file) return;
+    const currentChapter = chapters.find((chapter) => chapter.id === chapterId);
+    if ((currentChapter?.worksheetFiles || []).length > 0) {
+      toast.error('Only one worksheet can be uploaded for this chapter');
+      return;
+    }
+    const fileName = String(file.name || '').toLowerCase();
+    if (!fileName.endsWith('.pdf') && !fileName.endsWith('.doc') && !fileName.endsWith('.docx')) {
+      toast.error('Worksheet must be a PDF or DOCX file');
+      return;
+    }
     const tempId = `worksheet-upload-${Date.now()}-${Math.random().toString(36).slice(2)}`;
     const setProgress = (progress) => {
       updateChapter(chapterId, (chapter) => ({
@@ -951,11 +1047,6 @@ const AIPoweredTeaching = () => {
             referenceMaterials: chapter.teacherNotes ? [stripHtml(chapter.teacherNotes)] : [],
             tryoutSections: chapter.tryouts || [],
             selfAssessments: chapter.recap ? [stripHtml(chapter.recap)] : [],
-            questionPapers: {
-              basic: (chapter.assessments || [])[0]?.title || '',
-              intermediate: (chapter.assessments || [])[1]?.title || '',
-              advanced: (chapter.assessments || [])[2]?.title || '',
-            },
           }],
         }],
       }]
@@ -983,6 +1074,7 @@ const AIPoweredTeaching = () => {
       // Step-by-step explanation and quick recap from Content tab
       explanation: stripHtml(chapter.explanation) || '',
       recap: stripHtml(chapter.recap) || '',
+      didYouKnow: stripHtml(chapter.didYouKnow) || '',
       materialsNeeded: Object.entries(chapter.contentUploads || {})
         .filter(([bucket]) => MATERIAL_BUCKETS.has(bucket))
         .flatMap(([bucket, files]) => (files || []).map((file) => serializeResourceRef(file, bucket)).filter(Boolean)),
@@ -1104,15 +1196,16 @@ const AIPoweredTeaching = () => {
   const activeChapter = openChapters[openChapters.length - 1] || null;
 
   return (
-    <div className="min-h-full overflow-y-auto bg-[#f4f7fb] p-2 sm:p-4 lg:h-full lg:min-h-0 lg:overflow-hidden dark:bg-slate-950">
+    <div className="min-h-full overflow-y-auto bg-[#f4f7fb] p-0 lg:h-full lg:min-h-0 lg:overflow-hidden dark:bg-slate-950">
       <Motion.div
         initial={{ opacity: 0, y: 10 }}
         animate={{ opacity: 1, y: 0 }}
         transition={{ duration: 0.25, ease: 'easeOut' }}
-        className="mx-auto flex min-h-full w-full max-w-[1440px] min-w-0 flex-col overflow-hidden rounded-[22px] bg-white shadow-[0_25px_50px_-12px_rgba(0,0,0,0.15)] sm:rounded-[32px] lg:h-full lg:min-h-0 lg:rounded-[40px]"
+        className="flex min-h-full w-full min-w-0 flex-col overflow-hidden bg-white shadow-none lg:h-full lg:min-h-0"
       >
         <HeaderActions
           autosaveStatus={publishing ? 'Publishing...' : autosaveStatus}
+          selectionDisabled={selectionChanging || publishing}
           classValue={selectedClass}
           sectionValue={selectedSection}
           subjectValue={selectedSubject}
@@ -1123,7 +1216,7 @@ const AIPoweredTeaching = () => {
           currentStep={activeStep}
           onUploadMaterial={handleUploadMaterialFiles}
           uploadMaterialDisabled={uploadingMaterial}
-          onClassChange={async (value) => {
+          onClassChange={(value) => changeSelection(async () => {
             setSelectedClass(value);
             setSelectedSection('');
             setSelectedSubject('');
@@ -1135,8 +1228,8 @@ const AIPoweredTeaching = () => {
             setCurrentDraftId(null);
             localStorage.removeItem('currentLessonPlanDraft');
             await loadOptions({ classId: value });
-          }}
-          onSectionChange={async (value) => {
+          })}
+          onSectionChange={(value) => changeSelection(async () => {
             setSelectedSection(value);
             setSelectedSubject('');
             writeStoredSelection({ classId: selectedClass, sectionId: value });
@@ -1146,8 +1239,8 @@ const AIPoweredTeaching = () => {
             setCurrentDraftId(null);
             localStorage.removeItem('currentLessonPlanDraft');
             await loadOptions({ classId: selectedClass, sectionId: value });
-          }}
-          onSubjectChange={(value) => {
+          })}
+          onSubjectChange={(value) => changeSelection(async () => {
             setSelectedSubject(value);
             writeStoredSelection({ classId: selectedClass, sectionId: selectedSection, subjectId: value });
             setChapters([]);
@@ -1155,10 +1248,10 @@ const AIPoweredTeaching = () => {
             setCurrentDraftId(null);
             setAutosaveStatus('Not saved');
             localStorage.removeItem('currentLessonPlanDraft');
-          }}
+          })}
         />
 
-        <div className="flex min-w-0 flex-1 flex-col gap-2.5 p-2 sm:p-3 lg:min-h-0 lg:flex-row">
+        <div className="flex min-w-0 flex-1 flex-col gap-2.5 p-2 sm:p-3 lg:h-full lg:min-h-0 lg:flex-row">
           <Sidebar
             chapters={filteredChapters}
             activeChapterId={openChapterIds[openChapterIds.length - 1] || null}
@@ -1192,6 +1285,7 @@ const AIPoweredTeaching = () => {
                     sectionId={selectedSection}
                     subjectId={selectedSubject}
                     subjectName={selectedSubjectName}
+                    classDisplayName={selectedClassName}
                     onClose={() => handleCloseChapter(chapter.id)}
                     onUpdate={(nextChapter) => updateChapter(nextChapter.id, () => nextChapter)}
                     onAddContentFile={(file, bucket) => addContentFile(chapter.id, file, bucket)}

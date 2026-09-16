@@ -21,6 +21,7 @@ const Timetable = require('../models/Timetable');
 const TeacherAllocation = require('../models/TeacherAllocation');
 const StudentUser = require('../models/StudentUser');
 const StudentProgress = require('../models/StudentProgress');
+const SmartLearningProgress = require('../models/SmartLearningProgress');
 const TeachingMaterial = require('../models/TeachingMaterial');
 const PracticePaper = require('../models/PracticePaper');
 const Assignment = require('../models/Assignment');
@@ -29,6 +30,7 @@ const { logStudentPortalEvent, logStudentPortalError } = require('../utils/stude
 const TryoutResult = require('../models/TryoutResult');
 const { getAttachmentDownloadUrl, signAttachmentUrls, parseS3Uri } = require('../utils/s3Storage');
 const { buildCloudinaryAttachmentUrl } = require('../utils/cloudinaryUpload');
+const { queueVectorDeletion } = require('../services/vectorDeletionService');
 
 const AI_SERVICE_URL = process.env.AI_SERVICE_URL || 'http://localhost:8000';
 const SUPPORTED_VECTOR_EXTENSIONS = new Set(['pdf', 'docx', 'pptx']);
@@ -36,8 +38,19 @@ const SUPPORTED_VECTOR_EXTENSIONS = new Set(['pdf', 'docx', 'pptx']);
 const normalizeString = (value) => String(value || '').trim();
 const normalizeLower = (value) => String(value || '').trim().toLowerCase();
 const escapeRegex = (value) => String(value || '').replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+// StudentUser.grade is usually a bare number ("5") while Class.name / the
+// className copied onto LessonPlan/TeachingMaterial/PracticePaper docs is
+// often "Class 5" — an anchored `^5$` regex against student.grade then
+// matches nothing. Tolerate an optional "Class " prefix on the stored side
+// the same way this was already fixed for practicePaperRoutes.js.
+const classNameRegex = (value) => ({
+  $regex: `^(?:class\\s+)?${escapeRegex(normalizeLower(value).replace(/^class\s+/, ''))}$`,
+  $options: 'i',
+});
 const normalizeStringList = (value) =>
   Array.isArray(value) ? value.map((item) => normalizeString(item)).filter(Boolean) : [];
+
+const normalizeProgressKey = (value) => normalizeLower(value).replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '');
 
 const normalizeTryoutList = (value) =>
   Array.isArray(value) ? value.filter((item) => item && typeof item === 'object' && !Array.isArray(item)) : [];
@@ -194,10 +207,14 @@ const buildVectorSourceId = (material, attachment, index) => {
   return `${String(material._id)}:${String(stableAttachmentId)}`;
 };
 
-const deleteMaterialVectors = (materialId) =>
-  axios.delete(`${AI_SERVICE_URL}/ingest/material/${encodeURIComponent(String(materialId))}`, {
-    timeout: 60_000,
-  });
+const deleteMaterialVectors = async (materialId, schoolId = null) => {
+  try {
+    return await axios.delete(`${AI_SERVICE_URL}/ingest/material/${encodeURIComponent(String(materialId))}`, { timeout: 60_000 });
+  } catch (err) {
+    await queueVectorDeletion(materialId, schoolId, err).catch((queueErr) => console.error('[Smart Learning ingest] failed to queue vector deletion', queueErr.message));
+    throw err;
+  }
+};
 
 const ingestPublishedMaterialAttachments = async (material) => {
   const attachments = Array.isArray(material.attachments) ? material.attachments.filter(isVectorIngestible) : [];
@@ -957,6 +974,7 @@ const resolvePlanPayload = async ({ schoolId, campusId, payload, forcedTeacherId
     introduction,
     explanation,
     recap,
+    didYouKnow,
     materialsNeeded,
     additionalNotes,
     plannerContent,
@@ -1022,6 +1040,7 @@ const resolvePlanPayload = async ({ schoolId, campusId, payload, forcedTeacherId
       introduction: normalizeString(introduction),
       explanation: normalizeString(explanation),
       recap: normalizeString(recap),
+      didYouKnow: normalizeString(didYouKnow),
       materialsNeeded: Array.isArray(materialsNeeded)
         ? materialsNeeded.map((item) => normalizeString(item)).filter(Boolean)
         : [],
@@ -1584,7 +1603,7 @@ router.get('/student/status', authStudent, async (req, res) => {
 
     const planFilter = {
       schoolId,
-      className: { $regex: `^${escapeRegex(className)}$`, $options: 'i' },
+      className: classNameRegex(className),
       sectionName: { $regex: `^${escapeRegex(sectionName)}$`, $options: 'i' },
     };
     if (campusId) planFilter.campusId = campusId;
@@ -2153,7 +2172,7 @@ router.get('/student/smart-learning-map', authStudent, async (req, res) => {
       const className = normalizeLower(student.grade);
       const sectionName = normalizeLower(student.section);
       if (!className || !sectionName) return res.json({ subjects: [] });
-      planFilter.className = { $regex: '^' + escapeRegex(className) + '$', $options: 'i' };
+      planFilter.className = classNameRegex(className);
       planFilter.sectionName = { $regex: '^' + escapeRegex(sectionName) + '$', $options: 'i' };
     }
 
@@ -2219,7 +2238,7 @@ router.get('/student/smart-learning-map', authStudent, async (req, res) => {
     const [materials, papers, assignments, standaloneMaterials] = await Promise.all([
       TeachingMaterial.find(materialFilter).sort({ publishedAt: -1, createdAt: -1 }).lean(),
       PracticePaper.find(paperFilter).sort({ publishedAt: -1, createdAt: -1 }).lean(),
-      Assignment.find(assignmentFilter).sort({ dueDate: -1, createdAt: -1 }).lean(),
+      Assignment.find(assignmentFilter).select('-quizSections').sort({ dueDate: -1, createdAt: -1 }).lean(),
       TeachingMaterial.find(standaloneMaterialFilter).sort({ publishedAt: -1, createdAt: -1 }).lean(),
     ]);
 
@@ -2287,6 +2306,7 @@ router.get('/student/smart-learning-map', authStudent, async (req, res) => {
         introduction: normalizeString(plan?.introduction) || '',
         explanation: normalizeString(plan?.explanation) || '',
         recap: normalizeString(plan?.recap) || '',
+        didYouKnow: normalizeString(plan?.didYouKnow) || '',
       };
     };
 
@@ -2301,6 +2321,7 @@ router.get('/student/smart-learning-map', authStudent, async (req, res) => {
       introduction: nextMeta.introduction || currentMeta.introduction || '',
       explanation: nextMeta.explanation || currentMeta.explanation || '',
       recap: nextMeta.recap || currentMeta.recap || '',
+      didYouKnow: nextMeta.didYouKnow || currentMeta.didYouKnow || '',
     });
 
     const ensureChapterTopicSubTopic = (subjectEntry, plan, chapter, topic, subTopic) => {
@@ -2310,11 +2331,16 @@ router.get('/student/smart-learning-map', authStudent, async (req, res) => {
       const chapterId = normalizeIdValue(chapter?.id) || chapterTitle.toLowerCase();
       const chapterKey = getChapterMapKey(chapter, chapterTitle) || chapterId;
       const topicId = normalizeIdValue(topic?.id) || topicTitle.toLowerCase();
+      // Prefer the title for the exposed/keying id — chapter.id and topic.id
+      // are routinely left at the authoring tool's generic default (e.g.
+      // "chapter-1"/"topic-1"), which collides across unrelated
+      // chapters/topics and breaks both React keys and <select> values.
+      const topicKey = topicTitle.toLowerCase() || topicId;
       const subTopicId = normalizeIdValue(subTopic?.id) || subTopicTitle.toLowerCase();
 
       if (!subjectEntry.chapters.has(chapterKey)) {
         subjectEntry.chapters.set(chapterKey, {
-          id: chapterId,
+          id: chapterKey,
           title: chapterTitle,
           uploads: [],
           meta: {},
@@ -2324,17 +2350,18 @@ router.get('/student/smart-learning-map', authStudent, async (req, res) => {
       const chapterEntry = subjectEntry.chapters.get(chapterKey);
       chapterEntry.meta = mergeChapterMeta(chapterEntry.meta, buildChapterMeta(plan, chapter));
 
-      if (!chapterEntry.topics.has(topicId)) {
-        chapterEntry.topics.set(topicId, {
-          id: topicId,
+      if (!chapterEntry.topics.has(topicKey)) {
+        chapterEntry.topics.set(topicKey, {
+          id: topicKey,
           title: topicTitle,
           subtopics: new Map(),
         });
       }
-      const topicEntry = chapterEntry.topics.get(topicId);
+      const topicEntry = chapterEntry.topics.get(topicKey);
 
-      if (!subjectEntry.topics.has(topicId)) {
-        subjectEntry.topics.set(topicId, {
+      const subjectTopicKey = `${chapterKey}::${topicKey}`;
+      if (!subjectEntry.topics.has(subjectTopicKey)) {
+        subjectEntry.topics.set(subjectTopicKey, {
           title: topicTitle,
           subtopics: new Set(),
         });
@@ -2518,7 +2545,12 @@ router.get('/student/smart-learning-map', authStudent, async (req, res) => {
         const chapterKey = getChapterMapKey(chapter) || chapterId;
         if (!subjectEntry.chapters.has(chapterKey)) {
           subjectEntry.chapters.set(chapterKey, {
-            id: chapterId,
+            // Teachers routinely leave chapter.id at the generator's default
+            // (e.g. "chapter-1"), so it repeats across every chapter in the
+            // subject. Expose chapterKey (title-based, already unique per
+            // chapter) instead, or the frontend's <select> options collide
+            // on value and only the first chapter with that id is pickable.
+            id: chapterKey,
             title: normalizeString(chapter.title) || 'Chapter',
             uploads: [],
             topics: new Map(),
@@ -2547,23 +2579,29 @@ router.get('/student/smart-learning-map', authStudent, async (req, res) => {
         }
         (chapter.topics || []).forEach((topic) => {
           const topicId = normalizeIdValue(topic.id) || normalizeString(topic.title).toLowerCase();
-          if (!chapterEntry.topics.has(topicId)) {
-            chapterEntry.topics.set(topicId, {
-              id: topicId,
+          // Same default-id collision as chapters: prefer the topic's own
+          // title for the key/exposed id so two topics sharing the raw
+          // "topic-1" default (within this chapter, or across chapters)
+          // don't merge into one entry or collide as <select> values.
+          const topicKey = normalizeString(topic.title).toLowerCase() || topicId;
+          if (!chapterEntry.topics.has(topicKey)) {
+            chapterEntry.topics.set(topicKey, {
+              id: topicKey,
               title: normalizeString(topic.title) || 'Topic',
               subtopics: new Map(),
             });
           }
-          if (!subjectEntry.topics.has(topicId)) {
-            subjectEntry.topics.set(topicId, {
+          const subjectTopicKey = `${chapterKey}::${topicKey}`;
+          if (!subjectEntry.topics.has(subjectTopicKey)) {
+            subjectEntry.topics.set(subjectTopicKey, {
               title: normalizeString(topic.title) || 'Topic',
               subtopics: new Set(),
               tryoutSections: [],
             });
           }
-          const topicEntry = subjectEntry.topics.get(topicId);
+          const topicEntry = subjectEntry.topics.get(subjectTopicKey);
           if (!Array.isArray(topicEntry.tryoutSections)) topicEntry.tryoutSections = [];
-          const chapterTopicEntry = chapterEntry.topics.get(topicId);
+          const chapterTopicEntry = chapterEntry.topics.get(topicKey);
           (topic.subTopics || []).forEach((sub) => {
             const subTitle = normalizeString(sub.title);
             if (subTitle) topicEntry.subtopics.add(subTitle);
@@ -2666,7 +2704,7 @@ router.get('/student/smart-learning-overview', authStudent, async (req, res) => 
     if (sectionId) studentScope.sectionId = sectionId;
     const legacyScope = (!classId || !sectionId) && student.grade && student.section
       ? {
-          className: { $regex: `^${escapeRegex(normalizeLower(student.grade))}$`, $options: 'i' },
+          className: classNameRegex(student.grade),
           sectionName: { $regex: `^${escapeRegex(normalizeLower(student.section))}$`, $options: 'i' },
         }
       : null;
@@ -2680,7 +2718,7 @@ router.get('/student/smart-learning-overview', authStudent, async (req, res) => 
         publishedForStudentPortal: true,
         ...(campusId ? { campusId } : {}),
         ...(legacyScope ? legacyScope : studentScope),
-      }).lean(),
+      }).select('-quizSections').lean(),
       StudentProgress.findOne({ schoolId, studentId }).lean(),
     ]);
 
@@ -3105,6 +3143,54 @@ router.patch('/teacher/:id/meta', authTeacher, async (req, res) => {
   }
 });
 
+// Smart Learning progress is account-backed so a student can resume from
+// another device. Local storage remains a fast offline fallback in the UI.
+router.get('/student/smart-learning-progress', authStudent, async (req, res) => {
+  try {
+    const subjectKey = normalizeProgressKey(req.query.subject);
+    const topicKey = normalizeProgressKey(req.query.topic);
+    if (!subjectKey || !topicKey) return res.status(400).json({ error: 'subject and topic are required' });
+
+    const progress = await SmartLearningProgress.findOne({
+      schoolId: req.schoolId,
+      studentId: req.userId,
+      subjectKey,
+      topicKey,
+    }).lean();
+    return res.json({ success: true, progress: progress || null });
+  } catch (err) {
+    return res.status(500).json({ error: err.message });
+  }
+});
+
+router.put('/student/smart-learning-progress', authStudent, async (req, res) => {
+  try {
+    const subjectKey = normalizeProgressKey(req.body?.subject);
+    const topicKey = normalizeProgressKey(req.body?.topic);
+    if (!subjectKey || !topicKey) return res.status(400).json({ error: 'subject and topic are required' });
+
+    const completedSteps = Array.isArray(req.body?.completedSteps)
+      ? [...new Set(req.body.completedSteps.map((step) => normalizeString(step)).filter(Boolean))]
+      : [];
+    const progress = await SmartLearningProgress.findOneAndUpdate(
+      { schoolId: req.schoolId, studentId: req.userId, subjectKey, topicKey },
+      {
+        $set: {
+          completedSteps,
+          topicCompleted: Boolean(req.body?.topicCompleted),
+          activeStepId: normalizeString(req.body?.activeStepId),
+          scrollTop: Math.max(0, Number(req.body?.scrollTop) || 0),
+          lastAccessedAt: new Date(),
+        },
+      },
+      { upsert: true, new: true, setDefaultsOnInsert: true }
+    ).lean();
+    return res.json({ success: true, progress });
+  } catch (err) {
+    return res.status(500).json({ error: err.message });
+  }
+});
+
 // ─── Tryout Submission (Student) ────────────────────────────────────────────
 // POST /api/lesson-plans/student/tryout-submit
 router.post('/student/tryout-submit', authStudent, async (req, res) => {
@@ -3139,9 +3225,87 @@ router.post('/student/tryout-submit', authStudent, async (req, res) => {
       let autoScore = null;
 
       const qType = String(q.type || '').toLowerCase().replace(/-/g, '_');
+      let correctAnswer = null;
       if (qType === 'mcq' && q.correctAnswer !== undefined && q.correctAnswer !== null) {
         isCorrect = Number(studentAnswer?.selectedOption) === Number(q.correctAnswer);
         autoScore = isCorrect ? 1 : 0;
+        correctAnswer = Array.isArray(q.options) ? q.options[Number(q.correctAnswer)] : q.correctAnswer;
+      } else if (qType === 'choice_matrix' && Array.isArray(q.answers)) {
+        const submitted = studentAnswer?.value;
+        if (submitted && typeof submitted === 'object') {
+          const total = q.answers.length;
+          const correctCount = q.answers.reduce((count, expected, idx) => {
+            return submitted[String(idx)] === expected ? count + 1 : count;
+          }, 0);
+          isCorrect = total > 0 && correctCount === total;
+          autoScore = total > 0 ? correctCount / total : null;
+        }
+        correctAnswer = q.statements ? q.statements.map((s, idx) => ({ statement: s, answer: q.answers[idx] })) : q.answers;
+      } else if (qType === 'cloze_text' && Array.isArray(q.correctAnswers)) {
+        const submitted = studentAnswer?.value;
+        if (submitted && typeof submitted === 'object') {
+          const total = q.correctAnswers.length;
+          const correctCount = q.correctAnswers.reduce((count, expected, idx) => {
+            const given = String(submitted[String(idx)] ?? '').trim().toLowerCase();
+            const want = String(expected ?? '').trim().toLowerCase();
+            return given && given === want ? count + 1 : count;
+          }, 0);
+          isCorrect = total > 0 && correctCount === total;
+          autoScore = total > 0 ? correctCount / total : null;
+        }
+        correctAnswer = q.correctAnswers;
+      } else if (qType === 'cloze_drag_drop' && Array.isArray(q.correctAnswers)) {
+        const submitted = studentAnswer?.value;
+        if (submitted && typeof submitted === 'object') {
+          const total = q.correctAnswers.length;
+          const correctCount = q.correctAnswers.reduce((count, expected, idx) => {
+            if (expected === undefined || expected === null) return count;
+            return Number(submitted[String(idx)]) === Number(expected) ? count + 1 : count;
+          }, 0);
+          const gradable = q.correctAnswers.filter((a) => a !== undefined && a !== null).length;
+          isCorrect = gradable > 0 && correctCount === gradable;
+          autoScore = gradable > 0 ? correctCount / gradable : null;
+        }
+        correctAnswer = q.correctAnswers.map((idx) => (idx !== undefined && idx !== null ? q.options?.[idx] : null));
+      } else if (qType === 'cloze_dropdown' && Array.isArray(q.correctAnswers)) {
+        const submitted = studentAnswer?.value;
+        if (submitted && typeof submitted === 'object') {
+          const total = q.correctAnswers.length;
+          const correctCount = q.correctAnswers.reduce((count, expected, idx) => {
+            if (expected === undefined || expected === null) return count;
+            const given = String(submitted[String(idx)] ?? '').trim().toLowerCase();
+            const want = String(expected).trim().toLowerCase();
+            return given && given === want ? count + 1 : count;
+          }, 0);
+          const gradable = q.correctAnswers.filter((a) => a !== undefined && a !== null).length;
+          isCorrect = gradable > 0 && correctCount === gradable;
+          autoScore = gradable > 0 ? correctCount / gradable : null;
+        }
+        correctAnswer = q.correctAnswers;
+      } else if (q.correctAnswer !== undefined && q.correctAnswer !== null) {
+        correctAnswer = q.correctAnswer;
+      } else if (Array.isArray(q.correctAnswers)) {
+        correctAnswer = q.correctAnswers;
+      } else if (qType === 'sort_list' && Array.isArray(q.items)) {
+        const submitted = studentAnswer?.value;
+        if (Array.isArray(submitted)) {
+          const total = q.items.length;
+          isCorrect = total > 0 && submitted.length === total && submitted.every((idx, pos) => Number(idx) === pos);
+          const correctCount = submitted.filter((idx, pos) => Number(idx) === pos).length;
+          autoScore = total > 0 ? correctCount / total : null;
+        }
+        correctAnswer = q.items;
+      } else if (qType === 'match_list' && Array.isArray(q.items) && Array.isArray(q.pairs)) {
+        const submitted = studentAnswer?.value;
+        if (submitted && typeof submitted === 'object') {
+          const total = q.items.length;
+          const correctCount = q.items.reduce((count, _, idx) => {
+            return Number(submitted[String(idx)]) === idx ? count + 1 : count;
+          }, 0);
+          isCorrect = total > 0 && correctCount === total;
+          autoScore = total > 0 ? correctCount / total : null;
+        }
+        correctAnswer = q.items.map((item, idx) => ({ item, pair: q.pairs[idx] }));
       }
 
       return {
@@ -3149,6 +3313,7 @@ router.post('/student/tryout-submit', authStudent, async (req, res) => {
         questionType: qType,
         questionText: String(q.question || q.text || ''),
         answer: studentAnswer?.value ?? studentAnswer ?? null,
+        correctAnswer,
         isCorrect,
         autoScore,
       };
@@ -3187,7 +3352,11 @@ router.get('/student/tryout-results', authStudent, async (req, res) => {
     if (topicTitle) filter.topicTitle = new RegExp(escapeRegex(topicTitle), 'i');
 
     const results = await TryoutResult.find(filter).sort({ createdAt: -1 }).lean();
-    return res.json({ success: true, results });
+    const sanitized = results.map((r) => ({
+      ...r,
+      answers: (r.answers || []).map(({ correctAnswer, ...rest }) => rest),
+    }));
+    return res.json({ success: true, results: sanitized });
   } catch (err) {
     return res.status(500).json({ error: err.message });
   }

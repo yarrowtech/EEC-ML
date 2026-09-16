@@ -10,6 +10,7 @@ const StudentUser = require('../models/StudentUser');
 const Principal = require('../models/Principal');
 const SupportSetting = require('../models/SupportSetting');
 const Notification = require('../models/Notification');
+const { notifyParentComplaintStatus } = require('../utils/complaintNotifications');
 const { isStrongPassword, passwordPolicyMessage } = require('../utils/passwordPolicy');
 const { logSecurityEvent } = require('../utils/securityEventLogger');
 const { logBusinessEvent } = require('../utils/businessEventLogger');
@@ -309,12 +310,15 @@ router.get('/requests', adminAuth, async (req, res) => {
     }
 
     if (req.isSuperAdmin) {
+      // Parent complaints stay with the school, except Technical ones, which
+      // are routed to the super admin (targetRole: 'superadmin').
       if (supportType && SCHOOL_ADMIN_ONLY_SUPPORT_TYPES.includes(supportType)) {
-        filter.createdByRole = { $ne: 'parent' };
+        filter.$or = [{ createdByRole: { $ne: 'parent' } }, { targetRole: 'superadmin' }];
       } else {
         filter.$or = [
           { supportType: { $nin: SCHOOL_ADMIN_ONLY_SUPPORT_TYPES } },
-          { createdByRole: { $ne: 'parent' } }
+          { createdByRole: { $ne: 'parent' } },
+          { targetRole: 'superadmin' }
         ];
       }
     }
@@ -376,6 +380,63 @@ router.get('/requests/:id', adminAuth, async (req, res) => {
   } catch (err) {
     console.error('Failed to fetch support request', err);
     res.status(500).json({ error: err.message || 'Unable to fetch support request' });
+  }
+});
+
+// PATCH /requests/:id/complaint-status — the SCHOOL admin moves a parent
+// complaint that was routed to the school admin (non-academic, non-technical)
+// through open → in_progress → resolved, with an optional note for the parent.
+router.patch('/requests/:id/complaint-status', adminAuth, async (req, res) => {
+  try {
+    if (req.isSuperAdmin) return res.status(403).json({ error: 'Use the super admin issue tools for this ticket' });
+    const { id } = req.params;
+    if (!mongoose.isValidObjectId(id)) return res.status(400).json({ error: 'Invalid request id' });
+    const schoolId = req.admin?.schoolId;
+    if (!schoolId) return res.status(400).json({ error: 'School context missing for admin' });
+
+    const request = await SupportRequest.findOne({ _id: id, schoolId, supportType: 'complaint' });
+    if (!request) return res.status(404).json({ error: 'Complaint not found' });
+    if (request.createdByRole !== 'parent' || request.targetRole !== 'admin') {
+      return res.status(403).json({ error: 'This complaint is handled by another team' });
+    }
+
+    const { status, resolutionNotes } = req.body || {};
+    if (!['open', 'in_progress', 'resolved'].includes(status)) return res.status(400).json({ error: 'Invalid status' });
+    const note = typeof resolutionNotes === 'string' ? resolutionNotes.trim().slice(0, 1000) : undefined;
+
+    const previousStatus = request.status;
+    const actor = await Admin.findById(req.admin.id).select('name username').lean();
+    const actorName = actor?.name || actor?.username || 'School Admin';
+
+    request.status = status;
+    if (note !== undefined) request.resolutionNotes = note;
+    request.auditTrail.push({ status, note: note || `Marked as ${status.replace('_', ' ')}`, changedBy: req.admin.id, changedByName: actorName });
+    if (status === 'resolved') {
+      request.resolvedAt = new Date();
+      request.resolvedBy = req.admin.id;
+      request.resolvedByName = actorName;
+    } else {
+      request.resolvedAt = undefined;
+      request.resolvedBy = undefined;
+      request.resolvedByName = undefined;
+    }
+    await request.save();
+    notifyParentComplaintStatus(request, { previousStatus, actorName });
+
+    logBusinessEvent(req, {
+      action: 'parent_complaint.status_update',
+      outcome: 'success',
+      entity: 'support_request',
+      entityId: request._id,
+      statusCode: 200,
+      previousStatus,
+      nextStatus: status,
+      adminId: req.admin?.id,
+    });
+    return res.json(sanitizeSupportRequest(request));
+  } catch (err) {
+    console.error('School admin complaint update failed', err);
+    return res.status(500).json({ error: err.message || 'Unable to update complaint' });
   }
 });
 
@@ -462,9 +523,11 @@ router.patch('/requests/:id', adminAuth, ensureSuperAdmin, async (req, res) => {
     }
 
     await request.save();
+    notifyParentComplaintStatus(request, { previousStatus, actorName: 'EEC Support' });
+    const isParentTicket = request.createdByRole === 'parent';
 
     // Notify school admin when status moves to in-progress.
-    if (request.status === 'in_progress' && previousStatus !== 'in_progress' && request.schoolId) {
+    if (!isParentTicket && request.status === 'in_progress' && previousStatus !== 'in_progress' && request.schoolId) {
       try {
         const title = request.subject || request.supportType || 'Support Request';
         await Notification.create({
@@ -484,7 +547,7 @@ router.patch('/requests/:id', adminAuth, ensureSuperAdmin, async (req, res) => {
     }
 
     // Notify the school admin when their support request is resolved (only on first resolution)
-    if (request.status === 'resolved' && previousStatus !== 'resolved' && request.schoolId) {
+    if (!isParentTicket && request.status === 'resolved' && previousStatus !== 'resolved' && request.schoolId) {
       try {
         const title = request.subject || request.supportType || 'Support Request';
         await Notification.create({

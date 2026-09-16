@@ -10,6 +10,9 @@ import {
   Activity,
   Gauge,
   BookOpen,
+  UploadCloud,
+  KeyRound,
+  IdCard,
   X,
   ChevronRight,
   ChevronLeft
@@ -20,13 +23,16 @@ const navLinks = [
   { to: '/super-admin/overview', label: 'Overview', icon: LayoutDashboard },
   { to: '/super-admin/usage', label: 'Usage', icon: Gauge },
   { to: '/super-admin/study-materials', label: 'Study Materials', icon: BookOpen },
+  { to: '/super-admin/data-migration', label: 'Data Migration', icon: UploadCloud },
   { to: '/super-admin/requests', label: 'Requests', icon: Building2 },
   { to: '/super-admin/feedback', label: 'Feedback', icon: MessageSquare },
   { to: '/super-admin/issues', label: 'Issues', icon: AlertTriangle },
   { to: '/super-admin/operations', label: 'Operations', icon: Activity },
   { to: '/super-admin/active-schools', label: 'Active Schools', icon: Building2 },
   { to: '/super-admin/organizations', label: 'Organizations', icon: Building2 },
-  { to: '/super-admin/organizations/payment-status', label: 'Payment Status', icon: Activity }
+  { to: '/super-admin/organizations/payment-status', label: 'Payment Status', icon: Activity },
+  { to: '/super-admin/credentials', label: 'Credentials', icon: KeyRound },
+  { to: '/super-admin/id-pass', label: 'ID Pass', icon: IdCard }
 ];
 
 const badgeLabel = (count) => (count > 99 ? '99+' : String(count));

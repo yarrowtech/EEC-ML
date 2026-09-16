@@ -19,6 +19,16 @@ function shapeRecord({
   entity = '', entityId = null,
 }) {
   const lineage = aiResponse.lineage || {};
+  const usage = aiResponse.usage || aiResponse.usage_metadata || lineage.usage || {};
+  const inputTokens = Number.isFinite(Number(usage.input_tokens ?? usage.prompt_tokens))
+    ? Number(usage.input_tokens ?? usage.prompt_tokens) : null;
+  const outputTokens = Number.isFinite(Number(usage.output_tokens ?? usage.completion_tokens))
+    ? Number(usage.output_tokens ?? usage.completion_tokens) : null;
+  const totalTokens = Number.isFinite(Number(usage.total_tokens))
+    ? Number(usage.total_tokens)
+    : (inputTokens != null && outputTokens != null ? inputTokens + outputTokens : null);
+  const costUsd = Number.isFinite(Number(usage.cost_usd ?? usage.cost))
+    ? Number(usage.cost_usd ?? usage.cost) : null;
   return {
     schoolId: asObjectId(schoolId),
     userId: asObjectId(userId),
@@ -44,6 +54,10 @@ function shapeRecord({
     errorType,
     latencyMs,
     outputChars: aiResponse.content != null ? String(aiResponse.content).length : null,
+    inputTokens,
+    outputTokens,
+    totalTokens,
+    costUsd,
     citationCount: Array.isArray(aiResponse.citations) ? aiResponse.citations.length : 0,
     score: Number.isFinite(aiResponse.score) ? aiResponse.score : null,
     confidenceScore: Number.isFinite(aiResponse.confidenceScore) ? aiResponse.confidenceScore : null,

@@ -1,4 +1,5 @@
 const express = require('express');
+const { cacheHrResponse, invalidateHrCacheOnWrite } = require('../utils/hrDataCache');
 const router = express.Router();
 const mongoose = require('mongoose');
 const { logger } = require('../utils/logger');
@@ -18,6 +19,7 @@ const Principal = require('../models/Principal');
 const Admin = require('../models/Admin');
 const School = require('../models/School');
 const TeacherLeave = require('../models/TeacherLeave');
+const Notification = require('../models/Notification');
 const TeacherExpense = require('../models/TeacherExpense');
 const TeacherAttendance = require('../models/TeacherAttendance');
 const FeeStructure = require('../models/FeeStructure');
@@ -549,10 +551,11 @@ router.post('/bulk-import-csv', adminAuth, async (req, res) => {
 });
 
 // Short-lived in-memory caches for the student / parent directory listings so
-// repeat page loads are instant. TTL is deliberately tiny and every student /
-// parent mutation in this file clears both maps, so a stale read can only ever
-// be a few seconds behind a change made from elsewhere (enrol, bulk import).
-const DIRECTORY_LIST_TTL_MS = 15 * 1000;
+// repeat page loads are instant. Every student / parent mutation in this file
+// clears both maps, so a stale read can only ever be behind a change made from
+// elsewhere (enrol, bulk import) by at most this TTL — raised from 15s since
+// the round trip these calls save is the dominant cost of a manual refresh.
+const DIRECTORY_LIST_TTL_MS = 45 * 1000;
 const studentsListCache = new Map(); // key -> { data, expires }
 const parentsListCache = new Map();
 const directoryCacheKey = (req) =>
@@ -577,7 +580,13 @@ router.get("/get-students", adminAuth, async (req, res) => {
   // #swagger.tags = ['Admin Users']
   try {
     const cacheKey = directoryCacheKey(req);
-    const cached = studentsListCache.get(cacheKey);
+    // A request right after a mutation (bulk delete, import, etc.) passes
+    // ?fresh=1 to skip the cache read entirely — protects against the case
+    // where a slow concurrent request that started before the mutation's
+    // cache invalidation finishes just after it and re-populates the cache
+    // with stale (pre-mutation) data.
+    const skipCache = req.query?.fresh === '1';
+    const cached = skipCache ? null : studentsListCache.get(cacheKey);
     if (cached && cached.expires > Date.now()) {
       return res.status(200).json(cached.data);
     }
@@ -622,31 +631,6 @@ router.get("/get-parents", adminAuth, async (req, res) => {
     }
 
     const filter = buildScopedFilter(req);
-    const schoolId = filter.schoolId || req.schoolId;
-    const activeYear = schoolId
-      ? await AcademicYear.findOne({ schoolId, isActive: true }).select('name').lean()
-      : null;
-    const activeYearName = String(activeYear?.name || '').trim().toLowerCase();
-    // Class 11/12 stream sections (and any class already tied to an academic
-    // year) are the authoritative signal for "is this student in the active
-    // year" — the student's own academicYear string field can go stale after
-    // a manual grade edit or a promotion that didn't touch it.
-    let activeYearClassNames = null;
-    let otherYearClassNames = null;
-    if (activeYear) {
-      const allClasses = await ClassModel.find({ schoolId }).select('name academicYearId').lean();
-      activeYearClassNames = new Set();
-      otherYearClassNames = new Set();
-      allClasses.forEach((c) => {
-        const name = String(c.name || '').trim().toLowerCase();
-        if (!name) return;
-        if (String(c.academicYearId || '') === String(activeYear._id)) {
-          activeYearClassNames.add(name);
-        } else {
-          otherYearClassNames.add(name);
-        }
-      });
-    }
     const parents = await ParentUser.find(filter)
       .select('-password')
       .populate({
@@ -663,19 +647,12 @@ router.get("/get-parents", adminAuth, async (req, res) => {
     const withResolvedAddress = parents
       .map((parent) => {
       const populatedChildren = Array.isArray(parent.childrenIds) ? parent.childrenIds : [];
-      const activeChildren = populatedChildren.filter((child) => {
-        if (!child || child.isArchived === true || isExitedStudentStatus(child.status)) return false;
-        if (!activeYearName) return true;
-        const childGrade = String(child.grade || '').trim().toLowerCase();
-        if (childGrade && activeYearClassNames.has(childGrade)) return true;
-        if (childGrade && otherYearClassNames.has(childGrade)) {
-          // Grade maps to a known class from a different year — genuinely stale.
-          return false;
-        }
-        // Grade doesn't match any known class (legacy/free-text value) —
-        // fall back to the student's own academicYear string.
-        return String(child.academicYear || '').trim().toLowerCase() === activeYearName;
-      });
+      // A parent stays visible as long as at least one linked child is still
+      // on the roll (not left/expelled/archived) — regardless of which session
+      // that child's record says, so a stale grade/session never hides them.
+      const activeChildren = populatedChildren.filter(
+        (child) => child && child.isArchived !== true && !isExitedStudentStatus(child.status)
+      );
       if (populatedChildren.length > 0 && activeChildren.length === 0) {
         return null;
       }
@@ -998,6 +975,11 @@ const autoGeneratePromotionInvoice = async ({ student, oldGrade, schoolId }) => 
     balanceAmount: snapshots.totalAmount,
     discountAmount: 0,
     discountNote: '',
+    lateFeeRuleSnapshot: {
+      amount: Number(structure.lateFeeAmount || 0),
+      excludeSundays: Boolean(structure.lateFeeExcludeSundays),
+      excludeHolidays: Boolean(structure.lateFeeExcludeHolidays),
+    },
     feeHeadsSnapshot: snapshots.feeHeadsSnapshot,
     installmentsSnapshot: snapshots.installmentsSnapshot,
     status: 'due',
@@ -1100,6 +1082,12 @@ router.post('/teachers/:id/make-principal', adminAuth, async (req, res) => {
 
     if (existingPrincipal) {
       return res.status(400).json({ error: 'Principal account already exists for this teacher' });
+    }
+
+    // A school may only have one principal at a time.
+    const schoolAlreadyHasPrincipal = await Principal.exists({ schoolId: teacher.schoolId });
+    if (schoolAlreadyHasPrincipal) {
+      return res.status(400).json({ error: 'This school already has a principal. Remove the existing principal before assigning a new one.' });
     }
 
     // Create principal account
@@ -1923,6 +1911,7 @@ router.put('/principals/:id', adminAuth, async (req, res) => {
   // #swagger.tags = ['Admin Users']
   try {
     await updateByScope(Principal, req, res);
+    invalidateTeacherDirectoryCaches();
   } catch (err) {
     res.status(500).json({ error: err.message });
   }
@@ -1957,6 +1946,7 @@ router.delete('/principals/:id', adminAuth, async (req, res) => {
   // #swagger.tags = ['Admin Users']
   try {
     await deleteByScope(Principal, req, res);
+    invalidateTeacherDirectoryCaches();
   } catch (err) {
     res.status(500).json({ error: err.message });
   }
@@ -1966,12 +1956,19 @@ router.delete('/principals/:id', adminAuth, async (req, res) => {
 router.get("/dashboard-stats", adminAuth, async (req, res) => {
   // #swagger.tags = ['Admin Users']
   try {
-    const cacheKey = directoryCacheKey(req);
+    const filter = buildScopedFilter(req);
+    const statsSchoolId = filter.schoolId || req.schoolId;
+    // Counts follow the school's *active* session. Its id is part of the cache
+    // key, so switching the active session in Academic Setup shows the new
+    // session's numbers immediately instead of a cached old-session total.
+    const activeYear = statsSchoolId
+      ? await AcademicYear.findOne({ schoolId: statsSchoolId, isActive: true }).select('_id name').lean()
+      : null;
+    const cacheKey = `${directoryCacheKey(req)}:${activeYear?._id || 'noyear'}`;
     const cached = dashboardStatsCache.get(cacheKey);
     if (cached && cached.expires > Date.now()) {
       return res.status(200).json(cached.data);
     }
-    const filter = buildScopedFilter(req);
 
     // Get recent registrations (last 30 days)
     const thirtyDaysAgo = new Date();
@@ -1979,11 +1976,15 @@ router.get("/dashboard-stats", adminAuth, async (req, res) => {
 
     // Only count active students — same rule as /admin/users/get-students —
     // so a student who has left/been expelled/been archived doesn't inflate
-    // the dashboard total.
+    // the dashboard total — and only those in the active session.
+    const activeYearName = String(activeYear?.name || '').trim();
     const activeStudentFilter = {
       ...filter,
       isArchived: { $ne: true },
       status: { $nin: EXITED_STUDENT_STATUSES },
+      ...(activeYearName
+        ? { academicYear: new RegExp(`^\\s*${activeYearName.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}\\s*$`, 'i') }
+        : {}),
     };
 
     // Parents whose linked children have ALL exited/been archived are excluded
@@ -1991,7 +1992,7 @@ router.get("/dashboard-stats", adminAuth, async (req, res) => {
     // lists (a parent with zero children is still counted).
     const parentDocsPromise = ParentUser.find(filter)
       .select('childrenIds createdAt')
-      .populate({ path: 'childrenIds', select: 'status isArchived' })
+      .populate({ path: 'childrenIds', select: 'status isArchived academicYear' })
       .lean();
 
     // Fetch counts from all user types
@@ -2025,14 +2026,60 @@ router.get("/dashboard-stats", adminAuth, async (req, res) => {
       (parent) => parent.createdAt && new Date(parent.createdAt) >= thirtyDaysAgo
     ).length;
 
+    // Dashboard summary cards: student growth this calendar year, teachers on
+    // approved leave today, and today's student attendance.
+    const now = new Date();
+    const yearStart = new Date(now.getFullYear(), 0, 1);
+    const dayStart = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+    const dayEnd = new Date(dayStart.getTime() + 24 * 60 * 60 * 1000);
+    const todayKey = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`;
+    const leaveQuery = { status: 'Approved', startDate: { $lte: todayKey }, endDate: { $gte: todayKey } };
+    if (filter.schoolId) leaveQuery.schoolId = filter.schoolId;
+    const [studentsThisYear, leaveTeacherIds, attendanceToday] = await Promise.all([
+      StudentUser.countDocuments({ ...activeStudentFilter, createdAt: { $gte: yearStart } }),
+      TeacherLeave.distinct('teacherId', leaveQuery),
+      StudentUser.aggregate([
+        { $match: { ...activeStudentFilter, 'attendance.date': { $gte: dayStart, $lt: dayEnd } } },
+        {
+          $project: {
+            today: {
+              $filter: {
+                input: '$attendance',
+                as: 'a',
+                cond: { $and: [{ $gte: ['$$a.date', dayStart] }, { $lt: ['$$a.date', dayEnd] }] },
+              },
+            },
+          },
+        },
+        {
+          $group: {
+            _id: null,
+            marked: { $sum: 1 },
+            present: { $sum: { $cond: [{ $in: ['present', '$today.status'] }, 1, 0] } },
+          },
+        },
+      ]),
+    ]);
+    const studentsBeforeYear = Math.max(studentCount - studentsThisYear, 0);
+
     const payload = {
       students: {
         total: studentCount,
-        recent: recentStudents
+        recent: recentStudents,
+        thisYear: studentsThisYear,
+        growthThisYear: studentsBeforeYear > 0
+          ? Math.round((studentsThisYear / studentsBeforeYear) * 1000) / 10
+          : null,
       },
       teachers: {
         total: teacherCount,
-        recent: recentTeachers
+        recent: recentTeachers,
+        onLeaveToday: leaveTeacherIds.length,
+      },
+      attendanceToday: {
+        present: attendanceToday[0]?.present || 0,
+        marked: attendanceToday[0]?.marked || 0,
+        total: studentCount,
       },
       parents: {
         total: parentCount,
@@ -2057,7 +2104,7 @@ router.get("/dashboard-stats", adminAuth, async (req, res) => {
   }
 });
 
-router.get('/teacher-leaves', adminAuth, async (req, res) => {
+router.get('/teacher-leaves', adminAuth, cacheHrResponse, async (req, res) => {
   // #swagger.tags = ['Admin Users']
   try {
     const filter = buildScopedFilter(req);
@@ -2082,7 +2129,7 @@ router.get('/teacher-leaves', adminAuth, async (req, res) => {
         .filter((teacherId) => mongoose.isValidObjectId(teacherId))
     )];
     const teachers = teacherIds.length
-      ? await TeacherUser.find({ _id: { $in: teacherIds } }).select('_id email mobile').lean()
+      ? await TeacherUser.find({ _id: { $in: teacherIds } }).select('_id email mobile profilePic').lean()
       : [];
     const teacherById = new Map(
       teachers.map((teacher) => [String(teacher._id), teacher])
@@ -2096,6 +2143,7 @@ router.get('/teacher-leaves', adminAuth, async (req, res) => {
         teacherName: leave.teacherName || '',
         teacherEmail: teacherById.get(String(leave.teacherId))?.email || '',
         teacherPhone: teacherById.get(String(leave.teacherId))?.mobile || '',
+        teacherProfilePic: teacherById.get(String(leave.teacherId))?.profilePic || '',
         type: leave.type,
         startDate: leave.startDate,
         endDate: leave.endDate,
@@ -2111,7 +2159,7 @@ router.get('/teacher-leaves', adminAuth, async (req, res) => {
   }
 });
 
-router.patch('/teacher-leaves/:id/status', adminAuth, async (req, res) => {
+router.patch('/teacher-leaves/:id/status', adminAuth, invalidateHrCacheOnWrite, async (req, res) => {
   // #swagger.tags = ['Admin Users']
   try {
     const { status, adminNote } = req.body || {};
@@ -2150,6 +2198,30 @@ router.patch('/teacher-leaves/:id/status', adminAuth, async (req, res) => {
       return res.status(404).json({ error: 'Leave request not found for this school/campus' });
     }
 
+    if (updated.status === 'Approved' || updated.status === 'Rejected') {
+      try {
+        const fmt = (d) => new Date(d).toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' });
+        const decision = updated.status.toLowerCase();
+        const note = updated.adminNote ? ` Remarks: ${updated.adminNote}` : '';
+        await Notification.create({
+          schoolId: updated.schoolId,
+          campusId: updated.campusId || null,
+          title: `Leave request ${decision}`,
+          message: `Your ${updated.type} from ${fmt(updated.startDate)} to ${fmt(updated.endDate)} was ${decision}.${note}`,
+          audience: 'Teacher',
+          targetUserIds: [updated.teacherId],
+          createdByType: 'admin',
+          type: 'alert',
+          typeLabel: 'teacher_leave_reviewed',
+          category: 'general',
+          priority: 'high',
+          relatedEntity: { entityType: 'leave', entityId: updated._id },
+        });
+      } catch (notifErr) {
+        logger.error({ err: notifErr }, 'Teacher leave decision notification failed');
+      }
+    }
+
     res.json({
       message: 'Leave status updated',
       leave: {
@@ -2168,7 +2240,7 @@ router.patch('/teacher-leaves/:id/status', adminAuth, async (req, res) => {
   }
 });
 
-router.get('/teacher-expenses', adminAuth, async (req, res) => {
+router.get('/teacher-expenses', adminAuth, cacheHrResponse, async (req, res) => {
   // #swagger.tags = ['Admin Users']
   try {
     const filter = buildScopedFilter(req);
@@ -2181,6 +2253,11 @@ router.get('/teacher-expenses', adminAuth, async (req, res) => {
     }
 
     const expenses = await TeacherExpense.find(query).sort({ expenseDate: -1, createdAt: -1 }).lean();
+    const expenseTeacherIds = [...new Set(expenses.map((e) => String(e.teacherId || '')).filter((id) => mongoose.isValidObjectId(id)))];
+    const expenseTeachers = expenseTeacherIds.length
+      ? await TeacherUser.find({ _id: { $in: expenseTeacherIds } }).select('_id profilePic').lean()
+      : [];
+    const expensePicById = new Map(expenseTeachers.map((t) => [String(t._id), t.profilePic || '']));
     res.json({
       expenses: expenses.map((expense) => ({
         id: expense._id,
@@ -2188,6 +2265,7 @@ router.get('/teacher-expenses', adminAuth, async (req, res) => {
         campusId: expense.campusId || null,
         teacherId: expense.teacherId,
         teacherName: expense.teacherName || '',
+        teacherProfilePic: expensePicById.get(String(expense.teacherId)) || '',
         category: expense.category,
         amount: expense.amount,
         description: expense.description || '',
@@ -2205,7 +2283,7 @@ router.get('/teacher-expenses', adminAuth, async (req, res) => {
   }
 });
 
-router.patch('/teacher-expenses/:id/status', adminAuth, async (req, res) => {
+router.patch('/teacher-expenses/:id/status', adminAuth, invalidateHrCacheOnWrite, async (req, res) => {
   // #swagger.tags = ['Admin Users']
   try {
     const { status, adminNote } = req.body || {};
@@ -2261,7 +2339,7 @@ router.patch('/teacher-expenses/:id/status', adminAuth, async (req, res) => {
   }
 });
 
-router.get('/teacher-attendance-settings', adminAuth, async (req, res) => {
+router.get('/teacher-attendance-settings', adminAuth, cacheHrResponse, async (req, res) => {
   // #swagger.tags = ['Admin Users']
   try {
     const schoolId = req.schoolId || req.query?.schoolId || null;
@@ -2286,7 +2364,7 @@ router.get('/teacher-attendance-settings', adminAuth, async (req, res) => {
   }
 });
 
-router.get('/teacher-leave-policy', adminAuth, async (req, res) => {
+router.get('/teacher-leave-policy', adminAuth, cacheHrResponse, async (req, res) => {
   // #swagger.tags = ['Admin Users']
   try {
     const schoolId = req.schoolId || req.query?.schoolId || null;
@@ -2311,7 +2389,7 @@ router.get('/teacher-leave-policy', adminAuth, async (req, res) => {
   }
 });
 
-router.put('/teacher-leave-policy', adminAuth, async (req, res) => {
+router.put('/teacher-leave-policy', adminAuth, invalidateHrCacheOnWrite, async (req, res) => {
   // #swagger.tags = ['Admin Users']
   try {
     const schoolId = req.schoolId || req.body?.schoolId || null;
@@ -2343,7 +2421,7 @@ router.put('/teacher-leave-policy', adminAuth, async (req, res) => {
   }
 });
 
-router.put('/teacher-attendance-settings', adminAuth, async (req, res) => {
+router.put('/teacher-attendance-settings', adminAuth, invalidateHrCacheOnWrite, async (req, res) => {
   // #swagger.tags = ['Admin Users']
   try {
     const schoolId = req.schoolId || req.body?.schoolId || null;
@@ -2388,7 +2466,7 @@ router.put('/teacher-attendance-settings', adminAuth, async (req, res) => {
   }
 });
 
-router.get('/teacher-attendance', adminAuth, async (req, res) => {
+router.get('/teacher-attendance', adminAuth, cacheHrResponse, async (req, res) => {
   // #swagger.tags = ['Admin Users']
   try {
     const scope = buildScopedFilter(req);
@@ -2423,17 +2501,21 @@ router.get('/teacher-attendance', adminAuth, async (req, res) => {
 
     const teacherIds = [...new Set(records.map((r) => String(r.teacherId)).filter(Boolean))];
     const teachers = teacherIds.length > 0
-      ? await TeacherUser.find({ _id: { $in: teacherIds } }).select('name').lean()
+      ? await TeacherUser.find({ _id: { $in: teacherIds } }).select('name profilePic username').lean()
       : [];
     const teacherNameById = new Map(teachers.map((t) => [String(t._id), t.name || 'Teacher']));
+    const teacherPicById = new Map(teachers.map((t) => [String(t._id), t.profilePic || '']));
+    const teacherLoginById = new Map(teachers.map((t) => [String(t._id), t.username || '']));
 
     res.json({
       records: records.map((record) => ({
+        teacherLoginId: teacherLoginById.get(String(record.teacherId)) || '',
         id: record._id,
         schoolId: record.schoolId,
         campusId: record.campusId || null,
         teacherId: record.teacherId,
         teacherName: teacherNameById.get(String(record.teacherId)) || 'Teacher',
+        teacherProfilePic: teacherPicById.get(String(record.teacherId)) || '',
         date: record.dateKey,
         checkInAt: record.checkInAt || null,
         checkOutAt: record.checkOutAt || null,
@@ -2467,14 +2549,16 @@ router.delete('/students/:id/all-data', adminAuth, async (req, res) => {
         const TutorConversation = require('../models/TutorConversation');
         const ReadingAssessment = require('../models/ReadingAssessment');
         const WritingAssessment = require('../models/WritingAssessment');
+        const { purgeStudentAiData } = require('../services/dataRetentionService');
 
         const [progress, mastery, convos, reading, writing] = await Promise.all([
             StudentProgress.deleteMany({ studentId }),
             MasteryScore.deleteMany({ studentId }),
             TutorConversation.deleteMany({ studentId }).catch(() => ({ deletedCount: 0 })),
             ReadingAssessment.deleteMany({ studentId }).catch(() => ({ deletedCount: 0 })),
-            WritingAssessment.deleteMany({ studentId }).catch(() => ({ deletedCount: 0 })),
+          WritingAssessment.deleteMany({ studentId }).catch(() => ({ deletedCount: 0 })),
         ]);
+        const extendedAiPurge = await purgeStudentAiData(studentId, schoolId);
 
         // Anonymize PII on StudentUser rather than hard-delete to preserve referential integrity
         await StudentUser.findByIdAndUpdate(studentId, {
@@ -2508,6 +2592,7 @@ router.delete('/students/:id/all-data', adminAuth, async (req, res) => {
                 conversationsDeleted: convos.deletedCount,
                 readingDeleted: reading.deletedCount,
                 writingDeleted: writing.deletedCount,
+                extendedAiPurge,
                 reason: req.body?.reason || 'Right to erasure request (DPDP Act 2023)',
             },
         }).catch(() => {});
@@ -2529,3 +2614,11 @@ router.delete('/students/:id/all-data', adminAuth, async (req, res) => {
 });
 
 module.exports = router;
+// Exposed so the data-migration portal (backend/services/migration/teacher.js)
+// can drive the exact same teacher-creation pipeline — sequence-generated
+// employeeCode/username, password policy check — instead of reimplementing
+// it. teacherBulkUploadJobs must hold the job entry before
+// runTeacherBulkUploadJob is called (see POST /teachers/bulk-upload above for
+// the shape it expects).
+module.exports.runTeacherBulkUploadJob = runTeacherBulkUploadJob;
+module.exports.teacherBulkUploadJobs = teacherBulkUploadJobs;

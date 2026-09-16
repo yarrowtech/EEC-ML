@@ -1,11 +1,12 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import {
-  Bell, Plus, Trash2, Megaphone, Filter, Pin, PinOff, Edit2, Calendar, User, ChevronRight, ChevronLeft,
+  Bell, Trash2, Megaphone, Filter, Pin, PinOff, Edit2, Calendar, User, ChevronRight, ChevronLeft, ChevronsLeft, ChevronsRight,
   LayoutGrid, List as ListIcon,
-  Send, FileText, X, Search
+  X, Search
 } from 'lucide-react';
 import toast from 'react-hot-toast';
+import NoticePostForm from './NoticePostForm';
 import Swal from 'sweetalert2';
 import {
   CATEGORY_ORDER, CATEGORY_META, getDisplayCategory, isNewNotice, getCreatorLabel,
@@ -28,6 +29,22 @@ const DEFAULT_FORM = {
 };
 
 const NOTICE_PAGE_SIZE = 5;
+
+// Page numbers to show: first, last, and current ±1, with '…' for gaps.
+// e.g. (15, 42) → [1, '…', 14, 15, 16, '…', 42]
+const getPageWindow = (current, total) => {
+  if (total <= 7) return Array.from({ length: total }, (_, i) => i + 1);
+  const pages = new Set([1, total, current - 1, current, current + 1]);
+  if (current <= 3) [2, 3, 4].forEach((p) => pages.add(p));
+  if (current >= total - 2) [total - 3, total - 2, total - 1].forEach((p) => pages.add(p));
+  const sorted = [...pages].filter((p) => p >= 1 && p <= total).sort((a, b) => a - b);
+  const out = [];
+  sorted.forEach((p, i) => {
+    if (i > 0 && p - sorted[i - 1] > 1) out.push('…');
+    out.push(p);
+  });
+  return out;
+};
 
 const NoticeManagement = ({ setShowAdminHeader, viewMode = 'view' }) => {
   const navigate = useNavigate();
@@ -217,6 +234,42 @@ const NoticeManagement = ({ setShowAdminHeader, viewMode = 'view' }) => {
     setCurrentPage(1);
   }, [activeCategory, sortBy, searchQuery]);
 
+  // The notice list can shrink after a delete/bulk-delete, which can leave
+  // `currentPage` pointing past the new last page — clamp it back instead of
+  // silently rendering an empty page with an out-of-range pager.
+  useEffect(() => {
+    setCurrentPage((page) => Math.min(page, totalPages));
+  }, [totalPages]);
+
+  // ── Bulk selection ──
+  const isProtectedNotice = (notice) =>
+    String(notice?.createdByType || '').toLowerCase() === 'super_admin'
+    || String(notice?.typeLabel || '').toLowerCase() === 'super admin broadcast';
+  const [selectedIds, setSelectedIds] = useState(() => new Set());
+  const [bulkDeleting, setBulkDeleting] = useState(false);
+  const selectableIds = useMemo(
+    () => sortedNotices.filter((n) => !isProtectedNotice(n)).map((n) => String(n._id)),
+    [sortedNotices],
+  );
+  // Drop selections that are no longer in the filtered list.
+  useEffect(() => {
+    setSelectedIds((prev) => {
+      const allowed = new Set(selectableIds);
+      const next = new Set([...prev].filter((id) => allowed.has(id)));
+      return next.size === prev.size ? prev : next;
+    });
+  }, [selectableIds]);
+  const selectedCount = selectedIds.size;
+  const allSelected = selectableIds.length > 0 && selectedCount === selectableIds.length;
+  const someSelected = selectedCount > 0 && !allSelected;
+  const toggleSelected = (id) => setSelectedIds((prev) => {
+    const next = new Set(prev);
+    const key = String(id);
+    if (next.has(key)) next.delete(key); else next.add(key);
+    return next;
+  });
+  const toggleSelectAll = () => setSelectedIds(allSelected ? new Set() : new Set(selectableIds));
+
   const paginatedNotices = useMemo(() => {
     const start = (currentPage - 1) * NOTICE_PAGE_SIZE;
     return sortedNotices.slice(start, start + NOTICE_PAGE_SIZE);
@@ -306,6 +359,37 @@ const NoticeManagement = ({ setShowAdminHeader, viewMode = 'view' }) => {
     }
   };
 
+  const bulkDeleteNotices = async () => {
+    const ids = [...selectedIds];
+    if (!ids.length) return;
+    const confirm = await Swal.fire({
+      icon: 'warning',
+      title: `Delete ${ids.length} notice${ids.length === 1 ? '' : 's'}?`,
+      text: 'The selected notices will be removed for all recipients. This cannot be undone.',
+      showCancelButton: true,
+      confirmButtonText: 'Yes, Delete',
+      cancelButtonText: 'Cancel',
+      confirmButtonColor: '#dc2626',
+    });
+    if (!confirm.isConfirmed) return;
+    setBulkDeleting(true);
+    try {
+      const res = await apiRequest('/api/notifications/bulk-delete', {
+        method: 'POST',
+        body: JSON.stringify({ ids }),
+      });
+      const deleted = res?.deleted ?? ids.length;
+      toast.success(`${deleted} notice${deleted === 1 ? '' : 's'} deleted`);
+      if (res?.skipped) toast(`${res.skipped} could not be deleted`);
+      setSelectedIds(new Set());
+      await loadData();
+    } catch (err) {
+      toast.error(err.message || 'Unable to delete notices');
+    } finally {
+      setBulkDeleting(false);
+    }
+  };
+
   const togglePin = async (notice) => {
     const id = notice._id;
     setPinningId(id);
@@ -369,14 +453,25 @@ const NoticeManagement = ({ setShowAdminHeader, viewMode = 'view' }) => {
 
   const formatDate = (iso) => {
     if (!iso) return null;
-    return new Date(iso).toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' });
+    return new Date(iso).toLocaleString('en-IN', {
+      day: 'numeric', month: 'short', year: 'numeric', hour: 'numeric', minute: '2-digit',
+    });
   };
+
+  // "Posted on" (createdAt) never changes when a notice is edited — by design,
+  // so the original publish date stays accurate. A notice edited after its
+  // initial save has updatedAt meaningfully later than createdAt (more than a
+  // minute, to ignore the sub-second gap from the insert itself); show that
+  // separately so an edit-today doesn't look like a stuck/wrong post date.
+  const wasEditedAfterPosting = (notice) =>
+    notice?.updatedAt && notice?.createdAt &&
+    new Date(notice.updatedAt).getTime() - new Date(notice.createdAt).getTime() > 60000;
 
   const inputCls = 'w-full rounded-xl border border-gray-200 bg-gray-50 px-3 py-2.5 text-sm text-slate-800 placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-indigo-500/30 focus:border-indigo-400 transition';
   const labelCls = 'block text-xs font-semibold text-slate-500 uppercase tracking-wide mb-1.5';
 
   return (
-    <div className="min-h-screen bg-slate-50">
+    <div className={`bg-slate-50 ${isPostView ? '' : 'min-h-screen'}`}>
 
       {/* ── Header ── */}
       {isViewPage ? (
@@ -414,265 +509,26 @@ const NoticeManagement = ({ setShowAdminHeader, viewMode = 'view' }) => {
             </div>
           )}
         </div>
-      ) : (
-        <div className="relative overflow-hidden bg-linear-to-r from-slate-900 via-blue-950 to-slate-900 px-6 py-6 shadow-lg">
-          <div className="absolute top-0 right-0 w-72 h-72 bg-indigo-400/10 rounded-full -translate-y-1/2 translate-x-1/4 blur-3xl pointer-events-none" />
-          <div className="absolute bottom-0 left-0 w-56 h-56 bg-cyan-500/10 rounded-full translate-y-1/2 -translate-x-1/4 blur-3xl pointer-events-none" />
-          <div className="relative max-w-7xl mx-auto flex flex-wrap items-center justify-between gap-4">
-            <div className="flex items-center gap-4">
-              <div className="w-11 h-11 rounded-2xl bg-white/10 border border-white/20 flex items-center justify-center backdrop-blur-sm">
-                <Bell className="h-5 w-5 text-white" />
-              </div>
-              <div>
-                <h1 className="text-xl font-bold text-white tracking-tight">New Notice</h1>
-                <p className="text-sm text-slate-400 mt-0.5">Create and publish a new notice</p>
-              </div>
-            </div>
-          </div>
-        </div>
-      )}
+      ) : null}
 
       {/* ── Main content ── */}
-      <div className="mx-auto max-w-7xl px-4 sm:px-6 py-6">
+      <div className={`mx-auto max-w-7xl px-4 sm:px-6 ${isPostView ? 'py-3' : 'py-6'}`}>
         {isPostView ? (
-          <div className="mx-auto max-w-4xl">
-            <form onSubmit={submitNotice}>
-              <div className="rounded-2xl border border-slate-200 bg-white shadow-sm overflow-hidden">
-
-              {/* Form header */}
-              <div className="px-5 py-4 bg-linear-to-r from-indigo-600 to-indigo-500 flex items-center gap-3">
-                <div className="w-8 h-8 rounded-lg bg-white/20 flex items-center justify-center">
-                  <Plus className="h-4 w-4 text-white" />
-                </div>
-                <div>
-                  <h2 className="text-sm font-semibold text-white">New Notice</h2>
-                  <p className="text-xs text-indigo-200">Fill details and publish</p>
-                </div>
-              </div>
-
-              <div className="px-5 py-5 space-y-4">
-
-                {/* Session */}
-                <div>
-                  <label className={labelCls}>Session</label>
-                  <select
-                    className={inputCls}
-                    value={selectedAcademicYearId}
-                    onChange={(e) => {
-                      setSelectedAcademicYearId(e.target.value);
-                      setForm((current) => ({ ...current, classId: '', sectionId: '' }));
-                    }}
-                  >
-                    {academicYears.length === 0 ? (
-                      <option value="">No sessions found</option>
-                    ) : (
-                      academicYears.map((year) => (
-                        <option key={year._id} value={year._id}>
-                          {year.name}{year.isActive ? ' (active)' : ''}
-                        </option>
-                      ))
-                    )}
-                  </select>
-                  {selectedAcademicYear && (
-                    <p className="mt-1 text-[11px] text-slate-400">
-                      Showing classes from {selectedAcademicYear.name}
-                    </p>
-                  )}
-                </div>
-
-                {/* Title */}
-                <div>
-                  <label className={labelCls}>Title <span className="text-red-400 normal-case tracking-normal">*</span></label>
-                  <input
-                    className={inputCls}
-                    value={form.title}
-                    onChange={(e) => setForm((p) => ({ ...p, title: e.target.value }))}
-                    placeholder="Enter notice title…"
-                    required
-                  />
-                </div>
-
-                {/* Message */}
-                <div>
-                  <label className={labelCls}>Message <span className="text-red-400 normal-case tracking-normal">*</span></label>
-                  <textarea
-                    rows={4}
-                    className={`${inputCls} resize-none`}
-                    value={form.message}
-                    onChange={(e) => setForm((p) => ({ ...p, message: e.target.value }))}
-                    placeholder="Write your message here…"
-                    required
-                  />
-                </div>
-
-                <div className="border-t border-slate-100" />
-
-                {/* Category + Type */}
-                <div className="grid grid-cols-2 gap-3">
-                  <div>
-                    <label className={labelCls}>Category</label>
-                    <select className={inputCls} value={form.category} onChange={(e) => setForm((p) => ({ ...p, category: e.target.value }))}>
-                      <option value="general">General</option>
-                      <option value="academic">Academic</option>
-                      <option value="events">Events</option>
-                      <option value="transport">Transport</option>
-                    </select>
-                  </div>
-                  <div>
-                    <label className={labelCls}>Type</label>
-                    <select className={inputCls} value={form.type} onChange={(e) => setForm((p) => ({ ...p, type: e.target.value }))}>
-                      <option value="notice">Notice</option>
-                      <option value="announcement">Announcement</option>
-                      <option value="assignment">Assignment</option>
-                      <option value="exam">Exam</option>
-                      <option value="result">Result</option>
-                      <option value="fee">Fee</option>
-                      <option value="other">Other</option>
-                    </select>
-                  </div>
-                </div>
-
-                {/* Class + Section */}
-                <div className="grid grid-cols-2 gap-3">
-                  <div>
-                    <label className={labelCls}>Class</label>
-                    <select
-                      className={inputCls}
-                      value={form.classId}
-                      onChange={(e) => setForm((p) => ({ ...p, classId: e.target.value, sectionId: '' }))}
-                      disabled={!selectedAcademicYearId}
-                    >
-                      <option value="">{selectedAcademicYearId ? 'All classes' : 'Select session first'}</option>
-                      {classOptions.map((cls) => (
-                        <option key={cls._id} value={cls._id}>{cls.name}</option>
-                      ))}
-                    </select>
-                  </div>
-                  <div>
-                    <label className={labelCls}>Section</label>
-                    <select
-                      className={inputCls}
-                      value={form.sectionId}
-                      onChange={(e) => setForm((p) => ({ ...p, sectionId: e.target.value }))}
-                      disabled={!form.classId}
-                    >
-                      <option value="">{form.classId ? 'All sections' : 'Select class first'}</option>
-                      {sectionOptions.map((sec) => (
-                        <option key={sec._id} value={sec._id}>{sec.name}</option>
-                      ))}
-                    </select>
-                  </div>
-                </div>
-
-                {/* Priority + Audience */}
-                <div className="grid grid-cols-2 gap-3">
-                  <div>
-                    <label className={labelCls}>Priority</label>
-                    <select className={inputCls} value={form.priority} onChange={(e) => setForm((p) => ({ ...p, priority: e.target.value }))}>
-                      <option value="low">Low</option>
-                      <option value="medium">Medium</option>
-                      <option value="high">High</option>
-                    </select>
-                  </div>
-                  <div>
-                    <label className={labelCls}>Audience</label>
-                    <select className={inputCls} value={form.audience} onChange={(e) => setForm((p) => ({ ...p, audience: e.target.value }))}>
-                      <option value="All">All</option>
-                      <option value="Student">Students</option>
-                      <option value="Parent">Parents</option>
-                      <option value="Teacher">Teachers</option>
-                    </select>
-                  </div>
-                </div>
-
-                {/* Pin */}
-                <label className="flex items-center gap-2.5 rounded-xl border border-slate-200 bg-slate-50 px-3 py-2.5 cursor-pointer">
-                  <input
-                    type="checkbox"
-                    checked={form.isPinned}
-                    onChange={(e) => setForm((p) => ({ ...p, isPinned: e.target.checked }))}
-                    className="h-4 w-4 rounded border-slate-300 text-indigo-600 focus:ring-indigo-400"
-                  />
-                  <span className="text-sm font-medium text-slate-700">Pin this notice to the top</span>
-                </label>
-
-                {/* Custom label */}
-                {form.type === 'other' && (
-                  <div>
-                    <label className={labelCls}>Custom Label</label>
-                    <input
-                      className={inputCls}
-                      value={form.typeLabel}
-                      onChange={(e) => setForm((p) => ({ ...p, typeLabel: e.target.value }))}
-                      placeholder="e.g., Holiday"
-                    />
-                  </div>
-                )}
-
-                <div className="border-t border-slate-100" />
-
-                {/* PDF Upload */}
-                <div>
-                  <label className={labelCls}>PDF Attachment <span className="normal-case tracking-normal font-normal text-slate-400">(optional)</span></label>
-                  <label className={`flex flex-col items-center justify-center gap-2 w-full rounded-xl border-2 border-dashed px-4 py-5 cursor-pointer transition ${isUploading ? 'border-slate-200 bg-slate-50 opacity-60 cursor-not-allowed' : 'border-indigo-200 bg-indigo-50/40 hover:border-indigo-400 hover:bg-indigo-50'}`}>
-                    <div className="w-10 h-10 rounded-xl bg-white border border-indigo-100 flex items-center justify-center shadow-sm">
-                      <FileText className="h-5 w-5 text-indigo-400" />
-                    </div>
-                    <div className="text-center">
-                      <p className="text-sm font-medium text-slate-600">{isUploading ? 'Uploading…' : 'Click to upload PDF'}</p>
-                      <p className="text-xs text-slate-400 mt-0.5">PDF files only</p>
-                    </div>
-                    <input
-                      type="file"
-                      accept="application/pdf"
-                      className="hidden"
-                      onChange={(e) => { const f = e.target.files?.[0]; if (f) uploadAttachment(f); }}
-                      disabled={isUploading}
-                    />
-                  </label>
-
-                  {attachments.length > 0 && (
-                    <div className="mt-2 space-y-1.5">
-                      {attachments.map((att, idx) => (
-                        <div key={`${att.url}-${idx}`} className="flex items-center gap-2 rounded-lg border border-indigo-100 bg-indigo-50 px-3 py-2">
-                          <FileText className="h-4 w-4 text-indigo-500 shrink-0" />
-                          <span className="text-xs text-slate-700 truncate flex-1">{att.name || `Attachment ${idx + 1}`}</span>
-                          <button
-                            type="button"
-                            onClick={() => setAttachments(prev => prev.filter((_, i) => i !== idx))}
-                            className="text-slate-400 hover:text-red-500 transition shrink-0"
-                          >
-                            <X className="h-3.5 w-3.5" />
-                          </button>
-                        </div>
-                      ))}
-                    </div>
-                  )}
-                </div>
-
-              </div>
-
-              {/* Form footer */}
-              <div className="px-5 py-4 bg-slate-50 border-t border-slate-100 flex items-center justify-between">
-                <button
-                  type="button"
-                  onClick={resetForm}
-                  className="text-sm text-slate-400 hover:text-slate-600 transition"
-                >
-                  Clear
-                </button>
-                <button
-                  type="submit"
-                  disabled={loading || isUploading}
-                  className="inline-flex items-center gap-2 rounded-xl bg-indigo-600 px-5 py-2.5 text-sm font-semibold text-white hover:bg-indigo-700 disabled:opacity-50 disabled:cursor-not-allowed transition shadow-md shadow-indigo-200"
-                >
-                  <Send className="h-4 w-4" />
-                  {loading ? 'Publishing…' : 'Publish Notice'}
-                </button>
-              </div>
-            </div>
-            </form>
-          </div>
+          <NoticePostForm
+            form={form}
+            setForm={setForm}
+            selectedAcademicYearId={selectedAcademicYearId}
+            selectedAcademicYear={selectedAcademicYear}
+            classOptions={classOptions}
+            sectionOptions={sectionOptions}
+            attachments={attachments}
+            setAttachments={setAttachments}
+            isUploading={isUploading}
+            uploadAttachment={uploadAttachment}
+            loading={loading}
+            onSubmit={submitNotice}
+            onReset={resetForm}
+          />
         ) : null}
 
         {isViewPage ? (
@@ -789,6 +645,12 @@ const NoticeManagement = ({ setShowAdminHeader, viewMode = 'view' }) => {
                                   <Calendar className="h-3 w-3" />
                                   {formatDate(notice.createdAt)}
                                 </span>
+                                {wasEditedAfterPosting(notice) && (
+                                  <span className="flex items-center gap-1" title={`Edited after posting — last updated ${formatDate(notice.updatedAt)}`}>
+                                    <Edit2 className="h-3 w-3" />
+                                    Updated {formatDate(notice.updatedAt)}
+                                  </span>
+                                )}
                                 <span className="flex items-center gap-1">
                                   <User className="h-3 w-3" />
                                   {creator}
@@ -808,7 +670,19 @@ const NoticeManagement = ({ setShowAdminHeader, viewMode = 'view' }) => {
                 {/* All notices */}
                 <div className="rounded-2xl border border-slate-200 bg-white shadow-sm overflow-hidden">
                   <div className="px-5 py-4 border-b border-slate-100 flex items-center justify-between gap-3">
-                    <h2 className="text-base font-semibold text-slate-900">All Notices</h2>
+                    <div className="flex items-center gap-3">
+                      {selectableIds.length > 0 && (
+                        <input
+                          type="checkbox"
+                          aria-label="Select all notices"
+                          checked={allSelected}
+                          ref={(el) => { if (el) el.indeterminate = someSelected; }}
+                          onChange={toggleSelectAll}
+                          className="h-4 w-4 cursor-pointer rounded border-slate-300 text-indigo-600 focus:ring-indigo-500"
+                        />
+                      )}
+                      <h2 className="text-base font-semibold text-slate-900">All Notices</h2>
+                    </div>
                     <div className="flex items-center gap-2">
                       <div className="relative">
                         <select
@@ -842,6 +716,37 @@ const NoticeManagement = ({ setShowAdminHeader, viewMode = 'view' }) => {
                     </div>
                   </div>
 
+                  {selectedCount > 0 && (
+                    <div className="flex flex-wrap items-center justify-between gap-2 border-b border-indigo-100 bg-indigo-50/70 px-5 py-2.5">
+                      <p className="text-sm text-indigo-900">
+                        <span className="font-semibold">{selectedCount}</span> selected
+                        {!allSelected && selectableIds.length > selectedCount && (
+                          <button type="button" onClick={toggleSelectAll} className="ml-2 text-xs font-semibold text-indigo-600 hover:underline">
+                            Select all {selectableIds.length}
+                          </button>
+                        )}
+                      </p>
+                      <div className="flex items-center gap-2">
+                        <button
+                          type="button"
+                          onClick={() => setSelectedIds(new Set())}
+                          className="rounded-lg px-3 py-1.5 text-xs font-semibold text-slate-600 hover:bg-white"
+                        >
+                          Clear
+                        </button>
+                        <button
+                          type="button"
+                          onClick={bulkDeleteNotices}
+                          disabled={bulkDeleting}
+                          className="inline-flex items-center gap-1.5 rounded-lg bg-red-600 px-3 py-1.5 text-xs font-semibold text-white hover:bg-red-700 disabled:opacity-60"
+                        >
+                          <Trash2 className="h-3.5 w-3.5" />
+                          {bulkDeleting ? 'Deleting…' : `Delete selected (${selectedCount})`}
+                        </button>
+                      </div>
+                    </div>
+                  )}
+
                   {sortedNotices.length === 0 ? (
                     <div className="flex flex-col items-center justify-center py-20 gap-3">
                       <div className="w-14 h-14 rounded-2xl bg-indigo-50 flex items-center justify-center">
@@ -867,8 +772,19 @@ const NoticeManagement = ({ setShowAdminHeader, viewMode = 'view' }) => {
                             tabIndex={0}
                             onClick={() => navigate(`/admin/notices/view/${notice._id}`)}
                             onKeyDown={(e) => { if (e.key === 'Enter') navigate(`/admin/notices/view/${notice._id}`); }}
-                            className="group flex items-center gap-4 px-5 py-4 hover:bg-slate-50/80 transition-colors cursor-pointer"
+                            className={`group flex items-center gap-4 px-5 py-4 transition-colors cursor-pointer ${selectedIds.has(String(notice._id)) ? 'bg-indigo-50/60' : 'hover:bg-slate-50/80'}`}
                           >
+                            {!isProtectedNotice(notice) ? (
+                              <input
+                                type="checkbox"
+                                aria-label={`Select ${notice.title}`}
+                                checked={selectedIds.has(String(notice._id))}
+                                onClick={(e) => e.stopPropagation()}
+                                onKeyDown={(e) => e.stopPropagation()}
+                                onChange={() => toggleSelected(notice._id)}
+                                className="h-4 w-4 shrink-0 cursor-pointer rounded border-slate-300 text-indigo-600 focus:ring-indigo-500"
+                              />
+                            ) : <span className="h-4 w-4 shrink-0" aria-hidden="true" />}
                             <div className={`w-10 h-10 rounded-xl flex items-center justify-center shrink-0 ${meta.iconBg}`}>
                               <Icon className={`h-5 w-5 ${meta.iconColor}`} />
                             </div>
@@ -885,6 +801,12 @@ const NoticeManagement = ({ setShowAdminHeader, viewMode = 'view' }) => {
                                 <Calendar className="h-3.5 w-3.5" />
                                 {formatDate(notice.createdAt)}
                               </span>
+                              {wasEditedAfterPosting(notice) && (
+                                <span className="flex items-center gap-1" title={`Edited after posting — last updated ${formatDate(notice.updatedAt)}`}>
+                                  <Edit2 className="h-3.5 w-3.5" />
+                                  Updated {formatDate(notice.updatedAt)}
+                                </span>
+                              )}
                               <span className="flex items-center gap-1">
                                 <User className="h-3.5 w-3.5" />
                                 {creator}
@@ -941,10 +863,21 @@ const NoticeManagement = ({ setShowAdminHeader, viewMode = 'view' }) => {
                             tabIndex={0}
                             onClick={() => navigate(`/admin/notices/view/${notice._id}`)}
                             onKeyDown={(e) => { if (e.key === 'Enter') navigate(`/admin/notices/view/${notice._id}`); }}
-                            className="group relative rounded-2xl border border-slate-200 bg-white p-4 hover:shadow-md transition cursor-pointer"
+                            className={`group relative rounded-2xl border bg-white p-4 hover:shadow-md transition cursor-pointer ${selectedIds.has(String(notice._id)) ? 'border-indigo-300 ring-2 ring-indigo-100' : 'border-slate-200'}`}
                           >
                             <div className="flex items-center justify-between gap-2 mb-3">
                               <div className="flex items-center gap-2">
+                                {!isProtectedNotice(notice) ? (
+                              <input
+                                type="checkbox"
+                                aria-label={`Select ${notice.title}`}
+                                checked={selectedIds.has(String(notice._id))}
+                                onClick={(e) => e.stopPropagation()}
+                                onKeyDown={(e) => e.stopPropagation()}
+                                onChange={() => toggleSelected(notice._id)}
+                                className="h-4 w-4 shrink-0 cursor-pointer rounded border-slate-300 text-indigo-600 focus:ring-indigo-500"
+                              />
+                            ) : <span className="h-4 w-4 shrink-0" aria-hidden="true" />}
                                 <span className={`w-8 h-8 rounded-lg flex items-center justify-center ${meta.iconBg}`}>
                                   <Icon className={`h-4 w-4 ${meta.iconColor}`} />
                                 </span>
@@ -981,6 +914,12 @@ const NoticeManagement = ({ setShowAdminHeader, viewMode = 'view' }) => {
                                   <Calendar className="h-3 w-3" />
                                   {formatDate(notice.createdAt)}
                                 </span>
+                                {wasEditedAfterPosting(notice) && (
+                                  <span className="flex items-center gap-1" title={`Edited after posting — last updated ${formatDate(notice.updatedAt)}`}>
+                                    <Edit2 className="h-3 w-3" />
+                                    Updated {formatDate(notice.updatedAt)}
+                                  </span>
+                                )}
                                 <span className="flex items-center gap-1">
                                   <User className="h-3 w-3" />
                                   {creator}
@@ -996,39 +935,71 @@ const NoticeManagement = ({ setShowAdminHeader, viewMode = 'view' }) => {
                     </div>
                   )}
 
-                  {/* Pagination */}
+                  {/* Pagination — compact window with ellipses so many pages never overflow */}
                   {sortedNotices.length > 0 && (
-                    <div className="flex items-center justify-center gap-1.5 px-5 py-4 border-t border-slate-100">
-                      <button
-                        type="button"
-                        onClick={() => setCurrentPage((p) => Math.max(1, p - 1))}
-                        disabled={currentPage === 1}
-                        className="p-2 rounded-lg border border-slate-200 text-slate-400 hover:bg-slate-50 disabled:opacity-40 disabled:cursor-not-allowed transition"
-                      >
-                        <ChevronLeft className="h-4 w-4" />
-                      </button>
-                      {Array.from({ length: totalPages }, (_, i) => i + 1).map((page) => (
-                        <button
-                          key={page}
-                          type="button"
-                          onClick={() => setCurrentPage(page)}
-                          className={`min-w-9 h-9 rounded-lg text-sm font-semibold transition ${
-                            page === currentPage
-                              ? 'bg-indigo-600 text-white shadow-sm'
-                              : 'text-slate-500 hover:bg-slate-50 border border-slate-200'
-                          }`}
-                        >
-                          {page}
-                        </button>
-                      ))}
-                      <button
-                        type="button"
-                        onClick={() => setCurrentPage((p) => Math.min(totalPages, p + 1))}
-                        disabled={currentPage === totalPages}
-                        className="p-2 rounded-lg border border-slate-200 text-slate-400 hover:bg-slate-50 disabled:opacity-40 disabled:cursor-not-allowed transition"
-                      >
-                        <ChevronRight className="h-4 w-4" />
-                      </button>
+                    <div className="flex flex-col items-center gap-3 border-t border-slate-100 px-4 py-3 sm:flex-row sm:justify-between sm:px-5">
+                      <p className="text-xs text-slate-500">
+                        Showing <span className="font-semibold text-slate-700">{(currentPage - 1) * NOTICE_PAGE_SIZE + 1}–{Math.min(currentPage * NOTICE_PAGE_SIZE, sortedNotices.length)}</span> of{' '}
+                        <span className="font-semibold text-slate-700">{sortedNotices.length}</span> notices
+                      </p>
+                      {totalPages > 1 && (
+                        <nav className="flex items-center gap-1" aria-label="Notice pages">
+                          {[
+                            { label: 'First page', icon: ChevronsLeft, to: 1, disabled: currentPage === 1, hideOnMobile: true },
+                            { label: 'Previous page', icon: ChevronLeft, to: currentPage - 1, disabled: currentPage === 1 },
+                          ].map(({ label, icon: Icon, to, disabled, hideOnMobile }) => (
+                            <button
+                              key={label}
+                              type="button"
+                              aria-label={label}
+                              onClick={() => setCurrentPage(to)}
+                              disabled={disabled}
+                              className={`${hideOnMobile ? 'hidden sm:inline-flex' : 'inline-flex'} h-8 w-8 items-center justify-center rounded-lg border border-slate-200 text-slate-500 transition hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-40`}
+                            >
+                              <Icon className="h-4 w-4" />
+                            </button>
+                          ))}
+
+                          <span className="px-2 text-xs font-semibold text-slate-600 sm:hidden">
+                            Page {currentPage} / {totalPages}
+                          </span>
+                          <div className="hidden items-center gap-1 sm:flex">
+                            {getPageWindow(currentPage, totalPages).map((item, i) => (item === '…' ? (
+                              <span key={`gap-${i}`} className="w-6 text-center text-sm text-slate-400">…</span>
+                            ) : (
+                              <button
+                                key={item}
+                                type="button"
+                                onClick={() => setCurrentPage(item)}
+                                aria-current={item === currentPage ? 'page' : undefined}
+                                className={`h-8 min-w-8 rounded-lg px-2 text-sm font-semibold transition ${
+                                  item === currentPage
+                                    ? 'bg-indigo-600 text-white shadow-sm'
+                                    : 'border border-slate-200 text-slate-600 hover:bg-slate-50'
+                                }`}
+                              >
+                                {item}
+                              </button>
+                            )))}
+                          </div>
+
+                          {[
+                            { label: 'Next page', icon: ChevronRight, to: currentPage + 1, disabled: currentPage === totalPages },
+                            { label: 'Last page', icon: ChevronsRight, to: totalPages, disabled: currentPage === totalPages, hideOnMobile: true },
+                          ].map(({ label, icon: Icon, to, disabled, hideOnMobile }) => (
+                            <button
+                              key={label}
+                              type="button"
+                              aria-label={label}
+                              onClick={() => setCurrentPage(to)}
+                              disabled={disabled}
+                              className={`${hideOnMobile ? 'hidden sm:inline-flex' : 'inline-flex'} h-8 w-8 items-center justify-center rounded-lg border border-slate-200 text-slate-500 transition hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-40`}
+                            >
+                              <Icon className="h-4 w-4" />
+                            </button>
+                          ))}
+                        </nav>
+                      )}
                     </div>
                   )}
                 </div>

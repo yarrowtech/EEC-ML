@@ -7,8 +7,10 @@ previous results are retrieved semantically so the LLM can personalise
 feedback and difficulty recommendations.
 """
 
+import asyncio
 import json
 import logging
+import time
 import uuid
 from typing import Any
 
@@ -71,6 +73,11 @@ async def _ensure_collection() -> None:
             field_name="mode",
             field_schema=PayloadSchemaType.KEYWORD,
         )
+        await client.create_payload_index(
+            collection_name=settings.qdrant_language_collection,
+            field_name="school_id",
+            field_schema=PayloadSchemaType.KEYWORD,
+        )
     except Exception:
         pass  # Indexes already exist
 
@@ -94,7 +101,7 @@ async def store_assessment(
             f"Content: {content[:500]}. "
             f"Metadata: {json.dumps(metadata)[:300]}"
         )
-        vectors = await embed_texts([embed_text])
+        vectors = await asyncio.to_thread(embed_texts, [embed_text])
         vector = vectors[0]
 
         point = PointStruct(
@@ -107,6 +114,7 @@ async def store_assessment(
                 "mode": mode,
                 "content_preview": content[:500],
                 "metadata": metadata,
+                "created_at": time.time(),
             },
         )
         await client.upsert(
@@ -121,6 +129,7 @@ async def store_assessment(
 
 async def retrieve_history(
     student_id: str,
+    school_id: str,
     mode: str,
     limit: int = 3,
 ) -> list[dict]:
@@ -130,19 +139,24 @@ async def retrieve_history(
         client = await _get_client()
 
         # Use scroll (not search) to get the student's recent results by filter
+        must_conditions = [
+            FieldCondition(key="student_id", match=MatchValue(value=student_id)),
+            FieldCondition(key="school_id", match=MatchValue(value=school_id)),
+            FieldCondition(key="mode", match=MatchValue(value=mode)),
+        ]
         results, _ = await client.scroll(
             collection_name=settings.qdrant_language_collection,
-            scroll_filter=Filter(
-                must=[
-                    FieldCondition(key="student_id", match=MatchValue(value=student_id)),
-                    FieldCondition(key="mode", match=MatchValue(value=mode)),
-                ]
-            ),
-            limit=limit,
+            scroll_filter=Filter(must=must_conditions),
+            limit=max(limit, 20),
             with_payload=True,
             with_vectors=False,
         )
 
+        ordered = sorted(
+            results,
+            key=lambda r: float((r.payload or {}).get("created_at", 0) or 0),
+            reverse=True,
+        )[:limit]
         return [
             {
                 "assessment_id": r.payload.get("assessment_id"),
@@ -150,7 +164,7 @@ async def retrieve_history(
                 "content_preview": r.payload.get("content_preview", ""),
                 "metadata": r.payload.get("metadata", {}),
             }
-            for r in results
+            for r in ordered
         ]
     except Exception as exc:
         logger.warning("Memory retrieve failed: %s", exc)

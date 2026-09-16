@@ -1,3 +1,12 @@
+"""Opt-in smoke test for locally running Ollama models.
+
+This module must stay safe to collect as part of the normal offline test suite.
+Run it explicitly with ``RUN_OLLAMA_CONNECTION_TESTS=1`` when Ollama is up.
+"""
+
+import os
+
+import pytest
 import ollama
 
 models = [
@@ -8,12 +17,14 @@ models = [
     
 ]
 
-for model in models:
-    print(f"Testing {model}...")
-    response = ollama.chat(
-        model=model,
-        messages=[{"role": "user", "content": "say hello in one word"}]
-    )
-    print(f"Response: {response['message']['content']}")
-    print("---")
-    print("Hello");
+@pytest.mark.skipif(
+    os.getenv("RUN_OLLAMA_CONNECTION_TESTS") != "1",
+    reason="live Ollama smoke tests are opt-in",
+)
+def test_ollama_models_are_reachable():
+    for model in models:
+        response = ollama.chat(
+            model=model,
+            messages=[{"role": "user", "content": "say hello in one word"}],
+        )
+        assert response["message"]["content"].strip()

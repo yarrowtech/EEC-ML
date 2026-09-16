@@ -36,13 +36,22 @@ import {
   RefreshCw,
   CalendarCheck,
   Activity,
+  Sparkles,
+  CircleUser,
+  ArrowLeftRight,
+  ArrowRight,
+  CheckCircle2,
+  Search,
 } from 'lucide-react';
 import { Button } from '../components/ui/button';
+import { useTenant } from '../context/TenantContext';
 
+import TeacherExamDutyList from './TeacherExamDutyList';
 import HealthUpdatesAdvanced from './HealthUpdatesAdvanced';
 import ParentMeetings from './ParentMeetings';
 import AssignmentPortal from './AssignmentPortal';
 import AttendanceManagement from './AttendanceManagement';
+import ClassAttendanceOverview from './ClassAttendanceOverview';
 import TeacherDashboard from './TeacherDashboard';
 import SmartTeachingLessonPlanner from './SmartTeachingLessonPlanner';
 import LessonPlannerWizard from './components/LessonPlannerWizard';
@@ -59,36 +68,41 @@ import ClassRoutine from './ClassRoutine';
 import StudentObservationOverview from './StudentObservationOverview';
 import ClassNotes from './ClassNotes';
 import PracticeQuestions from './PracticeQuestions';
+import PracticePapersPortal from './components/PracticePapersPortal';
 import LanguagePracticeManager from './LanguagePracticeManager';
 import TeacherFeedbackPortal from './TeacherFeedbackPortal';
 import ExcuseLetters from './ExcuseLetters';
 import ExamResultPortal from './ExamResultPortal';
+import LongAnswerAssessment from './LongAnswerAssessment';
 import LiveExamMonitor from './LiveExamMonitor';
 import HolidayList from './HolidayList';
 import TeacherAchievements from './TeacherAchievements';
 import TeacherAlcove from './TeacherAlcove';
 import TryoutManagement from '../components/TryoutManagement';
 import { useDesktopNotificationBridge } from '../hooks/useDesktopNotificationBridge';
+import useCommunityWallUnread, { subscribeSocketEvent } from '../hooks/useCommunityWallUnread';
+import usePortalChatNotifier from '../hooks/usePortalChatNotifier';
 import DesktopNotificationPermissionModal from '../components/DesktopNotificationPermissionModal';
 import NotificationPopover from '../components/NotificationPopover';
 import ExamRoutineTable from '../components/ExamRoutineTable';
-import { AUTH_NOTICE, apiFetch, logoutAndRedirect } from '../utils/authSession';
+import { AUTH_NOTICE, apiFetch, logoutAndRedirect, switchAccount } from '../utils/authSession';
 import { notificationId, readModuleSeenState, writeModuleSeenState } from '../utils/moduleNotificationUtils';
 
 const PORTAL_BASE = '/teacher';
 const API_BASE = (import.meta.env.VITE_API_URL || 'http://localhost:5000').replace(/\/$/, '');
-const MotionNavLink = Motion.create(NavLink);
 
 const portalNavigation = [
   { icon: Home, label: 'Dashboard', path: `${PORTAL_BASE}/dashboard` },
   { icon: Users, label: 'Classes & Work', path: `${PORTAL_BASE}/classes` },
   { icon: CalendarDays, label: 'Calendar', path: `${PORTAL_BASE}/calendar` },
   { icon: Clock, label: 'Timetable', path: `${PORTAL_BASE}/timetable` },
-  { icon: Bell, label: 'Notifications', path: `${PORTAL_BASE}/notifications` },
-  { icon: Library, label: 'Academic Alcove', path: `${PORTAL_BASE}/resource-library` },
+  // Notifications live in the header bell; no sidebar entry.
+  // { icon: Bell, label: 'Notifications', path: `${PORTAL_BASE}/notifications` },
+  { icon: ClipboardCheck, label: 'Exam Duty', path: `${PORTAL_BASE}/exam-duty` },
+  { icon: Library, label: 'Community Wall', path: `${PORTAL_BASE}/community-wall` },
   { icon: Brain, label: 'Lesson Plan', path: `${PORTAL_BASE}/lesson-plan` },
-  { icon: Brain, label: 'AI Tools', path: `${PORTAL_BASE}/ai-tools` },
-  { icon: Activity, label: 'Live Monitor', path: `${PORTAL_BASE}/live-monitor` },
+  //{ icon: Brain, label: 'AI Tools', path: `${PORTAL_BASE}/ai-tools` },
+  //{ icon: Activity, label: 'Live Monitor', path: `${PORTAL_BASE}/live-monitor` },
   { icon: CalendarCheck, label: 'PTM', path: `${PORTAL_BASE}/ptm` },
   { icon: MessageSquare, label: 'Chat', path: `${PORTAL_BASE}/classes/current/communication/chat` },
   { icon: ThumbsUp, label: 'Student Feedback', path: `${PORTAL_BASE}/classes/current/communication/feedback` },
@@ -100,8 +114,8 @@ const mobileNavigation = [
   { icon: Home, label: 'Dashboard', path: `${PORTAL_BASE}/dashboard` },
   { icon: Users, label: 'Classes', path: `${PORTAL_BASE}/classes` },
   { icon: Clock, label: 'Timetable', path: `${PORTAL_BASE}/timetable` },
-  { icon: MessageSquare, label: 'Chat', path: `${PORTAL_BASE}/classes/current/communication/chat` },
-  { icon: Menu, label: 'More', action: 'menu' },
+  { icon: Sparkles, label: 'AI Copilot', path: `${PORTAL_BASE}/lesson-plan` },
+  { icon: CircleUser, label: 'Profile', action: 'profile' },
 ];
 
 const studentsLinks = [
@@ -122,6 +136,7 @@ const teachingSectionLinks = [
   { label: 'Lesson Planner Wizard', to: 'lesson-planner-wizard' },
   { label: 'Class Notes', to: 'class-notes' },
   { label: 'Practice Questions', to: 'practice-questions' },
+  { label: 'Practice Papers', to: 'practice-papers' },
   { label: 'Language Practice', to: 'language-practice' },
   { label: 'Study Materials', to: 'study-materials' },
   { label: 'AI Teaching Assistant', to: 'ai-assistant' },
@@ -130,6 +145,7 @@ const teachingSectionLinks = [
 
 const assessmentSectionLinks = [
   { label: 'Exam', to: 'exam' },
+  { label: 'Long Answer', to: 'long-answer' },
 ];
 
 const communicationSectionLinks = [
@@ -189,10 +205,13 @@ const resolveTeacherNotificationPath = (notification) => {
   const message = String(notification?.message || '').toLowerCase();
   const type = String(notification?.type || notification?.typeLabel || '').toLowerCase();
   const blob = `${title} ${message} ${type}`;
+  if (String(notification?.typeLabel || '').toLowerCase().startsWith('excuse_letter')) return '/teacher/classes/current/communication/excuse-letters';
+  if (String(notification?.typeLabel || '').toLowerCase() === 'teacher_leave_reviewed') return '/teacher/settings?tab=leave';
   if (blob.includes('substitute') || blob.includes('attendance')) return '/teacher/attendance';
   if (blob.includes('assignment_submission') || blob.includes('new submission') || blob.includes('submitted')) return '/teacher/evaluation';
   if (blob.includes('assignment')) return '/teacher/assignments';
   const typeLabel = String(notification?.typeLabel || '').toLowerCase();
+  if (typeLabel.startsWith('feedback_')) return '/teacher/feedback';
   if (
     typeLabel === 'exam_schedule_teacher'
     || typeLabel === 'exam_routine_published_teacher'
@@ -206,7 +225,7 @@ const resolveTeacherNotificationPath = (notification) => {
   if (blob.includes('result') || blob.includes('exam')) return '/teacher/result-management';
   if (blob.includes('meeting') || blob.includes('parent')) return '/teacher/parent-meetings';
   if (blob.includes('feedback')) return '/teacher/feedback';
-  if (blob.includes('wall') || blob.includes('alcove') || blob.includes('problem library')) return '/teacher/academic-alcove';
+  if (blob.includes('wall') || blob.includes('alcove') || blob.includes('problem library')) return '/teacher/community-wall';
   if (blob.includes('chat') || blob.includes('message')) return '/teacher/chat';
   if (blob.includes('health') || blob.includes('wellbeing')) return '/teacher/health-updates';
   return '/teacher/dashboard';
@@ -334,7 +353,7 @@ const teacherNotificationModuleKeyForPath = (path) => {
   if (value.includes('/teaching/')) return 'lesson-plan';
   if (value.includes('calendar')) return 'timetable';
   if (value.includes('timetable')) return 'timetable';
-  if (value.includes('resource-library')) return 'resource-library';
+  if (value.includes('community-wall') || value.includes('resource-library')) return 'resource-library';
   if (value.includes('lesson-plan')) return 'lesson-plan';
   if (value.includes('ai-tools')) return 'ai-tools';
   if (value.includes('live-monitor')) return 'live-monitor';
@@ -395,23 +414,25 @@ const notificationToneClasses = {
 // Cache the last-fetched list per browser tab so the page can paint instantly
 // on revisit instead of showing a blank "Loading…" state while the network
 // round trip is still in flight — the fetch below still runs and replaces it.
-const TEACHER_NOTIFICATIONS_CACHE_KEY = 'teacher_notifications_cache_v1';
-const readCachedNotifications = () => {
+const TEACHER_NOTIFICATIONS_CACHE_KEY = 'teacher_notifications_cache_v2';
+const readCachedNotifications = (view = 'notification') => {
   try {
-    const raw = sessionStorage.getItem(TEACHER_NOTIFICATIONS_CACHE_KEY);
+    const raw = sessionStorage.getItem(`${TEACHER_NOTIFICATIONS_CACHE_KEY}:${view}`);
     const parsed = raw ? JSON.parse(raw) : null;
     return Array.isArray(parsed) ? parsed : null;
   } catch { return null; }
 };
-const writeCachedNotifications = (list) => {
-  try { sessionStorage.setItem(TEACHER_NOTIFICATIONS_CACHE_KEY, JSON.stringify(list)); } catch { /* ignore */ }
+const writeCachedNotifications = (list, view = 'notification') => {
+  try { sessionStorage.setItem(`${TEACHER_NOTIFICATIONS_CACHE_KEY}:${view}`, JSON.stringify(list)); } catch { /* ignore */ }
 };
 
 const NOTIFICATIONS_PAGE_SIZE = 10;
 
 const TeacherNotifications = () => {
   const navigate = useNavigate();
-  const cached = useMemo(() => readCachedNotifications(), []);
+  // 'notification' = event alerts (duty, results…); 'notice' = official school notices.
+  const [view, setView] = useState('notification');
+  const cached = useMemo(() => readCachedNotifications(view), [view]);
   const [notifications, setNotifications] = useState(cached || []);
   const [filter, setFilter] = useState('all');
   const [page, setPage] = useState(1);
@@ -429,7 +450,7 @@ const TeacherNotifications = () => {
         setNotifications([]);
         return;
       }
-      const response = await apiFetch(`${API_BASE}/api/notifications/user`, {
+      const response = await apiFetch(`${API_BASE}/api/notifications/user?kind=${view}`, {
         cache: 'no-store',
         headers: { 'Content-Type': 'application/json', authorization: `Bearer ${token}` },
       }, navigate);
@@ -438,22 +459,24 @@ const TeacherNotifications = () => {
       if (!response.ok) throw new Error(data?.error || 'Unable to load notifications');
       const list = Array.isArray(data) ? data : [];
       setNotifications(list);
-      writeCachedNotifications(list);
+      writeCachedNotifications(list, view);
     } catch (err) {
       setError(err.message || 'Unable to load notifications');
     } finally {
       setLoading(false);
       setRefreshing(false);
     }
-  }, [navigate]);
+  }, [navigate, view]);
 
   useEffect(() => {
+    setNotifications(cached || []);
+    setLoading(!cached);
     loadNotifications({ silent: Boolean(cached) });
     const poll = setInterval(() => loadNotifications({ silent: true }), 30_000);
     return () => clearInterval(poll);
   }, [loadNotifications]);
 
-  useEffect(() => { setPage(1); }, [filter]);
+  useEffect(() => { setPage(1); }, [filter, view]);
 
   const markRead = useCallback(async (id) => {
     if (!id) return;
@@ -477,7 +500,7 @@ const TeacherNotifications = () => {
     const token = localStorage.getItem('token');
     setNotifications((previous) => previous.map((item) => ({ ...item, isRead: true })));
     try {
-      const response = await apiFetch(`${API_BASE}/api/notifications/user/read-all`, {
+      const response = await apiFetch(`${API_BASE}/api/notifications/user/read-all?kind=${view}`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json', authorization: `Bearer ${token}` },
       }, navigate);
@@ -508,8 +531,10 @@ const TeacherNotifications = () => {
           <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
             <div>
               <p className="text-xs font-semibold uppercase tracking-[0.18em] text-indigo-600">Teacher Portal</p>
-              <h1 className="mt-2 text-2xl font-semibold text-slate-950">Notifications</h1>
-              <p className="mt-2 max-w-2xl text-sm text-slate-500">Keep track of announcements, class updates, meetings and action items in one place.</p>
+              <h1 className="mt-2 text-2xl font-semibold text-slate-950">{view === 'notice' ? 'Notices' : 'Notifications'}</h1>
+              <p className="mt-2 max-w-2xl text-sm text-slate-500">{view === 'notice'
+                ? 'Official school notices — announcements, exam schedules, holidays and circulars.'
+                : 'Alerts that need your attention — exam duty, class updates and action items.'}</p>
             </div>
             <button type="button" onClick={() => loadNotifications({ silent: true })} disabled={refreshing} className="inline-flex items-center justify-center gap-2 rounded-xl border border-slate-200 px-3 py-2 text-xs font-semibold text-slate-700 transition hover:border-indigo-200 hover:bg-indigo-50 disabled:cursor-not-allowed disabled:opacity-60">
               <RefreshCw size={15} className={refreshing ? 'animate-spin' : ''} />
@@ -524,12 +549,21 @@ const TeacherNotifications = () => {
         </section>
 
         <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-          <div className="inline-flex w-fit rounded-xl border border-slate-200 bg-white p-1">
-            {['all', 'unread', 'read'].map((value) => (
-              <button key={value} type="button" onClick={() => setFilter(value)} className={`rounded-lg px-3 py-1.5 text-xs font-semibold capitalize transition ${filter === value ? 'bg-slate-950 text-white' : 'text-slate-500 hover:text-slate-900'}`}>
-                {value} {value === 'unread' ? `(${unreadCount})` : ''}
-              </button>
-            ))}
+          <div className="flex flex-wrap items-center gap-2">
+            <div className="inline-flex w-fit rounded-xl border border-indigo-200 bg-indigo-50 p-1">
+              {[['notification', 'Notifications'], ['notice', 'Notices']].map(([value, label]) => (
+                <button key={value} type="button" onClick={() => setView(value)} className={`rounded-lg px-3 py-1.5 text-xs font-semibold transition ${view === value ? 'bg-indigo-600 text-white' : 'text-indigo-700 hover:text-indigo-900'}`}>
+                  {label}
+                </button>
+              ))}
+            </div>
+            <div className="inline-flex w-fit rounded-xl border border-slate-200 bg-white p-1">
+              {['all', 'unread', 'read'].map((value) => (
+                <button key={value} type="button" onClick={() => setFilter(value)} className={`rounded-lg px-3 py-1.5 text-xs font-semibold capitalize transition ${filter === value ? 'bg-slate-950 text-white' : 'text-slate-500 hover:text-slate-900'}`}>
+                  {value} {value === 'unread' ? `(${unreadCount})` : ''}
+                </button>
+              ))}
+            </div>
           </div>
           {unreadCount > 0 && <button type="button" onClick={markAllRead} className="inline-flex items-center gap-2 text-xs font-semibold text-indigo-700 hover:text-indigo-900"><CheckCheck size={15} /> Mark all as read</button>}
         </div>
@@ -545,63 +579,63 @@ const TeacherNotifications = () => {
           </div>
         ) : (
           <>
-          <div className="space-y-3">
-            {pagedNotifications.map((notification) => {
-              const id = String(notification?._id || notification?.id || notification?.title || 'notification');
-              const meta = notificationTypeMeta(notification);
-              const Icon = meta.icon;
-              const isRead = Boolean(notification?.isRead);
-              // The "Exam Scheduled" heads-up has no detail page of its own
-              // (just a class-list summary) — offering "Open related page"
-              // for it only ever lands on a generic screen, so skip it.
-              const hasRelatedPage = String(notification?.typeLabel || '') !== 'exam_scheduled_teacher';
-              return (
-                <article key={id} className={`rounded-2xl border bg-white p-4 shadow-sm transition hover:shadow-md sm:p-5 ${isRead ? 'border-slate-200' : 'border-indigo-200 ring-1 ring-indigo-50'}`}>
-                  <div className="flex items-start gap-3">
-                    <div className={`flex h-10 w-10 shrink-0 items-center justify-center rounded-xl ${notificationToneClasses[meta.tone]}`}><Icon size={19} /></div>
-                    <div className="min-w-0 flex-1">
-                      <div className="flex flex-wrap items-center gap-2">
-                        <span className={`rounded-full px-2 py-0.5 text-[10px] font-bold uppercase tracking-wide ${notificationToneClasses[meta.tone]}`}>{meta.label}</span>
-                        {!isRead && <span className="rounded-full bg-indigo-100 px-2 py-0.5 text-[10px] font-bold text-indigo-700">Unread</span>}
-                        {notification?.priority && notification.priority !== 'medium' && <span className="text-[10px] font-semibold capitalize text-slate-400">{notification.priority} priority</span>}
-                      </div>
-                      <h2 className="mt-2 text-base font-semibold text-slate-950">{notification?.title || 'Notification'}</h2>
-                      <p className="mt-1 text-sm leading-6 text-slate-600">{notification?.message || 'There is an update waiting for you.'}</p>
-                      <div className="mt-3 flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-slate-400">
-                        <span>{notificationTimeLabel(notification?.createdAt)}</span>
-                        {notification?.createdByName && <span>From {notification.createdByName}</span>}
-                        {(notification?.className || notification?.sectionName) && <span>{[notification.className, notification.sectionName].filter(Boolean).join(' · ')}</span>}
+            <div className="space-y-3">
+              {pagedNotifications.map((notification) => {
+                const id = String(notification?._id || notification?.id || notification?.title || 'notification');
+                const meta = notificationTypeMeta(notification);
+                const Icon = meta.icon;
+                const isRead = Boolean(notification?.isRead);
+                // The "Exam Scheduled" heads-up has no detail page of its own
+                // (just a class-list summary) — offering "Open related page"
+                // for it only ever lands on a generic screen, so skip it.
+                const hasRelatedPage = String(notification?.typeLabel || '') !== 'exam_scheduled_teacher';
+                return (
+                  <article key={id} className={`rounded-2xl border bg-white p-4 shadow-sm transition hover:shadow-md sm:p-5 ${isRead ? 'border-slate-200' : 'border-indigo-200 ring-1 ring-indigo-50'}`}>
+                    <div className="flex items-start gap-3">
+                      <div className={`flex h-10 w-10 shrink-0 items-center justify-center rounded-xl ${notificationToneClasses[meta.tone]}`}><Icon size={19} /></div>
+                      <div className="min-w-0 flex-1">
+                        <div className="flex flex-wrap items-center gap-2">
+                          <span className={`rounded-full px-2 py-0.5 text-[10px] font-bold uppercase tracking-wide ${notificationToneClasses[meta.tone]}`}>{meta.label}</span>
+                          {!isRead && <span className="rounded-full bg-indigo-100 px-2 py-0.5 text-[10px] font-bold text-indigo-700">Unread</span>}
+                          {notification?.priority && notification.priority !== 'medium' && <span className="text-[10px] font-semibold capitalize text-slate-400">{notification.priority} priority</span>}
+                        </div>
+                        <h2 className="mt-2 text-base font-semibold text-slate-950">{notification?.title || 'Notification'}</h2>
+                        <p className="mt-1 text-sm leading-6 text-slate-600">{notification?.message || 'There is an update waiting for you.'}</p>
+                        <div className="mt-3 flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-slate-400">
+                          <span>{notificationTimeLabel(notification?.createdAt)}</span>
+                          {notification?.createdByName && <span>From {notification.createdByName}</span>}
+                          {(notification?.className || notification?.sectionName) && <span>{[notification.className, notification.sectionName].filter(Boolean).join(' · ')}</span>}
+                        </div>
                       </div>
                     </div>
-                  </div>
-                  {(!isRead || hasRelatedPage) && (
-                    <div className="mt-4 flex flex-wrap justify-end gap-2 border-t border-slate-100 pt-3">
-                      {!isRead && <button type="button" onClick={() => markRead(id)} className="rounded-lg border border-slate-200 px-3 py-1.5 text-xs font-semibold text-slate-600 hover:bg-slate-50">Mark as read</button>}
-                      {hasRelatedPage && (
-                        <button type="button" onClick={async () => { await markRead(id); navigate(resolveTeacherNotificationPath(notification)); }} className="rounded-lg bg-slate-950 px-3 py-1.5 text-xs font-semibold text-white hover:bg-slate-800">Open related page</button>
-                      )}
-                    </div>
-                  )}
-                </article>
-              );
-            })}
-          </div>
-
-          {totalPages > 1 && (
-            <div className="flex items-center justify-between gap-3 rounded-2xl border border-slate-200 bg-white px-4 py-3">
-              <p className="text-xs text-slate-500">Page {currentPage} of {totalPages} · {filteredNotifications.length} notification{filteredNotifications.length !== 1 ? 's' : ''}</p>
-              <div className="flex items-center gap-2">
-                <button type="button" onClick={() => setPage((p) => Math.max(1, p - 1))} disabled={currentPage <= 1}
-                  className="rounded-lg border border-slate-200 px-3 py-1.5 text-xs font-semibold text-slate-600 hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-40">
-                  Previous
-                </button>
-                <button type="button" onClick={() => setPage((p) => Math.min(totalPages, p + 1))} disabled={currentPage >= totalPages}
-                  className="rounded-lg border border-slate-200 px-3 py-1.5 text-xs font-semibold text-slate-600 hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-40">
-                  Next
-                </button>
-              </div>
+                    {(!isRead || hasRelatedPage) && (
+                      <div className="mt-4 flex flex-wrap justify-end gap-2 border-t border-slate-100 pt-3">
+                        {!isRead && <button type="button" onClick={() => markRead(id)} className="rounded-lg border border-slate-200 px-3 py-1.5 text-xs font-semibold text-slate-600 hover:bg-slate-50">Mark as read</button>}
+                        {hasRelatedPage && (
+                          <button type="button" onClick={async () => { await markRead(id); navigate(resolveTeacherNotificationPath(notification)); }} className="rounded-lg bg-slate-950 px-3 py-1.5 text-xs font-semibold text-white hover:bg-slate-800">Open related page</button>
+                        )}
+                      </div>
+                    )}
+                  </article>
+                );
+              })}
             </div>
-          )}
+
+            {totalPages > 1 && (
+              <div className="flex items-center justify-between gap-3 rounded-2xl border border-slate-200 bg-white px-4 py-3">
+                <p className="text-xs text-slate-500">Page {currentPage} of {totalPages} · {filteredNotifications.length} notification{filteredNotifications.length !== 1 ? 's' : ''}</p>
+                <div className="flex items-center gap-2">
+                  <button type="button" onClick={() => setPage((p) => Math.max(1, p - 1))} disabled={currentPage <= 1}
+                    className="rounded-lg border border-slate-200 px-3 py-1.5 text-xs font-semibold text-slate-600 hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-40">
+                    Previous
+                  </button>
+                  <button type="button" onClick={() => setPage((p) => Math.min(totalPages, p + 1))} disabled={currentPage >= totalPages}
+                    className="rounded-lg border border-slate-200 px-3 py-1.5 text-xs font-semibold text-slate-600 hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-40">
+                    Next
+                  </button>
+                </div>
+              </div>
+            )}
           </>
         )}
       </div>
@@ -627,22 +661,31 @@ const teacherDutyTo12Hour = (value) => {
 // carry the same slot more than once, e.g. one row per class/section sharing
 // a subject+date+time+room — collapse those here too so the table only ever
 // shows a duty slot once, regardless of when the notice was created.
-const teacherDutyRowKey = (row) => [row?.date, row?.subject, row?.time, row?.duration, row?.building, row?.floor, row?.room].join('|');
+// One invigilation slot = same date + time + duration + building + floor +
+// room. Several classes often sit different papers together in one room (a
+// combined sitting) — the teacher invigilates that room once, so the slot is
+// shown once, listing every subject in it ("English, Drawing").
+const teacherDutyRowKey = (row) => [row?.date, row?.time, row?.duration, row?.building, row?.floor, row?.room].join('|');
 
 const teacherDutyRows = (examRoutine = []) => {
-  const seen = new Set();
-  return (Array.isArray(examRoutine) ? examRoutine : [])
-    .filter((row) => {
-      const key = teacherDutyRowKey(row);
-      if (seen.has(key)) return false;
-      seen.add(key);
-      return true;
-    })
+  const slots = new Map();
+  (Array.isArray(examRoutine) ? examRoutine : []).forEach((row) => {
+    const key = teacherDutyRowKey(row);
+    const subject = String(row?.subject || '').trim();
+    if (!slots.has(key)) {
+      slots.set(key, { ...row, subjects: subject ? [subject] : [] });
+    } else if (subject && !slots.get(key).subjects.includes(subject)) {
+      slots.get(key).subjects.push(subject);
+    }
+  });
+  // Sort on the raw 24h time before it's turned into "h:mm AM/PM".
+  return [...slots.values()]
+    .sort((a, b) => new Date(a?.date || 0) - new Date(b?.date || 0) || String(a?.time || '').localeCompare(String(b?.time || '')))
     .map((row) => ({
       ...row,
+      subject: row.subjects.join(', ') || row.subject || '',
       time: teacherDutyTo12Hour(row?.time),
-    }))
-    .sort((a, b) => new Date(a?.date || 0) - new Date(b?.date || 0));
+    }));
 };
 
 // One notification per exam group ("Exam Duty Assigned: <group title>") — its
@@ -652,6 +695,7 @@ const TeacherExamDuty = () => {
   const navigate = useNavigate();
   const { notificationId } = useParams();
   const [notification, setNotification] = useState(null);
+  const [liveExams, setLiveExams] = useState(null); // null = not loaded / unavailable
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
 
@@ -662,10 +706,16 @@ const TeacherExamDuty = () => {
       setError('');
       try {
         const token = localStorage.getItem('token');
-        const response = await apiFetch(`${API_BASE}/api/notifications/user`, {
-          cache: 'no-store',
-          headers: { 'Content-Type': 'application/json', authorization: `Bearer ${token}` },
-        }, navigate);
+        const headers = { 'Content-Type': 'application/json', authorization: `Bearer ${token}` };
+        // The notice's stored rows can be stale (older publishes, older
+        // recipient rules). The live invigilation data — same source as
+        // "My Exam Duty" — is the source of truth; stored rows are a fallback.
+        const [response, liveResponse] = await Promise.all([
+          apiFetch(`${API_BASE}/api/notifications/user`, { cache: 'no-store', headers }, navigate),
+          apiFetch(`${API_BASE}/api/exam/teacher/routine`, { cache: 'no-store', headers }, navigate).catch(() => null),
+        ]);
+        const live = liveResponse?.ok ? await liveResponse.json().catch(() => null) : null;
+        if (!cancelled) setLiveExams(Array.isArray(live) ? live : null);
         const data = await response.json().catch(() => []);
         if (!response.ok) throw new Error(data?.error || 'Unable to load exam duty');
         const list = Array.isArray(data) ? data : [];
@@ -684,7 +734,31 @@ const TeacherExamDuty = () => {
     return () => { cancelled = true; };
   }, [notificationId, navigate]);
 
-  const rows = useMemo(() => teacherDutyRows(notification?.examRoutine), [notification]);
+  // "Exam Duty Assigned: Class Test 2" / "Exam Duty Changed: Class Test 2" → "Class Test 2".
+  const examTitle = String(notification?.title || '').replace(/^[^:]*:\s*/, '').trim();
+  const rows = useMemo(() => {
+    if (Array.isArray(liveExams) && examTitle) {
+      const mine = liveExams.filter((e) => String(e.groupId?.title || e.title || '').trim().toLowerCase() === examTitle.toLowerCase());
+      return teacherDutyRows(mine.map((e) => ({
+        subject: e.subjectId?.name || e.subject || '',
+        date: e.date ? String(e.date).slice(0, 10) : '',
+        // Weekday from the exam date, e.g. "Monday".
+        day: e.date && !Number.isNaN(new Date(e.date).getTime())
+          ? new Date(e.date).toLocaleDateString('en-US', { weekday: 'long' })
+          : '',
+        time: e.time || '',
+        duration: e.duration ?? null,
+        building: e.roomId?.floorId?.buildingId?.name || '',
+        floor: e.roomId?.floorId?.name || '',
+        room: e.roomId?.roomNumber || '',
+        venue: e.venue || '',
+      })));
+    }
+    return teacherDutyRows(notification?.examRoutine);
+  }, [notification, liveExams, examTitle]);
+  const dutyMessage = examTitle && Array.isArray(liveExams)
+    ? `You have ${rows.length} invigilation dut${rows.length === 1 ? 'y' : 'ies'} in ${examTitle}.`
+    : notification?.message;
 
   return (
     <div className="min-h-full bg-slate-50 p-3 sm:p-5 lg:p-6">
@@ -703,7 +777,7 @@ const TeacherExamDuty = () => {
             {notification?.typeLabel === 'exam_routine_published_teacher' ? 'Exam Routine' : 'Exam Duty'}
           </p>
           <h1 className="mt-2 text-2xl font-semibold text-slate-950">{notification?.title || 'Exam Duty'}</h1>
-          {notification?.message && <p className="mt-2 max-w-2xl text-sm text-slate-500">{notification.message}</p>}
+          {dutyMessage && <p className="mt-2 max-w-2xl text-sm text-slate-500">{dutyMessage}</p>}
         </section>
 
         {loading ? (
@@ -728,63 +802,50 @@ const PlaceholderModule = ({ icon = FileText, title, description, actions = [], 
   const ModuleIcon = icon;
 
   return (
-  <div className="rounded-2xl border border-slate-200 bg-white p-5">
-    <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
-      <div className="flex items-start gap-3">
-        <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-slate-100 text-slate-700">
-          <ModuleIcon size={20} />
+    <div className="rounded-2xl border border-slate-200 bg-white p-5">
+      <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
+        <div className="flex items-start gap-3">
+          <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-slate-100 text-slate-700">
+            <ModuleIcon size={20} />
+          </div>
+          <div>
+            <h2 className="text-base font-semibold text-slate-950">{title}</h2>
+            <p className="mt-1 max-w-2xl text-sm text-slate-500">{description}</p>
+          </div>
         </div>
-        <div>
-          <h2 className="text-base font-semibold text-slate-950">{title}</h2>
-          <p className="mt-1 max-w-2xl text-sm text-slate-500">{description}</p>
-        </div>
+        {actions.length > 0 && (
+          <div className="flex flex-wrap gap-2">
+            {actions.map((action) => (
+              <NavLink
+                key={action.to}
+                to={action.to}
+                className="inline-flex items-center gap-2 rounded-lg border border-slate-200 px-3 py-2 text-xs font-semibold text-slate-700 hover:border-indigo-300 hover:bg-indigo-50 hover:text-indigo-700"
+              >
+                {action.label}
+                {getTeacherModuleNotificationCount(notifications, teacherNotificationModuleKeyForLabel(action.label), seenState) > 0 && (
+                  <span className="flex min-h-5 min-w-5 items-center justify-center rounded-full bg-red-500 px-1.5 text-[10px] font-bold leading-none text-white">
+                    {getTeacherModuleNotificationCount(notifications, teacherNotificationModuleKeyForLabel(action.label), seenState) > 99 ? '99+' : getTeacherModuleNotificationCount(notifications, teacherNotificationModuleKeyForLabel(action.label), seenState)}
+                  </span>
+                )}
+              </NavLink>
+            ))}
+          </div>
+        )}
       </div>
-      {actions.length > 0 && (
-        <div className="flex flex-wrap gap-2">
-          {actions.map((action) => (
-            <NavLink
-              key={action.to}
-              to={action.to}
-              className="inline-flex items-center gap-2 rounded-lg border border-slate-200 px-3 py-2 text-xs font-semibold text-slate-700 hover:border-indigo-300 hover:bg-indigo-50 hover:text-indigo-700"
-            >
-              {action.label}
-              {getTeacherModuleNotificationCount(notifications, teacherNotificationModuleKeyForLabel(action.label), seenState) > 0 && (
-                <span className="flex min-h-5 min-w-5 items-center justify-center rounded-full bg-red-500 px-1.5 text-[10px] font-bold leading-none text-white">
-                  {getTeacherModuleNotificationCount(notifications, teacherNotificationModuleKeyForLabel(action.label), seenState) > 99 ? '99+' : getTeacherModuleNotificationCount(notifications, teacherNotificationModuleKeyForLabel(action.label), seenState)}
-                </span>
-              )}
-            </NavLink>
-          ))}
-        </div>
-      )}
     </div>
-  </div>
   );
-};
-
-const GLASS_CARD = {
-  background: 'rgba(255, 255, 255, 0.35)',
-  backdropFilter: 'blur(18px) saturate(180%)',
-  WebkitBackdropFilter: 'blur(18px) saturate(180%)',
-  boxShadow: '0 20px 40px -12px rgba(100, 120, 200, 0.15), 0 8px 24px -6px rgba(80, 100, 180, 0.06), inset 0 1px 2px rgba(255, 255, 255, 0.5)',
-  border: '1px solid #D7DCFF',
-};
-
-const GLASS_CONTROL = {
-  background: 'rgba(255, 255, 255, 0.20)',
-  backdropFilter: 'blur(4px)',
-  WebkitBackdropFilter: 'blur(4px)',
 };
 
 const ClassesHub = () => {
   const navigate = useNavigate();
+  const { logo: schoolLogo, name: schoolName } = useTenant();
+  const [logoBroken, setLogoBroken] = useState(false);
   const [allocations, setAllocations] = useState([]);
   const [loading, setLoading] = useState(true);
   const [selectedClass, setSelectedClass] = useState('');
   const [selectedSection, setSelectedSection] = useState('');
   const [selectedSubject, setSelectedSubject] = useState('');
   const [allocationError, setAllocationError] = useState('');
-
   useEffect(() => {
     (async () => {
       setLoading(true);
@@ -893,123 +954,106 @@ const ClassesHub = () => {
     });
   };
 
-  const SelectField = ({ id, label, value, onChange, options }) => (
-    <div >
-      <label
-        htmlFor={id}
-        className="mb-2 block text-[0.75rem] font-medium uppercase tracking-[0.04em] text-[#5363F5]/80"
-      >
-        {label}
+  const fields = [
+    { id: 'classSelect', label: 'Class', icon: GraduationCap, iconCls: 'text-slate-500', value: selectedClass, onChange: setSelectedClass, options: classNames, ring: 'focus:border-blue-300 focus:ring-blue-100' },
+    { id: 'sectionSelect', label: 'Section', icon: Users, iconCls: 'text-slate-500', value: selectedSection, onChange: setSelectedSection, options: sections, ring: 'focus:border-blue-300 focus:ring-blue-100' },
+    { id: 'subjectSelect', label: 'Subject', icon: BookOpen, iconCls: 'text-violet-500', value: selectedSubject, onChange: setSelectedSubject, options: subjects, ring: 'border-violet-200 focus:border-violet-300 focus:ring-violet-100' },
+  ];
+
+  const renderField = (f, wide = false) => (
+    <div key={f.id} className={`rounded-2xl border border-white/80 bg-white/80 p-3 ${wide ? 'col-span-2' : ''}`}>
+      <label htmlFor={f.id} className="mb-2 flex items-center gap-2 text-[13px] font-medium text-slate-600">
+        <f.icon size={15} className={f.iconCls} /> {f.label}
       </label>
       <div className="relative">
         <select
-          id={id}
-          value={value}
-          onChange={(e) => onChange(e.target.value)}
-          className="w-full cursor-pointer appearance-none rounded-[60px] border border-[#D7DCFF] px-5 py-3 pr-10 text-base font-medium text-[#5363F5] transition-all duration-200 hover:border-[#C4CDFF] focus:border-[#B8C2F5] focus:outline-none focus:ring-2 focus:ring-[#B8C2F5]/40"
-          style={GLASS_CONTROL}
+          id={f.id}
+          value={f.value}
+          onChange={(e) => f.onChange(e.target.value)}
+          className={`w-full cursor-pointer appearance-none rounded-full border border-slate-200 bg-white px-3.5 py-2 pr-9 text-sm font-semibold text-slate-900 shadow-sm transition focus:outline-none focus:ring-4 ${f.ring}`}
         >
-          {options.map((o) => (
-            <option key={o} value={o} style={{ background: 'rgba(255,255,255,0.95)', color: '#0b1a2b' }}>
-              {o}
-            </option>
-          ))}
-          {options.length === 0 && (
-            <option value="" style={{ background: 'rgba(255,255,255,0.95)', color: '#0b1a2b' }}>
-              —
-            </option>
-          )}
+          {f.options.map((o) => <option key={o} value={o}>{o}</option>)}
+          {f.options.length === 0 && <option value="">—</option>}
         </select>
-        <span className="pointer-events-none absolute right-4 top-1/2 -translate-y-1/2 text-[1.1rem] text-[#5363F5]/70">
-          ⌄
-        </span>
+        <ChevronDown size={15} className="pointer-events-none absolute right-3 top-1/2 -translate-y-1/2 text-slate-500" />
       </div>
     </div>
   );
 
+  // Full-bleed screen: soft light background with a white frosted edge vignette, card centred, never scrolls.
+  const shell = (children) => (
+    <div className="relative flex h-full min-h-0 items-center justify-center overflow-hidden p-4">
+      <div aria-hidden="true" className="absolute inset-0 bg-gradient-to-br from-blue-100 via-slate-50 to-indigo-100" />
+      <div className="relative w-full max-w-[520px]">{children}</div>
+    </div>
+  );
+
   if (!loading && allocations.length === 0) {
-    return (
-      <div className="flex min-h-full items-center justify-center bg-white p-6 ">
-        <div className="w-full max-w-[520px] rounded-[40px] p-11 text-center" style={GLASS_CARD}>
-          <p className="text-sm text-[#2c405e]">{allocationError || 'No class allocations found. Contact your administrator.'}</p>
-        </div>
-      </div>
+    return shell(
+      <div className="rounded-3xl border border-white/70 bg-white/90 p-8 text-center shadow-2xl backdrop-blur-xl">
+        <p className="text-sm text-slate-600">{allocationError || 'No class allocations found. Contact your administrator.'}</p>
+      </div>,
     );
   }
 
-  return (
-    <div className="flex min-h-full items-center justify-center bg-white rounded-[35px] p-6">
-      <div
-        className="flex w-full max-w-[760px] flex-col rounded-[35px] border border-[#D7DCFF] bg-white/35 transition-colors hover:border-[#C4CDFF]"
-        style={{ ...GLASS_CARD, padding: '3.5rem 4rem 4rem' }}
-      >
-        {/* Title */}
-          <h1
-          className="mb-8 self-center rounded-[60px] px-6 py-1.5 text-center text-[1.6rem] font-semibold tracking-[-0.02em] text-[#5363F5]"
-          style={{ background: 'rgba(255,255,255,0.20)', border: '1px solid #D7DCFF', backdropFilter: 'blur(4px)' }}
-        >
-          Select Class
-        </h1>
+  const chips = [
+    selectedClass && { key: 'c', icon: GraduationCap, text: `Class ${selectedClass}`, cls: 'border-blue-200 bg-blue-50 text-slate-800', iconCls: 'text-blue-600' },
+    selectedSection && { key: 's', icon: Users, text: `Section ${selectedSection}`, cls: 'border-emerald-200 bg-emerald-50 text-slate-800', iconCls: 'text-emerald-600' },
+    selectedSubject && { key: 'j', icon: BookOpen, text: selectedSubject, cls: 'border-violet-200 bg-violet-50 text-slate-800', iconCls: 'text-violet-600' },
+  ].filter(Boolean);
 
-        {/* Class + Section */}
-        <div className="mb-6 grid grid-cols-2 gap-4">
-          <SelectField
-            id="classSelect"
-            label="Class"
-            value={selectedClass}
-            onChange={setSelectedClass}
-            options={classNames}
-          />
-          <SelectField
-            id="sectionSelect"
-            label="Section"
-            value={selectedSection}
-            onChange={setSelectedSection}
-            options={sections}
-          />
+  return shell(
+    <Motion.div
+      initial={{ opacity: 0, y: 14, scale: 0.98 }}
+      animate={{ opacity: 1, y: 0, scale: 1 }}
+      transition={{ duration: 0.35, ease: 'easeOut' }}
+      className="rounded-3xl border border-white/70 bg-white/90 px-5 pb-5 pt-4 shadow-[0_24px_60px_-12px_rgba(0,0,0,0.45)] backdrop-blur-xl"
+    >
+      {/* Header */}
+      <div className="mb-4 flex flex-col items-center text-center">
+        {/* School logo (falls back to the book icon if the school has none) */}
+        <div className="mb-2 flex h-14 w-14 items-center justify-center overflow-hidden rounded-full bg-white text-blue-600 shadow-[0_6px_18px_rgba(37,99,235,0.18)]">
+          {schoolLogo && !logoBroken
+            ? <img src={schoolLogo} alt={schoolName || 'School logo'} onError={() => setLogoBroken(true)} className="h-full w-full object-contain p-1" />
+            : <BookOpen size={22} />}
         </div>
-
-        {/* Subject */}
-        <SelectField
-          id="subjectSelect"
-          label="Subject"
-          value={selectedSubject}
-          onChange={setSelectedSubject}
-          options={subjects}
-        />
-
-        {/* Divider */}
-        <div className="my-4 h-px w-full" style={{ background: 'rgba(255,255,255,0.15)' }} />
-
-        {/* Selection preview */}
-        <div
-          className="flex flex-wrap items-center justify-center gap-3 rounded-[60px] px-5 py-2.5"
-          style={{ background: 'rgba(255,255,255,0.15)', border: '1px solid #D7DCFF', backdropFilter: 'blur(4px)' }}
-        >
-          <span className="text-[0.7rem] uppercase tracking-[0.04em] text-[#5363F5]/70">Selected</span>
-          {[selectedClass, selectedSection, selectedSubject].filter(Boolean).map((val) => (
-            <span
-              key={val}
-              className="rounded-[40px] px-5 py-1 text-[0.85rem] font-medium text-[#5363F5]"
-              style={{ background: 'rgba(255,255,255,0.20)', border: '1px solid #D7DCFF' }}
-            >
-              {val}
-            </span>
-          ))}
-        </div>
-
-        {/* Go button */}
-        <button
-          type="button"
-          onClick={handleGo}
-          disabled={!selectedClass || !selectedSection}
-          className="mt-5 w-full rounded-[60px] border border-[#D7DCFF] py-3.5 text-base font-semibold text-[#5363F5] transition-all duration-200 hover:-translate-y-1 hover:border-[#C4CDFF] hover:bg-[#C4CDFF]/20 hover:shadow-[0_12px_28px_-10px_rgba(80,100,180,0.20)] active:translate-y-0 active:border-[#B8C2F5] focus:border-[#B8C2F5] focus:outline-none focus:ring-2 focus:ring-[#B8C2F5]/40 disabled:cursor-not-allowed disabled:opacity-50"
-          style={{ background: 'rgba(255,255,255,0.30)', backdropFilter: 'blur(4px)' }}
-        >
-          Go to the Class
-        </button>
+        <h1 className="text-xl font-bold tracking-tight text-slate-900">Select Class</h1>
+        <p className="mt-0.5 text-xs text-slate-500">Choose the class, section and subject to continue</p>
       </div>
-    </div>
+
+      {loading ? (
+        <div className="flex justify-center py-10"><RefreshCw size={20} className="animate-spin text-blue-500" /></div>
+      ) : (
+        <>
+          <div className="grid grid-cols-2 gap-3">
+            {renderField(fields[0])}
+            {renderField(fields[1])}
+            {renderField(fields[2], true)}
+          </div>
+
+          {/* Selection preview */}
+          <div className="mt-3 flex flex-wrap items-center gap-2 rounded-2xl bg-slate-100 px-3 py-2.5">
+            <span className="mr-auto flex items-center gap-1.5 text-xs font-medium text-slate-500">
+              <CheckCircle2 size={16} className="fill-sky-500 text-white" /> Selected Class
+            </span>
+            {chips.map((c) => (
+              <span key={c.key} className={`inline-flex items-center gap-1.5 rounded-full border px-3 py-1 text-xs font-semibold ${c.cls}`}>
+                <c.icon size={13} className={c.iconCls} /> {c.text}
+              </span>
+            ))}
+          </div>
+
+          <button
+            type="button"
+            onClick={handleGo}
+            disabled={!selectedClass || !selectedSection}
+            className="mt-4 flex w-full items-center justify-center gap-2 rounded-full bg-gradient-to-r from-blue-500 to-blue-600 py-3 text-sm font-semibold text-white shadow-[0_10px_24px_-8px_rgba(37,99,235,0.6)] transition hover:-translate-y-0.5 hover:from-blue-600 hover:to-blue-700 disabled:cursor-not-allowed disabled:opacity-50"
+          >
+            <ArrowRight size={17} /> Go to the Class
+          </button>
+        </>
+      )}
+    </Motion.div>,
   );
 };
 
@@ -1027,17 +1071,19 @@ const CW_TABS = [
   {
     id: 'overview',
     label: 'Overview',
+    description: 'Class-wide performance and attendance at a glance',
     icon: Home,
     ownPaths: (rel) => rel.startsWith('overview/'),
     firstPath: 'overview/analytics',
     subTabs: [
-      { label: 'Overall Class Analytics',  path: 'overview/analytics' },
-      { label: 'Overall Attendance',       path: 'overview/attendance' },
+      { label: 'Overall Class Analytics', path: 'overview/analytics' },
+      { label: 'Overall Attendance', path: 'overview/attendance' },
     ],
   },
   {
     id: 'students',
     label: 'Students',
+    description: 'Manage and track student related activities',
     icon: Users,
     ownPaths: (rel) =>
       rel === 'students' ||
@@ -1050,16 +1096,17 @@ const CW_TABS = [
     firstPath: 'students/health-records',
     subTabs: [
       { label: 'Student Health Records', path: 'students/health-records', notificationKey: 'health' },
-      { label: 'Attendance',             path: 'students/attendance', notificationKey: 'attendance' },
-      { label: 'Assignments',            path: 'assignments/manage', notificationKey: 'assignments' },
-      { label: 'Evaluate Submissions',   path: 'assignments/evaluate', notificationKey: 'assignments-evaluate' },
-      { label: 'Achievements',           path: 'students/achievements', notificationKey: 'achievements' },
-      { label: 'Exam',                   path: 'assessments/exam', notificationKey: 'assessments' },
+      { label: 'Attendance', path: 'students/attendance', notificationKey: 'attendance' },
+      { label: 'Assignments', path: 'assignments/manage', notificationKey: 'assignments' },
+      // { label: 'Evaluate Submissions', path: 'assignments/evaluate', notificationKey: 'assignments-evaluate' },
+      { label: 'Achievements', path: 'students/achievements', notificationKey: 'achievements' },
+      { label: 'Exam', path: 'assessments/exam', notificationKey: 'assessments' },
     ],
   },
   {
     id: 'observations',
     label: 'Observations',
+    description: 'Observe student wellbeing and behaviour',
     icon: Eye,
     ownPaths: (rel) =>
       rel.startsWith('students/observations') ||
@@ -1072,6 +1119,7 @@ const CW_TABS = [
   {
     id: 'ai',
     label: 'AI',
+    description: 'AI assistant and teaching tools',
     icon: BarChart3,
     ownPaths: (rel) =>
       rel === 'teaching' ||
@@ -1084,6 +1132,18 @@ const CW_TABS = [
     subTabs: [],
   },
 ];
+
+const SUB_TAB_ICONS = {
+  'overview/analytics': BarChart3,
+  'overview/attendance': CalendarCheck,
+  'students/health-records': Activity,
+  'students/attendance': CalendarCheck,
+  'assignments/manage': FileText,
+  'assignments/evaluate': ClipboardCheck,
+  'students/achievements': Sparkles,
+  'assessments/exam': GraduationCap,
+  'students/observations': Eye,
+};
 
 const ClassWorkspace = ({ notifications = [], seenState = {} }) => {
   const { classId = 'current' } = useParams();
@@ -1128,11 +1188,11 @@ const ClassWorkspace = ({ notifications = [], seenState = {} }) => {
         const remembered = readRememberedClass();
         const rememberedAllocation = remembered?.slug
           ? activeAllocations.find((a) => {
-              const cn = String(a?.classId?.name || a?.className || '').trim();
-              const sn = String(a?.sectionId?.name || a?.sectionName || '').trim();
-              const itSlug = `${cn}-${sn}`.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '');
-              return itSlug === remembered.slug;
-            })
+            const cn = String(a?.classId?.name || a?.className || '').trim();
+            const sn = String(a?.sectionId?.name || a?.sectionName || '').trim();
+            const itSlug = `${cn}-${sn}`.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '');
+            return itSlug === remembered.slug;
+          })
           : null;
         const primary = rememberedAllocation
           || activeAllocations.find((a) => a?.isClassTeacher)
@@ -1233,7 +1293,36 @@ const ClassWorkspace = ({ notifications = [], seenState = {} }) => {
   // ── Active tab ────────────────────────────────────────────
   const rel = location.pathname.replace(basePath, '').replace(/^\//, '');
   const activeTab = useMemo(() => CW_TABS.find((t) => t.ownPaths(rel)) ?? CW_TABS[0], [rel]);
-  const hasSubTabs = activeTab.subTabs.length > 0;
+  const [hoverTabId, setHoverTabId] = useState(null);
+  const [caretX, setCaretX] = useState(null);
+  const menuWrapRef = useRef(null);
+  // Point the submenu's caret at the centre of the hovered tab.
+  // Caret under the ACTIVE tab that joins it to the page content below.
+  const [activeCaretX, setActiveCaretX] = useState(null);
+  useEffect(() => {
+    const measure = () => {
+      const wrap = menuWrapRef.current;
+      const el = wrap?.querySelector(`[data-tab-id="${activeTab.id}"]`);
+      if (!wrap || !el) return;
+      const w = wrap.getBoundingClientRect();
+      const r = el.getBoundingClientRect();
+      setActiveCaretX(r.left + r.width / 2 - w.left);
+    };
+    measure();
+    window.addEventListener('resize', measure);
+    return () => window.removeEventListener('resize', measure);
+  }, [activeTab.id]);
+  const openSubmenu = (tabId, el) => {
+    setHoverTabId(tabId);
+    const wrap = menuWrapRef.current?.getBoundingClientRect();
+    const rect = el?.getBoundingClientRect();
+    if (wrap && rect) setCaretX(rect.left + rect.width / 2 - wrap.left);
+  };
+  // Hovering a main tab previews its children; otherwise the active tab's children show.
+  const hoverTab = CW_TABS.find((t) => t.id === hoverTabId);
+  const panelTab = hoverTab && hoverTab.subTabs.length > 0 ? hoverTab : null;
+  const hasSubTabs = Boolean(panelTab);
+  const activeSub = activeTab.subTabs.find((sub) => rel === sub.path || rel.startsWith(`${sub.path}/`));
 
   // Communication pages are direct destinations from the main sidebar.
   // Do not render the class workspace header/tabs around them.
@@ -1241,158 +1330,150 @@ const ClassWorkspace = ({ notifications = [], seenState = {} }) => {
     return <Outlet />;
   }
 
+  const todayLabel = new Date().toLocaleDateString('en-GB', { weekday: 'long', day: 'numeric', month: 'short', year: 'numeric' }).replace(/,/g, '');
+  const countBadge = (count, testId) => (count > 0 ? (
+    <span data-testid={testId} className="inline-flex min-h-4 min-w-4 items-center justify-center rounded-full bg-red-500 px-1 text-[9px] font-bold leading-none text-white">
+      {count > 99 ? '99+' : count}
+    </span>
+  ) : null);
+
   return (
-    <div className="space-y-4">
+    <div className={`mx-auto max-w-[1240px] space-y-3 ${rel === 'overview/analytics' ? 'p-3 sm:p-5 lg:p-6' : ''}`}>
 
-      <nav aria-label="Class workspace breadcrumb" className="flex flex-wrap items-center gap-1.5 px-1 text-xs font-semibold text-slate-500">
-        {[
-          { label: 'Classes & Work', to: '/teacher/classes', key: 'classes' },
-          { label: 'Students', to: `${basePath}/students`, key: 'students' },
-          { label: 'Assignments', to: `${basePath}/assignments/manage`, key: 'assignments' },
-          ...(rel.startsWith('assignments/evaluate') ? [{ label: 'Evaluate Submissions', to: `${basePath}/assignments/evaluate`, key: 'assignments-evaluate', current: true }] : []),
-        ].map((item, index) => (
-          <React.Fragment key={item.key}>
-            {index > 0 && <ChevronRight size={13} className="text-slate-300" aria-hidden="true" />}
-            <NavLink
-              to={item.to}
-              aria-current={item.current ? 'page' : undefined}
-              className={({ isActive }) => `inline-flex items-center gap-1.5 rounded-full px-2.5 py-1 transition ${item.current || isActive ? 'bg-indigo-50 text-indigo-700' : 'hover:bg-slate-100 hover:text-slate-800'}`}
-            >
-              {item.label}
-              <span
-                data-testid={`teacher-breadcrumb-notification-${item.key}`}
-                title={`${getTeacherModuleNotificationCount(notifications, item.key, seenState)} unread notification${getTeacherModuleNotificationCount(notifications, item.key, seenState) === 1 ? '' : 's'}`}
-                className={`inline-flex min-h-4 min-w-4 items-center justify-center rounded-full px-1 text-[9px] font-bold leading-none ${getTeacherModuleNotificationCount(notifications, item.key, seenState) > 0 ? 'bg-red-500 text-white' : 'bg-slate-200 text-slate-500'}`}
-              >
-                {getTeacherModuleNotificationCount(notifications, item.key, seenState) > 99 ? '99+' : getTeacherModuleNotificationCount(notifications, item.key, seenState)}
-              </span>
-            </NavLink>
-          </React.Fragment>
-        ))}
-      </nav>
-
-      {/* ══════════════════════════════════════════════════
-          Card  — white, rounded-[20px], subtle shadow
-      ══════════════════════════════════════════════════ */}
-      <div className="rounded-[20px] bg-white shadow-[0_2px_16px_0_rgba(15,23,42,0.08)] border border-slate-100">
-
-        {/* ── Title block — centered ─────────────────────── */}
-        <div className="pt-8 pb-2 flex flex-col items-center gap-3">
-
-          {/* "Class :5  Section : A" */}
-          <h1 className="text-[1.75rem] font-bold tracking-tight text-[#0F172A] text-center">
-            {className
-              ? <>Class&nbsp;:{className}&nbsp;&nbsp;Section&nbsp;:&nbsp;{sectionName || '—'}</>
-              : classDisplayName(classId)
-            }
+      {/* ── Header: back · title · switch class · date ── */}
+      <div className="flex flex-wrap items-center gap-3">
+        <button
+          type="button"
+          onClick={() => navigate('/teacher/classes')}
+          aria-label="Back to classes"
+          className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full border border-slate-200 bg-white text-slate-700 shadow-sm transition hover:bg-slate-50"
+        >
+          <ChevronLeft size={18} />
+        </button>
+        <div className="min-w-0">
+          <h1 className="truncate text-[22px] font-bold leading-tight tracking-tight text-slate-900">
+            {className ? <>Class {className} - Section {sectionName || '—'}</> : classDisplayName(classId)}
           </h1>
-
-          {/* Switch class pill */}
+          {/* ── Breadcrumb ── */}
+          <nav aria-label="Breadcrumb" className="mt-0.5 flex flex-wrap items-center gap-1 text-[12.5px] text-slate-500">
+            <NavLink to="/teacher/classes" className="transition hover:text-blue-700">Classes</NavLink>
+            <ChevronRight size={13} className="text-slate-400" />
+            <span>{className ? `Class ${className} - ${sectionName || '—'}` : classDisplayName(classId)}</span>
+            <ChevronRight size={13} className="text-slate-400" />
+            {activeSub ? (
+              <>
+                <NavLink to={`${basePath}/${activeTab.firstPath}`} className="transition hover:text-blue-700">{activeTab.label}</NavLink>
+                <ChevronRight size={13} className="text-slate-400" />
+                <span aria-current="page" className="font-semibold text-blue-700">{activeSub.label}</span>
+              </>
+            ) : (
+              <span aria-current="page" className="font-semibold text-blue-700">{activeTab.label}</span>
+            )}
+          </nav>
+        </div>
+        <div className="ml-auto flex items-center gap-2">
           <NavLink
             to="/teacher/classes"
-            className="inline-flex items-center rounded-full border border-slate-200 bg-white px-4 py-1.5 text-[13px] font-medium text-slate-600 hover:border-indigo-300 hover:text-indigo-600 transition-colors"
+            className="inline-flex items-center gap-2 rounded-full border border-slate-200 bg-white px-3.5 py-2 text-[13px] font-semibold text-slate-800 shadow-sm transition hover:border-blue-200 hover:text-blue-700"
           >
-            Switch class
+            <ArrowLeftRight size={15} className="text-blue-600" /> Switch Class
           </NavLink>
+          {/* <span className="hidden items-center gap-2 rounded-full border border-slate-200 bg-white px-3.5 py-2 text-[13px] text-slate-600 shadow-sm sm:inline-flex">
+            <CalendarDays size={15} className="text-slate-500" /> {todayLabel}
+          </span> */}
         </div>
+      </div>
 
-        {/* ── Tab bar — centered, pill ───────────────────────
-            Ref: rx=24, fill=#F8FAFC, stroke=#E2E8F0, h=48
-            Active: indigo border with no fill or shadow, rx=18.5, h=37
-        ──────────────────────────────────────────────────── */}
-        <div className="flex justify-center px-6 pt-4 pb-0">
-          <div className="inline-flex items-center gap-[5px] rounded-[24px] border border-[#E2E8F0] bg-[#F8FAFC] p-[5.5px]">
-            {CW_TABS.map((tab) => {
-              const Icon = tab.icon;
-              const isActive = tab.id === activeTab.id;
-              const to = `${basePath}/${tab.firstPath}`;
-              const notificationKey = tab.id === 'overview' ? 'overview' : tab.id;
-              const notificationCount = getTeacherModuleNotificationCount(notifications, notificationKey, seenState);
-              return (
-                <NavLink
-                  key={tab.id}
-                  to={to}
-                  className={[
-                    'inline-flex items-center gap-1.5 rounded-[18px] px-4 text-[13.5px] font-semibold',
-                    'h-[37px] whitespace-nowrap transition-all duration-150',
-                    isActive
-                      ? 'text-[#5363F5] ring-1 ring-[#B8C2F5]'
-                      : 'text-[#475569] hover:text-[#1E293B]',
-                  ].join(' ')}
-                >
-                  <Icon size={15} strokeWidth={isActive ? 2.2 : 1.8} />
-                  {tab.label}
-                  <span data-testid={`teacher-class-tab-notification-${tab.id}`} className={`inline-flex min-h-4 min-w-4 items-center justify-center rounded-full px-1 text-[9px] font-bold leading-none ${notificationCount > 0 ? 'bg-red-500 text-white' : 'bg-slate-200 text-slate-500'}`}>
-                    {notificationCount > 99 ? '99+' : notificationCount}
-                  </span>
-                </NavLink>
-              );
-            })}
-          </div>
+
+      <div ref={menuWrapRef} className="relative" onMouseLeave={() => setHoverTabId(null)}>
+      {/* ── Main tab bar ── */}
+      <div className="flex justify-center">
+        <div className="inline-flex max-w-full items-center gap-1 overflow-x-auto rounded-full border border-slate-200 bg-white/80 p-1 shadow-sm">
+          {CW_TABS.map((tab) => {
+            const Icon = tab.icon;
+            const isActive = tab.id === activeTab.id;
+            const notificationCount = getTeacherModuleNotificationCount(notifications, tab.id, seenState);
+            return (
+              <NavLink
+                key={tab.id}
+                data-tab-id={tab.id}
+                onMouseEnter={(e) => openSubmenu(tab.id, e.currentTarget)}
+                onFocus={(e) => openSubmenu(tab.id, e.currentTarget)}
+                to={`${basePath}/${tab.firstPath}`}
+                className={`inline-flex h-9 items-center gap-2 whitespace-nowrap rounded-full px-5 text-[13px] font-semibold transition ${isActive
+                  ? 'border border-blue-200 bg-blue-500 text-white shadow-sm'
+                  : 'border border-transparent text-slate-700 hover:bg-slate-50'}`}
+              >
+                <Icon size={16} className={isActive ? 'text-white' : 'text-slate-500'} />
+                {tab.label}
+                {countBadge(notificationCount, `teacher-class-tab-notification-${tab.id}`)}
+              </NavLink>
+            );
+          })}
         </div>
+      </div>
 
-        {/* ── Caret + Sub-tab bar ────────────────────────────
-            Ref image: small downward-pointing triangle
-            connecting active tab to the sub-bar below.
-            Sub-bar: rx=21.5, fill=#F5F5FF, stroke=#D7DCFF
-            Active sub-item: rx=16, fill=white, h=32
-            Items: soft purple bullet dot + text
-        ──────────────────────────────────────────────────── */}
-        {hasSubTabs && (
-          <Motion.div
-            key={activeTab.id}
-            initial={{ opacity: 0, y: -8 }}
-            animate={{ opacity: 1, y: 0 }}
-            transition={{ duration: 0.18, ease: 'easeOut' }}
-            className="flex flex-col items-center pb-6 pt-0"
-          >
-            {/* Triangle caret — points down from tab bar to sub-bar */}
-            <div
-              style={{
-                width: 0,
-                height: 0,
-                borderLeft: '10px solid transparent',
-                borderRight: '10px solid transparent',
-                borderTop: '10px solid #F5F5FF',
-                filter: 'drop-shadow(0 -1px 0 #D7DCFF)',
-              }}
-            />
-
-            {/* Sub-bar pill */}
-            <div className="inline-flex max-w-full items-center gap-[5px] overflow-x-auto rounded-[22px] border border-[#D7DCFF] bg-[#F5F5FF] p-[5.5px]">
-              {activeTab.subTabs.map((sub, idx) => (
-                <NavLink
-                  key={sub.path + idx}
-                  to={`${basePath}/${sub.path}`}
-                  className={({ isActive: ia }) =>
-                    [
-                      'inline-flex items-center gap-1.5 rounded-[16px] px-3',
-                      'h-8 text-[12.5px] font-semibold whitespace-nowrap transition-all duration-150',
-                      ia
-                        ? 'bg-[#B8C2F5]/25 text-[#5363F5] shadow-sm ring-1 ring-[#B8C2F5]'
-                        : 'text-[#5363F5] hover:bg-[#C4CDFF]/35 hover:text-[#5363F5]',
-                    ].join(' ')
-                  }
-                >
-                  {/* Indigo bullet dot — r=2.5 from SVG */}
-                  <span className="w-[5px] h-[5px] rounded-full bg-[#5363F5] shrink-0" />
-                  {sub.label}
-                  {(() => {
-                    const subKey = sub.notificationKey || teacherNotificationModuleKeyForPath(sub.path);
-                    const subCount = getTeacherModuleNotificationCount(notifications, subKey, seenState);
-                    return <span data-testid={`teacher-subtab-notification-${subKey}`} className={`inline-flex min-h-4 min-w-4 items-center justify-center rounded-full px-1 text-[9px] font-bold leading-none ${subCount > 0 ? 'bg-red-500 text-white' : 'bg-slate-200 text-slate-500'}`}>{subCount > 99 ? '99+' : subCount}</span>;
-                  })()}
-                </NavLink>
-              ))}
+      {/* ── Sub-tab bar ── */}
+      {hasSubTabs && (
+        <Motion.div
+          key="cw-submenu"
+          initial={{ opacity: 0, y: -6, left: caretX ?? '50%' }}
+          animate={{ opacity: 1, y: 0, left: caretX ?? '50%' }}
+          transition={{ duration: 0.18, ease: 'easeOut', left: { type: 'spring', stiffness: 420, damping: 34 } }}
+          style={{ x: '-50%' }}
+          className="absolute top-full z-30 w-max max-w-[calc(100vw-2rem)] pt-3"
+        >
+          {/* Card is centred under the hovered tab, so the caret always sits on it. */}
+          <span
+            aria-hidden="true"
+            className="absolute left-1/2 top-[5px] z-10 h-3.5 w-3.5 -translate-x-1/2 rotate-45 border-l border-t border-slate-200 bg-white"
+          />
+          <div className="relative w-fit max-w-full rounded-full border border-slate-200 bg-white p-1.5 shadow-[0_10px_30px_-12px_rgba(15,23,42,0.15)]">
+            <div className="flex items-stretch overflow-x-auto">
+              {panelTab.subTabs.map((sub, idx) => {
+                const SubIcon = SUB_TAB_ICONS[sub.path] || FileText;
+                const subKey = sub.notificationKey || teacherNotificationModuleKeyForPath(sub.path);
+                const subCount = getTeacherModuleNotificationCount(notifications, subKey, seenState);
+                return (
+                  <div key={sub.path + idx} className="flex shrink-0 items-center">
+                    {idx > 0 && <span aria-hidden="true" className="mx-1 h-8 w-px bg-slate-200" />}
+                    <NavLink
+                      to={`${basePath}/${sub.path}`}
+                      className={({ isActive: ia }) => `inline-flex min-h-11 items-center gap-2.5 rounded-full px-4 py-1.5 text-left text-[12.5px] font-medium leading-tight transition ${ia
+                        ? 'bg-blue-500 text-white ring-1 ring-blue-100'
+                        : 'text-slate-700 hover:bg-slate-50 hover:text-blue-700'}`}
+                    >
+                      {({ isActive: ia }) => (
+                        <>
+                          <SubIcon size={18} className={ia ? 'text-white' : 'text-slate-500'} />
+                          <span className="max-w-[110px]">{sub.label}</span>
+                          {countBadge(subCount, `teacher-subtab-notification-${subKey}`)}
+                        </>
+                      )}
+                    </NavLink>
+                  </div>
+                );
+              })}
             </div>
-          </Motion.div>
-        )}
-
-        {!hasSubTabs && <div className="pb-4" />}
+          </div>
+        </Motion.div>
+      )}
       </div>
 
       {/* Child route */}
-      <Outlet context={{ className, sectionName }} />
+      {/* Content hangs off the active tab: the caret overlaps the page card's top border. */}
+      <div className="relative">
+        {activeCaretX != null && (
+          <Motion.span
+            aria-hidden="true"
+            initial={false}
+            animate={{ left: activeCaretX }}
+            transition={{ type: 'spring', stiffness: 420, damping: 34 }}
+            className="pointer-events-none absolute -top-[6px] z-10 h-3.5 w-3.5 -translate-x-1/2 rotate-45 border-l border-t border-slate-200 bg-white"
+          />
+        )}
+        <Outlet context={{ className, sectionName }} />
+      </div>
 
     </div>
   );
@@ -1436,17 +1517,166 @@ class TeacherPortalErrorBoundary extends Component {
   }
 }
 
+// ── Header pieces (mirrors the school admin header) ──────────────
+const TEACHER_SEARCH_TARGETS = [
+  ...portalNavigation.map((item) => ({ label: item.label, hint: 'Portal', path: item.path })),
+  ...studentsLinks.map((item) => ({ label: item.label, hint: 'Current class · Students', path: buildClassPath('current', item.to) })),
+  ...teachingSectionLinks.map((item) => ({ label: item.label, hint: 'Current class · Teaching', path: buildClassPath('current', `teaching/${item.to}`) })),
+  ...assessmentSectionLinks.map((item) => ({ label: `${item.label} & Marks`, hint: 'Current class · Assessments', path: buildClassPath('current', `assessments/${item.to}`) })),
+  { label: 'Parent Meetings', hint: 'Current class · Communication', path: buildClassPath('current', 'communication/parent-meetings') },
+];
+
+const TeacherModuleSearch = () => {
+  const navigate = useNavigate();
+  const inputRef = useRef(null);
+  const [query, setQuery] = useState('');
+  const [open, setOpen] = useState(false);
+  const [activeIndex, setActiveIndex] = useState(-1);
+
+  const suggestions = useMemo(() => {
+    const q = query.trim().toLowerCase();
+    if (!q) return TEACHER_SEARCH_TARGETS.slice(0, 6);
+    return TEACHER_SEARCH_TARGETS
+      .filter((t) => t.label.toLowerCase().includes(q) || t.hint.toLowerCase().includes(q))
+      .slice(0, 8);
+  }, [query]);
+
+  // ⌘K / Ctrl+K focuses the search
+  useEffect(() => {
+    const onKeyDown = (e) => {
+      if ((e.metaKey || e.ctrlKey) && (e.key === 'k' || e.key === 'K')) {
+        e.preventDefault();
+        inputRef.current?.focus();
+      }
+    };
+    window.addEventListener('keydown', onKeyDown);
+    return () => window.removeEventListener('keydown', onKeyDown);
+  }, []);
+
+  const go = (item) => {
+    if (!item) return;
+    setQuery(''); setOpen(false); setActiveIndex(-1);
+    inputRef.current?.blur();
+    navigate(item.path);
+  };
+
+  const onKeyDown = (e) => {
+    if (!suggestions.length) return;
+    if (e.key === 'ArrowDown') { e.preventDefault(); setActiveIndex((i) => (i + 1) % suggestions.length); }
+    else if (e.key === 'ArrowUp') { e.preventDefault(); setActiveIndex((i) => (i <= 0 ? suggestions.length - 1 : i - 1)); }
+    else if (e.key === 'Escape') { setOpen(false); inputRef.current?.blur(); }
+  };
+
+  return (
+    <div className="relative max-w-md flex-1">
+      <form
+        onSubmit={(e) => { e.preventDefault(); go(suggestions[activeIndex >= 0 ? activeIndex : 0]); }}
+        className="flex w-full items-center gap-2 rounded-full border border-gray-400/50 bg-white py-0.5 pl-4 pr-1.5 transition-all focus-within:shadow-[0_4px_16px_rgba(15,23,42,0.05)]"
+      >
+        <Search className="h-4 w-4 shrink-0 text-slate-400" strokeWidth={2} />
+        <input
+          ref={inputRef}
+          type="text"
+          value={query}
+          placeholder="Search modules…"
+          aria-label="Search modules"
+          onChange={(e) => { setQuery(e.target.value); setActiveIndex(-1); setOpen(true); }}
+          onFocus={() => setOpen(true)}
+          onBlur={() => setTimeout(() => setOpen(false), 120)}
+          onKeyDown={onKeyDown}
+          className="w-full border-none bg-transparent py-2 text-sm font-medium text-slate-900 outline-none placeholder:font-normal placeholder:text-slate-400"
+        />
+        {query ? (
+          <button type="button" onMouseDown={(e) => e.preventDefault()} onClick={() => setQuery('')} className="shrink-0 pr-1 text-slate-400 hover:text-slate-600" aria-label="Clear search">
+            <X size={14} />
+          </button>
+        ) : (
+          <kbd className="hidden rounded-full border border-white/40 bg-white/40 px-2.5 py-1 text-[10px] font-medium text-slate-400 xl:inline-block">⌘+K</kbd>
+        )}
+      </form>
+      {open && (
+        <div className="absolute left-0 right-0 top-full z-50 mt-2 overflow-hidden rounded-2xl border border-white/60 bg-white/95 shadow-xl ring-1 ring-black/5 backdrop-blur-xl">
+          {suggestions.length === 0 ? (
+            <div className="px-4 py-3 text-sm text-slate-400">No results</div>
+          ) : (
+            <ul className="divide-y divide-slate-50">
+              {suggestions.map((item, idx) => (
+                <li key={`${item.label}:${item.path}`}>
+                  <button
+                    type="button"
+                    onMouseDown={(e) => e.preventDefault()}
+                    onMouseEnter={() => setActiveIndex(idx)}
+                    onClick={() => go(item)}
+                    className={`flex w-full items-center gap-3 px-4 py-2.5 text-left transition-colors ${idx === activeIndex ? 'bg-indigo-50/70' : 'hover:bg-indigo-50/50'}`}
+                  >
+                    <Search size={13} className="shrink-0 text-slate-300" />
+                    <div>
+                      <p className="text-sm font-medium text-slate-800">{item.label}</p>
+                      <p className="text-[11px] text-slate-400">{item.hint}</p>
+                    </div>
+                  </button>
+                </li>
+              ))}
+            </ul>
+          )}
+        </div>
+      )}
+    </div>
+  );
+};
+
+// Own component so the 1s tick doesn't re-render the whole portal shell.
+const HeaderClock = () => {
+  const [now, setNow] = useState(() => new Date());
+  useEffect(() => {
+    const t = setInterval(() => setNow(new Date()), 1000);
+    return () => clearInterval(t);
+  }, []);
+  return (
+    <div className="hidden items-center gap-2 rounded-full border border-white/30 bg-white/25 px-3.5 py-1.5 text-sm font-medium text-slate-900 xl:flex">
+      <Clock size={14} className="shrink-0 text-slate-400" />
+      <span className="whitespace-nowrap tabular-nums">{now.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</span>
+      <span className="text-slate-400">{now.toLocaleDateString('en-IN', { day: 'numeric', month: 'short' })}</span>
+    </div>
+  );
+};
+
 const TeacherPortalShell = () => {
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
+  // Chat needs the width: collapse the main sidebar while it's open, restore it after.
+  const sidebarBeforeChatRef = useRef(null);
   const [showLogoutConfirm, setShowLogoutConfirm] = useState(false);
+  // Self-contained mobile profile popover (My Profile / Sign out) — deliberately
+  // independent of `sidebarOpen`/the drawer, so logout stays reachable even if
+  // the drawer mechanism ever regresses again.
+  const [showMobileProfileMenu, setShowMobileProfileMenu] = useState(false);
+  const { name: schoolName, logo: schoolLogo } = useTenant();
   const location = useLocation();
   const navigate = useNavigate();
   const isChatRoute = location.pathname.includes('/communication/chat');
+  usePortalChatNotifier({
+    navigate,
+    chatPath: '/teacher/classes/current/communication/chat',
+    isChatPath: (path) => path.includes('/communication/chat'),
+    meStorageKey: 'teacher_chat_me_id_v1',
+  });
+  // Chat needs the width: collapse the main sidebar while it is open, restore it after.
+  useEffect(() => {
+    if (isChatRoute) {
+      if (sidebarBeforeChatRef.current === null) sidebarBeforeChatRef.current = sidebarCollapsed;
+      setSidebarCollapsed(true);
+    } else if (sidebarBeforeChatRef.current !== null) {
+      setSidebarCollapsed(sidebarBeforeChatRef.current);
+      sidebarBeforeChatRef.current = null;
+    }
+  }, [isChatRoute]);
   const isDashboardRoute = location.pathname === '/teacher/dashboard' || location.pathname === '/teacher';
   const isSmartPlannerRoute = location.pathname.includes('/teaching/lesson-planner') || location.pathname === '/teacher/lesson-plan';
   const isAttendanceRoute = location.pathname.includes('/students/attendance') || location.pathname.includes('/overview/attendance');
-  const hasContainedPageScroll = isChatRoute || isSmartPlannerRoute || isAttendanceRoute;
+  // Class picker is a fixed, non-scrolling full-bleed screen.
+  const isClassesHubRoute = location.pathname.replace(/\/$/, '') === '/teacher/classes';
+  const hasContainedPageScroll = isChatRoute || isSmartPlannerRoute || isAttendanceRoute || isClassesHubRoute;
 
   useEffect(() => {
     if (!location.pathname.startsWith('/teachers')) return;
@@ -1470,9 +1700,25 @@ const TeacherPortalShell = () => {
     };
   }, [sidebarOpen]);
 
-  const isItemActive = useCallback((path) =>
-    location.pathname === path || location.pathname.startsWith(`${path}/`),
-  [location.pathname]);
+  // Sidebar shortcuts (Chat, Student Feedback, Excuse Letters) point at
+  // `classes/current/...` but the URL carries the real class (`classes/5-a/...`),
+  // so match any class id there — and when one of them matches, "Classes & Work"
+  // must not light up as well.
+  const isItemActive = useCallback((path) => {
+    const current = location.pathname.replace(/\/$/, '');
+    const matches = (target) => current === target || current.startsWith(`${target}/`);
+    const shortcutPattern = (target) => {
+      const m = target.match(/^(.*\/classes\/)current(\/.+)$/);
+      return m ? new RegExp(`^${m[1]}[^/]+${m[2]}(?:/|$)`) : null;
+    };
+    const pattern = shortcutPattern(path);
+    if (pattern) return pattern.test(current);
+    if (path === `${PORTAL_BASE}/classes`) {
+      const onShortcut = portalNavigation.some((item) => shortcutPattern(item.path)?.test(current));
+      if (onShortcut) return false;
+    }
+    return matches(path);
+  }, [location.pathname]);
 
   const handleLogout = () => {
     setShowLogoutConfirm(true);
@@ -1494,6 +1740,7 @@ const TeacherPortalShell = () => {
   const [moduleSeenState, setModuleSeenState] = useState(() => readModuleSeenState('teacher'));
   const profileRef = useRef(null);
   const notificationsRef = useRef(null);
+  const mobileProfileMenuRef = useRef(null);
 
   // Fetch teacher profile
   useEffect(() => {
@@ -1516,6 +1763,33 @@ const TeacherPortalShell = () => {
     loadProfile();
   }, []);
 
+  // Teachers who are also the principal can switch to the principal portal.
+  const [hasPrincipalAccess, setHasPrincipalAccess] = useState(false);
+  const [switchingAccount, setSwitchingAccount] = useState(false);
+  useEffect(() => {
+    const token = localStorage.getItem('token');
+    if (!token) return;
+    fetch(`${import.meta.env.VITE_API_URL}/api/teacher/auth/principal-access`, {
+      headers: { authorization: `Bearer ${token}` },
+    })
+      .then((res) => (res.ok ? res.json() : {}))
+      .then((data) => setHasPrincipalAccess(Boolean(data?.isPrincipal)))
+      .catch(() => {});
+  }, []);
+
+  const handleSwitchToPrincipal = async () => {
+    if (switchingAccount) return;
+    setSwitchingAccount(true);
+    setProfileOpen(false);
+    setShowMobileProfileMenu(false);
+    try {
+      await switchAccount({ endpoint: '/api/teacher/auth/switch-to-principal', redirectTo: '/principal' });
+    } catch (err) {
+      setSwitchingAccount(false);
+      window.alert(err.message);
+    }
+  };
+
   // Close profile dropdown on outside click
   useEffect(() => {
     const handler = (e) => {
@@ -1525,10 +1799,17 @@ const TeacherPortalShell = () => {
       if (notificationsRef.current && !notificationsRef.current.contains(e.target)) {
         setShowNotifications(false);
       }
+      if (mobileProfileMenuRef.current && !mobileProfileMenuRef.current.contains(e.target)) {
+        setShowMobileProfileMenu(false);
+      }
     };
     document.addEventListener('mousedown', handler);
     return () => document.removeEventListener('mousedown', handler);
   }, []);
+
+  useEffect(() => {
+    setShowMobileProfileMenu(false);
+  }, [location.pathname]);
 
   const toggleProfile = useCallback(() => {
     setProfileOpen((prev) => !prev);
@@ -1573,9 +1854,15 @@ const TeacherPortalShell = () => {
       }));
     return [...notifications, ...fallbackItems];
   }, [assignmentSubmissionNotifications, moduleSeenState, notifications]);
+  // Unread Community Wall posts ride along in the bell and badge the sidebar item.
+  const communityUnread = useCommunityWallUnread({ wallPath: '/teacher/community-wall' });
+  const bellNotificationItems = useMemo(
+    () => [...communityUnread.bellItems, ...notificationItems].sort((a, b) => new Date(b?.createdAt || 0) - new Date(a?.createdAt || 0)),
+    [communityUnread.bellItems, notificationItems]
+  );
   const unreadCount = useMemo(
-    () => notificationItems.filter((item) => !item?.isRead).length,
-    [notificationItems]
+    () => bellNotificationItems.filter((item) => !item?.isRead).length,
+    [bellNotificationItems]
   );
 
   const fetchNotifs = useCallback(async () => {
@@ -1588,7 +1875,7 @@ const TeacherPortalShell = () => {
     setNotifLoading(true);
     setNotifError('');
     try {
-      const res = await apiFetch(`${API_BASE}/api/notifications/user`, {
+      const res = await apiFetch(`${API_BASE}/api/notifications/user?kind=notification`, {
         cache: 'no-store',
         headers: {
           'Content-Type': 'application/json',
@@ -1638,7 +1925,9 @@ const TeacherPortalShell = () => {
       if (document.visibilityState === 'visible') fetchNotifs();
     };
     document.addEventListener('visibilitychange', onVisible);
+    const unsubscribeSocket = subscribeSocketEvent('new_notification', () => fetchNotifs());
     return () => {
+      unsubscribeSocket();
       clearInterval(poll);
       document.removeEventListener('visibilitychange', onVisible);
     };
@@ -1694,6 +1983,7 @@ const TeacherPortalShell = () => {
   const markAllRead = useCallback(async () => {
     const token = localStorage.getItem('token');
     if (!token) return;
+    communityUnread.markAllSeen();
     setNotifications((prev) => prev.map((item) => ({ ...item, isRead: true })));
     const submissionIds = assignmentSubmissionNotifications.map(notificationId).filter(Boolean);
     if (submissionIds.length > 0) {
@@ -1706,7 +1996,7 @@ const TeacherPortalShell = () => {
       });
     }
     try {
-      const res = await apiFetch(`${API_BASE}/api/notifications/user/read-all`, {
+      const res = await apiFetch(`${API_BASE}/api/notifications/user/read-all?kind=notification`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json', authorization: `Bearer ${token}` },
       }, navigate);
@@ -1716,10 +2006,15 @@ const TeacherPortalShell = () => {
       setNotifError(err.message || 'Failed to mark all as read');
       await fetchNotifs();
     }
-  }, [fetchNotifs, navigate]);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [fetchNotifs, navigate, communityUnread.markAllSeen]);
 
   const dismissHeaderNotification = useCallback(async (id) => {
     if (!id) return;
+    if (String(id).startsWith('community-post-')) {
+      communityUnread.markPostSeen(String(id).slice('community-post-'.length));
+      return;
+    }
     const token = localStorage.getItem('token');
     if (!token) return;
     if (isAssignmentSubmissionNotification({ id })) {
@@ -1739,14 +2034,12 @@ const TeacherPortalShell = () => {
     }
   }, [fetchNotifs, navigate]);
 
-  const handleToggleNotifications = useCallback(async () => {
-    const nextOpen = !showNotifications;
-    if (nextOpen && unreadCount > 0) {
-      await markAllRead();
-    }
-    setShowNotifications(nextOpen);
+  // Opening the bell doesn't mark anything read — unread items stay highlighted
+  // until opened or "Mark all as read" is used.
+  const handleToggleNotifications = useCallback(() => {
+    setShowNotifications((open) => !open);
     setProfileOpen(false);
-  }, [markAllRead, showNotifications, unreadCount]);
+  }, []);
 
   useEffect(() => {
     markTeacherModuleVisited(teacherNotificationModuleKeyForPath(location.pathname));
@@ -1785,114 +2078,94 @@ const TeacherPortalShell = () => {
 
   return (
     <>
-    <div className="flex h-screen h-dvh max-h-screen max-h-dvh min-h-0 overflow-hidden bg-[#fafafa]">
-      {showLogoutConfirm && (
-        <div className="fixed inset-0 z-[200] flex items-center justify-center bg-black/40 backdrop-blur-sm p-4">
-          <div className="w-full max-w-sm rounded-2xl bg-white shadow-2xl overflow-hidden">
-            <div className="h-1 bg-linear-to-r from-red-400 to-rose-400" />
-            <div className="p-6">
-              <div className="w-12 h-12 rounded-2xl bg-red-50 flex items-center justify-center mx-auto mb-4">
-                <LogOut className="w-6 h-6 text-red-500" />
-              </div>
-              <h3 className="text-base font-bold text-gray-900 text-center">Confirm Logout</h3>
-              <p className="text-sm text-gray-500 text-center mt-1">
-                Are you sure you want to log out? Any unsaved changes will be lost.
-              </p>
-              <div className="mt-5 flex gap-3">
-                <button
-                  onClick={() => setShowLogoutConfirm(false)}
-                  className="flex-1 py-2.5 rounded-xl border border-gray-200 text-sm font-semibold text-gray-600 hover:bg-gray-50 transition-colors"
-                >
-                  Cancel
-                </button>
-                <button
-                  onClick={confirmLogout}
-                  className="flex-1 py-2.5 rounded-xl bg-red-500 hover:bg-red-600 text-white text-sm font-bold transition-colors"
-                >
-                  Logout
-                </button>
+      <div className="flex h-screen h-dvh max-h-screen max-h-dvh min-h-0 overflow-hidden bg-gray-50">
+        {showLogoutConfirm && (
+          <div className="fixed inset-0 z-[200] flex items-center justify-center bg-black/40 backdrop-blur-sm p-4">
+            <div className="w-full max-w-sm rounded-2xl bg-white shadow-2xl overflow-hidden">
+              <div className="h-1 bg-linear-to-r from-red-400 to-rose-400" />
+              <div className="p-6">
+                <div className="w-12 h-12 rounded-2xl bg-red-50 flex items-center justify-center mx-auto mb-4">
+                  <LogOut className="w-6 h-6 text-red-500" />
+                </div>
+                <h3 className="text-base font-bold text-gray-900 text-center">Confirm Logout</h3>
+                <p className="text-sm text-gray-500 text-center mt-1">
+                  Are you sure you want to log out? Any unsaved changes will be lost.
+                </p>
+                <div className="mt-5 flex gap-3">
+                  <button
+                    onClick={() => setShowLogoutConfirm(false)}
+                    className="flex-1 py-2.5 rounded-xl border border-gray-200 text-sm font-semibold text-gray-600 hover:bg-gray-50 transition-colors"
+                  >
+                    Cancel
+                  </button>
+                  <button
+                    onClick={confirmLogout}
+                    className="flex-1 py-2.5 rounded-xl bg-red-500 hover:bg-red-600 text-white text-sm font-bold transition-colors"
+                  >
+                    Logout
+                  </button>
+                </div>
               </div>
             </div>
           </div>
-        </div>
-      )}
-      {sidebarOpen && (
-        <div
-          className="fixed inset-0 bg-black/40 z-30 lg:hidden"
-          onClick={() => setSidebarOpen(false)}
-        />
-      )}
+        )}
+        {sidebarOpen && (
+          <div
+            className="fixed inset-0 bg-black/40 z-30 lg:hidden"
+            onClick={() => setSidebarOpen(false)}
+          />
+        )}
 
-      <aside
-        data-testid="teacher-sidebar"
-        aria-label="Teacher portal navigation"
-        className={`fixed left-0 top-0 z-40 flex h-screen h-dvh max-h-screen max-h-dvh min-h-0 flex-col overflow-hidden border border-[#f0f2f5] bg-white shadow-[0_4px_24px_rgba(0,0,0,0.04),0_1px_4px_rgba(0,0,0,0.02)] lg:sticky lg:left-3 lg:top-3 lg:my-3 lg:ml-3 lg:h-[calc(100dvh-1.5rem)] lg:max-h-[calc(100dvh-1.5rem)] lg:rounded-[1.5rem] ${sidebarCollapsed ? 'lg:w-[76px]' : 'lg:w-[280px]'
-          } w-80 ${sidebarOpen ? 'translate-x-0' : '-translate-x-full lg:translate-x-0'
-          }`}
-        style={{
-          fontFamily: "'Poppins', -apple-system, BlinkMacSystemFont, sans-serif",
-          transitionProperty: 'width, transform, box-shadow',
-          transitionDuration: '0.3s',
-          transitionTimingFunction: 'cubic-bezier(0.4, 0, 0.2, 1)',
-        }}
-      >
-        {/* ── Sidebar Header ── */}
-        <div className="shrink-0 border-b border-[#f0f2f5]">
-          {sidebarCollapsed ? (
-            <div className="flex min-h-[92px] flex-col items-center justify-center gap-3 px-2 py-4">
-              <div
-                data-testid="teacher-sidebar-logo"
-                aria-label="EEC Teacher Portal logo"
-                className="flex size-12 items-center justify-center overflow-hidden rounded-xl border border-slate-700 bg-slate-950 p-1.5 shadow-[0_6px_16px_rgba(15,23,42,0.2)]"
-              >
-                <img src="/logo_new.png" alt="EEC" className="h-full w-full object-contain" />
-              </div>
-              <button
-                type="button"
-                className="hidden rounded-lg p-1.5 text-[#8e9aaf] transition-colors hover:bg-[#f5f3ff] hover:text-[#5b21b6] lg:inline-flex"
-                onClick={() => setSidebarCollapsed(false)}
-                aria-label="Expand sidebar"
-              >
-                <ChevronRight size={16} />
-              </button>
-            </div>
-          ) : (
-            <Motion.div
-              key="expanded-brand"
-              initial={{ opacity: 0, x: -8 }}
-              animate={{ opacity: 1, x: 0 }}
-              transition={{ duration: 0.2 }}
-              className="flex items-center justify-between px-6 pb-6 pt-7"
+        {/* Sidebar — same shell as the school admin / parent portals */}
+        <aside
+          data-testid="teacher-sidebar"
+          aria-label="Teacher portal navigation"
+          className={`fixed inset-y-0 left-0 z-50 flex h-dvh min-h-0 flex-col border-r border-gray-100 bg-white shadow-lg transition-all duration-300 ease-in-out lg:sticky lg:top-0 lg:z-40 ${sidebarCollapsed ? 'w-64 lg:w-[72px]' : 'w-64'} ${sidebarOpen ? 'translate-x-0' : '-translate-x-full lg:translate-x-0'}`}
+          style={{ fontFamily: "'Poppins', -apple-system, BlinkMacSystemFont, sans-serif" }}
+        >
+          {/* ── Brand header ── */}
+          <div className="relative flex items-center gap-3 border-b border-gray-100 bg-indigo-50 px-4 py-3">
+            <div
+              data-testid={sidebarCollapsed ? 'teacher-sidebar-logo' : undefined}
+              aria-label={`${schoolName} logo`}
+              className={`flex shrink-0 items-center justify-center overflow-hidden rounded-full transition-all duration-300 ${sidebarCollapsed ? 'h-9 w-9' : 'h-10 w-10'}`}
             >
-              <div className="min-w-0">
-                <div className="truncate text-[1.3rem] font-bold leading-tight tracking-[-0.02em] text-[#0b0e1a]">Teacher Portal</div>
-                <div className="mt-1 truncate text-xs font-normal tracking-[0.03em] text-[#6f7a8c]">Academic Workspace</div>
+              <img src={schoolLogo || '/logo_new.png'} alt="" className="h-full w-full object-cover" />
+            </div>
+            {!sidebarCollapsed && (
+              <div className="min-w-0 flex-1">
+                <p className="truncate text-sm font-bold leading-tight text-gray-900">
+                  {schoolName
+                    ?.trim()
+                    .split(/\s+/)
+                    .map(word => word.charAt(0).toUpperCase())
+                    .join('.')}
+                </p>
+                <p className="mt-0.5 truncate text-[11px] font-medium text-indigo-500">Teacher Portal</p>
               </div>
-              <div className="flex items-center gap-1">
-                <button
-                  type="button"
-                  className="hidden rounded-lg p-1.5 text-[#8e9aaf] transition-colors hover:bg-[#f5f3ff] hover:text-[#5b21b6] lg:inline-flex"
-                  onClick={() => setSidebarCollapsed(true)}
-                  aria-label="Collapse sidebar"
-                >
-                  <ChevronRight size={16} className="rotate-180" />
-                </button>
-                <button
-                  type="button"
-                  onClick={() => setSidebarOpen(false)}
-                  className="rounded-lg p-1.5 text-[#8e9aaf] transition-colors hover:bg-[#f5f3ff] hover:text-[#5b21b6] lg:hidden"
-                  aria-label="Close sidebar"
-                >
-                  <X size={17} />
-                </button>
-              </div>
-            </Motion.div>
-          )}
-        </div>
+            )}
+            <button
+              type="button"
+              onClick={() => setSidebarCollapsed((c) => !c)}
+              className={`hidden shrink-0 items-center justify-center transition-all duration-200 lg:flex ${sidebarCollapsed
+                ? 'h-5 w-5 rounded-full bg-yellow-500 text-white shadow-md hover:bg-yellow-600'
+                : 'h-7 w-7 rounded-lg text-gray-400 hover:bg-yellow-50 hover:text-yellow-600'}`}
+              aria-label={sidebarCollapsed ? 'Expand sidebar' : 'Collapse sidebar'}
+            >
+              {sidebarCollapsed ? <ChevronRight size={18} /> : <ChevronRight size={15} className="rotate-180" />}
+            </button>
+            <button
+              type="button"
+              onClick={() => setSidebarOpen(false)}
+              className="flex h-7 w-7 shrink-0 items-center justify-center rounded-lg text-gray-400 transition-all hover:bg-gray-100 hover:text-gray-600 lg:hidden"
+              aria-label="Close sidebar"
+            >
+              <X size={15} />
+            </button>
+          </div>
 
-        {/* ── Navigation ── */}
-        <nav className={`flex-1 overflow-y-auto overflow-x-hidden ${!sidebarCollapsed ? 'px-2.5 py-5' : 'px-1.5 py-3'}`}>
-          <div className="space-y-0.5">
+          {/* ── Navigation ── */}
+          <nav className="teacher-sidebar-nav min-h-0 flex-1 space-y-0.5 overflow-y-auto overflow-x-hidden overscroll-contain px-2 py-3">
             {portalNavigation.map((item) => {
               const active = isItemActive(item.path);
               const Icon = item.icon;
@@ -1900,139 +2173,91 @@ const TeacherPortalShell = () => {
                 notifications,
                 item.label === 'Notifications' ? 'notifications' : teacherNotificationModuleKeyForPath(item.path),
                 moduleSeenState,
+              ) + (item.path.endsWith('/community-wall') ? communityUnread.count : 0);
+              const badge = notificationCount > 0 && (
+                <span
+                  data-testid={`teacher-module-notification-${teacherNotificationModuleKeyForPath(item.path)}`}
+                  title={`${notificationCount} unread item${notificationCount === 1 ? '' : 's'} in ${item.label}`}
+                  className={sidebarCollapsed
+                    ? 'absolute -right-1.5 -top-1.5 flex h-3.5 min-w-3.5 items-center justify-center rounded-full bg-red-500 px-1 text-[9px] font-bold text-white'
+                    : 'flex h-5 min-w-[1.25rem] items-center justify-center rounded-full bg-red-500 px-1.5 text-[10px] font-bold text-white'}
+                >
+                  {notificationCount > 99 ? '99+' : notificationCount}
+                </span>
               );
               return (
-                <Button
+                <NavLink
                   key={item.path}
-                  asChild
-                  variant="ghost"
-                  className={`group relative !h-auto !w-full !justify-start !rounded-[0.6rem] !border-l-[3px] !px-3 !py-2.5 !text-[0.82rem] !font-medium ${sidebarCollapsed ? '!justify-center !px-2' : 'space-x-2.5'} ${
-                    active
-                      ? '!border-l-[#8b5cf6] !bg-[#f5f3ff] !font-semibold !text-[#5b21b6] hover:!bg-[#ede9fe]'
-                      : '!border-l-transparent !bg-transparent !text-[#4a5668] hover:!bg-[#fffbeb] hover:!text-[#0b0e1a]'
-                  }`}
+                  to={item.path}
+                  title={sidebarCollapsed ? item.label : undefined}
+                  aria-label={item.label}
+                  onClick={() => { if (window.innerWidth < 1024) setSidebarOpen(false); }}
+                  className={`group relative flex items-center gap-3 rounded-xl px-3 py-2.5 transition-colors duration-150 ${sidebarCollapsed ? 'lg:justify-center' : ''} ${active ? 'text-yellow-700' : 'text-gray-500 hover:bg-gray-50 hover:text-gray-900'}`}
                 >
-                  <MotionNavLink
-                    to={item.path}
-                    title={sidebarCollapsed ? item.label : undefined}
-                    aria-label={item.label}
-                    whileHover={{ x: sidebarCollapsed ? 0 : 4, scale: 1.01 }}
-                    whileTap={{ scale: 0.98 }}
-                    transition={{ type: 'spring', stiffness: 500, damping: 20 }}
-                    className="relative flex w-full items-center"
-                  >
-                    <span className="flex size-5 shrink-0 items-center justify-center">
-                      <Icon size={16} strokeWidth={1.9} className="shrink-0" />
-                    </span>
-                    {!sidebarCollapsed && <span className="truncate">{item.label}</span>}
-                    {notificationCount > 0 && (
-                      <span
-                        data-testid={`teacher-module-notification-${teacherNotificationModuleKeyForPath(item.path)}`}
-                        title={`${notificationCount} unread item${notificationCount === 1 ? '' : 's'} in ${item.label}`}
-                        className={`${sidebarCollapsed ? 'absolute -right-1 -top-1' : 'ml-auto'} flex min-h-5 min-w-5 items-center justify-center rounded-full border-2 border-white bg-red-500 px-1.5 text-[10px] font-bold leading-none text-white shadow-sm`}
-                      >
-                        {notificationCount > 99 ? '99+' : notificationCount}
-                      </span>
-                    )}
-                  </MotionNavLink>
-                </Button>
+                  {active && (
+                    <Motion.div
+                      layoutId="teacher-sidebar-active-pill"
+                      className="absolute inset-0 rounded-full bg-yellow-50"
+                      transition={{ type: 'spring', stiffness: 400, damping: 32 }}
+                    />
+                  )}
+                  <span className="relative z-10 shrink-0">
+                    <Icon
+                      size={22}
+                      className={`rounded-full p-1 transition-colors ${active ? 'bg-yellow-500 text-white' : 'bg-gray-100 text-gray-400 group-hover:text-yellow-500'}`}
+                    />
+                    {sidebarCollapsed && <span className="hidden lg:contents">{badge}</span>}
+                  </span>
+                  <span className={`relative z-10 flex flex-1 items-center gap-2 truncate text-sm ${sidebarCollapsed ? 'lg:hidden' : ''} ${active ? 'font-bold' : 'font-semibold'}`}>
+                    {item.label}
+                    {!sidebarCollapsed && badge}
+                  </span>
+                </NavLink>
               );
             })}
-          </div>        
-        </nav>
+          </nav>
 
-        {/* ── Bottom: Logout ── */}
-        <div className={`mt-auto shrink-0 border-t border-[#f0f2f5] bg-white ${sidebarCollapsed ? 'p-2.5' : 'px-3 py-3.5'}`}>
-          <div>
-            {sidebarCollapsed ? (
-              <button
-                type="button"
-                onClick={handleLogout}
-                aria-label="Logout"
-                data-testid="collapsed-sidebar-logout"
-                className="group relative flex h-11 w-full items-center justify-center overflow-visible rounded-[0.6rem] text-[#536179] transition-all duration-200 hover:bg-[#f5f3ff] hover:text-[#6d28d9] active:scale-95"
-              >
-                <span aria-hidden="true" className="absolute inset-1 scale-75 rounded-lg bg-gradient-to-br from-violet-100 via-purple-50 to-amber-50 opacity-0 transition-all duration-200 group-hover:scale-100 group-hover:opacity-100" />
-                <span className="relative flex size-8 items-center justify-center">
-                  <LogOut size={18} strokeWidth={1.9} className="block shrink-0 text-current" />
-                </span>
-                <div className="pointer-events-none absolute left-full z-50 ml-3 translate-x-2 opacity-0 transition-all group-hover:translate-x-0 group-hover:opacity-100">
-                  <div className="min-w-max rounded-xl border border-gray-700 bg-gray-900 px-4 py-3 text-left text-white shadow-2xl">
-                    <div className="text-sm font-semibold">Logout</div>
-                    <div className="mt-1 text-xs text-gray-300">Sign out securely</div>
-                    <div className="absolute left-0 top-1/2 -translate-x-1 -translate-y-1/2">
-                      <div className="size-2 rotate-45 border-l border-t border-gray-700 bg-gray-900" />
-                    </div>
-                  </div>
-                </div>
-              </button>
-            ) : (
-              <Motion.button
-                type="button"
-                onClick={handleLogout}
-                initial="rest"
-                whileHover="hover"
-                whileTap={{ scale: 0.98 }}
-                variants={{
-                  rest: { color: '#4a5668', borderColor: 'rgba(255,255,255,0)' },
-                  hover: { color: '#6d28d9', borderColor: '#ddd6fe' },
-                }}
-                transition={{ duration: 0.2 }}
-                className="group relative flex h-11 w-full items-center gap-2.5 overflow-hidden rounded-[0.6rem] border px-3 text-left text-[0.84rem] font-medium"
-              >
-                <Motion.span
-                  aria-hidden="true"
-                  variants={{ rest: { scaleX: 0 }, hover: { scaleX: 1 } }}
-                  transition={{ type: 'spring', stiffness: 260, damping: 28 }}
-                  className="absolute inset-0 origin-left bg-gradient-to-r from-violet-100/90 via-purple-50 to-amber-50/80"
-                />
-                <Motion.span
-                  aria-hidden="true"
-                  variants={{ rest: { x: -45, opacity: 0 }, hover: { x: 235, opacity: [0, 0.75, 0] } }}
-                  transition={{ duration: 0.85, ease: 'easeInOut' }}
-                  className="absolute -top-3 size-14 rounded-full bg-amber-200/70 blur-xl"
-                />
-                <Motion.span
-                  variants={{ rest: { x: 0, rotate: 0 }, hover: { x: 4, rotate: -8 } }}
-                  transition={{ type: 'spring', stiffness: 500, damping: 18 }}
-                  className="relative flex shrink-0 items-center justify-center"
-                >
-                  <LogOut size={17} strokeWidth={1.8} />
-                </Motion.span>
-                <Motion.span variants={{ rest: { x: 0 }, hover: { x: 2 } }} transition={{ type: 'spring', stiffness: 420, damping: 24 }} className="relative whitespace-nowrap">Logout</Motion.span>
-                <Motion.span variants={{ rest: { x: 0, color: '#8e9aaf' }, hover: { x: -2, color: '#7c3aed' } }} transition={{ duration: 0.25 }} className="relative ml-auto whitespace-nowrap text-[0.64rem] font-normal tracking-[0.02em]">Sign out securely</Motion.span>
-              </Motion.button>
-            )}
-          </div>
-        </div>
-      </aside>
-
-      <div className="flex h-screen h-dvh max-h-screen max-h-dvh min-h-0 min-w-0 flex-1 flex-col overflow-hidden">
-        <header className="sticky top-0 z-30 hidden w-full bg-slate-100 px-0 py-0 lg:block">
-          <div className="relative flex h-[55px] items-center justify-center rounded-full bg-white">
-            <div className="min-w-0 px-16 text-center leading-none">
-              <p className="truncate text-[16px] font-semibold tracking-[-0.01em] text-[#1F2A44]">
-                {greeting}, <span className="text-[#4F46E5]">{teacherFirstName}</span>
-              </p>
-              <p className="mt-2 truncate text-[12px] font-normal leading-none text-[#64748B]">
-                {dateLabel}
-              </p>
-            </div>
-
+          {/* ── Footer: Logout ── */}
+          <div className="shrink-0 space-y-1 border-t border-gray-100 bg-gray-200/30 p-3">
             <button
-              onClick={() => setSidebarOpen(true)}
-              className="absolute left-2 rounded-xl p-2 text-slate-600 transition-all hover:bg-slate-100 active:scale-95 lg:hidden"
-              aria-label="Open sidebar"
+              type="button"
+              onClick={handleLogout}
+              title={sidebarCollapsed ? 'Logout' : undefined}
+              aria-label="Logout"
+              data-testid={sidebarCollapsed ? 'collapsed-sidebar-logout' : undefined}
+              className={`flex w-full items-center gap-2.5 rounded-xl px-3 py-2 text-sm font-semibold text-red-400 transition-all duration-150 hover:bg-red-50 hover:text-red-600 ${sidebarCollapsed ? 'lg:justify-center' : ''}`}
             >
-              <Menu size={20} />
+              <LogOut size={15} className="shrink-0" />
+              <span className={sidebarCollapsed ? 'lg:hidden' : ''}>Logout</span>
             </button>
+          </div>
+          <style>{`
+            .teacher-sidebar-nav::-webkit-scrollbar { width: 4px; }
+            .teacher-sidebar-nav::-webkit-scrollbar-track { background: transparent; }
+            .teacher-sidebar-nav::-webkit-scrollbar-thumb { background: #e5e7eb; border-radius: 4px; }
+          `}</style>
+        </aside>
 
-              {/* Right: Profile */}
-              <div className="absolute right-2 flex items-center gap-1.5 sm:gap-2">
+        <div className="flex h-screen h-dvh max-h-screen max-h-dvh min-h-0 min-w-0 flex-1 flex-col overflow-hidden">
+          {/* Desktop header — same bar as the school admin portal */}
+          <header className="sticky top-0 z-30 hidden w-full lg:block">
+            <div className="flex items-center gap-3 border border-white/70 bg-indigo-50 px-5 py-2 shadow-[0_16px_44px_-12px_rgba(15,23,42,0.10),0_4px_12px_rgba(15,23,42,0.04)]">
+              {/* <div className="min-w-0 leading-tight">
+                <p className="truncate text-[15px] font-semibold text-slate-900">
+                  {greeting}, <span className="text-indigo-600">{teacherFirstName}</span>
+                </p>
+                <p className="mt-0.5 truncate text-[11px] text-slate-500">{dateLabel}</p>
+              </div> */}
+
+              <TeacherModuleSearch />
+
+              {/* Right cluster */}
+              <div className="ml-auto flex items-center gap-2">
+                <HeaderClock />
                 <div className="relative" ref={notificationsRef}>
                   <button
                     onClick={handleToggleNotifications}
-                    className="relative w-9 h-9 flex items-center justify-center rounded-xl text-gray-500 hover:bg-gray-100 border border-gray-100 transition-all"
+                    className="relative flex h-10 w-10 items-center justify-center rounded-full border border-white/30 bg-white/25 text-slate-600 transition-all hover:border-white/60 hover:bg-white/70"
                     aria-label="Notifications"
                   >
                     <Bell size={18} />
@@ -2046,7 +2271,7 @@ const TeacherPortalShell = () => {
                   <AnimatePresence>
                     {showNotifications && (
                       <NotificationPopover
-                        notifications={notificationItems}
+                        notifications={bellNotificationItems}
                         unreadCount={unreadCount}
                         loading={notifLoading}
                         error={notifError}
@@ -2054,6 +2279,11 @@ const TeacherPortalShell = () => {
                         onDismissNotification={dismissHeaderNotification}
                         formatTime={timeAgo}
                         onOpenNotification={async (notification) => {
+                          if (notification?.isCommunityPost) {
+                            setShowNotifications(false);
+                            navigate(notification.path);
+                            return;
+                          }
                           const id = String(notification?._id || notification?.id || '');
                           if (!notification?.isRead) await markRead(id);
                           setShowNotifications(false);
@@ -2070,10 +2300,10 @@ const TeacherPortalShell = () => {
                     whileHover={{ y: -1, scale: 1.01 }}
                     whileTap={{ scale: 0.97 }}
                     transition={{ type: 'spring', stiffness: 450, damping: 26 }}
-                    className={`flex items-center gap-2 rounded-xl border bg-white px-1.5 py-1 transition-colors ${profileOpen
-                      ? 'border-violet-200 shadow-[0_8px_20px_-10px_rgba(109,40,217,0.22)]'
-                      : 'border-slate-100 shadow-sm hover:border-slate-200 hover:bg-slate-50'
-                    }`}
+                    className={`flex items-center gap-2.5 rounded-full border bg-white/25 pl-1.5 pr-3 py-1 transition-all ${profileOpen
+                      ? 'border-indigo-200 bg-white/70 shadow-sm'
+                      : 'border-white/30 hover:border-white/50 hover:bg-white/50'
+                      }`}
                     onClick={() => {
                       setShowNotifications(false);
                       toggleProfile();
@@ -2097,26 +2327,26 @@ const TeacherPortalShell = () => {
                       </div>
                     )}
                     <div className="hidden md:block text-left">
-                      <p className="max-w-24 truncate text-[11px] font-semibold leading-tight text-slate-800">
+                      <p className="max-w-40 truncate text-sm font-semibold leading-tight text-slate-800">
                         {hasProfileImage ? teacherFirstName : teacherFirstLastName}
                       </p>
-                      <p className="mt-0.5 max-w-24 truncate text-[9px] text-slate-400">{teacherProfile.department || 'Teacher'}</p>
+                      <p className="mt-0.5 max-w-40 truncate text-[10px] font-medium text-slate-500">{teacherProfile.department || 'Teacher'}</p>
                     </div>
                     <ChevronDown size={14} className={`hidden text-slate-400 transition-transform duration-200 md:block ${profileOpen ? 'rotate-180 text-violet-500' : ''}`} />
                   </Motion.button>
 
                   <AnimatePresence>
                     {profileOpen && (
-                    <Motion.div
-                      initial={{ opacity: 0, y: -8, scale: 0.97 }}
-                      animate={{ opacity: 1, y: 0, scale: 1 }}
-                      exit={{ opacity: 0, y: -6, scale: 0.98 }}
-                      transition={{ type: 'spring', stiffness: 420, damping: 30 }}
-                      data-testid="teacher-profile-glass-card"
-                      role="menu"
-                      className="absolute right-0 z-50 mt-2 w-[min(280px,calc(100vw-1rem))] overflow-hidden rounded-2xl border border-slate-100 bg-white p-4 shadow-[0_16px_40px_-16px_rgba(15,23,42,0.2),0_4px_12px_rgba(15,23,42,0.05)]"
-                    >
-                      <div className="flex items-center gap-3 pb-3.5">
+                      <Motion.div
+                        initial={{ opacity: 0, y: -8, scale: 0.97 }}
+                        animate={{ opacity: 1, y: 0, scale: 1 }}
+                        exit={{ opacity: 0, y: -6, scale: 0.98 }}
+                        transition={{ type: 'spring', stiffness: 420, damping: 30 }}
+                        data-testid="teacher-profile-glass-card"
+                        role="menu"
+                        className="absolute right-0 z-50 mt-2 w-[min(280px,calc(100vw-1rem))] overflow-hidden rounded-2xl border border-slate-100 bg-white p-4 shadow-[0_16px_40px_-16px_rgba(15,23,42,0.2),0_4px_12px_rgba(15,23,42,0.05)]"
+                      >
+                        <div className="flex items-center gap-3 pb-3.5">
                           {hasProfileImage ? (
                             <img
                               src={teacherProfile.profilePic}
@@ -2135,277 +2365,346 @@ const TeacherPortalShell = () => {
                             <p className="truncate text-sm font-semibold tracking-tight text-slate-900">{teacherProfile.name || 'Teacher'}</p>
                             <p className="mt-0.5 truncate text-xs text-slate-500">{teacherProfile.department || 'Educator'}</p>
                           </div>
-                      </div>
+                        </div>
 
-                      <div className="flex items-center justify-between gap-2 border-t border-slate-100 pt-3">
-                        <Motion.button
-                          type="button"
-                          role="menuitem"
-                          whileHover={{ y: -2 }}
-                          whileTap={{ scale: 0.97 }}
-                          className="rounded-full border border-slate-200 bg-white px-3.5 py-2 text-xs font-medium text-slate-600 transition-colors hover:bg-slate-50 hover:text-slate-900"
-                          onClick={() => { setProfileOpen(false); navigate('/teacher/settings'); }}
-                        >
-                          My Profile
-                        </Motion.button>
-                        <Motion.button
-                          type="button"
-                          role="menuitem"
-                          whileHover={{ y: -2, x: 1 }}
-                          whileTap={{ scale: 0.97 }}
-                          onClick={() => {
-                            setProfileOpen(false);
-                            handleLogout();
-                          }}
-                          className="flex items-center gap-1.5 rounded-full border border-slate-200 bg-white px-3.5 py-2 text-xs font-medium text-slate-400 transition-colors hover:border-red-200 hover:bg-red-50 hover:text-red-500"
-                        >
-                          <LogOut size={15} strokeWidth={1.8} />
-                          Sign out
-                        </Motion.button>
-                      </div>
-                    </Motion.div>
+                        {hasPrincipalAccess && (
+                          <Motion.button
+                            type="button"
+                            role="menuitem"
+                            whileHover={{ y: -2 }}
+                            whileTap={{ scale: 0.97 }}
+                            disabled={switchingAccount}
+                            onClick={handleSwitchToPrincipal}
+                            className="mb-3 flex w-full items-center justify-center gap-2 rounded-full border border-indigo-200 bg-indigo-50 px-3.5 py-2 text-xs font-semibold text-indigo-700 transition-colors hover:bg-indigo-100 disabled:opacity-60"
+                          >
+                            <ArrowLeftRight size={15} strokeWidth={1.9} />
+                            {switchingAccount ? 'Switching…' : 'Switch to Principal'}
+                          </Motion.button>
+                        )}
+
+                        <div className="flex items-center justify-between gap-2 border-t border-slate-100 pt-3">
+                          <Motion.button
+                            type="button"
+                            role="menuitem"
+                            whileHover={{ y: -2 }}
+                            whileTap={{ scale: 0.97 }}
+                            className="rounded-full border border-slate-200 bg-white px-3.5 py-2 text-xs font-medium text-slate-600 transition-colors hover:bg-slate-50 hover:text-slate-900"
+                            onClick={() => { setProfileOpen(false); navigate('/teacher/settings'); }}
+                          >
+                            My Profile
+                          </Motion.button>
+                          <Motion.button
+                            type="button"
+                            role="menuitem"
+                            whileHover={{ y: -2, x: 1 }}
+                            whileTap={{ scale: 0.97 }}
+                            onClick={() => {
+                              setProfileOpen(false);
+                              handleLogout();
+                            }}
+                            className="flex items-center gap-1.5 rounded-full border border-slate-200 bg-white px-3.5 py-2 text-xs font-medium text-slate-400 transition-colors hover:border-red-200 hover:bg-red-50 hover:text-red-500"
+                          >
+                            <LogOut size={15} strokeWidth={1.8} />
+                            Sign out
+                          </Motion.button>
+                        </div>
+                      </Motion.div>
                     )}
                   </AnimatePresence>
                 </div>
               </div>
-          </div>
-        </header>
-
-        <header className="sticky top-0 z-30 bg-violet-600 px-4 pb-4 pt-[calc(1rem+env(safe-area-inset-top))] text-white shadow-md lg:hidden">
-          <div className="flex items-center justify-between gap-3">
-            <button type="button" onClick={() => navigate('/teacher/settings')} className="flex min-w-0 items-center gap-3 text-left" aria-label="Open teacher profile">
-              <span className="relative shrink-0">
-                {hasProfileImage ? (
-                  <img src={teacherProfile.profilePic} alt="" className="h-10 w-10 rounded-full border border-white/40 object-cover" />
-                ) : (
-                  <span className="flex h-10 w-10 items-center justify-center rounded-full border border-white/40 bg-white/20 text-sm font-bold shadow-inner">{initialsLabel}</span>
-                )}
-                <span className="absolute right-0 top-0 h-3 w-3 rounded-full border-2 border-violet-600 bg-emerald-400" />
-              </span>
-              <span className="min-w-0"><span className="block truncate text-base font-bold leading-tight tracking-tight">{teacherProfile.name || 'Teacher'}</span><span className="block truncate text-xs font-medium text-purple-200">{teacherProfile.department || 'Academic workspace'}</span></span>
-            </button>
-            <div className="flex items-center gap-2">
-              <div className="relative" ref={notificationsRef}>
-                <button type="button" onClick={handleToggleNotifications} className="relative flex h-9 w-9 items-center justify-center rounded-full bg-white/10 transition active:scale-95" aria-label="Notifications">
-                  <Bell size={19} />
-                  {unreadCount > 0 && (
-                    <span className="absolute -right-1 -top-1 flex min-h-[17px] min-w-[17px] items-center justify-center rounded-full border-2 border-violet-600 bg-red-500 px-1 text-[10px] font-bold leading-none text-white">
-                      {unreadCount > 9 ? '9+' : unreadCount}
-                    </span>
-                  )}
-                </button>
-                <AnimatePresence>
-                  {showNotifications && (
-                    <NotificationPopover
-                      notifications={notificationItems}
-                      seenState={moduleSeenState}
-                      unreadCount={unreadCount}
-                      loading={notifLoading}
-                      error={notifError}
-                      onMarkAllRead={markAllRead}
-                      onDismissNotification={dismissHeaderNotification}
-                      formatTime={timeAgo}
-                      onOpenNotification={async (notification) => {
-                        const id = String(notification?._id || notification?.id || '');
-                        if (!notification?.isRead) await markRead(id);
-                        setShowNotifications(false);
-                        navigate(resolveNotifPath(notification));
-                      }}
-                    />
-                  )}
-                </AnimatePresence>
-              </div>
-              <button type="button" onClick={() => navigate('/teacher/settings')} className="flex h-9 w-9 items-center justify-center rounded-full bg-white/10 transition active:scale-95" aria-label="Account details"><ChevronRight size={19} /></button>
             </div>
-          </div>
-        </header>
+          </header>
 
-        <main className={`flex-1 min-h-0 pb-[calc(4.5rem+env(safe-area-inset-bottom))] lg:pb-0 ${isSmartPlannerRoute ? 'p-0' : ''} ${hasContainedPageScroll ? 'overflow-hidden' : 'overflow-y-auto'}`}>
-          <div className={isChatRoute
-            ? 'flex h-full min-h-0 flex-col'
-            : isSmartPlannerRoute
-              ? 'h-full min-h-0'
-              : isAttendanceRoute
-                ? 'h-full min-h-0 overflow-y-auto overscroll-contain p-3 sm:p-6'
-                : `min-h-full ${isDashboardRoute ? 'p-0 lg:p-6' : 'p-3 sm:p-6'}`}>
-            <Routes>
-              <Route index element={<Navigate to="/teacher/dashboard" replace />} />
-              <Route path="dashboard" element={<TeacherDashboard />} />
-              <Route path="classes" element={<ClassesHub />} />
-              <Route path="classes/:classId" element={<ClassWorkspace notifications={notificationItems} seenState={moduleSeenState} />}>
-                <Route index element={<Navigate to="overview/analytics" replace />} />
-                <Route
-                  path="students"
-                  element={
-                    <PlaceholderModule
-                      icon={Users}
-                      title="Students"
-                      description="Student list, attendance, health records, observations, achievements, analytics, and student-specific AI learning paths live here."
-                      actions={studentSectionLinks}
-                      notifications={notificationItems}
-                      seenState={moduleSeenState}
-                    />
-                  }
-                />
-                <Route path="overview/analytics"  element={<StudentAnalyticsPortal />} />
-                <Route path="overview/attendance" element={<AttendanceManagement />} />
-                <Route path="students/attendance" element={<AttendanceManagement />} />
-                <Route path="students/health-records" element={<HealthUpdatesAdvanced />} />
-                <Route path="students/observations" element={<StudentObservationOverview />} />
-                <Route path="students/achievements" element={<TeacherAchievements />} />
-                <Route path="students/analytics" element={<StudentAnalyticsPortal />} />
-                <Route path="students/:studentId/ai-learning/:subject" element={<AILearningPath />} />
-                <Route
-                  path="teaching"
-                  element={
-                    <PlaceholderModule
-                      icon={BookOpen}
-                      title="Teaching Workspace"
-                      description="Lesson planning, notes, questions, materials, and AI teaching assistance are owned by this class workspace."
-                      actions={teachingSectionLinks}
-                      notifications={notificationItems}
-                      seenState={moduleSeenState}
-                    />
-                  }
-                />
-                <Route path="teaching/lesson-planner" element={<SmartTeachingLessonPlanner />} />
-                <Route path="teaching/lesson-planner-wizard" element={<LessonPlannerWizard />} />
-                <Route path="teaching/class-notes" element={<ClassNotes />} />
-                <Route path="teaching/practice-questions" element={<PracticeQuestions />} />
-                <Route path="teaching/language-practice" element={<LanguagePracticeManager />} />
-                <Route path="teaching/study-materials" element={<TeacherAlcove />} />
-                <Route path="teaching/ai-assistant" element={<GenerateAIPathPortal />} />
-                <Route path="teaching/video-lecture" element={<VideoUnderstandingTool />} />
-                <Route path="assignments" element={<Navigate to="manage" replace />} />
-                <Route path="assignments/manage" element={<AssignmentPortal view="manage" notificationCount={getTeacherModuleNotificationCount(notificationItems, 'assignments-manage', moduleSeenState)} siblingNotificationCount={getTeacherModuleNotificationCount(notificationItems, 'assignments-evaluate', moduleSeenState)} />} />
-                <Route path="assignments/evaluate" element={<AssignmentPortal view="evaluate" notificationCount={getTeacherModuleNotificationCount(notificationItems, 'assignments-evaluate', moduleSeenState)} siblingNotificationCount={getTeacherModuleNotificationCount(notificationItems, 'assignments-manage', moduleSeenState)} />} />
-                <Route
-                  path="assessments"
-                  element={
-                    <PlaceholderModule
-                      icon={GraduationCap}
-                      title="Assessments"
-                      description="Formal exams, results, evaluations, and report cards are separated from practice assignments."
-                      actions={assessmentSectionLinks}
-                      notifications={notificationItems}
-                      seenState={moduleSeenState}
-                    />
-                  }
-                />
-                <Route path="assessments/exam" element={<ExamResultPortal />} />
-                <Route
-                  path="communication"
-                  element={
-                    <PlaceholderModule
-                      icon={MessageSquare}
-                      title="Communication"
-                      description="Chat, parent meetings, student feedback, and excuse letters are centralized so other modules trigger communication instead of duplicating it."
-                      actions={communicationSectionLinks}
-                      notifications={notificationItems}
-                    />
-                  }
-                />
-                <Route path="communication/chat" element={<TeacherChat />} />
-                <Route path="communication/parent-meetings" element={<ParentMeetings />} />
-                <Route path="communication/feedback" element={<TeacherFeedbackPortal />} />
-                <Route path="communication/excuse-letters" element={<ExcuseLetters />} />
-                <Route
-                  path="reports"
-                  element={<Navigate to="../assessments/exam" replace />}
-                />
-              </Route>
-
-              <Route path="calendar" element={<HolidayList />} />
-              <Route path="timetable" element={<ClassRoutine />} />
-              <Route
-                path="notifications"
-                element={<TeacherNotifications />}
-              />
-              <Route path="exam-duty/:notificationId" element={<TeacherExamDuty />} />
-              <Route path="resource-library" element={<TeacherAlcove />} />
-              <Route path="lesson-plan" element={<AIPoweredTeaching />} />
-              <Route path="tryout" element={<TryoutManagement />} />
-              <Route path="ai-tools" element={<TeacherAIToolsPanel />} />
-              <Route path="live-monitor" element={<LiveExamMonitor />} />
-              <Route path="ptm" element={<ParentMeetings />} />
-              <Route path="settings" element={<MyWorkPortal />} />
-              {import.meta.env.DEV && <Route path="test" element={<TestTeacherPortal />} />}
-
-              <Route path="my-work-portal" element={<Navigate to="/teacher/settings" replace />} />
-              <Route path="class-routine" element={<Navigate to="/teacher/timetable" replace />} />
-              <Route path="holidays" element={<Navigate to="/teacher/calendar" replace />} />
-              <Route path="attendance" element={<Navigate to={buildClassPath('current', 'students/attendance')} replace />} />
-              <Route path="achievements" element={<Navigate to={buildClassPath('current', 'students/achievements')} replace />} />
-              <Route path="student-analytics" element={<Navigate to={buildClassPath('current', 'students/analytics')} replace />} />
-              <Route path="progress" element={<Navigate to={buildClassPath('current', 'students/analytics')} replace />} />
-              <Route path="weak-students" element={<Navigate to={buildClassPath('current', 'students/analytics')} replace />} />
-              <Route path="health-updates" element={<Navigate to={buildClassPath('current', 'students/health-records')} replace />} />
-              <Route path="student-observations" element={<Navigate to={buildClassPath('current', 'students/observations')} replace />} />
-              <Route path="smart-teaching" element={<Navigate to={buildClassPath('current', 'teaching/ai-assistant')} replace />} />
-              <Route path="smart-teaching/lesson-planner" element={<Navigate to={buildClassPath('current', 'teaching/lesson-planner')} replace />} />
-              <Route path="smart-teaching/lesson-planner-wizard" element={<Navigate to={buildClassPath('current', 'teaching/lesson-planner-wizard')} replace />} />
-              <Route path="ai-center" element={<Navigate to="/teacher/lesson-plan" replace />} />
-              <Route path="ai-powered-teaching" element={<Navigate to="/teacher/lesson-plan" replace />} />
-              <Route path="academic-alcove" element={<Navigate to="/teacher/resource-library" replace />} />
-              <Route path="ai-learning/:studentId/:subject" element={<Navigate to={buildClassPath('current', 'students')} replace />} />
-              <Route path="parent-meetings" element={<Navigate to={buildClassPath('current', 'communication/parent-meetings')} replace />} />
-              <Route path="assignments" element={<Navigate to={buildClassPath('current', 'assignments/manage')} replace />} />
-              <Route path="evaluation" element={<Navigate to={buildClassPath('current', 'assignments/evaluate')} replace />} />
-              <Route path="practice-questions" element={<Navigate to={buildClassPath('current', 'teaching/practice-questions')} replace />} />
-              <Route path="language-practice" element={<Navigate to={buildClassPath('current', 'teaching/language-practice')} replace />} />
-              <Route path="chat" element={<Navigate to={buildClassPath('current', 'communication/chat')} replace />} />
-              <Route path="class-notes" element={<Navigate to={buildClassPath('current', 'teaching/class-notes')} replace />} />
-              <Route path="exams" element={<Navigate to={buildClassPath('current', 'assessments/exam')} replace />} />
-              <Route path="result-management" element={<Navigate to={buildClassPath('current', 'assessments/exam')} replace />} />
-              <Route path="results" element={<Navigate to={buildClassPath('current', 'assessments/exam')} replace />} />
-              <Route path="excuse-letters" element={<Navigate to={buildClassPath('current', 'communication/excuse-letters')} replace />} />
-              <Route path="feedback" element={<Navigate to={buildClassPath('current', 'communication/feedback')} replace />} />
-            </Routes>
-          </div>
-        </main>
-
-        <nav aria-label="Teacher mobile navigation" className="fixed inset-x-0 bottom-0 z-40 border-t border-slate-200/80 bg-white/95 px-2 pb-[calc(.375rem+env(safe-area-inset-bottom))] pt-1.5 shadow-[0_-4px_20px_rgba(0,0,0,0.04)] backdrop-blur-md lg:hidden">
-          <div className="mx-auto flex max-w-md items-center justify-around">
-            {mobileNavigation.map((item) => {
-              const Icon = item.icon;
-              const notificationCount = item.action === 'menu'
-                ? getTeacherModuleNotificationCount(notificationItems, 'notifications', moduleSeenState)
-                : getTeacherModuleNotificationCount(notificationItems, teacherNotificationModuleKeyForPath(item.path), moduleSeenState);
-              const active = item.action === 'menu'
-                ? sidebarOpen
-                : isItemActive(item.path) || (item.label === 'Classes' && location.pathname.startsWith('/teacher/classes') && !location.pathname.includes('/communication/chat'));
-              const itemClasses = `flex min-w-[58px] flex-col items-center rounded-xl px-2 py-1 text-[10px] font-semibold transition active:scale-95 ${active ? 'text-violet-600' : 'text-slate-400'}`;
-              const content = (
-                <>
-                  <span className={`relative mb-0.5 flex h-8 w-8 items-center justify-center rounded-full ${active ? 'bg-purple-100' : ''}`}><Icon size={active ? 17 : 19} fill={active && item.icon === Home ? 'currentColor' : 'none'} />{notificationCount > 0 && <span className="absolute -right-1 -top-1 flex min-h-4 min-w-4 items-center justify-center rounded-full bg-red-500 px-1 text-[9px] font-bold leading-none text-white shadow">{notificationCount > 99 ? '99+' : notificationCount}</span>}</span>
-                  {item.label}
-                </>
-              );
-
-              if (item.action === 'menu') {
-                return (
-                  <button key={item.label} type="button" onClick={() => setSidebarOpen(true)} aria-label="Open all teacher options" aria-expanded={sidebarOpen} className={itemClasses}>
-                    {content}
+          <header className="sticky top-0 z-30 border-b border-white/70 bg-indigo-50 px-3 pb-2.5 pt-[calc(0.625rem+env(safe-area-inset-top))] text-slate-900 shadow-[0_6px_24px_rgba(15,23,42,0.06)] lg:hidden">
+            <div className="flex items-center justify-between gap-3">
+              <button type="button" onClick={() => navigate('/teacher/settings')} className="flex min-w-0 items-center gap-3 text-left" aria-label="Open teacher profile">
+                <span className="relative shrink-0">
+                  {hasProfileImage ? (
+                    <img src={teacherProfile.profilePic} alt="" className="h-10 w-10 rounded-full object-cover ring-2 ring-white/70" />
+                  ) : (
+                    <span className="flex h-10 w-10 items-center justify-center rounded-full border bg-gradient-to-br from-blue-400 to-purple-500 text-sm font-bold text-white ring-2 ring-white/70">{initialsLabel}</span>
+                  )}
+                  <span className="absolute right-0 top-0 h-3 w-3 rounded-full border-2 border-indigo-50 bg-emerald-400" />
+                </span>
+                <span className="min-w-0"><span className="block truncate text-base font-bold leading-tight tracking-tight">{teacherProfile.name || 'Teacher'}</span><span className="block truncate text-xs font-medium text-slate-500">{teacherProfile.department || 'Academic workspace'}</span></span>
+              </button>
+              <div className="flex items-center gap-2">
+                <div className="relative" ref={notificationsRef}>
+                  <button type="button" onClick={handleToggleNotifications} className="relative flex h-9 w-9 items-center justify-center rounded-full text-slate-600 transition hover:bg-white/70 active:scale-95" aria-label="Notifications">
+                    <Bell size={19} />
+                    {unreadCount > 0 && (
+                      <span className="absolute -right-1 -top-1 flex min-h-[17px] min-w-[17px] items-center justify-center rounded-full border-2 border-indigo-50 bg-red-500 px-1 text-[10px] font-bold leading-none text-white">
+                        {unreadCount > 9 ? '9+' : unreadCount}
+                      </span>
+                    )}
                   </button>
-                );
-              }
+                  <AnimatePresence>
+                    {showNotifications && (
+                      <NotificationPopover
+                        notifications={notificationItems}
+                        seenState={moduleSeenState}
+                        unreadCount={unreadCount}
+                        loading={notifLoading}
+                        error={notifError}
+                        onMarkAllRead={markAllRead}
+                        onDismissNotification={dismissHeaderNotification}
+                        formatTime={timeAgo}
+                        onOpenNotification={async (notification) => {
+                          const id = String(notification?._id || notification?.id || '');
+                          if (!notification?.isRead) await markRead(id);
+                          setShowNotifications(false);
+                          navigate(resolveNotifPath(notification));
+                        }}
+                      />
+                    )}
+                  </AnimatePresence>
+                </div>
+                <button type="button" onClick={() => setSidebarOpen(true)} className="flex h-9 w-9 items-center justify-center rounded-full text-slate-600 transition hover:bg-white/70 active:scale-95" aria-label="Open all teacher options" aria-expanded={sidebarOpen}><Menu size={19} /></button>
+              </div>
+            </div>
+          </header>
 
-              return (
-                <NavLink key={item.path} to={item.path} aria-label={`${item.label} mobile navigation`} className={itemClasses}>
-                  {content}
-                </NavLink>
-              );
-            })}
-          </div>
-        </nav>
+          <main className={`flex-1 min-h-0 pb-[calc(4.5rem+env(safe-area-inset-bottom))] lg:pb-0 ${isSmartPlannerRoute ? 'p-0' : ''} ${hasContainedPageScroll ? 'overflow-hidden' : 'overflow-y-auto overscroll-contain'}`}>
+            <div className={isChatRoute
+              ? 'flex h-full min-h-0 flex-col'
+              : isSmartPlannerRoute || isClassesHubRoute
+                ? 'h-full min-h-0'
+                : isAttendanceRoute
+                  ? 'h-full min-h-0 overflow-y-auto overscroll-contain p-3 sm:p-6'
+                  : `min-h-full ${isDashboardRoute ? 'p-0' : ''}`}>
+              <Routes>
+                <Route index element={<Navigate to="/teacher/dashboard" replace />} />
+                <Route path="dashboard" element={<TeacherDashboard />} />
+                <Route path="classes" element={<ClassesHub />} />
+                <Route path="classes/:classId" element={<ClassWorkspace notifications={notificationItems} seenState={moduleSeenState} />}>
+                  <Route index element={<Navigate to="overview/analytics" replace />} />
+                  <Route
+                    path="students"
+                    element={
+                      <PlaceholderModule
+                        icon={Users}
+                        title="Students"
+                        description="Student list, attendance, health records, observations, achievements, analytics, and student-specific AI learning paths live here."
+                        actions={studentSectionLinks}
+                        notifications={notificationItems}
+                        seenState={moduleSeenState}
+                      />
+                    }
+                  />
+                  <Route path="overview/analytics" element={<StudentAnalyticsPortal />} />
+                  <Route path="overview/attendance" element={<ClassAttendanceOverview />} />
+                  <Route path="students/attendance" element={<AttendanceManagement />} />
+                  <Route path="students/health-records" element={<HealthUpdatesAdvanced />} />
+                  <Route path="students/observations" element={<StudentObservationOverview />} />
+                  <Route path="students/achievements" element={<TeacherAchievements />} />
+                  <Route path="students/analytics" element={<StudentAnalyticsPortal />} />
+                  <Route path="students/:studentId/ai-learning/:subject" element={<AILearningPath />} />
+                  <Route
+                    path="teaching"
+                    element={
+                      <PlaceholderModule
+                        icon={BookOpen}
+                        title="Teaching Workspace"
+                        description="Lesson planning, notes, questions, materials, and AI teaching assistance are owned by this class workspace."
+                        actions={teachingSectionLinks}
+                        notifications={notificationItems}
+                        seenState={moduleSeenState}
+                      />
+                    }
+                  />
+                  <Route path="teaching/lesson-planner" element={<SmartTeachingLessonPlanner />} />
+                  <Route path="teaching/lesson-planner-wizard" element={<LessonPlannerWizard />} />
+                  <Route path="teaching/class-notes" element={<ClassNotes />} />
+                  <Route path="teaching/practice-questions" element={<PracticeQuestions />} />
+                  <Route path="teaching/practice-papers" element={<PracticePapersPortal />} />
+                  <Route path="teaching/language-practice" element={<LanguagePracticeManager />} />
+                  <Route path="teaching/study-materials" element={<TeacherAlcove />} />
+                  <Route path="teaching/ai-assistant" element={<GenerateAIPathPortal />} />
+                  <Route path="teaching/video-lecture" element={<VideoUnderstandingTool />} />
+                  <Route path="assignments" element={<Navigate to="manage" replace />} />
+                  <Route path="assignments/manage" element={<AssignmentPortal view="manage" notificationCount={getTeacherModuleNotificationCount(notificationItems, 'assignments-manage', moduleSeenState)} siblingNotificationCount={getTeacherModuleNotificationCount(notificationItems, 'assignments-evaluate', moduleSeenState)} />} />
+                  <Route path="assignments/evaluate" element={<AssignmentPortal view="evaluate" notificationCount={getTeacherModuleNotificationCount(notificationItems, 'assignments-evaluate', moduleSeenState)} siblingNotificationCount={getTeacherModuleNotificationCount(notificationItems, 'assignments-manage', moduleSeenState)} />} />
+                  <Route
+                    path="assessments"
+                    element={
+                      <PlaceholderModule
+                        icon={GraduationCap}
+                        title="Assessments"
+                        description="Formal exams, results, evaluations, and report cards are separated from practice assignments."
+                        actions={assessmentSectionLinks}
+                        notifications={notificationItems}
+                        seenState={moduleSeenState}
+                      />
+                    }
+                  />
+                  <Route path="assessments/exam" element={<ExamResultPortal />} />
+                  <Route path="assessments/long-answer" element={<LongAnswerAssessment />} />
+                  <Route
+                    path="communication"
+                    element={
+                      <PlaceholderModule
+                        icon={MessageSquare}
+                        title="Communication"
+                        description="Chat, parent meetings, student feedback, and excuse letters are centralized so other modules trigger communication instead of duplicating it."
+                        actions={communicationSectionLinks}
+                        notifications={notificationItems}
+                      />
+                    }
+                  />
+                  <Route path="communication/chat" element={<TeacherChat />} />
+                  <Route path="communication/parent-meetings" element={<ParentMeetings />} />
+                  <Route path="communication/feedback" element={<TeacherFeedbackPortal />} />
+                  <Route path="communication/excuse-letters" element={<ExcuseLetters />} />
+                  <Route
+                    path="reports"
+                    element={<Navigate to="../assessments/exam" replace />}
+                  />
+                </Route>
+
+                <Route path="calendar" element={<HolidayList />} />
+                <Route path="timetable" element={<ClassRoutine />} />
+                <Route
+                  path="notifications"
+                  element={<TeacherNotifications />}
+                />
+                <Route path="exam-duty" element={<TeacherExamDutyList />} />
+                <Route path="exam-duty/:notificationId" element={<TeacherExamDuty />} />
+                <Route path="community-wall" element={<TeacherAlcove />} />
+                <Route path="resource-library" element={<Navigate to="/teacher/community-wall" replace />} />
+                <Route path="lesson-plan" element={<div className="p-3 sm:p-5 lg:p-6"><AIPoweredTeaching /></div>} />
+                <Route path="tryout" element={<TryoutManagement />} />
+                <Route path="ai-tools" element={<TeacherAIToolsPanel />} />
+                <Route path="live-monitor" element={<LiveExamMonitor />} />
+                <Route path="ptm" element={<ParentMeetings />} />
+                <Route path="settings" element={<MyWorkPortal />} />
+                {import.meta.env.DEV && <Route path="test" element={<TestTeacherPortal />} />}
+
+                <Route path="my-work-portal" element={<Navigate to="/teacher/settings" replace />} />
+                <Route path="class-routine" element={<Navigate to="/teacher/timetable" replace />} />
+                <Route path="holidays" element={<Navigate to="/teacher/calendar" replace />} />
+                <Route path="attendance" element={<Navigate to={buildClassPath('current', 'students/attendance')} replace />} />
+                <Route path="achievements" element={<Navigate to={buildClassPath('current', 'students/achievements')} replace />} />
+                <Route path="student-analytics" element={<Navigate to={buildClassPath('current', 'students/analytics')} replace />} />
+                <Route path="progress" element={<Navigate to={buildClassPath('current', 'students/analytics')} replace />} />
+                <Route path="weak-students" element={<Navigate to={buildClassPath('current', 'students/analytics')} replace />} />
+                <Route path="health-updates" element={<Navigate to={buildClassPath('current', 'students/health-records')} replace />} />
+                <Route path="student-observations" element={<Navigate to={buildClassPath('current', 'students/observations')} replace />} />
+                <Route path="smart-teaching" element={<Navigate to={buildClassPath('current', 'teaching/ai-assistant')} replace />} />
+                <Route path="smart-teaching/lesson-planner" element={<Navigate to={buildClassPath('current', 'teaching/lesson-planner')} replace />} />
+                <Route path="smart-teaching/lesson-planner-wizard" element={<Navigate to={buildClassPath('current', 'teaching/lesson-planner-wizard')} replace />} />
+                <Route path="ai-center" element={<Navigate to="/teacher/lesson-plan" replace />} />
+                <Route path="ai-powered-teaching" element={<Navigate to="/teacher/lesson-plan" replace />} />
+                <Route path="academic-alcove" element={<Navigate to="/teacher/community-wall" replace />} />
+                <Route path="ai-learning/:studentId/:subject" element={<Navigate to={buildClassPath('current', 'students')} replace />} />
+                <Route path="parent-meetings" element={<Navigate to={buildClassPath('current', 'communication/parent-meetings')} replace />} />
+                <Route path="assignments" element={<Navigate to={buildClassPath('current', 'assignments/manage')} replace />} />
+                <Route path="evaluation" element={<Navigate to={buildClassPath('current', 'assignments/evaluate')} replace />} />
+                <Route path="practice-questions" element={<Navigate to={buildClassPath('current', 'teaching/practice-questions')} replace />} />
+                <Route path="language-practice" element={<Navigate to={buildClassPath('current', 'teaching/language-practice')} replace />} />
+                <Route path="chat" element={<Navigate to={buildClassPath('current', 'communication/chat')} replace />} />
+                <Route path="class-notes" element={<Navigate to={buildClassPath('current', 'teaching/class-notes')} replace />} />
+                <Route path="exams" element={<Navigate to={buildClassPath('current', 'assessments/exam')} replace />} />
+                <Route path="result-management" element={<Navigate to={buildClassPath('current', 'assessments/exam')} replace />} />
+                <Route path="results" element={<Navigate to={buildClassPath('current', 'assessments/exam')} replace />} />
+                <Route path="long-answer" element={<Navigate to={buildClassPath('current', 'assessments/long-answer')} replace />} />
+                <Route path="excuse-letters" element={<Navigate to={buildClassPath('current', 'communication/excuse-letters')} replace />} />
+                <Route path="feedback" element={<Navigate to={buildClassPath('current', 'communication/feedback')} replace />} />
+              </Routes>
+            </div>
+          </main>
+
+          <nav aria-label="Teacher mobile navigation" className="fixed inset-x-0 bottom-0 z-40 border-t border-slate-200/80 bg-white/95 px-2 pb-[calc(.375rem+env(safe-area-inset-bottom))] pt-1.5 shadow-[0_-4px_20px_rgba(0,0,0,0.04)] backdrop-blur-md will-change-transform lg:hidden">
+            <div className="mx-auto flex max-w-md items-center justify-around sm:max-w-xl md:max-w-2xl">
+              {mobileNavigation.map((item) => {
+                const Icon = item.icon;
+                const notificationCount = item.action === 'profile'
+                  ? getTeacherModuleNotificationCount(notificationItems, 'notifications', moduleSeenState)
+                  : getTeacherModuleNotificationCount(notificationItems, teacherNotificationModuleKeyForPath(item.path), moduleSeenState);
+                const active = item.action === 'profile'
+                  ? showMobileProfileMenu || location.pathname.startsWith('/teacher/settings')
+                  : isItemActive(item.path) || (item.label === 'Classes' && location.pathname.startsWith('/teacher/classes') && !location.pathname.includes('/communication/chat'));
+                const itemClasses = `flex min-w-[58px] flex-col items-center rounded-xl px-2 py-1 text-[10px] font-semibold transition active:scale-95 ${active ? 'text-violet-600' : 'text-slate-400'}`;
+                const content = (
+                  <>
+                    <span className={`relative mb-0.5 flex h-8 w-8 items-center justify-center rounded-full ${active ? 'bg-purple-100' : ''}`}><Icon size={active ? 17 : 19} fill={active && item.icon === Home ? 'currentColor' : 'none'} />{notificationCount > 0 && <span className="absolute -right-1 -top-1 flex min-h-4 min-w-4 items-center justify-center rounded-full bg-red-500 px-1 text-[9px] font-bold leading-none text-white shadow">{notificationCount > 99 ? '99+' : notificationCount}</span>}</span>
+                    {item.label}
+                  </>
+                );
+
+                if (item.action === 'profile') {
+                  return (
+                    <div key={item.label} className="relative" ref={mobileProfileMenuRef}>
+                      <button
+                        type="button"
+                        onClick={() => setShowMobileProfileMenu((prev) => !prev)}
+                        aria-label="Open profile menu"
+                        aria-haspopup="menu"
+                        aria-expanded={showMobileProfileMenu}
+                        className={itemClasses}
+                      >
+                        {content}
+                      </button>
+                      <AnimatePresence>
+                        {showMobileProfileMenu && (
+                          <Motion.div
+                            initial={{ opacity: 0, y: 8, scale: 0.97 }}
+                            animate={{ opacity: 1, y: 0, scale: 1 }}
+                            exit={{ opacity: 0, y: 8, scale: 0.97 }}
+                            transition={{ type: 'spring', stiffness: 420, damping: 30 }}
+                            role="menu"
+                            className="absolute bottom-full right-0 z-50 mb-3 w-48 overflow-hidden rounded-2xl border border-slate-100 bg-white p-1.5 shadow-[0_16px_40px_-16px_rgba(15,23,42,0.25),0_4px_12px_rgba(15,23,42,0.08)]"
+                          >
+                            <button
+                              type="button"
+                              role="menuitem"
+                              onClick={() => { setShowMobileProfileMenu(false); navigate('/teacher/settings'); }}
+                              className="flex w-full items-center gap-2.5 rounded-xl px-3 py-2.5 text-left text-sm font-medium text-slate-700 transition hover:bg-slate-50"
+                            >
+                              <CircleUser size={16} className="text-slate-400" /> My Profile
+                            </button>
+                            {hasPrincipalAccess && (
+                              <button
+                                type="button"
+                                role="menuitem"
+                                disabled={switchingAccount}
+                                onClick={handleSwitchToPrincipal}
+                                className="flex w-full items-center gap-2.5 rounded-xl px-3 py-2.5 text-left text-sm font-medium text-indigo-700 transition hover:bg-indigo-50 disabled:opacity-60"
+                              >
+                                <ArrowLeftRight size={16} /> Switch to Principal
+                              </button>
+                            )}
+                            <button
+                              type="button"
+                              role="menuitem"
+                              onClick={() => { setShowMobileProfileMenu(false); handleLogout(); }}
+                              className="flex w-full items-center gap-2.5 rounded-xl px-3 py-2.5 text-left text-sm font-medium text-red-500 transition hover:bg-red-50"
+                            >
+                              <LogOut size={16} /> Sign out
+                            </button>
+                          </Motion.div>
+                        )}
+                      </AnimatePresence>
+                    </div>
+                  );
+                }
+
+                return (
+                  <NavLink key={item.path} to={item.path} aria-label={`${item.label} mobile navigation`} className={itemClasses}>
+                    {content}
+                  </NavLink>
+                );
+              })}
+            </div>
+          </nav>
+        </div>
       </div>
-    </div>
-    <DesktopNotificationPermissionModal
-      open={showPermissionModal}
-      onAllow={requestPermissionFromModal}
-      onLater={dismissPermissionModal}
-      pendingCount={pendingCount}
-    />
+      <DesktopNotificationPermissionModal
+        open={showPermissionModal}
+        onAllow={requestPermissionFromModal}
+        onLater={dismissPermissionModal}
+        pendingCount={pendingCount}
+      />
     </>
   );
 };

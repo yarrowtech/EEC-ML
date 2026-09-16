@@ -16,35 +16,27 @@ import {
   Eye,
 } from "lucide-react";
 
-/* ════════════════════════════════════════════════════════════
-   SAMPLE DATA
-   In a real app this would come from `fetch('/api/attendance')`
-   or similar — swap it out inside `handleRefresh` below.
-   ════════════════════════════════════════════════════════════ */
-const SAMPLE_ATTENDANCE = [
-  { _id: "1", date: "2026-09-11", subject: "Mathematics", status: "present" },
-  { _id: "2", date: "2026-09-11", subject: "Physics", status: "present" },
-  { _id: "3", date: "2026-09-11", subject: "Chemistry", status: "absent" },
-  { _id: "4", date: "2026-09-10", subject: "Mathematics", status: "present" },
-  { _id: "5", date: "2026-09-10", subject: "Biology", status: "present" },
-  { _id: "6", date: "2026-09-09", subject: "English", status: "present" },
-  { _id: "7", date: "2026-09-09", subject: "History", status: "present" },
-  { _id: "8", date: "2026-09-08", subject: "Mathematics", status: "absent" },
-  { _id: "9", date: "2026-09-08", subject: "Physics", status: "present" },
-  { _id: "10", date: "2026-09-05", subject: "Chemistry", status: "present" },
-  { _id: "11", date: "2026-09-05", subject: "Biology", status: "present" },
-  { _id: "12", date: "2026-09-04", subject: "English", status: "present" },
-  { _id: "13", date: "2026-09-04", subject: "Mathematics", status: "present" },
-  { _id: "14", date: "2026-09-03", subject: "Physics", status: "present" },
-  { _id: "15", date: "2026-09-03", subject: "History", status: "absent" },
-  { _id: "16", date: "2026-09-02", subject: "Chemistry", status: "present" },
-  { _id: "17", date: "2026-09-02", subject: "Biology", status: "present" },
-  { _id: "18", date: "2026-09-01", subject: "English", status: "present" },
-  { _id: "19", date: "2026-09-01", subject: "Mathematics", status: "present" },
-  { _id: "20", date: "2026-08-29", subject: "Physics", status: "present" },
-  { _id: "21", date: "2026-08-29", subject: "Chemistry", status: "present" },
-  { _id: "22", date: "2026-08-28", subject: "Biology", status: "absent" },
-];
+const API_BASE = (import.meta.env.VITE_API_URL || "http://localhost:5000").replace(/\/$/, "");
+
+async function fetchStudentAttendance() {
+  const token = localStorage.getItem("token");
+  if (!token) throw new Error("Not logged in.");
+  // Mounted under /auth in routes/index.js alongside /api/student/auth/schedule
+  // (routes/studentRoute.js), even though it's a data read, not an auth action.
+  const res = await fetch(`${API_BASE}/api/student/auth/attendance`, {
+    headers: { Authorization: `Bearer ${token}` },
+  });
+  if (!res.ok) throw new Error("Unable to load attendance.");
+  const data = await res.json();
+  // Backend tracks one present/absent/leave status per day (StudentUser.attendance),
+  // not per subject/period — there is no per-subject breakdown to fetch, so
+  // `subject` is intentionally omitted (processAttendance() defaults it to "General").
+  return (data.attendance || []).map((r, i) => ({
+    _id: r._id || `${r.date}-${i}`,
+    date: r.date ? new Date(r.date).toISOString().slice(0, 10) : r.date,
+    status: r.status,
+  }));
+}
 
 const MONTH_NAMES = [
   "January", "February", "March", "April", "May", "June",
@@ -246,13 +238,14 @@ function Header({ streak, lastSynced, onRefresh, isRefreshing, overallPct }) {
             </p>
             <p className="mt-3 text-xs text-slate-400 flex items-center gap-1.5 font-medium">
               <span className="w-1.5 h-1.5 rounded-full bg-slate-400" />
-              Last updated{" "}
-              {lastSynced.toLocaleString(undefined, {
-                month: "short",
-                day: "numeric",
-                hour: "numeric",
-                minute: "2-digit",
-              })}
+              {lastSynced
+                ? `Last updated ${lastSynced.toLocaleString(undefined, {
+                    month: "short",
+                    day: "numeric",
+                    hour: "numeric",
+                    minute: "2-digit",
+                  })}`
+                : "Loading…"}
             </p>
           </div>
         </div>
@@ -985,14 +978,33 @@ export default function AttendanceDashboard() {
     return () => document.head.removeChild(link);
   }, []);
 
-  const [rawRecords, setRawRecords] = useState(SAMPLE_ATTENDANCE);
+  const [rawRecords, setRawRecords] = useState([]);
   const [currentDate, setCurrentDate] = useState(new Date());
   const [selectedDate, setSelectedDate] = useState(null);
   const [activeTab, setActiveTab] = useState("overview");
   const [dailyFilter, setDailyFilter] = useState("all");
   const [expandedWeek, setExpandedWeek] = useState(null);
-  const [isRefreshing, setIsRefreshing] = useState(false);
-  const [lastSynced, setLastSynced] = useState(() => new Date());
+  const [isRefreshing, setIsRefreshing] = useState(true);
+  const [lastSynced, setLastSynced] = useState(null);
+  const [loadError, setLoadError] = useState(null);
+
+  const loadAttendance = useCallback(async () => {
+    setIsRefreshing(true);
+    setLoadError(null);
+    try {
+      const records = await fetchStudentAttendance();
+      setRawRecords(records);
+      setLastSynced(new Date());
+    } catch (err) {
+      setLoadError(err.message || "Unable to load attendance.");
+    } finally {
+      setIsRefreshing(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    loadAttendance();
+  }, [loadAttendance]);
 
   // Derived data — recomputed only when the raw records actually change,
   // not on every render (tab switches, date selection, etc).
@@ -1003,14 +1015,8 @@ export default function AttendanceDashboard() {
   const streak = useMemo(() => computeStreak(records, byDate), [records, byDate]);
 
   const handleRefresh = useCallback(() => {
-    setIsRefreshing(true);
-    // Swap this timeout+setRawRecords for a real `fetch()` call in production.
-    setTimeout(() => {
-      setRawRecords([...SAMPLE_ATTENDANCE]);
-      setLastSynced(new Date());
-      setIsRefreshing(false);
-    }, 800);
-  }, []);
+    loadAttendance();
+  }, [loadAttendance]);
 
   return (
     <div
@@ -1026,6 +1032,17 @@ export default function AttendanceDashboard() {
           overallPct={stats.percentage}
         />
         <TabNav activeTab={activeTab} setActiveTab={setActiveTab} />
+
+        {loadError && (
+          <div className="rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">
+            {loadError}
+          </div>
+        )}
+        {!loadError && !isRefreshing && records.length === 0 && (
+          <div className="rounded-xl border border-gray-200 bg-white px-4 py-6 text-center text-sm text-gray-500">
+            No attendance has been recorded for you yet.
+          </div>
+        )}
 
         <AnimatePresence mode="wait">
           {activeTab === "overview" && (

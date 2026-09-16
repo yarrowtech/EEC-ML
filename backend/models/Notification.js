@@ -1,5 +1,7 @@
 const mongoose = require('mongoose');
 const { sendPushForNotification } = require('../utils/webPushService');
+const socketRegistry = require('../utils/socketRegistry');
+const { userNotificationsCache } = require('../utils/responseCache');
 
 const notificationSchema = new mongoose.Schema(
   {
@@ -29,6 +31,15 @@ const notificationSchema = new mongoose.Schema(
       index: true
     },
     typeLabel: { type: String, default: '' },
+    // NOTICE vs NOTIFICATION (same collection, clearly separated):
+    //  - 'notice'       → official, persistent school communication (Notices pages)
+    //  - 'notification' → short, actionable event alert (bell / notifications page)
+    kind: { type: String, enum: ['notice', 'notification'], default: 'notification', index: true },
+    // Machine-readable event that produced a notification (EXAM_CREATED,
+    // EXAM_DUTY_ASSIGNED, FEE_PAYMENT_RECEIVED, …) — see services/communicationService.js.
+    eventType: { type: String, default: '', index: true },
+    // Role this copy is worded for (student / parent / teacher / admin / all).
+    targetRole: { type: String, enum: ['student', 'parent', 'teacher', 'admin', 'principal', 'all', ''], default: '' },
     priority: {
       type: String,
       enum: ['low', 'medium', 'high'],
@@ -37,14 +48,15 @@ const notificationSchema = new mongoose.Schema(
     },
     category: {
       type: String,
-      enum: ['academic', 'events', 'transport', 'general'],
+      // Notice categories: General, Academic, Exam, Events, Fee, Transport.
+      enum: ['academic', 'exam', 'events', 'fee', 'transport', 'general'],
       default: 'general'
     },
     isPinned: { type: Boolean, default: false, index: true },
 
     // Related entity reference
     relatedEntity: {
-      entityType: { type: String, enum: ['assignment', 'exam', 'fee', 'result', 'meeting', 'mastery', 'mastery_badge', 'gap_detection', 'at_risk', 'learning_path', 'practice_question', null] },
+      entityType: { type: String, enum: ['assignment', 'exam', 'examGroup', 'examDuty', 'fee', 'payment', 'holiday', 'notice', 'result', 'meeting', 'promotion', 'leave', 'mastery', 'mastery_badge', 'gap_detection', 'at_risk', 'learning_path', 'practice_question', 'practice_paper', 'feedbackWindow', null] },
       entityId: { type: mongoose.Schema.Types.ObjectId }
     },
     attachments: [
@@ -53,6 +65,8 @@ const notificationSchema = new mongoose.Schema(
         url: { type: String, default: '' },
         size: { type: Number, default: 0 },
         type: { type: String, default: '' },
+        // 'student' | 'parent' — role-specific copy (e.g. Dear Student PDF); '' = everyone.
+        role: { type: String, default: '' },
       },
     ],
 
@@ -87,6 +101,14 @@ const notificationSchema = new mongoose.Schema(
     // notice list every class an exam was published for instead of teachers
     // getting a separate notice per class/section.
     classesCovered: [{ type: String }],
+    // Formal, letterhead-style content for system-generated notices (school
+    // header, notice number, salutation, body, details table, signature) —
+    // rendered by the FormalNotice component; `message` stays the plain-text copy.
+    document: { type: mongoose.Schema.Types.Mixed, default: undefined },
+    // Recipient-specific copies of a notice the admin already sees in one
+    // consolidated form (e.g. per-class exam routine notices) — kept out of
+    // the admin Notices console.
+    adminHidden: { type: Boolean, default: false },
     targetUserIds: [{ type: mongoose.Schema.Types.ObjectId, index: true }],
 
     // Read tracking
@@ -114,9 +136,30 @@ const notificationSchema = new mongoose.Schema(
   { timestamps: true }
 );
 
+
+const emitNotificationCreated = (doc) => {
+  try {
+    const notification = doc?.toObject ? doc.toObject() : doc;
+    const schoolId = notification?.schoolId ? String(notification.schoolId) : '';
+    if (!schoolId) return;
+    const io = socketRegistry.get();
+    if (!io) return;
+    io.to(`school:${schoolId}`).emit('new_notification', {
+      notificationId: String(notification._id || ''),
+      schoolId,
+      audience: notification.audience || 'All',
+      type: notification.type || 'general',
+      typeLabel: notification.typeLabel || '',
+      kind: notification.kind || 'notification',
+    });
+  } catch (_err) {
+    // Notification persistence must not fail because a realtime hint could not be sent.
+  }
+};
 // Add compound indexes for efficient queries
 notificationSchema.index({ schoolId: 1, audience: 1, createdAt: -1 });
 notificationSchema.index({ schoolId: 1, campusId: 1, audience: 1 });
+notificationSchema.index({ schoolId: 1, kind: 1, createdAt: -1 });
 
 notificationSchema.pre('save', function (next) {
   this.$locals = this.$locals || {};
@@ -127,7 +170,9 @@ notificationSchema.pre('save', function (next) {
 notificationSchema.post('save', function (doc) {
   if (!this?.$locals?.wasNew) return;
   setImmediate(() => {
-    sendPushForNotification(doc).catch(() => {});
+    emitNotificationCreated(doc);
+    // Notices are persistent records; the alert that accompanies them carries the push.
+    if (doc?.kind !== 'notice') sendPushForNotification(doc).catch(() => {});
   });
 });
 
@@ -135,11 +180,15 @@ notificationSchema.post('insertMany', function (docs = []) {
   if (!Array.isArray(docs) || docs.length === 0) return;
   docs.forEach((doc) => {
     setImmediate(() => {
-      sendPushForNotification(doc).catch(() => {});
+      emitNotificationCreated(doc);
+      if (doc?.kind !== 'notice') sendPushForNotification(doc).catch(() => {});
     });
   });
 });
 
 notificationSchema.add({ dedupeKey: { type: String } });
 notificationSchema.index({ dedupeKey: 1 }, { unique: true, sparse: true });
+// Any write to notifications (from any router) drops cached /notifications/user responses.
+const clearUserNotificationsCache = () => userNotificationsCache.clear();
+notificationSchema.post(['save', 'insertMany', 'deleteOne', 'deleteMany', 'findOneAndDelete', 'findOneAndUpdate', 'updateOne', 'updateMany'], clearUserNotificationsCache);
 module.exports = mongoose.model('Notification', notificationSchema);

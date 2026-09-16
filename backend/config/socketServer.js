@@ -8,6 +8,7 @@ const { createAdapter } = require('@socket.io/redis-adapter');
 const jwt = require('jsonwebtoken');
 const { runWithTenant } = require('../utils/tenantContext');
 const { logger } = require('../utils/logger');
+const { sendChatMessagePush } = require('../utils/webPushService');
 const {
   getPresenceSnapshot,
   markUserOnline,
@@ -15,6 +16,9 @@ const {
   notifyPresenceChange,
 } = require('../utils/chatPresence');
 const socketRegistry = require('../utils/socketRegistry');
+const StudentUser = require('../models/StudentUser');
+const TeacherUser = require('../models/TeacherUser');
+const ParentUser = require('../models/ParentUser');
 
 const resolveOrganizationForSocket = async (decoded, hostname, tenantResolver) => {
   const { getRootDomain, isMainHostname, resolveSlug } = tenantResolver;
@@ -102,6 +106,12 @@ const registerSocketEvents = (io, socket, ensureChatAccess) => {
   };
 
   socket.join(`user:${userId}`);
+  if (user.schoolId) {
+    socket.join(`school:${user.schoolId}`);
+  }
+  if (user.campusId) {
+    socket.join(`campus:${user.campusId}`);
+  }
   const presenceOnline = markUserOnline(userId);
   if (presenceOnline.changed) {
     notifyPresenceChange(io, { user, targetUserId: userId, online: true, lastSeen: presenceOnline.lastSeen });
@@ -141,7 +151,12 @@ const registerSocketEvents = (io, socket, ensureChatAccess) => {
     socket.leave(`thread:${threadId}`);
   });
 
-  socket.on('send-message', async ({ threadId, text, encrypted }) => {
+  // Threads this socket already passed the (slow, allocation-based) access check for.
+  const verifiedThreadIds = new Set();
+
+  socket.on('send-message', async ({ threadId, text, encrypted } = {}, ack) => {
+    // Optional ack lets the sender mark the message failed instead of hanging.
+    const reply = typeof ack === 'function' ? ack : () => {};
     try {
       const plainText = String(text || '').trim();
       const hasEncrypted =
@@ -149,7 +164,7 @@ const registerSocketEvents = (io, socket, ensureChatAccess) => {
         String(encrypted.ciphertext || '').trim() &&
         String(encrypted.iv || '').trim() &&
         Array.isArray(encrypted.keys) && encrypted.keys.length > 0;
-      if (!plainText && !hasEncrypted) return;
+      if (!plainText && !hasEncrypted) return reply({ ok: false, error: 'Empty message' });
 
       const thread = await ChatThread.findOne({
         _id: threadId,
@@ -157,10 +172,14 @@ const registerSocketEvents = (io, socket, ensureChatAccess) => {
         ...(user.campusId ? { campusId: user.campusId } : {}),
         'participants.userId': userId,
       }).lean();
-      if (!thread) return;
-      if (!(await ensureChatAccess({ user, schoolId: user.schoolId, campusId: user.campusId }, thread))) {
-        socket.emit('error', { message: 'Access denied' });
-        return;
+      if (!thread) return reply({ ok: false, error: 'Conversation not found' });
+      if (!verifiedThreadIds.has(String(threadId))) {
+        if (!(await ensureChatAccess({ user, schoolId: user.schoolId, campusId: user.campusId }, thread))) {
+          socket.emit('error', { message: 'Access denied' });
+          reply({ ok: false, error: 'Access denied' });
+          return;
+        }
+        verifiedThreadIds.add(String(threadId));
       }
 
       const myParticipant = thread.participants?.find((p) => p.userId?.toString() === userId);
@@ -185,6 +204,20 @@ const registerSocketEvents = (io, socket, ensureChatAccess) => {
         seenBy: [{ userId, seenAt: new Date() }],
       });
 
+      // Deliver to everyone first; the thread summary/unread writes below can follow.
+      const payload = msg.toObject();
+      socket.emit('message-sent', payload);
+      reply({ ok: true, message: payload });
+      io.to(`thread:${threadId}`).emit('new-message', payload);
+      for (const p of thread.participants) {
+        if (p.userId?.toString() === userId) continue;
+        io.to(`user:${p.userId}`).emit('thread-updated', {
+          threadId, lastMessage: msg.text || '[Encrypted message]',
+          lastMessageAt: msg.createdAt, message: payload,
+        });
+      }
+      sendChatMessagePush({ io, thread, message: payload, senderId: userId })
+        .catch((pushErr) => logger.warn({ err: pushErr }, 'chat push failed'));
       const bulkOps = thread.participants
         .filter((p) => p.userId?.toString() !== userId)
         .map((p) => ({
@@ -202,18 +235,9 @@ const registerSocketEvents = (io, socket, ensureChatAccess) => {
         bulkOps.length ? ChatThread.bulkWrite(bulkOps) : Promise.resolve(),
       ]);
 
-      const payload = msg.toObject();
-      socket.emit('message-sent', payload);
-      io.to(`thread:${threadId}`).emit('new-message', payload);
-      for (const p of thread.participants) {
-        if (p.userId?.toString() === userId) continue;
-        io.to(`user:${p.userId}`).emit('thread-updated', {
-          threadId, lastMessage: msg.text || '[Encrypted message]',
-          lastMessageAt: msg.createdAt, message: payload,
-        });
-      }
     } catch (err) {
       socket.emit('error', { message: err.message });
+      reply({ ok: false, error: 'Message could not be sent' });
     }
   });
 
@@ -278,6 +302,8 @@ const registerSocketEvents = (io, socket, ensureChatAccess) => {
     const presenceOffline = markUserOffline(userId);
     if (presenceOffline.changed) {
       notifyPresenceChange(io, { user, targetUserId: userId, online: false, lastSeen: presenceOffline.lastSeen });
+      const UserModel = { student: StudentUser, teacher: TeacherUser, parent: ParentUser }[String(user.userType || '').toLowerCase()];
+      UserModel?.updateOne({ _id: userId }, { $set: { lastActiveAt: presenceOffline.lastSeen } }).catch(() => {});
     }
   });
 };
@@ -321,7 +347,10 @@ const configureSocketServer = (httpServer, corsOrigin, tenantResolver, redisClie
     if (!token) return next(new Error('Authentication required'));
     try {
       const decoded = jwt.verify(token, process.env.JWT_SECRET);
-      if (!decoded.campusId) return next(new Error('campusId required'));
+      const normalizedType = String(decoded.userType || decoded.type || decoded.role || '').toLowerCase();
+      if (!decoded.campusId && !['admin', 'super_admin', 'super admin'].includes(normalizedType)) {
+        return next(new Error('campusId required'));
+      }
       const rawHost = socket.handshake.headers.host || '';
       const { normalizeHostname } = tenantResolver;
       const hostname = normalizeHostname(rawHost.replace(/:\d+$/, ''));

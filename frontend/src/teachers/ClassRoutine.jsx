@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useMemo, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { jsPDF } from 'jspdf';
 import { AnimatePresence, motion as Motion } from 'framer-motion';
 import {
@@ -21,6 +21,7 @@ import {
   Timer,
   TrendingUp,
   Users,
+  X,
   Zap,
 } from 'lucide-react';
 
@@ -125,10 +126,14 @@ const ClassRoutine = () => {
   const [showFilters, setShowFilters] = useState(false);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
+  const [openEntry, setOpenEntry] = useState(null);
+  const [refreshing, setRefreshing] = useState(false);
+  const loadedOnceRef = useRef(false);
 
   const loadRoutine = useCallback(async () => {
     try {
-      setLoading(true);
+      if (loadedOnceRef.current) setRefreshing(true);
+      else setLoading(true);
       setError(null);
 
       const token = localStorage.getItem('token');
@@ -196,7 +201,9 @@ const ClassRoutine = () => {
     } catch (err) {
       setError(err.message || 'Failed to load routine');
     } finally {
+      loadedOnceRef.current = true;
       setLoading(false);
+      setRefreshing(false);
     }
   }, []);
 
@@ -442,312 +449,181 @@ const ClassRoutine = () => {
   };
 
 
+  // Professional A4-landscape routine: letterhead, teacher details, weekly grid, legend, signatures.
   const downloadPDF = useCallback(() => {
     const generate = async () => {
       const doc = new jsPDF({ orientation: 'landscape', unit: 'mm', format: 'a4' });
-      const PW = 297, PH = 210, ML = 14, MR = 14;
-      const UW = PW - ML - MR; // 269 mm usable width
+      const PW = 297, PH = 210, M = 12;
+      const UW = PW - M * 2;
+      const NAVY = [15, 27, 61], BLUE = [37, 99, 235], MUTED = [100, 116, 139], LINE = [214, 222, 233];
+      const trunc = (str, n) => { const v = String(str || ''); return v.length > n ? `${v.slice(0, n - 1)}…` : v; };
 
-      const schoolName    = teacherProfile?.schoolName || teacherProfile?.school?.name || teacherProfile?.campusName || 'School';
-      const schoolAddress = teacherProfile?.schoolAddress || teacherProfile?.school?.address || teacherProfile?.campusAddress || teacherProfile?.address || '';
-      const teacherName   = teacherProfile?.name || teacherProfile?.fullName || '';
-      const subject       = teacherProfile?.subject || '';
-      const logoUrl       = teacherProfile?.schoolLogo || '';
+      const schoolName = teacherProfile?.schoolName || teacherProfile?.campusName || 'School';
+      const schoolAddress = teacherProfile?.schoolAddress || '';
+      const teacherName = teacherProfile?.name || teacherProfile?.fullName || 'Teacher';
+      const logoUrl = teacherProfile?.schoolLogo || '';
 
-      // ── Load school logo as base64 ───────────────────────────────────────
-      let logoDataUrl = null;
+      let logo = null;
       if (logoUrl) {
         try {
-          const resp = await fetch(logoUrl);
-          const blob = await resp.blob();
-          logoDataUrl = await new Promise((resolve, reject) => {
+          const blob = await (await fetch(logoUrl)).blob();
+          logo = await new Promise((resolve, reject) => {
             const reader = new FileReader();
-            reader.onload  = () => resolve(reader.result);
+            reader.onload = () => resolve(reader.result);
             reader.onerror = reject;
             reader.readAsDataURL(blob);
           });
-        } catch { /* skip logo if fetch fails */ }
+        } catch { /* letterhead without logo */ }
       }
 
-      const activeDays  = DAYS.filter(d => (effectiveSchedule[d] || []).length > 0);
-      const displayDays = activeDays.length > 0 ? activeDays : DAYS.slice(0, 6);
+      // Mon–Sat always; Sunday only when it has classes.
+      const days = DAYS.filter((d, i) => i < 6 || (effectiveSchedule[d] || []).length > 0);
+      const subjects = Array.from(new Set(DAYS.flatMap((d) => (effectiveSchedule[d] || []).map((e) => e.subject || 'Subject')))).sort();
+      const PALETTE = [
+        { fill: [220, 245, 230], bar: [22, 163, 74] },
+        { fill: [219, 231, 254], bar: [37, 99, 235] },
+        { fill: [236, 226, 254], bar: [147, 51, 234] },
+        { fill: [253, 240, 210], bar: [245, 158, 11] },
+        { fill: [253, 224, 224], bar: [239, 68, 68] },
+        { fill: [213, 243, 241], bar: [20, 184, 166] },
+        { fill: [252, 231, 243], bar: [236, 72, 153] },
+      ];
+      const toneOf = (subject) => PALETTE[Math.max(0, subjects.indexOf(subject || 'Subject')) % PALETTE.length];
 
-      const TIME_W   = 30;
-      const COL_W    = (UW - TIME_W) / displayDays.length;
-      const HDR_H    = 9;
-      const LOGO_SZ  = 22;   // logo size in mm
-      const HEADER_H = logoDataUrl ? 38 : 30; // taller header when logo present
-      const BRK_H    = 8;    // break row height
-
-      const infoItems = [
-        teacherName && `Teacher: ${teacherName}`,
-        subject && `Subject: ${subject}`,
-        teacherClassLabels.length > 0 && `Class: ${teacherClassLabels.join(', ')}`,
-        teacherSectionLabels.length > 0 && `Section: ${teacherSectionLabels.join(', ')}`,
-        teacherProfile?.campusName && `Campus: ${teacherProfile.campusName}`,
-      ].filter(Boolean);
-      const INFO_H = infoItems.length > 0 ? 10 : 0;
-
-      // ── Break detection between consecutive time slots ───────────────────
-      const timeToMins = (t) => {
-        if (!t) return null;
-        const m = t.trim().match(/^(\d+):(\d+)\s*(AM|PM)$/i);
-        if (!m) return null;
-        let h = parseInt(m[1]), mn = parseInt(m[2]);
-        if (m[3].toUpperCase() === 'PM' && h !== 12) h += 12;
-        if (m[3].toUpperCase() === 'AM' && h === 12) h = 0;
-        return h * 60 + mn;
-      };
-
-      const pdfRows = [];
-      weeklySlots.forEach((slot, si) => {
-        pdfRows.push({ slot: slot.slot, isBreak: false, si });
-        if (si < weeklySlots.length - 1) {
-          const parts     = slot.slot.split(' - ');
-          const nextParts = weeklySlots[si + 1].slot.split(' - ');
-          const endMins   = timeToMins(parts[1]?.trim());
-          const nextMins  = timeToMins(nextParts[0]?.trim());
-          if (endMins !== null && nextMins !== null && nextMins - endMins >= 10) {
-            const dur = nextMins - endMins;
-            pdfRows.push({
-              slot: `${parts[1]?.trim()} - ${nextParts[0]?.trim()}`,
-              isBreak: true,
-              breakLabel: `Break  (${dur} min)`,
-              si: -1,
-            });
-          }
-        }
-      });
-
-      const breakCount = pdfRows.filter(r => r.isBreak).length;
-      const dataCount  = pdfRows.filter(r => !r.isBreak).length;
-      // Available height for data rows
-      const availH = PH - HEADER_H - INFO_H - 5 - HDR_H - breakCount * BRK_H - 12;
-      const ROW_H  = Math.min(20, Math.max(12, Math.floor(availH / Math.max(dataCount, 1))));
-
-      const TABLE_W = TIME_W + displayDays.length * COL_W;
-      const trunc   = (str, n) => { const s = String(str || ''); return s.length > n ? s.slice(0, n - 1) + '…' : s; };
-
-      // ── HEADER BLOCK ──────────────────────────────────────────────────────
-      doc.setFillColor(67, 56, 202);      // indigo-700
-      doc.rect(0, 0, PW, HEADER_H, 'F');
-
-      // School logo — left side, vertically centered in header (above accent strip)
-      const logoAreaH = HEADER_H - 10; // exclude bottom accent strip
-      if (logoDataUrl) {
-        const logoX = 8;
-        const logoY = (logoAreaH - LOGO_SZ) / 2;
-        // White circle bg behind logo
-        doc.setFillColor(255, 255, 255);
-        doc.circle(logoX + LOGO_SZ / 2, logoY + LOGO_SZ / 2, LOGO_SZ / 2 + 1.5, 'F');
-        try { doc.addImage(logoDataUrl, logoX, logoY, LOGO_SZ, LOGO_SZ); } catch { /* skip */ }
+      // ── Letterhead ──
+      let y = M;
+      const LOGO = 18;
+      if (logo) {
+        try { doc.addImage(logo, M, y, LOGO, LOGO); } catch { /* skip */ }
       }
-
-      // School name — centered
-      const nameY = logoDataUrl ? 12 : 11;
-      doc.setFont('helvetica', 'bold');
-      doc.setFontSize(18);
-      doc.setTextColor(255, 255, 255);
-      doc.text(trunc(schoolName, 55), PW / 2, nameY, { align: 'center' });
-
-      // School address
+      const textX = logo ? M + LOGO + 5 : M;
+      doc.setFont('helvetica', 'bold'); doc.setFontSize(17); doc.setTextColor(...NAVY);
+      doc.text(trunc(schoolName, 60), textX, y + 7);
       if (schoolAddress) {
-        doc.setFont('helvetica', 'normal');
-        doc.setFontSize(8.5);
-        doc.setTextColor(199, 210, 254);  // indigo-200
-        doc.text(trunc(schoolAddress, 90), PW / 2, nameY + 8, { align: 'center' });
+        doc.setFont('helvetica', 'normal'); doc.setFontSize(9); doc.setTextColor(...MUTED);
+        doc.text(trunc(schoolAddress, 100), textX, y + 12.5);
       }
-
-      // CLASS ROUTINE accent strip at bottom of header
-      doc.setFillColor(79, 70, 229);      // indigo-600
-      doc.rect(0, HEADER_H - 10, PW, 10, 'F');
-      doc.setFont('helvetica', 'bold');
-      doc.setFontSize(9);
-      doc.setTextColor(224, 231, 255);    // indigo-100
-      doc.text('CLASS ROUTINE', PW / 2, HEADER_H - 3.5, { align: 'center' });
-
-      let y = HEADER_H + 4;
-
-      // ── TEACHER INFO BAR ──────────────────────────────────────────────────
-      if (infoItems.length > 0) {
-        doc.setFont('helvetica', 'normal');
-        doc.setFontSize(7.5);
-        doc.setTextColor(75, 85, 99);
-        doc.text(infoItems.join('   ·   '), PW / 2, y, { align: 'center' });
-        y += 5;
-      }
-
-      doc.setDrawColor(229, 231, 235);
-      doc.setLineWidth(0.3);
-      doc.line(ML, y, PW - MR, y);
+      doc.setFont('helvetica', 'bold'); doc.setFontSize(13); doc.setTextColor(...BLUE);
+      doc.text('TEACHER CLASS ROUTINE', PW - M, y + 7, { align: 'right' });
+      doc.setFont('helvetica', 'normal'); doc.setFontSize(8.5); doc.setTextColor(...MUTED);
+      doc.text('Weekly timetable', PW - M, y + 12.5, { align: 'right' });
+      y += LOGO + 3;
+      doc.setDrawColor(...BLUE); doc.setLineWidth(0.8); doc.line(M, y, PW - M, y);
+      doc.setDrawColor(...LINE); doc.setLineWidth(0.3); doc.line(M, y + 1.2, PW - M, y + 1.2);
       y += 5;
 
-      const TABLE_Y = y;
-
-      // ── TABLE HEADER ──────────────────────────────────────────────────────
-      doc.setFillColor(243, 244, 246);
-      doc.rect(ML, y, TIME_W, HDR_H, 'F');
-      doc.setFont('helvetica', 'bold');
-      doc.setFontSize(7);
-      doc.setTextColor(107, 114, 128);
-      doc.text('TIME', ML + TIME_W / 2, y + 5.5, { align: 'center' });
-
-      displayDays.forEach((day, di) => {
-        const cx = ML + TIME_W + di * COL_W;
-        doc.setFillColor(238, 242, 255);  // indigo-50
-        doc.rect(cx, y, COL_W, HDR_H, 'F');
-        doc.setFont('helvetica', 'bold');
-        doc.setFontSize(8);
-        doc.setTextColor(67, 56, 202);    // indigo-700
-        doc.text(day.toUpperCase(), cx + COL_W / 2, y + 5.5, { align: 'center' });
+      // ── Teacher details strip ──
+      const weeklyTotal = DAYS.reduce((n, d) => n + (effectiveSchedule[d] || []).length, 0);
+      const details = [
+        ['Teacher', teacherName],
+        ['Subject', teacherProfile?.subject || subjects.join(', ') || '—'],
+        ['Classes', `${weeklyTotal} class${weeklyTotal === 1 ? '' : 'es'} in the week`],
+      ];
+      const boxW = UW / details.length;
+      doc.setFillColor(246, 248, 251); doc.setDrawColor(...LINE); doc.setLineWidth(0.25);
+      doc.roundedRect(M, y, UW, 12, 1.5, 1.5, 'FD');
+      details.forEach(([label, value], i) => {
+        const x = M + i * boxW + 4;
+        if (i) doc.line(M + i * boxW, y + 2, M + i * boxW, y + 10);
+        doc.setFont('helvetica', 'normal'); doc.setFontSize(7); doc.setTextColor(...MUTED);
+        doc.text(label.toUpperCase(), x, y + 4.5);
+        doc.setFont('helvetica', 'bold'); doc.setFontSize(9.5); doc.setTextColor(...NAVY);
+        doc.text(trunc(value, Math.floor(boxW / 2.1)), x, y + 9.5);
       });
+      y += 16;
 
+      // ── Grid ──
+      const TIME_W = 34, HDR_H = 9;
+      const COL_W = (UW - TIME_W) / days.length;
+      const footerSpace = 20;
+      const ROW_H = Math.max(14, Math.min(22, (PH - y - HDR_H - footerSpace) / Math.max(weeklySlots.length, 1)));
+      const tableY = y;
+
+      doc.setFillColor(...NAVY);
+      doc.rect(M, y, UW, HDR_H, 'F');
+      doc.setFont('helvetica', 'bold'); doc.setFontSize(8.5); doc.setTextColor(255, 255, 255);
+      doc.text('TIME', M + TIME_W / 2, y + 5.8, { align: 'center' });
+      days.forEach((day, i) => doc.text(day.toUpperCase(), M + TIME_W + i * COL_W + COL_W / 2, y + 5.8, { align: 'center' }));
       y += HDR_H;
 
-      // ── TABLE ROWS (class rows + break rows) ─────────────────────────────
-      const FILLS   = [[239,246,255],[245,243,255],[236,253,245],[255,251,235],[255,241,242],[240,253,250]];
-      const ACCENTS = [[59,130,246],[139,92,246],[16,185,129],[245,158,11],[244,63,94],[20,184,166]];
-      const subMaxCh = Math.max(8, Math.floor(COL_W / 2.1));
-
-      pdfRows.forEach((row) => {
-        if (row.isBreak) {
-          // ── BREAK ROW ────────────────────────────────────────────────────
-          // Full-width amber strip
-          doc.setFillColor(255, 251, 235);          // amber-50
-          doc.rect(ML, y, TABLE_W, BRK_H, 'F');
-          // Left accent stripe
-          doc.setFillColor(245, 158, 11);            // amber-500
-          doc.rect(ML, y, 2.5, BRK_H, 'F');
-          // Time span (left column)
-          doc.setFont('helvetica', 'normal');
-          doc.setFontSize(5.5);
-          doc.setTextColor(161, 98, 7);              // amber-700
-          doc.text(row.slot, ML + TIME_W / 2, y + BRK_H / 2 + 1.5, { align: 'center' });
-          // "Break (X min)" label — centered over day columns
-          doc.setFont('helvetica', 'bold');
-          doc.setFontSize(7);
-          doc.setTextColor(161, 98, 7);
-          const breakCenterX = ML + TIME_W + (TABLE_W - TIME_W) / 2;
-          doc.text(row.breakLabel, breakCenterX, y + BRK_H / 2 + 1.5, { align: 'center' });
-          y += BRK_H;
+      weeklySlots.forEach(({ slot }, r) => {
+        if (r % 2) { doc.setFillColor(250, 251, 253); doc.rect(M, y, UW, ROW_H, 'F'); }
+        doc.setFillColor(241, 245, 249); doc.rect(M, y, TIME_W, ROW_H, 'F');
+        const [from, to] = slot.split(' - ');
+        doc.setFont('helvetica', 'bold'); doc.setFontSize(8); doc.setTextColor(...NAVY);
+        if (to) {
+          doc.text(from, M + TIME_W / 2, y + ROW_H / 2 - 0.8, { align: 'center' });
+          doc.setFont('helvetica', 'normal'); doc.setFontSize(7); doc.setTextColor(...MUTED);
+          doc.text(`to ${to}`, M + TIME_W / 2, y + ROW_H / 2 + 3.2, { align: 'center' });
         } else {
-          // ── CLASS ROW ────────────────────────────────────────────────────
-          const si = row.si;
-          const [fr, fg, fb] = FILLS[si % FILLS.length];
-          const [ar, ag, ab] = ACCENTS[si % ACCENTS.length];
-          const midY = y + ROW_H / 2;
+          doc.text(slot, M + TIME_W / 2, y + ROW_H / 2 + 1, { align: 'center' });
+        }
 
-          // Time cell
-          doc.setFillColor(249, 250, 251);
-          doc.rect(ML, y, TIME_W, ROW_H, 'F');
-          const parts = row.slot.split(' - ');
-          if (parts.length === 2) {
-            doc.setFont('helvetica', 'bold');
-            doc.setFontSize(7);
-            doc.setTextColor(55, 65, 81);
-            doc.text(parts[0], ML + TIME_W / 2, midY - 2, { align: 'center' });
-            doc.setFont('helvetica', 'normal');
-            doc.setFontSize(6);
-            doc.setTextColor(107, 114, 128);
-            doc.text(parts[1], ML + TIME_W / 2, midY + 3, { align: 'center' });
-          } else {
-            doc.setFont('helvetica', 'bold');
-            doc.setFontSize(7);
-            doc.setTextColor(55, 65, 81);
-            doc.text(row.slot, ML + TIME_W / 2, midY + 1, { align: 'center' });
+        days.forEach((day, i) => {
+          const x = M + TIME_W + i * COL_W;
+          const entry = weeklyMatrix[day]?.[slot];
+          if (!entry) {
+            doc.setFont('helvetica', 'normal'); doc.setFontSize(9); doc.setTextColor(203, 213, 225);
+            doc.text('—', x + COL_W / 2, y + ROW_H / 2 + 1, { align: 'center' });
+            return;
           }
-
-          // Day cells
-          displayDays.forEach((day, di) => {
-            const cx    = ML + TIME_W + di * COL_W;
-            const entry = weeklyMatrix[day]?.[row.slot];
-            if (entry) {
-              doc.setFillColor(fr, fg, fb);
-              doc.roundedRect(cx + 1.5, y + 1.5, COL_W - 3, ROW_H - 3, 1.5, 1.5, 'F');
-              // Accent dot
-              doc.setFillColor(ar, ag, ab);
-              doc.circle(cx + 5, y + ROW_H * 0.28, 1.4, 'F');
-              // Subject
-              doc.setFont('helvetica', 'bold');
-              doc.setFontSize(7.5);
-              doc.setTextColor(17, 24, 39);
-              doc.text(trunc(entry.subject || 'Subject', subMaxCh), cx + COL_W / 2, midY - 1.5, { align: 'center' });
-              // Class
-              const cls = entry.classLabel || entry.className || entry.class || '';
-              if (cls) {
-                doc.setFont('helvetica', 'normal');
-                doc.setFontSize(6.5);
-                doc.setTextColor(ar, ag, ab);
-                doc.text(trunc(cls, 18), cx + COL_W / 2, midY + 3.5, { align: 'center' });
-              }
-              // Room
-              doc.setFontSize(6);
-              doc.setTextColor(156, 163, 175);
-              doc.text(trunc(entry.room || 'TBA', 16), cx + COL_W / 2, y + ROW_H * 0.85, { align: 'center' });
-            } else {
-              doc.setFillColor(250, 250, 250);
-              doc.rect(cx, y, COL_W, ROW_H, 'F');
-              doc.setFont('helvetica', 'normal');
-              doc.setFontSize(10);
-              doc.setTextColor(209, 213, 219);
-              doc.text('—', cx + COL_W / 2, midY + 1, { align: 'center' });
-            }
-          });
-
-          y += ROW_H;
-        }
+          const tone = toneOf(entry.subject);
+          doc.setFillColor(...tone.fill); doc.roundedRect(x + 1.2, y + 1.2, COL_W - 2.4, ROW_H - 2.4, 1.2, 1.2, 'F');
+          doc.setFillColor(...tone.bar); doc.rect(x + 1.2, y + 1.2, 1.1, ROW_H - 2.4, 'F');
+          const maxCh = Math.max(8, Math.floor(COL_W / 1.9));
+          const cx = x + COL_W / 2;
+          const cls = entry.classLabel || entry.className || '';
+          const room = entry.roomNumber || (entry.room && entry.room !== 'TBA' ? entry.room : '');
+          const venue = [entry.building, entry.floor, room ? `Room ${room}` : 'Room TBA'].filter(Boolean).join(' · ');
+          doc.setFont('helvetica', 'normal'); doc.setFontSize(6);
+          const venueLines = doc.splitTextToSize(venue, COL_W - 5).slice(0, 2);
+          const lineCount = 2 + venueLines.length;
+          let ty = y + ROW_H / 2 - ((lineCount - 1) * 3.1) / 2 + 1;
+          doc.setFont('helvetica', 'bold'); doc.setFontSize(8.5); doc.setTextColor(...NAVY);
+          doc.text(trunc(entry.subject || 'Subject', maxCh), cx, ty, { align: 'center' });
+          ty += 3.3;
+          doc.setFont('helvetica', 'bold'); doc.setFontSize(7); doc.setTextColor(...tone.bar);
+          doc.text(trunc(cls ? `Class ${cls}` : '', maxCh + 4), cx, ty, { align: 'center' });
+          doc.setFont('helvetica', 'normal'); doc.setFontSize(6); doc.setTextColor(71, 85, 105);
+          venueLines.forEach((line) => { ty += 3; doc.text(line, cx, ty, { align: 'center' }); });
+        });
+        y += ROW_H;
       });
 
-      const TABLE_END_Y = y;
+      // Grid lines
+      doc.setDrawColor(...LINE); doc.setLineWidth(0.25);
+      for (let ly = tableY + HDR_H; ly <= y + 0.01; ly += ROW_H) doc.line(M, ly, PW - M, ly);
+      doc.line(M + TIME_W, tableY, M + TIME_W, y);
+      for (let i = 1; i < days.length; i += 1) doc.line(M + TIME_W + i * COL_W, tableY + HDR_H, M + TIME_W + i * COL_W, y);
+      doc.setDrawColor(...NAVY); doc.setLineWidth(0.4); doc.rect(M, tableY, UW, y - tableY);
 
-      // ── GRID LINES ────────────────────────────────────────────────────────
-      doc.setDrawColor(209, 213, 219);
-      doc.setLineWidth(0.35);
-      doc.rect(ML, TABLE_Y, TABLE_W, TABLE_END_Y - TABLE_Y);
-
-      doc.setLineWidth(0.2);
-      doc.setDrawColor(229, 231, 235);
-
-      // Horizontal lines between rows
-      let ly = TABLE_Y + HDR_H;
-      pdfRows.forEach((row) => {
-        doc.line(ML, ly, ML + TABLE_W, ly);
-        ly += row.isBreak ? BRK_H : ROW_H;
+      // ── Legend ──
+      y += 5;
+      doc.setFont('helvetica', 'bold'); doc.setFontSize(8); doc.setTextColor(...NAVY);
+      doc.text('Subjects:', M, y);
+      let lx = M + 17;
+      doc.setFont('helvetica', 'normal');
+      subjects.forEach((subject) => {
+        const tone = toneOf(subject);
+        doc.setFillColor(...tone.bar); doc.circle(lx + 1.3, y - 1.1, 1.3, 'F');
+        doc.setTextColor(71, 85, 105); doc.text(subject, lx + 4, y);
+        lx += doc.getTextWidth(subject) + 11;
       });
 
-      // Vertical lines drawn in segments — break rows are skipped so they
-      // appear as a single full-width colspan cell with no dividers inside.
-      const vSegs = [];
-      let vy = TABLE_Y;
-      vSegs.push({ y1: vy, y2: vy + HDR_H });   // header row segment
-      vy += HDR_H;
-      pdfRows.forEach((row) => {
-        if (!row.isBreak) {
-          const last = vSegs[vSegs.length - 1];
-          if (last && last.y2 === vy) { last.y2 = vy + ROW_H; }  // extend
-          else                        { vSegs.push({ y1: vy, y2: vy + ROW_H }); }
-          vy += ROW_H;
-        } else {
-          vy += BRK_H;  // skip — no vertical lines drawn through break row
-        }
-      });
+      // ── Footer ──
+      doc.setFont('helvetica', 'normal');
 
-      const vLineXs = [ML + TIME_W];
-      for (let i = 1; i < displayDays.length; i++) vLineXs.push(ML + TIME_W + i * COL_W);
-      vLineXs.forEach(lx => vSegs.forEach(seg => doc.line(lx, seg.y1, lx, seg.y2)));
+      const generated = new Date().toLocaleString('en-IN', { day: '2-digit', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit' });
+      doc.setDrawColor(...LINE); doc.line(M, PH - 8, PW - M, PH - 8);
+      doc.setFontSize(7); doc.setTextColor(148, 163, 184);
+      doc.text(`Generated on ${generated}`, M, PH - 4.5);
+      doc.text(trunc(schoolName, 60), PW / 2, PH - 4.5, { align: 'center' });
+      doc.text('Page 1 of 1', PW - M, PH - 4.5, { align: 'right' });
 
-      // ── FOOTER ────────────────────────────────────────────────────────────
-      const genDate = new Date().toLocaleString('en-IN', { day: 'numeric', month: 'long', year: 'numeric', hour: '2-digit', minute: '2-digit' });
-      doc.setFont('helvetica', 'italic');
-      doc.setFontSize(6.5);
-      doc.setTextColor(156, 163, 175);
-      doc.text(`Generated: ${genDate}`, ML, PH - 5);
-      doc.text(trunc(schoolName, 50), PW - MR, PH - 5, { align: 'right' });
-
-      doc.save(`class-routine-${(teacherProfile?.name || 'teacher').replace(/\s+/g, '-').toLowerCase()}.pdf`);
+      doc.save(`class-routine-${teacherName.replace(/\s+/g, '-').toLowerCase()}.pdf`);
     };
     generate();
-  }, [effectiveSchedule, weeklySlots, weeklyMatrix, teacherProfile, teacherClassLabels, teacherSectionLabels]);
+  }, [effectiveSchedule, weeklySlots, weeklyMatrix, teacherProfile, teacherClassLabels]);
 
   if (loading) {
     return (
@@ -777,132 +653,175 @@ const ClassRoutine = () => {
     { label: 'Subjects', value: uniqueSubjects.length, insight: `${subjectDistribution[0]?.subject || 'No subject'} leads workload`, icon: Layers, tone: 'from-cyan-500 to-sky-500' },
   ];
 
+  // Fixed weekly routine: one colour per subject, shared by the cells and the legend.
+  const SUBJECT_TONES = [
+    { cell: 'bg-[#dcf5e6] border-l-[#16a34a]', dot: 'bg-[#16a34a]', text: 'text-[#15803d]' },
+    { cell: 'bg-[#dbe7fe] border-l-[#2563eb]', dot: 'bg-[#2563eb]', text: 'text-[#1d4ed8]' },
+    { cell: 'bg-[#ece2fe] border-l-[#9333ea]', dot: 'bg-[#9333ea]', text: 'text-[#7e22ce]' },
+    { cell: 'bg-[#fdf0d2] border-l-[#f59e0b]', dot: 'bg-[#f59e0b]', text: 'text-[#b45309]' },
+    { cell: 'bg-[#fde0e0] border-l-[#ef4444]', dot: 'bg-[#ef4444]', text: 'text-[#b91c1c]' },
+    { cell: 'bg-[#d5f3f1] border-l-[#14b8a6]', dot: 'bg-[#14b8a6]', text: 'text-[#0f766e]' },
+    { cell: 'bg-[#fce7f3] border-l-[#ec4899]', dot: 'bg-[#ec4899]', text: 'text-[#be185d]' },
+  ];
+  const DAY_TONES = ['#2563eb', '#9333ea', '#16a34a', '#f59e0b', '#ef4444', '#14b8a6', '#ec4899'];
+  const toneFor = (subject) => SUBJECT_TONES[Math.max(0, uniqueSubjects.indexOf(subject || 'Subject')) % SUBJECT_TONES.length];
+  // Only today's remaining classes count as "next" — no class today means nothing to show.
+  const todaysNext = nextClass && nextClass.day === todayName ? nextClass : null;
+
   return (
-    <div className="min-h-screen bg-slate-100 p-3 sm:p-5 lg:p-6">
-      <div className="mx-auto max-w-[1500px] space-y-5">
-        <Motion.section initial={{ opacity: 0, y: 12 }} animate={{ opacity: 1, y: 0 }} className="overflow-hidden rounded-3xl border border-slate-200 bg-slate-950 text-white shadow-xl shadow-slate-300/40">
-          <div className="relative p-5 sm:p-7">
-            <div className="absolute inset-0 bg-[radial-gradient(circle_at_top_right,rgba(99,102,241,0.55),transparent_36%),linear-gradient(135deg,rgba(15,23,42,1),rgba(30,41,59,1))]" />
-            <div className="relative flex flex-col gap-6 xl:flex-row xl:items-end xl:justify-between">
-              <div>
-                <p className="text-xs font-semibold uppercase tracking-[0.22em] text-indigo-200">Teacher Timetable</p>
-                <h1 className="mt-3 text-2xl font-semibold tracking-tight sm:text-4xl">Good day, {firstName}</h1>
-                <p className="mt-3 max-w-3xl text-sm text-slate-300">
-                  You have <span className="font-semibold text-white">{realTodayClasses.length} classes today</span>. {nextClass ? `Next class: ${nextClass.subject || 'Subject'} · ${countdownLabel}.` : 'No upcoming class is scheduled.'}
-                </p>
-                <div className="mt-5 flex flex-wrap gap-2">
-                  {teacherProfile?.subject && <HeroChip icon={BookOpen} label={teacherProfile.subject} />}
-                  {teacherProfile?.campusName && <HeroChip icon={School} label={teacherProfile.campusName} />}
-                  <HeroChip icon={Zap} label={`${teachingHours} weekly workload`} />
-                  <HeroChip icon={Users} label={`${toScopeLabel(routineMeta.filterSource)} · ${routineMeta.timetableCount} matched`} />
-                </div>
-              </div>
-              <div className="grid min-w-[280px] gap-3 sm:grid-cols-2">
-                <HeroMetric label="Next Class" value={nextClass?.subject || 'None'} sub={countdownLabel} />
-                <HeroMetric label="Room" value={nextClass?.room || 'TBA'} sub={nextClass ? `${nextClass.classLabel || nextClass.className || 'Class'} · ${nextClass.day}` : 'No upcoming room'} />
-              </div>
-            </div>
+    <div className="min-h-screen bg-[#f6f8fb] p-3 sm:p-4">
+      <div className="mx-auto max-w-[1400px] space-y-3">
+        <div className="flex flex-wrap items-center justify-between gap-2">
+          <div>
+            <h1 className="text-[20px] font-bold leading-tight text-[#0f1b3d]">Teacher Timetable</h1>
+            <p className="text-[12px] text-[#64748b]">Your class schedule for the week.</p>
           </div>
-        </Motion.section>
-
-        {(teacherClassLabels.length > 0 || teacherSectionLabels.length > 0 || teacherProfile?.subject) && (
-          <div className="flex flex-wrap items-center gap-2">
-            {teacherProfile?.subject && <ContextPill icon={BookOpen} label={teacherProfile.subject} tone="indigo" />}
-            {teacherClassLabels.length > 0 && <ContextPill icon={Users} label={`Class ${teacherClassLabels.join(', ')}`} tone="blue" />}
-            {teacherSectionLabels.length > 0 && <ContextPill icon={Layers} label={`Section ${teacherSectionLabels.join(', ')}`} tone="emerald" />}
-            {teacherProfile?.campusName && <ContextPill icon={School} label={teacherProfile.campusName} tone="slate" />}
+          <div className="flex items-center gap-2">
+            <button type="button" onClick={loadRoutine} disabled={refreshing} className="inline-flex items-center gap-1.5 rounded-full border border-[#e2e8f0] bg-white px-3 py-1.5 text-[12px] font-medium text-[#0f1b3d] shadow-sm transition hover:bg-slate-50 disabled:cursor-wait">
+              <RefreshCw size={14} className={refreshing ? 'animate-spin text-[#2563eb]' : 'text-[#475569]'} /> {refreshing ? 'Refreshing…' : 'Refresh'}
+            </button>
+            <button type="button" onClick={downloadPDF} disabled={totalClasses === 0} className="inline-flex items-center gap-1.5 rounded-full bg-[#2563eb] px-3 py-1.5 text-[12px] font-semibold text-white shadow-[0_4px_12px_rgba(37,99,235,0.3)] transition hover:bg-[#1d4ed8] disabled:cursor-not-allowed disabled:opacity-50">
+              <Download size={14} /> Download
+            </button>
           </div>
-        )}
-
-        <div className="grid gap-4 md:grid-cols-3 xl:grid-cols-6">
-          {smartStats.map((stat, index) => <InsightCard key={stat.label} stat={stat} index={index} />)}
         </div>
 
-        <section className="rounded-3xl border border-slate-200 bg-white p-4 shadow-sm">
-          <div className="flex flex-col gap-3 xl:flex-row xl:items-center xl:justify-between">
-            <div className="inline-flex w-fit rounded-2xl border border-slate-200 bg-slate-50 p-1">
-              {[{ id: 'weekly', label: 'Week' }, { id: 'daily', label: 'Day' }].map((tab) => (
-                <button key={tab.id} type="button" onClick={() => setViewMode(tab.id)} className={`rounded-xl px-4 py-2 text-xs font-semibold transition ${viewMode === tab.id ? 'bg-white text-slate-950 shadow-sm' : 'text-slate-500 hover:text-slate-800'}`}>{tab.label}</button>
-              ))}
-            </div>
-
-            <div className="flex flex-col gap-2 md:flex-row md:items-center">
-              <div className="relative md:w-72">
-                <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />
-                <input value={searchTerm} onChange={(event) => setSearchTerm(event.target.value)} placeholder="Search subject, class, room" className="w-full rounded-2xl border border-slate-200 bg-slate-50 py-2.5 pl-9 pr-3 text-sm outline-none transition focus:border-indigo-300 focus:bg-white focus:ring-4 focus:ring-indigo-100" />
-              </div>
-              <button type="button" onClick={() => setShowFilters((prev) => !prev)} className={`inline-flex items-center justify-center gap-2 rounded-2xl border px-3 py-2.5 text-xs font-semibold transition ${activeFilterCount ? 'border-indigo-200 bg-indigo-50 text-indigo-700' : 'border-slate-200 text-slate-600 hover:bg-slate-50'}`}>
-                <Filter size={15} /> Filters {activeFilterCount > 0 && <span className="rounded-full bg-indigo-600 px-1.5 text-[10px] text-white">{activeFilterCount}</span>}
-                <ChevronDown size={14} className={showFilters ? 'rotate-180 transition' : 'transition'} />
-              </button>
-              <div className="relative">
-                <button type="button" onClick={downloadPDF} disabled={totalClasses === 0} className="inline-flex w-full items-center justify-center gap-2 rounded-2xl bg-slate-950 px-3 py-2.5 text-xs font-semibold text-white shadow-sm hover:bg-slate-800 disabled:cursor-not-allowed disabled:opacity-40">
-                  <Download size={15} /> Export PDF
-                </button>
-              </div>
-              <button type="button" onClick={loadRoutine} className="inline-flex items-center justify-center gap-2 rounded-2xl border border-slate-200 px-3 py-2.5 text-xs font-semibold text-slate-600 hover:bg-slate-50">
-                <RefreshCw size={15} /> Reload
-              </button>
+        {/* Greeting + today's next class */}
+        <section className="flex flex-col gap-3 rounded-xl bg-linear-to-r from-[#2563eb] via-[#4f46e5] to-[#9333ea] p-3.5 text-white shadow-[0_8px_20px_rgba(79,70,229,0.25)] md:flex-row md:items-center md:justify-between">
+          <div className="flex items-center gap-3">
+            <span className="flex h-11 w-11 shrink-0 items-center justify-center rounded-full bg-white/20"><Calendar size={20} /></span>
+            <div>
+              <h2 className="text-[16px] font-bold">Good day, {firstName}!</h2>
+              <p className="text-[12px] text-white/85">
+                {realTodayClasses.length
+                  ? `You have ${realTodayClasses.length} class${realTodayClasses.length === 1 ? '' : 'es'} today.`
+                  : 'You have no classes today. Enjoy your day!'}
+              </p>
             </div>
           </div>
-
-          <AnimatePresence>
-            {showFilters && (
-              <Motion.div initial={{ height: 0, opacity: 0 }} animate={{ height: 'auto', opacity: 1 }} exit={{ height: 0, opacity: 0 }} className="overflow-hidden">
-                <div className="mt-4 grid gap-3 border-t border-slate-100 pt-4 md:grid-cols-4">
-                  <FilterSelect label="Subject" value={subjectFilter} onChange={setSubjectFilter} options={uniqueSubjects} />
-                  <FilterSelect label="Room" value={roomFilter} onChange={setRoomFilter} options={uniqueRooms} />
-                  <FilterSelect label="Class" value={classFilter} onChange={setClassFilter} options={uniqueClasses} />
-                  <div className="flex items-end">
-                    <button type="button" onClick={clearFilters} className="h-10 w-full rounded-xl border border-slate-200 text-xs font-semibold text-slate-600 hover:bg-slate-50">Clear filters</button>
-                  </div>
+          <div className="w-full rounded-lg bg-white px-3.5 py-2 text-[#0f1b3d] md:w-[340px]">
+            {todaysNext ? (
+              <>
+                <div className="flex items-center justify-between gap-2">
+                  <span className="rounded-full bg-[#dbeafe] px-2 py-px text-[10px] font-semibold text-[#2563eb]">Next Class</span>
+                  <span className="text-[11px] font-medium text-[#16a34a]">{countdownLabel}</span>
                 </div>
-              </Motion.div>
+                <p className="mt-1 text-[15px] font-bold">{todaysNext.subject || 'Subject'}</p>
+                <p className="flex flex-wrap items-center gap-x-3 text-[12px] text-[#64748b]">
+                  <span className="flex items-center gap-1"><Clock size={13} />{formatSlot(todaysNext)}</span>
+                  <span className="flex items-center gap-1"><MapPin size={13} />{todaysNext.room ? `Room ${todaysNext.room}` : 'Room TBA'}{todaysNext.classLabel || todaysNext.className ? ` · ${todaysNext.classLabel || todaysNext.className}` : ''}</span>
+                </p>
+              </>
+            ) : (
+              <div className="flex items-center gap-2 py-1">
+                <Coffee size={16} className="text-[#f59e0b]" />
+                <p className="text-[13px] font-medium">{realTodayClasses.length ? 'All classes for today are done.' : 'No class scheduled today.'}</p>
+              </div>
             )}
-          </AnimatePresence>
+          </div>
         </section>
 
-        <div className="grid gap-5 xl:grid-cols-[minmax(0,1fr)_360px]">
-          <main className="space-y-5">
-            <div className="flex gap-2 overflow-x-auto pb-1">
-              {DAYS.map((day) => {
-                const count = (visibleSchedule[day] || []).length;
-                const active = selectedDay === day;
-                return (
-                  <button key={day} onClick={() => setSelectedDay(day)} className={`shrink-0 rounded-2xl px-3 py-2 text-xs font-semibold transition ${active ? 'bg-slate-950 text-white shadow-lg shadow-slate-200' : 'bg-white text-slate-600 hover:bg-slate-50'}`}>
-                    <span className="sm:hidden">{day.slice(0, 3)}</span><span className="hidden sm:inline">{day}</span>
-                    <span className={`ml-2 rounded-full px-1.5 py-0.5 text-[10px] ${active ? 'bg-white/15' : 'bg-slate-100 text-slate-500'}`}>{count}</span>
-                  </button>
-                );
-              })}
-            </div>
+        {/* Weekly timetable (fixed routine — weekdays only, no dates) */}
+        <section className={`relative rounded-xl border border-[#e6ebf2] bg-white p-3 shadow-[0_1px_3px_rgba(15,23,42,0.04)] transition-opacity duration-300 ${refreshing ? 'opacity-60' : 'opacity-100'}`}>
+          {refreshing && <div className="absolute inset-x-0 top-0 h-0.5 overflow-hidden rounded-t-xl"><div className="h-full w-1/3 animate-[excuse-progress_1s_ease-in-out_infinite] bg-[#2563eb]" /></div>}
+          <h2 className="mb-2 text-[15px] font-bold text-[#0f1b3d]">Weekly Timetable</h2>
 
-            {error ? (
-              <div className="rounded-2xl border border-red-100 bg-red-50 p-4 text-sm font-medium text-red-700"><AlertCircle className="mr-2 inline h-4 w-4" />{error}</div>
-            ) : totalClasses === 0 ? (
-              <EmptyTimetable loadRoutine={loadRoutine} />
-            ) : (
-              <AnimatePresence mode="wait">
-                {viewMode === 'weekly' ? (
-                  <Motion.div key="weekly" initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: -8 }}>
-                    <WeeklyWorkspace weeklySlots={weeklySlots} matrix={visibleWeeklyMatrix} selectedDay={selectedDay} currentMinutes={currentMinutes} timeToMinutes={timeToMinutes} />
-                  </Motion.div>
-                ) : (
-                  <Motion.div key="daily" initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: -8 }}>
-                    <DailyAgenda day={selectedDay} classes={visibleTodayClasses} currentMinutes={currentMinutes} timeToMinutes={timeToMinutes} />
-                  </Motion.div>
-                )}
-              </AnimatePresence>
-            )}
-          </main>
+          {error ? (
+            <div className="rounded-xl border border-red-100 bg-red-50 p-3 text-sm font-medium text-red-700"><AlertCircle className="mr-2 inline h-4 w-4" />{error}</div>
+          ) : totalClasses === 0 ? (
+            <EmptyTimetable loadRoutine={loadRoutine} />
+          ) : (
+            <>
+              <div className="overflow-x-auto rounded-lg border border-[#e6ebf2]">
+                <table className="w-full min-w-[820px] table-fixed border-collapse text-[12px]">
+                  <thead>
+                    <tr>
+                      <th className="w-[175px] whitespace-nowrap border-b border-r border-[#eef2f7] bg-[#f8fafc] px-3 py-2 text-left font-semibold text-[#475569]">Time</th>
+                      {DAYS.map((day, i) => {
+                        const isToday = day === todayName;
+                        return (
+                          <th key={day} className="border-b border-r border-[#eef2f7] px-1.5 py-1.5 last:border-r-0" style={{ backgroundColor: isToday ? DAY_TONES[i] : `${DAY_TONES[i]}14` }}>
+                            <span className={`text-[12px] font-bold ${isToday ? 'text-white' : ''}`} style={isToday ? undefined : { color: DAY_TONES[i] }}>{day.slice(0, 3)}</span>
+                            {isToday && <span className="ml-1 rounded-full bg-white/25 px-1.5 text-[9px] font-semibold text-white">Today</span>}
+                          </th>
+                        );
+                      })}
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {weeklySlots.map(({ slot }) => (
+                      <tr key={slot}>
+                        <td className="border-b border-r border-[#eef2f7] bg-[#fbfcfe] px-3 py-1 font-medium text-[#0f1b3d]">
+                          <span className="flex items-center gap-1.5 whitespace-nowrap"><Clock size={12} className="shrink-0 text-[#94a3b8]" />{slot}</span>
+                        </td>
+                        {DAYS.map((day) => {
+                          const entry = weeklyMatrix[day]?.[slot];
+                          const todayCol = day === todayName ? 'bg-[#f5f9ff]' : '';
+                          if (!entry) return <td key={day} className={`border-b border-r border-[#eef2f7] text-center text-[#cbd5e1] last:border-r-0 ${todayCol}`}>–</td>;
+                          const cls = entry.classLabel || entry.className || entry.class || '';
+                          const tone = toneFor(entry.subject);
+                          return (
+                            <td key={day} className={`border-b border-r border-[#eef2f7] p-1 last:border-r-0 ${todayCol}`}>
+                              <button type="button" onClick={() => setOpenEntry({ ...entry, day, slot })} title="View class details" className={`block w-full rounded-md border-l-[3px] px-2 py-1 text-left transition hover:shadow-md hover:brightness-95 ${tone.cell}`}>
+                                <p className={`truncate font-bold ${tone.text}`}>{entry.subject || 'Subject'}</p>
+                                <p className="truncate text-[11px] text-[#475569]">{[cls, entry.room ? `Rm ${entry.room}` : 'TBA'].filter(Boolean).join(' · ')}</p>
+                              </button>
+                            </td>
+                          );
+                        })}
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
 
-          <aside className="space-y-5 xl:sticky xl:top-20 xl:self-start">
-            <UpcomingClasses nextClass={nextClass} countdownLabel={countdownLabel} entries={scheduleEntries.slice(0, 6)} />
-            <FreePeriodInsights todayFreeSlots={todayFreeSlots} freePeriodCount={freePeriodCount} busiestDay={busiestDay} />
-            <ScheduleInsights busiestDay={busiestDay} longestStreak={longestStreak} roomSwitches={roomSwitches} subjectDistribution={subjectDistribution} />
-          </aside>
-        </div>
+              <div className="mt-2.5 flex flex-wrap items-center gap-x-4 gap-y-1.5 text-[12px] text-[#475569]">
+                {uniqueSubjects.map((subject) => (
+                  <span key={subject} className="flex items-center gap-1.5"><span className={`h-2.5 w-2.5 rounded-full ${toneFor(subject).dot}`} />{subject}</span>
+                ))}
+                <span className="flex items-center gap-1.5"><span className="h-2.5 w-2.5 rounded-full bg-[#cbd5e1]" />Free Period</span>
+              </div>
+            </>
+          )}
+        </section>
       </div>
+
+      {/* Class details popup */}
+      {openEntry && (() => {
+        const tone = toneFor(openEntry.subject);
+        const rows = [
+          { icon: Calendar, label: 'Day', value: openEntry.day },
+          { icon: Clock, label: 'Time', value: openEntry.slot },
+          { icon: Users, label: 'Class', value: openEntry.classLabel || openEntry.className || '—' },
+          { icon: School, label: 'Building', value: openEntry.building || '—' },
+          { icon: Layers, label: 'Floor', value: openEntry.floor || '—' },
+          { icon: MapPin, label: 'Room No.', value: openEntry.roomNumber || (openEntry.room && openEntry.room !== 'TBA' ? openEntry.room : '—') },
+        ];
+        return (
+          <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/50 p-4 backdrop-blur-sm" role="presentation" onMouseDown={(e) => e.target === e.currentTarget && setOpenEntry(null)}>
+            <Motion.div initial={{ opacity: 0, y: 12, scale: 0.97 }} animate={{ opacity: 1, y: 0, scale: 1 }} role="dialog" aria-modal="true" className="w-full max-w-sm overflow-hidden rounded-2xl bg-white shadow-2xl">
+              <div className={`flex items-start justify-between gap-3 border-l-4 px-5 py-4 ${tone.cell}`}>
+                <div>
+                  <p className="text-[11px] font-semibold uppercase tracking-wide text-[#64748b]">Class details</p>
+                  <h3 className={`text-[18px] font-bold ${tone.text}`}>{openEntry.subject || 'Subject'}</h3>
+                </div>
+                <button type="button" onClick={() => setOpenEntry(null)} aria-label="Close" className="flex h-8 w-8 items-center justify-center rounded-full text-[#475569] hover:bg-white/70"><X size={16} /></button>
+              </div>
+              <div className="grid grid-cols-2 gap-2 p-4">
+                {rows.map(({ icon: Icon, label, value }) => (
+                  <div key={label} className="flex items-start gap-2 rounded-xl border border-[#eef2f7] px-3 py-2">
+                    <span className={`mt-0.5 flex h-7 w-7 shrink-0 items-center justify-center rounded-full text-white ${tone.dot}`}><Icon size={14} /></span>
+                    <div className="min-w-0">
+                      <p className="text-[11px] text-[#64748b]">{label}</p>
+                      <p className="whitespace-nowrap text-[13px] font-semibold text-[#0f1b3d]">{value}</p>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </Motion.div>
+          </div>
+        );
+      })()}
     </div>
   );
 };

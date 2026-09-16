@@ -2,6 +2,7 @@ import { render, screen } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { MemoryRouter, Route, Routes } from 'react-router-dom';
 import TeacherPortal from '../TeacherPortal';
+import { TenantProvider } from '../../context/TenantContext';
 
 jest.mock('../SmartTeachingLessonPlanner', () => ({ __esModule: true, default: () => null }));
 jest.mock('../AIPoweredTeaching', () => ({ __esModule: true, default: () => null }));
@@ -44,11 +45,13 @@ jest.mock('../../utils/authSession', () => ({
 
   const renderPortal = (initialEntry = '/teacher/dashboard') =>
     render(
-      <MemoryRouter initialEntries={[initialEntry]}>
-        <Routes>
-          <Route path="/teacher/*" element={<TeacherPortal />} />
-        </Routes>
-    </MemoryRouter>
+      <TenantProvider>
+        <MemoryRouter initialEntries={[initialEntry]}>
+          <Routes>
+            <Route path="/teacher/*" element={<TeacherPortal />} />
+          </Routes>
+        </MemoryRouter>
+      </TenantProvider>
   );
 
 describe('TeacherPortal', () => {
@@ -85,7 +88,7 @@ describe('TeacherPortal', () => {
     expect(screen.getByTestId('teacher-sidebar')).toHaveStyle({
       fontFamily: "'Poppins', -apple-system, BlinkMacSystemFont, sans-serif",
     });
-    expect(screen.getByRole('link', { name: 'Dashboard' })).toHaveClass('!bg-[#f5f3ff]');
+    expect(screen.getByRole('link', { name: 'Dashboard' })).toHaveClass('text-yellow-700');
   });
 
   test('keeps a visible brand mark when the sidebar is collapsed', async () => {
@@ -93,7 +96,9 @@ describe('TeacherPortal', () => {
 
     await userEvent.click(screen.getByRole('button', { name: /Collapse sidebar/i }));
 
-    expect(screen.getByTestId('teacher-sidebar-logo')).toContainElement(screen.getByAltText('EEC'));
+    const collapsedLogo = screen.getByTestId('teacher-sidebar-logo');
+    expect(collapsedLogo).toHaveAttribute('aria-label', 'Electronic Educare logo');
+    expect(collapsedLogo.querySelector('img')).toBeInTheDocument();
     expect(screen.getByRole('button', { name: /Expand sidebar/i })).toBeInTheDocument();
     expect(screen.getByTestId('collapsed-sidebar-logout').querySelector('svg')).toBeInTheDocument();
   });
@@ -110,7 +115,9 @@ describe('TeacherPortal', () => {
 
   test('opens profile dropdown when avatar is clicked', async () => {
     renderPortal('/teacher/dashboard');
-    const profileButton = await screen.findByLabelText(/profile menu/i);
+    // Exact match: the mobile bottom nav's "Open profile menu" button also
+    // contains the substring "profile menu" and would otherwise also match.
+    const profileButton = await screen.findByLabelText('Profile menu');
 
     await userEvent.click(profileButton);
 

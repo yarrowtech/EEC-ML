@@ -1,12 +1,12 @@
 const { dispatchTeacherFeedbackReminders } = require('./teacherFeedbackNotify');
 
-const DEFAULT_INTERVAL_MS = Number(process.env.TEACHER_FEEDBACK_REMINDER_CHECK_INTERVAL_MS || 6 * 60 * 60 * 1000);
+const DEFAULT_INTERVAL_MS = Number(process.env.TEACHER_FEEDBACK_REMINDER_CHECK_INTERVAL_MS || 60 * 60 * 1000); // hourly: timely auto-close + reminders
 
 const startTeacherFeedbackReminderScheduler = () => {
   const runOnce = async () => {
     try {
       const stats = await dispatchTeacherFeedbackReminders();
-      console.log(`[teacher-feedback-reminder] scanned=${stats.scanned}, created=${stats.created}`);
+      console.log(`[teacher-feedback-reminder] scanned=${stats.scanned}, created=${stats.created}, autoClosed=${stats.autoClosed || 0}`);
     } catch (err) {
       console.error(`[teacher-feedback-reminder] failed: ${err.message}`);
     }

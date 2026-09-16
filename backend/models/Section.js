@@ -10,4 +10,9 @@ const sectionSchema = new mongoose.Schema(
   { timestamps: true }
 );
 
+// Same hot-path reasoning as Class.js — /api/student/allocated-subjects
+// does Section.find({ schoolId }) on every Smart Learning page load, and
+// {classId} covers the other common "sections for this class" lookups.
+sectionSchema.index({ schoolId: 1, classId: 1 });
+
 module.exports = mongoose.model('Section', sectionSchema);

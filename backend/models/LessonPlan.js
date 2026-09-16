@@ -26,6 +26,7 @@ const lessonPlanSchema = new mongoose.Schema(
     introduction: { type: String, default: '' },
     explanation: { type: String, default: '' },
     recap: { type: String, default: '' },
+    didYouKnow: { type: String, default: '' },
     materialsNeeded: [{ type: String, trim: true }],
     additionalNotes: { type: String, default: '' },
     plannerContent: {

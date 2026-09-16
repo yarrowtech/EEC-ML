@@ -12,9 +12,10 @@ import {
   X,
   ChevronRight,
   UserCog,
+  ArrowLeftRight,
 } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
-import { AUTH_NOTICE, logoutAndRedirect } from '../utils/authSession';
+import { AUTH_NOTICE, logoutAndRedirect, switchAccount } from '../utils/authSession';
 import { PRINCIPAL_MENU_ITEMS } from './principalConstants';
 
 const PrincipalHeader = ({ sidebarOpen, setSidebarOpen, notifications, principalProfile }) => {
@@ -99,6 +100,32 @@ const PrincipalHeader = ({ sidebarOpen, setSidebarOpen, notifications, principal
   const unreadNotifications = notifications.filter((n) => !n.read);
   const urgentNotifications = unreadNotifications.filter((n) => n.priority === 'high');
   const totalNotifications = unreadNotifications.length;
+
+  // A principal who also teaches can switch back to the teacher portal.
+  const [hasTeacherAccess, setHasTeacherAccess] = useState(false);
+  const [switchingAccount, setSwitchingAccount] = useState(false);
+  useEffect(() => {
+    const token = localStorage.getItem('token');
+    if (!token) return;
+    fetch(`${import.meta.env.VITE_API_URL}/api/principal/auth/teacher-access`, {
+      headers: { authorization: `Bearer ${token}` },
+    })
+      .then((res) => (res.ok ? res.json() : {}))
+      .then((data) => setHasTeacherAccess(Boolean(data?.isTeacher)))
+      .catch(() => {});
+  }, []);
+
+  const handleSwitchToTeacher = async () => {
+    if (switchingAccount) return;
+    setSwitchingAccount(true);
+    setShowProfile(false);
+    try {
+      await switchAccount({ endpoint: '/api/principal/auth/switch-to-teacher', redirectTo: '/teacher/dashboard' });
+    } catch (err) {
+      setSwitchingAccount(false);
+      window.alert(err.message);
+    }
+  };
 
   const handleLogout = () => {
     logoutAndRedirect({ navigate, notice: AUTH_NOTICE.LOGGED_OUT });
@@ -378,6 +405,16 @@ const PrincipalHeader = ({ sidebarOpen, setSidebarOpen, notifications, principal
                     <User className="h-4 w-4 flex-shrink-0 text-slate-500" />
                     <span className="text-sm text-slate-700">Communications</span>
                   </button>
+                  {hasTeacherAccess && (
+                    <button
+                      className="flex w-full items-center gap-3 px-4 py-2 text-left transition-colors hover:bg-indigo-50 disabled:opacity-60"
+                      disabled={switchingAccount}
+                      onClick={handleSwitchToTeacher}
+                    >
+                      <ArrowLeftRight className="h-4 w-4 flex-shrink-0 text-indigo-600" />
+                      <span className="text-sm text-indigo-700">{switchingAccount ? 'Switching…' : 'Switch to Teacher'}</span>
+                    </button>
+                  )}
                   <div className="my-1 border-t border-slate-100"></div>
                   <button
                     onClick={handleLogout}

@@ -118,9 +118,9 @@ jest.mock('../LearningHub', () => {
   return () => React.createElement('div', { 'data-testid': 'learning-hub-view' });
 });
 
-jest.mock('../AcademicAlcove', () => {
+jest.mock('../CommunityWall', () => {
   const React = require('react');
-  return () => React.createElement('div', { 'data-testid': 'academic-alcove-view' });
+  return () => React.createElement('div', { 'data-testid': 'community-wall-view' });
 });
 
 jest.mock('../StudentWellbeing', () => {

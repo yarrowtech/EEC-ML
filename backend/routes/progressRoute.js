@@ -1,12 +1,17 @@
 const express = require('express');
 const mongoose = require('mongoose');
 const router = express.Router();
+const { teacherAnalyticsCache } = require('../utils/responseCache');
+router.use(teacherAnalyticsCache.invalidateOnWrite);
 const StudentProgress = require('../models/StudentProgress');
 const StudentUser = require('../models/StudentUser');
+const ExamResult = require('../models/ExamResult');
+const Exam = require('../models/Exam');
 const Assignment = require('../models/Assignment');
 const AcademicYear = require('../models/AcademicYear');
 const adminAuth = require('../middleware/adminAuth');
 const teacherAuth = require('../middleware/authTeacher');
+const { computeSessionAttendance, resolveSessionWindow, loadHolidayKeys } = require('../utils/sessionAttendance');
 const {
   allowedSubjectsForStudent,
   buildTeacherAllocationScope,
@@ -79,7 +84,7 @@ const loadVisibleStudents = async (req, res, { grade, section, subject, academic
   }
 
   const students = await StudentUser.find(studentFilter)
-    .select('name grade section roll academicYear campusId')
+    .select('name grade section roll academicYear campusId profilePic')
     .lean();
   if (!isTeacherRequest(req)) return { schoolId, students, scope: null };
 
@@ -111,11 +116,106 @@ const filterMetricsForScope = ({ metrics = [], student, subject = '', scope = nu
   });
 };
 
+const norm = (v) => String(v || '').trim().toLowerCase();
+const gradeKey = (v) => norm(v).replace(/^class\s*/, '');
+
+// Real per-student numbers for the class analytics screen, built from exam
+// results + assignment submissions (StudentProgress.progressMetrics is rarely
+// populated, which made every student read 0%). Mirrors the per-student
+// overview: per subject, average the exam % and graded-assignment %, then
+// average the subjects. Returns Map(studentId -> summary).
+const buildStudentSummaries = async ({ schoolId, students, progressByStudent, subject = '', scope = null }) => {
+  const summaries = new Map();
+  if (!students.length) return summaries;
+  const studentIds = students.map((s) => s._id);
+  const requested = norm(subject);
+  const subjectAllowed = (student, subj) => {
+    if (requested && norm(subj) !== requested) return false;
+    const allowed = scope ? allowedSubjectsForStudent(student, scope) : null;
+    return allowed === null || allowed.has(norm(subj));
+  };
+
+  const grades = [...new Set(students.map((s) => gradeKey(s.grade)).filter(Boolean))];
+  const gradePatterns = grades.flatMap((g) => toGradeVariants(g)).map((g) => new RegExp(`^${escapeRegex(g)}$`, 'i'));
+  const [examResults, assignments] = await Promise.all([
+    ExamResult.find({ schoolId, studentId: { $in: studentIds }, status: { $ne: 'absent' } })
+      .select('examId studentId marks')
+      .lean(),
+    gradePatterns.length
+      ? Assignment.find({ schoolId, status: 'active', class: { $in: gradePatterns } })
+        .select('_id class section subject marks')
+        .lean()
+      : [],
+  ]);
+  const exams = examResults.length
+    ? await Exam.find({ _id: { $in: [...new Set(examResults.map((r) => String(r.examId)))] } }).select('subject marks').lean()
+    : [];
+  const examMap = new Map(exams.map((e) => [String(e._id), e]));
+  const assignmentMap = new Map(assignments.map((a) => [String(a._id), a]));
+  const resultsByStudent = new Map();
+  examResults.forEach((r) => {
+    const key = String(r.studentId);
+    if (!resultsByStudent.has(key)) resultsByStudent.set(key, []);
+    resultsByStudent.get(key).push(r);
+  });
+  const avg = (list) => (list.length ? list.reduce((a, b) => a + b, 0) / list.length : null);
+
+  students.forEach((student) => {
+    const id = String(student._id);
+    const bySubject = new Map();
+    const bucket = (name) => {
+      const k = String(name || 'General').trim() || 'General';
+      if (!bySubject.has(k)) bySubject.set(k, { exam: [], assignment: [] });
+      return bySubject.get(k);
+    };
+
+    let examCount = 0;
+    (resultsByStudent.get(id) || []).forEach((r) => {
+      const exam = examMap.get(String(r.examId));
+      const max = Number(exam?.marks || 0);
+      if (!exam || max <= 0 || !subjectAllowed(student, exam.subject)) return;
+      bucket(exam.subject).exam.push(Math.max(0, Math.min(100, (Number(r.marks || 0) / max) * 100)));
+      examCount += 1;
+    });
+
+    // Assignments set for this student's class + section (or the whole class).
+    const assigned = assignments.filter((a) => gradeKey(a.class) === gradeKey(student.grade)
+      && (!a.section || norm(a.section) === norm(student.section))
+      && subjectAllowed(student, a.subject));
+    const assignedIds = new Set(assigned.map((a) => String(a._id)));
+    const submittedIds = new Set();
+    let graded = 0;
+    (progressByStudent.get(id)?.submissions || []).forEach((s) => {
+      const aid = String(s.assignmentId || '');
+      const assignment = assignmentMap.get(aid);
+      if (!assignment || !assignedIds.has(aid)) return;
+      submittedIds.add(aid);
+      if (s.score != null && Number.isFinite(Number(s.score))) {
+        graded += 1;
+        const max = Number(assignment.marks) || 100;
+        bucket(assignment.subject).assignment.push(Math.max(0, Math.min(100, (Number(s.score) / max) * 100)));
+      }
+    });
+
+    const subjectScores = [...bySubject.values()]
+      .map((b) => avg([avg(b.exam), avg(b.assignment)].filter((v) => v != null)))
+      .filter((v) => v != null);
+    summaries.set(id, {
+      overallScore: subjectScores.length ? Math.round(avg(subjectScores)) : null,
+      examCount,
+      gradedAssignments: graded,
+      submittedAssignments: submittedIds.size,
+      assignedAssignments: assignedIds.size,
+    });
+  });
+  return summaries;
+};
+
 // Get progress for all students.
 // authTeacher accepts both admin and teacher tokens (see middleware/authTeacher),
 // so the teacher analytics portal can read class progress without a 403 falling
 // back to empty metrics. Scoping stays by schoolId + grade/section query params.
-router.get('/students', teacherAuth, async (req, res) => {
+router.get('/students', teacherAuth, teacherAnalyticsCache.cache, async (req, res) => {
   // #swagger.tags = ['Progress']
   try {
     const { grade, section, subject } = req.query;
@@ -125,12 +225,14 @@ router.get('/students', teacherAuth, async (req, res) => {
     const studentIds = students.map(student => student._id);
     const progressData = await StudentProgress.find({ studentId: { $in: studentIds }, schoolId }).lean();
     const progressByStudent = new Map(progressData.map((progress) => [String(progress.studentId), progress]));
+    const summaries = await buildStudentSummaries({ schoolId, students, progressByStudent, subject, scope });
 
     // A student remains visible before their first StudentProgress document exists.
     const response = students.map((student) => {
       const progress = progressByStudent.get(String(student._id)) || {};
       return {
         ...progress,
+        summary: summaries.get(String(student._id)) || null,
         _id: progress._id || null,
         studentId: student,
         progressMetrics: filterMetricsForScope({
@@ -153,7 +255,160 @@ router.get('/students', teacherAuth, async (req, res) => {
 });
 
 // Get detailed progress for a specific student
-router.get('/student/:studentId', teacherAuth, async (req, res) => {
+// Teacher-facing student overview for the analytics "student detail" modal:
+// academic-year attendance (same day-based calculation as the parent portal),
+// exam results, assignment submissions and per-subject performance — works
+// even when the student has no StudentProgress document yet.
+router.get('/student/:studentId/overview', teacherAuth, teacherAnalyticsCache.cache, async (req, res) => {
+  // #swagger.tags = ['Progress']
+  try {
+    const schoolId = resolveSchoolId(req, res);
+    if (!schoolId) return;
+    const { studentId } = req.params;
+    if (!mongoose.isValidObjectId(studentId)) return res.status(400).json({ error: 'Invalid studentId' });
+    const campusId = req.campusId || req.user?.campusId || null;
+
+    const student = await StudentUser.findOne({ _id: studentId, schoolId })
+      .select('name grade section roll profilePic attendance attendanceSummary academicYear className sectionName')
+      .lean();
+    if (!student) return res.status(404).json({ error: 'Student not found' });
+
+    if (isTeacherRequest(req)) {
+      const scope = await buildTeacherAllocationScope({ schoolId, campusId, teacherId: req.user?.id });
+      if (!studentIsWithinTeacherScope(student, scope)) {
+        return res.status(403).json({ error: 'Student is outside your assigned scope' });
+      }
+    }
+
+    const [progress, examResults, sessionWindow] = await Promise.all([
+      StudentProgress.findOne({ studentId, schoolId })
+        .populate('submissions.assignmentId', 'title subject dueDate marks')
+        .lean(),
+      ExamResult.find({ studentId, schoolId })
+        .populate('examId', 'title subject marks date term subjectId')
+        .sort({ createdAt: -1 })
+        .lean(),
+      resolveSessionWindow(schoolId),
+    ]);
+
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+    const holidayKeys = await loadHolidayKeys({
+      schoolId,
+      campusId,
+      start: sessionWindow.start,
+      end: sessionWindow.end < today ? sessionWindow.end : today,
+    });
+    const attendance = await computeSessionAttendance({
+      attendance: Array.isArray(student.attendance) ? student.attendance : [],
+      schoolId,
+      campusId,
+      window: sessionWindow,
+      holidayKeys,
+    });
+
+    const pctOf = (score, max) => {
+      const s = Number(score);
+      const m = Number(max) || 100;
+      return Number.isFinite(s) && m > 0 ? Math.round((s / m) * 100) : null;
+    };
+    const avg = (list) => (list.length ? Math.round(list.reduce((a, b) => a + b, 0) / list.length) : null);
+
+    const exams = examResults
+      .filter((r) => r.examId)
+      .map((r) => ({
+        id: String(r._id),
+        title: r.examId.title || 'Exam',
+        subject: r.examId.subject || '',
+        term: r.examId.term || '',
+        date: r.examId.date || null,
+        marks: r.status === 'absent' ? null : r.marks,
+        maxMarks: r.examId.marks || 100,
+        percentage: r.status === 'absent' ? null : pctOf(r.marks, r.examId.marks),
+        grade: r.grade || '',
+        status: r.status || 'pass',
+        published: Boolean(r.published),
+      }));
+
+    const submissions = (progress?.submissions || [])
+      .map((s) => ({
+        title: s.assignmentId?.title || 'Assignment',
+        subject: s.assignmentId?.subject || '',
+        dueDate: s.assignmentId?.dueDate || null,
+        submittedAt: s.submittedAt || null,
+        score: s.score ?? null,
+        maxMarks: s.assignmentId?.marks || 100,
+        percentage: s.score == null ? null : pctOf(s.score, s.assignmentId?.marks),
+        status: s.status || 'submitted',
+      }))
+      .sort((a, b) => new Date(b.submittedAt || 0) - new Date(a.submittedAt || 0));
+
+    // Per-subject performance: exam % and graded-assignment % merged with any
+    // stored progress metrics.
+    const subjects = new Map();
+    const bucket = (name) => {
+      const key = String(name || 'General').trim() || 'General';
+      if (!subjects.has(key)) subjects.set(key, { subject: key, exam: [], assignment: [], submitted: 0, metric: null });
+      return subjects.get(key);
+    };
+    exams.forEach((e) => { if (e.percentage != null) bucket(e.subject).exam.push(e.percentage); });
+    submissions.forEach((s) => {
+      const b = bucket(s.subject);
+      b.submitted += 1;
+      if (s.percentage != null) b.assignment.push(s.percentage);
+    });
+    (progress?.progressMetrics || []).forEach((m) => { if (m?.subject) bucket(m.subject).metric = m; });
+
+    const subjectRows = [...subjects.values()].map((b) => {
+      const examAvg = avg(b.exam);
+      const assignmentAvg = avg(b.assignment);
+      const parts = [examAvg, assignmentAvg].filter((v) => v != null);
+      const score = parts.length ? avg(parts) : (b.metric?.averageScore ?? null);
+      return {
+        subject: b.subject,
+        score,
+        examAverage: examAvg,
+        examCount: b.exam.length,
+        assignmentAverage: assignmentAvg,
+        submitted: b.submitted,
+        completedAssignments: b.metric?.completedAssignments ?? b.submitted,
+        totalAssignments: b.metric?.totalAssignments ?? null,
+      };
+    }).sort((a, b) => a.subject.localeCompare(b.subject));
+
+    const scored = subjectRows.map((r) => r.score).filter((v) => v != null);
+
+    res.json({
+      student: {
+        _id: student._id,
+        name: student.name || 'Student',
+        grade: student.grade || student.className || '',
+        section: student.section || student.sectionName || '',
+        roll: student.roll || null,
+        profilePic: typeof student.profilePic === 'string'
+          ? student.profilePic
+          : (student.profilePic?.secure_url || student.profilePic?.url || null),
+      },
+      overallScore: avg(scored),
+      attendance,
+      improvementTrend: progress?.improvementTrend || 'stable',
+      subjects: subjectRows,
+      exams: exams.slice(0, 200),
+      submissions: submissions.slice(0, 10),
+      totals: {
+        exams: exams.length,
+        submissions: submissions.length,
+        graded: submissions.filter((s) => s.score != null).length,
+        late: submissions.filter((s) => s.status === 'late').length,
+      },
+    });
+  } catch (error) {
+    console.error('Error fetching student overview:', error);
+    res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
+router.get('/student/:studentId', teacherAuth, teacherAnalyticsCache.cache, async (req, res) => {
   // #swagger.tags = ['Progress']
   try {
     const schoolId = resolveSchoolId(req, res);
@@ -175,7 +430,7 @@ router.get('/student/:studentId', teacherAuth, async (req, res) => {
     }
 
     const progress = await StudentProgress.findOne({ studentId, schoolId })
-      .populate('studentId', 'name grade section roll email mobile')
+      .populate('studentId', 'name grade section roll email mobile profilePic')
       .populate('submissions.assignmentId', 'title subject dueDate marks')
       .lean();
 
@@ -295,7 +550,7 @@ router.put('/submission/grade/:studentId/:assignmentId', teacherAuth, async (req
 // Get class performance analytics
 // authTeacher accepts admin + teacher tokens; both the admin dashboard and the
 // teacher analytics portal call this.
-router.get('/analytics', teacherAuth, async (req, res) => {
+router.get('/analytics', teacherAuth, teacherAnalyticsCache.cache, async (req, res) => {
   // #swagger.tags = ['Progress']
   try {
     const { grade, section, subject, academicYearId } = req.query;
@@ -373,6 +628,160 @@ router.get('/analytics', teacherAuth, async (req, res) => {
         delete perf.totalScore; // Remove temporary field
       });
     }
+
+    // Exam results are the real source of marks (StudentProgress is sparse and
+    // often stale). When the selected students have results, derive the
+    // average score, per-subject performance and grade distribution from them.
+    const examResults = studentIds.length
+      ? await ExamResult.find({ schoolId, studentId: { $in: studentIds }, status: { $ne: 'absent' } })
+        .select('examId studentId marks createdAt')
+        .lean()
+      : [];
+    if (examResults.length) {
+      const exams = await Exam.find({ _id: { $in: [...new Set(examResults.map((r) => String(r.examId)))] } })
+        .select('subject marks date')
+        .lean();
+      const examMap = new Map(exams.map((e) => [String(e._id), e]));
+      const bySubject = new Map(); // subject -> { total, count, students:Set }
+      const byStudent = new Map(); // studentId -> { total, count }
+      let total = 0;
+      let count = 0;
+      examResults.forEach((r) => {
+        const exam = examMap.get(String(r.examId));
+        const max = Number(exam?.marks || 0);
+        if (!exam || max <= 0) return;
+        if (subject && String(exam.subject || '').toLowerCase() !== String(subject).toLowerCase()) return;
+        const pct = Math.max(0, Math.min(100, (Number(r.marks || 0) / max) * 100));
+        const subj = String(exam.subject || 'General').trim() || 'General';
+        if (!bySubject.has(subj)) bySubject.set(subj, { total: 0, count: 0, students: new Set() });
+        const s = bySubject.get(subj);
+        s.total += pct; s.count += 1; s.students.add(String(r.studentId));
+        const key = String(r.studentId);
+        if (!byStudent.has(key)) byStudent.set(key, { total: 0, count: 0, points: [] });
+        const st = byStudent.get(key);
+        st.total += pct; st.count += 1;
+        const when = new Date(exam.date || r.createdAt || 0).getTime() || 0;
+        st.points.push({ when, pct });
+        total += pct; count += 1;
+      });
+      if (count) {
+        analytics.averageScore = Math.round(total / count);
+        analytics.subjectPerformance = {};
+        bySubject.forEach((v, subj) => {
+          analytics.subjectPerformance[subj] = {
+            averageScore: Math.round(v.total / v.count),
+            studentCount: v.students.size,
+          };
+        });
+        const gradeOf = (p) => (p >= 90 ? 'A+' : p >= 80 ? 'A' : p >= 70 ? 'B+' : p >= 60 ? 'B' : p >= 50 ? 'C+' : p >= 40 ? 'C' : p >= 33 ? 'D' : 'F');
+        analytics.gradeDistribution = { 'A+': 0, 'A': 0, 'B+': 0, 'B': 0, 'C+': 0, 'C': 0, 'D': 0, 'F': 0 };
+        byStudent.forEach((v) => { analytics.gradeDistribution[gradeOf(v.total / v.count)] += 1; });
+
+        // Improvement trend per student: average of their later exams vs their
+        // earlier exams (split in half by date). >5 points up = improving,
+        // >5 down = declining, otherwise stable. Students with a single exam
+        // can't show a trend, so they're left out (and counted separately).
+        const TREND_THRESHOLD = 5;
+        const trends = { improving: 0, stable: 0, declining: 0 };
+        let insufficient = 0;
+        byStudent.forEach((v) => {
+          if (v.points.length < 2) { insufficient += 1; return; }
+          const sorted = [...v.points].sort((a, b) => a.when - b.when);
+          const half = Math.floor(sorted.length / 2);
+          const avg = (list) => list.reduce((sum, p) => sum + p.pct, 0) / list.length;
+          const delta = avg(sorted.slice(sorted.length - half)) - avg(sorted.slice(0, half));
+          if (delta > TREND_THRESHOLD) trends.improving += 1;
+          else if (delta < -TREND_THRESHOLD) trends.declining += 1;
+          else trends.stable += 1;
+        });
+        analytics.improvementTrends = trends;
+        analytics.trendMeta = {
+          basis: 'exam_results',
+          threshold: TREND_THRESHOLD,
+          studentsWithTrend: trends.improving + trends.stable + trends.declining,
+          insufficientData: insufficient + Math.max(0, studentIds.length - byStudent.size),
+        };
+        analytics.source = 'exam_results';
+      }
+    }
+
+    // Today's attendance for the selected students (embedded attendance log).
+    const todayKey = new Date().toISOString().slice(0, 10);
+    const attendanceDocs = studentIds.length
+      ? await StudentUser.find({ _id: { $in: studentIds } }).select('attendance attendanceSummary').lean()
+      : [];
+    const today = { date: todayKey, present: 0, absent: 0, late: 0, notMarked: 0, total: studentIds.length };
+    attendanceDocs.forEach((doc) => {
+      const entry = (doc.attendance || []).find((a) => a?.date && new Date(a.date).toISOString().slice(0, 10) === todayKey);
+      const status = String(entry?.status || '').toLowerCase();
+      if (!entry) today.notMarked += 1;
+      else if (status === 'present') today.present += 1;
+      else if (status === 'late') today.late += 1;
+      else today.absent += 1;
+    });
+    today.notMarked += Math.max(0, studentIds.length - attendanceDocs.length);
+    const marked = today.present + today.absent + today.late;
+    today.rate = marked ? Math.round(((today.present + today.late) / marked) * 100) : null;
+    analytics.todayAttendance = today;
+
+    // Academic-year attendance from the real (embedded) attendance records —
+    // StudentProgress.attendanceRate is rarely populated. The class rate is
+    // present days / days attendance was actually taken, so days nobody
+    // marked don't drag the class to 0%. null = no attendance taken yet.
+    const sessionWindow = await resolveSessionWindow(schoolId);
+    const dayStart = new Date();
+    dayStart.setHours(0, 0, 0, 0);
+    const holidayKeys = await loadHolidayKeys({
+      schoolId,
+      campusId: req.campusId || null,
+      start: sessionWindow.start,
+      end: sessionWindow.end < dayStart ? sessionWindow.end : dayStart,
+    });
+    let presentDays = 0;
+    let markedDays = 0;
+    let schoolDays = 0;
+    for (const doc of attendanceDocs) {
+      // eslint-disable-next-line no-await-in-loop -- window + holidays are preloaded, so this is pure CPU
+      const summary = await computeSessionAttendance({
+        attendance: Array.isArray(doc.attendance) ? doc.attendance : [],
+        schoolId,
+        window: sessionWindow,
+        holidayKeys,
+      });
+      presentDays += summary.presentDays;
+      markedDays += summary.markedDays;
+      schoolDays = summary.schoolDays;
+    }
+    analytics.attendanceRate = markedDays > 0 ? Math.round((presentDays / markedDays) * 100) : null;
+    analytics.attendanceMeta = {
+      basis: 'attendance_records',
+      sessionName: sessionWindow.name || null,
+      schoolDays,
+      markedStudentDays: markedDays,
+      presentStudentDays: presentDays,
+    };
+
+    // How much data stands behind each headline number, so the UI can say
+    // "No data yet" instead of showing a misleading 0% / 100%.
+    // Assignment completion: submissions ÷ assignments set for each student.
+    const summaries = await buildStudentSummaries({
+      schoolId,
+      students,
+      progressByStudent: new Map(progressData.map((p) => [String(p.studentId), p])),
+      subject,
+      scope,
+    });
+    let assigned = 0;
+    let submitted = 0;
+    summaries.forEach((s) => { assigned += s.assignedAssignments; submitted += s.submittedAssignments; });
+    analytics.assignmentCompletion = assigned > 0 ? Math.round((submitted / assigned) * 100) : null;
+    analytics.assignmentMeta = { assigned, submitted };
+
+    analytics.dataCounts = {
+      examResults: examResults.length,
+      attendanceMarkedDays: markedDays,
+      assignmentsAssigned: assigned,
+    };
 
     res.status(200).json(analytics);
   } catch (error) {

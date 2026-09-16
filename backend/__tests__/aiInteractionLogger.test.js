@@ -51,6 +51,17 @@ describe('shapeRecord', () => {
     expect(r.needsReview).toBe(true);
   });
 
+  test('captures provider usage and cost when supplied', () => {
+    const r = shapeRecord({
+      feature: 'tutor_generate',
+      aiResponse: { usage: { prompt_tokens: 12, completion_tokens: 8, cost: 0.0004 } },
+    });
+    expect(r.inputTokens).toBe(12);
+    expect(r.outputTokens).toBe(8);
+    expect(r.totalTokens).toBe(20);
+    expect(r.costUsd).toBe(0.0004);
+  });
+
   test('shapes an error record without an aiResponse', () => {
     const r = shapeRecord({
       schoolId: 'school1', feature: 'answer_evaluate',

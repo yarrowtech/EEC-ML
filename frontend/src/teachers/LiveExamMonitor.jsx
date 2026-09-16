@@ -9,6 +9,7 @@ export default function LiveExamMonitor() {
   const [exams, setExams] = useState([]);
   const [selectedExam, setSelectedExam] = useState('');
   const [monitoring, setMonitoring] = useState(false);
+  const [connected, setConnected] = useState(false);
   const [takers, setTakers] = useState({}); // { studentId: { name, event, at } }
   const [loadingExams, setLoadingExams] = useState(true);
   const socketRef = useRef(null);
@@ -29,14 +30,32 @@ export default function LiveExamMonitor() {
     if (!selectedExam) return;
     setTakers({});
     setMonitoring(true);
+    setConnected(false);
 
+    // `reconnection: true` (the default) means the socket itself recovers from
+    // a drop, but the exam room membership does not automatically survive a
+    // reconnect — without re-emitting `join-exam-monitor` on every `connect`
+    // (not just the first one), a dropped connection silently stops delivering
+    // `exam-taker-update` events while `monitoring` stays true forever, so the
+    // teacher keeps seeing the last-known (now stale) state with no indication
+    // it's gone stale.
     const socket = io(API_BASE, {
       auth: { token: localStorage.getItem('token') || '' },
       transports: ['websocket'],
+      reconnectionAttempts: Infinity,
     });
 
     socket.on('connect', () => {
+      setConnected(true);
       socket.emit('join-exam-monitor', { examId: selectedExam });
+    });
+
+    socket.on('disconnect', () => {
+      setConnected(false);
+    });
+
+    socket.on('connect_error', () => {
+      setConnected(false);
     });
 
     socket.on('exam-taker-update', ({ studentId, studentName, event, at }) => {
@@ -56,6 +75,7 @@ export default function LiveExamMonitor() {
       socketRef.current = null;
     }
     setMonitoring(false);
+    setConnected(false);
   };
 
   useEffect(() => () => { socketRef.current?.disconnect(); }, []);
@@ -148,13 +168,22 @@ export default function LiveExamMonitor() {
 
           <div className="rounded-2xl border border-gray-200 bg-white shadow-sm overflow-hidden">
             <div className="flex items-center gap-2 border-b border-gray-100 px-5 py-3">
-              <span className="relative flex h-2.5 w-2.5">
-                <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-blue-400 opacity-75" />
-                <span className="relative inline-flex h-2.5 w-2.5 rounded-full bg-blue-500" />
-              </span>
+              {connected ? (
+                <span className="relative flex h-2.5 w-2.5">
+                  <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-blue-400 opacity-75" />
+                  <span className="relative inline-flex h-2.5 w-2.5 rounded-full bg-blue-500" />
+                </span>
+              ) : (
+                <span className="relative inline-flex h-2.5 w-2.5 rounded-full bg-red-500" />
+              )}
               <p className="text-sm font-semibold text-gray-700">
-                Live — {selectedExamDoc?.title || 'Exam'}
+                {connected ? 'Live' : 'Reconnecting…'} — {selectedExamDoc?.title || 'Exam'}
               </p>
+              {!connected && (
+                <span className="rounded-full bg-red-50 px-2 py-0.5 text-[10px] font-bold text-red-600">
+                  Status below may be stale
+                </span>
+              )}
             </div>
 
             {!takerList.length ? (

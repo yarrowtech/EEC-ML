@@ -43,6 +43,18 @@ export const readSharedChild = readStore;
 export const writeSharedChild = writeStore;
 export const isSameChild = (a, b) => sameChild(a, b);
 
+// Subscribe to child changes made elsewhere (navbar switcher, other tabs).
+// Returns an unsubscribe function.
+export const subscribeSharedChild = (callback) => {
+  const handler = () => callback(readStore());
+  window.addEventListener(SYNC_EVENT, handler);
+  window.addEventListener('storage', handler);
+  return () => {
+    window.removeEventListener(SYNC_EVENT, handler);
+    window.removeEventListener('storage', handler);
+  };
+};
+
 const sameChild = (option, stored) => {
   if (!option || !stored) return false;
   if (stored.id && option.id) return String(stored.id) === String(option.id);

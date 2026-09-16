@@ -12,6 +12,7 @@ import { fetchCachedJson } from '../utils/studentApiCache';
 import { useStudentDashboard } from './StudentDashboardContext';
 import { generateExamSchedulePdf } from '../utils/examRoutinePdf';
 import ExamRoutineTable from './ExamRoutineTable';
+import FormalNotice, { isFormalNotice, attachmentsForRole } from './FormalNotice';
 import {
   CATEGORY_ORDER, CATEGORY_META, PRIORITY_META, DEPT_FALLBACK,
   getDisplayCategory, isNewNotice, isPinnedNotice, formatNoticeDate,
@@ -102,7 +103,7 @@ const SkeletonCard = () => (
 /* ─── Notice detail (inline) ─── */
 const NoticeDetailsView = ({
   notice, onBack, examGroup, onDownloadRoutine, downloadingRoutine, onViewExams,
-  onPrev, onNext, hasPrev, hasNext, pdfHeader,
+  onPrev, onNext, hasPrev, hasNext, pdfHeader, onGiveFeedback,
 }) => {
   if (!notice) return null;
   const displayCategory = getDisplayCategory(notice);
@@ -114,7 +115,8 @@ const NoticeDetailsView = ({
   const creator = getCreator(notice);
   const displayDate = resolveDate(notice);
   const subjectLabel = notice.subjectName || notice.subject || '';
-  const attachments = Array.isArray(notice.attachments) ? notice.attachments : [];
+  // Only the student copy of role-specific attachments (e.g. the Student PDF).
+  const attachments = attachmentsForRole(Array.isArray(notice.attachments) ? notice.attachments : [], 'student');
   const showExamRoutine = isExamNotice(notice);
   // An exam notice fired the moment the exam is scheduled (before any subject
   // is added) never has a routine table or PDF yet — only the one posted when
@@ -243,7 +245,35 @@ const NoticeDetailsView = ({
                 )
               )}
 
-              <p className="text-sm text-slate-600 leading-relaxed whitespace-pre-line">{notice.message || 'No details available.'}</p>
+              {isFormalNotice(notice) ? (
+                <>
+                  <FormalNotice document={notice.document} viewerRole="student" />
+                  {String(notice.typeLabel || '').startsWith('exam_notice') && onViewExams && (
+                    <div className="flex justify-center">
+                      <button
+                        type="button"
+                        onClick={onViewExams}
+                        className="inline-flex items-center gap-1.5 rounded-full bg-linear-to-r from-indigo-500 to-purple-600 px-4 py-2 text-sm font-semibold text-white shadow-sm hover:opacity-90"
+                      >
+                        View My Exams <ArrowRight className="h-4 w-4" />
+                      </button>
+                    </div>
+                  )}
+                  {notice.typeLabel === 'feedback_window' && onGiveFeedback && (
+                    <div className="flex justify-center">
+                      <button
+                        type="button"
+                        onClick={onGiveFeedback}
+                        className="inline-flex items-center gap-1.5 rounded-full bg-linear-to-r from-indigo-500 to-purple-600 px-4 py-2 text-sm font-semibold text-white shadow-sm hover:opacity-90"
+                      >
+                        Give Feedback <ArrowRight className="h-4 w-4" />
+                      </button>
+                    </div>
+                  )}
+                </>
+              ) : (
+                <p className="text-sm text-slate-600 leading-relaxed whitespace-pre-line">{notice.message || 'No details available.'}</p>
+              )}
               {subjectLabel ? <p className="text-xs text-slate-400">Subject: {subjectLabel}</p> : null}
               <ExamRoutineTable rows={notice.examRoutine} />
             </div>
@@ -357,7 +387,7 @@ const NoticeBoard = () => {
   const API_BASE = (import.meta.env.VITE_API_URL || 'http://localhost:5000')
     .replace(/\/$/, '')
     .replace(/\/api$/, '');
-  const NOTICEBOARD_NOTICES_ENDPOINT = `${API_BASE}/api/notifications/user`;
+  const NOTICEBOARD_NOTICES_ENDPOINT = `${API_BASE}/api/notifications/user?kind=notice`;
   const NOTICEBOARD_CLASS_TEACHER_ENDPOINT = `${API_BASE}/api/student/auth/class-teacher`;
   const NOTICEBOARD_EXAM_GROUPS_ENDPOINT = `${API_BASE}/api/exam/groups/student-schedule`;
   const NOTICEBOARD_NOTICES_CACHE_TTL_MS = 2 * 60 * 1000;
@@ -425,6 +455,8 @@ const NoticeBoard = () => {
             },
           });
           setExamGroups(Array.isArray(examData) ? examData : []);
+        } else {
+          setExamGroups([]);
         }
       } catch (err) {
         console.error('Failed to fetch notices:', err);
@@ -514,6 +546,13 @@ const NoticeBoard = () => {
     setCurrentPage(1);
   }, [activeCategory, sortBy, searchQuery]);
 
+  // The notice list can shrink after a refetch (expired/hidden notices dropped),
+  // which can leave `currentPage` pointing past the new last page — clamp it
+  // back instead of silently rendering an empty page.
+  useEffect(() => {
+    setCurrentPage((page) => Math.min(page, totalPages));
+  }, [totalPages]);
+
   const paginatedNotices = useMemo(() => {
     const start = (currentPage - 1) * NOTICE_PAGE_SIZE;
     return sortedNotices.slice(start, start + NOTICE_PAGE_SIZE);
@@ -581,6 +620,7 @@ const NoticeBoard = () => {
             onDownloadRoutine={handleDownloadRoutine}
             downloadingRoutine={downloadingExamId === String(matchedExamGroup?._id || '')}
             onViewExams={() => navigate('/student/exams')}
+            onGiveFeedback={() => navigate('/student/teacherfeedback')}
             onPrev={() => prevNotice && setSelectedNoticeId(resolveId(prevNotice))}
             onNext={() => nextNotice && setSelectedNoticeId(resolveId(nextNotice))}
             hasPrev={Boolean(prevNotice)}

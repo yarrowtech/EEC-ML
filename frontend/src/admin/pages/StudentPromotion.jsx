@@ -1,5 +1,7 @@
-import React, { useState, useEffect, useCallback, useMemo } from "react";
+import React, { useState, useEffect, useCallback, useMemo, useRef } from "react";
 import { motion as Motion, AnimatePresence } from "framer-motion";
+import { useNavigate } from "react-router-dom";
+import { readCache, writeCache } from "../../utils/swrCache";
 import {
   ArrowRight,
   Users,
@@ -17,7 +19,6 @@ import {
   Loader2,
   UserX,
   UserCheck,
-  ArrowUpCircle,
   Award,
   Calendar,
   ClipboardList,
@@ -28,6 +29,7 @@ import {
 import Swal from "sweetalert2";
 
 const API_BASE = import.meta.env.VITE_API_URL;
+const ACTIVE_STUDENTS_CACHE_KEY = "left-students:active";
 
 const token = () => localStorage.getItem("token");
 
@@ -49,6 +51,14 @@ const formatDate = (d) => {
   } catch {
     return d;
   }
+};
+
+// Student photo → absolute URL (Cloudinary/https, data: or a backend-relative path).
+const studentPhotoUrl = (value) => {
+  const src = String(value || "").trim();
+  if (!src) return "";
+  if (/^(https?:|data:image\/|blob:)/i.test(src)) return src;
+  return `${String(API_BASE || "").replace(/\/$/, "")}/${src.replace(/^\/+/, "")}`;
 };
 
 const initials = (name = "") =>
@@ -190,12 +200,15 @@ const PaginationBar = ({ page, totalItems, pageSize, onPageChange }) => {
 };
 
 // ────────────────────────────────────────────────────────────
-const StudentPromotion = ({ setShowAdminHeader }) => {
+// `section` picks what this renders: "promotion" (the /admin/promotion page) or
+// "leave" (the Leave Management tab embedded in /admin/left-students).
+const StudentPromotion = ({ setShowAdminHeader, section = "promotion", onShowLeft }) => {
+  const navigate = useNavigate();
   useEffect(() => {
     if (setShowAdminHeader) setShowAdminHeader(true);
   }, [setShowAdminHeader]);
 
-  const [activeTab, setActiveTab] = useState("promotion");
+  const [activeTab] = useState(section);
 
   // ── shared data ──────────────────────────────────────────
   const [classes, setClasses] = useState([]);       // [{_id, name, order}]
@@ -221,10 +234,20 @@ const StudentPromotion = ({ setShowAdminHeader }) => {
   const [selectedStudentIds, setSelectedStudentIds] = useState([]);
   const [loadingPreview, setLoadingPreview] = useState(false);
   const [promoting, setPromoting] = useState(false);
+  // Promotion is an irreversible bulk mutation — a stale preview response
+  // (from before the admin changed class/section/year, or from a previous
+  // Preview click) must never be allowed to populate `previewStudents` /
+  // `selectedStudentIds` after a newer request has started, since the
+  // promote action sends the CURRENT class/year labels alongside whatever
+  // student ids happen to be selected.
+  const previewRequestIdRef = useRef(0);
 
   const [promotionMode, setPromotionMode] = useState("bulk");
   const [minPromotionPercentage, setMinPromotionPercentage] = useState(50);
   const [promotionSearch, setPromotionSearch] = useState("");
+  const [previewPage, setPreviewPage] = useState(1);
+  // Back to page 1 whenever the preview list or its search changes.
+  useEffect(() => { setPreviewPage(1); }, [previewStudents, promotionSearch]);
   const [notes, setNotes] = useState("");
 
   const [promotionHistory, setPromotionHistory] = useState([]);
@@ -239,7 +262,7 @@ const StudentPromotion = ({ setShowAdminHeader }) => {
   const [leavingStudents, setLeavingStudents] = useState([]);
   const [loadingLeaving, setLoadingLeaving] = useState(false);
 
-  const [activeStudents, setActiveStudents] = useState([]);
+  const [activeStudents, setActiveStudents] = useState(() => readCache(ACTIVE_STUDENTS_CACHE_KEY) || []);
   const [loadingActive, setLoadingActive] = useState(false);
 
   const [activeSearch, setActiveSearch] = useState("");
@@ -362,6 +385,7 @@ const StudentPromotion = ({ setShowAdminHeader }) => {
   // Class select handler
   // ──────────────────────────────────────────────────────────
   const handleFromClassChange = (e) => {
+    previewRequestIdRef.current += 1; // invalidate any in-flight preview
     const selectedId = e.target.value;
     const cls = classes.find((c) => c._id === selectedId);
     setFromClassId(selectedId);
@@ -372,6 +396,7 @@ const StudentPromotion = ({ setShowAdminHeader }) => {
   };
 
   const handleFromAcademicYearChange = (e) => {
+    previewRequestIdRef.current += 1; // invalidate any in-flight preview
     const selectedId = e.target.value;
     const selectedYear = academicYears.find((y) => String(y._id) === String(selectedId));
     setFromAcademicYearId(selectedId);
@@ -411,6 +436,8 @@ const StudentPromotion = ({ setShowAdminHeader }) => {
       Swal.fire({ icon: "warning", title: "Select Source Class", text: "Please select the class to promote from.", confirmButtonColor: "#6366f1" });
       return;
     }
+    const requestId = ++previewRequestIdRef.current;
+    const isStale = () => previewRequestIdRef.current !== requestId;
     setLoadingPreview(true);
     setPreviewStudents([]);
     setSelectedStudentIds([]);
@@ -433,6 +460,7 @@ const StudentPromotion = ({ setShowAdminHeader }) => {
         body: JSON.stringify(body),
       });
       const data = await res.json();
+      if (isStale()) return;
       if (res.ok) {
         const students = (data.students || []).filter(
           (s) => !["Leaving", "Left"].includes(String(s?.status || ""))
@@ -474,9 +502,10 @@ const StudentPromotion = ({ setShowAdminHeader }) => {
         Swal.fire({ icon: "error", title: "Error", text: data.error || "Failed to load students.", confirmButtonColor: "#6366f1" });
       }
     } catch {
+      if (isStale()) return;
       Swal.fire({ icon: "error", title: "Network Error", text: "Could not reach server.", confirmButtonColor: "#6366f1" });
     } finally {
-      setLoadingPreview(false);
+      if (!isStale()) setLoadingPreview(false);
     }
   };
 
@@ -595,7 +624,9 @@ const StudentPromotion = ({ setShowAdminHeader }) => {
   const fetchLeavingStudents = useCallback(async () => {
     setLoadingLeaving(true);
     try {
-      const params = new URLSearchParams();
+      // Only students still being processed; finalized "Left" students live on
+      // their own page (/admin/left-students).
+      const params = new URLSearchParams({ status: "Leaving" });
       if (leaveClassFilter) params.set("classFilter", leaveClassFilter);
       const res = await fetch(
         `${API_BASE}/api/promotion/leaving-students?${params.toString()}`,
@@ -612,10 +643,14 @@ const StudentPromotion = ({ setShowAdminHeader }) => {
     }
   }, [leaveClassFilter]);
 
-  const fetchActiveStudents = useCallback(async () => {
-    setLoadingActive(true);
+  // Cached in the browser (instant paint, background refresh). force → skip
+  // both caches, used right after a mark-left / restore so the list is exact.
+  const fetchActiveStudents = useCallback(async ({ force = false } = {}) => {
+    const cached = force ? null : readCache(ACTIVE_STUDENTS_CACHE_KEY);
+    if (cached) setActiveStudents(cached);
+    else setLoadingActive(true);
     try {
-      const res = await fetch(`${API_BASE}/api/admin/users/get-students`, {
+      const res = await fetch(`${API_BASE}/api/admin/users/get-students${force ? "?fresh=1" : ""}`, {
         headers: authHeader(),
       });
       if (res.ok) {
@@ -623,6 +658,7 @@ const StudentPromotion = ({ setShowAdminHeader }) => {
         const list = (Array.isArray(data) ? data : []).filter(
           (s) => !["Leaving", "Left"].includes(s.status)
         );
+        writeCache(ACTIVE_STUDENTS_CACHE_KEY, list);
         setActiveStudents(list);
       }
     } catch {
@@ -656,7 +692,7 @@ const StudentPromotion = ({ setShowAdminHeader }) => {
   }, [leaveClassFilter]);
 
   // ──────────────────────────────────────────────────────────
-  // Mark as Leaving
+  // Mark as Left (bulk, direct)
   // ──────────────────────────────────────────────────────────
   const handleMarkLeaving = () => {
     if (selectedForLeave.length === 0) {
@@ -677,16 +713,18 @@ const StudentPromotion = ({ setShowAdminHeader }) => {
       const res = await fetch(`${API_BASE}/api/promotion/mark-leaving`, {
         method: "POST",
         headers: authHeader(),
-        body: JSON.stringify({ studentIds: selectedForLeave, ...leaveForm }),
+        // Bulk action finalizes directly as Left (no intermediate "Leaving" step).
+        body: JSON.stringify({ studentIds: selectedForLeave, ...leaveForm, markAs: "Left" }),
       });
       const data = await res.json();
       if (res.ok) {
-        Swal.fire({ icon: "success", title: "Marked as Leaving", text: data.message, confirmButtonColor: "#6366f1" });
+        Swal.fire({ icon: "success", title: "Marked as Left", text: data.message, confirmButtonColor: "#6366f1" });
+        if (onShowLeft) onShowLeft();
         setShowLeaveModal(false);
         setSelectedForLeave([]);
         setLeaveForm({ leavingDate: "", reasonForLeaving: "", transferCertificateNo: "", transferCertificateDate: "", remarks: "" });
         fetchLeavingStudents();
-        fetchActiveStudents();
+        fetchActiveStudents({ force: true });
         fetchMeta(); // refresh counts
       } else {
         Swal.fire({ icon: "error", title: "Error", text: data.error || "Failed to mark students.", confirmButtonColor: "#6366f1" });
@@ -723,7 +761,7 @@ const StudentPromotion = ({ setShowAdminHeader }) => {
       if (res.ok) {
         Swal.fire({ icon: "success", title: "Restored", text: data.message, confirmButtonColor: "#6366f1" });
         fetchLeavingStudents();
-        fetchActiveStudents();
+        fetchActiveStudents({ force: true });
         fetchMeta();
       } else {
         Swal.fire({ icon: "error", title: "Error", text: data.error || "Failed to restore.", confirmButtonColor: "#6366f1" });
@@ -769,6 +807,78 @@ const StudentPromotion = ({ setShowAdminHeader }) => {
     }
   };
 
+  // Bulk actions on the Leaving Students table (select all / per row).
+  const [selectedLeaving, setSelectedLeaving] = useState([]);
+  const [bulkLeavingAction, setBulkLeavingAction] = useState(""); // "left" | "restore" | ""
+  const [bulkProgress, setBulkProgress] = useState({ done: 0, total: 0 });
+
+  // While a bulk leave/restore is running, block the page (overlay below) and
+  // warn before a refresh/close that would cut the batch off half-way.
+  const bulkBusy = Boolean(bulkLeavingAction) || submittingLeave;
+  useEffect(() => {
+    if (!bulkBusy) return undefined;
+    const onBeforeUnload = (e) => {
+      e.preventDefault();
+      e.returnValue = "";
+    };
+    window.addEventListener("beforeunload", onBeforeUnload);
+    return () => window.removeEventListener("beforeunload", onBeforeUnload);
+  }, [bulkBusy]);
+  useEffect(() => {
+    // Drop selections for students no longer in the list (finalized/restored/filtered).
+    setSelectedLeaving((prev) => prev.filter((id) => leavingStudents.some((s) => s._id === id)));
+  }, [leavingStudents]);
+  const allLeavingSelected = leavingStudents.length > 0 && selectedLeaving.length === leavingStudents.length;
+  const toggleLeavingSelected = (id) =>
+    setSelectedLeaving((prev) => (prev.includes(id) ? prev.filter((x) => x !== id) : [...prev, id]));
+  const toggleAllLeaving = () =>
+    setSelectedLeaving(allLeavingSelected ? [] : leavingStudents.map((s) => s._id));
+
+  const handleBulkLeaving = async (action) => {
+    const ids = [...selectedLeaving];
+    if (!ids.length) return;
+    const isLeft = action === "left";
+    const confirm = await Swal.fire({
+      icon: isLeft ? "warning" : "question",
+      title: isLeft ? "Mark Selected as Left" : "Restore Selected",
+      text: isLeft
+        ? `Finalize ${ids.length} student(s) as Left?`
+        : `Restore ${ids.length} student(s) back to Active status?`,
+      showCancelButton: true,
+      confirmButtonText: isLeft ? "Yes, Mark Left" : "Yes, Restore",
+      confirmButtonColor: isLeft ? "#dc2626" : "#10b981",
+      cancelButtonColor: "#6b7280",
+    });
+    if (!confirm.isConfirmed) return;
+
+    setBulkLeavingAction(action);
+    setBulkProgress({ done: 0, total: ids.length });
+    const results = await Promise.allSettled(
+      ids.map((id) =>
+        fetch(
+          isLeft ? `${API_BASE}/api/promotion/mark-left/${id}` : `${API_BASE}/api/promotion/restore-student/${id}`,
+          { method: "PUT", headers: authHeader() }
+        )
+          .then((r) => (r.ok ? r : Promise.reject(r)))
+          .finally(() => setBulkProgress((p) => ({ ...p, done: p.done + 1 })))
+      )
+    );
+    const ok = results.filter((r) => r.status === "fulfilled").length;
+    const failed = ids.length - ok;
+    setBulkLeavingAction("");
+    setSelectedLeaving([]);
+    Swal.fire({
+      icon: failed ? "warning" : "success",
+      title: isLeft ? "Marked as Left" : "Restored",
+      text: `${ok} student(s) ${isLeft ? "marked as Left" : "restored"}${failed ? `, ${failed} failed` : ""}.`,
+      confirmButtonColor: "#6366f1",
+    });
+    fetchLeavingStudents();
+    fetchActiveStudents({ force: true });
+    fetchMeta();
+    if (isLeft && ok && onShowLeft) onShowLeft();
+  };
+
   // ──────────────────────────────────────────────────────────
   // Derived / filtered lists
   // ──────────────────────────────────────────────────────────
@@ -781,6 +891,13 @@ const StudentPromotion = ({ setShowAdminHeader }) => {
       (s.studentCode || "").toLowerCase().includes(q)
     );
   });
+  // Promotion preview pagination (select-all still covers every student).
+  const previewPageCount = Math.max(1, Math.ceil(filteredPreview.length / LEAVE_TABLE_PAGE_SIZE));
+  const safePreviewPage = Math.min(previewPage, previewPageCount);
+  const paginatedPreview = filteredPreview.slice(
+    (safePreviewPage - 1) * LEAVE_TABLE_PAGE_SIZE,
+    safePreviewPage * LEAVE_TABLE_PAGE_SIZE
+  );
 
   const fromYearClasses = fromAcademicYearId
     ? classes.filter((c) => String(c.academicYearId || "") === String(fromAcademicYearId))
@@ -845,17 +962,47 @@ const StudentPromotion = ({ setShowAdminHeader }) => {
   // Render
   // ──────────────────────────────────────────────────────────
   return (
-    <div className="min-h-screen bg-gray-50 p-4 md:p-6">
-      {/* ──────── Hero header ──────── */}
+    <div className={section === "leave" ? "flex h-full min-h-0 flex-col" : "min-h-screen bg-gray-50 p-4 md:p-6"}>
+      {/* Full-page blocking overlay during bulk leave / restore */}
+      {bulkBusy && (
+        <div className="fixed inset-0 z-[100] flex items-center justify-center bg-slate-950/60 p-4 backdrop-blur-sm" role="alertdialog" aria-live="assertive" aria-busy="true">
+          <div className="w-full max-w-sm rounded-2xl bg-white p-6 text-center shadow-2xl">
+            <Loader2 className="mx-auto h-10 w-10 animate-spin text-rose-500" />
+            <h3 className="mt-4 text-lg font-bold text-gray-900">
+              {bulkLeavingAction === "restore" ? "Restoring students…" : "Marking students as Left…"}
+            </h3>
+            {bulkLeavingAction && bulkProgress.total > 0 ? (
+              <>
+                <p className="mt-1 text-sm text-gray-500">
+                  {bulkProgress.done} of {bulkProgress.total} done
+                </p>
+                <div className="mt-3 h-2 w-full overflow-hidden rounded-full bg-gray-100">
+                  <div
+                    className="h-full rounded-full bg-rose-500 transition-all duration-300"
+                    style={{ width: `${Math.round((bulkProgress.done / bulkProgress.total) * 100)}%` }}
+                  />
+                </div>
+              </>
+            ) : (
+              <p className="mt-1 text-sm text-gray-500">Updating {selectedForLeave.length} student(s)…</p>
+            )}
+            <p className="mt-4 rounded-lg bg-amber-50 px-3 py-2 text-xs font-semibold text-amber-700">
+              Please don&apos;t refresh or close this page until it finishes.
+            </p>
+          </div>
+        </div>
+      )}
+      {/* ──────── Hero header (Promotion page only; the leave section is embedded in Left Students) ──────── */}
+      {section === "promotion" && (
       <div className="relative overflow-hidden rounded-3xl bg-gradient-to-br from-indigo-50 via-violet-50/50 to-white border border-indigo-100/70 p-6 md:p-8 mb-6 shadow-sm">
         <div className="relative flex flex-col md:flex-row items-center gap-6">
           <div className="flex-1 min-w-0 w-full">
             <p className="text-xs font-semibold text-indigo-500 mb-2">Academics</p>
             <h1 className="text-2xl md:text-[28px] font-extrabold text-gray-900 leading-tight">
-              Student Promotion &amp; Leave Management
+              Student Promotion
             </h1>
             <p className="text-gray-500 text-sm mt-2 max-w-xl">
-              Promote students to their next class or manage student departures in just a few clicks.
+              Promote students to their next class in just a few clicks. Student departures are on the Left Students page.
             </p>
           </div>
           <div className="shrink-0">
@@ -868,36 +1015,7 @@ const StudentPromotion = ({ setShowAdminHeader }) => {
           </div>
         </div>
       </div>
-
-      {/* ──────── Tabs ──────── */}
-      <div className="relative flex items-center gap-6 mb-6 border-b border-gray-200">
-        {[
-          { key: "promotion", label: "Promotion", icon: ArrowUpCircle },
-          { key: "leave", label: "Leave Management", icon: LogOut },
-        ].map((tab) => {
-          const Icon = tab.icon;
-          const active = activeTab === tab.key;
-          return (
-            <button
-              key={tab.key}
-              onClick={() => setActiveTab(tab.key)}
-              className={`relative flex items-center gap-2 pb-3 text-sm font-semibold transition-colors ${
-                active ? "text-indigo-600" : "text-gray-500 hover:text-gray-800"
-              }`}
-            >
-              <Icon className="w-4 h-4" />
-              {tab.label}
-              {active && (
-                <Motion.span
-                  layoutId="promoTabIndicator"
-                  className="absolute left-0 right-0 -bottom-px h-0.5 rounded-full bg-indigo-600"
-                  transition={{ type: "spring", duration: 0.5, bounce: 0.2 }}
-                />
-              )}
-            </button>
-          );
-        })}
-      </div>
+      )}
 
       <AnimatePresence mode="wait">
         {/* ══════════════════════════════════════════════════════
@@ -1237,7 +1355,7 @@ const StudentPromotion = ({ setShowAdminHeader }) => {
                         </tr>
                       </thead>
                       <tbody className="divide-y divide-gray-100">
-                        {filteredPreview.map((s, i) => {
+                        {paginatedPreview.map((s, i) => {
                           const isSelected = selectedStudentIds.includes(s._id);
                           return (
                             <tr
@@ -1263,7 +1381,7 @@ const StudentPromotion = ({ setShowAdminHeader }) => {
                                   className="rounded border-gray-300 accent-indigo-600 cursor-pointer disabled:cursor-not-allowed"
                                 />
                               </td>
-                              <td className="px-4 py-3 text-gray-400">{i + 1}</td>
+                              <td className="px-4 py-3 text-gray-400">{(safePreviewPage - 1) * LEAVE_TABLE_PAGE_SIZE + i + 1}</td>
                               <td className="px-4 py-3">
                                 <div className="flex items-center gap-2.5">
                                   <div className="h-7 w-7 shrink-0 rounded-full bg-gradient-to-br from-indigo-400 to-violet-500 flex items-center justify-center text-white text-[11px] font-bold shadow-sm">
@@ -1309,6 +1427,12 @@ const StudentPromotion = ({ setShowAdminHeader }) => {
                       </tbody>
                     </table>
                   </div>
+                  <PaginationBar
+                    page={safePreviewPage}
+                    totalItems={filteredPreview.length}
+                    pageSize={LEAVE_TABLE_PAGE_SIZE}
+                    onPageChange={setPreviewPage}
+                  />
                 </Motion.div>
               )}
             </AnimatePresence>
@@ -1473,10 +1597,10 @@ const StudentPromotion = ({ setShowAdminHeader }) => {
             animate={{ opacity: 1, y: 0 }}
             exit={{ opacity: 0, y: -8 }}
             transition={{ duration: 0.2 }}
-            className="space-y-6"
+            className="flex h-full min-h-0 flex-col gap-6"
           >
             {/* Active students – select to mark leaving */}
-            <div className="bg-white/90 backdrop-blur rounded-2xl border border-gray-200/70 shadow-sm overflow-hidden">
+            <div className="flex min-h-0 flex-1 flex-col bg-white/90 backdrop-blur rounded-2xl border border-gray-200/70 shadow-sm overflow-hidden">
               <div className="p-4 border-b border-gray-100 bg-gradient-to-r from-emerald-50/60 to-transparent">
                 <div className="flex flex-wrap items-center justify-between gap-3">
                   <div>
@@ -1514,7 +1638,7 @@ const StudentPromotion = ({ setShowAdminHeader }) => {
                       className="flex items-center gap-2 px-4 py-2.5 bg-gradient-to-r from-red-500 to-rose-600 text-white rounded-xl text-sm font-semibold shadow-md shadow-red-200/70 hover:shadow-lg hover:-translate-y-0.5 transition-all disabled:opacity-40 disabled:cursor-not-allowed disabled:translate-y-0 disabled:shadow-none"
                     >
                       <LogOut className="w-4 h-4" />
-                      Mark Leaving ({selectedForLeave.length})
+                      Mark as Left ({selectedForLeave.length})
                     </button>
                   </div>
                 </div>
@@ -1531,9 +1655,11 @@ const StudentPromotion = ({ setShowAdminHeader }) => {
                     : "No active students found."}
                 </div>
               ) : (
-                <div className="overflow-x-auto">
+                <div className="flex min-h-0 flex-1 flex-col">
+                  {/* Rows scroll inside this box (sticky header); pagination stays pinned below. */}
+                  <div className="min-h-0 flex-1 overflow-auto">
                   <table className="w-full text-sm">
-                    <thead className="bg-gray-50/80 text-gray-500 text-xs uppercase tracking-wide">
+                    <thead className="sticky top-0 z-10 bg-gray-50 text-gray-500 text-xs uppercase tracking-wide">
                       <tr>
                         <th className="px-4 py-3 text-left">
                           <input
@@ -1580,8 +1706,18 @@ const StudentPromotion = ({ setShowAdminHeader }) => {
                             <td className="px-4 py-3 text-gray-400">{(activePage - 1) * LEAVE_TABLE_PAGE_SIZE + i + 1}</td>
                             <td className="px-4 py-3">
                               <div className="flex items-center gap-2.5">
-                                <div className="h-7 w-7 shrink-0 rounded-full bg-gradient-to-br from-emerald-400 to-teal-500 flex items-center justify-center text-white text-[11px] font-bold shadow-sm">
-                                  {initials(s.name)}
+                                <div className="h-7 w-7 shrink-0 overflow-hidden rounded-full bg-gradient-to-br from-emerald-400 to-teal-500 flex items-center justify-center text-white text-[11px] font-bold shadow-sm">
+                                  {studentPhotoUrl(s.profilePic) ? (
+                                    <img
+                                      src={studentPhotoUrl(s.profilePic)}
+                                      alt=""
+                                      className="h-full w-full object-cover"
+                                      onError={(e) => {
+                                        // Broken/expired photo URL → fall back to initials.
+                                        e.currentTarget.replaceWith(document.createTextNode(initials(s.name)));
+                                      }}
+                                    />
+                                  ) : initials(s.name)}
                                 </div>
                                 <span className="font-medium text-gray-800">{s.name}</span>
                               </div>
@@ -1596,6 +1732,7 @@ const StudentPromotion = ({ setShowAdminHeader }) => {
                       })}
                     </tbody>
                   </table>
+                  </div>
                   <PaginationBar
                     page={activePage}
                     totalItems={filteredActive.length}
@@ -1607,7 +1744,7 @@ const StudentPromotion = ({ setShowAdminHeader }) => {
             </div>
 
             {/* Leaving students list */}
-            <div className="bg-white/90 backdrop-blur rounded-2xl border border-gray-200/70 shadow-sm overflow-hidden">
+            {/* <div className="bg-white/90 backdrop-blur rounded-2xl border border-gray-200/70 shadow-sm overflow-hidden">
               <div className="p-4 border-b border-gray-100 flex flex-wrap items-center justify-between gap-3 bg-gradient-to-r from-orange-50/60 to-transparent">
                 <div>
                   <h3 className="font-bold text-gray-800 flex items-center gap-2">
@@ -1617,7 +1754,8 @@ const StudentPromotion = ({ setShowAdminHeader }) => {
                     Leaving Students
                   </h3>
                   <p className="text-xs text-gray-500 mt-0.5 ml-9">
-                    {leavingStudents.length} student(s) marked as leaving
+                    {leavingStudents.length} student(s) marked as leaving · finalized students move to{" "}
+                    <button type="button" onClick={() => (onShowLeft ? onShowLeft() : navigate("/admin/left-students"))} className="font-semibold text-indigo-600 hover:underline">Left Students</button>
                   </p>
                 </div>
                 <button
@@ -1628,19 +1766,61 @@ const StudentPromotion = ({ setShowAdminHeader }) => {
                 </button>
               </div>
 
+            
+              {selectedLeaving.length > 0 && (
+                <div className="flex flex-wrap items-center justify-between gap-3 border-b border-rose-100 bg-rose-50/60 px-4 py-2.5">
+                  <span className="text-sm font-semibold text-rose-700">
+                    {selectedLeaving.length} selected
+                    <button type="button" onClick={() => setSelectedLeaving([])} className="ml-3 text-xs font-medium text-gray-500 hover:underline">
+                      Clear
+                    </button>
+                  </span>
+                  <div className="flex items-center gap-2">
+                    <button
+                      type="button"
+                      onClick={() => handleBulkLeaving("left")}
+                      disabled={Boolean(bulkLeavingAction)}
+                      className="inline-flex items-center gap-1.5 rounded-lg bg-red-600 px-3 py-1.5 text-xs font-semibold text-white hover:bg-red-700 disabled:opacity-60"
+                    >
+                      {bulkLeavingAction === "left" ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <LogOut className="w-3.5 h-3.5" />}
+                      Mark Left ({selectedLeaving.length})
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => handleBulkLeaving("restore")}
+                      disabled={Boolean(bulkLeavingAction)}
+                      className="inline-flex items-center gap-1.5 rounded-lg bg-emerald-50 px-3 py-1.5 text-xs font-semibold text-emerald-700 hover:bg-emerald-100 disabled:opacity-60"
+                    >
+                      {bulkLeavingAction === "restore" ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <RotateCcw className="w-3.5 h-3.5" />}
+                      Restore ({selectedLeaving.length})
+                    </button>
+                  </div>
+                </div>
+              )}
+
               {loadingLeaving ? (
                 <div className="flex items-center justify-center py-12 gap-2 text-gray-400 text-sm">
                   <Loader2 className="w-5 h-5 animate-spin" /> Loading...
                 </div>
               ) : leavingStudents.length === 0 ? (
                 <div className="text-center py-12 text-gray-400 text-sm">
-                  No students marked as leaving.
+                  No students pending leave. Finalized students are on the Left Students page.
                 </div>
               ) : (
                 <div className="overflow-x-auto">
                   <table className="w-full text-sm">
                     <thead className="bg-gray-50/80 text-gray-500 text-xs uppercase tracking-wide">
                       <tr>
+                        <th className="px-4 py-3 text-left w-10">
+                          <input
+                            type="checkbox"
+                            checked={allLeavingSelected}
+                            ref={(el) => { if (el) el.indeterminate = selectedLeaving.length > 0 && !allLeavingSelected; }}
+                            onChange={toggleAllLeaving}
+                            className="h-4 w-4 rounded border-gray-300 text-rose-600 focus:ring-rose-400 cursor-pointer"
+                            aria-label="Select all leaving students"
+                          />
+                        </th>
                         <th className="px-4 py-3 text-left">#</th>
                         <th className="px-4 py-3 text-left">Name</th>
                         <th className="px-4 py-3 text-left">Class</th>
@@ -1656,6 +1836,15 @@ const StudentPromotion = ({ setShowAdminHeader }) => {
                     <tbody className="divide-y divide-gray-100">
                       {paginatedLeaving.map((s, i) => (
                         <tr key={s._id} className="even:bg-gray-50/40 hover:bg-orange-50/30 transition-colors">
+                          <td className="px-4 py-3">
+                            <input
+                              type="checkbox"
+                              checked={selectedLeaving.includes(s._id)}
+                              onChange={() => toggleLeavingSelected(s._id)}
+                              className="h-4 w-4 rounded border-gray-300 text-rose-600 focus:ring-rose-400 cursor-pointer"
+                              aria-label={`Select ${s.name}`}
+                            />
+                          </td>
                           <td className="px-4 py-3 text-gray-400">{(leavingPage - 1) * LEAVE_TABLE_PAGE_SIZE + i + 1}</td>
                           <td className="px-4 py-3">
                             <div className="font-medium text-gray-800">{s.name}</div>
@@ -1722,7 +1911,7 @@ const StudentPromotion = ({ setShowAdminHeader }) => {
                   />
                 </div>
               )}
-            </div>
+            </div> */}
           </Motion.div>
         )}
       </AnimatePresence>
@@ -1750,7 +1939,7 @@ const StudentPromotion = ({ setShowAdminHeader }) => {
                   <div className="h-9 w-9 rounded-xl bg-gradient-to-br from-red-500 to-rose-600 flex items-center justify-center shadow-sm">
                     <LogOut className="w-4 h-4 text-white" />
                   </div>
-                  <span>Mark as Leaving<br /><span className="text-xs font-normal text-gray-400">{selectedForLeave.length} student(s)</span></span>
+                  <span>Mark as Left<br /><span className="text-xs font-normal text-gray-400">{selectedForLeave.length} student(s)</span></span>
                 </h3>
                 <button
                   onClick={() => setShowLeaveModal(false)}
@@ -1790,28 +1979,8 @@ const StudentPromotion = ({ setShowAdminHeader }) => {
                   />
                 </div>
 
-                <div className="grid grid-cols-2 gap-3">
-                  <div>
-                    <label className="block text-xs font-medium text-gray-600 mb-1">TC Number</label>
-                    <input
-                      type="text"
-                      value={leaveForm.transferCertificateNo}
-                      onChange={(e) => setLeaveForm((f) => ({ ...f, transferCertificateNo: e.target.value }))}
-                      placeholder="TC-001"
-                      className="w-full border border-gray-200 rounded-xl px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-300"
-                    />
-                  </div>
-                  <div>
-                    <label className="block text-xs font-medium text-gray-600 mb-1">TC Issue Date</label>
-                    <input
-                      type="date"
-                      value={leaveForm.transferCertificateDate}
-                      onChange={(e) => setLeaveForm((f) => ({ ...f, transferCertificateDate: e.target.value }))}
-                      className="w-full border border-gray-200 rounded-xl px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-300"
-                    />
-                  </div>
-                </div>
-
+                {/* TC number + date are system-generated when a student is marked Left
+                    (SLC/<year>/<seq>); the certificate is issued from the Certificates tab. */}
                 <div>
                   <label className="block text-xs font-medium text-gray-600 mb-1">Remarks</label>
                   <textarea
@@ -1841,7 +2010,7 @@ const StudentPromotion = ({ setShowAdminHeader }) => {
                   ) : (
                     <LogOut className="w-4 h-4" />
                   )}
-                  Confirm Leaving
+                  Confirm Left
                 </button>
               </div>
             </Motion.div>

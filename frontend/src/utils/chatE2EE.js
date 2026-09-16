@@ -96,9 +96,26 @@ export const ensureE2EEIdentity = async ({ userId, apiFetch }) => {
   return stored;
 };
 
+// Participants' public keys per thread, reused for a few minutes so sending a message
+// doesn't need an extra request first. A fresh fetch runs in the background on reuse.
+const THREAD_KEYS_TTL_MS = 5 * 60 * 1000;
+const threadKeysCache = new Map(); // threadId -> { at, promise }
+const loadThreadKeys = (threadId, apiFetch) => {
+  const key = String(threadId);
+  const hit = threadKeysCache.get(key);
+  const fetchKeys = () => {
+    const promise = apiFetch(`/api/chat/threads/${threadId}/keys`);
+    threadKeysCache.set(key, { at: Date.now(), promise });
+    promise.catch(() => threadKeysCache.delete(key));
+    return promise;
+  };
+  if (hit && Date.now() - hit.at < THREAD_KEYS_TTL_MS) return hit.promise;
+  return fetchKeys();
+};
+
 export const encryptChatMessage = async ({ threadId, text, myId, apiFetch }) => {
   if (!threadId || !text || !myId || !apiFetch) return null;
-  const payload = await apiFetch(`/api/chat/threads/${threadId}/keys`);
+  const payload = await loadThreadKeys(threadId, apiFetch);
   const keyMap = payload?.keys || {};
   const participants = Object.entries(keyMap).filter(([, value]) => value?.publicKey);
   if (!participants.length) return null;

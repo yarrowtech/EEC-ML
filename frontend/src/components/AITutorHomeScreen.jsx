@@ -3698,7 +3698,6 @@ function AiTutorPanel({ onGeneratedStudyItem = () => {} }) {
   const recognitionRef = useRef(null);
   const [listening, setListening] = useState(false);
   const [autoSpeak, setAutoSpeak] = useState(false);
-  const [speakingId, setSpeakingId] = useState(null);
   const lastAutoSpokenIdRef = useRef(null);
   const [copiedId, setCopiedId] = useState(null);
   const [showJump, setShowJump] = useState(false);
@@ -3875,7 +3874,7 @@ function AiTutorPanel({ onGeneratedStudyItem = () => {} }) {
   // browser's native TTS engine. Strips markdown/LaTeX markup so the speech
   // doesn't read out asterisks, dollar signs, or fenced code blocks.
   const supportsSpeech = typeof window !== 'undefined' && 'speechSynthesis' in window;
-  const speakText = (text, id) => {
+  const speakText = (text) => {
     if (!supportsSpeech) return;
     window.speechSynthesis.cancel();
     const clean = String(text || '')
@@ -3886,14 +3885,10 @@ function AiTutorPanel({ onGeneratedStudyItem = () => {} }) {
     if (!clean) return;
     const utterance = new SpeechSynthesisUtterance(clean);
     utterance.rate = 1;
-    utterance.onend = () => setSpeakingId((current) => (current === id ? null : current));
-    utterance.onerror = () => setSpeakingId((current) => (current === id ? null : current));
-    setSpeakingId(id);
     window.speechSynthesis.speak(utterance);
   };
   const stopSpeaking = () => {
     if (supportsSpeech) window.speechSynthesis.cancel();
-    setSpeakingId(null);
   };
   useEffect(() => () => { if (supportsSpeech) window.speechSynthesis.cancel(); }, [supportsSpeech]);
 
@@ -3905,7 +3900,7 @@ function AiTutorPanel({ onGeneratedStudyItem = () => {} }) {
     if (!last || last.role !== 'assistant' || last.streaming || last.error || !last.text) return;
     if (lastAutoSpokenIdRef.current === last.id) return;
     lastAutoSpokenIdRef.current = last.id;
-    speakText(last.text, last.id);
+    speakText(last.text);
   }, [autoSpeak, messages]);
   const streamTimersRef = useRef([]);
   const [canScrollChipsLeft, setCanScrollChipsLeft] = useState(false);
@@ -4138,21 +4133,6 @@ function AiTutorPanel({ onGeneratedStudyItem = () => {} }) {
     } finally {
       setSending(false);
       setQuestion('');
-    }
-  };
-
-  const handleQuizComplete = async (scorePct, subject, topic) => {
-    if (!subject && !topic) return;
-    try {
-      const token = localStorage.getItem('token');
-      const topicId = topic ? topic.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/(^-|-$)/g, '') : 'general';
-      await fetch(`${API_BASE}/api/mastery/update`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
-        body: JSON.stringify({ subject, topicId, topicTitle: topic, score: scorePct }),
-      });
-    } catch {
-      // silently ignore — mastery update is non-critical
     }
   };
 
@@ -4439,7 +4419,7 @@ function AiTutorPanel({ onGeneratedStudyItem = () => {} }) {
                                           </div>
                                         )
                                         : <TutorMessageContent text={msg.text} />)
-                                    : <TutorResponseRenderer text={msg.text} mode={msg.mode} onMisconception={handleMisconception} onQuizComplete={handleQuizComplete} subject={msg.subject} topic={msg.topic} isLatest={i === messages.length - 1} />
+                                    : <TutorResponseRenderer text={msg.text} mode={msg.mode} onMisconception={handleMisconception} subject={msg.subject} topic={msg.topic} isLatest={i === messages.length - 1} />
                                   }
                                   {!msg.streaming && <TutorGeneratedVisuals visuals={msg.visuals} />}
                                   {!msg.streaming && <TutorVisualSources citations={msg.citations} />}
@@ -4472,18 +4452,6 @@ function AiTutorPanel({ onGeneratedStudyItem = () => {} }) {
                                       {copiedId === msg.id
                                         ? <><Check className="size-3 text-[#F59E0B]" /> Copied</>
                                         : <><Copy className="size-3" /> Copy</>}
-                                    </button>
-                                  )}
-                                  {!msg.streaming && supportsSpeech && (
-                                    <button
-                                      type="button"
-                                      onClick={() => (speakingId === msg.id ? stopSpeaking() : speakText(msg.text, msg.id))}
-                                      className="inline-flex items-center gap-1 rounded-md px-1.5 py-0.5 text-[11px] font-medium text-[#a3aaa2] transition-colors hover:bg-[#FEF3C7] hover:text-[#B45309]"
-                                      aria-label={speakingId === msg.id ? 'Stop reading aloud' : 'Read answer aloud'}
-                                    >
-                                      {speakingId === msg.id
-                                        ? <><VolumeX className="size-3 text-[#F59E0B]" /> Stop</>
-                                        : <><Volume2 className="size-3" /> Listen</>}
                                     </button>
                                   )}
                                 </div>

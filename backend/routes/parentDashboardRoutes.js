@@ -1,8 +1,14 @@
 const express = require('express');
+require('../models/TeacherUser'); // registers the model for remarks populate
 const router = express.Router();
+const { createResponseCache } = require('../utils/responseCache');
+// Parent growth analytics are read-heavy and change slowly: 60s per-parent cache.
+const growthCache = createResponseCache({ ttlMs: 60 * 1000 });
+router.use(growthCache.invalidateOnWrite);
 const axios = require('axios');
 const authParent = require('../middleware/authParent');
 const StudentUser = require('../models/StudentUser');
+const { summarizeStudentAttendance } = require('../utils/sessionAttendance');
 const MasteryScore = require('../models/MasteryScore');
 const ExamResult = require('../models/ExamResult');
 const Exam = require('../models/Exam');
@@ -10,6 +16,8 @@ const StudentObservation = require('../models/StudentObservation');
 const ParentDashboardReport = require('../models/ParentDashboardReport');
 const StudentDevelopmentProfile = require('../models/StudentDevelopmentProfile');
 const { resolveParentChildren, parentOwnsStudent } = require('../utils/parentChildren');
+const AuditLog = require('../models/AuditLog');
+const { exportStudentAiData } = require('../services/aiDataExportService');
 
 const AI_SERVICE_URL = process.env.AI_SERVICE_URL || 'http://localhost:8000';
 const TIMEOUT = 120_000;
@@ -28,6 +36,20 @@ const getChildIds = async (parentId, schoolId) => {
 
 const ownsStudent = parentOwnsStudent;
 
+// GET /api/parent-dashboard/ai-data-export/:studentId — parent access is
+// limited to children resolved from the authenticated parent and school.
+router.get('/ai-data-export/:studentId', authParent, async (req, res) => {
+  try {
+    const childIds = await getChildIds(req.user.id, req.schoolId);
+    if (!ownsStudent(childIds, req.params.studentId)) return res.status(403).json({ success: false, error: 'Not authorised for this student' });
+    const payload = await exportStudentAiData(req.params.studentId, req.schoolId);
+    await AuditLog.create({ schoolId: req.schoolId, actorId: req.user.id, actorType: 'parent', action: 'ai_data_export', entity: 'StudentUser', entityId: req.params.studentId, meta: { studentId: req.params.studentId } });
+    return res.json({ success: true, data: payload });
+  } catch (err) {
+    return res.status(500).json({ success: false, error: 'Unable to export AI data' });
+  }
+});
+
 const DAY = 24 * 60 * 60 * 1000;
 // How long a stored AI report stays fresh before the dashboard regenerates it.
 const REPORT_TTL = { home_support: 3 * DAY, weekly_digest: 7 * DAY, monthly_report: 30 * DAY };
@@ -38,6 +60,7 @@ const readCachedReport = async ({ req, type }) => {
   const existing = await ParentDashboardReport.findOne({
     parentId: req.user.id,
     studentId: req.params.studentId,
+    schoolId: req.schoolId,
     type,
   }).lean();
   if (existing && Date.now() - new Date(existing.generatedAt).getTime() < REPORT_TTL[type]) {
@@ -49,7 +72,7 @@ const readCachedReport = async ({ req, type }) => {
 const writeCachedReport = async ({ req, type, content }) => {
   const generatedAt = new Date();
   await ParentDashboardReport.findOneAndUpdate(
-    { parentId: req.user.id, studentId: req.params.studentId, type },
+    { parentId: req.user.id, studentId: req.params.studentId, schoolId: req.schoolId, type },
     { content, generatedAt, schoolId: req.schoolId },
     { upsert: true, new: true },
   );
@@ -105,7 +128,7 @@ router.get('/weak-areas', authParent, async (req, res) => {
 });
 
 // GET /api/parent-dashboard/remarks-feed
-router.get('/remarks-feed', authParent, async (req, res) => {
+router.get('/remarks-feed', authParent, growthCache.cache, async (req, res) => {
   try {
     const childIds = await getChildIds(req.user.id, req.schoolId);
     if (!childIds.length) return res.json({ success: true, data: [] });
@@ -117,7 +140,8 @@ router.get('/remarks-feed', authParent, async (req, res) => {
     })
       .sort({ recordedAt: -1 })
       .limit(20)
-      .select('studentId studentName observationText category recordedAt concernLevel')
+      .select('studentId studentName observationText category recordedAt concernLevel teacherId')
+      .populate({ path: 'teacherId', model: 'TeacherUser', select: 'name profilePic' })
       .lean();
 
     return res.json({ success: true, data: remarks });
@@ -133,6 +157,7 @@ router.get('/home-support/:studentId', authParent, async (req, res) => {
     if (!ownsStudent(childIds, req.params.studentId)) {
       return res.status(403).json({ error: 'Not authorized for this student' });
     }
+
 
     const cached = await readCachedReport({ req, type: 'home_support' });
     if (cached) return res.json({ success: true, data: cached });
@@ -170,6 +195,7 @@ router.get('/weekly-digest/:studentId', authParent, async (req, res) => {
     if (!ownsStudent(childIds, req.params.studentId)) {
       return res.status(403).json({ error: 'Not authorized for this student' });
     }
+
 
     const cached = await readCachedReport({ req, type: 'weekly_digest' });
     if (cached) return res.json({ success: true, data: cached });
@@ -211,6 +237,7 @@ router.get('/monthly-report/:studentId', authParent, async (req, res) => {
     if (!ownsStudent(childIds, req.params.studentId)) {
       return res.status(403).json({ error: 'Not authorized for this student' });
     }
+
 
     const cached = await readCachedReport({ req, type: 'monthly_report' });
     if (cached) return res.json({ success: true, data: cached });
@@ -256,7 +283,7 @@ router.get('/monthly-report/:studentId', authParent, async (req, res) => {
 });
 
 // GET /api/parent-dashboard/analytics/academic/:studentId
-router.get('/analytics/academic/:studentId', authParent, async (req, res) => {
+router.get('/analytics/academic/:studentId', authParent, growthCache.cache, async (req, res) => {
   try {
     const childIds = await getChildIds(req.user.id, req.schoolId);
     if (!ownsStudent(childIds, req.params.studentId)) {
@@ -267,7 +294,7 @@ router.get('/analytics/academic/:studentId', authParent, async (req, res) => {
     const [masteryScores, examResults, student] = await Promise.all([
       MasteryScore.find({ studentId: sid, schoolId: req.schoolId }).lean(),
       ExamResult.find({ studentId: sid }).lean(),
-      StudentUser.findById(sid).select('name grade section attendance').lean(),
+      StudentUser.findById(sid).select('name grade section attendance attendanceSummary').lean(),
     ]);
     const examIndex = await buildExamIndex(examResults.map((r) => r.examId));
 
@@ -294,9 +321,13 @@ router.get('/analytics/academic/:studentId', authParent, async (req, res) => {
 
     // Attendance summary from embedded array
     const attendance = Array.isArray(student?.attendance) ? student.attendance : [];
-    const presentDays = attendance.filter((a) => String(a.status).toLowerCase() === 'present').length;
-    const totalDays = attendance.length;
-    const attendancePct = totalDays > 0 ? Math.round((presentDays / totalDays) * 100) : null;
+    // Academic-year basis: present days ÷ school days of the active session.
+    const yearSummary = student
+      ? (await summarizeStudentAttendance([student], { schoolId: req.schoolId, campusId: req.campusId || null })).get(String(student._id)) || {}
+      : {};
+    const presentDays = yearSummary.presentDays || 0;
+    const totalDays = yearSummary.schoolDays || 0;
+    const attendancePct = yearSummary.percentage ?? null;
 
     // Monthly attendance trend (last 6 months)
     const monthlyAttendance = [];
@@ -333,7 +364,7 @@ router.get('/analytics/academic/:studentId', authParent, async (req, res) => {
 });
 
 // GET /api/parent-dashboard/analytics/wellbeing/:studentId
-router.get('/analytics/wellbeing/:studentId', authParent, async (req, res) => {
+router.get('/analytics/wellbeing/:studentId', authParent, growthCache.cache, async (req, res) => {
   try {
     const childIds = await getChildIds(req.user.id, req.schoolId);
     if (!ownsStudent(childIds, req.params.studentId)) {
@@ -424,7 +455,7 @@ router.get('/analytics/wellbeing/:studentId', authParent, async (req, res) => {
 });
 
 // GET /api/parent-dashboard/analytics/skills/:studentId
-router.get('/analytics/skills/:studentId', authParent, async (req, res) => {
+router.get('/analytics/skills/:studentId', authParent, growthCache.cache, async (req, res) => {
   try {
     const childIds = await getChildIds(req.user.id, req.schoolId);
     if (!ownsStudent(childIds, req.params.studentId)) {
@@ -435,7 +466,7 @@ router.get('/analytics/skills/:studentId', authParent, async (req, res) => {
     const [masteryScores, examResults, student, observations, devProfile] = await Promise.all([
       MasteryScore.find({ studentId: sid, schoolId: req.schoolId }).lean(),
       ExamResult.find({ studentId: sid }).lean(),
-      StudentUser.findById(sid).select('name grade section attendance').lean(),
+      StudentUser.findById(sid).select('name grade section attendance attendanceSummary').lean(),
       StudentObservation.find({ studentId: sid, schoolId: req.schoolId }).sort({ recordedAt: -1 }).limit(40).lean(),
       StudentDevelopmentProfile.findOne({ studentId: sid, schoolId: req.schoolId }).lean(),
     ]);
@@ -453,8 +484,9 @@ router.get('/analytics/skills/:studentId', authParent, async (req, res) => {
       : null;
 
     const attendance = Array.isArray(student?.attendance) ? student.attendance : [];
-    const presentDays = attendance.filter((a) => String(a.status).toLowerCase() === 'present').length;
-    const attendancePct = attendance.length > 0 ? Math.round((presentDays / attendance.length) * 100) : null;
+    const attendancePct = student
+      ? ((await summarizeStudentAttendance([student], { schoolId: req.schoolId, campusId: req.campusId || null })).get(String(student._id))?.percentage ?? null)
+      : null;
 
     const moodRatings = observations.filter((o) => o.moodRating != null).map((o) => o.moodRating);
     const moodScore = moodRatings.length

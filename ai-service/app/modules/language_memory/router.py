@@ -21,6 +21,7 @@ class StoreRequest(BaseModel):
 
 class RetrieveRequest(BaseModel):
     student_id: str
+    school_id: str
     mode: str  # "reading" | "writing"
     limit: int = 3
 
@@ -49,6 +50,7 @@ async def retrieve(req: RetrieveRequest):
     try:
         results = await mem_svc.retrieve_history(
             student_id=req.student_id,
+            school_id=req.school_id,
             mode=req.mode,
             limit=req.limit,
         )

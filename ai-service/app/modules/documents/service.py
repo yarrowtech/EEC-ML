@@ -2,7 +2,9 @@
 # All rights reserved. Unauthorized copying, modification, distribution,
 # or duplication is prohibited without prior written permission.
 
+import ipaddress
 import logging
+import socket
 import tempfile
 from functools import lru_cache
 from pathlib import Path
@@ -105,17 +107,66 @@ def resolve_extension(url: str, file_name: str, content_type: str) -> str:
     return ""
 
 
-def download_to_temp(url: str, extension: str) -> Path:
-    try:
-        resp = requests.get(url, timeout=settings.download_timeout, stream=True)
-        resp.raise_for_status()
-    except requests.RequestException as exc:
-        raise HTTPException(status_code=400, detail=f"Could not download material: {exc}") from exc
+def _assert_public_host(url: str) -> None:
+    """Block ingestion URLs that resolve to private/loopback/link-local addresses.
 
-    with tempfile.NamedTemporaryFile(delete=False, suffix=extension) as tmp:
-        for chunk in resp.iter_content(chunk_size=256 * 1024):
-            tmp.write(chunk)
-        return Path(tmp.name)
+    The ingest endpoint downloads whatever URL it's given (teacher-uploaded Cloudinary
+    material). Without this check, that URL could target internal services or the
+    cloud metadata endpoint (169.254.169.254) — a classic SSRF into the network this
+    service runs on.
+    """
+    parsed = urlparse(url)
+    try:
+        port = parsed.port
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail="Invalid material URL port") from exc
+    if parsed.scheme != "https" or parsed.username or parsed.password or port not in (None, 443):
+        raise HTTPException(status_code=400, detail="Material URL must use HTTPS without credentials on port 443")
+    host = parsed.hostname
+    if not host:
+        raise HTTPException(status_code=400, detail="Material URL is missing a host")
+    allowed = {h.strip().lower() for h in settings.download_allowed_hosts.split(",") if h.strip()}
+    if host.lower() not in allowed:
+        raise HTTPException(status_code=400, detail="Material URL host is not approved")
+    try:
+        addrs = {info[4][0] for info in socket.getaddrinfo(host, None)}
+    except socket.gaierror as exc:
+        raise HTTPException(status_code=400, detail=f"Could not resolve material URL host: {exc}") from exc
+    for addr in addrs:
+        ip = ipaddress.ip_address(addr)
+        if not ip.is_global:
+            raise HTTPException(status_code=400, detail="Material URL resolves to a disallowed address")
+
+
+def download_to_temp(url: str, extension: str) -> Path:
+    _assert_public_host(url)
+    path = None
+    try:
+        with requests.get(url, timeout=settings.download_timeout, stream=True, allow_redirects=False) as resp:
+            if 300 <= resp.status_code < 400:
+                raise HTTPException(status_code=400, detail="Material redirects are not allowed")
+            resp.raise_for_status()
+            limit = settings.download_max_bytes
+            if limit <= 0:
+                raise HTTPException(status_code=503, detail="Invalid download limit")
+            length = resp.headers.get("Content-Length")
+            if length and (not length.isdigit() or int(length) > limit):
+                raise HTTPException(status_code=413, detail="Material exceeds download limit")
+            with tempfile.NamedTemporaryFile(delete=False, suffix=extension) as tmp:
+                path = Path(tmp.name)
+                size = 0
+                for chunk in resp.iter_content(chunk_size=256 * 1024):
+                    size += len(chunk)
+                    if size > limit:
+                        raise HTTPException(status_code=413, detail="Material exceeds download limit")
+                    tmp.write(chunk)
+            return path
+    except Exception as exc:
+        if path:
+            path.unlink(missing_ok=True)
+        if isinstance(exc, requests.RequestException):
+            raise HTTPException(status_code=400, detail="Could not download material") from exc
+        raise
 
 
 @lru_cache(maxsize=64)
@@ -245,8 +296,12 @@ def ingest_material(
     if replace_existing:
         try:
             delete_material_chunks(material_id)
-        except Exception:
-            pass
+        except Exception as exc:
+            logger.warning(
+                "Failed to delete existing Qdrant chunks for material %s before re-ingest "
+                "(stale/duplicate chunks may remain): %s",
+                material_id, exc,
+            )
 
     indexed = upsert_chunks(
         material_id=material_id,

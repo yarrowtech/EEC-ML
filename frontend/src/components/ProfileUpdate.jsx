@@ -77,7 +77,6 @@ const ProfileUpdate = () => {
   const [dataLoading, setDataLoading] = useState(true);
   const [errors, setErrors] = useState({});
   const [activeTab, setActiveTab] = useState('personal');
-  const fileInputRef = useRef(null);
   const touchStartRef = useRef({ x: 0, y: 0 });
   const touchMoveRef = useRef({ x: 0, y: 0 });
   const swipeLockRef = useRef(0);
@@ -203,7 +202,7 @@ const ProfileUpdate = () => {
         break;
       case 'phone':
         const phoneRegex = /^\+?[\d\s()-]+$/;
-        if (!phoneRegex.test(value)) {
+        if (value && !phoneRegex.test(value)) {
           newErrors[name] = 'Please enter a valid phone number';
         } else {
           delete newErrors[name];
@@ -230,37 +229,6 @@ const ProfileUpdate = () => {
     validateField(name, value, nextProfile);
   };
 
-  const handleImageChange = (e) => {
-    const file = e.target.files[0];
-    if (file) {
-      if (file.size > 5 * 1024 * 1024) {
-        setErrors(prev => ({ ...prev, profilePic: 'Image size must be less than 5MB' }));
-        return;
-      }
-
-      setProfile((prev) => ({ ...prev, profilePic: file }));
-      const reader = new FileReader();
-      reader.onloadend = () => setPreview(reader.result);
-      reader.readAsDataURL(file);
-
-      if (errors.submit) {
-        setErrors((prev) => {
-          const newErrors = { ...prev };
-          delete newErrors.submit;
-          return newErrors;
-        });
-      }
-
-      if (errors.profilePic) {
-        setErrors(prev => {
-          const newErrors = { ...prev };
-          delete newErrors.profilePic;
-          return newErrors;
-        });
-      }
-    }
-  };
-
   const handleSubmit = async (e) => {
     e.preventDefault();
 
@@ -280,7 +248,8 @@ const ProfileUpdate = () => {
       return;
     }
 
-    if (Object.keys(errors).length > 0) {
+    // Only real field errors block saving (not a previous submit/photo message).
+    if (Object.keys(errors).some((k) => k !== 'submit' && k !== 'profilePic')) {
       return;
     }
 
@@ -617,8 +586,6 @@ const ProfileUpdate = () => {
       style={{ scrollbarGutter: 'stable' }}
     >
 
-      <input type="file" accept="image/*" ref={fileInputRef} onChange={handleImageChange} className="hidden" />
-
       {/* ══════════════════════════════════════════════════════
           MOBILE  (lg:hidden)
       ══════════════════════════════════════════════════════ */}
@@ -650,13 +617,6 @@ const ProfileUpdate = () => {
                   }
                 </div>
               </div>
-              <button
-                type="button"
-                onClick={() => fileInputRef.current?.click()}
-                className="absolute bottom-0 right-0 w-7 h-7 bg-white text-amber-500 rounded-full shadow-xl flex items-center justify-center active:scale-90 transition-all border-2 border-orange-100"
-              >
-                <Camera className="w-3.5 h-3.5" />
-              </button>
             </div>
 
             <h2 className="text-white font-black text-lg tracking-tight drop-shadow-sm">{profile.name || 'Student'}</h2>
@@ -813,14 +773,6 @@ const ProfileUpdate = () => {
                       : <div className="w-full h-full flex items-center justify-center text-amber-700 text-3xl font-black">{initialsLabel}</div>
                     }
                   </div>
-                  <button
-                    type="button"
-                    onClick={() => fileInputRef.current?.click()}
-                    className="absolute -bottom-2 -right-2 w-9 h-9 bg-white text-amber-500 rounded-full shadow-lg flex items-center justify-center hover:scale-110 transition-all border border-amber-100"
-                    title="Change photo"
-                  >
-                    <Camera className="w-4 h-4" />
-                  </button>
                 </div>
 
                 <div>

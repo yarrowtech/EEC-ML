@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import { Building2, Edit2, Loader2, Plus, Trash2, X } from 'lucide-react';
 import toast from 'react-hot-toast';
 
@@ -12,13 +12,13 @@ const DepartmentManagement = ({ setShowAdminHeader }) => {
   const [editingId, setEditingId] = useState('');
   const [form, setForm] = useState({ name: '', description: '' });
 
-  const authHeaders = useMemo(() => {
-    const token = localStorage.getItem('token') || '';
-    return {
-      'Content-Type': 'application/json',
-      authorization: `Bearer ${token}`,
-    };
-  }, []);
+  // Computed fresh per call (not memoized) so a token rotation mid-session
+  // is picked up immediately rather than every request reusing whatever
+  // token was in localStorage at mount.
+  const authHeaders = () => ({
+    'Content-Type': 'application/json',
+    authorization: `Bearer ${localStorage.getItem('token') || ''}`,
+  });
 
   useEffect(() => {
     setShowAdminHeader?.(true);
@@ -27,7 +27,7 @@ const DepartmentManagement = ({ setShowAdminHeader }) => {
   const loadDepartments = async () => {
     setLoading(true);
     try {
-      const res = await fetch(`${API_BASE}/api/departments`, { headers: authHeaders });
+      const res = await fetch(`${API_BASE}/api/departments`, { headers: authHeaders() });
       const data = await res.json().catch(() => []);
       if (!res.ok) throw new Error(data?.error || 'Failed to load departments');
       setDepartments(Array.isArray(data) ? data : []);
@@ -60,7 +60,7 @@ const DepartmentManagement = ({ setShowAdminHeader }) => {
       const isEdit = Boolean(editingId);
       const res = await fetch(`${API_BASE}/api/departments${isEdit ? `/${editingId}` : ''}`, {
         method: isEdit ? 'PUT' : 'POST',
-        headers: authHeaders,
+        headers: authHeaders(),
         body: JSON.stringify({ name, description }),
       });
       const data = await res.json().catch(() => ({}));
@@ -89,7 +89,7 @@ const DepartmentManagement = ({ setShowAdminHeader }) => {
     try {
       const res = await fetch(`${API_BASE}/api/departments/${id}`, {
         method: 'DELETE',
-        headers: authHeaders,
+        headers: authHeaders(),
       });
       const data = await res.json().catch(() => ({}));
       if (!res.ok) throw new Error(data?.error || 'Failed to delete department');

@@ -1,17 +1,20 @@
 import asyncio
 import logging
 import os
+import secrets
 from contextlib import asynccontextmanager
+from pathlib import Path
 
 from dotenv import load_dotenv
 
-load_dotenv()
+load_dotenv(Path(__file__).resolve().parents[1] / ".env")
 
 # hf_xet binary wheel is not compatible with Python 3.14; force HTTP fallback
 os.environ.setdefault("HF_HUB_DISABLE_XET", "1")
 
-from fastapi import FastAPI
+from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import JSONResponse
 
 from app.core.config import settings
 from app.core.logger import setup_logging
@@ -52,8 +55,9 @@ def _warmup_models():
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     # Run model loading in a thread so it doesn't block the event loop
-    loop = asyncio.get_event_loop()
-    await loop.run_in_executor(None, _warmup_models)
+    if os.getenv("AI_WARMUP_MODELS", "true").lower() not in {"0", "false", "no", "off"}:
+        loop = asyncio.get_event_loop()
+        await loop.run_in_executor(None, _warmup_models)
     yield
 
 
@@ -61,10 +65,32 @@ app = FastAPI(title="EEC AI Service", version="2.0.0", lifespan=lifespan)
 
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],
-    allow_methods=["*"],
-    allow_headers=["*"],
+    # This service is only ever called server-to-server by the Node backend, never
+    # directly from a browser — so no cross-origin access is legitimate.
+    allow_origins=[],
+    allow_methods=["GET", "POST", "DELETE"],
+    allow_headers=["Content-Type", "X-Internal-Key"],
 )
+
+_UNAUTHENTICATED_PATHS = {"/health"}
+
+
+@app.middleware("http")
+async def enforce_internal_key(request: Request, call_next):
+    """Fail closed unless the backend supplies the configured service secret."""
+    if request.url.path in _UNAUTHENTICATED_PATHS:
+        return await call_next(request)
+
+    expected = settings.ai_service_internal_key
+    if not expected:
+        return JSONResponse(status_code=503, content={"detail": "AI service authentication is not configured"})
+
+    provided = request.headers.get("x-internal-key", "")
+    if not secrets.compare_digest(provided.encode(), expected.encode()):
+        return JSONResponse(status_code=401, content={"detail": "Missing or invalid X-Internal-Key"})
+
+    return await call_next(request)
+
 
 app.include_router(orchestrator_router)   # ← single unified entry point for all AI tasks
 app.include_router(ingest_router)
@@ -82,12 +108,4 @@ app.include_router(video_router)
 
 @app.get("/health")
 async def health() -> dict:
-    return {
-        "status": "ok",
-        "message": "AI service is running",
-        "ollama_url": settings.ollama_url,
-        "ollama_model": settings.ollama_model,
-        "embed_model": settings.ollama_embed_model,
-        "vision_model": settings.ollama_vision_model,
-        "vision_enabled": settings.ollama_vision_enabled,
-    }
+    return {"status": "ok"}

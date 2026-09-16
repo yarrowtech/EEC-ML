@@ -27,6 +27,10 @@ const feeStructureSchema = new mongoose.Schema(
     name: { type: String, required: true, trim: true },
     totalAmount: { type: Number, required: true, min: 0 },
     lateFeeAmount: { type: Number, default: 0, min: 0 },
+    // Skip Sundays / this school's Holiday-collection dates when counting
+    // how many days an invoice has been overdue for late-fee purposes.
+    lateFeeExcludeSundays: { type: Boolean, default: false },
+    lateFeeExcludeHolidays: { type: Boolean, default: false },
     feeHeads: [feeHeadSchema],
     installments: [installmentSchema],
     isActive: { type: Boolean, default: true },

@@ -1,6 +1,7 @@
-import React, { useState, useEffect, useRef, lazy, Suspense } from 'react';
+import React, { useState, useEffect, useRef, lazy, Suspense, Component } from 'react';
 import { useLocation, useNavigate } from 'react-router-dom';
 import { motion as Motion } from 'framer-motion';
+import { AlertTriangle } from 'lucide-react';
 import Sidebar from './Sidebar';
 import Header from './Header';
 import DashboardHome from './DashboardHome';
@@ -24,19 +25,22 @@ const TeacherFeedback = lazy(() => import('./TeacherFeedback'));
 const StudentChat = lazy(() => import('./StudentChat'));
 const ExcuseLetter = lazy(() => import('./ExcuseLetter'));
 const LearningHub = lazy(() => import('./LearningHub'));
-const AcademicAlcove = lazy(() => import('./AcademicAlcove'));
+const CommunityWall = lazy(() => import('./CommunityWall'));
+const StudentCommunityWall = () => <CommunityWall role="student" />;
 const StudentWellbeing = lazy(() => import('./StudentWellbeing'));
 const LessonPlanStatusView = lazy(() => import('./LessonPlanStatusView'));
 const StudentExamsView = lazy(() => import('./StudentExamsView'));
+const AdmitCardsView = lazy(() => import('./AdmitCardsView'));
 const HolidayListView = lazy(() => import('./HolidayListView'));
 const StudentNotificationCenter = lazy(() => import('./StudentNotificationCenter'));
 const StudentOnboarding = lazy(() => import('./StudentOnboarding'));
 const LearningPathMapView = lazy(() => import('./LearningPathMapView'));
 const MasteryView = lazy(() => import('./MasteryView'));
-const ErrorAnalysisView = lazy(() => import('./ErrorAnalysisView'));
+//const ErrorAnalysisView = lazy(() => import('./ErrorAnalysisView'));
 const StudentHealthReport = lazy(() => import('./StudentHealthReport'));
 const StudentComplaints = lazy(() => import('./StudentComplaints'));
 const StudentMeetings = lazy(() => import('./StudentMeetings'));
+const LongAnswerAssessment = lazy(() => import('./LongAnswerAssessment'));
 
 // Per-route tab titles. The school name is appended automatically, so
 // `/student/attendance` shows "Attendance · <School>". Falls back to "Student".
@@ -50,8 +54,9 @@ const VIEW_TITLES = {
   'smart-learning-tutor': 'AI Tutor',
   academics: 'Assignments',
   assignments: 'Assignments',
+  'long-answer': 'Long Answer',
   'assignments-journal': 'Journal',
-  'assignments-academic-alcove': 'Academic Alcove',
+  'assignments-academic-alcove': 'Community Wall',
   'study-materials': 'Study Materials',
   'practice-papers': 'Practice Papers',
   'my-paths': 'My Paths',
@@ -77,7 +82,7 @@ const VIEW_TITLES = {
   notifications: 'Notifications',
   'learning-path-map': 'Learning Path',
   mastery: 'Mastery Progress',
-  'error-analysis': 'Error Analysis',
+  //'error-analysis': 'Error Analysis',
   profile: 'Profile',
   themecustomizer: 'Appearance',
 };
@@ -91,6 +96,48 @@ const LEARNING_HUB_VIEWS = [
   'smart-learning-courses-reference', 'smart-learning-tutor',
   'study-materials', 'practice-papers', 'my-paths',
 ];
+
+// Catches a lazy-chunk load failure (e.g. a stale tab after a new deploy
+// changes chunk hashes) or any render crash in the student views, which
+// would otherwise bubble past Suspense to an uncaught error and leave a
+// blank white screen with no way to recover short of manually reloading.
+class StudentDashboardErrorBoundary extends Component {
+  constructor(props) {
+    super(props);
+    this.state = { hasError: false };
+  }
+
+  static getDerivedStateFromError() {
+    return { hasError: true };
+  }
+
+  render() {
+    if (this.state.hasError) {
+      return (
+        <div className="flex min-h-screen w-full items-center justify-center bg-gray-50 p-6">
+          <div className="w-full max-w-md rounded-2xl border border-red-100 bg-white p-8 text-center shadow-sm">
+            <div className="mx-auto mb-4 flex h-14 w-14 items-center justify-center rounded-2xl bg-red-50 text-red-500">
+              <AlertTriangle size={26} />
+            </div>
+            <h1 className="text-xl font-semibold text-slate-950">Something went wrong</h1>
+            <p className="mt-2 text-sm text-slate-500">
+              This page failed to load. Reloading usually fixes it, especially right after an app update.
+            </p>
+            <button
+              type="button"
+              onClick={() => window.location.reload()}
+              className="mt-6 rounded-xl bg-amber-500 px-5 py-2.5 text-sm font-bold text-white shadow-md hover:opacity-90 transition-opacity"
+            >
+              Reload
+            </button>
+          </div>
+        </div>
+      );
+    }
+
+    return this.props.children;
+  }
+}
 
 const normalizeViewFromPath = (pathname) => {
   if (
@@ -106,7 +153,11 @@ const normalizeViewFromPath = (pathname) => {
   return 'dashboard';
 };
 
-const Dashboard = () => {
+// `useStudentDashboard()` only sees data from an ancestor `StudentDashboardProvider` —
+// it must be rendered as a child of the provider, not a sibling that merely
+// renders the provider itself. `Dashboard` (below) supplies that provider;
+// this component is where all the provider-dependent logic (and JSX) lives.
+const DashboardContent = () => {
   const location = useLocation();
   const navigate = useNavigate();
   const [sidebarOpen, setSidebarOpen] = useState(false);
@@ -168,7 +219,7 @@ const Dashboard = () => {
   }, []);
 
   // Onboarding: show when profile loads and onboardingCompleted === false
-  const { profile } = useStudentDashboard();
+  const { profile, refresh: refreshDashboard } = useStudentDashboard();
   useEffect(() => {
     if (profile && profile.onboardingCompleted === false) {
       setShowOnboarding(true);
@@ -202,11 +253,13 @@ const Dashboard = () => {
     routine: RoutineView,
     schedule: RoutineView,
     exams: StudentExamsView,
+    'admit-cards': AdmitCardsView,
     holidays: HolidayListView,
     'lesson-plan-status': LessonPlanStatusView,
     assignments: (props) => <AssignmentView {...props} defaultType="school" />,
+    'long-answer': LongAnswerAssessment,
     'assignments-journal': (props) => <AssignmentView {...props} ref={journalRef} defaultType="journal" />,
-    'assignments-academic-alcove': (props) => <AcademicAlcove {...props} />,
+    'assignments-academic-alcove': StudentCommunityWall,
     'study-materials': LearningHub,
     'practice-papers': LearningHub,
     'my-paths': LearningHub,
@@ -226,16 +279,17 @@ const Dashboard = () => {
     notifications: StudentNotificationCenter,
     'learning-path-map': LearningPathMapView,
     mastery: MasteryView,
-    'error-analysis': ErrorAnalysisView,
+    //'error-analysis': ErrorAnalysisView,
     profile: ProfileUpdate,
     themecustomizer: ThemeCustomizer,
   };
 
   useEffect(() => {
     if (!viewComponents[effectiveView]) {
+      console.warn(`[Dashboard] Unknown student view "${effectiveView}" for path "${location.pathname}" — redirecting to dashboard home.`);
       navigate('/student', { replace: true });
     }
-  }, [effectiveView, navigate]);
+  }, [effectiveView, location.pathname, navigate]);
 
   const renderContent = () => {
     const Component = viewComponents[effectiveView];
@@ -254,7 +308,7 @@ const Dashboard = () => {
   };
 
   return (
-    <StudentDashboardProvider>
+    <>
       <div className="min-h-screen w-full bg-gray-50 flex relative overflow-hidden">
         <Sidebar
           activeView={effectiveView}
@@ -305,12 +359,24 @@ const Dashboard = () => {
         <Suspense fallback={null}>
           <StudentOnboarding
             studentName={profile?.name || ''}
-            onComplete={() => setShowOnboarding(false)}
+            onComplete={() => {
+              setShowOnboarding(false);
+              refreshDashboard?.();
+            }}
           />
         </Suspense>
       )}
-    </StudentDashboardProvider>
+    </>
   );
 };
 
+const Dashboard = () => (
+  <StudentDashboardErrorBoundary>
+    <StudentDashboardProvider>
+      <DashboardContent />
+    </StudentDashboardProvider>
+  </StudentDashboardErrorBoundary>
+);
+
 export default Dashboard;
+

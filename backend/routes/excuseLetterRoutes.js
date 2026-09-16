@@ -6,6 +6,94 @@ const authParent = require('../middleware/authParent');
 
 const ExcuseLetter = require('../models/ExcuseLetter');
 const StudentUser = require('../models/StudentUser');
+const Notification = require('../models/Notification');
+const TeacherUser = require('../models/TeacherUser');
+
+// Saving a Notification pushes it to devices and pings open tabs over Socket.IO
+// (see models/Notification.js), so these alerts arrive instantly.
+const letterDates = (letter) => {
+  const fmt = (d) => new Date(d).toLocaleDateString('en-GB', { day: 'numeric', month: 'short' });
+  const from = fmt(letter.dateFrom);
+  const to = fmt(letter.dateTo);
+  return from === to ? from : `${from} – ${to}`;
+};
+const letterClass = (letter) => `Class ${letter.className || ''}${letter.sectionName ? `-${letter.sectionName}` : ''}`;
+
+// New letter → its class teacher(s).
+const notifyClassTeachersOfLetter = async (letter, submittedBy) => {
+  try {
+    const teachers = await TeacherAllocation.find({
+      schoolId: letter.schoolId,
+      classId: letter.classId,
+      sectionId: letter.sectionId,
+      isClassTeacher: true,
+    }).select('teacherId').lean();
+    const teacherIds = [...new Set(teachers.map((t) => String(t.teacherId)).filter(Boolean))];
+    if (!teacherIds.length) return;
+    await Notification.create({
+      schoolId: letter.schoolId,
+      campusId: null,
+      title: 'New excuse letter',
+      message: `${letter.studentName} (${letterClass(letter)}) requested leave for ${letterDates(letter)}. Sent by ${submittedBy}.`,
+      audience: 'Teacher',
+      targetUserIds: teacherIds,
+      createdByType: submittedBy === 'Parent' ? 'parent' : 'student',
+      type: 'alert',
+      typeLabel: 'excuse_letter',
+      category: 'general',
+      priority: 'high',
+      className: letter.className || '',
+      sectionName: letter.sectionName || '',
+      relatedEntity: { entityType: 'leave', entityId: letter._id },
+    });
+  } catch (err) {
+    console.error('Excuse letter teacher notification failed:', err.message);
+  }
+};
+
+// Decision → the student and their parent(s).
+const notifyLetterDecision = async (letter, teacherId) => {
+  try {
+    const [teacher, parents] = await Promise.all([
+      TeacherUser.findById(teacherId).select('name').lean(),
+      ParentUser.find({ schoolId: letter.schoolId, childrenIds: letter.studentId }).select('_id').lean(),
+    ]);
+    const decision = letter.status === 'approved' ? 'approved' : 'rejected';
+    const by = teacher?.name ? ` by ${teacher.name}` : '';
+    const common = {
+      schoolId: letter.schoolId,
+      campusId: null,
+      title: `Excuse letter ${decision}`,
+      createdByType: 'teacher',
+      createdByTeacherId: teacherId,
+      createdByName: teacher?.name || '',
+      type: 'alert',
+      typeLabel: 'excuse_letter_reviewed',
+      category: 'general',
+      priority: 'high',
+      className: letter.className || '',
+      sectionName: letter.sectionName || '',
+      relatedEntity: { entityType: 'leave', entityId: letter._id },
+    };
+    const docs = [{
+      ...common,
+      audience: 'Student',
+      targetUserIds: [letter.studentId],
+      message: `Your leave request for ${letterDates(letter)} was ${decision}${by}.`,
+    }];
+    if (parents.length) {
+      docs.push({
+        ...common,
+        audience: 'Parent',
+        targetUserIds: parents.map((p) => p._id),
+        message: `The leave request for ${letter.studentName} (${letterDates(letter)}) was ${decision}${by}.`,
+      });
+    }
+    await Notification.insertMany(docs);
+  } catch (err) {
+    console.error('Excuse letter decision notification failed:', err.message);
+  }
+};
 const ParentUser = require('../models/ParentUser');
 const TeacherAllocation = require('../models/TeacherAllocation');
 const ClassModel = require('../models/Class');
@@ -14,6 +102,9 @@ const School = require('../models/School');
 const { logStudentPortalEvent, logStudentPortalError } = require('../utils/studentPortalLogger');
 
 const router = express.Router();
+const { parentAttendanceCache } = require('../utils/responseCache');
+// Any write here clears the parent attendance screen's response cache.
+router.use(parentAttendanceCache.invalidateOnWrite);
 
 const resolveClassCandidates = (raw) => {
   const value = String(raw || '').trim();
@@ -149,6 +240,7 @@ router.post('/student', authStudent, async (req, res) => {
       status: 'pending',
     });
 
+    notifyClassTeachersOfLetter(created, 'Student');
     res.status(201).json(created);
     logStudentPortalEvent(req, {
       feature: 'excuse_letter',
@@ -174,7 +266,7 @@ router.post('/student', authStudent, async (req, res) => {
 });
 
 // Parent: list letters submitted by the authenticated parent's linked children.
-router.get('/parent', authParent, async (req, res) => {
+router.get('/parent', authParent, parentAttendanceCache.cache, async (req, res) => {
   try {
     const parent = await ParentUser.findById(req.user.id)
       .select('schoolId campusId childrenIds children')
@@ -239,7 +331,7 @@ router.post('/parent', authParent, async (req, res) => {
     if (!parent) return res.status(404).json({ error: 'Parent not found' });
     const schoolId = parent.schoolId || req.schoolId || null;
     const campusId = parent.campusId || req.campusId || null;
-    const { studentId, dateFrom, dateTo, reason, reasonType, additionalNotes, emergencyContact } = req.body || {};
+    const { studentId, dateFrom, dateTo, reason, reasonType, customReasonType, additionalNotes, emergencyContact } = req.body || {};
     if (!schoolId || !studentId || !dateFrom || !dateTo || !String(reason || '').trim()) {
       return res.status(400).json({ error: 'studentId, dateFrom, dateTo and reason are required' });
     }
@@ -270,8 +362,11 @@ router.post('/parent', authParent, async (req, res) => {
       className: classDoc.name || '', sectionName: sectionDoc.name || '',
       parentName: parent.name || parent.username || '', parentEmail: parent.email || '', parentPhone: parent.mobile || '',
       dateFrom: new Date(dateFrom), dateTo: new Date(dateTo), reason: String(reason).trim(),
-      reasonType: String(reasonType || 'other'), additionalNotes: String(additionalNotes || ''), emergencyContact: String(emergencyContact || ''), status: 'pending',
+      reasonType: String(reasonType || 'other'),
+      customReasonType: String(reasonType || 'other') === 'other' ? String(customReasonType || '').trim().slice(0, 60) : '',
+      additionalNotes: String(additionalNotes || ''), emergencyContact: String(emergencyContact || ''), status: 'pending',
     });
+    notifyClassTeachersOfLetter(created, 'Parent');
     return res.status(201).json(created);
   } catch (err) {
     return res.status(400).json({ error: err.message });
@@ -307,9 +402,15 @@ router.get('/teacher', authTeacher, async (req, res) => {
     })
       .sort({ createdAt: -1 })
       .lean();
-    const schoolMeta = await buildSchoolMeta(schoolId);
+    const studentIds = [...new Set(items.map((item) => String(item.studentId || '')).filter(Boolean))];
+    const [schoolMeta, students] = await Promise.all([
+      buildSchoolMeta(schoolId),
+      studentIds.length ? StudentUser.find({ _id: { $in: studentIds } }).select('_id profilePic').lean() : [],
+    ]);
+    const photoByStudent = new Map(students.map((student) => [String(student._id), student.profilePic || '']));
     const enriched = items.map((item) => ({
       ...item,
+      studentPhoto: photoByStudent.get(String(item.studentId)) || '',
       schoolName: item.schoolName || schoolMeta.schoolName || '',
       schoolAddress: item.schoolAddress || schoolMeta.schoolAddress || '',
     }));
@@ -358,6 +459,7 @@ router.patch('/teacher/:id', authTeacher, async (req, res) => {
       { $set: { status, reviewedBy: teacherId, reviewedAt: new Date() } },
       { new: true }
     ).lean();
+    if (updated) notifyLetterDecision(updated, teacherId);
 
     const schoolMeta = await buildSchoolMeta(schoolId);
     res.json({

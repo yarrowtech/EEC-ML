@@ -26,4 +26,10 @@ teacherAllocationSchema.index(
   { unique: true, name: 'unique_teacher_allocation' }
 );
 
+// /api/student/allocated-subjects reads "all allocations for this class +
+// section" without filtering by teacherId — the uniqueness index above
+// can't seek on classId/sectionId efficiently since teacherId sits between
+// them and campusId in its key order. This index matches that read shape.
+teacherAllocationSchema.index({ schoolId: 1, campusId: 1, classId: 1, sectionId: 1 });
+
 module.exports = mongoose.model('TeacherAllocation', teacherAllocationSchema);

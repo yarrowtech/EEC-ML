@@ -164,23 +164,23 @@ describe('ParentPortal', () => {
       [
         'Dashboard',
         'Growth Analytics',
-        'Report Card',
+        'Results & Report Card',
         'Attendance',
         'Achievements',
         'Health Record',
         'Class Routine',
         'Holidays',
-        'Fees',
-        'Chat',
-        'Meetings',
-        'Complaints',
+        'Fees & Payments',
+        'Messages',
+        'Meetings / PTM',
+        'Support & Complaints',
         'Observations',
-        'Excuse Letters',
+        'Leave / Excuse Letters',
       ].forEach((label) => {
         expect(nav.getByText(label)).toBeInTheDocument();
       });
       // Grouped navigation headings
-      ['Progress', 'Schedule', 'Money', 'Talk to school'].forEach((heading) => {
+      ['Learning', 'Exams & Results', 'School', 'Communication', 'My Child'].forEach((heading) => {
         expect(nav.getByText(heading)).toBeInTheDocument();
       });
     });
@@ -234,7 +234,7 @@ describe('ParentPortal', () => {
 
       await waitFor(() => {
         expect(screen.getByText((content, element) => {
-          return element?.textContent === '2 children';
+          return element?.textContent === 'Parent · 2 children';
         })).toBeInTheDocument();
       }, { timeout: 5000 });
     });
@@ -298,7 +298,7 @@ describe('ParentPortal', () => {
         expect(screen.getByTestId('parent-dashboard')).toBeInTheDocument();
       });
 
-      const attendanceLink = screen.getByText('Attendance');
+      const attendanceLink = within(screen.getByLabelText('Sidebar navigation')).getByText('Attendance');
       fireEvent.click(attendanceLink);
 
       await waitFor(() => {
@@ -319,7 +319,7 @@ describe('ParentPortal', () => {
         expect(screen.getByTestId('parent-dashboard')).toBeInTheDocument();
       });
 
-      const academicLink = screen.getByText('Report Card');
+      const academicLink = screen.getByText('Results & Report Card');
       fireEvent.click(academicLink);
 
       await waitFor(() => {
@@ -340,7 +340,7 @@ describe('ParentPortal', () => {
         expect(screen.getByTestId('parent-dashboard')).toBeInTheDocument();
       });
 
-      const feesLink = screen.getAllByText('Fees')[0];
+      const feesLink = screen.getByText('Fees & Payments');
       fireEvent.click(feesLink);
 
       await waitFor(() => {
@@ -361,7 +361,7 @@ describe('ParentPortal', () => {
         expect(screen.getByTestId('parent-dashboard')).toBeInTheDocument();
       });
 
-      const ptmLink = screen.getByText('Meetings');
+      const ptmLink = screen.getByText('Meetings / PTM');
       fireEvent.click(ptmLink);
 
       await waitFor(() => {
@@ -382,7 +382,7 @@ describe('ParentPortal', () => {
         expect(screen.getByTestId('parent-dashboard')).toBeInTheDocument();
       });
 
-      const chatLink = screen.getByText('Chat');
+      const chatLink = screen.getByText('Messages');
       fireEvent.click(chatLink);
 
       await waitFor(() => {
@@ -403,7 +403,7 @@ describe('ParentPortal', () => {
 
       await waitFor(() => {
         const sidebar = screen.getByLabelText('Sidebar navigation');
-        expect(sidebar).toHaveClass('lg:w-80');
+        expect(sidebar).toHaveClass('w-64');
       });
     });
 
@@ -425,7 +425,7 @@ describe('ParentPortal', () => {
 
       await waitFor(() => {
         const sidebar = screen.getByLabelText('Sidebar navigation');
-        expect(sidebar).toHaveClass('w-20');
+        expect(sidebar).toHaveClass('w-[72px]');
       });
     });
 
@@ -448,7 +448,7 @@ describe('ParentPortal', () => {
 
       await waitFor(() => {
         const sidebar = screen.getByLabelText('Sidebar navigation');
-        expect(sidebar).toHaveClass('w-20');
+        expect(sidebar).toHaveClass('w-[72px]');
       });
 
       // Expand
@@ -457,7 +457,7 @@ describe('ParentPortal', () => {
 
       await waitFor(() => {
         const sidebar = screen.getByLabelText('Sidebar navigation');
-        expect(sidebar).toHaveClass('lg:w-80');
+        expect(sidebar).toHaveClass('w-64');
       });
     });
 
@@ -511,7 +511,7 @@ describe('ParentPortal', () => {
       // The mobile button might be shown
       await waitFor(() => {
         const sidebar = screen.getByLabelText('Sidebar navigation');
-        expect(sidebar).toHaveClass('w-20');
+        expect(sidebar).toHaveClass('w-[72px]');
       });
     });
   });
@@ -575,7 +575,6 @@ describe('ParentPortal', () => {
       const dashboardLink = nav.getByText('Dashboard').closest('a');
       expect(dashboardLink).toHaveAttribute('aria-current', 'page');
       expect(dashboardLink).toHaveClass('bg-violet-50');
-      expect(dashboardLink).toHaveClass('border-violet-600');
     });
 
     test('attendance link is highlighted when on attendance route', async () => {
@@ -591,7 +590,6 @@ describe('ParentPortal', () => {
         const attendanceLink = screen.getAllByText('Attendance')[0].closest('a');
         expect(attendanceLink).toHaveAttribute('aria-current', 'page');
         expect(attendanceLink).toHaveClass('bg-violet-50');
-        expect(attendanceLink).toHaveClass('border-violet-600');
       });
     });
   });
@@ -623,7 +621,7 @@ describe('ParentPortal', () => {
       mockFetch = createMockFetch({
         '/api/parent/auth/profile': { ok: true, data: mockParentProfile },
         'http://localhost:5000/api/parent/auth/profile': { ok: true, data: mockParentProfile },
-        'http://localhost:5000/api/notifications/user': {
+        'http://localhost:5000/api/notifications/user?kind=notification': {
           ok: true,
           data: [{ _id: 'n1', title: 'Fee due soon', message: 'Pay by Friday', isRead: false, createdAt: new Date().toISOString(), type: 'fee' }],
         },
@@ -704,7 +702,7 @@ describe('ParentPortal', () => {
 
       await waitFor(() => {
         expect(screen.getByText((content, element) => {
-          return element?.textContent === 'Your children';
+          return element?.tagName === 'SPAN' && element?.textContent === 'Parent';
         })).toBeInTheDocument();
       });
     });
@@ -738,7 +736,7 @@ describe('ParentPortal', () => {
 
       await waitFor(() => {
         expect(screen.getByText((content, element) => {
-          return element?.textContent === '1 child';
+          return element?.textContent === 'Parent · 1 child';
         })).toBeInTheDocument();
       }, { timeout: 5000 });
     });

@@ -19,7 +19,9 @@ import {
   FlaskConical,
   Lightbulb,
   ListChecks,
+  Maximize2,
   Mic,
+  Minimize2,
   PenLine,
   Play,
   Plus,
@@ -39,8 +41,6 @@ import { Progress, ProgressLabel, ProgressValue } from '@/components/ui/progress
 import { Textarea } from '@/components/ui/textarea';
 import RichTextEditor from './RichTextEditor';
 import UploadDropzone from './UploadDropzone';
-import FileUploadCard from './FileUploadCard';
-import AssessmentCard from './AssessmentCard';
 import { InlineTryoutBuilder } from './TryoutBuilder';
 import RichTextMaterialEditor from '../RichTextMaterialEditor';
 import { API_BASE } from '@/config/api';
@@ -58,10 +58,10 @@ const STEPS = [
   { key: 'materials',  label: 'Materials',          icon: BookOpen,       color: 'purple'  },
   { key: 'intro',      label: 'Introduction',       icon: Lightbulb,      color: 'amber'   },
   { key: 'content',    label: 'Content',            icon: ListChecks,     color: 'green'   },
-  { key: 'assessment', label: 'Assessment',         icon: ClipboardList,  color: 'rose'    },
+  { key: 'assessment', label: 'Worksheet',          icon: ClipboardList,  color: 'rose'    },
   { key: 'language',   label: 'Language Practice',  icon: Mic,            color: 'indigo'  },
   { key: 'tryout',     label: 'Tryout',             icon: Play,           color: 'pink'    },
-  { key: 'publish',    label: 'Publish', icon: Send,           color: 'emerald' },
+  { key: 'publish',    label: 'Review and Publish', icon: Send,  color: 'emerald' },
 ];
 
 const EVAL_TAGS = ['Excellent', 'Good', 'Needs Improvement'];
@@ -129,6 +129,7 @@ const DrawerModal = ({
   publishProgress = 0,
   externalStep,
   onStepChange,
+  classDisplayName = '',
 }) => {
   const [currentStep, setCurrentStep] = useState(0);
   const [customDurationSelected, setCustomDurationSelected] = useState(() => (
@@ -139,6 +140,56 @@ const DrawerModal = ({
   const [contentGenerating, setContentGenerating] = useState(false);
   const [contentStreaming, setContentStreaming] = useState(false);
   const contentStreamTimersRef = React.useRef([]);
+
+  // Fullscreen state
+  const [isFullscreen, setIsFullscreen] = useState(false);
+  const containerRef = React.useRef(null);
+
+  const toggleFullscreen = React.useCallback(async () => {
+    const el = containerRef.current;
+    if (!el) return;
+
+    try {
+      if (!document.fullscreenElement) {
+        await el.requestFullscreen?.();
+        setIsFullscreen(true);
+      } else {
+        await document.exitFullscreen?.();
+        setIsFullscreen(false);
+      }
+    } catch {
+      // Fallback: CSS-only fullscreen if the Fullscreen API is blocked
+      setIsFullscreen((v) => !v);
+    }
+  }, []);
+
+  // Keep React state in sync if the user exits fullscreen via ESC
+  React.useEffect(() => {
+    const onFsChange = () => {
+      setIsFullscreen(Boolean(document.fullscreenElement));
+    };
+    document.addEventListener('fullscreenchange', onFsChange);
+    return () => document.removeEventListener('fullscreenchange', onFsChange);
+  }, []);
+
+  // Close fullscreen when the drawer closes
+  React.useEffect(() => {
+    if (!open && document.fullscreenElement) {
+      document.exitFullscreen?.().catch(() => {});
+    }
+  }, [open]);
+
+  // ESC closes drawer's CSS-only fullscreen fallback
+  React.useEffect(() => {
+    if (!isFullscreen) return;
+    const onKey = (e) => {
+      if (e.key === 'Escape' && !document.fullscreenElement) {
+        setIsFullscreen(false);
+      }
+    };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, [isFullscreen]);
 
   React.useEffect(() => () => {
     contentStreamTimersRef.current.forEach(clearTimeout);
@@ -162,8 +213,8 @@ const DrawerModal = ({
 
   React.useEffect(() => {
     if (!open) return;
-    const subject = localStorage.getItem('selectedSubjectName') || '';
-    const className = localStorage.getItem('selectedClassName') || '';
+    const subject = subjectName || '';
+    const className = classDisplayName || '';
     if (!subject && !className) return;
     setCurriculumLoading(true);
     const params = new URLSearchParams();
@@ -178,7 +229,7 @@ const DrawerModal = ({
       })
       .catch(() => setCurriculumTopics([]))
       .finally(() => setCurriculumLoading(false));
-  }, [open]);
+  }, [open, subjectName, classDisplayName]);
 
   const generateIdoWeeDo = async () => {
     const subject = subjectName || 'General';
@@ -451,9 +502,6 @@ const DrawerModal = ({
       case 'info':
         return (
           <div className="space-y-4">
-            <p className={`rounded-lg px-3 py-2 text-sm font-medium ${accent.banner}`}>
-              Name this lesson, pick a date and set how long it will run.
-            </p>
             <Card>
               <Field label="Chapter Title">
                 <Input
@@ -737,14 +785,7 @@ const DrawerModal = ({
                 className="mb-3 resize-none"
                 style={{ color: '#0f172a', caretColor: '#0f172a' }}
               />
-              <Field label="Attach a file (image, video, PDF…)">
-                <Input
-                  type="file"
-                  accept="image/*,video/*,.pdf,.doc,.docx"
-                  onChange={(e) => onAddContentFile(e.target.files?.[0] || null, 'Explanation Attachments')}
-                  className="cursor-pointer"
-                />
-              </Field>
+              
             </Card>
 
             {/* Quick Recap */}
@@ -755,6 +796,18 @@ const DrawerModal = ({
                 value={chapter.recap}
                 onChange={(e) => onUpdate({ ...chapter, recap: e.target.value })}
                 placeholder="Key points students must take away from this lesson…"
+                className="resize-none"
+                style={{ color: '#0f172a', caretColor: '#0f172a' }}
+              />
+            </Card>
+            {/* Did You Know? */}
+            <Card>
+              <SectionTitle icon={Lightbulb} iconColor="text-amber-400">Did You Know?</SectionTitle>
+              <Textarea
+                rows={3}
+                value={chapter.didYouKnow}
+                onChange={(e) => onUpdate({ ...chapter, didYouKnow: e.target.value })}
+                placeholder="A fun or surprising fact related to this lesson…"
                 className="resize-none"
                 style={{ color: '#0f172a', caretColor: '#0f172a' }}
               />
@@ -807,29 +860,14 @@ const DrawerModal = ({
               </div>
             </Card>
 
-            {/* Reference / Worksheet link */}
+            {/* Reference link */}
             <Card>
-              <SectionTitle icon={FlaskConical} iconColor="text-purple-500">Worksheet File or Link</SectionTitle>
-              <div className="flex flex-col gap-2 sm:flex-row">
-                <Input
-                  type="file"
-                  accept=".pdf,.doc,.docx,.xls,.xlsx,image/*"
-                  onChange={(e) => onAddWorksheetFile(e.target.files?.[0] || null)}
-                  className="cursor-pointer"
-                />
-                <Input
-                  value={chapter.worksheetLink}
-                  onChange={(e) => onUpdate({ ...chapter, worksheetLink: e.target.value })}
-                  placeholder="Or paste a worksheet URL…"
-                />
-              </div>
-              {(chapter.worksheetFiles || []).length > 0 && (
-                <div className="mt-3 space-y-2">
-                  {chapter.worksheetFiles.map((file) => (
-                    <FileUploadCard key={file.id} file={file} onRemove={onRemoveWorksheetFile} />
-                  ))}
-                </div>
-              )}
+              <SectionTitle icon={FlaskConical} iconColor="text-purple-500">Article Reference</SectionTitle>
+              <Input
+                value={chapter.worksheetLink}
+                onChange={(e) => onUpdate({ ...chapter, worksheetLink: e.target.value })}
+                placeholder="Paste an article or reference URL…"
+              />
             </Card>
 
             {/* Report uploads */}
@@ -837,7 +875,7 @@ const DrawerModal = ({
               <SectionTitle icon={FileText} iconColor="text-purple-400">Reports & Additional Files</SectionTitle>
               <div className="grid gap-3 sm:grid-cols-2">
                 <UploadDropzone
-                  title="Report Upload"
+                  title="Class Notes"
                   accept=".pdf,.doc,.docx,.xls,.xlsx,image/*"
                   files={chapter.contentUploads?.['Report Upload'] || []}
                   onAddFile={(file) => onAddContentFile(file, 'Report Upload')}
@@ -855,88 +893,23 @@ const DrawerModal = ({
           </div>
         );
 
-      /* ─── ASSESSMENT ──────────────────────────────────────────── */
+      /* ─── WORKSHEET ───────────────────────────────────────────── */
       case 'assessment':
         return (
           <div className="space-y-4">
-            
-            {/* Practice Papers */}
-            <Card>
-              <div className="mb-3 flex items-center justify-between">
-                <SectionTitle icon={ClipboardList} iconColor="text-rose-500">Practice Papers</SectionTitle>
-                
-              </div>
-              <div className="grid gap-3 sm:grid-cols-3">
-                {[
-                  { label: 'Basic',        bucket: 'Practice Papers Basic'        },
-                  { label: 'Intermediate', bucket: 'Practice Papers Intermediate'  },
-                  { label: 'Advanced',     bucket: 'Practice Papers Advanced'      },
-                ].map(({ label, bucket }) => (
-                  <div key={bucket} className="rounded-xl border border-slate-200 bg-slate-50 p-3 dark:border-slate-700 dark:bg-slate-800/40">
-                    <p className="mb-2 text-xs font-semibold text-slate-600 dark:text-slate-300">{label}</p>
-                    <UploadDropzone
-                      title={label}
-                      accept=".pdf,.doc,.docx,.xls,.xlsx"
-                      files={chapter.contentUploads?.[bucket] || []}
-                      onAddFile={(file) => onAddContentFile(file, bucket)}
-                      onRemoveFile={(fileId) => onRemoveContentFile(fileId, bucket)}
-                    />
-                  </div>
-                ))}
-              </div>
-            </Card>
 
-            {/* Worksheets */}
             <Card>
               <div className="mb-3 flex items-center justify-between">
-                <SectionTitle icon={FileText} iconColor="text-rose-400">Worksheets</SectionTitle>
-                <span className="rounded-full bg-slate-100 px-2 py-0.5 text-[11px] font-medium text-slate-500 dark:bg-slate-800 dark:text-slate-400">
-                  Available in Uploaded Resources
-                </span>
+                <SectionTitle icon={ClipboardList} iconColor="text-rose-500">Worksheet</SectionTitle>
               </div>
-              <div className="grid gap-3 sm:grid-cols-2">
-                <UploadDropzone
-                  title="Worksheet Files"
-                  accept=".pdf,.doc,.docx,.xls,.xlsx,image/*"
-                  files={chapter.contentUploads?.['Upload Worksheet'] || []}
-                  onAddFile={(file) => onAddContentFile(file, 'Upload Worksheet')}
-                  onRemoveFile={(fileId) => onRemoveContentFile(fileId, 'Upload Worksheet')}
-                />
-                <div className="flex flex-col justify-center rounded-xl border border-dashed border-slate-300 bg-slate-50 p-3 dark:border-slate-700 dark:bg-slate-800/40">
-                  <p className="mb-2 text-xs font-semibold text-slate-600 dark:text-slate-300">Worksheet Link</p>
-                  <Input
-                    value={chapter.worksheetLink || ''}
-                    onChange={(e) => onUpdate({ ...chapter, worksheetLink: e.target.value })}
-                    placeholder="Paste a Google Docs / Drive URL…"
-                    className="text-xs"
-                    style={{ color: '#0f172a', caretColor: '#0f172a' }}
-                  />
-                </div>
-              </div>
-            </Card>
-
-            {/* Structured assessments */}
-            <Card>
-              <div className="mb-3 flex items-center justify-between">
-                <SectionTitle icon={ClipboardCheck} iconColor="text-rose-400">Structured Assessments</SectionTitle>
-                <Button variant="outline" size="sm" onClick={onAddAssessment} className="text-xs">
-                  + Add Assessment
-                </Button>
-              </div>
-              {(chapter.assessments || []).length === 0 ? (
-                <p className="text-sm text-slate-400 dark:text-slate-500">No assessments yet — click "Add Assessment" to create one.</p>
-              ) : (
-                <div className="space-y-2">
-                  {chapter.assessments.map((assessment) => (
-                    <AssessmentCard
-                      key={assessment.id}
-                      assessment={assessment}
-                      types={assessmentTypes}
-                      onChange={(next) => onUpdateAssessment(assessment.id, next)}
-                    />
-                  ))}
-                </div>
-              )}
+              <p className="mb-3 text-xs text-slate-500 dark:text-slate-400">Upload one worksheet for this chapter. Accepted files: PDF and DOCX.</p>
+              <UploadDropzone
+                title="Upload Worksheet"
+                accept=".pdf,.doc,.docx,application/pdf,application/msword,application/vnd.openxmlformats-officedocument.wordprocessingml.document"
+                files={chapter.worksheetFiles || []}
+                onAddFile={onAddWorksheetFile}
+                onRemoveFile={onRemoveWorksheetFile}
+              />
             </Card>
 
           </div>
@@ -944,8 +917,6 @@ const DrawerModal = ({
 
       /* ─── LANGUAGE PRACTICE ─────────────────────────────────── */
       case 'language': {
-        const subjectName = localStorage.getItem('selectedSubjectName') || '';
-
         const saveReading = async () => {
           if (!readingForm.title.trim() || !readingForm.content.trim()) {
             toast.error('Title and passage are required');
@@ -1046,12 +1017,8 @@ const DrawerModal = ({
 
         return (
           <div className="space-y-4">
-            <p className={`rounded-lg px-3 py-2 text-sm font-medium ${accent.banner}`}>
-              Add reading passages students will read aloud, or writing prompts they will respond to. Both are published instantly to the student portal.
-            </p>
-
             {/* Sub-tab toggle */}
-            <div className="flex gap-1 rounded-xl border border-slate-200 bg-slate-50 p-1 dark:border-slate-700 dark:bg-slate-800/60 w-fit">
+            <div className="mx-auto flex w-fit gap-1 rounded-xl border border-slate-200 bg-slate-50 p-1 dark:border-slate-700 dark:bg-slate-800/60">
               {[
                 { key: 'reading', label: 'Reading', icon: Mic },
                 { key: 'writing', label: 'Writing', icon: PenLine },
@@ -1130,14 +1097,16 @@ const DrawerModal = ({
                     />
                   </div>
 
-                  <button
-                    type="button"
-                    onClick={saveReading}
-                    disabled={langSaving}
-                    className="flex items-center gap-2 rounded-xl bg-indigo-600 px-5 py-2.5 text-sm font-semibold text-white hover:bg-indigo-700 disabled:opacity-50 transition-colors"
-                  >
-                    {langSaving ? 'Saving…' : <><Plus className="size-4" /> Save & Publish Passage</>}
-                  </button>
+                  <div className="flex justify-end">
+                    <button
+                      type="button"
+                      onClick={saveReading}
+                      disabled={langSaving}
+                      className="flex items-center gap-2 rounded-xl bg-indigo-600 px-5 py-2.5 text-sm font-semibold text-white transition-colors hover:bg-indigo-700 disabled:opacity-50"
+                    >
+                      {langSaving ? 'Saving…' : 'Save'}
+                    </button>
+                  </div>
                 </div>
 
                 {/* Existing passages for this chapter */}
@@ -1175,7 +1144,7 @@ const DrawerModal = ({
             {/* ── WRITING form ── */}
             {langTab === 'writing' && (
               <Card>
-                <SectionTitle icon={PenLine} iconColor="text-emerald-500">New Writing Prompt</SectionTitle>
+                <SectionTitle icon={PenLine} iconColor="text-emerald-500">Create Writing</SectionTitle>
                 <div className="space-y-3">
                   <div>
                     <label className="mb-1 block text-xs font-semibold uppercase tracking-wide text-slate-500">Title *</label>
@@ -1215,7 +1184,7 @@ const DrawerModal = ({
                   </div>
 
                   <div>
-                    <label className="mb-1 block text-xs font-semibold uppercase tracking-wide text-slate-500">Prompt / Question *</label>
+                    <label className="mb-1 block text-xs font-semibold uppercase tracking-wide text-slate-500">Question *</label>
                     <textarea
                       className={`${inputCls} resize-y`}
                       rows={3}
@@ -1248,20 +1217,22 @@ const DrawerModal = ({
                     />
                   </div>
 
-                  <button
-                    type="button"
-                    onClick={saveWriting}
-                    disabled={langSaving}
-                    className="flex items-center gap-2 rounded-xl bg-emerald-600 px-5 py-2.5 text-sm font-semibold text-white hover:bg-emerald-700 disabled:opacity-50 transition-colors"
-                  >
-                    {langSaving ? 'Saving…' : <><Plus className="size-4" /> Save & Publish Prompt</>}
-                  </button>
+                  <div className="flex justify-end">
+                    <button
+                      type="button"
+                      onClick={saveWriting}
+                      disabled={langSaving}
+                      className="flex items-center gap-2 rounded-xl bg-emerald-600 px-5 py-2.5 text-sm font-semibold text-white transition-colors hover:bg-emerald-700 disabled:opacity-50"
+                    >
+                      {langSaving ? 'Saving…' : 'Save'}
+                    </button>
+                  </div>
                 </div>
 
                 {/* Existing prompts for this chapter */}
                 {langItems.writing.length > 0 && (
                   <div className="mt-5 space-y-2">
-                    <p className="text-xs font-semibold uppercase tracking-wide text-slate-400">Saved Prompts</p>
+                    <p className="text-xs font-semibold uppercase tracking-wide text-slate-400">Saved</p>
                     {langItems.writing.map((item) => (
                       <div key={item._id} className="flex items-center justify-between gap-3 rounded-xl border border-slate-100 bg-slate-50 px-3 py-2.5 dark:border-slate-700 dark:bg-slate-800/40">
                         <div className="min-w-0 flex-1">
@@ -1297,38 +1268,102 @@ const DrawerModal = ({
       case 'tryout':
         return (
           <div className="space-y-4">
-            <p className={`rounded-lg px-3 py-2 text-sm font-medium ${accent.banner}`}>
-              Create interactive questions students answer inside the Smart Learning portal.
-            </p>
+            
             <InlineTryoutBuilder
               tryouts={chapter.tryouts || []}
               onSaveTryouts={handleSaveTryouts}
               topicTitle={chapter.title || ''}
+              subjectName={subjectName}
+              gradeLevel={classDisplayName}
             />
           </div>
         );
 
       /* ─── EVALUATE & PUBLISH ──────────────────────────────────── */
-      case 'publish':
+      case 'publish': {
+        const reviewMaterials = Object.entries(chapter.contentUploads || {})
+          .flatMap(([bucket, files]) => (Array.isArray(files) ? files : []).map((file) => ({ ...file, bucket })))
+          .filter((file) => file?.name || file?.url);
+        const reviewObjectives = Array.isArray(chapter.learningObjectives)
+          ? chapter.learningObjectives.filter(Boolean)
+          : [];
+        const reviewFlow = Array.isArray(chapter.instructionalFlow)
+          ? chapter.instructionalFlow.filter((step) => step?.description || step?.phase)
+          : [];
+        const reviewTryouts = Array.isArray(chapter.tryouts) ? chapter.tryouts : [];
+        const reviewPracticeItems = Array.isArray(chapter.assessments) ? chapter.assessments.filter((item) => item?.title) : [];
+        const reviewDueDate = chapter.lessonDate || new Date().toISOString().slice(0, 10);
         return (
           <div className="space-y-4">
-            <p className={`rounded-lg px-3 py-2 text-sm font-medium ${accent.banner}`}>
-              Add private notes, rate the class, then publish this chapter to students.
-            </p>
+
+            <Card className="border-emerald-200 bg-emerald-50/50 dark:border-emerald-900 dark:bg-emerald-950/20">
+              <div className="flex items-start gap-3">
+                <div className="flex size-9 shrink-0 items-center justify-center rounded-xl bg-emerald-100 text-emerald-700 dark:bg-emerald-900/50 dark:text-emerald-300"><CheckCircle2 className="size-5" /></div>
+                <div>
+                  <p className="text-sm font-bold text-emerald-900 dark:text-emerald-200">Review before publishing</p>
+                  <p className="mt-1 text-xs leading-relaxed text-emerald-800 dark:text-emerald-300">This complete chapter package will become visible immediately to students in the selected class and section. Publishing again replaces the currently published version.</p>
+                </div>
+              </div>
+            </Card>
 
             <Card>
-              <p className="mb-2 text-sm font-semibold text-slate-800 dark:text-slate-100">
-                Teacher Notes{' '}
-                <span className="text-xs font-normal text-slate-400 dark:text-slate-500">(private — not shown to students)</span>
-              </p>
-              <Textarea
-                rows={3}
-                value={chapter.teacherNotes}
-                onChange={(e) => onUpdate({ ...chapter, teacherNotes: e.target.value })}
-                placeholder="Personal observations, follow-up actions, reminders…"
-                className="resize-none"
-                style={{ color: '#0f172a', caretColor: '#0f172a' }}
-              />
+              <SectionTitle icon={BookOpen} iconColor="text-blue-500">Chapter information</SectionTitle>
+              <div className="grid gap-3 text-sm sm:grid-cols-2">
+                <div><p className="text-[10px] font-bold uppercase tracking-wide text-slate-400">Title</p><p className="mt-1 font-semibold text-slate-800 dark:text-slate-100">{chapter.title || 'Untitled Chapter'}</p></div>
+                <div><p className="text-[10px] font-bold uppercase tracking-wide text-slate-400">Class and subject</p><p className="mt-1 font-semibold text-slate-800 dark:text-slate-100">{[classDisplayName, subjectName].filter(Boolean).join(' · ') || 'Selected class and subject'}</p></div>
+                <div><p className="text-[10px] font-bold uppercase tracking-wide text-slate-400">Lesson date</p><p className="mt-1 font-semibold text-slate-800 dark:text-slate-100">{chapter.lessonDate || 'Not set'}</p></div>
+                <div><p className="text-[10px] font-bold uppercase tracking-wide text-slate-400">Duration</p><p className="mt-1 font-semibold text-slate-800 dark:text-slate-100">{chapter.duration || 'Not set'}</p></div>
+              </div>
+            </Card>
+
+            <Card>
+              <SectionTitle icon={FileText} iconColor="text-violet-500">Materials</SectionTitle>
+              {reviewMaterials.length > 0 || chapter.worksheetLink ? (
+                <div className="space-y-2">
+                  {reviewMaterials.map((file) => (
+                    <div key={`${file.bucket}-${file.id || file.name}`} className="flex items-center justify-between gap-3 rounded-lg border border-slate-200 bg-slate-50 px-3 py-2 dark:border-slate-700 dark:bg-slate-800/50">
+                      <div className="min-w-0"><p className="truncate text-sm font-medium text-slate-700 dark:text-slate-200">{file.name || 'Uploaded material'}</p><p className="text-[10px] text-slate-400">{file.bucket}</p></div>
+                      {file.url && <a href={file.url} target="_blank" rel="noreferrer" className="shrink-0 text-xs font-semibold text-blue-600 hover:underline">Preview</a>}
+                    </div>
+                  ))}
+                  {chapter.worksheetLink && <a href={chapter.worksheetLink} target="_blank" rel="noreferrer" className="block truncate text-xs font-semibold text-blue-600 hover:underline">Reference link: {chapter.worksheetLink}</a>}
+                </div>
+              ) : <p className="text-sm text-slate-500">No additional materials added.</p>}
+            </Card>
+
+            <Card>
+              <SectionTitle icon={Lightbulb} iconColor="text-amber-500">Introduction</SectionTitle>
+              <p className="whitespace-pre-wrap text-sm leading-relaxed text-slate-600 dark:text-slate-300">{chapter.introductionText?.trim() || 'No introduction added.'}</p>
+            </Card>
+
+            <Card>
+              <SectionTitle icon={ListChecks} iconColor="text-green-500">Content</SectionTitle>
+              {reviewObjectives.length > 0 && <div className="mb-3"><p className="mb-1 text-[10px] font-bold uppercase tracking-wide text-slate-400">Learning objectives</p><ul className="list-disc space-y-1 pl-5 text-sm text-slate-600 dark:text-slate-300">{reviewObjectives.map((item, index) => <li key={`${item}-${index}`}>{item}</li>)}</ul></div>}
+              <p className="whitespace-pre-wrap text-sm leading-relaxed text-slate-600 dark:text-slate-300">{chapter.explanation?.trim() || 'No lesson content added.'}</p>
+              {chapter.recap?.trim() && <div className="mt-3 rounded-lg bg-slate-50 p-3 text-sm text-slate-600 dark:bg-slate-800/50 dark:text-slate-300"><span className="font-semibold">Recap: </span>{chapter.recap}</div>}
+              {chapter.didYouKnow?.trim() && <div className="mt-3 rounded-lg bg-amber-50 p-3 text-sm text-amber-900 dark:bg-amber-900/20 dark:text-amber-200"><span className="font-semibold">Did you know? </span>{chapter.didYouKnow}</div>}
+              {reviewFlow.length > 0 && <div className="mt-3 flex flex-wrap gap-2">{reviewFlow.map((step, index) => <span key={`${step.id || step.phase || index}`} className="rounded-full bg-blue-50 px-2.5 py-1 text-[11px] font-semibold text-blue-700 dark:bg-blue-900/30 dark:text-blue-300">{step.phase || `Step ${index + 1}`}</span>)}</div>}
+            </Card>
+
+            <Card>
+              <SectionTitle icon={ClipboardList} iconColor="text-rose-500">Worksheet</SectionTitle>
+              {chapter.worksheetFiles?.length > 0 ? (
+                <div className="space-y-2">
+                  <p className="text-xs text-slate-500">Students can preview/download this file, complete it, and submit their work once.</p>
+                  {chapter.worksheetFiles.map((file) => <div key={file.id || file.name} className="flex items-center justify-between gap-3 rounded-lg border border-amber-200 bg-amber-50/60 px-3 py-2"><span className="truncate text-sm font-semibold text-slate-700 dark:text-slate-200">{file.name || 'Worksheet file'}</span>{file.url && <a href={file.url} target="_blank" rel="noreferrer" className="shrink-0 text-xs font-semibold text-amber-700 hover:underline">Preview</a>}</div>)}
+                  <div className="grid gap-2 pt-1 text-xs sm:grid-cols-2"><p className="rounded-lg bg-slate-50 px-3 py-2 text-slate-600 dark:bg-slate-800/50 dark:text-slate-300"><span className="font-semibold">Due date:</span> {reviewDueDate}</p><p className="rounded-lg bg-slate-50 px-3 py-2 text-slate-600 dark:bg-slate-800/50 dark:text-slate-300"><span className="font-semibold">Submission:</span> One student submission</p></div>
+                </div>
+              ) : <p className="text-sm text-slate-500">No worksheet uploaded. Students will not receive a worksheet until one is added.</p>}
+            </Card>
+
+            <Card>
+              <SectionTitle icon={ClipboardList} iconColor="text-indigo-500">Practice</SectionTitle>
+              {reviewPracticeItems.length > 0 ? <div className="space-y-2">{reviewPracticeItems.map((item) => <div key={item.id || item.title} className="rounded-lg border border-slate-200 px-3 py-2 text-sm text-slate-700 dark:border-slate-700 dark:text-slate-200">{item.title}</div>)}</div> : <p className="text-sm text-slate-500">No additional practice paper added in this chapter.</p>}
+            </Card>
+
+            <Card>
+              <SectionTitle icon={Play} iconColor="text-pink-500">Tryout</SectionTitle>
+              {reviewTryouts.length > 0 ? <div className="space-y-2">{reviewTryouts.map((item, index) => <div key={item.id || item.title || index} className="rounded-lg border border-slate-200 px-3 py-2 text-sm text-slate-700 dark:border-slate-700 dark:text-slate-200">{item.title || item.name || `Tryout ${index + 1}`}</div>)}</div> : <p className="text-sm text-slate-500">No tryout added in this chapter.</p>}
             </Card>
 
             {!!chapter.history?.length && (
@@ -1365,6 +1400,7 @@ const DrawerModal = ({
             </div>
           </div>
         );
+      }
 
       default:
         return null;
@@ -1376,11 +1412,17 @@ const DrawerModal = ({
       {open && (
         <motion.section
           key={chapter.id}
+          ref={containerRef}
           initial={{ opacity: 0, y: 16 }}
           animate={{ opacity: 1, y: 0 }}
           exit={{ opacity: 0, y: -16 }}
           transition={{ duration: 0.18 }}
-          className="flex min-w-0 w-full flex-col self-start overflow-hidden rounded-[22px] border border-[#e9edf2] bg-white shadow-[0_25px_50px_-24px_rgba(15,23,42,0.28)] sm:rounded-[28px] lg:h-full lg:min-h-0 dark:border-slate-700 dark:bg-slate-900"
+          className={[
+            'flex min-w-0 w-full flex-col self-start overflow-hidden rounded-[22px] border border-[#e9edf2] bg-white shadow-[0_25px_50px_-24px_rgba(15,23,42,0.28)] sm:rounded-[28px] lg:h-full lg:min-h-0 dark:border-slate-700 dark:bg-slate-900',
+            isFullscreen
+              ? 'fixed inset-0 z-[100] h-screen w-screen rounded-none sm:rounded-none border-0'
+              : '',
+          ].join(' ')}
         >
           {/* Header */}
           <div className="flex flex-wrap items-center justify-between gap-2 rounded-t-[22px] border-b border-[#ebf0f6] bg-[#fafcff] px-3 py-3 sm:rounded-t-[28px] sm:px-5 sm:py-4 dark:border-slate-800 dark:bg-slate-800/60">
@@ -1402,6 +1444,17 @@ const DrawerModal = ({
               <Button variant="outline" size="sm" onClick={exportPdf} className="gap-1 rounded-full border-[#dce2ea] text-xs">
                 <FileText className="size-3.5" /> Export PDF
               </Button>
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={toggleFullscreen}
+                className="gap-1 rounded-full border-[#dce2ea] text-xs"
+                aria-label={isFullscreen ? 'Exit fullscreen' : 'Enter fullscreen'}
+                title={isFullscreen ? 'Exit fullscreen' : 'View lesson plan in fullscreen'}
+              >
+                {isFullscreen ? <Minimize2 className="size-3.5" /> : <Maximize2 className="size-3.5" />}
+                <span className="hidden sm:inline">{isFullscreen ? 'Exit' : 'Fullscreen'}</span>
+              </Button>
               <Button variant="ghost" size="icon-sm" onClick={onClose} aria-label="Close chapter" className="rounded-full text-slate-500 hover:bg-slate-100 hover:text-slate-800 dark:text-slate-400 dark:hover:text-white">
                 <X className="size-4" />
               </Button>
@@ -1410,7 +1463,7 @@ const DrawerModal = ({
 
           {/* Step navigation */}
           <div className="overflow-x-auto border-b border-[#e9edf2] px-3 py-2 sm:px-5 sm:py-3 dark:border-slate-800">
-            <div className="flex w-max min-w-full items-center gap-1 rounded-full border border-[#e2e8f0] bg-[#f8fafc] p-1">
+            <div className="mx-auto flex w-max min-w-full items-center justify-center gap-1 rounded-full border border-[#e2e8f0] bg-[#f8fafc] p-1">
               {STEPS.map((step, index) => {
                 const isActive = index === currentStep;
                 const isDone = index < currentStep;
@@ -1472,7 +1525,7 @@ const DrawerModal = ({
                 disabled={isPublishing}
                 className="gap-1 rounded-full bg-[#059669] px-4 text-white shadow-[0_4px_12px_-4px_rgba(5,150,105,0.4)] hover:bg-emerald-700 disabled:opacity-50 sm:px-6"
               >
-                {isPublishing ? (isPublished ? 'Updating...' : 'Publishing...') : <><Send className="size-3.5" /> {isPublished ? 'Update' : 'Publish'}</>}
+                {isPublishing ? (isPublished ? 'Updating...' : 'Publishing...') : <><Send className="size-3.5" /> {isPublished ? 'Publish ' : 'Publish'}</>}
               </Button>
             )}
           </div>

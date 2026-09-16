@@ -2,9 +2,10 @@ const express = require('express');
 const mongoose = require('mongoose');
 const adminAuth = require('../middleware/adminAuth');
 const TeacherFeedback = require('../models/TeacherFeedback');
+const TeacherUser = require('../models/TeacherUser');
 const School = require('../models/School');
 const AcademicYear = require('../models/AcademicYear');
-const { notifyTeacherFeedbackWindowStarted } = require('../utils/teacherFeedbackNotify');
+const { handleFeedbackWindowChange } = require('../utils/teacherFeedbackNotify');
 
 const router = express.Router();
 
@@ -97,6 +98,11 @@ router.put('/teacher-feedback/settings', adminAuth, async (req, res) => {
       if (startDate > endDate) {
         return res.status(400).json({ error: 'Start date must be before or equal to end date' });
       }
+      const todayUtc = new Date();
+      todayUtc.setUTCHours(0, 0, 0, 0);
+      if (endDate < todayUtc) {
+        return res.status(400).json({ error: 'End date is already in the past — choose a future end date' });
+      }
     }
 
     const [school, session] = await Promise.all([
@@ -113,7 +119,10 @@ router.put('/teacher-feedback/settings', adminAuth, async (req, res) => {
     const existingIndex = (school.teacherFeedbackWindows || []).findIndex(
       (window) => String(window.sessionId) === String(sessionId)
     );
-    const wasEnabled = existingIndex >= 0 ? Boolean(school.teacherFeedbackWindows[existingIndex].enabled) : false;
+    const previous = existingIndex >= 0 ? school.teacherFeedbackWindows[existingIndex] : null;
+    const before = previous
+      ? { enabled: Boolean(previous.enabled), startDate: previous.startDate, endDate: previous.endDate }
+      : null;
 
     const nextWindow = { sessionId, enabled, startDate: startDate || null, endDate: endDate || null };
     if (existingIndex >= 0) {
@@ -124,11 +133,12 @@ router.put('/teacher-feedback/settings', adminAuth, async (req, res) => {
 
     await school.save();
 
-    if (enabled && !wasEnabled) {
-      notifyTeacherFeedbackWindowStarted({ schoolId: school._id, sessionId, startDate, endDate }).catch((err) => {
-        console.error('[teacher-feedback] failed to send start notifications:', err.message);
-      });
-    }
+    // Opened → notice (student/parent) + alerts (student/parent/teacher);
+    // dates changed → notice updated + "dates changed" alerts;
+    // disabled → notices removed + "closed" alerts; unchanged → nothing.
+    handleFeedbackWindowChange({ schoolId: school._id, sessionId, before, after: nextWindow }).catch((err) => {
+      console.error('[teacher-feedback] failed to send notifications:', err.message);
+    });
 
     return res.json({
       message: 'Teacher feedback settings updated',
@@ -181,10 +191,27 @@ router.get('/teacher-feedback', adminAuth, async (req, res) => {
     if (normalizeText(className)) filter.className = normalizeText(className);
     if (normalizeText(sectionName)) filter.sectionName = normalizeText(sectionName);
     if (normalizeText(subjectName)) filter.subjectName = normalizeText(subjectName);
-    if (dateFrom || dateTo) {
+    // Session scope: feedback has no session field, so a session is its date
+    // window. ?sessionId=… picks one; otherwise the school's active session.
+    // The optional from/to range is intersected with that window.
+    let sessionDoc = null;
+    if (req.query.sessionId && mongoose.isValidObjectId(req.query.sessionId)) {
+      sessionDoc = await AcademicYear.findOne({ _id: req.query.sessionId, ...(schoolId ? { schoolId } : {}) })
+        .select('name startDate endDate isActive').lean();
+    } else if (schoolId) {
+      sessionDoc = await AcademicYear.findOne({ schoolId, isActive: true })
+        .select('name startDate endDate isActive').lean();
+    }
+    const validDate = (v) => (v && !Number.isNaN(new Date(v).getTime()) ? new Date(v) : null);
+    const sessionStart = validDate(sessionDoc?.startDate);
+    const sessionEnd = validDate(sessionDoc?.endDate);
+    if (sessionEnd) sessionEnd.setHours(23, 59, 59, 999);
+    const effectiveFrom = [dateFrom, sessionStart].filter(Boolean).sort((a, b) => b - a)[0] || null;
+    const effectiveTo = [dateTo, sessionEnd].filter(Boolean).sort((a, b) => a - b)[0] || null;
+    if (effectiveFrom || effectiveTo) {
       filter.createdAt = {};
-      if (dateFrom) filter.createdAt.$gte = dateFrom;
-      if (dateTo) filter.createdAt.$lte = dateTo;
+      if (effectiveFrom) filter.createdAt.$gte = effectiveFrom;
+      if (effectiveTo) filter.createdAt.$lte = effectiveTo;
     }
 
     const searchText = normalizeText(search);
@@ -200,6 +227,13 @@ router.get('/teacher-feedback', adminAuth, async (req, res) => {
     }
 
     const docs = await TeacherFeedback.find(filter).sort({ createdAt: -1 }).lean();
+
+    const teacherIds = Array.from(new Set(docs.map((doc) => String(doc.teacherId || '')).filter(Boolean)));
+    const teacherPhotoById = new Map();
+    if (teacherIds.length) {
+      const teacherDocs = await TeacherUser.find({ _id: { $in: teacherIds } }).select('profilePic').lean();
+      teacherDocs.forEach((t) => teacherPhotoById.set(String(t._id), t.profilePic || ''));
+    }
 
     const ratingKeys = ['teaching_quality', 'communication', 'engagement', 'preparation', 'availability', 'fairness'];
     const totalFeedback = docs.length;
@@ -240,6 +274,7 @@ router.get('/teacher-feedback', adminAuth, async (req, res) => {
       id: doc._id,
       teacherId: doc.teacherId,
       teacherName: doc.teacherName || 'Teacher',
+      teacherPhoto: teacherPhotoById.get(String(doc.teacherId || '')) || '',
       className: doc.className || '',
       sectionName: doc.sectionName || '',
       subjectName: doc.subjectName || '',
@@ -264,6 +299,7 @@ router.get('/teacher-feedback', adminAuth, async (req, res) => {
     const teachers = Array.from(teacherMap.values()).sort((a, b) => a.teacherName.localeCompare(b.teacherName));
 
     return res.json({
+      session: sessionDoc ? { id: sessionDoc._id, name: sessionDoc.name, isActive: Boolean(sessionDoc.isActive) } : null,
       stats: {
         totalFeedback,
         averageRating: totalFeedback ? overallSum / totalFeedback : 0,

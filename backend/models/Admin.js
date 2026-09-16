@@ -15,6 +15,7 @@ const adminSchema = new mongoose.Schema({
   name: String,
   email: String,
   avatar: String,
+  coverImage: String, // settings-page hero banner photo
   role: { type: String, enum: ['admin', 'super_admin'], default: 'admin' },
   status: { type: String, enum: ['active', 'inactive'], default: 'active' },
   schoolId: { type: mongoose.Schema.Types.ObjectId, ref: 'School', default: null },

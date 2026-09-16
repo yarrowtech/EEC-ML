@@ -1,5 +1,7 @@
 const express = require('express');
 const router = express.Router();
+const { teacherAnalyticsCache } = require('../utils/responseCache');
+router.use(teacherAnalyticsCache.invalidateOnWrite);
 const authTeacher = require('../middleware/authTeacher');
 const StudentUser = require('../models/StudentUser');
 const StudentProgress = require('../models/StudentProgress');
@@ -29,6 +31,7 @@ async function buildClassScores(students, schoolId) {
         roll: s.roll,
         grade: s.grade,
         section: s.section,
+        profilePic: typeof s.profilePic === 'string' ? s.profilePic : (s.profilePic?.secure_url || s.profilePic?.url || null),
         atRisk: scores.atRisk,
         engagement: scores.engagement,
         masteryAvg: scores.masteryAvg,
@@ -46,7 +49,7 @@ async function buildClassScores(students, schoolId) {
 }
 
 // GET /api/ml/student/:studentId
-router.get('/student/:studentId', authTeacher, async (req, res) => {
+router.get('/student/:studentId', authTeacher, teacherAnalyticsCache.cache, async (req, res) => {
   try {
     const students = await scopedStudents(req);
     const student = students.find((s) => String(s._id) === req.params.studentId);
@@ -59,7 +62,7 @@ router.get('/student/:studentId', authTeacher, async (req, res) => {
 });
 
 // GET /api/ml/class/scores?className=&section=&subject=
-router.get('/class/scores', authTeacher, async (req, res) => {
+router.get('/class/scores', authTeacher, teacherAnalyticsCache.cache, async (req, res) => {
   try {
     const { className, section } = req.query;
     const students = await scopedStudents(req);
@@ -71,7 +74,7 @@ router.get('/class/scores', authTeacher, async (req, res) => {
 });
 
 // GET /api/ml/class/at-risk?className=&section=
-router.get('/class/at-risk', authTeacher, async (req, res) => {
+router.get('/class/at-risk', authTeacher, teacherAnalyticsCache.cache, async (req, res) => {
   try {
     const { className, section } = req.query;
     const students = await scopedStudents(req);
@@ -86,7 +89,7 @@ router.get('/class/at-risk', authTeacher, async (req, res) => {
 });
 
 // GET /api/ml/class/engagement?className=&section=
-router.get('/class/engagement', authTeacher, async (req, res) => {
+router.get('/class/engagement', authTeacher, teacherAnalyticsCache.cache, async (req, res) => {
   try {
     const { className, section } = req.query;
     const students = await scopedStudents(req);
@@ -99,7 +102,7 @@ router.get('/class/engagement', authTeacher, async (req, res) => {
 });
 
 // GET /api/ml/class/trends?className=&section=
-router.get('/class/trends', authTeacher, async (req, res) => {
+router.get('/class/trends', authTeacher, teacherAnalyticsCache.cache, async (req, res) => {
   try {
     const { className, section } = req.query;
     const students = await scopedStudents(req);
@@ -118,7 +121,7 @@ router.get('/class/trends', authTeacher, async (req, res) => {
 });
 
 // GET /api/ml/class/at-risk-validation?className=&section=&horizonDays=
-router.get('/class/at-risk-validation', authTeacher, async (req, res) => {
+router.get('/class/at-risk-validation', authTeacher, teacherAnalyticsCache.cache, async (req, res) => {
   try {
     const { className, section, horizonDays } = req.query;
     const students = await scopedStudents(req);

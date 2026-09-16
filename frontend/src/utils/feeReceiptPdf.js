@@ -104,6 +104,7 @@ export const downloadFeeReceiptPdf = async ({
   const headerBlue = [28, 84, 163];
   const accentYellow = [245, 199, 52];
   const lightBlue = [240, 246, 255];
+  const lightYellow = [255, 249, 230];
 
   const resolvedSchoolName = school?.name || schoolName;
   const resolvedDate = receipt?.date || payment.paidOn || payment.createdAt;
@@ -283,7 +284,7 @@ export const downloadFeeReceiptPdf = async ({
     const monthly = Math.round(Number(transportHead.amount || 0) / 3);
     const quarterly = Math.round(Number(transportHead.amount || 0));
 
-    doc.setFillColor(...headerYellow);
+    doc.setFillColor(...accentYellow);
     doc.rect(tableX, currentY, tableW, 8, 'FD');
     doc.setFont('helvetica', 'bold');
     doc.setFontSize(10);

@@ -13,12 +13,14 @@ const Payment = require('../models/Payment');
 const PaymentAudit = require('../models/PaymentAudit');
 const StudentUser = require('../models/StudentUser');
 const ParentUser = require('../models/ParentUser');
-const { EXITED_STUDENT_STATUSES } = require('../utils/studentStatus');
+const { EXITED_STUDENT_STATUSES, ACTIVE_STUDENT_FILTER } = require('../utils/studentStatus');
 const ClassModel = require('../models/Class');
 const Section = require('../models/Section');
 const AcademicYear = require('../models/AcademicYear');
 const School = require('../models/School');
+const Holiday = require('../models/Holiday');
 const NotificationService = require('../utils/notificationService');
+const { notifyFeeInvoicesCreated, notifyFeePaymentReceived } = require('../services/schoolCommunication');
 const { logger } = require('../utils/logger');
 const {
   buildRazorpayReceipt,
@@ -32,6 +34,7 @@ const {
 } = require('../utils/paymentGatewayService');
 const { capturePayment } = require('../services/paymentLifecycleService');
 const { logStudentPortalEvent, logStudentPortalError } = require('../utils/studentPortalLogger');
+const { parentFeesCache } = require('../utils/responseCache');
 const { buildInvoiceSnapshotsForStudent } = require('../utils/feeHeadPolicy');
 const {
   recomputeInvoiceStatus,
@@ -41,6 +44,7 @@ const {
 } = require('../services/feeService');
 
 const router = express.Router();
+router.use(parentFeesCache.invalidateOnWrite);
 
 // Short-lived in-memory cache for /admin/summary — it's a heavy aggregation
 // (every active student, every invoice, a FeePayment aggregate, a 500-row
@@ -48,11 +52,24 @@ const router = express.Router();
 // by both the main admin dashboard and the Fees Dashboard page for the same
 // school. Same TTL-Map pattern as the students/teachers directory caches in
 // adminUserManagement.js.
-const FEE_SUMMARY_TTL_MS = 60 * 1000;
+// 5 minutes — this aggregation's cost is dominated by data-transfer round trips
+// (student/invoice/payment documents pulled from the DB), not CPU, so a longer
+// TTL buys a much bigger reduction in how often that transfer happens than it
+// costs in staleness for a dashboard summary tile.
+const FEE_SUMMARY_TTL_MS = 5 * 60 * 1000;
 const feeSummaryCache = new Map(); // key -> { data, expires }
+// Filter options (classes/sections/years) + fee structures change rarely; a
+// short TTL makes Fees Collection's parallel boot requests near-instant.
+const FEE_META_TTL_MS = 2 * 60 * 1000;
+const feeMetaCache = new Map(); // key -> { data, expires }
+const readFeeMeta = (key) => {
+  const hit = feeMetaCache.get(key);
+  return hit && hit.expires > Date.now() ? hit.data : null;
+};
+const writeFeeMeta = (key, data) => feeMetaCache.set(key, { data, expires: Date.now() + FEE_META_TTL_MS });
 const feeSummaryCacheKey = (req) => {
-  const { academicYearId = '', classId = '', section = '' } = req.query || {};
-  return `${req.schoolId || 'x'}:${req.campusId || 'x'}:${academicYearId}:${classId}:${section}`;
+  const { academicYearId = '', classId = '', section = '', activeYear = '' } = req.query || {};
+  return `${req.schoolId || 'x'}:${req.campusId || 'x'}:${academicYearId}:${classId}:${section}:${activeYear ? 'active' : ''}`;
 };
 
 const formatReceiptDateTime = (value) => {
@@ -68,7 +85,24 @@ const formatReceiptDateTime = (value) => {
   });
 };
 
+// Payments recorded before receipt numbers existed get one assigned the first
+// time a receipt is requested, so every receipt (admin + parent) has a number.
+const ensurePaymentReceiptNumber = async (payment) => {
+  if (!payment || payment.receiptNumber || !payment._id) return payment;
+  const receiptNumber = await FeePayment.allocateReceiptNumber(
+    payment.schoolId,
+    payment.paidOn || payment.createdAt || new Date()
+  );
+  await FeePayment.updateOne(
+    { _id: payment._id, receiptNumber: { $in: [null, ''] } },
+    { $set: { receiptNumber } }
+  );
+  payment.receiptNumber = receiptNumber;
+  return payment;
+};
+
 const buildReceiptPayload = async ({ payment, invoice, schoolId, campusId = null, parentName = '' }) => {
+  await ensurePaymentReceiptNumber(payment);
   const [student, school, academicYear] = await Promise.all([
     StudentUser.findOne({ _id: payment.studentId, schoolId })
       .select('name username grade section roll admissionNumber studentCode fatherName motherName guardianName guardianPhone guardianEmail mobile email academicYear')
@@ -110,7 +144,8 @@ const buildReceiptPayload = async ({ payment, invoice, schoolId, campusId = null
     receipt: {
       paymentId: payment._id,
       transactionId: payment.transactionId || payment.gatewayPaymentId || '',
-      receiptNo: payment.transactionId || payment.gatewayPaymentId || String(payment._id || ''),
+      receiptNo: payment.receiptNumber || payment.transactionId || payment.gatewayPaymentId || String(payment._id || ''),
+      receiptNumber: payment.receiptNumber || '',
       sid: student?.studentCode || student?.admissionNumber || '',
       childName: student?.name || '',
       username: student?.username || '',
@@ -169,15 +204,6 @@ const normalizeInstallments = (installments) => {
 const sumAmounts = (items) =>
   items.reduce((sum, item) => sum + Number(item.amount || 0), 0);
 
-const getEarliestInstallmentDueDate = (installments = []) => {
-  if (!Array.isArray(installments) || installments.length === 0) return undefined;
-  const dates = installments
-    .map((item) => (item?.dueDate ? new Date(item.dueDate) : null))
-    .filter((date) => date && !Number.isNaN(date.getTime()))
-    .sort((a, b) => a.getTime() - b.getTime());
-  return dates[0] || undefined;
-};
-
 const normalizeLateFeeAmount = (value) => {
   const amount = Number(value);
   return Number.isFinite(amount) && amount >= 0 ? amount : 0;
@@ -226,13 +252,32 @@ const ensureInvoiceCampusAccess = async ({ invoice, schoolId, campusId }) => {
 
 const getOverdueDate = (invoice) => {
   if (invoice?.dueDate) return new Date(invoice.dueDate);
-  const installmentDates = Array.isArray(invoice?.installmentsSnapshot)
+
+  const installments = Array.isArray(invoice?.installmentsSnapshot)
     ? invoice.installmentsSnapshot
-        .map((item) => (item?.dueDate ? new Date(item.dueDate) : null))
-        .filter((date) => date && !Number.isNaN(date.getTime()))
+        .map((item) => ({
+          amount: Number(item?.amount || 0),
+          dueDate: item?.dueDate ? new Date(item.dueDate) : null,
+        }))
+        .filter((item) => item.dueDate && !Number.isNaN(item.dueDate.getTime()))
+        .sort((a, b) => a.dueDate.getTime() - b.dueDate.getTime())
     : [];
-  if (!installmentDates.length) return null;
-  return installmentDates.sort((a, b) => a.getTime() - b.getTime())[0];
+  if (!installments.length) return null;
+
+  // Walk the payment waterfall instead of just taking the earliest
+  // installment date: once enough has been paid to cover April + August,
+  // the invoice isn't overdue again until December's own due date arrives,
+  // even though April's date is long in the past.
+  const paid = Number(invoice?.paidAmount || 0);
+  let cumulative = 0;
+  for (const installment of installments) {
+    cumulative += installment.amount;
+    if (cumulative > paid + 0.01) {
+      return installment.dueDate;
+    }
+  }
+  // Every installment is already covered by payments made so far.
+  return null;
 };
 
 const shouldAutoApplyLateFee = (invoice) => {
@@ -249,41 +294,107 @@ const startOfDay = (value) => {
   return new Date(date.getFullYear(), date.getMonth(), date.getDate());
 };
 
-const getOverdueDays = (invoice) => {
+const toDateKey = (date) => {
+  const y = date.getFullYear();
+  const m = String(date.getMonth() + 1).padStart(2, '0');
+  const d = String(date.getDate()).padStart(2, '0');
+  return `${y}-${m}-${d}`;
+};
+
+// Expands every Holiday doc's startDate..endDate range for a school/campus
+// into a flat set of 'YYYY-MM-DD' keys, so per-day exclusion checks during
+// late-fee counting are O(1) lookups instead of a query per invoice.
+const fetchHolidayDateSet = async (schoolId, campusId) => {
+  const filter = { schoolId };
+  if (campusId) filter.campusId = campusId;
+  const holidays = await Holiday.find(filter).select('startDate endDate').lean();
+  const keys = new Set();
+  holidays.forEach((h) => {
+    const start = startOfDay(h.startDate);
+    const end = startOfDay(h.endDate) || start;
+    if (!start) return;
+    const cursor = new Date(start);
+    // Holiday ranges are school calendar spans, not decades — this loop is
+    // always small (days within a single break), never unbounded.
+    while (cursor.getTime() <= end.getTime()) {
+      keys.add(toDateKey(cursor));
+      cursor.setDate(cursor.getDate() + 1);
+    }
+  });
+  return keys;
+};
+
+// Counts calendar days strictly between dueStart and todayStart (i.e. days
+// the invoice has actually been overdue), skipping Sundays and/or school
+// holidays when the structure asked to exclude them.
+const getOverdueDays = (invoice, { excludeSundays = false, excludeHolidays = false, holidayDateSet = null } = {}) => {
   const dueDate = getOverdueDate(invoice);
   const dueStart = startOfDay(dueDate);
   const todayStart = startOfDay(new Date());
   if (!dueStart || !todayStart) return 0;
-  const diffMs = todayStart.getTime() - dueStart.getTime();
-  if (diffMs <= 0) return 0;
-  return Math.floor(diffMs / (1000 * 60 * 60 * 24));
+  if (todayStart.getTime() <= dueStart.getTime()) return 0;
+
+  if (!excludeSundays && !excludeHolidays) {
+    const diffMs = todayStart.getTime() - dueStart.getTime();
+    return Math.floor(diffMs / (1000 * 60 * 60 * 24));
+  }
+
+  let count = 0;
+  const cursor = new Date(dueStart);
+  cursor.setDate(cursor.getDate() + 1);
+  while (cursor.getTime() <= todayStart.getTime()) {
+    const isSunday = excludeSundays && cursor.getDay() === 0;
+    const isHoliday = excludeHolidays && holidayDateSet?.has(toDateKey(cursor));
+    if (!isSunday && !isHoliday) count += 1;
+    cursor.setDate(cursor.getDate() + 1);
+  }
+  return count;
 };
 
-const resolveInvoiceLateFeeAmount = async ({ invoice, schoolId, structureCache }) => {
-  const fromSnapshot = normalizeLateFeeAmount(invoice?.lateFeeRuleSnapshot?.amount);
-  if (fromSnapshot > 0) return fromSnapshot;
+const resolveInvoiceLateFeeRule = async ({ invoice, schoolId, structureCache }) => {
+  const snapshot = invoice?.lateFeeRuleSnapshot;
+  const snapshotAmount = normalizeLateFeeAmount(snapshot?.amount);
+  if (snapshotAmount > 0) {
+    return {
+      amount: snapshotAmount,
+      excludeSundays: Boolean(snapshot?.excludeSundays),
+      excludeHolidays: Boolean(snapshot?.excludeHolidays),
+    };
+  }
 
   const structureId = String(invoice?.feeStructureId || '');
-  if (!structureId || !mongoose.isValidObjectId(structureId)) return 0;
+  if (!structureId || !mongoose.isValidObjectId(structureId)) {
+    return { amount: 0, excludeSundays: false, excludeHolidays: false };
+  }
 
   if (structureCache && structureCache.has(structureId)) {
     return structureCache.get(structureId);
   }
 
   const structure = await FeeStructure.findOne({ _id: structureId, schoolId })
-    .select('lateFeeAmount')
+    .select('lateFeeAmount lateFeeExcludeSundays lateFeeExcludeHolidays')
     .lean();
-  const amount = normalizeLateFeeAmount(structure?.lateFeeAmount);
-  if (structureCache) structureCache.set(structureId, amount);
-  return amount;
+  const rule = {
+    amount: normalizeLateFeeAmount(structure?.lateFeeAmount),
+    excludeSundays: Boolean(structure?.lateFeeExcludeSundays),
+    excludeHolidays: Boolean(structure?.lateFeeExcludeHolidays),
+  };
+  if (structureCache) structureCache.set(structureId, rule);
+  return rule;
 };
 
 const applyLateFeeToInvoiceIfEligible = async ({ invoice, schoolId, structureCache }) => {
   if (!shouldAutoApplyLateFee(invoice)) return false;
-  const perDayLateFeeAmount = await resolveInvoiceLateFeeAmount({ invoice, schoolId, structureCache });
-  if (perDayLateFeeAmount <= 0) return false;
-  const overdueDays = getOverdueDays(invoice);
+  const rule = await resolveInvoiceLateFeeRule({ invoice, schoolId, structureCache });
+  if (rule.amount <= 0) return false;
+  const holidayDateSet = rule.excludeHolidays ? await fetchHolidayDateSet(schoolId) : null;
+  const overdueDays = getOverdueDays(invoice, {
+    excludeSundays: rule.excludeSundays,
+    excludeHolidays: rule.excludeHolidays,
+    holidayDateSet,
+  });
   if (overdueDays <= 0) return false;
+  const perDayLateFeeAmount = rule.amount;
 
   const expectedLateFeeTotal = perDayLateFeeAmount * overdueDays;
   const alreadyAppliedLateFee = normalizeLateFeeAmount(invoice.lateFeeAmountApplied);
@@ -326,14 +437,26 @@ const applyLateFeesForFilter = async ({ schoolId, filter = {} }) => {
   if (!overdueInvoices.length) return 0;
 
   const structureCache = new Map();
+  // Fetched lazily and once per batch (not per-invoice) the first time any
+  // invoice's rule actually needs holiday exclusion.
+  let holidayDateSet = null;
   const bulkOps = [];
   for (const invoice of overdueInvoices) {
     if (!shouldAutoApplyLateFee(invoice)) continue;
     // eslint-disable-next-line no-await-in-loop
-    const perDayLateFeeAmount = await resolveInvoiceLateFeeAmount({ invoice, schoolId, structureCache });
-    if (perDayLateFeeAmount <= 0) continue;
-    const overdueDays = getOverdueDays(invoice);
+    const rule = await resolveInvoiceLateFeeRule({ invoice, schoolId, structureCache });
+    if (rule.amount <= 0) continue;
+    if (rule.excludeHolidays && !holidayDateSet) {
+      // eslint-disable-next-line no-await-in-loop
+      holidayDateSet = await fetchHolidayDateSet(schoolId);
+    }
+    const overdueDays = getOverdueDays(invoice, {
+      excludeSundays: rule.excludeSundays,
+      excludeHolidays: rule.excludeHolidays,
+      holidayDateSet,
+    });
     if (overdueDays <= 0) continue;
+    const perDayLateFeeAmount = rule.amount;
 
     const expectedLateFeeTotal = perDayLateFeeAmount * overdueDays;
     const alreadyAppliedLateFee = normalizeLateFeeAmount(invoice.lateFeeAmountApplied);
@@ -375,6 +498,7 @@ const applyLateFeesForFilter = async ({ schoolId, filter = {} }) => {
 
 // Fee Structures
 router.post('/structures', adminAuth, async (req, res) => {
+  res.on('finish', () => { if (res.statusCode < 400) feeMetaCache.clear(); });
   // #swagger.tags = ['Fees']
   try {
     const schoolId = resolveSchoolId(req, res);
@@ -390,6 +514,8 @@ router.post('/structures', adminAuth, async (req, res) => {
       feeHeads,
       board,
       lateFeeAmount,
+      lateFeeExcludeSundays,
+      lateFeeExcludeHolidays,
     } = req.body || {};
     if (!name || !String(name).trim()) {
       return res.status(400).json({ error: 'Structure name is required' });
@@ -421,6 +547,8 @@ router.post('/structures', adminAuth, async (req, res) => {
       name: String(name).trim(),
       totalAmount: total,
       lateFeeAmount: normalizedLateFeeAmount,
+      lateFeeExcludeSundays: Boolean(lateFeeExcludeSundays),
+      lateFeeExcludeHolidays: Boolean(lateFeeExcludeHolidays),
       feeHeads: normalizedFeeHeads,
       installments: normalizedInstallments,
     });
@@ -458,7 +586,11 @@ router.get('/structures', adminAuth, async (req, res) => {
     if (req.query.className) {
       filter.className = String(req.query.className).trim();
     }
+    const structuresKey = `structures:${schoolId}:${req.campusId || 'x'}:${req.query.classId || ''}:${req.query.className || ''}`;
+    const cachedStructures = readFeeMeta(structuresKey);
+    if (cachedStructures) return res.json(cachedStructures);
     const items = await FeeStructure.find(filter).sort({ createdAt: -1 }).lean();
+    writeFeeMeta(structuresKey, items);
     res.json(items);
   } catch (err) {
     res.status(500).json({ error: err.message });
@@ -545,6 +677,7 @@ router.get('/admin/structures/analytics', adminAuth, async (req, res) => {
 });
 
 router.put('/structures/:id', adminAuth, async (req, res) => {
+  res.on('finish', () => { if (res.statusCode < 400) feeMetaCache.clear(); });
   // #swagger.tags = ['Fees']
   try {
     const schoolId = resolveSchoolId(req, res);
@@ -578,6 +711,8 @@ router.put('/structures/:id', adminAuth, async (req, res) => {
       board,
       isActive,
       lateFeeAmount,
+      lateFeeExcludeSundays,
+      lateFeeExcludeHolidays,
     } = req.body || {};
 
     if (typeof name !== 'undefined' && !String(name).trim()) {
@@ -600,6 +735,12 @@ router.put('/structures/:id', adminAuth, async (req, res) => {
     if (typeof isActive !== 'undefined') updates.isActive = Boolean(isActive);
     if (typeof lateFeeAmount !== 'undefined') {
       updates.lateFeeAmount = normalizeLateFeeAmount(lateFeeAmount);
+    }
+    if (typeof lateFeeExcludeSundays !== 'undefined') {
+      updates.lateFeeExcludeSundays = Boolean(lateFeeExcludeSundays);
+    }
+    if (typeof lateFeeExcludeHolidays !== 'undefined') {
+      updates.lateFeeExcludeHolidays = Boolean(lateFeeExcludeHolidays);
     }
 
     let normalizedFeeHeads = null;
@@ -637,10 +778,12 @@ router.put('/structures/:id', adminAuth, async (req, res) => {
         feeStructureId: existing._id,
         status: { $in: ['due', 'partial'] },
       });
-      const nextDueDate = getEarliestInstallmentDueDate(normalizedInstallments);
+      // Don't stamp a top-level invoice.dueDate here — leave it unset so
+      // getOverdueDate()'s payment-waterfall logic keeps picking whichever
+      // installment isn't covered by payments yet, instead of pinning
+      // lateness to the earliest installment regardless of what's been paid.
       for (const invoice of invoicesToSync) {
         invoice.installmentsSnapshot = normalizedInstallments;
-        invoice.dueDate = nextDueDate;
         await invoice.save();
       }
     }
@@ -652,6 +795,7 @@ router.put('/structures/:id', adminAuth, async (req, res) => {
 });
 
 router.delete('/structures/:id', adminAuth, async (req, res) => {
+  res.on('finish', () => { if (res.statusCode < 400) feeMetaCache.clear(); });
   // #swagger.tags = ['Fees']
   try {
     const schoolId = resolveSchoolId(req, res);
@@ -674,13 +818,35 @@ router.delete('/structures/:id', adminAuth, async (req, res) => {
       }
     }
 
-    const hasInvoices = await FeeInvoice.exists({ schoolId, feeStructureId: structureId });
-    if (hasInvoices) {
-      return res.status(400).json({ error: 'Cannot delete structure with invoices' });
+    const linkedInvoices = await FeeInvoice.find({ schoolId, feeStructureId: structureId })
+      .select('_id')
+      .lean();
+
+    if (linkedInvoices.length > 0) {
+      const force = String(req.query.force || '').toLowerCase() === 'true';
+      if (!force) {
+        return res.status(400).json({ error: 'Cannot delete structure with invoices' });
+      }
+
+      // Force delete still refuses to touch an invoice that has real money
+      // collected against it — cascading the delete into paid/partial
+      // invoices would destroy payment history, which no confirmation dialog
+      // should be able to authorize from this endpoint.
+      const invoiceIds = linkedInvoices.map((inv) => inv._id);
+      const hasPayments = await FeePayment.exists({ schoolId, invoiceId: { $in: invoiceIds } });
+      if (hasPayments) {
+        return res.status(400).json({
+          error: 'Cannot force delete — some invoices for this structure have recorded payments. Refund/void those first.',
+        });
+      }
+
+      await FeeInvoice.deleteMany({ _id: { $in: invoiceIds }, schoolId });
     }
 
     await FeeStructure.deleteOne({ _id: structureId, schoolId });
-    res.json({ success: true });
+    feeSummaryCache.clear();
+    invoicesListCache.clear();
+    res.json({ success: true, invoicesDeleted: linkedInvoices.length });
   } catch (err) {
     res.status(400).json({ error: err.message || 'Unable to delete structure' });
   }
@@ -763,6 +929,8 @@ router.post('/invoices', adminAuth, async (req, res) => {
       discountNote: '',
       lateFeeRuleSnapshot: {
         amount: normalizeLateFeeAmount(structure?.lateFeeAmount),
+        excludeSundays: Boolean(structure?.lateFeeExcludeSundays),
+        excludeHolidays: Boolean(structure?.lateFeeExcludeHolidays),
       },
       lateFeeAmountApplied: 0,
       feeHeadsSnapshot: structureSnapshots?.feeHeadsSnapshot || [],
@@ -771,24 +939,10 @@ router.post('/invoices', adminAuth, async (req, res) => {
       dueDate: dueDate ? new Date(dueDate) : undefined,
     });
 
-    // Create notification if due date is within 7 days
-    if (created.dueDate) {
-      const daysUntilDue = Math.ceil((new Date(created.dueDate) - new Date()) / (1000 * 60 * 60 * 24));
-
-      if (daysUntilDue <= 7 && daysUntilDue >= 0) {
-        try {
-          await NotificationService.notifyFeeReminder({
-            schoolId,
-            campusId: req.campusId || null,
-            invoice: created,
-            createdBy: req.admin?.id || null
-          });
-        } catch (notifErr) {
-          (req.log || logger).error({ err: notifErr, invoiceId: created._id }, 'Failed to create fee notification');
-          // Don't fail the entire request if notification fails
-        }
-      }
-    }
+    // Student + linked parents: invoice issued (idempotent per invoice).
+    notifyFeeInvoicesCreated({
+      schoolId, campusId: req.campusId || null, invoices: [created], entityId: created._id, createdBy: req.admin?.id || null,
+    }).catch((err) => console.error('Failed to send fee invoice notifications:', err.message));
 
     res.status(201).json(created);
   } catch (err) {
@@ -796,17 +950,35 @@ router.post('/invoices', adminAuth, async (req, res) => {
   }
 });
 
+// Short-lived cache for the full invoices list — hit on every Student
+// Management refresh (alongside get-students / get-parents) as well as the
+// Fees Collection and per-student pages. Data-transfer round trips are the
+// dominant cost here (see the /admin/summary cache above), so a small TTL
+// makes repeated refreshes fast without noticeably staling the ledger.
+const INVOICES_LIST_TTL_MS = 20 * 1000;
+const invoicesListCache = new Map(); // key -> { data, expires }
+const invoicesListCacheKey = (req) =>
+  `${req.schoolId || 'x'}:${req.campusId || 'x'}:${req.query?.studentId || ''}`;
+
 router.get('/invoices', adminAuth, async (req, res) => {
   // #swagger.tags = ['Fees']
   try {
     const schoolId = resolveSchoolId(req, res);
     if (!schoolId) return;
     if (!requireCampusId(req, res)) return;
+
+    const cacheKey = invoicesListCacheKey(req);
+    const cached = invoicesListCache.get(cacheKey);
+    if (cached && cached.expires > Date.now()) {
+      return res.json(cached.data);
+    }
+
     const filter = { schoolId };
     let campusStudentIds = null;
     if (req.campusId) {
       campusStudentIds = await fetchCampusStudentIds(schoolId, req.campusId);
       if (campusStudentIds.length === 0) {
+        invoicesListCache.set(cacheKey, { data: [], expires: Date.now() + INVOICES_LIST_TTL_MS });
         return res.json([]);
       }
       filter.studentId = { $in: campusStudentIds };
@@ -819,6 +991,7 @@ router.get('/invoices', adminAuth, async (req, res) => {
     }
     await applyLateFeesForFilter({ schoolId, filter });
     const items = await FeeInvoice.find(filter).sort({ createdAt: -1 }).lean();
+    invoicesListCache.set(cacheKey, { data: items, expires: Date.now() + INVOICES_LIST_TTL_MS });
     res.json(items);
   } catch (err) {
     res.status(500).json({ error: err.message });
@@ -844,7 +1017,7 @@ router.post('/payments', adminAuth, async (req, res) => {
     }
     const resolvedMethod = String(method || 'cash').trim().toLowerCase();
     const REFERENCE_LABEL_BY_METHOD = {
-      cash: 'Receipt number',
+      // cash: receipt number is now system-generated (FeePayment.receiptNumber)
       upi: 'UPI transaction ID',
       bank: 'Bank transaction / UTR number',
       card: 'Card transaction reference',
@@ -902,6 +1075,9 @@ router.post('/payments', adminAuth, async (req, res) => {
       },
     });
     feeSummaryCache.clear();
+    invoicesListCache.clear();
+    notifyFeePaymentReceived({ schoolId, campusId: req.campusId || null, payment: created, invoice })
+      .catch((err) => console.error('Failed to send fee payment notifications:', err.message));
 
     res.status(201).json({
       success: true,
@@ -936,6 +1112,127 @@ router.get('/payments', adminAuth, async (req, res) => {
     res.json(items);
   } catch (err) {
     res.status(500).json({ error: err.message });
+  }
+});
+
+// Fee receipts register — every recorded payment with its receipt number,
+// student and payment details. Supports search (receipt no / transaction id /
+// student name / admission no), method filter, date range and pagination.
+router.get('/admin/receipts', adminAuth, async (req, res) => {
+  // #swagger.tags = ['Fees']
+  // #swagger.summary = 'List fee receipts'
+  try {
+    const schoolId = resolveSchoolId(req, res);
+    if (!schoolId) return;
+    if (!requireCampusId(req, res)) return;
+
+    const page = Math.max(1, Number.parseInt(req.query.page, 10) || 1);
+    const limit = Math.min(100, Math.max(1, Number.parseInt(req.query.limit, 10) || 20));
+    const search = String(req.query.search || '').trim();
+    const method = String(req.query.method || '').trim().toLowerCase();
+
+    const filter = { schoolId };
+    let studentIdScope = null;
+    if (req.campusId) {
+      studentIdScope = (await fetchCampusStudentIds(schoolId, req.campusId)).map(String);
+      if (!studentIdScope.length) {
+        return res.json({ items: [], total: 0, page, limit, totals: { amount: 0, count: 0 } });
+      }
+    }
+    if (method) filter.method = method;
+    const from = req.query.from ? new Date(req.query.from) : null;
+    const to = req.query.to ? new Date(req.query.to) : null;
+    if ((from && !Number.isNaN(from.getTime())) || (to && !Number.isNaN(to.getTime()))) {
+      filter.paidOn = {};
+      if (from && !Number.isNaN(from.getTime())) filter.paidOn.$gte = from;
+      if (to && !Number.isNaN(to.getTime())) {
+        to.setHours(23, 59, 59, 999);
+        filter.paidOn.$lte = to;
+      }
+    }
+
+    if (search) {
+      const safe = search.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+      const rx = new RegExp(safe, 'i');
+      const matchedStudents = await StudentUser.find({
+        schoolId,
+        $or: [{ name: rx }, { admissionNumber: rx }, { studentCode: rx }],
+      }).select('_id').lean();
+      let matchedIds = matchedStudents.map((s) => String(s._id));
+      if (studentIdScope) matchedIds = matchedIds.filter((id) => studentIdScope.includes(id));
+      filter.$or = [
+        { receiptNumber: rx },
+        { transactionId: rx },
+        { referenceNumber: rx },
+        { gatewayPaymentId: rx },
+        ...(matchedIds.length ? [{ studentId: { $in: matchedIds.map((id) => new mongoose.Types.ObjectId(id)) } }] : []),
+      ];
+    }
+    if (studentIdScope) filter.studentId = { $in: studentIdScope.map((id) => new mongoose.Types.ObjectId(id)) };
+
+    const [total, totalsAgg, payments] = await Promise.all([
+      FeePayment.countDocuments(filter),
+      FeePayment.aggregate([
+        { $match: { ...filter, schoolId: new mongoose.Types.ObjectId(String(schoolId)) } },
+        { $group: { _id: null, amount: { $sum: '$amount' }, count: { $sum: 1 } } },
+      ]).catch(() => []),
+      FeePayment.find(filter)
+        .sort({ paidOn: -1, createdAt: -1 })
+        .skip((page - 1) * limit)
+        .limit(limit)
+        .lean(),
+    ]);
+
+    // Backfill numbers for legacy payments on the page being viewed.
+    await Promise.all(payments.map((p) => ensurePaymentReceiptNumber(p)));
+
+    const studentIds = [...new Set(payments.map((p) => String(p.studentId)))];
+    const invoiceIds = [...new Set(payments.map((p) => String(p.invoiceId)))];
+    const [students, invoices] = await Promise.all([
+      StudentUser.find({ _id: { $in: studentIds } })
+        .select('name grade section admissionNumber studentCode profilePic')
+        .lean(),
+      FeeInvoice.find({ _id: { $in: invoiceIds } }).select('className section title').lean(),
+    ]);
+    const studentMap = new Map(students.map((s) => [String(s._id), s]));
+    const invoiceMap = new Map(invoices.map((i) => [String(i._id), i]));
+
+    const items = payments.map((p) => {
+      const student = studentMap.get(String(p.studentId)) || {};
+      const invoice = invoiceMap.get(String(p.invoiceId)) || {};
+      return {
+        paymentId: p._id,
+        invoiceId: p.invoiceId,
+        receiptNumber: p.receiptNumber || '',
+        studentName: student.name || 'Student',
+        admissionNumber: student.admissionNumber || student.studentCode || '',
+        profilePic: student.profilePic || '',
+        className: invoice.className || student.grade || '',
+        section: invoice.section || student.section || '',
+        invoiceTitle: invoice.title || '',
+        amount: Number(p.amount || 0),
+        method: p.method || 'cash',
+        gateway: p.gateway || '',
+        referenceNumber: p.referenceNumber || '',
+        bankName: p.bankName || '',
+        transactionId: p.transactionId || '',
+        gatewayPaymentId: p.gatewayPaymentId || '',
+        gatewayOrderId: p.gatewayOrderId || '',
+        paidOn: p.paidOn || p.createdAt,
+        notes: p.notes || '',
+        initiatedByType: p.initiatedByType || '',
+      };
+    });
+
+    res.json({
+      items,
+      total,
+      page,
+      limit,
+      totals: { amount: Number(totalsAgg?.[0]?.amount || 0), count: Number(totalsAgg?.[0]?.count || total) },
+    });
+  } catch (err) {
+    res.status(500).json({ error: err.message || 'Unable to load receipts' });
   }
 });
 
@@ -1190,6 +1487,7 @@ router.post('/admin/razorpay/verify', adminAuth, paymentGatewayResolver, async (
       userId: req.admin?.id || null,
     });
     feeSummaryCache.clear();
+    invoicesListCache.clear();
     return res.json({
       success: true,
       message: 'Payment verified and captured',
@@ -1335,6 +1633,7 @@ router.get('/admin/razorpay/qr/:qrCodeId/status', adminAuth, paymentGatewayResol
         userId: req.admin?.id || null,
       });
       feeSummaryCache.clear();
+    invoicesListCache.clear();
       return res.json({ status: 'captured', payment: captured.receipt });
     }
 
@@ -1377,13 +1676,16 @@ router.get('/admin/filters', adminAuth, async (req, res) => {
     if (!schoolId) return;
     if (!requireCampusId(req, res)) return;
     const campusId = req.campusId || null;
+    const metaKey = `filters:${schoolId}:${campusId || 'x'}`;
+    const cachedFilters = readFeeMeta(metaKey);
+    if (cachedFilters) return res.json(cachedFilters);
     const [classDocs, sectionDocs, yearDocs] = await Promise.all([
       ClassModel.find(buildCampusFilter(schoolId, campusId)).sort({ order: 1, name: 1 }).lean(),
       Section.find(buildCampusFilter(schoolId, campusId)).sort({ name: 1 }).lean(),
       AcademicYear.find({ schoolId }).sort({ createdAt: -1 }).lean(),
     ]);
 
-    res.json({
+    const filtersPayload = {
       classes: classDocs.map((cls) => ({
         id: cls._id,
         name: cls.name,
@@ -1402,7 +1704,9 @@ router.get('/admin/filters', adminAuth, async (req, res) => {
         startDate: year.startDate || null,
         endDate: year.endDate || null,
       })),
-    });
+    };
+    writeFeeMeta(metaKey, filtersPayload);
+    res.json(filtersPayload);
   } catch (err) {
     res.status(500).json({ error: err.message || 'Unable to load filters' });
   }
@@ -1415,12 +1719,16 @@ router.get('/admin/summary', adminAuth, async (req, res) => {
     if (!schoolId) return;
     if (!requireCampusId(req, res)) return;
 
-    const cacheKey = feeSummaryCacheKey(req);
+    // With ?activeYear=1 the cache key carries the resolved active year id, so
+    // switching the active session never serves the previous session's summary.
+    const activeYearForKey = req.query.activeYear
+      ? await AcademicYear.findOne({ schoolId, isActive: true }).select('_id').lean()
+      : null;
+    const cacheKey = `${feeSummaryCacheKey(req)}:${activeYearForKey?._id || ''}`;
     const cached = feeSummaryCache.get(cacheKey);
     if (cached && cached.expires > Date.now()) {
       return res.json(cached.data);
     }
-
     const { academicYearId, classId, section } = req.query || {};
 
     // Only students still on the roll — archived / left / expelled students keep
@@ -1443,9 +1751,8 @@ router.get('/admin/summary', adminAuth, async (req, res) => {
     if (section) {
       studentFilter.section = String(section).trim();
     }
-    if (academicYearId && mongoose.isValidObjectId(academicYearId)) {
-      studentFilter.academicYear = academicYearId;
-    }
+    // Session scoping is applied to the invoices (academicYearId) below, not to
+    // the student record: a student's academicYear holds a name, not an id.
     const students = await StudentUser.find(studentFilter)
       .select('name grade section roll admissionNumber username academicYear studentCode')
       .lean();
@@ -1453,6 +1760,7 @@ router.get('/admin/summary', adminAuth, async (req, res) => {
     const studentMap = new Map(students.map((s) => [String(s._id), s]));
 
     const invoiceFilter = { schoolId };
+    let scopedAcademicYearName = '';
     if (req.campusId && studentIds.length === 0) {
       const emptySummary = {
         totals: {
@@ -1466,18 +1774,31 @@ router.get('/admin/summary', adminAuth, async (req, res) => {
         monthlyTrend: [],
         enrollment: [],
         outstandingSegments: [],
+        classStudents: {},
         recentPayments: [],
       };
       feeSummaryCache.set(cacheKey, { data: emptySummary, expires: Date.now() + FEE_SUMMARY_TTL_MS });
       return res.json(emptySummary);
     }
-    if (studentIds.length > 0) {
-      invoiceFilter.studentId = { $in: studentIds };
-    }
+    // Always scope to current (non-left) students — with no matching students
+    // this matches nothing rather than falling back to every invoice.
+    invoiceFilter.studentId = { $in: studentIds };
     if (academicYearId && mongoose.isValidObjectId(academicYearId)) {
       invoiceFilter.academicYearId = academicYearId;
+    } else if (req.query.activeYear) {
+      // ?activeYear=1 → only the school's current active academic year.
+      const activeYearDoc = await AcademicYear.findOne({ schoolId, isActive: true }).select('_id name').lean();
+      scopedAcademicYearName = activeYearDoc?.name || '';
+      invoiceFilter.academicYearId = activeYearDoc?._id || null;
     }
-    await applyLateFeesForFilter({ schoolId, filter: invoiceFilter });
+    // Unlike the invoices list/detail routes, this is a high-frequency, cached
+    // dashboard read — recomputing late fees for every overdue invoice here
+    // (a full sequential pass, one query per distinct fee structure) is what
+    // made the cache-miss request take 20-30s on schools with a lot of overdue
+    // invoices. Late fees are kept current by the /invoices and per-student
+    // routes below, which every admin visit to the Fees Collection page hits,
+    // so this dashboard summary can safely read the latest already-applied
+    // figures instead of recomputing them on every load.
     const invoices = await FeeInvoice.find(invoiceFilter).lean();
 
     // "Amount collected" is derived from the payment ledger (FeePayment), not the
@@ -1516,11 +1837,13 @@ router.get('/admin/summary', adminAuth, async (req, res) => {
         month: d.toLocaleString('en-US', { month: 'short' }),
         collected: 0,
         due: 0,
+        overdue: 0,
       });
     }
     const trendMap = new Map(trendBuckets.map((b) => [b.key, b]));
 
     const classBuckets = new Map();
+    const classStudentBuckets = new Map(); // className -> Map(studentId -> { total, paid, balance })
     invoices.forEach((inv) => {
       const gross = Number(inv.totalAmount || 0);
       const discount = Number(inv.discountAmount || 0);
@@ -1537,19 +1860,6 @@ router.get('/admin/summary', adminAuth, async (req, res) => {
         totals.overdueAmount += balance;
       }
 
-      // Distribute the invoice's payable amount into the month(s) it falls due.
-      const dueInstallments = Array.isArray(inv.installmentsSnapshot)
-        ? inv.installmentsSnapshot.filter((it) => it && it.dueDate)
-        : [];
-      if (dueInstallments.length) {
-        dueInstallments.forEach((it) => {
-          const b = trendMap.get(monthKeyOf(it.dueDate));
-          if (b) b.due += Math.max(0, Number(it.amount || 0));
-        });
-      } else {
-        const b = trendMap.get(monthKeyOf(inv.dueDate || inv.createdAt));
-        if (b) b.due += payable;
-      }
 
       const student = studentMap.get(String(inv.studentId));
       const className = inv.className || student?.grade || 'Unassigned';
@@ -1559,6 +1869,18 @@ router.get('/admin/summary', adminAuth, async (req, res) => {
       const bucket = classBuckets.get(className);
       bucket.students.add(String(inv.studentId));
       bucket.outstanding += balance;
+
+      // Per-student rollup within each class, so the dashboard can show who's
+      // paid/due when an admin drills into a class card — a student can have
+      // more than one invoice in the same class, so these are summed.
+      if (!classStudentBuckets.has(className)) classStudentBuckets.set(className, new Map());
+      const studentBucket = classStudentBuckets.get(className);
+      const studentKey = String(inv.studentId);
+      if (!studentBucket.has(studentKey)) studentBucket.set(studentKey, { total: 0, paid: 0, balance: 0 });
+      const studentRow = studentBucket.get(studentKey);
+      studentRow.total += payable;
+      studentRow.paid += paid;
+      studentRow.balance += balance;
     });
     totals.totalStudents = studentsWithInvoice.size;
 
@@ -1581,6 +1903,28 @@ router.get('/admin/summary', adminAuth, async (req, res) => {
       ...row,
       percentage: Math.round((row.amount / totalOutstanding) * 100),
     }));
+
+    const classStudents = {};
+    classStudentBuckets.forEach((studentBucket, label) => {
+      classStudents[label] = Array.from(studentBucket.entries())
+        .map(([studentId, agg]) => {
+          const student = studentMap.get(studentId);
+          const balanceAmount = Math.round(agg.balance);
+          const paidAmount = Math.round(agg.paid);
+          return {
+            studentId,
+            name: student?.name || 'Student',
+            roll: student?.roll || '',
+            username: student?.username || student?.studentCode || student?.admissionNumber || '',
+            section: student?.section || '',
+            totalAmount: Math.round(agg.total),
+            paidAmount,
+            balanceAmount,
+            status: balanceAmount <= 0 ? 'paid' : paidAmount > 0 ? 'partial' : 'due',
+          };
+        })
+        .sort((a, b) => b.balanceAmount - a.balanceAmount || a.name.localeCompare(b.name));
+    });
 
     const invoiceMap = new Map(invoices.map((inv) => [String(inv._id), inv]));
 
@@ -1654,7 +1998,49 @@ router.get('/admin/summary', adminAuth, async (req, res) => {
       if (b) b.collected += Number(row.total || 0);
     });
 
+    // Month-end snapshot per bucket: Outstanding = what had been invoiced by
+    // then minus what had been paid by then; Overdue = the part of that whose
+    // invoice due date had already passed. Same rules as the Outstanding /
+    // Overdue totals, so the current month's bars equal those totals.
+    const paidByInvoiceMonth = invoiceIds.length
+      ? await FeePayment.aggregate([
+          { $match: { invoiceId: { $in: invoiceIds } } },
+          {
+            $group: {
+              _id: { invoiceId: '$invoiceId', y: { $year: '$paidOn' }, m: { $month: '$paidOn' } },
+              total: { $sum: '$amount' },
+            },
+          },
+        ])
+      : [];
+    const paymentsTimeline = new Map(); // invoiceId -> [{ key, amount }]
+    paidByInvoiceMonth.forEach((row) => {
+      const id = String(row._id.invoiceId);
+      if (!paymentsTimeline.has(id)) paymentsTimeline.set(id, []);
+      paymentsTimeline.get(id).push({
+        key: `${row._id.y}-${String(row._id.m).padStart(2, '0')}`,
+        amount: Number(row.total || 0),
+      });
+    });
+    trendBuckets.forEach((bucket) => {
+      const [y, m] = bucket.key.split('-').map(Number);
+      const monthEnd = new Date(y, m, 0, 23, 59, 59, 999);
+      const asOf = monthEnd < today ? monthEnd : today;
+      invoices.forEach((inv) => {
+        const created = new Date(inv.createdAt || inv.dueDate || 0);
+        if (Number.isNaN(created.getTime()) || created > asOf) return;
+        const payable = Math.max(0, Number(inv.totalAmount || 0) - Number(inv.discountAmount || 0));
+        const paidByThen = (paymentsTimeline.get(String(inv._id)) || [])
+          .filter((p) => p.key <= bucket.key)
+          .reduce((sum, p) => sum + p.amount, 0);
+        const outstanding = Math.max(0, payable - Math.min(paidByThen, payable));
+        bucket.due += outstanding;
+        if (outstanding > 0 && inv.dueDate && new Date(inv.dueDate) < asOf) bucket.overdue += outstanding;
+      });
+    });
+
     const summary = {
+      academicYearName: scopedAcademicYearName,
       totals: {
         totalOutstanding: Math.round(totals.totalOutstanding),
         totalCollected: Math.round(totals.totalCollected),
@@ -1663,13 +2049,16 @@ router.get('/admin/summary', adminAuth, async (req, res) => {
         overdueInvoices,
         overdueAmount: Math.round(totals.overdueAmount),
       },
-      monthlyTrend: trendBuckets.map(({ month, collected, due }) => ({
+      monthlyTrend: trendBuckets.map(({ month, collected, due, overdue }) => ({
         month,
         collected: Math.round(collected),
-        due: Math.round(due),
+        due: Math.round(due), // month-end outstanding
+        outstanding: Math.round(due),
+        overdue: Math.round(overdue),
       })),
       enrollment: enrollmentNormalized,
       outstandingSegments: outstandingNormalized,
+      classStudents,
       recentPayments,
     };
     feeSummaryCache.set(cacheKey, { data: summary, expires: Date.now() + FEE_SUMMARY_TTL_MS });
@@ -1679,12 +2068,29 @@ router.get('/admin/summary', adminAuth, async (req, res) => {
   }
 });
 
+// Keyed on the full query so every filter/search combination caches separately.
+// Lives in invoicesListCache so every existing write-path .clear() (payments,
+// discounts, bulk assign, Razorpay capture) invalidates it immediately.
+const ADMIN_INVOICES_TTL_MS = 30 * 1000;
+const adminInvoicesCacheKey = (req) => {
+  const q = req.query || {};
+  const parts = Object.keys(q).sort().map((k) => `${k}=${q[k]}`).join('&');
+  return `admin:${req.schoolId || 'x'}:${req.campusId || 'x'}:${parts}`;
+};
+
 router.get('/admin/invoices', adminAuth, async (req, res) => {
   // #swagger.tags = ['Fees']
   try {
     const schoolId = resolveSchoolId(req, res);
     if (!schoolId) return;
     if (!requireCampusId(req, res)) return;
+
+    const adminCacheKey = adminInvoicesCacheKey(req);
+    const cachedAdmin = invoicesListCache.get(adminCacheKey);
+    if (cachedAdmin && cachedAdmin.expires > Date.now()) {
+      res.set('X-Cache', 'HIT');
+      return res.json(cachedAdmin.data);
+    }
 
     const {
       academicYearId,
@@ -1697,7 +2103,7 @@ router.get('/admin/invoices', adminAuth, async (req, res) => {
       studentId,
     } = req.query || {};
 
-    const studentFilter = { schoolId };
+    const studentFilter = { schoolId, ...ACTIVE_STUDENT_FILTER };
     if (req.campusId) {
       studentFilter.campusId = req.campusId;
     }
@@ -1738,11 +2144,15 @@ router.get('/admin/invoices', adminAuth, async (req, res) => {
       }
     }
 
+    // Only currently-enrolled students' invoices show up here — a student
+    // marked Leaving/Left/Expelled or archived is excluded even when looked
+    // up directly by studentId.
     let studentIds = null;
     if (studentId && mongoose.isValidObjectId(studentId)) {
       const student = await StudentUser.findOne({
         _id: studentId,
         schoolId,
+        ...ACTIVE_STUDENT_FILTER,
         ...(req.campusId ? { campusId: req.campusId } : {}),
       })
         .select('name grade section roll admissionNumber')
@@ -1757,7 +2167,7 @@ router.get('/admin/invoices', adminAuth, async (req, res) => {
         return res.json([]);
       }
       studentIds = [student._id];
-    } else if (req.campusId || className || section || search) {
+    } else {
       const students = await StudentUser.find(studentFilter)
         .select('name grade section roll admissionNumber')
         .lean();
@@ -1790,7 +2200,7 @@ router.get('/admin/invoices', adminAuth, async (req, res) => {
     const uniqueStudentIds = [...new Set(invoices.map((inv) => String(inv.studentId)))];
     const students = uniqueStudentIds.length
       ? await StudentUser.find({ _id: { $in: uniqueStudentIds } })
-          .select('name grade section roll admissionNumber')
+          .select('name grade section roll admissionNumber profilePic')
           .lean()
       : [];
     const studentMap = new Map(students.map((s) => [String(s._id), s]));
@@ -1805,6 +2215,7 @@ router.get('/admin/invoices', adminAuth, async (req, res) => {
         feeStructureId: inv.feeStructureId || null,
         studentName: student?.name || 'Student',
         admissionNumber: student?.admissionNumber || '',
+        profilePic: student?.profilePic || '',
         roll: student?.roll || '',
         classId: inv.classId || null,
         className: inv.className || student?.grade || '',
@@ -1821,6 +2232,8 @@ router.get('/admin/invoices', adminAuth, async (req, res) => {
       };
     });
 
+    invoicesListCache.set(adminCacheKey, { data: payload, expires: Date.now() + ADMIN_INVOICES_TTL_MS });
+    res.set("X-Cache", "MISS");
     res.json(payload);
   } catch (err) {
     res.status(500).json({ error: err.message || 'Unable to load invoices' });
@@ -1931,6 +2344,8 @@ router.post('/admin/invoices/bulk', adminAuth, async (req, res) => {
           discountNote: '',
           lateFeeRuleSnapshot: {
             amount: normalizeLateFeeAmount(structure?.lateFeeAmount),
+            excludeSundays: Boolean(structure?.lateFeeExcludeSundays),
+            excludeHolidays: Boolean(structure?.lateFeeExcludeHolidays),
           },
           lateFeeAmountApplied: 0,
           feeHeadsSnapshot: snapshots.feeHeadsSnapshot,
@@ -1942,6 +2357,9 @@ router.post('/admin/invoices/bulk', adminAuth, async (req, res) => {
 
     if (invoicesToCreate.length > 0) {
       await FeeInvoice.insertMany(invoicesToCreate);
+      notifyFeeInvoicesCreated({
+        schoolId, campusId: req.campusId || null, invoices: invoicesToCreate, entityId: structure._id, createdBy: req.admin?.id || null,
+      }).catch((err) => console.error('Failed to send fee invoice notifications:', err.message));
     }
 
     res.json({
@@ -1991,8 +2409,12 @@ router.get('/admin/invoices/:id', adminAuth, async (req, res) => {
       .sort({ createdAt: -1 })
       .lean();
 
+    const academicYear = refreshedInvoice.academicYearId
+      ? await AcademicYear.findById(refreshedInvoice.academicYearId).select('name').lean()
+      : null;
+
     res.json({
-      invoice: refreshedInvoice,
+      invoice: { ...refreshedInvoice, academicYearName: academicYear?.name || '' },
       student,
       payments,
     });
@@ -2037,7 +2459,7 @@ router.post('/admin/discount', adminAuth, async (req, res) => {
 });
 
 // Parent fees (view + pay)
-router.get('/parent/children', authParent, async (req, res) => {
+router.get('/parent/children', authParent, parentFeesCache.cache, async (req, res) => {
   // #swagger.tags = ['Fees']
   try {
     const parent = await ParentUser.findById(req.user.id)
@@ -2063,6 +2485,7 @@ router.get('/parent/children', authParent, async (req, res) => {
       admissionNumber: student.admissionNumber || '',
       grade: student.grade || '',
       section: student.section || '',
+      photo: student.profilePic || '',
       linked: true,
     }));
 
@@ -2126,7 +2549,7 @@ router.get('/parent/summary', authParent, async (req, res) => {
   }
 });
 
-router.get('/parent/invoices', authParent, async (req, res) => {
+router.get('/parent/invoices', authParent, parentFeesCache.cache, async (req, res) => {
   // #swagger.tags = ['Fees']
   try {
     const parent = await ParentUser.findById(req.user.id)
@@ -2305,6 +2728,7 @@ router.post('/payments/razorpay/verify', authAnyUser, paymentGatewayResolver, as
       userId: actor.id,
     });
     feeSummaryCache.clear();
+    invoicesListCache.clear();
     return res.json({ success: true, payment: captured.receipt, invoice: captured.invoice });
   } catch (error) {
     return res.status(error.statusCode || 400).json({ error: error.message || 'Unable to verify payment' });

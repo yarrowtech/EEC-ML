@@ -2,13 +2,18 @@ const express = require('express');
 const mongoose = require('mongoose');
 const Holiday = require('../models/Holiday');
 const School = require('../models/School');
+const AcademicYear = require('../models/AcademicYear');
 const adminAuth = require('../middleware/adminAuth');
+const { notifyHolidayChange } = require('../services/schoolCommunication');
 const authTeacher = require('../middleware/authTeacher');
 const authStudent = require('../middleware/authStudent');
 const authParent = require('../middleware/authParent');
 const { logStudentPortalEvent, logStudentPortalError } = require('../utils/studentPortalLogger');
 
 const router = express.Router();
+const { parentAttendanceCache, holidayCache } = require('../utils/responseCache');
+// Any write here clears the parent attendance screen's response cache.
+router.use(parentAttendanceCache.invalidateOnWrite);
 
 const normalizeHolidayDate = (value) => {
   const parsed = new Date(value);
@@ -126,6 +131,8 @@ router.post('/', adminAuth, async (req, res) => {
       createdBy: req.admin?.id || null,
     });
 
+    notifyHolidayChange({ ...scope, holiday: created, action: 'created', createdBy: req.admin?.id || null })
+      .catch((err) => console.error('Failed to send holiday notifications:', err.message));
     return res.status(201).json(toPublicHoliday(created));
   } catch (err) {
     if (err?.code === 11000) {
@@ -161,6 +168,8 @@ router.delete('/:id', adminAuth, async (req, res) => {
     if (!deleted) {
       return jsonError(res, 404, 'Holiday not found');
     }
+    notifyHolidayChange({ ...scope, holiday: deleted, action: 'deleted', createdBy: req.admin?.id || null })
+      .catch((err) => console.error('Failed to send holiday notifications:', err.message));
     return res.json({ message: 'Holiday deleted successfully' });
   } catch (err) {
     return jsonError(res, 500, err.message || 'Unable to delete holiday');
@@ -215,6 +224,9 @@ router.put('/:id', adminAuth, async (req, res) => {
     }
 
     await holiday.save();
+    // Silent when nothing visible (name/dates) actually changed.
+    notifyHolidayChange({ ...scope, holiday, action: 'updated', createdBy: req.admin?.id || null })
+      .catch((err) => console.error('Failed to send holiday notifications:', err.message));
     return res.json(toPublicHoliday(holiday));
   } catch (err) {
     if (err?.code === 11000) {
@@ -224,7 +236,7 @@ router.put('/:id', adminAuth, async (req, res) => {
   }
 });
 
-router.get('/teacher', authTeacher, async (req, res) => {
+router.get('/teacher', authTeacher, holidayCache.cache, async (req, res) => {
   try {
     const schoolId = req.schoolId || null;
     const campusId = req.campusId || null;
@@ -277,17 +289,24 @@ router.get('/student', authStudent, async (req, res) => {
   }
 });
 
-router.get('/parent', authParent, async (req, res) => {
+router.get('/parent', authParent, parentAttendanceCache.cache, async (req, res) => {
   try {
     const schoolId = req.schoolId || null;
     const campusId = req.campusId || null;
     if (!schoolId || !mongoose.isValidObjectId(schoolId)) {
       return jsonError(res, 400, 'Valid schoolId is required');
     }
-    const items = await loadPublicHolidays({ schoolId, campusId }, req.query);
-    const school = await School.findById(schoolId).select('name address logo').lean();
+    const [items, school, activeYear] = await Promise.all([
+      loadPublicHolidays({ schoolId, campusId }, req.query),
+      School.findById(schoolId).select('name address logo').lean(),
+      // Parent holiday list is scoped to the school's active session.
+      AcademicYear.findOne({ schoolId, isActive: true }).select('name startDate endDate').lean(),
+    ]);
     return res.json({
       holidays: items,
+      activeSession: activeYear
+        ? { name: activeYear.name || '', startDate: activeYear.startDate || null, endDate: activeYear.endDate || null }
+        : null,
       school: {
         name: school?.name || '',
         address: school?.address || '',

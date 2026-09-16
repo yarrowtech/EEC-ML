@@ -12,7 +12,16 @@ import {
   IndianRupee,
   CreditCard,
   X,
+  Filter,
+  ChevronRight,
+  User,
+  Wallet,
+  FileText,
+  MessageSquare,
+  Copy,
+  Check,
 } from 'lucide-react';
+import { readCache, writeCache } from '../../utils/swrCache';
 
 const API_BASE = import.meta.env.VITE_API_URL;
 const DATE_RANGE_OPTIONS = [
@@ -26,7 +35,33 @@ const FONT_STACK = "'Inter Variable', Inter, system-ui, -apple-system, 'Segoe UI
 // Glass surface presets — frosted, semi-transparent, soft-bordered.
 const GLASS_CARD = 'rounded-2xl border border-white/70 bg-white/60 backdrop-blur-xl backdrop-saturate-150 shadow-[0_8px_30px_rgba(15,23,42,0.06)]';
 const GLASS_INNER = 'rounded-xl border border-white/70 bg-white/50 backdrop-blur-md';
-const GLASS_INPUT = 'text-xs border border-white/70 rounded-xl px-3 py-2 bg-white/50 backdrop-blur-md focus:ring-2 focus:ring-violet-500/30 focus:border-violet-400 focus:outline-none transition-all';
+const GLASS_INPUT = 'text-xs border border-white/70 rounded-full px-3 py-2 bg-white/50 backdrop-blur-md focus:ring-2 focus:ring-violet-500/30 focus:border-violet-400 focus:outline-none transition-all';
+
+// Small copy-to-clipboard icon button used in the payment details modal.
+// eslint-disable-next-line react/prop-types
+const CopyButton = ({ value }) => {
+  const [copied, setCopied] = useState(false);
+  const handleCopy = async (e) => {
+    e.stopPropagation();
+    try {
+      await navigator.clipboard.writeText(String(value));
+      setCopied(true);
+      setTimeout(() => setCopied(false), 1500);
+    } catch {
+      /* clipboard unavailable */
+    }
+  };
+  return (
+    <button
+      type="button"
+      onClick={handleCopy}
+      className={`flex-shrink-0 rounded-md p-1 transition-colors ${copied ? 'text-emerald-600' : 'text-slate-500 hover:bg-white hover:text-slate-700'}`}
+      title={copied ? 'Copied' : 'Copy'}
+    >
+      {copied ? <Check size={16} /> : <Copy size={16} />}
+    </button>
+  );
+};
 
 const escapeCsv = (value) => `"${String(value ?? '').replace(/"/g, '""')}"`;
 
@@ -38,10 +73,10 @@ const localDateKey = (value) => {
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
 };
 
-const FeesDashboard = ({ setShowAdminHeader }) => {
+const FeesDashboard = ({ setShowAdminHeader, embedded = false }) => {
   useEffect(() => {
-    setShowAdminHeader(false);
-  }, [setShowAdminHeader]);
+    if (!embedded) setShowAdminHeader?.(false);
+  }, [setShowAdminHeader, embedded]);
 
   const [searchTerm, setSearchTerm] = useState('');
   const [dateRange, setDateRange] = useState('30d');
@@ -49,15 +84,19 @@ const FeesDashboard = ({ setShowAdminHeader }) => {
   const [selectedClass, setSelectedClass] = useState('');
   const [selectedSection, setSelectedSection] = useState('');
   const [selectedPayment, setSelectedPayment] = useState(null);
-  const [summary, setSummary] = useState(null);
-  const [loading, setLoading] = useState(true);
+  const [filtersOpen, setFiltersOpen] = useState(false);
+  const [classDetail, setClassDetail] = useState(null); // { mode: 'enrollment' | 'outstanding', label, rows }
+  const [classDetailSection, setClassDetailSection] = useState('');
+  // Paint the last summary instantly from the client cache, then revalidate.
+  const [summary, setSummary] = useState(() => readCache('fees:summary'));
+  const [loading, setLoading] = useState(() => !readCache('fees:summary'));
   const [error, setError] = useState('');
 
   useEffect(() => {
     const controller = new AbortController();
     const loadSummary = async () => {
       setError('');
-      setLoading(true);
+      if (!readCache('fees:summary')) setLoading(true);
       try {
         const res = await fetch(`${API_BASE}/api/fees/admin/summary`, {
           headers: {
@@ -70,11 +109,12 @@ const FeesDashboard = ({ setShowAdminHeader }) => {
         if (!res.ok) {
           throw new Error(data?.error || data?.message || 'Failed to load fees dashboard data');
         }
+        writeCache('fees:summary', data);
         setSummary(data);
       } catch (err) {
         if (controller.signal.aborted) return;
         console.error(err);
-        setError(err.message || 'Failed to load dashboard data');
+        if (!readCache('fees:summary')) setError(err.message || 'Failed to load dashboard data');
       } finally {
         if (!controller.signal.aborted) {
           setLoading(false);
@@ -94,6 +134,7 @@ const FeesDashboard = ({ setShowAdminHeader }) => {
   };
   const enrollmentData = summary?.enrollment || [];
   const outstandingFeesData = summary?.outstandingSegments || [];
+  const classStudents = summary?.classStudents || {};
   const recentPayments = summary?.recentPayments || [];
   const dateRangeLabel =
     DATE_RANGE_OPTIONS.find((option) => option.value === dateRange)?.label || 'Last 30 Days';
@@ -207,6 +248,54 @@ const FeesDashboard = ({ setShowAdminHeader }) => {
     setSelectedPayment(null);
   };
 
+  const openEnrollmentDetail = (label) => {
+    setClassDetailSection('');
+    setClassDetail({ mode: 'enrollment', label, rows: classStudents[label] || [] });
+  };
+
+  const openOutstandingDetail = (label) => {
+    const rows = (classStudents[label] || []).filter((row) => row.balanceAmount > 0);
+    setClassDetailSection('');
+    setClassDetail({ mode: 'outstanding', label, rows });
+  };
+
+  const closeClassDetail = () => setClassDetail(null);
+
+  const classDetailSectionOptions = useMemo(() => {
+    if (!classDetail) return [];
+    return Array.from(new Set(classDetail.rows.map((row) => row.section).filter(Boolean))).sort();
+  }, [classDetail]);
+
+  const classDetailFilteredRows = useMemo(() => {
+    if (!classDetail) return [];
+    if (!classDetailSection) return classDetail.rows;
+    return classDetail.rows.filter((row) => row.section === classDetailSection);
+  }, [classDetail, classDetailSection]);
+
+  const downloadClassDetail = () => {
+    if (!classDetail) return;
+    const isOutstanding = classDetail.mode === 'outstanding';
+    const header = ['Student', 'Roll', 'User ID', 'Section', isOutstanding ? 'Due Amount' : 'Status'];
+    const rows = classDetailFilteredRows.map((row) => [
+      row.name || '',
+      row.roll || '',
+      row.username || '',
+      row.section || '',
+      isOutstanding ? row.balanceAmount : (row.status === 'paid' ? 'Paid' : row.status === 'partial' ? 'Partial' : 'Due'),
+    ]);
+    const csvContent = [header, ...rows].map((r) => r.map(escapeCsv).join(',')).join('\n');
+    const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    const safeLabel = String(classDetail.label || 'class').replace(/[^a-z0-9]+/gi, '-').toLowerCase();
+    a.download = `${isOutstanding ? 'outstanding' : 'enrollment'}-${safeLabel}-${new Date().toISOString().slice(0, 10)}.csv`;
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+    URL.revokeObjectURL(url);
+  };
+
   const collectionTrend = useMemo(() => {
     const today = new Date();
     const result = [];
@@ -306,7 +395,7 @@ const FeesDashboard = ({ setShowAdminHeader }) => {
 
   if (loading) {
     return (
-      <div className="min-h-screen bg-[#f1f5f9] flex items-center justify-center" style={{ fontFamily: FONT_STACK }}>
+      <div className={embedded ? 'flex items-center justify-center py-16' : 'min-h-screen bg-[#f1f5f9] flex items-center justify-center'} style={{ fontFamily: FONT_STACK }}>
         <div className="text-center text-slate-600">
           <div className="animate-spin h-10 w-10 border-2 border-violet-500 border-t-transparent rounded-full mx-auto mb-4" />
           <p className="text-sm text-[#64748b] mt-2">Loading the latest fee analytics...</p>
@@ -316,37 +405,55 @@ const FeesDashboard = ({ setShowAdminHeader }) => {
   }
 
   return (
-    <div className="min-h-screen bg-[#f1f5f9] relative" style={{ fontFamily: FONT_STACK }}>
+    <div className={embedded ? 'relative' : 'min-h-screen bg-[#f1f5f9] relative'} style={{ fontFamily: FONT_STACK }}>
       {/* Ambient background accents */}
-      <div className="pointer-events-none fixed top-[-10%] right-[-5%] w-96 h-96 bg-violet-300/20 rounded-full blur-3xl" />
-      <div className="pointer-events-none fixed bottom-[-10%] left-[-5%] w-96 h-96 bg-emerald-200/20 rounded-full blur-3xl" />
+      {!embedded && (
+        <>
+          <div className="pointer-events-none fixed top-[-10%] right-[-5%] w-96 h-96 bg-violet-300/20 rounded-full blur-3xl" />
+          <div className="pointer-events-none fixed bottom-[-10%] left-[-5%] w-96 h-96 bg-emerald-200/20 rounded-full blur-3xl" />
+        </>
+      )}
 
       {/* ── Header ── */}
-      <div className="relative px-4 sm:px-6 pt-6 pb-2 max-w-7xl mx-auto">
-        <div className={`${GLASS_CARD} px-6 py-5 animate-in fade-in slide-in-from-bottom-2 duration-500`}>
-          <div className="flex flex-wrap items-center justify-between gap-4">
-            <div className="flex items-center gap-4">
-              <div className="w-11 h-11 rounded-2xl bg-violet-500/10 border border-violet-300/40 flex items-center justify-center shrink-0">
-                <IndianRupee className="h-5 w-5 text-violet-600" />
+      {!embedded && (
+        <div className="relative px-4 sm:px-6 pt-6 pb-2 max-w-7xl mx-auto">
+          <div className={`${GLASS_CARD} px-6 py-5 animate-in fade-in slide-in-from-bottom-2 duration-500`}>
+            <div className="flex flex-wrap items-center justify-between gap-4">
+              <div className="flex items-center gap-4">
+                <div className="w-11 h-11 rounded-2xl bg-violet-500/10 border border-violet-300/40 flex items-center justify-center shrink-0">
+                  <IndianRupee className="h-5 w-5 text-violet-600" />
+                </div>
+                <div>
+                  <p className="text-xs font-semibold text-[#8e9aaf] uppercase tracking-widest">Fees Control Center</p>
+                  <h1 className="text-xl font-bold text-[#0f172a] tracking-tight">Fees Dashboard</h1>
+                  <p className="text-sm text-[#64748b] mt-0.5">Monitor collection health, overdue invoices, and cash flow trends.</p>
+                </div>
               </div>
-              <div>
-                <p className="text-xs font-semibold text-[#8e9aaf] uppercase tracking-widest">Fees Control Center</p>
-                <h1 className="text-xl font-bold text-[#0f172a] tracking-tight">Fees Dashboard</h1>
-                <p className="text-sm text-[#64748b] mt-0.5">Monitor collection health, overdue invoices, and cash flow trends.</p>
-              </div>
+              <button
+                onClick={generateReport}
+                className="inline-flex items-center gap-2 px-4 py-2 rounded-xl bg-violet-500/10 hover:bg-violet-500/20 border border-violet-300/40 text-violet-700 text-sm font-semibold transition-all duration-200 ease-out hover:-translate-y-0.5"
+              >
+                <Download size={15} />
+                Export Snapshot
+              </button>
             </div>
+          </div>
+        </div>
+      )}
+
+      <div className={embedded ? 'relative' : 'relative px-4 sm:px-6 py-6 max-w-7xl mx-auto'}>
+        {embedded && (
+          <div className="fc-in flex flex-wrap items-center justify-between gap-3 mb-5">
+            <p className="min-w-0 flex-1 text-xs text-slate-500">Monitor collection health, overdue invoices, and cash flow trends.</p>
             <button
               onClick={generateReport}
-              className="inline-flex items-center gap-2 px-4 py-2 rounded-xl bg-violet-500/10 hover:bg-violet-500/20 border border-violet-300/40 text-violet-700 text-sm font-semibold transition-all duration-200 ease-out hover:-translate-y-0.5"
+              className="shrink-0 inline-flex items-center gap-2 rounded-xl border border-white/70 bg-white/55 px-4 py-2.5 text-xs font-semibold text-slate-600 backdrop-blur-md transition-all duration-150 hover:-translate-y-0.5 hover:bg-white/80"
             >
-              <Download size={15} />
+              <Download className="h-3.5 w-3.5" />
               Export Snapshot
             </button>
           </div>
-        </div>
-      </div>
-
-      <div className="relative px-4 sm:px-6 py-6 max-w-7xl mx-auto">
+        )}
         {error && (
           <div className="mb-5 rounded-xl border border-red-200/70 bg-red-50/70 backdrop-blur-md text-red-700 px-4 py-3 text-sm">
             {error}
@@ -354,7 +461,9 @@ const FeesDashboard = ({ setShowAdminHeader }) => {
         )}
 
         {/* ── Stat Cards ── */}
-        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+        {/* 2-up until xl: at lg (landscape tablets + sidebar) 4 columns are
+            too narrow for large ₹ totals and the numbers overflow. */}
+        <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-4">
           {[
             {
               label: 'Total Outstanding',
@@ -392,16 +501,16 @@ const FeesDashboard = ({ setShowAdminHeader }) => {
           ].map((card, idx) => (
             <div
               key={card.label}
-              className={`${GLASS_CARD} p-5 transition-all duration-200 ease-out hover:-translate-y-0.5 hover:shadow-[0_12px_36px_rgba(15,23,42,0.09)] animate-in fade-in slide-in-from-bottom-2`}
+              className={`${GLASS_CARD} min-w-0 p-4 sm:p-5 transition-all duration-200 ease-out hover:-translate-y-0.5 hover:shadow-[0_12px_36px_rgba(15,23,42,0.09)] animate-in fade-in slide-in-from-bottom-2`}
               style={{ animationDelay: `${idx * 60}ms`, animationDuration: '500ms', animationFillMode: 'both' }}
             >
-              <div className="flex items-center justify-between mb-3">
-                <p className="text-xs font-semibold text-[#8e9aaf] uppercase tracking-wide">{card.label}</p>
-                <div className={`w-9 h-9 flex items-center justify-center rounded-xl ${card.iconBg}`}>
+              <div className="flex items-start justify-between gap-3 mb-3">
+                <p className="min-w-0 text-xs font-semibold text-[#8e9aaf] uppercase tracking-wide leading-5">{card.label}</p>
+                <div className={`w-9 h-9 shrink-0 flex items-center justify-center rounded-xl ${card.iconBg}`}>
                   <card.icon className={`w-4.5 h-4.5 ${card.iconColor}`} size={18} />
                 </div>
               </div>
-              <p className="text-2xl font-bold text-[#0f172a]">{card.value}</p>
+              <p className="text-xl sm:text-2xl font-bold text-[#0f172a] tabular-nums leading-tight break-words">{card.value}</p>
               <p className={`text-xs mt-1 ${card.subColor || 'text-[#8e9aaf]'}`}>{card.sub}</p>
             </div>
           ))}
@@ -471,8 +580,32 @@ const FeesDashboard = ({ setShowAdminHeader }) => {
                   </div>
                 </div>
 
-                <div className="mt-4 grid gap-3 lg:grid-cols-[minmax(0,1.5fr)_repeat(3,minmax(0,1fr))]">
-                  <div className="relative">
+                <div className="mt-4 flex items-center gap-2 lg:hidden">
+                  <div className="relative flex-1">
+                    <Search className="w-3.5 h-3.5 text-[#8e9aaf] absolute left-2.5 top-1/2 -translate-y-1/2 pointer-events-none" />
+                    <input
+                      type="text"
+                      value={searchTerm}
+                      onChange={(e) => setSearchTerm(e.target.value)}
+                      placeholder="Search student, username, transaction ID..."
+                      className={`${GLASS_INPUT} w-full pl-8`}
+                    />
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => setFiltersOpen((v) => !v)}
+                    aria-label={filtersOpen ? 'Close filters' : 'Open filters'}
+                    className={`shrink-0 h-9 w-9 flex items-center justify-center rounded-xl border transition-colors ${
+                      filtersOpen || selectedSession || selectedClass || selectedSection
+                        ? 'border-violet-300 bg-violet-50 text-violet-600'
+                        : 'border-white/70 bg-white/50 text-[#64748b] hover:bg-white/80'
+                    }`}
+                  >
+                    {filtersOpen ? <X className="w-4 h-4" /> : <Filter className="w-4 h-4" />}
+                  </button>
+                </div>
+                <div className={`mt-3 gap-3 lg:mt-4 lg:grid lg:grid-cols-[minmax(0,1.5fr)_repeat(3,minmax(0,1fr))] ${filtersOpen ? 'flex flex-wrap items-center' : 'hidden'}`}>
+                  <div className="relative hidden lg:block">
                     <Search className="w-3.5 h-3.5 text-[#8e9aaf] absolute left-2.5 top-1/2 -translate-y-1/2 pointer-events-none" />
                     <input
                       type="text"
@@ -590,7 +723,12 @@ const FeesDashboard = ({ setShowAdminHeader }) => {
                 {enrollmentData.length ? (
                   <div className="space-y-3">
                     {enrollmentData.map((program) => (
-                      <div key={program.label} className="flex items-center justify-between">
+                      <button
+                        type="button"
+                        key={program.label}
+                        onClick={() => openEnrollmentDetail(program.label)}
+                        className="w-full flex items-center justify-between gap-2 text-left rounded-lg -mx-1.5 px-1.5 py-1 transition-colors hover:bg-white/60"
+                      >
                         <div className="min-w-0">
                           <p className="text-xs font-semibold text-slate-700 truncate">{program.label}</p>
                           <p className="text-[11px] text-[#8e9aaf]">{program.students} students</p>
@@ -600,8 +738,9 @@ const FeesDashboard = ({ setShowAdminHeader }) => {
                             <div className="h-full bg-violet-400 rounded-full" style={{ width: `${program.percentage}%` }} />
                           </div>
                           <span className="text-xs font-bold text-slate-600 w-8 text-right">{program.percentage}%</span>
+                          <ChevronRight className="w-3.5 h-3.5 text-[#8e9aaf]" />
                         </div>
-                      </div>
+                      </button>
                     ))}
                   </div>
                 ) : (
@@ -627,10 +766,17 @@ const FeesDashboard = ({ setShowAdminHeader }) => {
                 {outstandingFeesData.length ? (
                   <div className="space-y-4">
                     {outstandingFeesData.map((segment) => (
-                      <div key={segment.label}>
+                      <button
+                        type="button"
+                        key={segment.label}
+                        onClick={() => openOutstandingDetail(segment.label)}
+                        className="w-full text-left rounded-lg -mx-1.5 px-1.5 py-1 transition-colors hover:bg-white/60"
+                      >
                         <div className="flex items-center justify-between mb-1.5">
                           <p className="text-xs font-semibold text-slate-700">{segment.label}</p>
-                          <span className="text-xs font-bold text-amber-600">{segment.percentage}%</span>
+                          <span className="flex items-center gap-1 text-xs font-bold text-amber-600">
+                            {segment.percentage}% <ChevronRight className="w-3.5 h-3.5 text-[#8e9aaf]" />
+                          </span>
                         </div>
                         <div className="w-full bg-white/60 rounded-full h-1.5">
                           <div
@@ -641,7 +787,7 @@ const FeesDashboard = ({ setShowAdminHeader }) => {
                         {segment.amount !== undefined && (
                           <p className="text-[11px] text-[#8e9aaf] mt-0.5">{formatCurrency(segment.amount)}</p>
                         )}
-                      </div>
+                      </button>
                     ))}
                   </div>
                 ) : (
@@ -655,96 +801,259 @@ const FeesDashboard = ({ setShowAdminHeader }) => {
         </div>
       </div>
 
-      {selectedPayment ? (
+      {selectedPayment ? (() => {
+        const p = selectedPayment;
+        const statusLabel = p.status || 'Paid';
+        const statusKey = String(statusLabel).toLowerCase();
+        const statusTone = statusKey.includes('partial')
+          ? { panel: 'bg-amber-50 border-amber-200/70', pill: 'bg-amber-100/70 border-amber-200 text-amber-700', dot: 'bg-amber-500' }
+          : statusKey.includes('pend') || statusKey.includes('due') || statusKey.includes('fail')
+            ? { panel: 'bg-rose-50 border-rose-200/70', pill: 'bg-rose-100/70 border-rose-200 text-rose-700', dot: 'bg-rose-500' }
+            : { panel: 'bg-emerald-50 border-emerald-200/70', pill: 'bg-emerald-100/70 border-emerald-200 text-emerald-700', dot: 'bg-emerald-500' };
+
+        const Field = ({ label, value, copyable = false, full = false }) => (
+          <div className={`rounded-xl border border-slate-200/70 bg-slate-50/70 px-4 py-3 ${full ? 'sm:col-span-2' : ''}`}>
+            <p className="text-[11px] font-semibold uppercase tracking-wider text-[#64748b]">{label}</p>
+            {copyable && value && value !== '—' ? (
+              <div className="mt-1.5 flex items-center justify-between gap-2 rounded-lg bg-slate-100/80 px-3 py-1.5">
+                <code className="truncate font-mono text-sm text-[#0f172a]">{value}</code>
+                <CopyButton value={value} />
+              </div>
+            ) : (
+              <p className="mt-1 text-base font-medium text-[#0f172a] break-words">{value || '—'}</p>
+            )}
+          </div>
+        );
+
+        const SectionHeader = ({ icon: Icon, title }) => (
+          <div className="mb-4 flex items-center gap-3">
+            <span className="flex h-11 w-11 items-center justify-center rounded-full bg-indigo-50 text-indigo-500">
+              <Icon size={20} />
+            </span>
+            <h4 className="text-lg font-bold text-[#0f172a]">{title}</h4>
+          </div>
+        );
+
+        const SummaryRow = ({ icon: Icon, label, children }) => (
+          <div className="flex items-start gap-4">
+            <span className="flex h-11 w-11 flex-shrink-0 items-center justify-center rounded-full bg-indigo-50 text-indigo-500">
+              <Icon size={20} />
+            </span>
+            <div className="min-w-0 flex-1">
+              <p className="text-sm text-[#64748b]">{label}</p>
+              <div className="mt-1">{children}</div>
+            </div>
+          </div>
+        );
+
+        return (
+          <div
+            className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/50 backdrop-blur-sm px-3 py-3 sm:px-4 sm:py-4"
+            onClick={closePaymentDetails}
+          >
+            <div
+              className="flex max-h-[calc(100vh-1.5rem)] w-full max-w-5xl flex-col overflow-hidden rounded-2xl bg-white shadow-2xl sm:max-h-[calc(100vh-2rem)] sm:rounded-3xl animate-in fade-in slide-in-from-bottom-4 duration-300"
+              style={{ fontFamily: FONT_STACK }}
+              onClick={(e) => e.stopPropagation()}
+            >
+              <div className="flex items-start justify-between gap-4 px-6 pt-6 pb-4 sm:px-8">
+                <div>
+                  <p className="text-xs font-semibold uppercase tracking-[0.18em] text-violet-500">Payment Details</p>
+                  <h3 className="mt-1 text-2xl sm:text-3xl font-bold text-[#0f172a]">{p.studentName || 'Student'}</h3>
+                  <p className="mt-1 text-base text-[#64748b]">
+                    {[p.className, p.section, p.session].filter(Boolean).join(' · ') || '—'}
+                  </p>
+                </div>
+                <button
+                  type="button"
+                  onClick={closePaymentDetails}
+                  className="inline-flex h-12 w-12 items-center justify-center rounded-full border border-slate-200 bg-white text-slate-600 shadow-sm hover:bg-slate-50 transition-all duration-200 ease-out"
+                  aria-label="Close payment details"
+                >
+                  <X size={20} />
+                </button>
+              </div>
+
+              <div className="grid flex-1 gap-5 overflow-y-auto px-4 pb-6 sm:px-8 lg:grid-cols-[minmax(0,1.5fr)_minmax(0,1fr)]">
+                <div className="space-y-5">
+                  <div className="rounded-2xl border border-slate-200/80 p-4 sm:p-5">
+                    <SectionHeader icon={User} title="Student Information" />
+                    <div className="grid gap-3 sm:grid-cols-2">
+                      <Field label="Student Name" value={p.studentName} />
+                      <Field label="Username" value={p.username} />
+                      <Field label="Admission / SID" value={p.admissionNo} />
+                      <Field label="Class" value={p.className} />
+                      <Field label="Section" value={p.section} />
+                      <Field label="Session" value={p.session} />
+                    </div>
+                  </div>
+
+                  <div className="border-t border-slate-200/80 pt-5">
+                    <SectionHeader icon={Wallet} title="Payment Information" />
+                    <div className="grid gap-3 sm:grid-cols-2">
+                      <Field label="Amount" value={formatCurrency(p.amount)} />
+                      <Field label="Payment Method" value={p.method} />
+                      <Field label="Transaction Date & Time" value={p.paidOnLabel} />
+                      <Field label="Transaction ID" value={p.transactionId || '—'} copyable />
+                      <Field label="Invoice Status" value={p.invoiceStatus} />
+                      <Field label="Gateway Payment ID" value={p.gatewayPaymentId || '—'} copyable />
+                      <Field label="Gateway Order ID" value={p.gatewayOrderId || '—'} copyable full />
+                    </div>
+                  </div>
+                </div>
+
+                <div className="h-fit rounded-2xl border border-slate-200/80 bg-slate-50/60 p-5 sm:p-6">
+                  <div className="flex items-start gap-4">
+                    <span className="flex h-12 w-12 flex-shrink-0 items-center justify-center rounded-full bg-indigo-100/70 text-indigo-500">
+                      <FileText size={22} />
+                    </span>
+                    <div>
+                      <h4 className="text-lg font-bold text-[#0f172a]">Payment Summary</h4>
+                      <p className="text-sm text-[#64748b]">Overview of this payment</p>
+                    </div>
+                  </div>
+
+                  <div className={`mt-5 flex items-start justify-between gap-3 rounded-xl border px-5 py-4 ${statusTone.panel}`}>
+                    <div>
+                      <p className="text-xs font-semibold uppercase tracking-wider text-[#64748b]">Payment Status</p>
+                      <p className="mt-1 text-2xl font-bold capitalize text-[#0f172a]">{statusLabel}</p>
+                    </div>
+                    <span className={`inline-flex items-center gap-2 rounded-full border px-3 py-1 text-sm font-semibold capitalize ${statusTone.pill}`}>
+                      <span className={`h-2 w-2 rounded-full ${statusTone.dot}`} />
+                      {statusLabel}
+                    </span>
+                  </div>
+
+                  <div className="my-5 border-t border-slate-200/80" />
+
+                  <div className="space-y-6">
+                    <SummaryRow icon={IndianRupee} label="Paid Amount">
+                      <p className="text-xl font-bold text-[#0f172a]">{formatCurrency(p.amount)}</p>
+                    </SummaryRow>
+                    <SummaryRow icon={Calendar} label="Receipt Date">
+                      <p className="text-lg font-medium text-[#0f172a]">{p.paidOnLabel || '—'}</p>
+                    </SummaryRow>
+                    <SummaryRow icon={FileText} label="Transaction Reference">
+                      {p.transactionId ? (
+                        <div className="flex items-center justify-between gap-2 rounded-lg border border-slate-200 bg-white px-3 py-2">
+                          <code className="truncate font-mono text-sm text-[#0f172a]">{p.transactionId}</code>
+                          <CopyButton value={p.transactionId} />
+                        </div>
+                      ) : <p className="text-lg font-medium text-[#0f172a]">—</p>}
+                    </SummaryRow>
+                  </div>
+
+                  <div className="my-5 border-t border-slate-200/80" />
+
+                  <SummaryRow icon={MessageSquare} label="Notes">
+                    <div className="rounded-xl border border-slate-200 bg-white px-5 py-4 text-sm leading-6 text-[#64748b] whitespace-pre-line">
+                      {p.notes || 'No additional notes available for this payment.'}
+                    </div>
+                  </SummaryRow>
+                </div>
+              </div>
+            </div>
+          </div>
+        );
+      })() : null}
+
+      {classDetail ? (
         <div
           className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/50 backdrop-blur-sm px-3 py-3 sm:px-4 sm:py-4"
-          onClick={closePaymentDetails}
+          onClick={closeClassDetail}
         >
           <div
-            className="flex max-h-[calc(100vh-1.5rem)] w-full max-w-2xl flex-col overflow-hidden rounded-2xl border border-white/70 bg-white/80 backdrop-blur-2xl backdrop-saturate-150 shadow-2xl sm:max-h-[calc(100vh-2rem)] sm:rounded-3xl animate-in fade-in slide-in-from-bottom-4 duration-300"
+            className="flex max-h-[calc(100vh-1.5rem)] w-full max-w-xl flex-col overflow-hidden rounded-2xl border border-white/70 bg-white/80 backdrop-blur-2xl backdrop-saturate-150 shadow-2xl sm:max-h-[calc(100vh-2rem)] sm:rounded-3xl animate-in fade-in slide-in-from-bottom-4 duration-300"
             style={{ fontFamily: FONT_STACK }}
             onClick={(e) => e.stopPropagation()}
           >
             <div className="flex items-start justify-between gap-4 border-b border-white/60 px-6 py-4">
               <div>
-                <p className="text-xs font-semibold uppercase tracking-[0.18em] text-violet-500">Payment Details</p>
-                <h3 className="mt-1 text-xl font-bold text-[#0f172a]">{selectedPayment.studentName || 'Student'}</h3>
+                <p className="text-xs font-semibold uppercase tracking-[0.18em] text-violet-500">
+                  {classDetail.mode === 'outstanding' ? 'Outstanding Dues' : 'Class Enrollment'}
+                </p>
+                <h3 className="mt-1 text-xl font-bold text-[#0f172a]">{classDetail.label}</h3>
                 <p className="text-sm text-[#64748b]">
-                  {selectedPayment.className || '—'}
-                  {selectedPayment.section ? ` · ${selectedPayment.section}` : ''}
-                  {selectedPayment.session ? ` · ${selectedPayment.session}` : ''}
+                  {classDetailFilteredRows.length} student{classDetailFilteredRows.length !== 1 ? 's' : ''}
+                  {classDetail.mode === 'outstanding' ? ' with pending dues' : ''}
                 </p>
               </div>
               <button
                 type="button"
-                onClick={closePaymentDetails}
+                onClick={closeClassDetail}
                 className="inline-flex h-9 w-9 items-center justify-center rounded-full border border-white/70 bg-white/50 text-slate-500 hover:bg-white/80 hover:text-slate-700 transition-all duration-200 ease-out"
-                aria-label="Close payment details"
+                aria-label="Close class details"
               >
                 <X size={18} />
               </button>
             </div>
 
-            <div className="grid flex-1 gap-4 overflow-y-auto px-4 py-4 sm:px-6 sm:py-5 md:grid-cols-[minmax(0,1.2fr)_minmax(0,0.8fr)]">
-              <div className="grid gap-3 sm:grid-cols-2">
-                {[
-                  ['Student Name', selectedPayment.studentName || '—'],
-                  ['Username', selectedPayment.username || '—'],
-                  ['Admission / SID', selectedPayment.admissionNo || '—'],
-                  ['Class', selectedPayment.className || '—'],
-                  ['Section', selectedPayment.section || '—'],
-                  ['Session', selectedPayment.session || '—'],
-                  ['Amount', formatCurrency(selectedPayment.amount)],
-                  ['Transaction Date & Time', selectedPayment.paidOnLabel || '—'],
-                  ['Transaction ID', selectedPayment.transactionId || '—'],
-                  ['Payment Method', selectedPayment.method || '—'],
-                  ['Invoice Status', selectedPayment.invoiceStatus || '—'],
-                  ['Gateway Payment ID', selectedPayment.gatewayPaymentId || '—'],
-                  ['Gateway Order ID', selectedPayment.gatewayOrderId || '—'],
-                ].map(([label, value]) => (
-                  <div key={label} className={`${GLASS_INNER} px-3 py-3 sm:px-4`}>
-                    <p className="text-[11px] font-semibold uppercase tracking-wide text-[#8e9aaf]">{label}</p>
-                    <p className="mt-1 text-sm font-semibold text-[#0f172a] break-words leading-5">{value}</p>
-                  </div>
-                ))}
+            {classDetail.rows.length > 0 && (
+              <div className="flex flex-wrap items-center gap-2 border-b border-white/60 px-4 py-3 sm:px-6">
+                {classDetailSectionOptions.length > 1 && (
+                  <select
+                    value={classDetailSection}
+                    onChange={(e) => setClassDetailSection(e.target.value)}
+                    className={GLASS_INPUT}
+                  >
+                    <option value="">All Sections</option>
+                    {classDetailSectionOptions.map((section) => (
+                      <option key={section} value={section}>Section {section}</option>
+                    ))}
+                  </select>
+                )}
+                <button
+                  type="button"
+                  onClick={downloadClassDetail}
+                  className="ml-auto inline-flex items-center gap-1.5 px-3 py-1.5 bg-violet-600 text-white text-xs font-semibold rounded-xl hover:bg-violet-700 transition-all duration-200 ease-out hover:-translate-y-0.5"
+                >
+                  <Download size={13} /> Download
+                </button>
               </div>
+            )}
 
-              <div className={`${GLASS_INNER} space-y-4 p-4 sm:p-5`}>
-                <div className="flex items-center justify-between gap-3">
-                  <div>
-                    <p className="text-xs font-semibold uppercase tracking-[0.18em] text-[#8e9aaf]">Payment Status</p>
-                    <p className="mt-1 text-lg font-bold text-[#0f172a]">{selectedPayment.status || 'Paid'}</p>
-                  </div>
-                  <span className={`inline-flex items-center rounded-full px-3 py-1 text-xs font-semibold ${getStatusColor(selectedPayment.status)}`}>
-                    {selectedPayment.status || 'Paid'}
-                  </span>
+            <div className="flex-1 overflow-y-auto px-4 py-4 sm:px-6 sm:py-5">
+              {classDetailFilteredRows.length ? (
+                <div className="overflow-x-auto">
+                  <table className="min-w-full text-sm">
+                    <thead className="sticky top-0 z-10 bg-white/95 backdrop-blur-md">
+                      <tr>
+                        {['Student', 'Roll', 'User ID', classDetail.mode === 'outstanding' ? 'Due Amount' : 'Status'].map((h) => (
+                          <th key={h} className="px-3 py-2.5 text-left text-xs font-semibold text-[#8e9aaf] uppercase tracking-wide border-b border-white/60">{h}</th>
+                        ))}
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-white/60">
+                      {classDetailFilteredRows.map((row) => (
+                        <tr key={row.studentId}>
+                          <td className="px-3 py-3">
+                            <p className="font-semibold text-slate-800 text-sm">{row.name}</p>
+                            {row.section && <p className="text-[11px] text-[#8e9aaf]">Section {row.section}</p>}
+                          </td>
+                          <td className="px-3 py-3 text-[#64748b] text-xs">{row.roll || '—'}</td>
+                          <td className="px-3 py-3 text-[#64748b] text-xs">{row.username || '—'}</td>
+                          <td className="px-3 py-3">
+                            {classDetail.mode === 'outstanding' ? (
+                              <span className="font-bold text-amber-600 text-sm">{formatCurrency(row.balanceAmount)}</span>
+                            ) : (
+                              <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-semibold ${getStatusColor(row.status === 'paid' ? 'Paid' : row.status === 'partial' ? 'Partial' : 'Due')}`}>
+                                {row.status === 'paid' ? 'Paid' : row.status === 'partial' ? 'Partial' : 'Due'}
+                              </span>
+                            )}
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
                 </div>
-
-                <div className="rounded-xl bg-white/60 p-4 border border-white/70">
-                  <p className="text-xs font-semibold uppercase tracking-wide text-[#8e9aaf]">Notes</p>
-                  <p className="mt-2 text-sm leading-6 text-[#64748b] whitespace-pre-line">
-                    {selectedPayment.notes || 'No additional notes available for this payment.'}
+              ) : (
+                <div className="flex flex-col items-center justify-center py-10 gap-2 text-center">
+                  <CheckCircle size={28} className="text-emerald-300" />
+                  <p className="text-sm text-[#8e9aaf]">
+                    {classDetail.mode === 'outstanding' ? 'No pending dues for this class.' : 'No students found.'}
                   </p>
                 </div>
-
-                <div className="rounded-xl bg-white/60 p-4 border border-white/70">
-                  <p className="text-xs font-semibold uppercase tracking-wide text-[#8e9aaf]">Summary</p>
-                  <div className="mt-3 space-y-2 text-sm text-[#64748b]">
-                    <div className="flex items-center justify-between gap-3">
-                      <span>Paid amount</span>
-                      <span className="font-semibold text-[#0f172a]">{formatCurrency(selectedPayment.amount)}</span>
-                    </div>
-                    <div className="flex items-center justify-between gap-3">
-                      <span>Receipt date</span>
-                      <span className="font-semibold text-[#0f172a]">{selectedPayment.paidOnLabel || '—'}</span>
-                    </div>
-                    <div className="flex items-center justify-between gap-3">
-                      <span>Transaction reference</span>
-                      <span className="font-semibold text-[#0f172a]">{selectedPayment.transactionId || '—'}</span>
-                    </div>
-                  </div>
-                </div>
-              </div>
+              )}
             </div>
           </div>
         </div>
