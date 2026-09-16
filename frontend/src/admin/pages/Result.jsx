@@ -1741,7 +1741,7 @@ const Result = ({ setShowAdminHeader }) => {
               onClick={() => setAddResultMode('single')}
               className={`px-3 py-1.5 rounded-full text-xs font-semibold ${addResultMode === 'single' ? 'bg-white text-indigo-700 shadow-sm' : 'text-slate-600'}`}
             >
-              Single Entry
+              Single Entryy
             </button>
             <button
               type="button"
