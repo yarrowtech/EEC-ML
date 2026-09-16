@@ -5554,14 +5554,15 @@ const ExaminationManagement = ({ setShowAdminHeader }) => {
               </select>
             </Field>
             <Field label="Status">
-              {groupForm.status === 'Published' ? (
-                <div className="flex items-center gap-2 rounded-xl border border-emerald-200 bg-emerald-50 px-3 py-2.5 text-sm font-semibold text-emerald-700">
-                  <CheckCircle2 size={14} /> Published — use Republish Routine to update
-                </div>
-              ) : (
-                <select value={groupForm.status} onChange={e => setGroupForm(p => ({ ...p, status: e.target.value }))} className={inp}>
-                  {GROUP_STATUS_OPTIONS.map(s => <option key={s} value={s}>{s}</option>)}
-                </select>
+              {/* Once published, the routine table/PDF itself is only ever
+                  changed via Republish — but the exam still needs to move to
+                  Completed once it's actually over, so that transition stays
+                  available here instead of locking the field entirely. */}
+              <select value={groupForm.status} onChange={e => setGroupForm(p => ({ ...p, status: e.target.value }))} className={inp}>
+                {(groupForm.status === 'Published' ? ['Published', 'Completed'] : GROUP_STATUS_OPTIONS).map(s => <option key={s} value={s}>{s}</option>)}
+              </select>
+              {groupForm.status === 'Published' && (
+                <p className="mt-1 text-xs text-slate-400">Published — set to Completed once the exam is over, or use Republish Routine to change the schedule.</p>
               )}
             </Field>
           </div>
@@ -5636,14 +5637,11 @@ const ExaminationManagement = ({ setShowAdminHeader }) => {
               </select>
             </Field>
             <Field label="Status">
-              {batchEditForm.status === 'Published' ? (
-                <div className="flex items-center gap-2 rounded-xl border border-emerald-200 bg-emerald-50 px-3 py-2.5 text-sm font-semibold text-emerald-700">
-                  <CheckCircle2 size={14} /> Published — use Republish Routine to update
-                </div>
-              ) : (
-                <select value={batchEditForm.status} onChange={e => setBatchEditForm(p => ({ ...p, status: e.target.value }))} className={inp}>
-                  {GROUP_STATUS_OPTIONS.map(s => <option key={s} value={s}>{s}</option>)}
-                </select>
+              <select value={batchEditForm.status} onChange={e => setBatchEditForm(p => ({ ...p, status: e.target.value }))} className={inp}>
+                {(batchEditForm.status === 'Published' ? ['Published', 'Completed'] : GROUP_STATUS_OPTIONS).map(s => <option key={s} value={s}>{s}</option>)}
+              </select>
+              {batchEditForm.status === 'Published' && (
+                <p className="mt-1 text-xs text-slate-400">Published — set to Completed once the exam is over, or use Republish Routine to change the schedule.</p>
               )}
             </Field>
           </div>
