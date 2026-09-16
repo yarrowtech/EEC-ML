@@ -69,14 +69,18 @@ describe('DrawerModal content generation', () => {
 
     fireEvent.click(await screen.findByRole('button', { name: 'Generate with AI' }));
 
-    await waitFor(() => expect(onUpdate).toHaveBeenCalled());
+    // Generated fields stream in progressively (see streamContentIntoChapter in
+    // DrawerModal), so wait for the final tick rather than the first onUpdate call.
+    await waitFor(() => {
+      const [updatedChapter] = onUpdate.mock.calls.at(-1) || [];
+      expect(updatedChapter?.learningObjectives).toEqual([
+        'Understand place value',
+        'Round large numbers',
+      ]);
+      expect(updatedChapter?.explanation).toContain('Identify each digit position');
+      expect(updatedChapter?.recap).toContain('Place determines digit value');
+    });
     const [updatedChapter] = onUpdate.mock.calls.at(-1);
-    expect(updatedChapter.learningObjectives).toEqual([
-      'Understand place value',
-      'Round large numbers',
-    ]);
-    expect(updatedChapter.explanation).toContain('Identify each digit position');
-    expect(updatedChapter.recap).toContain('Place determines digit value');
 
     const [url, options] = global.fetch.mock.calls[0];
     expect(url).toContain('/api/ai-teacher/generate-content');

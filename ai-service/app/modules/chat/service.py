@@ -1269,7 +1269,12 @@ def build_prompt(
         "Completely ignore any 'Note to the Teacher' or 'Note to Teacher' blocks — these are "
         "facilitator instructions and must not appear in student-facing output. "
         "Each section must appear only once; if you see the same section repeated, include it once "
-        "at its first occurrence and skip all repeats. Keep the tone age-appropriate."
+        "at its first occurrence and skip all repeats. Keep the tone age-appropriate. "
+        "LANGUAGE RULE: Write your entire response in the same language as the retrieved course "
+        "material below. If that material is in Bengali, respond in Bengali; if it is in Hindi, "
+        "respond in Hindi; and so on — never silently translate the material into English or any "
+        "other language. Only fall back to English if the retrieved material itself is in English "
+        "or the request carries no retrieved material to judge the language from."
     )
 
     # Inject student learning profile into system prompt for personalised responses.

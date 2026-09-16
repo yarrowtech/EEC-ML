@@ -145,13 +145,33 @@ const teacherHasClassAllocation = async ({ schoolId, campusId = null, teacherId,
   if (sectionId) filter.sectionId = sectionId;
 
   const allocations = await TeacherAllocation.find(filter).select('subjectId isClassTeacher').lean();
-  if (!allocations.length) return false;
-  if (!subjectId) return true;
-  return allocations.some((allocation) => (
-    allocation.isClassTeacher
+  const allocationMatch = allocations.some((allocation) => (
+    !subjectId
+    || allocation.isClassTeacher
     || !allocation.subjectId
     || String(allocation.subjectId) === String(subjectId)
   ));
+  if (allocationMatch) return true;
+
+  // Some schools only ever assign teachers via the timetable and never create
+  // a matching TeacherAllocation record. The lesson-plan builder's own
+  // allocation lookup (getAllocationCombos in lessonPlanRoutes.js) already
+  // treats timetable entries as a valid allocation source, so this check must
+  // fall back to it too — otherwise a teacher can select a class/section/
+  // subject in the lesson planner but gets "not allocated" on AI features.
+  const timetableFilter = {
+    schoolId,
+    classId,
+    'entries.teacherId': teacherId,
+    ...buildCampusFilter(campusId),
+  };
+  if (sectionId) timetableFilter.sectionId = sectionId;
+
+  const timetables = await Timetable.find(timetableFilter).select('entries').lean();
+  return timetables.some((timetable) => (timetable.entries || []).some((entry) => (
+    String(entry?.teacherId || '') === String(teacherId)
+    && (!subjectId || String(entry?.subjectId || '') === String(subjectId))
+  )));
 };
 
 module.exports = {

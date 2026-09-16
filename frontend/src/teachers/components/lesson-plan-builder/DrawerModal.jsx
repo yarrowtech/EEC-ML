@@ -98,6 +98,12 @@ const SectionTitle = ({ icon, iconColor, children }) => (
 
 const authHdrs = () => ({ 'Content-Type': 'application/json', Authorization: `Bearer ${localStorage.getItem('token') || ''}` });
 
+// Backend returns the full "Generate with AI" result in one response; reveal it
+// progressively on the frontend so the Content step feels like the AI is
+// writing live rather than the fields just snapping to their final values.
+const CONTENT_STREAM_TOKEN_DELAY_MS = 20;
+const splitStreamTokens = (text) => String(text || '').match(/\S+\s*/g) || [];
+
 const DrawerModal = ({
   open,
   chapter,
@@ -131,6 +137,12 @@ const DrawerModal = ({
   const [showMaterialUpload, setShowMaterialUpload] = useState(false);
   const [idoweEdoLoading, setIdoweEdoLoading] = useState(false);
   const [contentGenerating, setContentGenerating] = useState(false);
+  const [contentStreaming, setContentStreaming] = useState(false);
+  const contentStreamTimersRef = React.useRef([]);
+
+  React.useEffect(() => () => {
+    contentStreamTimersRef.current.forEach(clearTimeout);
+  }, []);
 
   // Language Practice step state
   const [langTab, setLangTab] = useState('reading'); // 'reading' | 'writing'
@@ -261,32 +273,92 @@ const DrawerModal = ({
         throw new Error('AI returned no usable lesson content for this chapter');
       }
 
-      onUpdate({
-        ...chapter,
-        // Only fill objectives if currently empty
-        learningObjectives: (chapter.learningObjectives || []).length === 0 && Array.isArray(aiObj) && aiObj.length
-          ? aiObj
-          : chapter.learningObjectives,
-        // Only fill flow if teacher hasn't customised it yet
-        instructionalFlow: (() => {
-          const hasCustomFlow = Array.isArray(chapter.instructionalFlow) && chapter.instructionalFlow.length > 0;
-          if (hasCustomFlow || !aiFlow) return chapter.instructionalFlow || DEFAULT_INSTRUCTIONAL_FLOW;
-          return Object.entries(phaseMap).map(([key, base]) => ({
+      // Only fill fields the teacher hasn't already customised — computed up
+      // front so streamContentIntoChapter knows exactly what to reveal.
+      const objectivesToApply = (chapter.learningObjectives || []).length === 0 && Array.isArray(aiObj) && aiObj.length
+        ? aiObj
+        : null;
+
+      const hasCustomFlow = Array.isArray(chapter.instructionalFlow) && chapter.instructionalFlow.length > 0;
+      const flowToApply = (!hasCustomFlow && aiFlow)
+        ? Object.entries(phaseMap).map(([key, base]) => ({
             ...base,
             description: (aiFlow[key] || '').slice(0, 120).trim() || base.phase + ' phase',
-          }));
-        })(),
-        // Only fill explanation if empty
-        explanation: !chapter.explanation?.trim() && aiExp ? aiExp : chapter.explanation,
-        // Only fill recap if empty
-        recap: !chapter.recap?.trim() && aiRecap ? aiRecap : chapter.recap,
-      });
-      toast.success('Content generated from your uploaded material');
+          }))
+        : null;
+
+      const explanationToApply = !chapter.explanation?.trim() && aiExp ? aiExp : null;
+      const recapToApply = !chapter.recap?.trim() && aiRecap ? aiRecap : null;
+
+      streamContentIntoChapter(chapter, { objectivesToApply, flowToApply, explanationToApply, recapToApply });
     } catch (err) {
       toast.error(err?.message || 'AI generation failed');
-    } finally {
       setContentGenerating(false);
     }
+  };
+
+  // Reveals a "Generate with AI" result progressively instead of the Content
+  // step just snapping to its final values: objectives are appended one at a
+  // time, and the explanation/recap/flow-phase descriptions stream in word by
+  // word, all advancing together on the same tick so it reads as one AI pass.
+  const streamContentIntoChapter = (baseChapter, { objectivesToApply, flowToApply, explanationToApply, recapToApply }) => {
+    contentStreamTimersRef.current.forEach(clearTimeout);
+    contentStreamTimersRef.current = [];
+
+    const explanationTokens = explanationToApply ? splitStreamTokens(explanationToApply) : [];
+    const recapTokens = recapToApply ? splitStreamTokens(recapToApply) : [];
+    const flowTokenSets = (flowToApply || []).map((phase) => splitStreamTokens(phase.description || ''));
+    const objectiveCount = objectivesToApply?.length || 0;
+
+    const totalSteps = Math.max(
+      explanationTokens.length,
+      recapTokens.length,
+      objectiveCount,
+      ...flowTokenSets.map((tokens) => tokens.length),
+      0
+    );
+
+    if (totalSteps === 0) {
+      setContentGenerating(false);
+      toast.success('Content generated from your uploaded material');
+      return;
+    }
+
+    setContentStreaming(true);
+    let step = 0;
+    let explanationText = '';
+    let recapText = '';
+    const flowTexts = flowTokenSets.map(() => '');
+
+    const pushStep = () => {
+      if (step < explanationTokens.length) explanationText += explanationTokens[step];
+      if (step < recapTokens.length) recapText += recapTokens[step];
+      flowTokenSets.forEach((tokens, i) => {
+        if (step < tokens.length) flowTexts[i] += tokens[step];
+      });
+      const objectivesSoFar = objectiveCount ? objectivesToApply.slice(0, Math.min(step + 1, objectiveCount)) : null;
+
+      step += 1;
+      const isDone = step >= totalSteps;
+
+      onUpdate({
+        ...baseChapter,
+        ...(objectivesToApply ? { learningObjectives: objectivesSoFar } : {}),
+        ...(flowToApply ? { instructionalFlow: flowToApply.map((phase, i) => ({ ...phase, description: flowTexts[i] })) } : {}),
+        ...(explanationToApply ? { explanation: explanationText } : {}),
+        ...(recapToApply ? { recap: recapText } : {}),
+      });
+
+      if (!isDone) {
+        contentStreamTimersRef.current.push(window.setTimeout(pushStep, CONTENT_STREAM_TOKEN_DELAY_MS));
+      } else {
+        setContentStreaming(false);
+        setContentGenerating(false);
+        toast.success('Content generated from your uploaded material');
+      }
+    };
+
+    pushStep();
   };
 
   const goToStep = (nextStep) => {
@@ -497,11 +569,32 @@ const DrawerModal = ({
                   size="sm"
                   variant="outline"
                   onClick={onApplyAiSuggestion}
-                  className="gap-1.5 border-purple-200 text-purple-600 hover:bg-purple-50 dark:border-purple-700 dark:text-purple-400"
+                  disabled={chapter.aiWriting}
+                  className="gap-1.5 border-purple-200 text-purple-600 hover:bg-purple-50 disabled:opacity-70 dark:border-purple-700 dark:text-purple-400"
                 >
-                  <Sparkles className="size-3.5" /> AI Suggestion
+                  {chapter.aiWriting ? (
+                    <>
+                      <span className="size-3.5 animate-spin rounded-full border-2 border-purple-300 border-t-purple-600" />
+                      Writing…
+                    </>
+                  ) : (
+                    <>
+                      <Sparkles className="size-3.5" /> AI Suggestion
+                    </>
+                  )}
                 </Button>
               </div>
+              {chapter.aiWriting && (
+                <div className="mb-2 flex items-center gap-2 text-xs font-medium text-purple-600 dark:text-purple-400">
+                  <Sparkles className="size-3.5 animate-pulse" />
+                  AI is writing your introduction…
+                  <span className="inline-flex gap-0.5">
+                    <span className="size-1 animate-bounce rounded-full bg-purple-400 [animation-delay:-0.3s]" />
+                    <span className="size-1 animate-bounce rounded-full bg-purple-400 [animation-delay:-0.15s]" />
+                    <span className="size-1 animate-bounce rounded-full bg-purple-400" />
+                  </span>
+                </div>
+              )}
               <RichTextEditor
                 value={chapter.introductionText}
                 onChange={(value) => onUpdate({ ...chapter, introductionText: value })}
@@ -525,10 +618,25 @@ const DrawerModal = ({
                 disabled={contentGenerating}
                 className="flex shrink-0 items-center gap-1.5 rounded-lg bg-green-600 px-3 py-1.5 text-xs font-semibold text-white hover:bg-green-700 disabled:opacity-50"
               >
-                <Sparkles className="size-3.5" />
-                {contentGenerating ? 'Generating…' : 'Generate with AI'}
+                {contentGenerating ? (
+                  <span className="size-3.5 animate-spin rounded-full border-2 border-white/40 border-t-white" />
+                ) : (
+                  <Sparkles className="size-3.5" />
+                )}
+                {contentStreaming ? 'Writing…' : contentGenerating ? 'Generating…' : 'Generate with AI'}
               </button>
             </div>
+            {contentStreaming && (
+              <div className="flex items-center gap-2 rounded-lg bg-green-50 px-3 py-2 text-xs font-medium text-green-700 dark:bg-green-950/40 dark:text-green-400">
+                <Sparkles className="size-3.5 animate-pulse" />
+                AI is writing your objectives, flow, and explanation…
+                <span className="inline-flex gap-0.5">
+                  <span className="size-1 animate-bounce rounded-full bg-green-500 [animation-delay:-0.3s]" />
+                  <span className="size-1 animate-bounce rounded-full bg-green-500 [animation-delay:-0.15s]" />
+                  <span className="size-1 animate-bounce rounded-full bg-green-500" />
+                </span>
+              </div>
+            )}
 
             {/* Learning Objectives */}
             <Card>

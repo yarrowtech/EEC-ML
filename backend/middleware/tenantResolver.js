@@ -31,6 +31,18 @@ const getRootDomain = () => normalizeHostname(
   process.env.ROOT_DOMAIN || process.env.MAIN_DOMAIN || 'electroniceducare.com'
 );
 
+// Extra hostnames (staging/test API hosts, etc.) that aren't a real tenant
+// subdomain and shouldn't hit Organization.findOne({ slug }) at all. Configured
+// via env so a new host can be added per-environment without a code change.
+const getExcludedHostnames = () => (
+  String(process.env.TENANT_RESOLVER_EXCLUDED_HOSTS || '')
+    .split(',')
+    .map((host) => normalizeHostname(host))
+    .filter(Boolean)
+);
+
+const isExcludedHostname = (hostname) => getExcludedHostnames().includes(hostname);
+
 const isMainHostname = (hostname, rootDomain = getRootDomain()) => (
   hostname === rootDomain
   || hostname === `www.${rootDomain}`
@@ -38,6 +50,7 @@ const isMainHostname = (hostname, rootDomain = getRootDomain()) => (
   || hostname === '127.0.0.1'
   || hostname === '::1'
   || hostname === `api.${rootDomain}`
+  || isExcludedHostname(hostname)
 );
 
 const resolveSlug = (hostname, rootDomain = getRootDomain()) => {
@@ -127,5 +140,6 @@ const tenantResolver = async (req, res, next) => {
 module.exports = tenantResolver;
 module.exports.getRootDomain = getRootDomain;
 module.exports.isMainHostname = isMainHostname;
+module.exports.isExcludedHostname = isExcludedHostname;
 module.exports.normalizeHostname = normalizeHostname;
 module.exports.resolveSlug = resolveSlug;
