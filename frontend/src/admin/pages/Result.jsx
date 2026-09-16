@@ -2,8 +2,8 @@ import React, { useState, useEffect } from 'react';
 import {
   Search, Filter, Download, FileSpreadsheet, Plus, Send, Upload, X,
   BookOpen, Edit2, Trash2, Clock, MapPin, User, Calendar,
-  RefreshCw, ChevronRight, CheckCircle, XCircle, AlertCircle,
-  Loader2, Award, TrendingUp, Eye, EyeOff, FileUp, FileDown
+  RefreshCw, ChevronRight, ChevronLeft, CheckCircle, XCircle, AlertCircle,
+  Loader2, Award, TrendingUp, Eye, EyeOff, FileUp, FileDown, Info
 } from 'lucide-react';
 import toast from 'react-hot-toast';
 import Swal from 'sweetalert2';
@@ -68,6 +68,15 @@ const deriveRemarkFromMarks = (marks, maxMarks, status = 'pass') => {
 
 /* ── modal shell ── */
 const Modal = ({ show, onClose, title, subtitle, icon: Icon, iconColor = 'bg-indigo-600', children, maxWidth = 'sm:max-w-3xl' }) => {
+  // Lock page scroll behind the modal while it's open — restores whatever
+  // the body had before in case another modal/overlay already set it.
+  useEffect(() => {
+    if (!show) return undefined;
+    const previousOverflow = document.body.style.overflow;
+    document.body.style.overflow = 'hidden';
+    return () => { document.body.style.overflow = previousOverflow; };
+  }, [show]);
+
   if (!show) return null;
   return (
     <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center p-0 sm:p-4">
@@ -155,10 +164,15 @@ const Result = ({ setShowAdminHeader }) => {
   const [examTabState, setExamTabState]     = useState({});   // { [examId]: { cls: 'all', sec: 'all' } }
   const [updatingCompletedExamGroupId, setUpdatingCompletedExamGroupId] = useState('');
   const [addResultMode, setAddResultMode] = useState('single');
-  const [bulkEntryForm, setBulkEntryForm] = useState({ session: '', className: '', sectionName: '', examId: '' });
+  const [bulkEntryForm, setBulkEntryForm] = useState({ session: '', className: '', sectionName: '', term: '', examId: '' });
   const [bulkEntryRows, setBulkEntryRows] = useState([]);
   const [bulkEntryLoading, setBulkEntryLoading] = useState(false);
   const [bulkEntrySubmitting, setBulkEntrySubmitting] = useState(false);
+  const [bulkStep, setBulkStep] = useState(1);
+  const [bulkSearchTerm, setBulkSearchTerm] = useState('');
+  const [bulkExcludedIds, setBulkExcludedIds] = useState(() => new Set());
+  const [bulkPage, setBulkPage] = useState(1);
+  const BULK_ROWS_PER_PAGE = 8;
 
   /* ── fetch ── */
   const fetchResults = async () => {
@@ -421,6 +435,9 @@ const Result = ({ setShowAdminHeader }) => {
       });
 
       setBulkEntryRows(nextRows);
+      setBulkExcludedIds(new Set());
+      setBulkSearchTerm('');
+      setBulkPage(1);
     } catch (err) {
       console.error('Failed to load bulk entry rows', err);
       toast.error('Failed to load students for bulk result entry');
@@ -508,6 +525,7 @@ const Result = ({ setShowAdminHeader }) => {
     }
     const payloadRows = bulkEntryRows
       .map((row) => {
+        if (bulkExcludedIds.has(row.studentId)) return null;
         const marksText = String(row.marks ?? '').trim();
         if (!marksText) return null;
         const marks = Number(marksText);
@@ -1143,7 +1161,14 @@ const Result = ({ setShowAdminHeader }) => {
       ? availableSectionsFromMaster
       : availableSectionsFromStudents;
 
-    const examOptions = exams.filter((exam) => {
+    // "Completed exam for the particular subject" — only exams the school has
+    // actually finished sitting are eligible for result entry. This is scoped
+    // to class/section only — Type (term) is a separate, later filter, since
+    // a class can easily have several completed exam titles ("First
+    // Summative Examination", "Class Test", "Class Test 2", ...) mixed
+    // together and picking a type first narrows that down before Exam.
+    const examOptionsForScope = exams.filter((exam) => {
+      if (String(exam?.status || '').toLowerCase() !== 'completed') return false;
       const examClass = getExamClassName(exam);
       const examSection = getExamSectionName(exam);
       const examYearId = String(exam?.classId?.academicYearId || '');
@@ -1159,7 +1184,13 @@ const Result = ({ setShowAdminHeader }) => {
       const matchSection = !bulkEntryForm.sectionName || normSec(examSection) === normSec(bulkEntryForm.sectionName);
       return matchSession && matchClass && matchSection;
     });
+    const examTypeOptions = [...new Set(examOptionsForScope.map((exam) => String(exam.term || '').trim()).filter(Boolean))]
+      .sort((a, b) => a.localeCompare(b));
+    const examOptions = bulkEntryForm.term
+      ? examOptionsForScope.filter((exam) => String(exam.term || '').trim() === bulkEntryForm.term)
+      : examOptionsForScope;
     const selectedExam = exams.find((exam) => String(exam._id) === String(bulkEntryForm.examId));
+    const maxMarks = Number(selectedExam?.marks || 100);
 
     const onFilterChange = (patch) => {
       const next = {
@@ -1175,171 +1206,400 @@ const Result = ({ setShowAdminHeader }) => {
       }
     };
 
+    const canProceedToStep2 = Boolean(bulkEntryForm.session && bulkEntryForm.className && bulkEntryForm.sectionName && bulkEntryForm.examId);
+
+    const searchedRows = bulkSearchTerm.trim()
+      ? bulkEntryRows.filter((row) => {
+          const q = bulkSearchTerm.trim().toLowerCase();
+          return String(row.name || '').toLowerCase().includes(q) || String(row.roll || '').toLowerCase().includes(q);
+        })
+      : bulkEntryRows;
+    const totalPages = Math.max(1, Math.ceil(searchedRows.length / BULK_ROWS_PER_PAGE));
+    const currentPage = Math.min(bulkPage, totalPages);
+    const pagedRows = searchedRows.slice((currentPage - 1) * BULK_ROWS_PER_PAGE, currentPage * BULK_ROWS_PER_PAGE);
+
+    const emptyMarksCount = bulkEntryRows.filter((row) => String(row.marks ?? '').trim() === '').length;
+    const handleAutoFill = () => {
+      // Fills every still-blank row with full marks (a safe, obviously-visible
+      // default an admin will edit down rather than accidentally publish) —
+      // grade/status/remarks are then derived the same way a manual entry would be.
+      bulkEntryRows.forEach((row) => {
+        if (String(row.marks ?? '').trim() === '') {
+          handleBulkRowMarksChange(row.studentId, String(maxMarks));
+        }
+      });
+    };
+
+    const includedRows = bulkEntryRows.filter((row) => !bulkExcludedIds.has(row.studentId) && String(row.marks ?? '').trim() !== '');
+    const reviewCounts = includedRows.reduce((acc, row) => {
+      const key = row.status === 'absent' ? 'absent' : row.status === 'fail' ? 'fail' : 'pass';
+      acc[key] += 1;
+      return acc;
+    }, { pass: 0, fail: 0, absent: 0 });
+
+    const stepMeta = [
+      { id: 1, title: 'Select Exam', sub: 'Choose session, class and exam' },
+      { id: 2, title: 'Enter Marks', sub: 'Fill or upload marks' },
+      { id: 3, title: 'Review & Submit', sub: 'Check and save results' },
+    ];
+
     return (
-      <form onSubmit={handleBulkResultSubmit} className="space-y-4">
-        <div className="grid grid-cols-1 sm:grid-cols-4 gap-3">
-          <Field label="Session(Active)">
-            <select
-              value={bulkEntryForm.session}
-              onChange={(e) => onFilterChange({ session: e.target.value, className: '', sectionName: '', examId: '' })}
-              className={`${inp} sm:max-w-[180px]`}
-              disabled={Boolean(activeSession)}
-            >
-              <option value="">{activeSession || 'Select session'}</option>
-              {availableSessions.map((session) => (
-                <option key={session} value={session}>{session}</option>
-              ))}
-            </select>
-          </Field>
-          <Field label="Class">
-            <select
-              value={bulkEntryForm.className}
-              onChange={(e) => onFilterChange({ className: e.target.value, sectionName: '', examId: '' })}
-              className={`${inp} sm:max-w-[180px]`}
-              disabled={!bulkEntryForm.session}
-            >
-              <option value="">Select class</option>
-              {availableClasses.map((className) => (
-                <option key={className} value={className}>{className}</option>
-              ))}
-            </select>
-          </Field>
-          <Field label="Section">
-            <select
-              value={bulkEntryForm.sectionName}
-              onChange={(e) => onFilterChange({ sectionName: e.target.value, examId: '' })}
-              className={`${inp} sm:max-w-[180px]`}
-              disabled={!bulkEntryForm.className}
-            >
-              <option value="">Select section</option>
-              {availableSections.map((sectionName) => (
-                <option key={sectionName} value={sectionName}>{sectionName}</option>
-              ))}
-            </select>
-          </Field>
-          <Field label="Exam Subject">
-            <select
-              value={bulkEntryForm.examId}
-              onChange={(e) => onFilterChange({ examId: e.target.value })}
-              className={`${inp} sm:max-w-[260px]`}
-              disabled={!bulkEntryForm.sectionName}
-            >
-              <option value="">Select exam</option>
-              {examOptions.map((exam) => (
-                <option key={exam._id} value={exam._id}>
-                  {exam.subject || exam.title} {exam.term ? `(${exam.term})` : ''} {exam.marks ? `- Max ${exam.marks}` : ''}
-                </option>
-              ))}
-            </select>
-            {bulkEntryForm.session && bulkEntryForm.className && !examOptions.length && (
-              <p className="text-xs text-amber-600 mt-1">
-                No exam subjects found for the selected session and class.
+      <form onSubmit={handleBulkResultSubmit} className="space-y-5">
+        {/* Step indicator */}
+        <div className="flex items-center">
+          {stepMeta.map((step, idx) => (
+            <React.Fragment key={step.id}>
+              <div className="flex items-center gap-2.5">
+                <div className={`flex h-9 w-9 shrink-0 items-center justify-center rounded-full text-sm font-bold ${
+                  bulkStep === step.id ? 'bg-indigo-600 text-white' : bulkStep > step.id ? 'bg-indigo-100 text-indigo-600' : 'bg-slate-100 text-slate-400'
+                }`}>
+                  {step.id}
+                </div>
+                <div className="hidden sm:block">
+                  <p className={`text-sm font-bold ${bulkStep === step.id ? 'text-indigo-700' : 'text-slate-700'}`}>{step.title}</p>
+                  <p className="text-xs text-slate-400">{step.sub}</p>
+                </div>
+              </div>
+              {idx < stepMeta.length - 1 && <div className="mx-3 h-px flex-1 bg-slate-200" />}
+            </React.Fragment>
+          ))}
+        </div>
+
+        {bulkStep === 1 && (
+          <div className="space-y-3">
+            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-3">
+              <Field label="Session (Active)">
+                <select
+                  value={bulkEntryForm.session}
+                  onChange={(e) => onFilterChange({ session: e.target.value, className: '', sectionName: '', term: '', examId: '' })}
+                  className={inp}
+                  disabled={Boolean(activeSession)}
+                >
+                  <option value="">{activeSession || 'Select session'}</option>
+                  {availableSessions.map((session) => (
+                    <option key={session} value={session}>{session}</option>
+                  ))}
+                </select>
+              </Field>
+              <Field label="Class">
+                <select
+                  value={bulkEntryForm.className}
+                  onChange={(e) => onFilterChange({ className: e.target.value, sectionName: '', term: '', examId: '' })}
+                  className={inp}
+                  disabled={!bulkEntryForm.session}
+                >
+                  <option value="">Select class</option>
+                  {availableClasses.map((className) => (
+                    <option key={className} value={className}>{className}</option>
+                  ))}
+                </select>
+              </Field>
+              <Field label="Section">
+                <select
+                  value={bulkEntryForm.sectionName}
+                  onChange={(e) => onFilterChange({ sectionName: e.target.value, term: '', examId: '' })}
+                  className={inp}
+                  disabled={!bulkEntryForm.className}
+                >
+                  <option value="">Select section</option>
+                  {availableSections.map((sectionName) => (
+                    <option key={sectionName} value={sectionName}>{sectionName}</option>
+                  ))}
+                </select>
+              </Field>
+              <Field label="Type">
+                <select
+                  value={bulkEntryForm.term}
+                  onChange={(e) => onFilterChange({ term: e.target.value, examId: '' })}
+                  className={inp}
+                  disabled={!bulkEntryForm.sectionName}
+                >
+                  <option value="">All types</option>
+                  {examTypeOptions.map((term) => (
+                    <option key={term} value={term}>{term}</option>
+                  ))}
+                </select>
+              </Field>
+              <Field label="Exam">
+                <select
+                  value={bulkEntryForm.examId}
+                  onChange={(e) => onFilterChange({ examId: e.target.value })}
+                  className={inp}
+                  disabled={!bulkEntryForm.sectionName}
+                >
+                  <option value="">Select exam</option>
+                  {examOptions.map((exam) => (
+                    <option key={exam._id} value={exam._id}>
+                      {exam.subject || exam.title} {exam.term ? `(${exam.term})` : ''} {exam.marks ? `- Max ${exam.marks}` : ''}
+                    </option>
+                  ))}
+                </select>
+                {bulkEntryForm.sectionName && !examOptions.length && (
+                  <p className="text-xs text-amber-600 mt-1">
+                    No completed exams found for this class/section{bulkEntryForm.term ? ` and type (${bulkEntryForm.term})` : ''}.
+                  </p>
+                )}
+              </Field>
+            </div>
+
+            <Field label="Subject">
+              <input
+                value={selectedExam?.subject || selectedExam?.title || ''}
+                readOnly
+                placeholder="Select an exam to see its subject"
+                className="w-full rounded-xl border border-slate-200 bg-slate-100 px-3 py-2.5 text-sm text-slate-600"
+              />
+            </Field>
+
+            {selectedExam && (
+              <p className="text-center text-xs text-slate-500">
+                Selected Exam: <span className="font-semibold text-slate-700">{selectedExam.title}</span>
+                {bulkEntryForm.session ? ` (${bulkEntryForm.session})` : ''} • Class {bulkEntryForm.className}
+                {bulkEntryForm.sectionName ? ` - ${bulkEntryForm.sectionName}` : ''} • {selectedExam.subject || selectedExam.title}
               </p>
             )}
-          </Field>
-        </div>
-
-        <div className="rounded-xl border border-slate-200 overflow-hidden">
-          <div className="text-center px-4 py-2.5 bg-slate-50 border-b border-slate-200 text-xs text-slate-500 font-semibold uppercase tracking-wide">
-            Students
           </div>
-          {bulkEntryLoading ? (
-            <div className="p-6 text-sm text-slate-500 flex items-center gap-2">
-              <Loader2 size={14} className="animate-spin" />
-              Loading students...
-            </div>
-          ) : bulkEntryRows.length === 0 ? (
-            <div className="p-6 text-sm text-slate-500">
-              Select session, class, section, and exam to load students.
-            </div>
-          ) : (
-            <div className="max-h-[420px] overflow-auto">
-              <table className="w-full text-sm">
-                <thead className="bg-gray-100 sticky top-0">
-                  <tr className="border-b border-slate-100">
-                    <th className="px-3 py-2 text-left text-xs font-semibold text-slate-500">Student</th>
-                    <th className="px-3 py-2 text-left text-xs font-semibold text-slate-500">Roll</th>
-                    <th className="px-3 py-2 text-left text-xs font-semibold text-slate-500">Marks{selectedExam?.marks ? ` / ${selectedExam.marks}` : ''}</th>
-                    <th className="px-3 py-2 text-left text-xs font-semibold text-slate-500">Grade</th>
-                    <th className="px-3 py-2 text-left text-xs font-semibold text-slate-500">Status</th>
-                    <th className="px-3 py-2 text-left text-xs font-semibold text-slate-500">Remarks</th>
-                  </tr>
-                </thead>
-                <tbody className="divide-y divide-slate-50">
-                  {bulkEntryRows.map((row) => (
-                    <tr key={row.studentId}>
-                      <td className="px-3 py-2">
-                        <div className="font-medium text-slate-800">{row.name || '—'}</div>
-                        <div className="text-xs text-slate-400">{row.studentCode || ''}</div>
-                      </td>
-                      <td className="px-3 py-2 text-slate-600">{row.roll || '—'}</td>
-                      <td className="px-3 py-2">
-                        <input
-                          type="text"
-                          min="0"
-                          max={selectedExam?.marks || undefined}
-                          inputMode="numeric"
-                          pattern="[0-9]*"
-                          value={row.marks}
-                          onChange={(e) => handleBulkRowMarksChange(row.studentId, e.target.value)}
-                          className="w-20 rounded-lg border border-slate-200 px-2 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-100 focus:border-indigo-400"
-                        />
-                      </td>
-                      <td className="px-3 py-2">
-                        <input
-                          type="text"
-                          value={row.grade}
-                          onChange={(e) => {
-                            const value = e.target.value;
-                            setBulkEntryRows((prev) => prev.map((item) => item.studentId === row.studentId ? { ...item, grade: value } : item));
-                          }}
-                          className="w-20 rounded-lg border border-slate-200 px-2 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-100 focus:border-indigo-400"
-                        />
-                      </td>
-                      <td className="px-3 py-2">
-                        <select
-                          value={row.status}
-                          onChange={(e) => {
-                            handleBulkRowStatusChange(row.studentId, e.target.value);
-                          }}
-                          className="rounded-lg border border-slate-200 px-2 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-100 focus:border-indigo-400"
-                        >
-                          <option value="pass">Pass</option>
-                          <option value="fail">Fail</option>
-                          <option value="absent">Absent</option>
-                        </select>
-                      </td>
-                      <td className="px-3 py-2">
-                        <input
-                          type="text"
-                          value={row.remarks}
-                          readOnly
-                          className="w-full rounded-lg border border-slate-200 bg-slate-100 px-2 py-1.5 text-sm text-slate-600 focus:outline-none"
-                        />
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
-          )}
-        </div>
+        )}
 
-        <div className="flex justify-end gap-2.5 pt-2">
-          <button
-            type="button"
-            onClick={closeAddResultModal}
-            className="px-4 py-2 rounded-xl border border-slate-200 text-sm text-slate-600 hover:bg-slate-50"
-          >
-            Cancel
-          </button>
-          <button
-            type="submit"
-            disabled={bulkEntrySubmitting || bulkEntryLoading || !bulkEntryRows.length}
-            className="px-5 py-2 rounded-xl bg-indigo-600 text-white text-sm font-semibold hover:bg-indigo-700 shadow-md shadow-indigo-200 disabled:opacity-60"
-          >
-            {bulkEntrySubmitting ? 'Uploading...' : 'Upload All Marks'}
-          </button>
+        {bulkStep === 2 && (
+          <div className="space-y-3">
+            <div className="rounded-xl border border-slate-200 overflow-hidden h-[300px]">
+              <div className="flex flex-wrap items-center justify-between gap-2 px-4 py-2.5 bg-slate-50 border-b border-slate-200">
+                <p className="text-xs font-semibold text-slate-500 uppercase tracking-wide">Students ({searchedRows.length})</p>
+                <div className="flex items-center gap-2">
+                  <div className="relative">
+                    <Search size={13} className="absolute left-2.5 top-1/2 -translate-y-1/2 text-slate-400" />
+                    <input
+                      value={bulkSearchTerm}
+                      onChange={(e) => { setBulkSearchTerm(e.target.value); setBulkPage(1); }}
+                      placeholder="Search by name or roll number..."
+                      className="rounded-lg border border-slate-200 bg-white pl-7 pr-3 py-1.5 text-xs w-56 focus:outline-none focus:ring-2 focus:ring-indigo-100 focus:border-indigo-400"
+                    />
+                  </div>
+                  <button
+                    type="button"
+                    onClick={handleAutoFill}
+                    disabled={!emptyMarksCount}
+                    className="px-3 py-1.5 rounded-lg border border-indigo-200 text-indigo-700 text-xs font-semibold hover:bg-indigo-50 disabled:opacity-50 disabled:cursor-not-allowed whitespace-nowrap"
+                  >
+                    Auto Fill ({emptyMarksCount})
+                  </button>
+                </div>
+              </div>
+
+              {bulkEntryLoading ? (
+                <div className="p-6 text-sm text-slate-500 flex items-center gap-2">
+                  <Loader2 size={14} className="animate-spin" />
+                  Loading students...
+                </div>
+              ) : bulkEntryRows.length === 0 ? (
+                <div className="p-6 text-sm text-slate-500">No students found for this class/section.</div>
+              ) : (
+                <div className="max-h-[420px] overflow-auto">
+                  <table className="w-full text-sm">
+                    <thead className="bg-gray-100 sticky top-0">
+                      <tr className="border-b border-slate-100">
+                        <th className="px-3 py-2 text-left">
+                          <input
+                            type="checkbox"
+                            checked={pagedRows.length > 0 && pagedRows.every((row) => !bulkExcludedIds.has(row.studentId))}
+                            onChange={(e) => {
+                              setBulkExcludedIds((prev) => {
+                                const next = new Set(prev);
+                                pagedRows.forEach((row) => (e.target.checked ? next.delete(row.studentId) : next.add(row.studentId)));
+                                return next;
+                              });
+                            }}
+                          />
+                        </th>
+                        {/* <th className="px-3 py-2 text-left text-xs font-semibold text-slate-500">#</th> */}
+                        <th className="px-3 py-2 text-left text-xs font-semibold text-slate-500">Roll No.</th>
+                        <th className="px-3 py-2 text-left text-xs font-semibold text-slate-500">Student Name</th>
+                        <th className="px-3 py-2 text-left text-xs font-semibold text-slate-500">Marks (Out of {maxMarks})</th>
+                        <th className="px-3 py-2 text-left text-xs font-semibold text-slate-500">Grade</th>
+                        <th className="px-3 py-2 text-left text-xs font-semibold text-slate-500">Status</th>
+                        <th className="px-3 py-2 text-left text-xs font-semibold text-slate-500">Remarks</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-slate-50">
+                      {pagedRows.map((row) => (
+                        <tr key={row.studentId} className={bulkExcludedIds.has(row.studentId) ? 'opacity-50' : ''}>
+                          <td className="px-3 py-2">
+                            <input
+                              type="checkbox"
+                              checked={!bulkExcludedIds.has(row.studentId)}
+                              onChange={() => {
+                                setBulkExcludedIds((prev) => {
+                                  const next = new Set(prev);
+                                  if (next.has(row.studentId)) next.delete(row.studentId);
+                                  else next.add(row.studentId);
+                                  return next;
+                                });
+                              }}
+                            />
+                          </td>
+                          {/* <td className="px-3 py-2 text-slate-500">{(currentPage - 1) * BULK_ROWS_PER_PAGE + idx + 1}</td> */}
+                          <td className="px-3 py-2 text-slate-600">{row.roll || '—'}</td>
+                          <td className="px-3 py-2">
+                            <div className="font-medium text-slate-800">{row.name || '—'}</div>
+                            <div className="text-xs text-slate-400">{row.studentCode || ''}</div>
+                          </td>
+                          <td className="px-3 py-2">
+                            <input
+                              type="text"
+                              inputMode="numeric"
+                              pattern="[0-9]*"
+                              value={row.marks}
+                              onChange={(e) => handleBulkRowMarksChange(row.studentId, e.target.value)}
+                              className="w-20 rounded-lg border border-slate-200 px-2 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-100 focus:border-indigo-400"
+                            />
+                          </td>
+                          <td className="px-3 py-2">
+                            <span className={`inline-flex min-w-9 justify-center rounded-md px-2 py-1 text-xs font-bold ${
+                              row.grade ? 'bg-emerald-100 text-emerald-700' : 'bg-slate-100 text-slate-400'
+                            }`}>
+                              {row.grade || '—'}
+                            </span>
+                          </td>
+                          <td className="px-3 py-2">
+                            <select
+                              value={row.status}
+                              onChange={(e) => handleBulkRowStatusChange(row.studentId, e.target.value)}
+                              className={`rounded-lg border px-2 py-1.5 text-xs font-semibold ${
+                                row.status === 'fail' ? 'border-red-200 bg-red-50 text-red-700' : row.status === 'absent' ? 'border-slate-200 bg-slate-100 text-slate-600' : 'border-emerald-200 bg-emerald-50 text-emerald-700'
+                              }`}
+                            >
+                              <option value="pass">Pass</option>
+                              <option value="fail">Fail</option>
+                              <option value="absent">Absent</option>
+                            </select>
+                          </td>
+                          <td className="px-3 py-2">
+                            <input
+                              type="text"
+                              value={row.remarks}
+                              readOnly
+                              className="w-full rounded-lg border border-slate-200 bg-slate-100 px-2 py-1.5 text-sm text-slate-600 focus:outline-none"
+                            />
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              )}
+
+              {searchedRows.length > 0 && (
+                <div className="flex items-center justify-between gap-2 px-4 py-2.5 border-t border-slate-100 bg-slate-50">
+                  <p className="text-xs text-slate-500">
+                    Showing {pagedRows.length} of {searchedRows.length} students
+                  </p>
+                  <div className="flex items-center gap-1">
+                    <button type="button" onClick={() => setBulkPage((p) => Math.max(1, p - 1))} disabled={currentPage <= 1}
+                      className="h-7 w-7 flex items-center justify-center rounded-lg border border-slate-200 text-slate-500 hover:bg-white disabled:opacity-40 disabled:cursor-not-allowed">
+                      <ChevronLeft size={14} />
+                    </button>
+                    {Array.from({ length: totalPages }, (_, i) => i + 1).map((p) => (
+                      <button key={p} type="button" onClick={() => setBulkPage(p)}
+                        className={`h-7 w-7 flex items-center justify-center rounded-lg text-xs font-semibold ${p === currentPage ? 'bg-indigo-600 text-white' : 'border border-slate-200 text-slate-600 hover:bg-white'}`}>
+                        {p}
+                      </button>
+                    ))}
+                    <button type="button" onClick={() => setBulkPage((p) => Math.min(totalPages, p + 1))} disabled={currentPage >= totalPages}
+                      className="h-7 w-7 flex items-center justify-center rounded-lg border border-slate-200 text-slate-500 hover:bg-white disabled:opacity-40 disabled:cursor-not-allowed">
+                      <ChevronRight size={14} />
+                    </button>
+                  </div>
+                </div>
+              )}
+            </div>
+          </div>
+        )}
+
+        {bulkStep === 3 && (
+          <div className="space-y-3">
+            <p className="text-center text-xs text-slate-500">
+              <span className="font-semibold text-slate-700">{selectedExam?.title}</span>
+              {bulkEntryForm.session ? ` (${bulkEntryForm.session})` : ''} • Class {bulkEntryForm.className}
+              {bulkEntryForm.sectionName ? ` - ${bulkEntryForm.sectionName}` : ''} • {selectedExam?.subject || selectedExam?.title}
+            </p>
+            <div className="grid grid-cols-3 gap-3">
+              <div className="rounded-xl border border-emerald-100 bg-emerald-50 p-3 text-center">
+                <p className="text-xl font-bold text-emerald-700">{reviewCounts.pass}</p>
+                <p className="text-xs font-semibold text-emerald-600 uppercase">Pass</p>
+              </div>
+              <div className="rounded-xl border border-red-100 bg-red-50 p-3 text-center">
+                <p className="text-xl font-bold text-red-700">{reviewCounts.fail}</p>
+                <p className="text-xs font-semibold text-red-600 uppercase">Fail</p>
+              </div>
+              <div className="rounded-xl border border-slate-200 bg-slate-100 p-3 text-center">
+                <p className="text-xl font-bold text-slate-700">{reviewCounts.absent}</p>
+                <p className="text-xs font-semibold text-slate-500 uppercase">Absent</p>
+              </div>
+            </div>
+            <div className="rounded-xl border border-slate-200 overflow-hidden">
+              <div className="max-h-[30px] overflow-auto">
+                <table className="w-full text-sm">
+                  <thead className="bg-gray-100 sticky top-0">
+                    <tr>
+                      <th className="px-3 py-2 text-left text-xs font-semibold text-slate-500">Student</th>
+                      <th className="px-3 py-2 text-left text-xs font-semibold text-slate-500">Marks</th>
+                      <th className="px-3 py-2 text-left text-xs font-semibold text-slate-500">Grade</th>
+                      <th className="px-3 py-2 text-left text-xs font-semibold text-slate-500">Status</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-slate-50">
+                    {includedRows.map((row) => (
+                      <tr key={row.studentId}>
+                        <td className="px-3 py-2 text-slate-700">{row.name}</td>
+                        <td className="px-3 py-2 text-slate-600">{row.marks} / {maxMarks}</td>
+                        <td className="px-3 py-2 text-slate-600">{row.grade || '—'}</td>
+                        <td className="px-3 py-2 capitalize text-slate-600">{row.status}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+            {!includedRows.length && (
+              <p className="text-center text-sm text-amber-600">No marks entered yet — go back to Enter Marks first.</p>
+            )}
+          </div>
+        )}
+
+        <div className="flex items-center justify-between gap-2.5 pt-2 border-t border-slate-100">
+          <div className="flex items-center gap-2.5">
+            <Info size={14} className="text-slate-400 shrink-0" />
+            <p className="text-xs text-slate-400">Grades, status and remarks are generated automatically based on marks.</p>
+          </div>
+          <div className="flex items-center gap-2.5 shrink-0">
+            {bulkStep > 1 && (
+              <button type="button" onClick={() => setBulkStep((s) => s - 1)} className="px-4 py-2 rounded-xl border border-slate-200 text-sm text-slate-600 hover:bg-slate-50">
+                Back
+              </button>
+            )}
+            <button type="button" onClick={closeAddResultModal} className="px-4 py-2 rounded-xl border border-slate-200 text-sm text-slate-600 hover:bg-slate-50">
+              Cancel
+            </button>
+            {bulkStep < 3 ? (
+              <button
+                type="button"
+                onClick={() => setBulkStep((s) => s + 1)}
+                disabled={(bulkStep === 1 && !canProceedToStep2) || (bulkStep === 2 && !bulkEntryRows.length)}
+                className="px-5 py-2 rounded-xl bg-indigo-600 text-white text-sm font-semibold hover:bg-indigo-700 shadow-md shadow-indigo-200 disabled:opacity-60 disabled:cursor-not-allowed"
+              >
+                Next
+              </button>
+            ) : (
+              <button
+                type="submit"
+                disabled={bulkEntrySubmitting || bulkEntryLoading || !includedRows.length}
+                className="px-5 py-2 rounded-xl bg-indigo-600 text-white text-sm font-semibold hover:bg-indigo-700 shadow-md shadow-indigo-200 disabled:opacity-60"
+              >
+                {bulkEntrySubmitting ? 'Saving...' : 'Save Results'}
+              </button>
+            )}
+          </div>
         </div>
       </form>
     );
@@ -1349,8 +1609,12 @@ const Result = ({ setShowAdminHeader }) => {
     const defaultSession = normalizeSession(activeAcademicYearName);
     setAddResultMode('bulk');
     setResultForm((prev) => ({ ...prev, session: defaultSession || prev.session || '' }));
-    setBulkEntryForm({ session: defaultSession || '', className: '', sectionName: '', examId: '' });
+    setBulkEntryForm({ session: defaultSession || '', className: '', sectionName: '', term: '', examId: '' });
     setBulkEntryRows([]);
+    setBulkStep(1);
+    setBulkSearchTerm('');
+    setBulkExcludedIds(new Set());
+    setBulkPage(1);
     setShowAddResult(true);
 
     void Promise.all([
@@ -1364,10 +1628,14 @@ const Result = ({ setShowAdminHeader }) => {
     setShowAddResult(false);
     setResultForm(emptyR);
     setAddResultMode('single');
-    setBulkEntryForm({ session: '', className: '', sectionName: '', examId: '' });
+    setBulkEntryForm({ session: '', className: '', sectionName: '', term: '', examId: '' });
     setBulkEntryRows([]);
     setBulkEntryLoading(false);
     setBulkEntrySubmitting(false);
+    setBulkStep(1);
+    setBulkSearchTerm('');
+    setBulkExcludedIds(new Set());
+    setBulkPage(1);
   };
 
   useEffect(() => {
@@ -1733,7 +2001,7 @@ const Result = ({ setShowAdminHeader }) => {
       </div>
 
       {/* ═══ ADD RESULT MODAL ═══ */}
-      <Modal show={showAddResult} onClose={closeAddResultModal} title="Add Result" subtitle="Record a student's exam result" icon={Plus} iconColor="bg-indigo-600">
+      <Modal show={showAddResult} onClose={closeAddResultModal} title="Add Result" subtitle="Record and upload students' exam results" icon={Plus} iconColor="bg-indigo-600" maxWidth="sm:max-w-4xl">
         <div className="space-y-4">
           <div className="inline-flex rounded-full border border-slate-200 p-1 bg-slate-50">
             <button
