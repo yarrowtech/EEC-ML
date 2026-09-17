@@ -2267,6 +2267,49 @@ const Students = ({ setShowAdminHeader }) => {
     };
   };
 
+  // Small copy-to-clipboard button for a plain ID value (Student ID / Parent
+  // ID) — same icon set / wiring pattern as buildCredentialPasswordBlock's
+  // password copy button, just without the show/hide toggle.
+  const buildCredentialIdRow = (label, value, idPrefix) => {
+    const valueId = `swal-${idPrefix}-value`;
+    const copyId = `swal-${idPrefix}-copy`;
+    const copyBtnBaseClasses = ["border-gray-200", "bg-gray-50", "text-gray-600", "hover:bg-gray-100"];
+    const copyBtnSuccessClasses = ["border-emerald-200", "bg-emerald-50", "text-emerald-600"];
+    const copyBtnClass = `inline-flex items-center gap-1.5 rounded-lg border px-2.5 py-1.5 text-xs font-semibold active:scale-95 transition-all ${copyBtnBaseClasses.join(" ")}`;
+    const hasValue = value && value !== "-";
+    return {
+      html: `
+        <div>
+          <div class="text-xs font-semibold text-gray-500 uppercase">${escapeHtml(label)}</div>
+          <div class="flex items-center gap-2 mt-1">
+            <div class="font-mono text-sm text-gray-900" id="${valueId}">${escapeHtml(value)}</div>
+            ${hasValue ? `<button type="button" id="${copyId}" class="${copyBtnClass}">${CRED_ICON_COPY}<span>Copy</span></button>` : ""}
+          </div>
+        </div>
+      `,
+      wire: () => {
+        if (!hasValue) return;
+        const copyBtn = document.getElementById(copyId);
+        if (!copyBtn) return;
+        copyBtn.addEventListener("click", async () => {
+          try {
+            await navigator.clipboard.writeText(value);
+            copyBtn.innerHTML = `${CRED_ICON_CHECK}<span>Copied!</span>`;
+            copyBtn.classList.remove(...copyBtnBaseClasses);
+            copyBtn.classList.add(...copyBtnSuccessClasses);
+            setTimeout(() => {
+              copyBtn.innerHTML = `${CRED_ICON_COPY}<span>Copy</span>`;
+              copyBtn.classList.remove(...copyBtnSuccessClasses);
+              copyBtn.classList.add(...copyBtnBaseClasses);
+            }, 1500);
+          } catch {
+            copyBtn.innerHTML = `${CRED_ICON_X}<span>Failed</span>`;
+          }
+        });
+      },
+    };
+  };
+
   const handleViewStudentCredentials = (student) => {
     if (!student) return;
     const loginId = student.username || student.studentCode || "-";
@@ -2282,29 +2325,40 @@ const Students = ({ setShowAdminHeader }) => {
     const parentId = parent?.username || parent?.userId || "-";
     const parentResetAt = parent?.lastLoginAt ? new Date(parent.lastLoginAt) : null;
 
+    const studentIdBlock = buildCredentialIdRow("Student ID", loginId, "sid");
+    const parentIdBlock = buildCredentialIdRow("Parent ID", parentId, "pid");
     const studentBlock = buildCredentialPasswordBlock("Password", studentResetAt, student.initialPassword, "spw");
     const parentBlock = buildCredentialPasswordBlock("Parent Password", parentResetAt, parent?.initialPassword, "ppw");
 
+    const photoUrl = isSafeImageUrl(student.profilePic) ? student.profilePic : "";
+    const classSectionRoll = [
+      [student.class || student.grade, student.section].filter(Boolean).join(" - "),
+      student.roll ? `Roll ${student.roll}` : "",
+    ].filter(Boolean).join(" · ");
+
     Swal.fire({
-      icon: "info",
       title: "Student Credentials",
       html: `
         <div class="text-left space-y-3">
-          <div>
-            <div class="text-xs font-semibold text-gray-500 uppercase">Student ID</div>
-            <div class="font-mono text-sm text-gray-900">${escapeHtml(loginId)}</div>
+          <div class="flex flex-col items-center gap-1 pb-2">
+            ${photoUrl
+              ? `<img src="${photoUrl}" alt="${escapeHtml(student.name || "Student")}" class="h-16 w-16 rounded-full object-cover border border-gray-200" />`
+              : `<div class="h-16 w-16 rounded-full bg-gray-100 border border-gray-200 flex items-center justify-center text-xl font-bold text-gray-300">${escapeHtml((student.name || "?").charAt(0))}</div>`
+            }
+            <div class="text-sm font-semibold text-gray-900">${escapeHtml(student.name || "Student")}</div>
+            ${classSectionRoll ? `<div class="text-xs text-gray-500">${escapeHtml(classSectionRoll)}</div>` : ""}
           </div>
+          ${studentIdBlock.html}
           ${studentBlock.html}
           <div class="pt-2 border-t border-gray-200"></div>
-          <div>
-            <div class="text-xs font-semibold text-gray-500 uppercase">Parent ID</div>
-            <div class="font-mono text-sm text-gray-900">${escapeHtml(parentId)}</div>
-          </div>
+          ${parentIdBlock.html}
           ${parentBlock.html}
         </div>
       `,
       confirmButtonColor: "#EAB308",
       didOpen: () => {
+        studentIdBlock.wire();
+        parentIdBlock.wire();
         studentBlock.wire();
         parentBlock.wire();
       },
@@ -3985,38 +4039,6 @@ const Students = ({ setShowAdminHeader }) => {
 
             
            
-            {selectedStudentIds.length > 0 && (
-              <button
-                onClick={handleBulkArchiveStudents}
-                disabled={isArchiving}
-                className="bg-blue-600 text-white px-3 py-2 rounded-full hover:bg-blue-700 disabled:opacity-60 flex items-center gap-2 text-sm flex-1 sm:flex-none justify-center transition"
-                title={`Archive ${selectedStudentIds.length} selected student(s)`}
-              >
-                <Archive size={15} />
-                {/* {isArchiving ? "Archiving..." : `Archive (${selectedStudentIds.length})`} */}
-                {isArchiving ? "Archiving..." : `Archive All`}
-              </button>
-            )}
-            {selectedStudentIds.length > 0 && (
-              <button
-                onClick={handleBulkDeleteStudents}
-                disabled={isBulkDeleting}
-                className="relative overflow-hidden bg-red-500 text-white px-3 py-2 rounded-full hover:bg-red-600 disabled:opacity-100 flex items-center gap-2 text-sm flex-1 sm:flex-none justify-center transition min-w-[130px]"
-                title={`Delete ${selectedStudentIds.length} selected student(s)`}
-              >
-                {isBulkDeleting && (
-                  <span
-                    className="absolute inset-y-0 left-0 bg-red-700/60 transition-all duration-200 ease-out"
-                    style={{ width: `${deleteProgress}%` }}
-                  />
-                )}
-                <span className="relative flex items-center gap-2">
-                  {isBulkDeleting ? <Loader2 size={15} className="animate-spin" /> : <Trash2 size={15} />}
-                  {/* {isBulkDeleting ? `Deleting... ${deleteProgress}%` : `Delete (${selectedStudentIds.length})`} */}
-                  {isBulkDeleting ? `Deleting... ${deleteProgress}%` : `Delete All`}
-                </span>
-              </button>
-            )}
             <button
               onClick={() => setShowDraftsModal(true)}
               className="relative border border-gray-200 bg-white text-gray-700 px-3 py-2 rounded-full hover:bg-gray-50 flex items-center gap-2 text-sm flex-1 sm:flex-none justify-center transition"
@@ -4049,6 +4071,40 @@ const Students = ({ setShowAdminHeader }) => {
               {/* {isAllFilteredSelected ? "Deselect All" : `Select All (${filteredStudentIds.length})`} */ }
               {isAllFilteredSelected ? "Deselect All" : `Select All`}
             </button>
+            {/* Only meaningful once something is selected — grouped right next
+                to Select All / Deselect All instead of sitting earlier in the
+                row, where their appearing/disappearing used to reflow and
+                misalign every button after them. */}
+            {selectedStudentIds.length > 0 && (
+              <button
+                onClick={handleBulkArchiveStudents}
+                disabled={isArchiving}
+                className="bg-blue-600 text-white px-3 py-2 rounded-full hover:bg-blue-700 disabled:opacity-60 flex items-center gap-2 text-sm flex-1 sm:flex-none justify-center transition"
+                title={`Archive ${selectedStudentIds.length} selected student(s)`}
+              >
+                <Archive size={15} />
+                {isArchiving ? "Archiving..." : `Archive All`}
+              </button>
+            )}
+            {selectedStudentIds.length > 0 && (
+              <button
+                onClick={handleBulkDeleteStudents}
+                disabled={isBulkDeleting}
+                className="relative overflow-hidden bg-red-500 text-white px-3 py-2 rounded-full hover:bg-red-600 disabled:opacity-100 flex items-center gap-2 text-sm flex-1 sm:flex-none justify-center transition min-w-[130px]"
+                title={`Delete ${selectedStudentIds.length} selected student(s)`}
+              >
+                {isBulkDeleting && (
+                  <span
+                    className="absolute inset-y-0 left-0 bg-red-700/60 transition-all duration-200 ease-out"
+                    style={{ width: `${deleteProgress}%` }}
+                  />
+                )}
+                <span className="relative flex items-center gap-2">
+                  {isBulkDeleting ? <Loader2 size={15} className="animate-spin" /> : <Trash2 size={15} />}
+                  {isBulkDeleting ? `Deleting... ${deleteProgress}%` : `Delete All`}
+                </span>
+              </button>
+            )}
             <button
               onClick={handleRefreshTableData}
               disabled={tableRefreshing || bulkBusy}
