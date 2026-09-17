@@ -3898,7 +3898,7 @@ const Students = ({ setShowAdminHeader }) => {
               Manage and monitor all enrolled students
             </p>
           </div>
-          <div className="flex flex-wrap gap-2 w-full sm:w-auto justify-stretch sm:justify-start">
+          <div className="flex flex-wrap gap-2 w-full sm:w-auto justify-stretch sm:justify-center">
             <button
               onClick={startNewEnrollment}
               className="bg-amber-500 text-white px-3 py-2 rounded-full hover:bg-amber-600 flex items-center gap-2 text-sm flex-1 sm:flex-none justify-center transition"
