@@ -642,7 +642,7 @@ const FeesCollection = ({ setShowAdminHeader }) => {
       </div>
 
       {/* ── View tabs ── */}
-      <div className="fc-in inline-flex items-center gap-1 rounded-2xl border border-white/60 bg-white/55 p-1 backdrop-blur-md">
+      <div className="fc-in inline-flex items-center gap-1 rounded-full border border-white/60 bg-white/55 p-1 backdrop-blur-md">
         {[
           { key: 'overview', label: 'Overview', icon: BarChart4 },
           { key: 'payments', label: 'Collect & Manage', icon: CreditCard },
@@ -651,7 +651,7 @@ const FeesCollection = ({ setShowAdminHeader }) => {
             key={tab.key}
             type="button"
             onClick={() => setActiveView(tab.key)}
-            className={`inline-flex items-center gap-2 rounded-xl px-4 py-2 text-xs font-semibold transition-all duration-150 ${
+            className={`inline-flex items-center gap-2 rounded-full px-4 py-2 text-xs font-semibold transition-all duration-150 ${
               activeView === tab.key
                 ? 'bg-violet-500 text-white shadow-[0_8px_20px_rgba(139,92,246,0.3)]'
                 : 'text-slate-500 hover:bg-white/70'
