@@ -13,20 +13,13 @@ import {
 } from 'lucide-react';
 
 /**
- * Mobile-only bottom tab bar for the admin portal (hidden at `lg` and up,
- * where the sidebar takes over).
+ * Mobile-only bottom tab bar for the admin portal.
  *
- * Five slots:
- * - Dashboard
- * - Students
- * - Teachers
- * - Fees
- * - Profile
- *
- * Active tab:
- * - Amber pill/capsule background
- * - White icon
- * - White text
+ * Active state:
+ * - Icon gets a circular amber background
+ * - Icon becomes white
+ * - Text becomes amber
+ * - No background behind the complete tab
  */
 
 const TABS = [
@@ -134,7 +127,7 @@ const AdminBottomNav = ({
   }, [pathname]);
 
   /* -------------------------------------------------------
-     Active state
+     Active states
   ------------------------------------------------------- */
 
   const onPrimaryTab = TABS.some(({ match }) =>
@@ -165,7 +158,7 @@ const AdminBottomNav = ({
       "
       aria-label="Primary navigation"
     >
-      <div className="grid h-14 grid-cols-5 px-1.5">
+      <div className="grid h-14 grid-cols-5 px-1">
 
         {/* ==================================================
             PRIMARY TABS
@@ -197,91 +190,93 @@ const AdminBottomNav = ({
                 }
                 className="
                   flex
+                  flex-col
                   items-center
                   justify-center
-                  px-2
-                  py-1.5
+                  gap-0.5
                   transition-all
                   active:scale-95
                 "
               >
-                {/* Active pill */}
+
+                {/* ==========================================
+                    ICON CIRCLE
+                ========================================== */}
+
                 <span
                   className={`
+                    relative
                     flex
-                    h-full
-                    w-full
-                    flex-col
+                    h-8
+                    w-8
                     items-center
                     justify-center
-                    gap-0.5
                     rounded-full
                     transition-all
                     duration-200
                     ${
                       active
                         ? 'bg-amber-500 text-white shadow-sm'
-                        : 'text-slate-400'
+                        : 'bg-transparent text-slate-400'
                     }
                   `}
                 >
+                  <Icon
+                    size={19}
+                    strokeWidth={
+                      active
+                        ? 2.5
+                        : 2
+                    }
+                  />
 
-                  {/* Icon + notification badge */}
-                  <span className="relative">
-
-                    <Icon
-                      size={20}
-                      strokeWidth={
-                        active
-                          ? 2.5
-                          : 2
-                      }
-                    />
-
-                    {count > 0 && (
-                      <span
-                        className="
-                          absolute
-                          -right-1.5
-                          -top-1.5
-                          flex
-                          h-3.5
-                          min-w-3.5
-                          items-center
-                          justify-center
-                          rounded-full
-                          bg-red-500
-                          px-1
-                          text-[8px]
-                          font-bold
-                          text-white
-                        "
-                      >
-                        {count > 99
-                          ? '99+'
-                          : count}
-                      </span>
-                    )}
-
-                  </span>
-
-                  {/* Label */}
-                  <span
-                    className={`
-                      text-[10px]
-                      leading-none
-                      tracking-tight
-                      ${
-                        active
-                          ? 'font-bold text-white'
-                          : 'font-medium'
-                      }
-                    `}
-                  >
-                    {label}
-                  </span>
-
+                  {/* Notification badge */}
+                  {count > 0 && (
+                    <span
+                      className="
+                        absolute
+                        -right-1
+                        -top-1
+                        flex
+                        h-3.5
+                        min-w-3.5
+                        items-center
+                        justify-center
+                        rounded-full
+                        bg-red-500
+                        px-1
+                        text-[8px]
+                        font-bold
+                        text-white
+                      "
+                    >
+                      {count > 99
+                        ? '99+'
+                        : count}
+                    </span>
+                  )}
                 </span>
+
+                {/* ==========================================
+                    TEXT
+                ========================================== */}
+
+                <span
+                  className={`
+                    text-[10px]
+                    leading-none
+                    tracking-tight
+                    transition-colors
+                    ${
+                      active
+                        ? 'font-bold text-amber-600'
+                        : 'font-medium text-slate-400'
+                    }
+                  `}
+                >
+                  {label}
+                </span>
+
               </Link>
             );
           }
@@ -297,8 +292,8 @@ const AdminBottomNav = ({
             relative
             flex
             h-full
-            px-2
-            py-1.5
+            items-center
+            justify-center
           "
         >
           <button
@@ -313,32 +308,29 @@ const AdminBottomNav = ({
                 ? undefined
                 : 'page'
             }
-            className={`
+            className="
               flex
               w-full
               flex-col
               items-center
               justify-center
               gap-0.5
-              rounded-full
               transition-all
-              duration-200
               active:scale-95
-              ${
-                profileActive
-                  ? 'bg-amber-500 text-white shadow-sm'
-                  : 'text-slate-400'
-              }
-            `}
+            "
             aria-label="Open profile menu"
             aria-expanded={
               showProfileMenu
             }
           >
 
-            {/* Profile image */}
+            {/* ==========================================
+                PROFILE CIRCLE
+            ========================================== */}
+
             <span
               className={`
+                relative
                 flex
                 h-8
                 w-8
@@ -347,11 +339,12 @@ const AdminBottomNav = ({
                 justify-center
                 overflow-hidden
                 rounded-full
-                ring-1
+                transition-all
+                duration-200
                 ${
                   profileActive
-                    ? 'ring-white/70'
-                    : 'ring-slate-300'
+                    ? 'bg-amber-500 text-white shadow-sm ring-2 ring-amber-600'
+                    : 'bg-transparent ring-1 ring-slate-300'
                 }
               `}
             >
@@ -386,16 +379,17 @@ const AdminBottomNav = ({
               )}
             </span>
 
-            {/* Profile label */}
+            {/* Profile text */}
             <span
               className={`
                 text-[10px]
                 leading-none
                 tracking-tight
+                transition-colors
                 ${
                   profileActive
-                    ? 'font-bold text-white'
-                    : 'font-medium'
+                    ? 'font-bold text-amber-600'
+                    : 'font-medium text-slate-400'
                 }
               `}
             >
@@ -441,8 +435,6 @@ const AdminBottomNav = ({
                   py-3
                 "
               >
-
-                {/* Avatar */}
                 <div
                   className="
                     flex
@@ -484,7 +476,6 @@ const AdminBottomNav = ({
                   )}
                 </div>
 
-                {/* Name / Role */}
                 <div
                   className="
                     min-w-0
@@ -513,20 +504,16 @@ const AdminBottomNav = ({
                     {profileRole}
                   </p>
                 </div>
-
               </div>
 
-              {/* Menu items */}
+              {/* Menu */}
               <div className="py-1.5">
 
                 {/* Full Menu */}
                 <button
                   type="button"
                   onClick={() => {
-                    setShowProfileMenu(
-                      false
-                    );
-
+                    setShowProfileMenu(false);
                     onOpenMore?.();
                   }}
                   className="
@@ -547,7 +534,6 @@ const AdminBottomNav = ({
                     size={15}
                     className="text-slate-400"
                   />
-
                   Full Menu
                 </button>
 
@@ -555,13 +541,8 @@ const AdminBottomNav = ({
                 <button
                   type="button"
                   onClick={() => {
-                    setShowProfileMenu(
-                      false
-                    );
-
-                    navigate(
-                      '/admin/settings'
-                    );
+                    setShowProfileMenu(false);
+                    navigate('/admin/settings');
                   }}
                   className="
                     flex
@@ -581,7 +562,6 @@ const AdminBottomNav = ({
                     size={15}
                     className="text-slate-400"
                   />
-
                   Settings
                 </button>
 
@@ -598,10 +578,7 @@ const AdminBottomNav = ({
                 <button
                   type="button"
                   onClick={() => {
-                    setShowProfileMenu(
-                      false
-                    );
-
+                    setShowProfileMenu(false);
                     onLogoutRequest?.();
                   }}
                   className="
@@ -619,7 +596,6 @@ const AdminBottomNav = ({
                   "
                 >
                   <LogOut size={15} />
-
                   Logout
                 </button>
 
@@ -627,6 +603,7 @@ const AdminBottomNav = ({
             </div>
           )}
         </div>
+
       </div>
     </nav>
   );

@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { motion } from 'framer-motion';
 import {
@@ -13,36 +13,20 @@ import {
 import {
   Users,
   GraduationCap,
+  UserRound,
+  User,
   BookOpen,
   UserPlus,
   School,
-  Info,
-  ArrowRight,
-  ArrowUp,
-  ChevronLeft,
-  ChevronRight,
-  CalendarDays,
-  Wallet,
-  Receipt,
-  Megaphone,
-  ClipboardCheck,
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { cn } from '@/lib/utils';
 import { apiFetch } from '../utils/authSession';
 import './Dashboard.css';
-// ₹ in Indian short form: 8.42L, 1.2Cr, 45.6K.
-const formatRupeesShort = (amount) => {
-  const n = Number(amount) || 0;
-  if (n >= 1e7) return `₹${(n / 1e7).toFixed(2)}Cr`;
-  if (n >= 1e5) return `₹${(n / 1e5).toFixed(2)}L`;
-  if (n >= 1e3) return `₹${(n / 1e3).toFixed(1)}K`;
-  return `₹${Math.round(n).toLocaleString('en-IN')}`;
-};
 
 // ── Data layer ───────────────────────────────────────────────────────────────
 
-const DASHBOARD_CACHE_PREFIX = 'admin_dashboard_cache_v2'; // v2: fees scoped to active year
+const DASHBOARD_CACHE_PREFIX = 'admin_dashboard_cache_v1';
 const CACHE_TTL = { stats: 2 * 60 * 1000, financial: 5 * 60 * 1000 };
 
 const getCacheStorage = () => {
@@ -110,170 +94,48 @@ const formatCompactINR = (value = 0) => {
   return `₹${n}`;
 };
 
-// Greeting-banner cover photo, kept as an object URL across dashboard visits.
-const coverObjectUrlCache = { remote: '', url: '' };
-
 // ── Presentational ───────────────────────────────────────────────────────────
 
-// Counts up from 0 to `target` over `duration` ms whenever `target` changes
-// (an ease-out curve so it settles rather than ticking at a constant rate).
-const useCountUp = (target, duration = 900) => {
-  const [value, setValue] = useState(0);
-  useEffect(() => {
-    const end = Number(target) || 0;
-    if (end <= 0) {
-      setValue(0);
-      return undefined;
-    }
-    let frame;
-    const start = performance.now();
-    const tick = (now) => {
-      const progress = Math.min(1, (now - start) / duration);
-      const eased = 1 - (1 - progress) ** 3;
-      setValue(Math.round(end * eased));
-      if (progress < 1) frame = requestAnimationFrame(tick);
-    };
-    frame = requestAnimationFrame(tick);
-    return () => cancelAnimationFrame(frame);
-  }, [target, duration]);
-  return value;
-};
-
-// Stat card: tinted icon tile, label + big count, arrow link, "+N vs last 30
-// days" pill, optional footnote and a soft decorative wave in the corner.
-const StatCard = ({ label, value, valueText, sub, subTone = 'neutral', icon, recent, color, tint, delay, loading, note, info, onOpen }) => {
-  const animatedValue = useCountUp(loading ? 0 : value);
-  return (
-    <motion.div
-      initial={{ opacity: 0, y: 20 }}
-      animate={{ opacity: 1, y: 0 }}
-      transition={{ delay, duration: 0.5, ease: 'easeOut' }}
-      whileHover={{ y: -3, transition: { duration: 0.15 } }}
-      className="relative min-w-0 overflow-hidden rounded-2xl border border-slate-100 bg-white p-3 sm:p-4 shadow-[0_4px_20px_rgba(15,23,42,0.05)] flex flex-col"
-    >
-      <svg
-        className="pointer-events-none absolute -bottom-2 right-0 h-20 w-3/5"
-        viewBox="0 0 200 80"
-        preserveAspectRatio="none"
-        aria-hidden="true"
-      >
-        <path d="M0,80 C60,78 70,40 120,30 C160,22 180,8 200,0 L200,80 Z" fill={tint} opacity="0.55" />
-      </svg>
-
-      <div className="relative flex items-start gap-3">
-        <span
-          className="flex h-10 w-10 sm:h-12 sm:w-12 shrink-0 items-center justify-center rounded-xl"
-          style={{ color, background: tint }}
-          aria-hidden="true"
-        >
-          {icon}
-        </span>
-        <div className="min-w-0 flex-1">
-          <p className="flex min-w-0 items-center gap-1.5 text-xs sm:text-sm font-medium text-slate-700">
-            {label}
-            {info ? (
-              <span title={info} className="text-slate-400">
-                <Info size={14} />
-              </span>
-            ) : null}
-          </p>
-          <p className="whitespace-nowrap text-xl sm:text-2xl font-bold leading-tight text-slate-900 tabular-nums">
-            {loading ? '—' : (valueText ?? animatedValue.toLocaleString('en-IN'))}
-          </p>
-        </div>
-        {onOpen ? (
-          <button
-            type="button"
-            onClick={onOpen}
-            className="hidden sm:flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-blue-50 text-blue-600 transition-colors hover:bg-blue-100"
-            aria-label={`Open ${label}`}
-          >
-            <ArrowRight size={16} />
-          </button>
-        ) : null}
-      </div>
-
-      {sub !== undefined ? (
-        <div className="relative mt-2.5 flex items-center gap-2">
-          <span
-            className={`inline-flex max-w-full items-center gap-1 rounded-full px-2 sm:px-2.5 py-0.5 text-[11px] sm:text-xs font-semibold leading-snug ${subTone === 'up' ? 'bg-emerald-50 text-emerald-600'
-              : subTone === 'down' ? 'bg-rose-50 text-rose-600'
-                : 'bg-slate-100 text-slate-600'
-              }`}
-          >
-            {subTone === 'up' ? <ArrowUp size={12} strokeWidth={2.5} /> : null}
-            {subTone === 'down' ? <ArrowUp size={12} strokeWidth={2.5} className="rotate-180" /> : null}
-            {loading ? '—' : sub}
-          </span>
-        </div>
-      ) : (
-        <div className="relative mt-2.5 flex items-center gap-2">
-          <span className="inline-flex items-center gap-1 rounded-full bg-emerald-50 px-2.5 py-0.5 text-xs font-semibold text-emerald-600">
-            <ArrowUp size={12} strokeWidth={2.5} />
-            {loading ? '—' : `+${Number(recent || 0).toLocaleString('en-IN')}`}
-          </span>
-          <span className="text-xs text-slate-400">vs last 30 days</span>
-        </div>
-      )}
-      {note ? <p className="relative mt-1.5 text-[11px] leading-snug text-slate-500">{note}</p> : null}
-    </motion.div>
-  );
-};
-
-// Small inline school illustration for the greeting banner.
-const SchoolIllustration = () => (
-  <svg viewBox="0 0 260 110" className="h-full w-auto" aria-hidden="true">
-    <ellipse cx="45" cy="18" rx="16" ry="7" fill="#e2e8f0" />
-    <ellipse cx="215" cy="16" rx="18" ry="7" fill="#e2e8f0" />
-    <g fill="#a7e3cf">
-      <ellipse cx="22" cy="62" rx="14" ry="26" />
-      <ellipse cx="60" cy="76" rx="10" ry="18" />
-      <ellipse cx="232" cy="80" rx="8" ry="15" />
-    </g>
-    <g stroke="#94a3b8" strokeWidth="1.5">
-      <line x1="22" y1="70" x2="22" y2="108" />
-      <line x1="60" y1="82" x2="60" y2="108" />
-      <line x1="232" y1="86" x2="232" y2="108" />
-    </g>
-    <rect x="80" y="52" width="130" height="56" rx="2" fill="#dbe4fb" />
-    <polygon points="72,54 145,54 145,42 90,42" fill="#b9c8f3" />
-    <polygon points="145,54 218,54 200,42 145,42" fill="#b9c8f3" />
-    <rect x="120" y="30" width="50" height="78" fill="#e4ebfd" />
-    <polygon points="112,34 145,10 178,34" fill="#b9c8f3" />
-    <line x1="145" y1="10" x2="145" y2="0" stroke="#94a3b8" strokeWidth="1.5" />
-    <polygon points="145,0 158,3 145,6" fill="#b9c8f3" />
-    <circle cx="145" cy="40" r="6" fill="#fff" stroke="#b9c8f3" strokeWidth="1.5" />
-    <path d="M136,108 v-16 a9,9 0 0 1 18,0 v16 z" fill="#b9c8f3" />
-    <g fill="#fff">
-      {[88, 100, 184, 196].map((x) => (
-        <g key={x}>
-          <rect x={x} y="62" width="8" height="8" rx="1" />
-          <rect x={x} y="78" width="8" height="8" rx="1" />
-        </g>
-      ))}
-      <rect x="128" y="54" width="8" height="8" rx="1" />
-      <rect x="154" y="54" width="8" height="8" rx="1" />
-    </g>
-  </svg>
+const StatCard = ({ label, value, icon, sub, color, delay, loading }) => (
+  <motion.div
+    initial={{ opacity: 0, y: 20 }}
+    animate={{ opacity: 1, y: 0 }}
+    transition={{ delay, duration: 0.5, ease: 'easeOut' }}
+    whileHover={{ y: -4, transition: { duration: 0.15 } }}
+    className="glass-card p-5 flex flex-col"
+  >
+    <div className="flex items-center justify-between mb-2">
+      <span className="stat-label">{label}</span>
+      <span className="opacity-60" style={{ color }} aria-hidden="true">
+        {icon}
+      </span>
+    </div>
+    {loading ? (
+      <span className="stat-skeleton" aria-hidden="true" />
+    ) : (
+      <span className="stat-number">{value}</span>
+    )}
+    <div className="flex items-center gap-1.5 mt-1.5">
+      <span className="text-[10px] font-medium text-emerald-600 bg-emerald-50 px-2 py-0.5 rounded-full">
+        {loading ? '—' : sub}
+      </span>
+      <span className="text-[10px] text-slate-400">last 30 days</span>
+    </div>
+  </motion.div>
 );
 
-// Grid tile: tinted icon badge on top, label underneath.
 const QuickAction = ({ label, icon, color, onClick }) => (
   <Button
     variant="ghost"
     onClick={onClick}
     className={cn(
-      'h-auto w-full flex-col items-center justify-center gap-2 lg:gap-1.5 whitespace-normal',
-      'bg-white/30 backdrop-blur-sm border border-white/40 rounded-full',
-      'hover:bg-white/70 hover:border-white/70 hover:-translate-y-0.5 transition-all',
-      'text-slate-700 font-medium text-xs sm:text-sm px-2 py-4 lg:py-1.5 text-center leading-tight',
+      'quick-action-btn w-full justify-start',
+      'bg-white/30 backdrop-blur-sm border border-white/30 rounded-full',
+      'hover:bg-white/60 hover:border-white/60 transition-all',
+      'text-slate-700 font-medium text-sm px-4 py-2 h-auto',
     )}
   >
-    <span
-      className="flex h-10 w-10 lg:h-8 lg:w-8 shrink-0 items-center justify-center rounded-full"
-      style={{ color, background: `${color}1a` }}
-      aria-hidden="true"
-    >
+    <span className="icon" style={{ color }} aria-hidden="true">
       {icon}
     </span>
     {label}
@@ -327,13 +189,12 @@ const Dashboard = ({ setShowAdminHeader }) => {
         const headers = { authorization: `Bearer ${localStorage.getItem('token')}` };
         // Same endpoint the Fees Dashboard uses, so both pages report identical
         // collected / outstanding / overdue figures.
-        const res = await apiFetch(`${import.meta.env.VITE_API_URL}/api/fees/admin/summary?activeYear=1`, { headers }, navigate);
+        const res = await apiFetch(`${import.meta.env.VITE_API_URL}/api/fees/admin/summary`, { headers }, navigate);
         const data = await res.json().catch(() => ({}));
         if (!res.ok) throw new Error(data?.error || 'Failed to load fee summary');
         if (cancelled) return;
         const next = {
           trend: Array.isArray(data?.monthlyTrend) ? data.monthlyTrend : [],
-          activeYearName: data?.academicYearName || '',
           totals: {
             totalCollected: Number(data?.totals?.totalCollected || 0),
             totalOutstanding: Number(data?.totals?.totalOutstanding || 0),
@@ -355,43 +216,6 @@ const Dashboard = ({ setShowAdminHeader }) => {
     };
   }, [navigate]);
 
-  // School cover photo for the greeting banner. Loaded as a blob and shown via
-  // an in-memory object URL (CSS background, no <img>), so the Cloudinary URL
-  // never appears in the DOM and the photo can't be dragged / right-click saved.
-  const [coverSrc, setCoverSrc] = useState(() => coverObjectUrlCache.url || '');
-  useEffect(() => {
-    let cancelled = false;
-    (async () => {
-      try {
-        const res = await apiFetch(
-          `${import.meta.env.VITE_API_URL}/api/admin/auth/settings`,
-          { headers: { authorization: `Bearer ${localStorage.getItem('token')}` } },
-          navigate,
-        );
-        const data = await res.json().catch(() => ({}));
-        const remote = String(data?.admin?.coverImage || '').trim();
-        if (!res.ok || !remote) {
-          if (!cancelled) setCoverSrc('');
-          return;
-        }
-        if (coverObjectUrlCache.remote === remote && coverObjectUrlCache.url) {
-          if (!cancelled) setCoverSrc(coverObjectUrlCache.url);
-          return;
-        }
-        const imgRes = await fetch(remote, { credentials: 'omit', referrerPolicy: 'no-referrer' });
-        if (!imgRes.ok) throw new Error('cover fetch failed');
-        const blob = await imgRes.blob();
-        if (coverObjectUrlCache.url) URL.revokeObjectURL(coverObjectUrlCache.url);
-        coverObjectUrlCache.remote = remote;
-        coverObjectUrlCache.url = URL.createObjectURL(blob);
-        if (!cancelled) setCoverSrc(coverObjectUrlCache.url);
-      } catch {
-        /* no cover — banner keeps its illustration */
-      }
-    })();
-    return () => { cancelled = true; };
-  }, [navigate]);
-
   const greeting = useMemo(() => {
     const h = new Date().getHours();
     if (h < 12) return 'Good morning';
@@ -399,125 +223,51 @@ const Dashboard = ({ setShowAdminHeader }) => {
     return 'Good evening';
   }, []);
 
-  const statCards = useMemo(() => {
-    const studentGrowth = stats?.students?.growthThisYear;
-    const onLeave = stats?.teachers?.onLeaveToday ?? 0;
-
-    // Fees: total collected this session; trend = this month vs last month.
-    const trend = financial?.trend ?? [];
-    const thisMonth = Number(trend[trend.length - 1]?.collected || 0);
-    const lastMonth = Number(trend[trend.length - 2]?.collected || 0);
-    const feeChange = lastMonth > 0 ? Math.round(((thisMonth - lastMonth) / lastMonth) * 1000) / 10 : null;
-
-    const att = stats?.attendanceToday || {};
-    const attTotal = Number(att.total || stats?.students?.total || 0);
-    const attPresent = Number(att.present || 0);
-    const attMarked = Number(att.marked || 0) > 0;
-    const attPct = attMarked && attTotal > 0 ? Math.round((attPresent / attTotal) * 1000) / 10 : null;
-
-    const pctSub = (pct, suffix) => ({
-      sub: pct === null || pct === undefined ? `No change ${suffix}` : `${Math.abs(pct)}% ${suffix}`,
-      subTone: pct > 0 ? 'up' : pct < 0 ? 'down' : 'neutral',
-    });
-
-    return [
+  const statCards = useMemo(
+    () => [
       {
         label: 'Students',
-        value: stats?.students?.total ?? 0,
-        ...(studentGrowth === null || studentGrowth === undefined
-          ? { sub: `+${Number(stats?.students?.thisYear || 0).toLocaleString('en-IN')} this year`, subTone: 'up' }
-          : pctSub(studentGrowth, 'this year')),
+        value: (stats?.students?.total ?? 0).toLocaleString('en-IN'),
+        sub: `+${stats?.students?.recent ?? 0} new`,
         icon: <Users size={24} strokeWidth={2} />,
-        color: '#2563eb',
-        tint: '#e8f0fe',
-        path: '/admin/students',
+        color: '#8b5cf6',
         delay: 0.05,
       },
       {
         label: 'Teachers',
-        value: stats?.teachers?.total ?? 0,
-        sub: `${onLeave} on leave today`,
-        subTone: 'neutral',
+        value: (stats?.teachers?.total ?? 0).toLocaleString('en-IN'),
+        sub: `+${stats?.teachers?.recent ?? 0} new`,
         icon: <GraduationCap size={24} strokeWidth={2} />,
-        color: '#7c3aed',
-        tint: '#f1ebfe',
-        path: '/admin/hr?tab=leaves',
+        color: '#60a5fa',
         delay: 0.1,
       },
       {
-        label: 'Fees',
-        value: 0,
-        valueText: financialLoading && !financial ? '—' : formatRupeesShort(financial?.totals?.totalCollected),
-        ...(feeChange === null
-          ? { sub: `${formatRupeesShort(thisMonth)} this month`, subTone: 'neutral' }
-          : pctSub(feeChange, 'this month')),
-        info: 'Collected in the active session; trend compares this month with last month',
-        icon: <Wallet size={24} strokeWidth={2} />,
-        color: '#059669',
-        tint: '#e3f7ee',
-        path: '/admin/fees/collection',
+        label: 'Parents',
+        value: (stats?.parents?.total ?? 0).toLocaleString('en-IN'),
+        sub: `+${stats?.parents?.recent ?? 0} new`,
+        icon: <UserRound size={24} strokeWidth={2} />,
+        color: '#a78bfa',
         delay: 0.15,
       },
       {
-        label: 'Attendance',
-        value: 0,
-        valueText: attPct === null ? '—' : `${attPct}%`,
-        sub: attMarked
-          ? `${attPresent.toLocaleString('en-IN')} / ${attTotal.toLocaleString('en-IN')}`
-          : 'Not marked yet today',
-        subTone: 'neutral',
-        info: "Today's student attendance",
-        icon: <ClipboardCheck size={24} strokeWidth={2} />,
-        color: '#ea580c',
-        tint: '#fdeee2',
+        label: 'All Users',
+        value: (stats?.totalUsers ?? 0).toLocaleString('en-IN'),
+        sub: `+${stats?.recentTotal ?? 0} new`,
+        icon: <User size={24} strokeWidth={2} />,
+        color: '#10b981',
         delay: 0.2,
       },
-    ];
-  }, [stats, financial, financialLoading]);
-
-  const todayLabel = new Date().toLocaleDateString('en-GB', {
-    weekday: 'short',
-    day: 'numeric',
-    month: 'short',
-    year: 'numeric',
-  });
+    ],
+    [stats],
+  );
 
   const quickActions = [
-    { label: 'Academic Setup', icon: <BookOpen size={18} strokeWidth={2} />, color: '#8b5cf6', path: '/admin/academics' },
-    { label: 'Add Student', icon: <UserPlus size={18} strokeWidth={2} />, color: '#60a5fa', path: '/admin/students?add=1' },
-    { label: 'Add Teacher', icon: <School size={18} strokeWidth={2} />, color: '#10b981', path: '/admin/teachers?add=1' },
-    { label: 'Collect Fees', icon: <Wallet size={18} strokeWidth={2} />, color: '#f59e0b', path: '/admin/fees/collection?view=payments' },
-    { label: 'Fee Receipts', icon: <Receipt size={18} strokeWidth={2} />, color: '#f43f5e', path: '/admin/fees/receipts' },
-    { label: 'Post Notice', icon: <Megaphone size={18} strokeWidth={2} />, color: '#0ea5e9', path: '/admin/notices/post' },
+    { label: 'Academic Setup', icon: <BookOpen size={16} strokeWidth={2} />, color: '#8b5cf6', path: '/admin/academics' },
+    { label: 'Add Student', icon: <UserPlus size={16} strokeWidth={2} />, color: '#60a5fa', path: '/admin/students' },
+    { label: 'Add Teacher', icon: <School size={16} strokeWidth={2} />, color: '#10b981', path: '/admin/teachers' },
   ];
 
   const chartData = financial?.trend ?? [];
-  const activeYearLabel = financial?.activeYearName || '';
-
-  // Quick-actions horizontal scroller (lg+): arrow state + page-by-page scroll.
-  const qaScrollRef = useRef(null);
-  const [qaScroll, setQaScroll] = useState({ canLeft: false, canRight: false });
-  const updateQaScroll = useCallback(() => {
-    const el = qaScrollRef.current;
-    if (!el) return;
-    // A few px of tolerance: snap alignment against the grid's padding can
-    // leave scrollLeft at ~4px on the first page, which isn't "scrolled".
-    setQaScroll({
-      canLeft: el.scrollLeft > 8,
-      canRight: el.scrollLeft + el.clientWidth < el.scrollWidth - 8,
-    });
-  }, []);
-  useEffect(() => {
-    // Always open on the first page (browsers may restore/snap an offset).
-    if (qaScrollRef.current) qaScrollRef.current.scrollLeft = 0;
-    updateQaScroll();
-    window.addEventListener('resize', updateQaScroll);
-    return () => window.removeEventListener('resize', updateQaScroll);
-  }, [updateQaScroll]);
-  const scrollQuickActions = (dir) => {
-    const el = qaScrollRef.current;
-    if (el) el.scrollBy({ left: dir * Math.max(160, el.clientWidth * 0.6), behavior: 'smooth' });
-  };
   const totals = financial?.totals ?? { totalCollected: 0, totalOutstanding: 0, overdueAmount: 0 };
   const hasChartData = chartData.some((d) => d.collected > 0 || d.due > 0);
 
@@ -532,92 +282,50 @@ const Dashboard = ({ setShowAdminHeader }) => {
 
   return (
     <motion.div
-      className="admin-dashboard-root min-h-screen p-4 md:p-6 lg:min-h-0 lg:h-[calc(100dvh-94px)] lg:overflow-hidden lg:p-5"
+      className="admin-dashboard-root min-h-screen p-6 md:p-8"
       variants={containerVariants}
       initial="hidden"
       animate="visible"
     >
-      <div className="max-w-7xl mx-auto space-y-6 lg:space-y-4 lg:h-full lg:flex lg:flex-col">
+      <div className="max-w-7xl mx-auto space-y-6">
         {/* ── Header ── */}
-        <motion.div
-          variants={itemVariants}
-          className="relative overflow-hidden rounded-2xl border border-white/70 bg-gradient-to-r from-white via-slate-50 to-indigo-50/70 px-4 py-2.5 shadow-[0_4px_20px_rgba(15,23,42,0.04)] lg:shrink-0"
-        >
-          {coverSrc ? (
-            <div
-              aria-hidden="true"
-              onContextMenu={(e) => e.preventDefault()}
-              className="pointer-events-none absolute inset-y-0 right-0 w-full lg:w-3/5 select-none overflow-hidden"
-            >
-              {/* Cover Image */}
-              <div
-                className="cover-fade absolute inset-0 bg-cover bg-center"
-                style={{
-                  backgroundImage: `url(${coverSrc})`,
-                }}
-              />
-
-              {/* Light Black Overlay */}
-              {/* <div className="absolute inset-0 bg-black/20" /> */}
-              <div
-                className="cover-shade absolute inset-0"
-              />
-            </div>
-          ) : null}
-          <div className="relative flex flex-col gap-3 md:flex-row md:items-center md:gap-5">
-            <div className="min-w-0">
-              <h1 className="flex flex-wrap items-center gap-1.5 text-xl font-bold tracking-tight text-slate-900 md:text-2xl">
-                {greeting}, <span className="text-blue-600">Admin</span>
-                {/* <span className="inline-block origin-[70%_70%] animate-[wave_2.4s_ease-in-out_infinite]" aria-hidden="true">👋</span> */}
+        <motion.div variants={itemVariants} className="glass rounded-[24px] p-6 md:p-8 glass-hover">
+          <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-4">
+            <div>
+              <h1 className="text-2xl md:text-3xl font-semibold text-slate-900 tracking-tight">
+                {greeting}, Admin
               </h1>
-              <p className="mt-0.5 text-xs text-slate-500 md:text-sm">
+              <p className="text-sm text-slate-500 mt-0.5">
                 Here&apos;s what&apos;s happening across your school this week.
               </p>
             </div>
-
-            <div className="flex items-center gap-2.5 md:border-l md:border-slate-200 md:pl-5">
-              <CalendarDays size={22} className="shrink-0 text-slate-500" />
-              <div>
-                <p className="text-sm font-semibold text-slate-800">{todayLabel}</p>
-                {activeYearLabel ? <p className="text-xs text-black">Academic Year {activeYearLabel}</p> : null}
-              </div>
-            </div>
-
-            {coverSrc ? (
-              <div className="hidden flex-1 md:block" />
-            ) : (
-              <div className="hidden h-12 flex-1 justify-end opacity-90 xl:flex">
-                <SchoolIllustration />
-              </div>
-            )}
-
-            {/* <div className="flex flex-col items-start gap-0.5 md:ml-auto md:items-end">
-              <span className="inline-flex items-center gap-1.5 rounded-full bg-emerald-50 px-2.5 py-0.5 text-xs font-semibold text-emerald-700">
-                <span className="h-2 w-2 animate-pulse rounded-full bg-emerald-500" />
+            <div className="flex items-center gap-3">
+              <div className="flex items-center gap-1.5 text-xs text-slate-500 bg-white/30 px-3 py-1.5 rounded-full border border-white/30">
+                <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse" />
                 Live
-              </span>
-              <span className="text-xs text-slate-500">
+              </div>
+              <span className="text-xs text-slate-400">
                 {statsLoading || financialLoading ? 'Updating…' : 'Updated just now'}
               </span>
-            </div> */}
+            </div>
           </div>
         </motion.div>
 
         {/* ── Stats Row ── */}
-        <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 sm:gap-4 lg:shrink-0">
+        <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
           {statCards.map((stat) => (
-            <StatCard key={stat.label} {...stat} loading={statsLoading} onOpen={stat.path ? () => navigate(stat.path) : undefined} />
+            <StatCard key={stat.label} {...stat} loading={statsLoading} />
           ))}
         </div>
 
         {/* ── Fees + Quick Actions ── */}
-        <motion.div variants={itemVariants} className="grid grid-cols-1 lg:grid-cols-3 gap-6 lg:gap-4 lg:flex-1 lg:min-h-0">
+        <motion.div variants={itemVariants} className="grid grid-cols-1 lg:grid-cols-3 gap-6">
           {/* Fees Collection */}
-          <div className="lg:col-span-2 glass-card p-5 md:p-6 lg:p-5 lg:flex lg:flex-col lg:min-h-0">
+          <div className="lg:col-span-2 glass-card p-5 md:p-6">
             <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 mb-4">
               <div>
                 <h3 className="section-title">Fees Collection</h3>
-                <p className="section-subtitle">{activeYearLabel ? `${activeYearLabel} · ` : ''}Current students · collected vs. outstanding — last 6 months</p>
+                <p className="section-subtitle">Revenue trend — last 6 months</p>
               </div>
               <div className="flex items-center gap-4 text-xs">
                 <div className="flex items-center gap-1.5">
@@ -631,7 +339,7 @@ const Dashboard = ({ setShowAdminHeader }) => {
               </div>
             </div>
 
-            <div className="h-[220px] w-full lg:h-auto lg:flex-1 lg:min-h-[120px]">
+            <div className="h-[220px] w-full">
               {financialLoading ? (
                 <div className="h-full flex items-center justify-center text-sm text-slate-400">
                   Loading chart…
@@ -673,14 +381,14 @@ const Dashboard = ({ setShowAdminHeader }) => {
                         name === 'collected' ? 'Collected' : 'Due',
                       ]}
                     />
-                    <Bar dataKey="collected" fill="#8b5cf6" radius={[4, 4, 0, 0]} maxBarSize={28} />
-                    <Bar dataKey="due" fill="#f59e0b" radius={[4, 4, 0, 0]} maxBarSize={28} />
+                    <Bar dataKey="collected" fill="#8b5cf6" radius={[4, 4, 0, 0]} maxBarSize={32} />
+                    <Bar dataKey="due" fill="#f59e0b" radius={[4, 4, 0, 0]} maxBarSize={32} />
                   </BarChart>
                 </ResponsiveContainer>
               )}
             </div>
 
-            <div className="grid grid-cols-2 gap-3 mt-4 pt-4 border-t border-slate-200/50">
+            <div className="grid grid-cols-3 gap-3 mt-4 pt-4 border-t border-slate-200/50">
               <div>
                 <p className="text-[10px] font-medium text-slate-400 uppercase tracking-wider">Collected</p>
                 <p className="text-sm font-semibold text-slate-900">
@@ -688,22 +396,27 @@ const Dashboard = ({ setShowAdminHeader }) => {
                 </p>
               </div>
               <div>
-                <p className="text-[10px] font-medium text-slate-400 uppercase tracking-wider">Due</p>
+                <p className="text-[10px] font-medium text-slate-400 uppercase tracking-wider">Outstanding</p>
                 <p className="text-sm font-semibold text-amber-600">
                   {financialLoading ? '—' : formatCurrency(totals.totalOutstanding)}
                 </p>
               </div>
+              <div>
+                <p className="text-[10px] font-medium text-slate-400 uppercase tracking-wider">Overdue</p>
+                <p className="text-sm font-semibold text-rose-500">
+                  {financialLoading ? '—' : formatCurrency(totals.overdueAmount)}
+                </p>
+              </div>
             </div>
-
           </div>
 
-          {/* Quick Actions — tiles on mobile/tablet; horizontally scrolling chips (with arrows) on lg+ */}
-          <div className="glass-card p-5 md:p-6 lg:p-4 flex flex-col lg:min-h-0 lg:overflow-hidden">
-            <div className="mb-4 lg:mb-3 lg:shrink-0">
+          {/* Quick Actions */}
+          <div className="glass-card p-5 md:p-6 flex flex-col">
+            <div className="mb-4">
               <h3 className="section-title">Quick Actions</h3>
               <p className="section-subtitle">Common admin tasks</p>
             </div>
-            <div className="grid grid-cols-2 sm:grid-cols-3 gap-2.5 lg:hidden">
+            <div className="flex-1 flex flex-col gap-2.5">
               {quickActions.map((action) => (
                 <QuickAction
                   key={action.label}
@@ -714,89 +427,7 @@ const Dashboard = ({ setShowAdminHeader }) => {
                 />
               ))}
             </div>
-            <div className="relative hidden lg:flex lg:flex-1 lg:min-h-0 lg:items-center">
-              {qaScroll.canLeft && (
-                <button
-                  type="button"
-                  onClick={() => scrollQuickActions(-1)}
-                  className="absolute left-0 top-1/2 z-10 flex h-8 w-8 -translate-y-1/2 items-center justify-center rounded-full border border-slate-200 bg-white text-slate-600 shadow-md transition hover:bg-white/30"
-                  aria-label="Scroll quick actions left"
-                >
-                  <ChevronLeft size={16} />
-                </button>
-              )}
-              <div
-                ref={qaScrollRef}
-                onScroll={updateQaScroll}
-                className="qa-scroll grid h-full w-full grid-flow-col grid-rows-2 auto-cols-[calc(50%-0.3125rem)] content-center gap-2.5 overflow-x-auto scroll-smooth snap-x scroll-px-1 px-1 py-1"
-              >
-                {/* 2 rows × columns of half the panel width → 4 cards visible
-                    (a 2×2 block); the rest scroll in left ↔ right. */}
-                {quickActions.map((action) => (
-                  <button
-                    key={action.label}
-                    type="button"
-                    onClick={() => navigate(action.path)}
-                    className="group flex snap-start flex-col items-center justify-center gap-1.5 rounded-2xl border border-slate-100 bg-white px-2 py-3 text-center text-xs font-semibold leading-tight text-slate-700 shadow-sm transition-all hover:-translate-y-0.5 hover:border-slate-200 hover:shadow-md"
-                  >
-                    <span
-                      className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full transition-transform group-hover:scale-105"
-                      style={{ color: action.color, background: `${action.color}1a` }}
-                      aria-hidden="true"
-                    >
-                      {React.cloneElement(action.icon, { size: 18 })}
-                    </span>
-                    {action.label}
-                  </button>
-                ))}
-              </div>
-              {qaScroll.canRight && (
-                <button
-                  type="button"
-                  onClick={() => scrollQuickActions(1)}
-                  className="absolute right-0 top-1/2 z-10 flex h-8 w-8 -translate-y-1/2 items-center justify-center rounded-full border border-slate-200 bg-white text-slate-600 shadow-md transition hover:bg-slate-50"
-                  aria-label="Scroll quick actions right"
-                >
-                  <ChevronRight size={16} />
-                </button>
-              )}
-            </div>
-            <div className="mt-2 flex items-center justify-center gap-1.5 lg:mt-1.5">
-              {(qaScroll.canLeft || qaScroll.canRight) && (
-                <div className="mt-2 flex items-center justify-center gap-1.5 lg:mt-1.5">
-                  {Array.from({
-                    length: Math.ceil(quickActions.length / 4),
-                  }).map((_, index) => {
-                    const activePage =
-                      Math.round(
-                        (qaScrollRef.current?.scrollLeft || 0) /
-                        (qaScrollRef.current?.clientWidth || 1)
-                      ) === index;
-
-                    return (
-                      <button
-                        key={index}
-                        type="button"
-                        onClick={() => {
-                          qaScrollRef.current?.scrollTo({
-                            left: index * qaScrollRef.current.clientWidth,
-                            behavior: 'smooth',
-                          });
-                        }}
-                        className={cn(
-                          'h-1.5 rounded-full transition-all duration-300',
-                          activePage
-                            ? 'w-5 bg-indigo-500'
-                            : 'w-1.5 bg-slate-300'
-                        )}
-                        aria-label={`Go to quick actions page ${index + 1}`}
-                      />
-                    );
-                  })}
-                </div>
-              )}
-            </div>
-            <div className="mt-4 pt-4 lg:mt-3 lg:pt-2.5 lg:shrink-0 border-t border-slate-200/50">
+            <div className="mt-4 pt-4 border-t border-slate-200/50">
               <p className="text-[10px] text-slate-400 text-center">
                 Need help?{' '}
                 <button

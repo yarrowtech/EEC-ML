@@ -1658,6 +1658,41 @@ const Students = ({ setShowAdminHeader }) => {
   // Open the multi-step wizard pre-filled with an existing student, in edit mode.
   // Applies a normalized student record into the wizard's form + selector state.
   const applyEditSource = useCallback((src) => {
+    // Older records never had guardianType/guardianRelation saved even though
+    // a father/mother/guardian was clearly filled in — infer which one the
+    // guardian fields actually belong to (by phone, falling back to name) so
+    // step 3 shows that card selected and its relation pre-picked instead of
+    // looking like no guardian was ever chosen.
+    let inferredGuardianType = src.guardianType || "";
+    let inferredGuardianRelation = src.guardianRelation || "";
+    if (!inferredGuardianType) {
+      const guardianPhoneDigits = String(src.guardianPhone || "").replace(/\D/g, "");
+      const guardianNameNorm = String(src.guardianName || "").trim().toLowerCase();
+      const fatherPhoneDigits = String(src.fatherPhone || "").replace(/\D/g, "");
+      const motherPhoneDigits = String(src.motherPhone || "").replace(/\D/g, "");
+      const fatherNameNorm = String(src.fatherName || "").trim().toLowerCase();
+      const motherNameNorm = String(src.motherName || "").trim().toLowerCase();
+      if (guardianPhoneDigits && guardianPhoneDigits === fatherPhoneDigits) {
+        inferredGuardianType = "father";
+      } else if (guardianPhoneDigits && guardianPhoneDigits === motherPhoneDigits) {
+        inferredGuardianType = "mother";
+      } else if (guardianNameNorm && guardianNameNorm === fatherNameNorm) {
+        inferredGuardianType = "father";
+      } else if (guardianNameNorm && guardianNameNorm === motherNameNorm) {
+        inferredGuardianType = "mother";
+      } else {
+        const linkedParent = parentDirectory.find((p) => {
+          const ids = Array.isArray(p.childrenIds) ? p.childrenIds : [];
+          return ids.some((id) => extractLinkedStudentId(id) === String(src._id || ""));
+        });
+        if (linkedParent) inferredGuardianType = "existing";
+      }
+      if (!inferredGuardianRelation) {
+        if (inferredGuardianType === "father") inferredGuardianRelation = "Father";
+        else if (inferredGuardianType === "mother") inferredGuardianRelation = "Mother";
+      }
+    }
+
     setNewStudent((prev) => ({
       ...prev,
       ...src,
@@ -1665,7 +1700,8 @@ const Students = ({ setShowAdminHeader }) => {
       pincode: src.pincode || src.pinCode || "",
       photograph: src.photograph || src.profilePic || "",
       hasPreviousSchool: src.hasPreviousSchool || (src.previousSchoolName ? "yes" : "no"),
-      guardianType: src.guardianType || "",
+      guardianType: inferredGuardianType,
+      guardianRelation: inferredGuardianRelation,
       status: src.status || "Active",
       approvalStatus: src.approvalStatus || "Approved",
       admissionType: src.admissionType || "New Admission",
@@ -1680,7 +1716,7 @@ const Students = ({ setShowAdminHeader }) => {
     setSelectedAcademicYearId(yr ? String(yr._id) : "");
     setSelectedClassId(cls ? String(cls._id) : "");
     setSelectedSectionId(sec ? String(sec._id) : "");
-  }, [academicClasses, academicYears, academicSections]);
+  }, [academicClasses, academicYears, academicSections, parentDirectory]);
 
   const openEditWizard = (student) => {
     if (!student?._id) return;
@@ -1691,8 +1727,15 @@ const Students = ({ setShowAdminHeader }) => {
     const src = normalizeStudentForEdit(student);
     setNewStudent({ ...INITIAL_NEW_STUDENT, ...src });
     applyEditSource(src);
-    setSelectedExistingParent(null);
-    setParentSearchTerm("");
+    // If this student already has a linked parent account, preselect it so
+    // step 3 shows it as the chosen guardian (and its relation) instead of
+    // looking like no guardian was ever picked.
+    const linkedParent = parentDirectory.find((p) => {
+      const ids = Array.isArray(p.childrenIds) ? p.childrenIds : [];
+      return ids.some((id) => extractLinkedStudentId(id) === String(student._id || ""));
+    }) || null;
+    setSelectedExistingParent(linkedParent);
+    setParentSearchTerm(linkedParent ? (linkedParent.name || linkedParent.username || "") : "");
     setActiveDraftId(null);
     setEditingStudentId(student._id);
     setResumeStep(0);
@@ -4290,7 +4333,7 @@ const Students = ({ setShowAdminHeader }) => {
                     <col style={{ width: "5%" }} /><col style={{ width: "24%" }} /><col style={{ width: "14%" }} />
                     <col style={{ width: "12%" }} /><col style={{ width: "18%" }} /><col style={{ width: "27%" }} />
                   </colgroup>
-                  <tbody className={tableRefreshing || isImporting ? "opacity-70 animate-pulse" : ""}>
+                  <tbody className={isImporting ? "opacity-70 animate-pulse" : ""}>
                     {studentsLoadError && studentData.length === 0 ? (
                       <tr>
                         <td colSpan={6} className="px-4 pt-16 pb-6">
@@ -4306,10 +4349,10 @@ const Students = ({ setShowAdminHeader }) => {
                           </div>
                         </td>
                       </tr>
-                    ) : studentsLoading && studentData.length === 0 ? (
+                    ) : (studentsLoading && studentData.length === 0) || tableRefreshing ? (
                       <>
                         <tr>
-                          <td colSpan={6} className="px-4 pt-16 pb-6">
+                          <td colSpan={6} className={tableRefreshing ? "px-4 py-10" : "px-4 pt-16 pb-6"}>
                             <div className="flex flex-col items-center justify-center gap-4">
                               <span className="relative flex h-12 w-12 items-center justify-center">
                                 <span className="absolute inset-0 rounded-full border-[3px] border-amber-100" />
@@ -4318,17 +4361,17 @@ const Students = ({ setShowAdminHeader }) => {
                               </span>
                               <div className="text-center">
                                 <p className="text-sm font-semibold text-gray-700">
-                                  Loading student data
+                                  {tableRefreshing ? "Refreshing student data" : "Loading student data"}
                                   <span className="loading-dots" />
                                 </p>
                                 <p className="mt-1 text-xs text-gray-400">
-                                  This can take a moment on the first visit
+                                  {tableRefreshing ? "Fetching the latest records" : "This can take a moment on the first visit"}
                                 </p>
                               </div>
                             </div>
                           </td>
                         </tr>
-                        {Array.from({ length: 5 }).map((_, i) => (
+                        {!tableRefreshing && Array.from({ length: 5 }).map((_, i) => (
                           <tr key={`student-skeleton-${i}`} className="animate-pulse">
                             <td className="px-2 py-3.5"><div className="h-4 w-4 rounded bg-gray-100" /></td>
                             <td className="px-2 py-3.5">
@@ -4769,7 +4812,10 @@ const Students = ({ setShowAdminHeader }) => {
           />
         )}
 
-        {/* Enrollment Drafts modal */}
+        {/* Enrollment Drafts modal — portaled to document.body, same as the
+            Student View modal, so its backdrop truly covers the full
+            viewport instead of being clipped to a transformed ancestor. */}
+        {showDraftsModal && createPortal(
         <AnimatePresence>
         {showDraftsModal && (
           <Motion.div
@@ -4845,7 +4891,9 @@ const Students = ({ setShowAdminHeader }) => {
             </Motion.div>
           </Motion.div>
         )}
-        </AnimatePresence>
+        </AnimatePresence>,
+        document.body
+        )}
 
         {/* Student View Modal — portaled to document.body. It used to render
             inline inside the page's own DOM subtree, so anything upstream
@@ -4941,14 +4989,17 @@ const Students = ({ setShowAdminHeader }) => {
 
               {/* Tab Content */}
               <div className="overflow-y-auto flex-1 p-6">
-                {loadingViewData && (
+                {/* The student's own fields (viewStudent) are already available
+                    the instant the modal opens — only Attendance/Fees need the
+                    async fetch, so Overview must not wait on loadingViewData. */}
+                {loadingViewData && viewTab !== "overview" && (
                   <div className="flex items-center justify-center py-12">
                     <Loader2 className="h-6 w-6 animate-spin text-amber-500" />
                     <span className="ml-2 text-sm text-gray-500">Loading details...</span>
                   </div>
                 )}
 
-                {!loadingViewData && viewTab === "overview" && (
+                {viewTab === "overview" && (
                   (() => {
                     const s = viewStudent;
                     const dash = "—";
@@ -6259,6 +6310,9 @@ const Students = ({ setShowAdminHeader }) => {
           </div>
         )}
 
+        {/* Archived Students modal — portaled to document.body, same fix as
+            the Enrollment Drafts / Student View modals. */}
+        {showArchiveModal && createPortal(
         <AnimatePresence>
         {showArchiveModal && (
           <Motion.div
@@ -6439,7 +6493,9 @@ const Students = ({ setShowAdminHeader }) => {
             </Motion.div>
           </Motion.div>
         )}
-        </AnimatePresence>
+        </AnimatePresence>,
+        document.body
+        )}
       </div>
     </div>
   );
