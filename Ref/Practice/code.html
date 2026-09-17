@@ -1,0 +1,281 @@
+<!DOCTYPE html><html lang="en" style=""><head><meta charset="utf-8"><meta content="width=device-width, initial-scale=1.0" name="viewport"><link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:opsz,wght,FILL,GRAD@20..48,100..700,0..1,-50..200" rel="stylesheet">
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet">
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@100..900&amp;display=swap" rel="stylesheet"><style>@layer base { html, body { margin: 0; padding: 0; } body { overscroll-behavior: none; } main > :first-child { margin-top: 0 !important; } main > :last-child { margin-bottom: 0 !important; } } ::-webkit-scrollbar { display: none; }</style><script src="https://cdn.tailwindcss.com?plugins=forms,container-queries"></script><script id="tailwind-config">tailwind.config = { darkMode: "class", theme: { extend: { "colors": { "surface-container-low": "#eff4ff", "inverse-surface": "#213145", "on-error-container": "#93000a", "tertiary": "#003fac", "surface": "#f8f9ff", "background": "#f8f9ff", "on-tertiary-fixed": "#00174b", "tertiary-fixed-dim": "#b4c5ff", "on-primary-fixed-variant": "#3323cc", "primary-fixed": "#e2dfff", "secondary-fixed-dim": "#4edea3", "surface-bright": "#f8f9ff", "on-secondary": "#ffffff", "on-secondary-container": "#00714d", "on-primary-container": "#dad7ff", "inverse-on-surface": "#eaf1ff", "outline-variant": "#c7c4d8", "on-error": "#ffffff", "secondary-fixed": "#6ffbbe", "on-tertiary": "#ffffff", "primary-container": "#4f46e5", "outline": "#777587", "primary": "#3525cd", "on-background": "#0b1c30", "surface-tint": "#4d44e3", "surface-container-lowest": "#ffffff", "primary-fixed-dim": "#c3c0ff", "secondary-container": "#6cf8bb", "tertiary-fixed": "#dbe1ff", "on-secondary-fixed": "#002113", "error": "#ba1a1a", "surface-container": "#e5eeff", "on-primary": "#ffffff", "error-container": "#ffdad6", "secondary": "#006c49", "tertiary-container": "#0555dd", "on-tertiary-container": "#d1daff", "surface-dim": "#cbdbf5", "on-secondary-fixed-variant": "#005236", "surface-container-high": "#dce9ff", "on-surface": "#0b1c30", "on-surface-variant": "#464555", "surface-variant": "#d3e4fe", "on-primary-fixed": "#0f0069", "inverse-primary": "#c3c0ff", "surface-container-highest": "#d3e4fe", "on-tertiary-fixed-variant": "#003ea8" }, "borderRadius": { "DEFAULT": "0.25rem", "lg": "0.5rem", "xl": "0.75rem", "full": "9999px" }, "spacing": { "space-xl": "2rem", "margin-lg": "3rem", "gutter": "1.5rem", "gutter-sm": "1rem", "space-lg": "1.5rem", "margin-sm": "1rem", "margin": "2rem", "space-md": "1rem", "space-sm": "0.5rem", "gutter-lg": "2rem", "space-xs": "0.25rem" }, "fontFamily": { "display-lg": ["Inter"], "title-md": ["Inter"], "label-md": ["Inter"], "headline-lg": ["Inter"], "body-sm": ["Inter"], "label-sm": ["Inter"], "headline-sm": ["Inter"], "body-md": ["Inter"], "headline-lg-mobile": ["Inter"], "headline-md": ["Inter"], "body-lg": ["Inter"] }, "fontSize": { "display-lg": ["3rem", { "lineHeight": "3.5rem", "letterSpacing": "-0.025em", "fontWeight": "700" }], "title-md": ["1.125rem", { "lineHeight": "1.5rem", "letterSpacing": "-0.005em", "fontWeight": "600" }], "label-md": ["0.875rem", { "lineHeight": "1.25rem", "letterSpacing": "0.01em", "fontWeight": "500" }], "headline-lg": ["2.25rem", { "lineHeight": "2.75rem", "letterSpacing": "-0.02em", "fontWeight": "700" }], "body-sm": ["0.875rem", { "lineHeight": "1.25rem", "fontWeight": "400" }], "label-sm": ["0.75rem", { "lineHeight": "1rem", "letterSpacing": "0.04em", "fontWeight": "600" }], "headline-sm": ["1.25rem", { "lineHeight": "1.75rem", "letterSpacing": "-0.01em", "fontWeight": "600" }], "body-md": ["1rem", { "lineHeight": "1.5rem", "fontWeight": "400" }], "headline-lg-mobile": ["1.75rem", { "lineHeight": "2.25rem", "letterSpacing": "-0.02em", "fontWeight": "700" }], "headline-md": ["1.5rem", { "lineHeight": "2rem", "letterSpacing": "-0.015em", "fontWeight": "600" }], "body-lg": ["1.125rem", { "lineHeight": "1.75rem", "fontWeight": "400" }] } } } };</script></head><body class="bg-background font-body-md text-on-surface antialiased"><header class="fixed top-0 w-full z-50 bg-surface-container-lowest border-b border-surface-container-high"></header><main class="w-full pt-28 max-w-[1440px] mx-auto px-margin-lg bg-background min-h-[calc(100vh-7rem)]"><div class="flex flex-col w-full">
+<!-- Contextual Sub-Header Bar -->
+<div class="w-full bg-surface-container-lowest border border-surface-container rounded-xl p-space-md shadow-sm mb-space-md flex flex-wrap items-center justify-between gap-space-md"><div class="flex flex-wrap items-center gap-space-md min-w-0 flex-1"><div class="flex items-center gap-2 shrink-0"><span class="font-label-md text-label-md font-semibold text-on-surface">Go</span></div><div class="flex flex-wrap items-center gap-space-sm flex-1"><div class="relative min-w-[210px] flex-1 sm:flex-initial"><label for="subject-selector" class="sr-only">Select Subject</label><div class="relative flex items-center"><span class="material-symbols-outlined absolute left-3 text-[18px] text-primary pointer-events-none">menu_book</span><select id="subject-selector" class="w-full pl-9 pr-8 py-2 bg-surface-container-low hover:bg-surface-container border border-surface-container hover:border-outline-variant rounded-lg font-label-md text-label-md text-on-surface cursor-pointer transition-colors appearance-none focus:outline-none focus:ring-2 focus:ring-primary/20"><option value="math" selected="">Mathematics</option><option value="physics">Science &amp; Physics</option><option value="english">English Literature</option><option value="cs">Computer Science</option></select><span class="material-symbols-outlined absolute right-2.5 text-[18px] text-on-surface-variant pointer-events-none">expand_more</span></div></div><div class="relative min-w-[250px] flex-1 sm:flex-initial"><label for="chapter-selector" class="sr-only">Select Chapter</label><div class="relative flex items-center"><span class="material-symbols-outlined absolute left-3 text-[18px] text-secondary pointer-events-none">auto_stories</span><select id="chapter-selector" class="w-full pl-9 pr-8 py-2 bg-surface-container-low hover:bg-surface-container border border-surface-container hover:border-outline-variant rounded-lg font-label-md text-label-md text-on-surface cursor-pointer transition-colors appearance-none focus:outline-none focus:ring-2 focus:ring-primary/20"><option value="ch4" selected="">Chapter 4: Quadratic Equations</option><option value="ch1">Chapter 1: Real Numbers</option><option value="ch2">Chapter 2: Polynomials</option><option value="ch3">Chapter 3: Linear Equations</option><option value="ch5">Chapter 5: Arithmetic Progressions</option></select><span class="material-symbols-outlined absolute right-2.5 text-[18px] text-on-surface-variant pointer-events-none">expand_more</span></div></div><div class="relative min-w-[230px] flex-1 sm:flex-initial hidden md:block"><label for="topic-selector" class="sr-only">Select Topic</label><div class="relative flex items-center"><span class="material-symbols-outlined absolute left-3 text-[18px] text-tertiary pointer-events-none">tag</span><select id="topic-selector" class="w-full pl-9 pr-8 py-2 bg-surface-container-low hover:bg-surface-container border border-surface-container hover:border-outline-variant rounded-lg font-label-md text-label-md text-on-surface cursor-pointer transition-colors appearance-none focus:outline-none focus:ring-2 focus:ring-primary/20"><option value="t42" selected="">Topic 4.2: Quadratic Formula</option><option value="t41">Topic 4.1: Standard Form &amp; Roots</option><option value="t43">Topic 4.3: Discriminant Analysis</option></select><span class="material-symbols-outlined absolute right-2.5 text-[18px] text-on-surface-variant pointer-events-none">expand_more</span></div></div></div></div><div class="flex items-center gap-2 shrink-0"></div></div><section class="w-full flex flex-col md:flex-row md:items-center justify-between gap-space-md py-space-sm mb-space-lg border-b border-surface-container pb-space-sm"><div class="flex flex-wrap items-center gap-space-sm"><a class="inline-flex items-center gap-space-xs px-space-md py-space-xs rounded-full bg-surface-container hover:bg-surface-container-high text-primary font-label-md text-label-md transition-all shrink-0" href="#"><span class="material-symbols-outlined text-[18px]">arrow_back</span><span class="">Back</span></a><span class="hidden sm:inline-block w-px h-4 bg-surface-container-high mx-1"></span><nav aria-label="Breadcrumb" class="flex items-center"><ol class="flex flex-wrap items-center gap-1.5 font-label-md text-label-md"><li class="inline-flex items-center"><a class="text-on-surface-variant hover:text-primary transition-colors flex items-center gap-1" href="#"><span class="material-symbols-outlined text-[16px]">calculate</span><span class="">Mathematics</span></a></li><li class="inline-flex items-center text-outline-variant"><span class="material-symbols-outlined text-[16px]">chevron_right</span></li><li class="inline-flex items-center"><a class="text-on-surface-variant hover:text-primary transition-colors" href="#">Chapter 4: Quadratic Equations</a></li><li class="inline-flex items-center text-outline-variant"><span class="material-symbols-outlined text-[16px]">chevron_right</span></li><li aria-current="page" class="inline-flex items-center"><span class="font-semibold text-primary bg-surface-container-low px-2 py-0.5 rounded-md">Topic 4.2: The Quadratic Formula</span></li></ol></nav></div><div class="flex items-center gap-space-sm font-label-sm text-label-sm text-on-surface-variant shrink-0"></div></section>
+<!-- VARIANT 2 MAIN GRID: Left Workspace (68-70%) + Right-Hand Action Drawer/Sidebar (30-32%) -->
+<div class="w-full gap-space-lg items-start pb-space-xl flex flex-col">
+<!-- LEFT MAIN WORKSPACE (8 cols on desktop / ~67-70%) -->
+<div class="flex flex-col gap-space-lg min-w-0 w-full">
+<!-- Hero Banner -->
+
+<!-- Section Header & Mode Toggle -->
+<div class="flex flex-col sm:flex-row sm:items-center justify-between gap-space-md pt-space-xs">
+<div class="flex flex-col">
+<h3 class="font-headline-sm text-headline-sm text-on-surface">Choose Your Tryout Format</h3>
+
+</div>
+<!-- Mode Toggle Pill -->
+<div class="inline-flex p-1 rounded-lg bg-surface-container-low shadow-sm shrink-0 self-start sm:self-center">
+
+
+</div>
+</div>
+<!-- STACKED HORIZONTAL LIST-STYLE QUESTION MODULES -->
+<div class="flex flex-col gap-space-md">
+<!-- ROW 1: MCQ (Selected) -->
+<div class="tryout-card group bg-surface-container-lowest rounded-xl p-space-md sm:p-space-lg shadow-sm hover:shadow-md transition-all cursor-pointer flex flex-col md:flex-row md:items-center justify-between gap-space-md ring-2 ring-primary/20" data-count="15" data-id="mcq" data-name="Multiple Choice" data-time="15">
+<div class="flex items-start gap-space-md min-w-0 flex-1">
+<div class="w-12 h-12 rounded-xl bg-surface-container text-primary flex items-center justify-center shrink-0 mt-0.5">
+<span class="material-symbols-outlined text-[24px]">ballot</span>
+</div>
+<div class="flex flex-col gap-1 min-w-0">
+<div class="flex flex-wrap items-center gap-2">
+<h4 class="font-title-md text-title-md text-on-surface group-hover:text-primary transition-colors">Multiple Choice (MCQ)</h4>
+<span class="inline-flex items-center gap-1 text-primary font-label-sm text-label-sm font-semibold">
+<span class="material-symbols-outlined text-[14px]">format_list_bulleted</span>
+                  15 Questions • 15 mins
+                </span>
+</div>
+<p class="font-body-sm text-body-sm text-on-surface-variant">
+                Single and multi-select questions focusing on discriminant properties (b² - 4ac), nature of roots, and standard form classification.
+              </p>
+<div class="flex flex-wrap gap-1.5 pt-1">
+
+
+
+</div>
+</div>
+</div>
+<!-- Actions & Checkbox Right Column -->
+<div class="flex items-center justify-between md:justify-end gap-space-md shrink-0 border-t md:border-t-0 pt-space-xs md:pt-0 border-surface-container">
+<div class="flex flex-col items-start md:items-end">
+
+<button class="inline-flex items-center gap-1 px-space-sm py-1 rounded-lg text-primary hover:bg-surface-container-low font-label-md text-label-md transition-colors" type="button">
+<span class="">Start MCQ</span>
+<span class="material-symbols-outlined text-[16px]">arrow_forward</span>
+</button>
+</div>
+<div class="h-8 w-px bg-surface-container hidden md:block"></div>
+<label class="relative flex items-center cursor-pointer p-1">
+<input checked="" class="tryout-checkbox w-5 h-5 accent-primary rounded cursor-pointer" type="checkbox">
+</label>
+</div>
+</div>
+<!-- ROW 2: Fill in the Blanks -->
+<div class="tryout-card group bg-surface-container-lowest rounded-xl p-space-md sm:p-space-lg shadow-sm hover:shadow-md transition-all cursor-pointer flex flex-col md:flex-row md:items-center justify-between gap-space-md" data-count="10" data-id="blanks" data-name="Fill in the Blanks" data-time="10">
+<div class="flex items-start gap-space-md min-w-0 flex-1">
+<div class="w-12 h-12 rounded-xl bg-surface-container text-tertiary flex items-center justify-center shrink-0 mt-0.5">
+<span class="material-symbols-outlined text-[24px]">edit_note</span>
+</div>
+<div class="flex flex-col gap-1 min-w-0">
+<div class="flex flex-wrap items-center gap-2">
+<h4 class="font-title-md text-title-md text-on-surface group-hover:text-primary transition-colors">Fill in the Blanks</h4>
+<span class="inline-flex items-center gap-1 text-on-surface-variant font-label-sm text-label-sm">
+<span class="material-symbols-outlined text-[14px]">space_bar</span>
+                  10 Questions • 10 mins
+                </span>
+</div>
+<p class="font-body-sm text-body-sm text-on-surface-variant">
+                Calculate and insert missing numerical coefficients, vertex coordinates, and exact radical values directly into standard formulas.
+              </p>
+<div class="flex flex-wrap gap-1.5 pt-1">
+
+
+
+</div>
+</div>
+</div>
+<!-- Actions & Checkbox Right Column -->
+<div class="flex items-center justify-between md:justify-end gap-space-md shrink-0 border-t md:border-t-0 pt-space-xs md:pt-0 border-surface-container">
+<div class="flex flex-col items-start md:items-end">
+
+<button class="inline-flex items-center gap-1 px-space-sm py-1 rounded-lg text-primary hover:bg-surface-container-low font-label-md text-label-md transition-colors" type="button">
+<span class="">Start Blanks</span>
+<span class="material-symbols-outlined text-[16px]">arrow_forward</span>
+</button>
+</div>
+<div class="h-8 w-px bg-surface-container hidden md:block"></div>
+<label class="relative flex items-center cursor-pointer p-1">
+<input class="tryout-checkbox w-5 h-5 accent-primary rounded cursor-pointer" type="checkbox">
+</label>
+</div>
+</div>
+<!-- ROW 3: True or False (Selected) -->
+<div class="tryout-card group bg-surface-container-lowest rounded-xl p-space-md sm:p-space-lg shadow-sm hover:shadow-md transition-all cursor-pointer flex flex-col md:flex-row md:items-center justify-between gap-space-md" data-count="10" data-id="tf" data-name="True or False" data-time="8">
+<div class="flex items-start gap-space-md min-w-0 flex-1">
+<div class="w-12 h-12 rounded-xl bg-secondary-container/50 text-secondary flex items-center justify-center shrink-0 mt-0.5">
+<span class="material-symbols-outlined text-[24px]">rule</span>
+</div>
+<div class="flex flex-col gap-1 min-w-0">
+<div class="flex flex-wrap items-center gap-2">
+<h4 class="font-title-md text-title-md text-on-surface group-hover:text-primary transition-colors">True or False</h4>
+<span class="inline-flex items-center gap-1 text-primary font-label-sm text-label-sm font-semibold">
+<span class="material-symbols-outlined text-[14px]">flaky</span>
+                  10 Questions • 8 mins
+                </span>
+</div>
+<p class="font-body-sm text-body-sm text-on-surface-variant">
+                Fast conceptual assertions evaluating discriminant sign rules, imaginary root pairs, and parabolic axis symmetry.
+              </p>
+<div class="flex flex-wrap gap-1.5 pt-1">
+
+
+
+</div>
+</div>
+</div>
+<!-- Actions & Checkbox Right Column -->
+<div class="flex items-center justify-between md:justify-end gap-space-md shrink-0 border-t md:border-t-0 pt-space-xs md:pt-0 border-surface-container">
+<div class="flex flex-col items-start md:items-end">
+
+<button class="inline-flex items-center gap-1 px-space-sm py-1 rounded-lg text-primary hover:bg-surface-container-low font-label-md text-label-md transition-colors" type="button">
+<span class="">Start T/F</span>
+<span class="material-symbols-outlined text-[16px]">arrow_forward</span>
+</button>
+</div>
+<div class="h-8 w-px bg-surface-container hidden md:block"></div>
+<label class="relative flex items-center cursor-pointer p-1">
+<input checked="" class="tryout-checkbox w-5 h-5 accent-primary rounded cursor-pointer" type="checkbox">
+</label>
+</div>
+</div>
+<!-- ROW 4: Match the Following -->
+<div class="tryout-card group bg-surface-container-lowest rounded-xl p-space-md sm:p-space-lg shadow-sm hover:shadow-md transition-all cursor-pointer flex flex-col md:flex-row md:items-center justify-between gap-space-md" data-count="6" data-id="matching" data-name="Match the Following" data-time="10">
+<div class="flex items-start gap-space-md min-w-0 flex-1">
+<div class="w-12 h-12 rounded-xl bg-surface-container text-primary flex items-center justify-center shrink-0 mt-0.5">
+<span class="material-symbols-outlined text-[24px]">hub</span>
+</div>
+<div class="flex flex-col gap-1 min-w-0">
+<div class="flex flex-wrap items-center gap-2">
+<h4 class="font-title-md text-title-md text-on-surface group-hover:text-primary transition-colors">Match the Following</h4>
+<span class="inline-flex items-center gap-1 text-on-surface-variant font-label-sm text-label-sm">
+<span class="material-symbols-outlined text-[14px]">compare_arrows</span>
+                  6 Pairs • 10 mins
+                </span>
+</div>
+<p class="font-body-sm text-body-sm text-on-surface-variant">
+                Pair algebraic quadratic forms with their geometric parabola graphs, root intersections, and vertex minima/maxima.
+              </p>
+<div class="flex flex-wrap gap-1.5 pt-1">
+
+
+
+</div>
+</div>
+</div>
+<!-- Actions & Checkbox Right Column -->
+<div class="flex items-center justify-between md:justify-end gap-space-md shrink-0 border-t md:border-t-0 pt-space-xs md:pt-0 border-surface-container">
+<div class="flex flex-col items-start md:items-end">
+
+<button class="inline-flex items-center gap-1 px-space-sm py-1 rounded-lg text-primary hover:bg-surface-container-low font-label-md text-label-md transition-colors" type="button">
+<span class="">Start Matching</span>
+<span class="material-symbols-outlined text-[16px]">arrow_forward</span>
+</button>
+</div>
+<div class="h-8 w-px bg-surface-container hidden md:block"></div>
+<label class="relative flex items-center cursor-pointer p-1">
+<input class="tryout-checkbox w-5 h-5 accent-primary rounded cursor-pointer" type="checkbox">
+</label>
+</div>
+</div><div class="tryout-card group bg-surface-container-lowest rounded-xl p-space-md sm:p-space-lg shadow-sm hover:shadow-md transition-all cursor-pointer flex flex-col md:flex-row md:items-center justify-between gap-space-md" data-count="1" data-id="reading" data-name="Reading Practice" data-time="5"><div class="flex items-start gap-space-md min-w-0 flex-1"><div class="w-12 h-12 rounded-xl bg-secondary-container/50 text-secondary flex items-center justify-center shrink-0 mt-0.5"><span class="material-symbols-outlined text-[24px]">mic</span></div><div class="flex flex-col gap-1 min-w-0"><div class="flex flex-wrap items-center gap-2"><h4 class="font-title-md text-title-md text-on-surface group-hover:text-primary transition-colors">Reading Practice</h4><span class="inline-flex items-center gap-1 text-on-surface-variant font-label-sm text-label-sm"><span class="material-symbols-outlined text-[14px]">menu_book</span>1 Passage • 5 mins</span></div><p class="font-body-sm text-body-sm text-on-surface-variant">Read mathematical passages, formulas, and proofs aloud with real-time speech AI fluency, pronunciation analysis, and comprehension checks.</p></div></div><div class="flex items-center justify-between md:justify-end gap-space-md shrink-0 border-t md:border-t-0 pt-space-xs md:pt-0 border-surface-container"><div class="flex flex-col items-start md:items-end"><button class="inline-flex items-center gap-1 px-space-sm py-1 rounded-lg text-primary hover:bg-surface-container-low font-label-md text-label-md transition-colors" type="button"><span class="">Start Reading</span><span class="material-symbols-outlined text-[16px]">arrow_forward</span></button></div><div class="h-8 w-px bg-surface-container hidden md:block"></div><label class="relative flex items-center cursor-pointer p-1"><input class="tryout-checkbox w-5 h-5 accent-primary rounded cursor-pointer" type="checkbox"></label></div></div><div class="tryout-card group bg-surface-container-lowest rounded-xl p-space-md sm:p-space-lg shadow-sm hover:shadow-md transition-all cursor-pointer flex flex-col md:flex-row md:items-center justify-between gap-space-md" data-count="1" data-id="writing" data-name="Writing Practice" data-time="15"><div class="flex items-start gap-space-md min-w-0 flex-1"><div class="w-12 h-12 rounded-xl bg-surface-container text-tertiary flex items-center justify-center shrink-0 mt-0.5"><span class="material-symbols-outlined text-[24px]">edit</span></div><div class="flex flex-col gap-1 min-w-0"><div class="flex flex-wrap items-center gap-2"><h4 class="font-title-md text-title-md text-on-surface group-hover:text-primary transition-colors">Writing Practice</h4><span class="inline-flex items-center gap-1 text-on-surface-variant font-label-sm text-label-sm"><span class="material-symbols-outlined text-[14px]">edit_note</span>1 Essay / Proof • 15 mins</span></div><p class="font-body-sm text-body-sm text-on-surface-variant">Formulate step-by-step mathematical proofs, conceptual derivations, and explanations with live AI coaching and rubric evaluation.</p></div></div><div class="flex items-center justify-between md:justify-end gap-space-md shrink-0 border-t md:border-t-0 pt-space-xs md:pt-0 border-surface-container"><div class="flex flex-col items-start md:items-end"><button class="inline-flex items-center gap-1 px-space-sm py-1 rounded-lg text-primary hover:bg-surface-container-low font-label-md text-label-md transition-colors" type="button"><span class="">Start Writing</span><span class="material-symbols-outlined text-[16px]">arrow_forward</span></button></div><div class="h-8 w-px bg-surface-container hidden md:block"></div><label class="relative flex items-center cursor-pointer p-1"><input class="tryout-checkbox w-5 h-5 accent-primary rounded cursor-pointer" type="checkbox"></label></div></div>
+</div>
+<!-- Quick Metrics Insight Box (Positioned right below the format list) -->
+
+</div>
+<!-- RIGHT-HAND SIDEBAR ACTION DRAWER (4 cols on desktop / ~30-33%) -->
+
+</div>
+<!-- STICKY BOTTOM DOCK (Custom Assessment Launcher) -->
+<div class="sticky bottom-4 z-40 w-full max-w-[1440px] mx-auto mt-space-md">
+
+</div>
+<!-- Interactive script for checkbox updates, mode switching, and dock synching -->
+<script>
+    (function() {
+      const cards = document.querySelectorAll('.tryout-card');
+      const resetBtn = document.getElementById('btn-reset-selection');
+      const dockTitle = document.getElementById('dock-title');
+      const dockStats = document.getElementById('dock-stats');
+      const dockBtnLabel = document.getElementById('dock-btn-label');
+      const launchBtn = document.getElementById('btn-launch-custom');
+      
+      // Mode toggle buttons
+      const btnPractice = document.getElementById('btn-mode-practice');
+      const btnExam = document.getElementById('btn-mode-exam');
+
+      btnPractice?.addEventListener('click', () => {
+        btnPractice.className = "inline-flex items-center gap-1.5 px-space-md py-1.5 rounded-md bg-surface-container-lowest font-label-md text-label-md text-primary shadow-sm transition-all";
+        btnExam.className = "inline-flex items-center gap-1.5 px-space-md py-1.5 rounded-md text-on-surface-variant hover:text-on-surface font-label-md text-label-md transition-all";
+      });
+
+      btnExam?.addEventListener('click', () => {
+        btnExam.className = "inline-flex items-center gap-1.5 px-space-md py-1.5 rounded-md bg-surface-container-lowest font-label-md text-label-md text-primary shadow-sm transition-all";
+        btnPractice.className = "inline-flex items-center gap-1.5 px-space-md py-1.5 rounded-md text-on-surface-variant hover:text-on-surface font-label-md text-label-md transition-all";
+      });
+
+      function updateDock() {
+        let totalCount = 0;
+        let totalTime = 0;
+        const selectedNames = [];
+
+        cards.forEach(card => {
+          const checkbox = card.querySelector('.tryout-checkbox');
+          if (checkbox && checkbox.checked) {
+            totalCount += parseInt(card.getAttribute('data-count') || '0', 10);
+            totalTime += parseInt(card.getAttribute('data-time') || '0', 10);
+            selectedNames.push(card.getAttribute('data-name'));
+            card.classList.add('ring-2', 'ring-primary/20');
+          } else {
+            card.classList.remove('ring-2', 'ring-primary/20');
+          }
+        });
+
+        if (selectedNames.length > 0) {
+          dockTitle.textContent = 'Selected: ' + selectedNames.join(', ');
+          dockStats.textContent = totalCount + ' Total Questions • ~' + totalTime + ' mins estimated';
+          dockBtnLabel.textContent = 'Launch Custom Tryout (' + totalCount + ' Questions)';
+          launchBtn.removeAttribute('disabled');
+          launchBtn.classList.remove('opacity-50', 'cursor-not-allowed');
+        } else {
+          dockTitle.textContent = 'No formats selected';
+          dockStats.textContent = '0 Questions • Select at least one module above';
+          dockBtnLabel.textContent = 'Select Questions to Start';
+          launchBtn.setAttribute('disabled', 'true');
+          launchBtn.classList.add('opacity-50', 'cursor-not-allowed');
+        }
+      }
+
+      cards.forEach(card => {
+        const checkbox = card.querySelector('.tryout-checkbox');
+        card.addEventListener('click', (e) => {
+          // If clicked directly on the checkbox or action buttons, don't double toggle
+          if (e.target.tagName.toLowerCase() === 'input' || e.target.closest('button')) return;
+          if (checkbox) {
+            checkbox.checked = !checkbox.checked;
+            updateDock();
+          }
+        });
+
+        checkbox?.addEventListener('change', () => {
+          updateDock();
+        });
+      });
+
+      resetBtn?.addEventListener('click', () => {
+        cards.forEach(card => {
+          const checkbox = card.querySelector('.tryout-checkbox');
+          if (checkbox) checkbox.checked = false;
+        });
+        updateDock();
+      });
+
+      // Initial state calculation
+      updateDock();
+    })();
+  </script>
+</div></main>
+
+
+
+</body></html>

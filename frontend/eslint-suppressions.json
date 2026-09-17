@@ -1069,7 +1069,7 @@
   },
   "src/components/PracticePapersPortal.jsx": {
     "react/prop-types": {
-      "count": 1
+      "count": 3
     }
   },
   "src/components/PracticeTestInterface.jsx": {
