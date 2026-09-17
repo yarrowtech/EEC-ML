@@ -18,16 +18,23 @@ describe('PracticePapersPortal', () => {
     localStorage.setItem('token', 'student-token');
     global.fetch = jest.fn((input) => {
       const url = String(input);
-      if (url.includes('/api/assignment/student/assignments')) return jsonResponse([]);
-      if (url.includes('/api/practice-papers/student/papers')) return jsonResponse({ papers: [] });
       if (url.includes('/api/practice/student/meta')) {
         return jsonResponse({ subjects: [{ id: 'subject-1', name: 'Mathematics' }] });
       }
       if (url.includes('/api/lesson-plans/student/smart-learning-map')) {
         return jsonResponse({
           subjects: [{
-            title: 'Science',
-            topics: [{ title: 'Living Things', tryoutSections: [{ type: 'mcq', question: 'What is life?' }] }],
+            subjectId: 'subject-1',
+            title: 'Mathematics',
+            chapters: [{
+              id: 'chapter-1',
+              title: 'Numbers',
+              topics: [{ id: 'topic-1', title: 'Living Things' }],
+            }],
+            topics: [{
+              title: 'Living Things',
+              tryoutSections: [{ type: 'mcq', question: 'What is life?' }],
+            }],
           }],
         });
       }
@@ -46,33 +53,44 @@ describe('PracticePapersPortal', () => {
     jest.clearAllMocks();
   });
 
-  test('shows teacher MCQs, fill blanks, tryouts, practice papers and homework filters together', async () => {
+  test('lets a student pick a subject and shows what they can practice', async () => {
+    const user = userEvent.setup();
     render(<MemoryRouter><PracticePapersPortal /></MemoryRouter>);
 
-    expect(await screen.findByText('Quick Activities')).toBeInTheDocument();
-    expect(await screen.findAllByText('Mathematics')).toHaveLength(3);
-    expect(screen.getByText('Assigned Tryouts')).toBeInTheDocument();
-    expect(screen.getByText('Living Things')).toBeInTheDocument();
-    expect(screen.getByRole('button', { name: 'Practice papers' })).toBeInTheDocument();
-    expect(screen.getByRole('button', { name: 'Homework' })).toBeInTheDocument();
+    expect(await screen.findByText('Choose Your Tryout Format')).toBeInTheDocument();
+    expect(await screen.findByText('Pick a subject above to see what you can practice.')).toBeInTheDocument();
+
+    await screen.findByRole('option', { name: 'Mathematics' });
+    await user.selectOptions(screen.getByRole('combobox', { name: 'Select Subject' }), 'subject-1');
+
+    // MCQ and Fill in the Blanks both report a count of 1 from the mocked question bank.
+    expect(await screen.findAllByText('1 question available')).toHaveLength(2);
+    expect(screen.getByRole('button', { name: 'Start MCQ' })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Start Blanks' })).toBeInTheDocument();
   });
 
   test('opens a teacher MCQ inside the practice-papers page', async () => {
     const user = userEvent.setup();
     render(<MemoryRouter><PracticePapersPortal /></MemoryRouter>);
 
-    const activityButtons = await screen.findAllByRole('button', { name: /Multiple choice.*Mathematics/i });
-    await user.click(activityButtons[0]);
+    await screen.findByRole('option', { name: 'Mathematics' });
+    await user.selectOptions(screen.getByRole('combobox', { name: 'Select Subject' }), 'subject-1');
+    await user.click(await screen.findByRole('button', { name: 'Start MCQ' }));
 
     await waitFor(() => expect(screen.getByText('What is 2 + 2?')).toBeInTheDocument());
     expect(screen.getByRole('button', { name: 'Back to activities' })).toBeInTheDocument();
   });
 
-  test('opens an assigned tryout inside the same practice portal', async () => {
+  test('opens an assigned tryout once a subject and topic are selected', async () => {
     const user = userEvent.setup();
     render(<MemoryRouter initialEntries={['/student/practice-papers']}><PracticePapersPortal /></MemoryRouter>);
 
-    await user.click(await screen.findByRole('button', { name: /Science.*Living Things.*Open tryout/i }));
+    await screen.findByRole('option', { name: 'Mathematics' });
+    await user.selectOptions(screen.getByRole('combobox', { name: 'Select Subject' }), 'subject-1');
+    await screen.findByRole('option', { name: 'Numbers' });
+    await user.selectOptions(screen.getByRole('combobox', { name: 'Select Chapter' }), 'chapter-1');
+    await user.selectOptions(await screen.findByRole('combobox', { name: 'Select Topic' }), 'topic-1');
+    await user.click(await screen.findByRole('button', { name: 'Start Tryout' }));
 
     expect(await screen.findByText('Assigned Tryout')).toBeInTheDocument();
     expect(screen.getByRole('button', { name: /Back to Activities/i })).toBeInTheDocument();
