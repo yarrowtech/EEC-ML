@@ -44,7 +44,7 @@ const notificationSchema = new mongoose.Schema(
 
     // Related entity reference
     relatedEntity: {
-      entityType: { type: String, enum: ['assignment', 'exam', 'fee', 'result', 'meeting', 'mastery', 'mastery_badge', 'gap_detection', 'at_risk', 'learning_path', 'practice_question', null] },
+      entityType: { type: String, enum: ['assignment', 'exam', 'fee', 'result', 'meeting', 'mastery', 'mastery_badge', 'gap_detection', 'at_risk', 'learning_path', 'practice_question', 'practice_paper', null] },
       entityId: { type: mongoose.Schema.Types.ObjectId }
     },
     attachments: [

@@ -63,6 +63,8 @@ const PracticePapersPortal = () => {
   const [searchQuery, setSearchQuery] = useState('');
   const [difficultyFilter, setDifficultyFilter] = useState('all');
   const [activityFilter, setActivityFilter] = useState('all');
+  const [subjects, setSubjects] = useState([]);
+  const [subjectFilter, setSubjectFilter] = useState('all');
   const [selectedPaper, setSelectedPaper] = useState(null);
   const [takingTest, setTakingTest] = useState(false);
   const [openingPaperId, setOpeningPaperId] = useState('');
@@ -146,6 +148,7 @@ const PracticePapersPortal = () => {
         if (!metaResponse.ok) throw new Error(metaData?.error || 'Unable to load teacher activities');
 
         const subjects = Array.isArray(metaData?.subjects) ? metaData.subjects : [];
+        setSubjects(subjects);
         const questionRequests = subjects.flatMap((subject) => ['mcq', 'blank'].map(async (type) => {
           const params = new URLSearchParams({ subjectId: String(subject.id), type });
           const response = await fetch(`${API_BASE}/api/practice/student/questions?${params}`, {
@@ -189,42 +192,55 @@ const PracticePapersPortal = () => {
     return () => controller.abort();
   }, [API_BASE, authHeaders]);
 
-  // Filter class work by difficulty + search; homework by search only
+  // Name of the selected subject, used to match items that only carry a
+  // subject name (homework, tryouts) rather than a subjectId (papers, quick activities).
+  const selectedSubjectName = useMemo(
+    () => subjects.find((s) => String(s.id) === subjectFilter)?.name || '',
+    [subjects, subjectFilter]
+  );
+
+  // Filter class work by difficulty + subject + search; homework by subject + search only
   const filteredPapers = useMemo(() => {
     if (activityFilter !== 'all' && activityFilter !== 'paper') return [];
     const query = searchQuery.trim().toLowerCase();
     return papers.filter(p => {
       if (difficultyFilter !== 'all' && p.difficulty !== difficultyFilter) return false;
+      if (subjectFilter !== 'all' && String(p.subjectId || '') !== subjectFilter) return false;
       return !query || [p.title, p.subjectName, p.chapterTitle, p.topicTitle, p.paperType]
         .some((value) => String(value || '').toLowerCase().includes(query));
     });
-  }, [activityFilter, papers, difficultyFilter, searchQuery]);
+  }, [activityFilter, papers, difficultyFilter, subjectFilter, searchQuery]);
 
   const filteredHomework = useMemo(() => {
     if (activityFilter !== 'all' && activityFilter !== 'homework') return [];
     const q = searchQuery.trim().toLowerCase();
-    if (!q) return homework;
-    return homework.filter((hw) =>
-      [hw.title, hw.subject, hw.chapterTitle, hw.topicTitle, hw.topic]
-        .some((v) => String(v || '').toLowerCase().includes(q))
-    );
-  }, [activityFilter, homework, searchQuery]);
+    return homework.filter((hw) => {
+      if (subjectFilter !== 'all' && selectedSubjectName
+        && String(hw.subject || '').toLowerCase() !== selectedSubjectName.toLowerCase()) return false;
+      if (!q) return true;
+      return [hw.title, hw.subject, hw.chapterTitle, hw.topicTitle, hw.topic]
+        .some((v) => String(v || '').toLowerCase().includes(q));
+    });
+  }, [activityFilter, homework, subjectFilter, selectedSubjectName, searchQuery]);
 
   const filteredPracticeActivities = useMemo(() => {
     const query = searchQuery.trim().toLowerCase();
     return practiceActivities.filter((activity) => {
       if (activityFilter !== 'all' && activityFilter !== activity.type) return false;
+      if (subjectFilter !== 'all' && String(activity.id || '') !== subjectFilter) return false;
       return !query || String(activity.name || '').toLowerCase().includes(query);
     });
-  }, [activityFilter, practiceActivities, searchQuery]);
+  }, [activityFilter, practiceActivities, subjectFilter, searchQuery]);
 
   const filteredTryoutActivities = useMemo(() => {
     if (activityFilter !== 'all' && activityFilter !== 'tryout') return [];
     const query = searchQuery.trim().toLowerCase();
-    return tryoutActivities.filter((activity) => (
-      !query || `${activity.subjectName} ${activity.topicName}`.toLowerCase().includes(query)
-    ));
-  }, [activityFilter, searchQuery, tryoutActivities]);
+    return tryoutActivities.filter((activity) => {
+      if (subjectFilter !== 'all' && selectedSubjectName
+        && activity.subjectName?.toLowerCase() !== selectedSubjectName.toLowerCase()) return false;
+      return !query || `${activity.subjectName} ${activity.topicName}`.toLowerCase().includes(query);
+    });
+  }, [activityFilter, searchQuery, tryoutActivities, subjectFilter, selectedSubjectName]);
 
   const openPaper = async (paper) => {
     if (!paper?._id || openingPaperId) return;
@@ -497,7 +513,7 @@ const PracticePapersPortal = () => {
 
         {/* Filters */}
         <div className="mb-6 rounded-2xl border border-white/80 bg-white/70 p-4 shadow-sm backdrop-blur-xl sm:p-5">
-          <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+          <div className="grid grid-cols-1 gap-4 sm:grid-cols-3">
             {/* Search */}
             <div className="relative">
               <Search className="absolute left-3 top-3 w-5 h-5 text-gray-400" />
@@ -509,6 +525,18 @@ const PracticePapersPortal = () => {
                 className="w-full pl-10 pr-4 py-2 border rounded-lg text-sm focus:ring-2 focus:ring-blue-500"
               />
             </div>
+
+            {/* Subject Filter */}
+            <select
+              value={subjectFilter}
+              onChange={(e) => setSubjectFilter(e.target.value)}
+              className="px-4 py-2 border rounded-lg text-sm focus:ring-2 focus:ring-blue-500"
+            >
+              <option value="all">All Subjects</option>
+              {subjects.map((subject) => (
+                <option key={subject.id} value={String(subject.id)}>{subject.name}</option>
+              ))}
+            </select>
 
             {/* Difficulty Filter (class work only) */}
             <select

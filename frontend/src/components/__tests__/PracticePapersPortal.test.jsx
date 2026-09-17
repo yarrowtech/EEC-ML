@@ -50,7 +50,7 @@ describe('PracticePapersPortal', () => {
     render(<MemoryRouter><PracticePapersPortal /></MemoryRouter>);
 
     expect(await screen.findByText('Quick Activities')).toBeInTheDocument();
-    expect(await screen.findAllByText('Mathematics')).toHaveLength(2);
+    expect(await screen.findAllByText('Mathematics')).toHaveLength(3);
     expect(screen.getByText('Assigned Tryouts')).toBeInTheDocument();
     expect(screen.getByText('Living Things')).toBeInTheDocument();
     expect(screen.getByRole('button', { name: 'Practice papers' })).toBeInTheDocument();

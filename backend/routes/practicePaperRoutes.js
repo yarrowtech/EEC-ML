@@ -9,6 +9,40 @@ const Subject = require('../models/Subject');
 const authTeacher = require('../middleware/authTeacher');
 const authStudent = require('../middleware/authStudent');
 const StudentUser = require('../models/StudentUser');
+const Notification = require('../models/Notification');
+
+// Tells students in the paper's class/section that new or updated practice
+// material is available. Best-effort — a notification failure must never
+// block the teacher's publish/edit action.
+const notifyStudentsOfPaperChange = async (paper, { isNew }) => {
+  try {
+    await Notification.create({
+      schoolId: paper.schoolId,
+      campusId: paper.campusId || null,
+      title: isNew ? 'New practice paper published' : 'Practice paper updated',
+      message: `${paper.title}${paper.subjectName ? ` (${paper.subjectName})` : ''} ${
+        isNew ? 'is now available to practice.' : 'has been updated by your teacher.'
+      }`,
+      audience: 'Student',
+      classId: paper.classId,
+      sectionId: paper.sectionId,
+      subjectId: paper.subjectId || null,
+      className: paper.className || '',
+      sectionName: paper.sectionName || '',
+      subjectName: paper.subjectName || '',
+      createdByType: 'teacher',
+      createdByTeacherId: paper.teacherId,
+      createdByName: paper.teacherName || '',
+      type: 'class_note',
+      typeLabel: 'Practice paper',
+      priority: 'medium',
+      category: 'academic',
+      relatedEntity: { entityType: 'practice_paper', entityId: paper._id },
+    });
+  } catch (err) {
+    logger.error('Error creating practice paper notification:', err);
+  }
+};
 
 const STUDENT_PLACEMENT_FIELDS = 'classId sectionId className sectionName grade section';
 
@@ -252,6 +286,9 @@ router.patch('/:id', authTeacher, async (req, res, next) => {
       });
     }
 
+    const wasPublished = paper.status === 'published';
+    const contentChanged = Boolean(title || description !== undefined || questions || tags || difficulty || duration !== undefined || passingPercentage !== undefined);
+
     // Update allowed fields
     if (title) paper.title = title.trim();
     if (description !== undefined) paper.description = description;
@@ -263,6 +300,14 @@ router.patch('/:id', authTeacher, async (req, res, next) => {
     if (status) paper.status = status;
 
     await paper.save();
+
+    if (paper.status === 'published') {
+      if (!wasPublished) {
+        notifyStudentsOfPaperChange(paper, { isNew: true });
+      } else if (contentChanged) {
+        notifyStudentsOfPaperChange(paper, { isNew: false });
+      }
+    }
 
     res.json({
       success: true,
@@ -317,9 +362,12 @@ router.post('/:id/publish', authTeacher, async (req, res, next) => {
       });
     }
 
+    const wasPublished = paper.status === 'published';
     paper.status = 'published';
     paper.publishedAt = new Date();
     await paper.save();
+
+    notifyStudentsOfPaperChange(paper, { isNew: !wasPublished });
 
     res.json({
       success: true,
