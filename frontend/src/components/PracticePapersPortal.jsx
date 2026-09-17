@@ -2,7 +2,7 @@ import React, { useState, useEffect, useMemo } from 'react';
 import {
   BookOpen, Loader, NotebookPen,
   Mic, PenLine, ListChecks, Puzzle, ChevronRight, ChevronDown,
-  ToggleLeft, Shuffle, FileEdit, Rocket, ArrowLeft, RotateCcw,
+  FileEdit, Rocket, ArrowLeft, RotateCcw,
 } from 'lucide-react';
 import { motion as Motion } from 'framer-motion';
 import ReadingPracticePage from './ReadingPracticePage';
@@ -39,14 +39,6 @@ const FORMAT_DEFS = [
     description: 'Write a response to a prompt and get AI rubric-based evaluation.',
     shortLabel: 'Writing',
   },
-  {
-    key: 'true_false', name: 'True or False', icon: ToggleLeft, tone: 'slate', comingSoon: true,
-    description: 'Fast conceptual checks — coming soon.',
-  },
-  {
-    key: 'matching', name: 'Match the Following', icon: Shuffle, tone: 'slate', comingSoon: true,
-    description: 'Pair related terms and concepts — coming soon.',
-  },
 ];
 
 const TONE_CLASSES = {
@@ -55,7 +47,6 @@ const TONE_CLASSES = {
   purple: 'bg-purple-100 text-purple-700',
   emerald: 'bg-emerald-100 text-emerald-700',
   amber: 'bg-amber-100 text-amber-700',
-  slate: 'bg-slate-100 text-slate-400',
 };
 
 // Wraps a self-contained full page (Reading/Writing practice) with a local
@@ -85,15 +76,18 @@ const PracticePapersPortal = () => {
   const [activeFormatView, setActiveFormatView] = useState(null); // null | 'reading' | 'writing'
   const [practiceActivities, setPracticeActivities] = useState([]);
   const [tryoutActivities, setTryoutActivities] = useState([]);
+  const [readingMaterials, setReadingMaterials] = useState([]);
+  const [writingPrompts, setWritingPrompts] = useState([]);
   const [activitiesLoading, setActivitiesLoading] = useState(true);
   const [activitiesError, setActivitiesError] = useState('');
 
-  // Subject → Chapter → Topic context selectors
+  // Subject → Chapter context selectors. Topic isn't a separate selector —
+  // each chapter maps to a single assigned topic in practice, so it's
+  // derived automatically from the chosen chapter.
   const [subjects, setSubjects] = useState([]);
   const [mapSubjects, setMapSubjects] = useState([]);
   const [subjectFilter, setSubjectFilter] = useState('all');
   const [chapterFilter, setChapterFilter] = useState('all');
-  const [topicFilter, setTopicFilter] = useState('all');
 
   // Multi-format launch queue
   const [selectedFormats, setSelectedFormats] = useState([]);
@@ -114,13 +108,20 @@ const PracticePapersPortal = () => {
       setActivitiesLoading(true);
       setActivitiesError('');
       try {
-        const [metaResponse, mapResponse] = await Promise.all([
+        const [metaResponse, mapResponse, readingResponse, writingResponse] = await Promise.all([
           fetch(`${API_BASE}/api/practice/student/meta`, { headers: authHeaders, signal: controller.signal }),
           fetch(`${API_BASE}/api/lesson-plans/student/smart-learning-map`, { headers: authHeaders, signal: controller.signal }),
+          fetch(`${API_BASE}/api/reading-assessment/student/materials`, { headers: authHeaders, signal: controller.signal }),
+          fetch(`${API_BASE}/api/writing-assessment/student/prompts`, { headers: authHeaders, signal: controller.signal }),
         ]);
         const metaData = await metaResponse.json().catch(() => ({}));
         const mapData = await mapResponse.json().catch(() => ({}));
+        const readingData = await readingResponse.json().catch(() => ({}));
+        const writingData = await writingResponse.json().catch(() => ({}));
         if (!metaResponse.ok) throw new Error(metaData?.error || 'Unable to load teacher activities');
+
+        setReadingMaterials(readingResponse.ok && Array.isArray(readingData?.data) ? readingData.data : []);
+        setWritingPrompts(writingResponse.ok && Array.isArray(writingData?.data) ? writingData.data : []);
 
         const metaSubjects = Array.isArray(metaData?.subjects) ? metaData.subjects : [];
         setSubjects(metaSubjects);
@@ -173,16 +174,12 @@ const PracticePapersPortal = () => {
   // Reset dependent selectors whenever an ancestor changes.
   useEffect(() => {
     setChapterFilter('all');
-    setTopicFilter('all');
   }, [subjectFilter]);
-  useEffect(() => {
-    setTopicFilter('all');
-  }, [chapterFilter]);
   // Availability of each format shifts with context — drop any selection
   // that's no longer valid instead of silently launching the wrong thing.
   useEffect(() => {
     setSelectedFormats([]);
-  }, [subjectFilter, chapterFilter, topicFilter]);
+  }, [subjectFilter, chapterFilter]);
 
   const selectedSubjectName = useMemo(
     () => subjects.find((s) => String(s.id) === subjectFilter)?.name || '',
@@ -197,16 +194,36 @@ const PracticePapersPortal = () => {
     )) || null;
   }, [mapSubjects, subjectFilter, selectedSubjectName]);
 
-  const chapters = selectedSubjectMapEntry?.chapters || [];
+  // Only topics the teacher actually assigned a tryout to should be pickable —
+  // the lesson-plan tree otherwise lists every topic in the curriculum,
+  // assigned or not.
+  const assignedTopicTitles = useMemo(() => {
+    const titles = new Set();
+    (selectedSubjectMapEntry?.topics || []).forEach((topic) => {
+      if (Array.isArray(topic.tryoutSections) && topic.tryoutSections.length > 0) {
+        titles.add(String(topic.title || '').toLowerCase());
+      }
+    });
+    return titles;
+  }, [selectedSubjectMapEntry]);
+
+  const chapters = useMemo(() => {
+    const allChapters = selectedSubjectMapEntry?.chapters || [];
+    return allChapters
+      .map((chapter) => ({
+        ...chapter,
+        topics: (chapter.topics || []).filter((t) => assignedTopicTitles.has(String(t.title || '').toLowerCase())),
+      }))
+      .filter((chapter) => chapter.topics.length > 0);
+  }, [selectedSubjectMapEntry, assignedTopicTitles]);
   const selectedChapterEntry = useMemo(
     () => chapters.find((c) => c.id === chapterFilter) || null,
     [chapters, chapterFilter]
   );
-  const topics = selectedChapterEntry?.topics || [];
-  const selectedTopicEntry = useMemo(
-    () => topics.find((t) => t.id === topicFilter) || null,
-    [topics, topicFilter]
-  );
+  // A chapter maps to exactly one assigned topic in practice (each lesson
+  // plan covers one chapter/topic), so the topic is just the chapter's
+  // first — and only — real one, with no separate picker needed.
+  const selectedTopicEntry = selectedChapterEntry?.topics?.[0] || null;
   const selectedChapterTitle = selectedChapterEntry?.title || '';
   const selectedTopicTitle = selectedTopicEntry?.title || '';
 
@@ -225,13 +242,25 @@ const PracticePapersPortal = () => {
     const key = `${selectedSubjectName.toLowerCase()}::${selectedTopicTitle.toLowerCase()}`;
     return tryoutActivities.find((t) => t.id === key) || null;
   }, [tryoutActivities, selectedSubjectName, selectedTopicTitle]);
+  // Reading/Writing cards are only "available" if a teacher actually
+  // published a matching material/prompt — not assumed. Teachers tag these
+  // by chapter in practice (subject is usually left blank), so match on
+  // whichever field is actually populated.
+  const hasReadingMaterial = useMemo(() => readingMaterials.some((m) => (
+    (selectedChapterTitle && String(m.chapter || '').toLowerCase() === selectedChapterTitle.toLowerCase())
+    || (m.subject && String(m.subject).toLowerCase() === selectedSubjectName.toLowerCase())
+  )), [readingMaterials, selectedChapterTitle, selectedSubjectName]);
+  const hasWritingPrompt = useMemo(() => writingPrompts.some((p) => (
+    (selectedChapterTitle && String(p.chapter || '').toLowerCase() === selectedChapterTitle.toLowerCase())
+    || (p.subject && String(p.subject).toLowerCase() === selectedSubjectName.toLowerCase())
+  )), [writingPrompts, selectedChapterTitle, selectedSubjectName]);
 
   const formatAvailability = {
     mcq: Boolean(mcqActivity),
     blank: Boolean(blankActivity),
     tryout: Boolean(tryoutActivity),
-    reading: true,
-    writing: true,
+    reading: hasReadingMaterial,
+    writing: hasWritingPrompt,
   };
   const formatCounts = {
     mcq: mcqActivity?.count || 0,
@@ -314,6 +343,9 @@ const PracticePapersPortal = () => {
   }
 
   const selectedQueueableCount = selectedFormats.length;
+  // Subject and chapter are mandatory before formats render; topic is
+  // optional — narrows the Topic Tryout card further but isn't required.
+  const contextReady = subjectFilter !== 'all' && chapterFilter !== 'all';
 
   // Main list view
   return (
@@ -347,25 +379,9 @@ const PracticePapersPortal = () => {
                 disabled={subjectFilter === 'all' || chapters.length === 0}
                 className="w-full appearance-none rounded-lg border border-slate-200 bg-slate-50 py-2 pl-9 pr-8 text-sm font-medium text-slate-700 hover:bg-slate-100 focus:outline-none focus:ring-2 focus:ring-indigo-500/30 disabled:cursor-not-allowed disabled:opacity-50"
               >
-                <option value="all">{chapters.length ? 'All Chapters' : 'No chapters yet'}</option>
+                <option value="all">{chapters.length ? 'All Chapters' : 'No assigned topics yet'}</option>
                 {chapters.map((chapter) => (
                   <option key={chapter.id} value={chapter.id}>{chapter.title}</option>
-                ))}
-              </select>
-              <ChevronDown className="pointer-events-none absolute right-2.5 top-1/2 -translate-y-1/2 size-4 text-slate-400" />
-            </div>
-            <div className="relative min-w-[210px] flex-1 sm:flex-initial">
-              <span className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-purple-500 font-bold text-sm">#</span>
-              <select
-                aria-label="Select Topic"
-                value={topicFilter}
-                onChange={(e) => setTopicFilter(e.target.value)}
-                disabled={chapterFilter === 'all' || topics.length === 0}
-                className="w-full appearance-none rounded-lg border border-slate-200 bg-slate-50 py-2 pl-9 pr-8 text-sm font-medium text-slate-700 hover:bg-slate-100 focus:outline-none focus:ring-2 focus:ring-indigo-500/30 disabled:cursor-not-allowed disabled:opacity-50"
-              >
-                <option value="all">{topics.length ? 'All Topics' : 'No topics yet'}</option>
-                {topics.map((topic) => (
-                  <option key={topic.id} value={topic.id}>{topic.title}</option>
                 ))}
               </select>
               <ChevronDown className="pointer-events-none absolute right-2.5 top-1/2 -translate-y-1/2 size-4 text-slate-400" />
@@ -381,7 +397,7 @@ const PracticePapersPortal = () => {
               <ChevronRight className="size-3 text-slate-300" />
               <span className="rounded-full bg-violet-50 px-2 py-0.5 text-violet-700 font-semibold">{selectedChapterTitle}</span>
             </>)}
-            {topicFilter !== 'all' && selectedTopicTitle && (<>
+            {selectedTopicTitle && selectedTopicTitle !== selectedChapterTitle && (<>
               <ChevronRight className="size-3 text-slate-300" />
               <span className="rounded-full bg-purple-50 px-2 py-0.5 text-purple-700 font-semibold">{selectedTopicTitle}</span>
             </>)}
@@ -391,7 +407,6 @@ const PracticePapersPortal = () => {
         {/* ── Choose Your Tryout Format ── */}
         <section className="mb-8">
           <div className="mb-4 flex items-center justify-between gap-3">
-            <h2 className="text-xl font-bold text-slate-900">Choose Your Tryout Format</h2>
             {selectedQueueableCount > 0 && (
               <button type="button" onClick={resetSelection} className="inline-flex items-center gap-1 text-xs font-semibold text-slate-400 hover:text-slate-600">
                 <RotateCcw className="size-3.5" /> Clear selection
@@ -403,17 +418,24 @@ const PracticePapersPortal = () => {
             <div className="flex justify-center rounded-2xl border border-white/80 bg-white/60 py-12"><Loader className="size-7 animate-spin text-indigo-600" /></div>
           ) : activitiesError ? (
             <div className="mb-4 rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-700">{activitiesError}</div>
-          ) : <>
-          {subjectFilter === 'all' && (
-            <div className="mb-4 rounded-xl border border-dashed border-indigo-200 bg-indigo-50/60 px-4 py-3 text-sm text-indigo-700">
-              Pick a subject above to see what you can practice.
+          ) : !contextReady ? (
+            <div className="flex flex-col items-center justify-center gap-3 rounded-2xl border border-dashed border-indigo-200 bg-indigo-50/60 px-6 py-14 text-center">
+              <div className="flex size-12 items-center justify-center rounded-full bg-indigo-100 text-indigo-600">
+                {subjectFilter === 'all'
+                  ? <BookOpen className="size-6" />
+                  : <NotebookPen className="size-6" />}
+              </div>
+              <p className="max-w-xs text-sm font-medium text-indigo-700">
+                {subjectFilter === 'all'
+                  ? 'Please Select a Subject to see what you can practice.'
+                  : 'Pick a chapter above to see what you can practice.'}
+              </p>
             </div>
-          )}
-
+          ) : <>
           <div className="flex flex-col gap-3">
             {FORMAT_DEFS.map((fmt) => {
               const Icon = fmt.icon;
-              const available = !fmt.comingSoon && formatAvailability[fmt.key];
+              const available = formatAvailability[fmt.key];
               const checked = selectedFormats.includes(fmt.key);
               const count = formatCounts[fmt.key];
               return (
@@ -421,7 +443,7 @@ const PracticePapersPortal = () => {
                   key={fmt.key}
                   onClick={() => { if (fmt.queueable && available) toggleFormatSelection(fmt.key); }}
                   className={`group rounded-xl bg-white p-4 sm:p-5 shadow-sm transition-all flex flex-col md:flex-row md:items-center justify-between gap-4 ${
-                    fmt.comingSoon ? 'opacity-60' : available ? 'cursor-pointer hover:shadow-md' : 'opacity-50'
+                    available ? 'cursor-pointer hover:shadow-md' : 'opacity-50'
                   } ${checked ? 'ring-2 ring-indigo-400/40' : ''}`}
                 >
                   <div className="flex items-start gap-4 min-w-0 flex-1">
@@ -431,28 +453,24 @@ const PracticePapersPortal = () => {
                     <div className="flex flex-col gap-1 min-w-0">
                       <div className="flex flex-wrap items-center gap-2">
                         <h4 className="font-bold text-slate-900">{fmt.name}</h4>
-                        {fmt.comingSoon ? (
-                          <span className="rounded-full bg-slate-100 px-2 py-0.5 text-[10px] font-bold uppercase text-slate-400">Coming soon</span>
-                        ) : fmt.queueable ? (
+                        {fmt.queueable && (
                           <span className="text-xs font-semibold text-slate-500">
                             {available ? `${count} question${count === 1 ? '' : 's'} available` : 'Not available for this selection'}
                           </span>
-                        ) : null}
+                        )}
                       </div>
                       <p className="text-sm text-slate-500">{fmt.description}</p>
                     </div>
                   </div>
                   <div className="flex items-center justify-between md:justify-end gap-4 shrink-0 border-t md:border-t-0 pt-3 md:pt-0 border-slate-100">
-                    {!fmt.comingSoon && (
-                      <button
-                        type="button"
-                        disabled={!available}
-                        onClick={(e) => { e.stopPropagation(); startSingleFormat(fmt.key); }}
-                        className="inline-flex items-center gap-1 px-3 py-1.5 rounded-lg text-indigo-700 hover:bg-indigo-50 font-semibold text-sm transition-colors disabled:cursor-not-allowed disabled:opacity-40 disabled:hover:bg-transparent"
-                      >
-                        Start {fmt.shortLabel} <ChevronRight className="size-4" />
-                      </button>
-                    )}
+                    <button
+                      type="button"
+                      disabled={!available}
+                      onClick={(e) => { e.stopPropagation(); startSingleFormat(fmt.key); }}
+                      className="inline-flex items-center gap-1 px-3 py-1.5 rounded-lg text-indigo-700 hover:bg-indigo-50 font-semibold text-sm transition-colors disabled:cursor-not-allowed disabled:opacity-40 disabled:hover:bg-transparent"
+                    >
+                      Start {fmt.shortLabel} <ChevronRight className="size-4" />
+                    </button>
                     {fmt.queueable && (
                       <label className="flex items-center p-1" onClick={(e) => e.stopPropagation()}>
                         <input
@@ -473,7 +491,41 @@ const PracticePapersPortal = () => {
         </section>
       </div>
 
-      {/* ── Sticky bottom dock: custom multi-format launcher ── */}
+      {/* ── Sticky bottom dock: custom multi-format launcher ──
+          Only shown once formats are queued (as the launcher) — the format
+          cards themselves don't render until subject + chapter are picked,
+          so there's nothing to nudge toward before then. */}
+      {selectedQueueableCount > 0 && (
+      <Motion.div
+        initial={{ y: 40, opacity: 0 }}
+        animate={{ y: 0, opacity: 1 }}
+        className="fixed bottom-4 left-1/2 -translate-x-1/2 z-40 w-[calc(100%-2rem)] max-w-3xl"
+      >
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 rounded-2xl border border-white/80 bg-white/95 backdrop-blur-xl shadow-xl px-4 py-3 sm:px-5">
+          <div className="min-w-0">
+            <p className="font-semibold text-sm text-slate-900 truncate">
+              {selectedQueueableCount > 0
+                ? `Selected: ${selectedFormats.map((k) => FORMAT_DEFS.find((f) => f.key === k)?.name).join(', ')}`
+                : 'No formats selected'}
+            </p>
+            <p className="text-xs text-slate-500">
+              {selectedQueueableCount > 0
+                ? `${selectedQueueableCount} format${selectedQueueableCount === 1 ? '' : 's'} queued — they’ll launch one after another`
+                : 'Tick MCQ, Fill Blanks or Topic Tryout above to bundle them'}
+            </p>
+          </div>
+          <button
+            type="button"
+            disabled={selectedQueueableCount === 0}
+            onClick={launchQueue}
+            className="inline-flex shrink-0 items-center justify-center gap-2 rounded-xl bg-indigo-600 px-4 py-2.5 text-sm font-bold text-white shadow-md shadow-indigo-200 transition hover:bg-indigo-700 disabled:cursor-not-allowed disabled:bg-slate-200 disabled:text-slate-400 disabled:shadow-none"
+          >
+            <Rocket className="size-4" />
+            {selectedQueueableCount > 0 ? `Launch (${selectedQueueableCount})` : 'Select formats to start'}
+          </button>
+        </div>
+      </Motion.div>
+      )}
     </div>
   );
 };

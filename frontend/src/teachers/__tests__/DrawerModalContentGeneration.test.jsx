@@ -80,7 +80,6 @@ describe('DrawerModal content generation', () => {
       expect(updatedChapter?.explanation).toContain('Identify each digit position');
       expect(updatedChapter?.recap).toContain('Place determines digit value');
     });
-    const [updatedChapter] = onUpdate.mock.calls.at(-1);
 
     // The curriculum-map lookup also fires (now that it's fed real subject/
     // class context instead of the always-empty legacy localStorage keys),
