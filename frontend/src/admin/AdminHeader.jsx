@@ -63,12 +63,14 @@ const AdminHeader = ({ adminUser, onOpenMobileSidebar, onLogoutRequest, notifica
     return () => clearInterval(t);
   }, []);
 
-  // Opening the bell doesn't mark anything read — unread items stay highlighted
-  // until opened or "Mark all as read" is used.
-  const handleToggleNotifications = useCallback(() => {
-    setShowNotifications((open) => !open);
+  const handleToggleNotifications = useCallback(async () => {
+    const nextOpen = !showNotifications;
+    if (nextOpen && unreadCount > 0) {
+      await markAllRead();
+    }
+    setShowNotifications(nextOpen);
     setShowProfileMenu(false);
-  }, []);
+  }, [markAllRead, showNotifications, unreadCount]);
 
   const {
     showPermissionModal,
@@ -83,8 +85,7 @@ const AdminHeader = ({ adminUser, onOpenMobileSidebar, onLogoutRequest, notifica
   });
 
   useEffect(() => {
-    // Wall posts already arrive as web push, so keep them out of the desktop-alert bridge.
-    syncNotifications(notifications.filter((item) => !item?.isCommunityPost));
+    syncNotifications(notifications);
   }, [notifications, syncNotifications]);
 
   const timeAgo = (val) => {
@@ -106,6 +107,7 @@ const AdminHeader = ({ adminUser, onOpenMobileSidebar, onLogoutRequest, notifica
     const baseTargets = [
       { label: 'Dashboard',       hint: 'Overview',                      path: '/admin/dashboard',      keys: ['dashboard', 'home', 'overview'] },
       { label: 'Analytics',       hint: 'Reports & charts',              path: '/admin/analytics',      keys: ['analytics', 'report', 'chart'] },
+      { label: 'Activity Log',    hint: 'School activity history',       path: '/admin/activity-log',   keys: ['activity log', 'audit', 'log'] },
       { label: 'Academic Setup',  hint: 'Classes, sections, subjects',   path: '/admin/academics',      keys: ['academic', 'class', 'section', 'subject'] },
       { label: 'Teachers',        hint: 'Manage teachers',               path: '/admin/teachers',       keys: ['teacher', 'faculty'] },
       { label: 'Students',        hint: 'Manage students',               path: '/admin/students',       keys: ['student', 'pupil'] },
@@ -115,14 +117,10 @@ const AdminHeader = ({ adminUser, onOpenMobileSidebar, onLogoutRequest, notifica
       { label: 'Results',         hint: 'Marks & results',               path: '/admin/result',         keys: ['result', 'marks'] },
       { label: 'Report Cards',    hint: 'Generate report cards',         path: '/admin/report-cards',   keys: ['report card'] },
       { label: 'Fees Collection', hint: 'Collect & track fees',          path: '/admin/fees/collection',keys: ['fees', 'payment', 'collection'] },
-      { label: 'Fee Receipts',    hint: 'All generated fee receipts',    path: '/admin/fees/receipts',  keys: ['receipt', 'receipts', 'fees', 'rcpt'] },
       { label: 'HR',              hint: 'Staff & leave management',      path: '/admin/hr',             keys: ['hr', 'leave', 'staff'] },
       { label: 'Parents',         hint: 'Parent records',                path: '/admin/parents',        keys: ['parent'] },
-      { label: 'Leave & Left Students', hint: 'Mark leaving, TC, left students', path: '/admin/left-students', keys: ['leave', 'left', 'leaving', 'tc', 'transfer certificate', 'alumni'] },
-      { label: 'Student Promotion', hint: 'Promote students to next class', path: '/admin/promotion', keys: ['promotion', 'promote'] },
       { label: 'Notices',         hint: 'Notifications & notices',       path: '/admin/notices/view',    keys: ['notice', 'notification'] },
       { label: 'Holidays',        hint: 'Holiday calendar',              path: '/admin/holidays',       keys: ['holiday'] },
-      { label: 'Community Wall',  hint: 'Posts, polls & discussions',    path: '/admin/community-wall', keys: ['community', 'wall', 'post', 'poll'] },
       { label: 'Settings',        hint: 'Account & app settings',        path: '/admin/settings',       keys: ['setting', 'profile'] },
     ];
     if (isSuperAdmin) return baseTargets;
@@ -423,7 +421,7 @@ const AdminHeader = ({ adminUser, onOpenMobileSidebar, onLogoutRequest, notifica
           <motion.div
             // whileHover={{ y: -1 }}
             transition={{ duration: 0.2 }}
-            className="flex items-center gap-2 sm:gap-3 border border-white/70 bg-indigo-50 px-3 sm:px-5 pt-[max(0.5rem,env(safe-area-inset-top))] pb-2 shadow-[0_16px_44px_-12px_rgba(15,23,42,0.10),0_4px_12px_rgba(15,23,42,0.04)] backdrop-blur-xl saturate-150 transition-colors hover:bg-white/70"
+            className="flex items-center gap-2 sm:gap-3 border border-white/70 bg-white/60 px-3 sm:px-5 pt-[max(0.5rem,env(safe-area-inset-top))] pb-2 shadow-[0_16px_44px_-12px_rgba(15,23,42,0.10),0_4px_12px_rgba(15,23,42,0.04)] backdrop-blur-xl saturate-150 transition-colors hover:bg-white/70"
           >
             {!showSearch && (
               <>
@@ -522,14 +520,15 @@ const AdminHeader = ({ adminUser, onOpenMobileSidebar, onLogoutRequest, notifica
                   onFocus={() => { setShowSuggestions(true); setIsSearchFocused(true); }}
                   onBlur={() => { closeSuggestionsIfFocusOutside(desktopSearchRef); setIsSearchFocused(false); }}
                   onKeyDown={handleSearchInputKeyDown}
-     Leaving Students             aria-haspopup="listbox"
+                  aria-expanded={showSuggestions}
+                  aria-haspopup="listbox"
                   aria-controls={DESKTOP_SEARCH_LISTBOX_ID}
                   aria-activedescendant={
                     showSuggestions && activeSuggestionIndex >= 0
                       ? `desktop-search-option-${activeSuggestionIndex}`
                       : undefined
                   }
-                  className="admin-search-input w-full border-none outline-none text-sm font-medium text-slate-900 placeholder:text-slate-400 placeholder:font-normal py-2 bg-white rounded-full"
+                  className="admin-search-input w-full border-none outline-none text-sm font-medium text-slate-900 placeholder:text-slate-400 placeholder:font-normal py-2 bg-white"
                 />
                 {searchQuery ? (
                   <button
@@ -621,8 +620,7 @@ const AdminHeader = ({ adminUser, onOpenMobileSidebar, onLogoutRequest, notifica
                     )}
                   </div>
                   <div className="flex flex-col leading-tight min-w-0 text-left">
-                    {/* <span className="text-sm font-semibold text-slate-900 truncate max-w-[160px]">{primaryName}</span> */}
-                    <span className="text-sm font-semibold text-slate-900 whitespace-nowrap">{primaryName}</span>
+                    <span className="text-sm font-semibold text-slate-900 truncate max-w-[160px]">{primaryName}</span>
                     <span className="text-[10px] font-medium text-slate-500 tracking-wide">{profileRole}</span>
                   </div>
                   <ChevronDown size={14} className="text-slate-400" />
