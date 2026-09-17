@@ -80,9 +80,11 @@ describe('DrawerModal content generation', () => {
       expect(updatedChapter?.explanation).toContain('Identify each digit position');
       expect(updatedChapter?.recap).toContain('Place determines digit value');
     });
-    const [updatedChapter] = onUpdate.mock.calls.at(-1);
 
-    const [url, options] = global.fetch.mock.calls[0];
+    // The curriculum-map lookup also fires (now that it's fed real subject/
+    // class context instead of the always-empty legacy localStorage keys),
+    // so find the generate-content call by URL rather than assuming index 0.
+    const [url, options] = global.fetch.mock.calls.find(([callUrl]) => callUrl.includes('/api/ai-teacher/generate-content'));
     expect(url).toContain('/api/ai-teacher/generate-content');
     expect(JSON.parse(options.body)).toMatchObject({
       subject: 'Mathematics',

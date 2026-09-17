@@ -2310,11 +2310,16 @@ router.get('/student/smart-learning-map', authStudent, async (req, res) => {
       const chapterId = normalizeIdValue(chapter?.id) || chapterTitle.toLowerCase();
       const chapterKey = getChapterMapKey(chapter, chapterTitle) || chapterId;
       const topicId = normalizeIdValue(topic?.id) || topicTitle.toLowerCase();
+      // Prefer the title for the exposed/keying id — chapter.id and topic.id
+      // are routinely left at the authoring tool's generic default (e.g.
+      // "chapter-1"/"topic-1"), which collides across unrelated
+      // chapters/topics and breaks both React keys and <select> values.
+      const topicKey = topicTitle.toLowerCase() || topicId;
       const subTopicId = normalizeIdValue(subTopic?.id) || subTopicTitle.toLowerCase();
 
       if (!subjectEntry.chapters.has(chapterKey)) {
         subjectEntry.chapters.set(chapterKey, {
-          id: chapterId,
+          id: chapterKey,
           title: chapterTitle,
           uploads: [],
           meta: {},
@@ -2324,17 +2329,18 @@ router.get('/student/smart-learning-map', authStudent, async (req, res) => {
       const chapterEntry = subjectEntry.chapters.get(chapterKey);
       chapterEntry.meta = mergeChapterMeta(chapterEntry.meta, buildChapterMeta(plan, chapter));
 
-      if (!chapterEntry.topics.has(topicId)) {
-        chapterEntry.topics.set(topicId, {
-          id: topicId,
+      if (!chapterEntry.topics.has(topicKey)) {
+        chapterEntry.topics.set(topicKey, {
+          id: topicKey,
           title: topicTitle,
           subtopics: new Map(),
         });
       }
-      const topicEntry = chapterEntry.topics.get(topicId);
+      const topicEntry = chapterEntry.topics.get(topicKey);
 
-      if (!subjectEntry.topics.has(topicId)) {
-        subjectEntry.topics.set(topicId, {
+      const subjectTopicKey = `${chapterKey}::${topicKey}`;
+      if (!subjectEntry.topics.has(subjectTopicKey)) {
+        subjectEntry.topics.set(subjectTopicKey, {
           title: topicTitle,
           subtopics: new Set(),
         });
@@ -2518,7 +2524,12 @@ router.get('/student/smart-learning-map', authStudent, async (req, res) => {
         const chapterKey = getChapterMapKey(chapter) || chapterId;
         if (!subjectEntry.chapters.has(chapterKey)) {
           subjectEntry.chapters.set(chapterKey, {
-            id: chapterId,
+            // Teachers routinely leave chapter.id at the generator's default
+            // (e.g. "chapter-1"), so it repeats across every chapter in the
+            // subject. Expose chapterKey (title-based, already unique per
+            // chapter) instead, or the frontend's <select> options collide
+            // on value and only the first chapter with that id is pickable.
+            id: chapterKey,
             title: normalizeString(chapter.title) || 'Chapter',
             uploads: [],
             topics: new Map(),
@@ -2547,23 +2558,29 @@ router.get('/student/smart-learning-map', authStudent, async (req, res) => {
         }
         (chapter.topics || []).forEach((topic) => {
           const topicId = normalizeIdValue(topic.id) || normalizeString(topic.title).toLowerCase();
-          if (!chapterEntry.topics.has(topicId)) {
-            chapterEntry.topics.set(topicId, {
-              id: topicId,
+          // Same default-id collision as chapters: prefer the topic's own
+          // title for the key/exposed id so two topics sharing the raw
+          // "topic-1" default (within this chapter, or across chapters)
+          // don't merge into one entry or collide as <select> values.
+          const topicKey = normalizeString(topic.title).toLowerCase() || topicId;
+          if (!chapterEntry.topics.has(topicKey)) {
+            chapterEntry.topics.set(topicKey, {
+              id: topicKey,
               title: normalizeString(topic.title) || 'Topic',
               subtopics: new Map(),
             });
           }
-          if (!subjectEntry.topics.has(topicId)) {
-            subjectEntry.topics.set(topicId, {
+          const subjectTopicKey = `${chapterKey}::${topicKey}`;
+          if (!subjectEntry.topics.has(subjectTopicKey)) {
+            subjectEntry.topics.set(subjectTopicKey, {
               title: normalizeString(topic.title) || 'Topic',
               subtopics: new Set(),
               tryoutSections: [],
             });
           }
-          const topicEntry = subjectEntry.topics.get(topicId);
+          const topicEntry = subjectEntry.topics.get(subjectTopicKey);
           if (!Array.isArray(topicEntry.tryoutSections)) topicEntry.tryoutSections = [];
-          const chapterTopicEntry = chapterEntry.topics.get(topicId);
+          const chapterTopicEntry = chapterEntry.topics.get(topicKey);
           (topic.subTopics || []).forEach((sub) => {
             const subTitle = normalizeString(sub.title);
             if (subTitle) topicEntry.subtopics.add(subTitle);

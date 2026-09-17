@@ -1735,11 +1735,6 @@
       "count": 3
     }
   },
-  "src/teachers/AIPoweredTeaching.jsx": {
-    "no-unused-vars": {
-      "count": 2
-    }
-  },
   "src/teachers/AssignmentEvaluation.jsx": {
     "react/no-unescaped-entities": {
       "count": 1
@@ -2027,13 +2022,13 @@
   },
   "src/teachers/components/lesson-plan-builder/DrawerModal.jsx": {
     "no-unused-vars": {
-      "count": 5
+      "count": 7
     },
     "react/no-unescaped-entities": {
       "count": 5
     },
     "react/prop-types": {
-      "count": 87
+      "count": 108
     }
   },
   "src/teachers/components/lesson-plan-builder/FileUploadCard.jsx": {
@@ -2063,10 +2058,13 @@
   },
   "src/teachers/components/lesson-plan-builder/TryoutBuilder.jsx": {
     "no-unused-vars": {
-      "count": 2
+      "count": 4
     },
     "react/prop-types": {
-      "count": 50
+      "count": 53
+    },
+    "no-useless-escape": {
+      "count": 2
     }
   },
   "src/teachers/components/lesson-plan-builder/UploadDropzone.jsx": {

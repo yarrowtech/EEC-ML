@@ -2,6 +2,7 @@ import { render, screen } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { MemoryRouter, Route, Routes } from 'react-router-dom';
 import TeacherPortal from '../TeacherPortal';
+import { TenantProvider } from '../../context/TenantContext';
 
 jest.mock('../SmartTeachingLessonPlanner', () => ({ __esModule: true, default: () => null }));
 jest.mock('../AIPoweredTeaching', () => ({ __esModule: true, default: () => null }));
@@ -44,11 +45,13 @@ jest.mock('../../utils/authSession', () => ({
 
   const renderPortal = (initialEntry = '/teacher/dashboard') =>
     render(
-      <MemoryRouter initialEntries={[initialEntry]}>
-        <Routes>
-          <Route path="/teacher/*" element={<TeacherPortal />} />
-        </Routes>
-    </MemoryRouter>
+      <TenantProvider>
+        <MemoryRouter initialEntries={[initialEntry]}>
+          <Routes>
+            <Route path="/teacher/*" element={<TeacherPortal />} />
+          </Routes>
+        </MemoryRouter>
+      </TenantProvider>
   );
 
 describe('TeacherPortal', () => {
@@ -93,7 +96,9 @@ describe('TeacherPortal', () => {
 
     await userEvent.click(screen.getByRole('button', { name: /Collapse sidebar/i }));
 
-    expect(screen.getByTestId('teacher-sidebar-logo')).toContainElement(screen.getByAltText('EEC'));
+    const collapsedLogo = screen.getByTestId('teacher-sidebar-logo');
+    expect(collapsedLogo).toHaveAttribute('aria-label', 'Electronic Educare logo');
+    expect(collapsedLogo.querySelector('img')).toBeInTheDocument();
     expect(screen.getByRole('button', { name: /Expand sidebar/i })).toBeInTheDocument();
     expect(screen.getByTestId('collapsed-sidebar-logout').querySelector('svg')).toBeInTheDocument();
   });

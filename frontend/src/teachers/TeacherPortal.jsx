@@ -38,6 +38,7 @@ import {
   Activity,
 } from 'lucide-react';
 import { Button } from '../components/ui/button';
+import { useTenant } from '../context/TenantContext';
 
 import HealthUpdatesAdvanced from './HealthUpdatesAdvanced';
 import ParentMeetings from './ParentMeetings';
@@ -1440,6 +1441,7 @@ const TeacherPortalShell = () => {
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
   const [showLogoutConfirm, setShowLogoutConfirm] = useState(false);
+  const { name: schoolName, logo: schoolLogo } = useTenant();
   const location = useLocation();
   const navigate = useNavigate();
   const isChatRoute = location.pathname.includes('/communication/chat');
@@ -1842,10 +1844,10 @@ const TeacherPortalShell = () => {
             <div className="flex min-h-[92px] flex-col items-center justify-center gap-3 px-2 py-4">
               <div
                 data-testid="teacher-sidebar-logo"
-                aria-label="EEC Teacher Portal logo"
+                aria-label={`${schoolName} logo`}
                 className="flex size-12 items-center justify-center overflow-hidden rounded-xl border border-slate-700 bg-slate-950 p-1.5 shadow-[0_6px_16px_rgba(15,23,42,0.2)]"
               >
-                <img src="/logo_new.png" alt="EEC" className="h-full w-full object-contain" />
+                <img src={schoolLogo || '/logo_new.png'} alt="" className="h-full w-full object-contain" />
               </div>
               <button
                 type="button"
@@ -1864,9 +1866,17 @@ const TeacherPortalShell = () => {
               transition={{ duration: 0.2 }}
               className="flex items-center justify-between px-6 pb-6 pt-7"
             >
-              <div className="min-w-0">
-                <div className="truncate text-[1.3rem] font-bold leading-tight tracking-[-0.02em] text-[#0b0e1a]">Teacher Portal</div>
-                <div className="mt-1 truncate text-xs font-normal tracking-[0.03em] text-[#6f7a8c]">Academic Workspace</div>
+              <div className="flex min-w-0 items-center gap-3">
+                <div
+                  aria-label={`${schoolName} logo`}
+                  className="flex size-10 shrink-0 items-center justify-center overflow-hidden rounded-xl border border-slate-700 bg-slate-950 p-1.5 shadow-[0_6px_16px_rgba(15,23,42,0.2)]"
+                >
+                  <img src={schoolLogo || '/logo_new.png'} alt="" className="h-full w-full object-contain" />
+                </div>
+                <div className="min-w-0">
+                  <div className="truncate text-[1.1rem] font-bold leading-tight tracking-[-0.02em] text-[#0b0e1a]">{schoolName}</div>
+                  <div className="mt-1 truncate text-xs font-normal tracking-[0.03em] text-[#6f7a8c]">Teacher Portal</div>
+                </div>
               </div>
               <div className="flex items-center gap-1">
                 <button

@@ -44,6 +44,15 @@ describe('PracticePapersPortal', () => {
       if (url.includes('/api/practice/student/questions')) {
         return jsonResponse({ questions: [{ id: 'mcq-1', type: 'mcq', question: 'What is 2 + 2?', options: ['3', '4'] }] });
       }
+      if (url.includes('/api/reading-assessment/student/materials')) {
+        // Teachers tag these by chapter in practice — subject is usually blank.
+        return jsonResponse({ success: true, data: [{ _id: 'rm-1', subject: '', chapter: 'Numbers', title: 'Numbers Passage' }] });
+      }
+      if (url.includes('/api/writing-assessment/student/prompts')) {
+        // No writing prompt published for the "Numbers" chapter — Writing
+        // Practice should stay unavailable rather than defaulting to "on".
+        return jsonResponse({ success: true, data: [{ _id: 'wp-1', subject: '', chapter: 'A Different Chapter', title: 'Explain photosynthesis' }] });
+      }
       return jsonResponse({});
     });
   });
@@ -57,16 +66,24 @@ describe('PracticePapersPortal', () => {
     const user = userEvent.setup();
     render(<MemoryRouter><PracticePapersPortal /></MemoryRouter>);
 
-    expect(await screen.findByText('Choose Your Tryout Format')).toBeInTheDocument();
-    expect(await screen.findByText('Pick a subject above to see what you can practice.')).toBeInTheDocument();
+    expect(await screen.findByText('Please Select a Subject to see what you can practice.')).toBeInTheDocument();
 
     await screen.findByRole('option', { name: 'Mathematics' });
     await user.selectOptions(screen.getByRole('combobox', { name: 'Select Subject' }), 'subject-1');
 
-    // MCQ and Fill in the Blanks both report a count of 1 from the mocked question bank.
-    expect(await screen.findAllByText('1 question available')).toHaveLength(2);
+    expect(await screen.findByText('Pick a chapter above to see what you can practice.')).toBeInTheDocument();
+    expect(screen.queryByRole('combobox', { name: 'Select Topic' })).not.toBeInTheDocument();
+
+    await screen.findByRole('option', { name: 'Numbers' });
+    await user.selectOptions(screen.getByRole('combobox', { name: 'Select Chapter' }), 'chapter-1');
+
+    // There's no separate topic step — the chapter's one assigned topic is
+    // used automatically, so MCQ, Fill in the Blanks and Topic Tryout are
+    // all available as soon as subject + chapter are picked.
+    expect(await screen.findAllByText('1 question available')).toHaveLength(3);
     expect(screen.getByRole('button', { name: 'Start MCQ' })).toBeInTheDocument();
     expect(screen.getByRole('button', { name: 'Start Blanks' })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Start Tryout' })).toBeInTheDocument();
   });
 
   test('opens a teacher MCQ inside the practice-papers page', async () => {
@@ -75,13 +92,15 @@ describe('PracticePapersPortal', () => {
 
     await screen.findByRole('option', { name: 'Mathematics' });
     await user.selectOptions(screen.getByRole('combobox', { name: 'Select Subject' }), 'subject-1');
+    await screen.findByRole('option', { name: 'Numbers' });
+    await user.selectOptions(screen.getByRole('combobox', { name: 'Select Chapter' }), 'chapter-1');
     await user.click(await screen.findByRole('button', { name: 'Start MCQ' }));
 
     await waitFor(() => expect(screen.getByText('What is 2 + 2?')).toBeInTheDocument());
     expect(screen.getByRole('button', { name: 'Back to activities' })).toBeInTheDocument();
   });
 
-  test('opens an assigned tryout once a subject and topic are selected', async () => {
+  test('opens the assigned tryout for the chapter\'s topic', async () => {
     const user = userEvent.setup();
     render(<MemoryRouter initialEntries={['/student/practice-papers']}><PracticePapersPortal /></MemoryRouter>);
 
@@ -89,10 +108,30 @@ describe('PracticePapersPortal', () => {
     await user.selectOptions(screen.getByRole('combobox', { name: 'Select Subject' }), 'subject-1');
     await screen.findByRole('option', { name: 'Numbers' });
     await user.selectOptions(screen.getByRole('combobox', { name: 'Select Chapter' }), 'chapter-1');
-    await user.selectOptions(await screen.findByRole('combobox', { name: 'Select Topic' }), 'topic-1');
     await user.click(await screen.findByRole('button', { name: 'Start Tryout' }));
 
     expect(await screen.findByText('Assigned Tryout')).toBeInTheDocument();
     expect(screen.getByRole('button', { name: /Back to Activities/i })).toBeInTheDocument();
+  });
+
+  test('gates Reading/Writing Practice on real published materials instead of always showing available', async () => {
+    const user = userEvent.setup();
+    render(<MemoryRouter><PracticePapersPortal /></MemoryRouter>);
+
+    await screen.findByRole('option', { name: 'Mathematics' });
+    await user.selectOptions(screen.getByRole('combobox', { name: 'Select Subject' }), 'subject-1');
+    await screen.findByRole('option', { name: 'Numbers' });
+    await user.selectOptions(screen.getByRole('combobox', { name: 'Select Chapter' }), 'chapter-1');
+
+    // A reading passage is published for Mathematics — the card is enabled.
+    const startReading = await screen.findByRole('button', { name: 'Start Reading' });
+    expect(startReading).toBeEnabled();
+
+    // No writing prompt is published for Mathematics (only for Science) —
+    // the card must stay disabled rather than being assumed available.
+    expect(screen.getByRole('button', { name: 'Start Writing' })).toBeDisabled();
+
+    await user.click(startReading);
+    expect(await screen.findByText('Reading practice')).toBeInTheDocument();
   });
 });

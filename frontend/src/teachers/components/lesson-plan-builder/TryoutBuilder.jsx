@@ -1092,7 +1092,9 @@ const TryoutBuilder = ({
 };
 
 // Inline (non-modal) version for embedding directly inside lesson plan drawer
-export const InlineTryoutBuilder = ({ tryouts = [], onSaveTryouts, topicTitle = '' }) => {
+export const InlineTryoutBuilder = ({
+  tryouts = [], onSaveTryouts, topicTitle = '', subjectName = '', gradeLevel = '',
+}) => {
   const [localTryouts, setLocalTryouts] = useState(tryouts);
   const [selectedType, setSelectedType] = useState(null);
   const [editingIndex, setEditingIndex] = useState(null);
@@ -1255,9 +1257,8 @@ export const InlineTryoutBuilder = ({ tryouts = [], onSaveTryouts, topicTitle = 
   };
 
   const generateAiTryouts = async () => {
-    const subject = localStorage.getItem('selectedSubjectName') || 'General';
+    const subject = subjectName || 'General';
     const topic = topicTitle || 'General Topic';
-    const gradeLevel = localStorage.getItem('selectedClassName') || '';
     const token = localStorage.getItem('token') || '';
 
     setGenerating(true);

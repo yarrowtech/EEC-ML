@@ -185,6 +185,9 @@ const AIPoweredTeaching = () => {
   const selectedSubjectName = useMemo(() => (
     subjectOptions.find((option) => toIdString(option?.subjectId) === toIdString(selectedSubject))?.subjectName || ''
   ), [selectedSubject, subjectOptions]);
+  const selectedClassName = useMemo(() => (
+    classOptions.find((option) => toIdString(option?.id) === toIdString(selectedClass))?.name || ''
+  ), [selectedClass, classOptions]);
 
   const authHeaders = () => ({
     'Content-Type': 'application/json',
@@ -1192,6 +1195,7 @@ const AIPoweredTeaching = () => {
                     sectionId={selectedSection}
                     subjectId={selectedSubject}
                     subjectName={selectedSubjectName}
+                    classDisplayName={selectedClassName}
                     onClose={() => handleCloseChapter(chapter.id)}
                     onUpdate={(nextChapter) => updateChapter(nextChapter.id, () => nextChapter)}
                     onAddContentFile={(file, bucket) => addContentFile(chapter.id, file, bucket)}

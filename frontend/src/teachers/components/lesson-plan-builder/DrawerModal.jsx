@@ -129,6 +129,7 @@ const DrawerModal = ({
   publishProgress = 0,
   externalStep,
   onStepChange,
+  classDisplayName = '',
 }) => {
   const [currentStep, setCurrentStep] = useState(0);
   const [customDurationSelected, setCustomDurationSelected] = useState(() => (
@@ -162,8 +163,8 @@ const DrawerModal = ({
 
   React.useEffect(() => {
     if (!open) return;
-    const subject = localStorage.getItem('selectedSubjectName') || '';
-    const className = localStorage.getItem('selectedClassName') || '';
+    const subject = subjectName || '';
+    const className = classDisplayName || '';
     if (!subject && !className) return;
     setCurriculumLoading(true);
     const params = new URLSearchParams();
@@ -178,7 +179,7 @@ const DrawerModal = ({
       })
       .catch(() => setCurriculumTopics([]))
       .finally(() => setCurriculumLoading(false));
-  }, [open]);
+  }, [open, subjectName, classDisplayName]);
 
   const generateIdoWeeDo = async () => {
     const subject = subjectName || 'General';
@@ -944,8 +945,6 @@ const DrawerModal = ({
 
       /* ─── LANGUAGE PRACTICE ─────────────────────────────────── */
       case 'language': {
-        const subjectName = localStorage.getItem('selectedSubjectName') || '';
-
         const saveReading = async () => {
           if (!readingForm.title.trim() || !readingForm.content.trim()) {
             toast.error('Title and passage are required');
@@ -1304,6 +1303,8 @@ const DrawerModal = ({
               tryouts={chapter.tryouts || []}
               onSaveTryouts={handleSaveTryouts}
               topicTitle={chapter.title || ''}
+              subjectName={subjectName}
+              gradeLevel={classDisplayName}
             />
           </div>
         );
