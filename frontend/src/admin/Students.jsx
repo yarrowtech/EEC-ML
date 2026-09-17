@@ -3881,7 +3881,12 @@ const Students = ({ setShowAdminHeader }) => {
     // container instead of the whole page scrolling.
     // ── Adjust the table area height here: bump the subtracted px to make it
     //    shorter (63.4px = AdminHeader; the extra ~30px leaves a bottom gap).
-    <div className="page-fade-in flex h-[calc(100dvh-94px)] flex-col overflow-hidden bg-gray-50">
+    // Tablet widths (md: 768–1024px) wrap the Add/Demo/Select All/Refresh
+    // button row onto two lines, eating extra height the base offset doesn't
+    // account for — without a bigger subtraction here that overflow drags the
+    // whole page into a second, outer scrollbar instead of staying contained
+    // in the table's own scroll area.
+    <div className="page-fade-in flex h-[calc(100dvh-94px)] md:h-[calc(100dvh-150px)] lg:h-[calc(100dvh-94px)] flex-col overflow-hidden bg-gray-50">
       <div className="w-full flex-1 flex flex-col p-3 md:p-5 lg:p-6 overflow-hidden text-sm md:text-base">
         {/* Header */}
         <div className="flex flex-col sm:flex-wrap gap-3 sm:justify-between sm:items-center mb-1 flex-shrink-0">
@@ -4008,7 +4013,10 @@ const Students = ({ setShowAdminHeader }) => {
               title={bulkBusy ? "Unavailable while a bulk job is running" : "Refresh students table data"}
             >
               {tableRefreshing ? <Loader2 size={15} className="animate-spin" /> : <RotateCcw size={15} />}
-              {tableRefreshing ? "Refreshing..." : "Refresh"}
+              {/* Icon-only on tablet widths (md: 768–1024px) to save header
+                  space — full label on mobile (buttons stack, room is fine)
+                  and back on desktop (lg+). */}
+              <span className="md:hidden lg:inline">{tableRefreshing ? "Refreshing..." : "Refresh"}</span>
             </button>
           </div>
         </div>
@@ -4110,9 +4118,13 @@ const Students = ({ setShowAdminHeader }) => {
 
           {/* Filter Bar */}
           <div className="mb-1 p-3 md:p-4 flex-shrink-0  ">
-            <div className="flex flex-wrap items-center gap-3">
+            {/* Search gets its own full-width row on mobile/tablet (below lg,
+                i.e. up to 1024px) — squeezing it down to min-w-[200px] next to
+                the filter selects on a tablet-width screen left it cramped
+                and wrapping awkwardly. Desktop (lg+) keeps the single row. */}
+            <div className="flex flex-col lg:flex-row lg:items-center gap-3">
               {/* Search */}
-              <div className="flex-1 min-w-[200px] relative">
+              <div className="w-full lg:flex-1 lg:min-w-[200px] relative">
                 <Search size={16} className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" />
                 <input
                   type="text"
@@ -4123,46 +4135,48 @@ const Students = ({ setShowAdminHeader }) => {
                 />
               </div>
 
-              {/* Session Filter */}
-              <select
-                value={sessionFilter}
-                onChange={(e) => { setSessionFilter(e.target.value); setClassFilter(""); setSectionFilter(""); }}
-                disabled={!sessionOptions.length}
-                className="bg-white border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-yellow-500 min-w-[140px]"
-              >
-                {!sessionOptions.length && <option value="">No Active Session</option>}
-                {sessionOptions.map((s) => <option key={s} value={s}>{s}</option>)}
-              </select>
-
-              {/* Class Filter */}
-              <select
-                value={classFilter}
-                onChange={(e) => { setClassFilter(e.target.value); setSectionFilter(""); }}
-                className="bg-white border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-yellow-500 min-w-[130px]"
-              >
-                <option value="">All Classes</option>
-                {classOptions.map((c) => <option key={c} value={c}>{c}</option>)}
-              </select>
-
-              {/* Section Filter */}
-              <select
-                value={sectionFilter}
-                onChange={(e) => setSectionFilter(e.target.value)}
-                className="bg-white border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-yellow-500 min-w-[130px]"
-              >
-                <option value="">All Sections</option>
-                {sectionOptions.map((s) => <option key={s} value={s}>{s}</option>)}
-              </select>
-
-              {/* Reset */}
-              {(sessionFilter || classFilter || sectionFilter || searchTerm) && (
-                <button
-                  onClick={() => { setSessionFilter(""); setClassFilter(""); setSectionFilter(""); setSearchTerm(""); }}
-                  className="inline-flex items-center gap-1 px-3 py-2 text-sm text-gray-600 hover:text-gray-800 hover:bg-gray-100 rounded-lg transition-colors"
+              <div className="flex flex-wrap items-center justify-center lg:justify-start gap-3">
+                {/* Session Filter */}
+                <select
+                  value={sessionFilter}
+                  onChange={(e) => { setSessionFilter(e.target.value); setClassFilter(""); setSectionFilter(""); }}
+                  disabled={!sessionOptions.length}
+                  className="bg-white border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-yellow-500 min-w-[140px]"
                 >
-                  <X size={14} /> Clear
-                </button>
-              )}
+                  {!sessionOptions.length && <option value="">No Active Session</option>}
+                  {sessionOptions.map((s) => <option key={s} value={s}>{s}</option>)}
+                </select>
+
+                {/* Class Filter */}
+                <select
+                  value={classFilter}
+                  onChange={(e) => { setClassFilter(e.target.value); setSectionFilter(""); }}
+                  className="bg-white border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-yellow-500 min-w-[130px]"
+                >
+                  <option value="">All Classes</option>
+                  {classOptions.map((c) => <option key={c} value={c}>{c}</option>)}
+                </select>
+
+                {/* Section Filter */}
+                <select
+                  value={sectionFilter}
+                  onChange={(e) => setSectionFilter(e.target.value)}
+                  className="bg-white border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-yellow-500 min-w-[130px]"
+                >
+                  <option value="">All Sections</option>
+                  {sectionOptions.map((s) => <option key={s} value={s}>{s}</option>)}
+                </select>
+
+                {/* Reset */}
+                {(sessionFilter || classFilter || sectionFilter || searchTerm) && (
+                  <button
+                    onClick={() => { setSessionFilter(""); setClassFilter(""); setSectionFilter(""); setSearchTerm(""); }}
+                    className="inline-flex items-center gap-1 px-3 py-2 text-sm text-gray-600 hover:text-gray-800 hover:bg-gray-100 rounded-lg transition-colors"
+                  >
+                    <X size={14} /> Clear
+                  </button>
+                )}
+              </div>
             </div>
 
             {/* Active filter tags */}
@@ -4374,9 +4388,17 @@ const Students = ({ setShowAdminHeader }) => {
                             }}
                           >
                             <div className="flex items-center gap-2">
-                              <div className="w-7 h-7 rounded-full bg-gradient-to-br from-amber-100 to-yellow-200 flex items-center justify-center text-xs font-semibold text-amber-700 flex-shrink-0">
-                                {student.name?.charAt(0) || "?"}
-                              </div>
+                              {isSafeImageUrl(student.profilePic) ? (
+                                <img
+                                  src={student.profilePic}
+                                  alt={student.name || "Student"}
+                                  className="w-7 h-7 rounded-full object-cover flex-shrink-0 ring-1 ring-amber-100"
+                                />
+                              ) : (
+                                <div className="w-7 h-7 rounded-full bg-gradient-to-br from-amber-100 to-yellow-200 flex items-center justify-center text-xs font-semibold text-amber-700 flex-shrink-0">
+                                  {student.name?.charAt(0) || "?"}
+                                </div>
+                              )}
                               <div className="min-w-0 flex-1">
                                 <div className="font-medium text-gray-900 text-xs truncate hover:text-amber-600 transition flex items-center gap-1">
                                   {studentGaps.length > 0 && (
@@ -4612,7 +4634,7 @@ const Students = ({ setShowAdminHeader }) => {
             </div>
 
             {/* Pagination */}
-              <div className="mt-1 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between flex-shrink-0 pt-3 border-t border-gray-100 px-1">
+              <div className="mt-1 flex  gap-3 sm:flex-col lg:flex-row sm:items-center sm:justify-between flex-shrink-0 pt-3 border-t border-gray-100 px-1">
                 <p className="text-gray-500 text-xs">
                   {filteredStudents.length === 0
                     ? "No students to display"
@@ -4827,9 +4849,22 @@ const Students = ({ setShowAdminHeader }) => {
         )}
         </AnimatePresence>
 
-        {/* Student View Modal */}
-        <AnimatePresence>
-        {showViewModal && viewStudent && (
+        {/* Student View Modal — portaled to document.body. It used to render
+            inline inside the page's own DOM subtree, so anything upstream
+            that ever picks up a `transform`/`filter`/`will-change` style
+            (Framer Motion's own animated ancestors included) silently turns
+            into a containing block for this modal's `fixed inset-0`
+            backdrop, shrinking it down to that ancestor's box instead of the
+            real viewport — exactly the "backdrop doesn't cover the page"
+            symptom. Portaling to <body> sidesteps the whole class of bug,
+            matching the BlockingOverlay component earlier in this file.
+            AnimatePresence has to live INSIDE the createPortal call, not
+            wrap it from the outside — it was wrapping the portal node
+            itself first, and AnimatePresence can't clone/track a Portal
+            object the way it can a normal element, which was why the modal
+            silently failed to ever mount at all. */}
+        {showViewModal && viewStudent && createPortal(
+          <AnimatePresence>
           <Motion.div
             className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4 overflow-y-auto"
             initial={{ opacity: 0 }}
@@ -5459,8 +5494,9 @@ const Students = ({ setShowAdminHeader }) => {
               </div>
             </Motion.div>
           </Motion.div>
+          </AnimatePresence>,
+          document.body
         )}
-        </AnimatePresence>
 
         <DocPreviewModal
           open={!!docPreview}
