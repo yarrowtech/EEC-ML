@@ -760,6 +760,18 @@ const DrawerModal = ({
                 style={{ color: '#0f172a', caretColor: '#0f172a' }}
               />
             </Card>
+            {/* Quick Recap */}
+            <Card>
+              <SectionTitle icon={CheckCircle2} iconColor="text-green-400">Did You Know?</SectionTitle>
+              <Textarea
+                rows={3}
+                value={chapter.recap}
+                onChange={(e) => onUpdate({ ...chapter, recap: e.target.value })}
+                placeholder="Key points students must take away from this lesson…"
+                className="resize-none"
+                style={{ color: '#0f172a', caretColor: '#0f172a' }}
+              />
+            </Card>
           </div>
         );
 
@@ -810,7 +822,7 @@ const DrawerModal = ({
 
             {/* Reference / Worksheet link */}
             <Card>
-              <SectionTitle icon={FlaskConical} iconColor="text-purple-500">Worksheet File or Link</SectionTitle>
+              <SectionTitle icon={FlaskConical} iconColor="text-purple-500">Article Reference</SectionTitle>
               <div className="flex flex-col gap-2 sm:flex-row">
                 <Input
                   type="file"
@@ -821,7 +833,7 @@ const DrawerModal = ({
                 <Input
                   value={chapter.worksheetLink}
                   onChange={(e) => onUpdate({ ...chapter, worksheetLink: e.target.value })}
-                  placeholder="Or paste a worksheet URL…"
+                  placeholder="Or paste a Article URL…"
                 />
               </div>
               {(chapter.worksheetFiles || []).length > 0 && (
@@ -889,12 +901,7 @@ const DrawerModal = ({
 
             {/* Worksheets */}
             <Card>
-              <div className="mb-3 flex items-center justify-between">
-                <SectionTitle icon={FileText} iconColor="text-rose-400">Worksheets</SectionTitle>
-                <span className="rounded-full bg-slate-100 px-2 py-0.5 text-[11px] font-medium text-slate-500 dark:bg-slate-800 dark:text-slate-400">
-                  Available in Uploaded Resources
-                </span>
-              </div>
+              
               <div className="grid gap-3 sm:grid-cols-2">
                 <UploadDropzone
                   title="Worksheet Files"
@@ -914,30 +921,6 @@ const DrawerModal = ({
                   />
                 </div>
               </div>
-            </Card>
-
-            {/* Structured assessments */}
-            <Card>
-              <div className="mb-3 flex items-center justify-between">
-                <SectionTitle icon={ClipboardCheck} iconColor="text-rose-400">Structured Assessments</SectionTitle>
-                <Button variant="outline" size="sm" onClick={onAddAssessment} className="text-xs">
-                  + Add Assessment
-                </Button>
-              </div>
-              {(chapter.assessments || []).length === 0 ? (
-                <p className="text-sm text-slate-400 dark:text-slate-500">No assessments yet — click "Add Assessment" to create one.</p>
-              ) : (
-                <div className="space-y-2">
-                  {chapter.assessments.map((assessment) => (
-                    <AssessmentCard
-                      key={assessment.id}
-                      assessment={assessment}
-                      types={assessmentTypes}
-                      onChange={(next) => onUpdateAssessment(assessment.id, next)}
-                    />
-                  ))}
-                </div>
-              )}
             </Card>
 
           </div>
@@ -1253,14 +1236,14 @@ const DrawerModal = ({
                     disabled={langSaving}
                     className="flex items-center gap-2 rounded-xl bg-emerald-600 px-5 py-2.5 text-sm font-semibold text-white hover:bg-emerald-700 disabled:opacity-50 transition-colors"
                   >
-                    {langSaving ? 'Saving…' : <><Plus className="size-4" /> Save & Publish Prompt</>}
+                    {langSaving ? 'Saving…' : <><Plus className="size-4" /> Save & Publish </>}
                   </button>
                 </div>
 
                 {/* Existing prompts for this chapter */}
                 {langItems.writing.length > 0 && (
                   <div className="mt-5 space-y-2">
-                    <p className="text-xs font-semibold uppercase tracking-wide text-slate-400">Saved Prompts</p>
+                    <p className="text-xs font-semibold uppercase tracking-wide text-slate-400">Saved</p>
                     {langItems.writing.map((item) => (
                       <div key={item._id} className="flex items-center justify-between gap-3 rounded-xl border border-slate-100 bg-slate-50 px-3 py-2.5 dark:border-slate-700 dark:bg-slate-800/40">
                         <div className="min-w-0 flex-1">
