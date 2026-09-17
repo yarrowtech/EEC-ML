@@ -48,7 +48,11 @@ const router = express.Router();
 // by both the main admin dashboard and the Fees Dashboard page for the same
 // school. Same TTL-Map pattern as the students/teachers directory caches in
 // adminUserManagement.js.
-const FEE_SUMMARY_TTL_MS = 60 * 1000;
+// 5 minutes — this aggregation's cost is dominated by data-transfer round trips
+// (student/invoice/payment documents pulled from the DB), not CPU, so a longer
+// TTL buys a much bigger reduction in how often that transfer happens than it
+// costs in staleness for a dashboard summary tile.
+const FEE_SUMMARY_TTL_MS = 5 * 60 * 1000;
 const feeSummaryCache = new Map(); // key -> { data, expires }
 const feeSummaryCacheKey = (req) => {
   const { academicYearId = '', classId = '', section = '' } = req.query || {};
@@ -796,17 +800,35 @@ router.post('/invoices', adminAuth, async (req, res) => {
   }
 });
 
+// Short-lived cache for the full invoices list — hit on every Student
+// Management refresh (alongside get-students / get-parents) as well as the
+// Fees Collection and per-student pages. Data-transfer round trips are the
+// dominant cost here (see the /admin/summary cache above), so a small TTL
+// makes repeated refreshes fast without noticeably staling the ledger.
+const INVOICES_LIST_TTL_MS = 20 * 1000;
+const invoicesListCache = new Map(); // key -> { data, expires }
+const invoicesListCacheKey = (req) =>
+  `${req.schoolId || 'x'}:${req.campusId || 'x'}:${req.query?.studentId || ''}`;
+
 router.get('/invoices', adminAuth, async (req, res) => {
   // #swagger.tags = ['Fees']
   try {
     const schoolId = resolveSchoolId(req, res);
     if (!schoolId) return;
     if (!requireCampusId(req, res)) return;
+
+    const cacheKey = invoicesListCacheKey(req);
+    const cached = invoicesListCache.get(cacheKey);
+    if (cached && cached.expires > Date.now()) {
+      return res.json(cached.data);
+    }
+
     const filter = { schoolId };
     let campusStudentIds = null;
     if (req.campusId) {
       campusStudentIds = await fetchCampusStudentIds(schoolId, req.campusId);
       if (campusStudentIds.length === 0) {
+        invoicesListCache.set(cacheKey, { data: [], expires: Date.now() + INVOICES_LIST_TTL_MS });
         return res.json([]);
       }
       filter.studentId = { $in: campusStudentIds };
@@ -819,6 +841,7 @@ router.get('/invoices', adminAuth, async (req, res) => {
     }
     await applyLateFeesForFilter({ schoolId, filter });
     const items = await FeeInvoice.find(filter).sort({ createdAt: -1 }).lean();
+    invoicesListCache.set(cacheKey, { data: items, expires: Date.now() + INVOICES_LIST_TTL_MS });
     res.json(items);
   } catch (err) {
     res.status(500).json({ error: err.message });
@@ -902,6 +925,7 @@ router.post('/payments', adminAuth, async (req, res) => {
       },
     });
     feeSummaryCache.clear();
+    invoicesListCache.clear();
 
     res.status(201).json({
       success: true,
@@ -1190,6 +1214,7 @@ router.post('/admin/razorpay/verify', adminAuth, paymentGatewayResolver, async (
       userId: req.admin?.id || null,
     });
     feeSummaryCache.clear();
+    invoicesListCache.clear();
     return res.json({
       success: true,
       message: 'Payment verified and captured',
@@ -1335,6 +1360,7 @@ router.get('/admin/razorpay/qr/:qrCodeId/status', adminAuth, paymentGatewayResol
         userId: req.admin?.id || null,
       });
       feeSummaryCache.clear();
+    invoicesListCache.clear();
       return res.json({ status: 'captured', payment: captured.receipt });
     }
 
@@ -1420,7 +1446,6 @@ router.get('/admin/summary', adminAuth, async (req, res) => {
     if (cached && cached.expires > Date.now()) {
       return res.json(cached.data);
     }
-
     const { academicYearId, classId, section } = req.query || {};
 
     // Only students still on the roll — archived / left / expelled students keep
@@ -1477,7 +1502,14 @@ router.get('/admin/summary', adminAuth, async (req, res) => {
     if (academicYearId && mongoose.isValidObjectId(academicYearId)) {
       invoiceFilter.academicYearId = academicYearId;
     }
-    await applyLateFeesForFilter({ schoolId, filter: invoiceFilter });
+    // Unlike the invoices list/detail routes, this is a high-frequency, cached
+    // dashboard read — recomputing late fees for every overdue invoice here
+    // (a full sequential pass, one query per distinct fee structure) is what
+    // made the cache-miss request take 20-30s on schools with a lot of overdue
+    // invoices. Late fees are kept current by the /invoices and per-student
+    // routes below, which every admin visit to the Fees Collection page hits,
+    // so this dashboard summary can safely read the latest already-applied
+    // figures instead of recomputing them on every load.
     const invoices = await FeeInvoice.find(invoiceFilter).lean();
 
     // "Amount collected" is derived from the payment ledger (FeePayment), not the
@@ -2305,6 +2337,7 @@ router.post('/payments/razorpay/verify', authAnyUser, paymentGatewayResolver, as
       userId: actor.id,
     });
     feeSummaryCache.clear();
+    invoicesListCache.clear();
     return res.json({ success: true, payment: captured.receipt, invoice: captured.invoice });
   } catch (error) {
     return res.status(error.statusCode || 400).json({ error: error.message || 'Unable to verify payment' });

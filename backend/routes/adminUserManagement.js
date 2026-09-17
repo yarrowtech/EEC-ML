@@ -549,10 +549,11 @@ router.post('/bulk-import-csv', adminAuth, async (req, res) => {
 });
 
 // Short-lived in-memory caches for the student / parent directory listings so
-// repeat page loads are instant. TTL is deliberately tiny and every student /
-// parent mutation in this file clears both maps, so a stale read can only ever
-// be a few seconds behind a change made from elsewhere (enrol, bulk import).
-const DIRECTORY_LIST_TTL_MS = 15 * 1000;
+// repeat page loads are instant. Every student / parent mutation in this file
+// clears both maps, so a stale read can only ever be behind a change made from
+// elsewhere (enrol, bulk import) by at most this TTL — raised from 15s since
+// the round trip these calls save is the dominant cost of a manual refresh.
+const DIRECTORY_LIST_TTL_MS = 45 * 1000;
 const studentsListCache = new Map(); // key -> { data, expires }
 const parentsListCache = new Map();
 const directoryCacheKey = (req) =>

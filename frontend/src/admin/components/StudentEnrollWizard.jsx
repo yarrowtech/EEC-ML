@@ -460,7 +460,7 @@ function GuardianCard({ active, disabled, title, subtitle, badge, onClick }) {
   );
 }
 
-function GuardianStep({ data, onChange, errors = {}, parent }) {
+function GuardianStep({ data, onChange, errors = {}, parent, editing }) {
   const setField = (name, value) => onChange({ target: { name, value } });
   const setMany = (obj) => Object.entries(obj).forEach(([k, v]) => setField(k, v));
 
@@ -486,7 +486,7 @@ function GuardianStep({ data, onChange, errors = {}, parent }) {
       key: "mother", title: data.motherName, subtitle: data.motherPhone || "No phone added",
       relation: "Mother", name: data.motherName, phone: data.motherPhone, email: "",
     },
-    parent.selected && {
+    !editing && parent.selected && {
       key: "existing", title: parent.selected.name || parent.selected.username || "Linked parent",
       subtitle: `${parent.selected.username || ""}${parent.selected.mobile ? ` · ${parent.selected.mobile}` : ""}`,
       badge: "Existing login", relation: data.guardianRelation || "",
@@ -1768,6 +1768,7 @@ export default function StudentEnrollWizard({
                 data={newStudent}
                 onChange={handleAddStudentChange}
                 errors={errors}
+                editing={editing}
                 parent={{
                   searchTerm: parentSearchTerm,
                   setSearchTerm: setParentSearchTerm,

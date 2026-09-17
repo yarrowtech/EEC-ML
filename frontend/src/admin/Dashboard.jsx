@@ -27,7 +27,7 @@ import './Dashboard.css';
 // ── Data layer ───────────────────────────────────────────────────────────────
 
 const DASHBOARD_CACHE_PREFIX = 'admin_dashboard_cache_v1';
-const CACHE_TTL = { stats: 2 * 60 * 1000, financial: 3 * 60 * 1000 };
+const CACHE_TTL = { stats: 2 * 60 * 1000, financial: 5 * 60 * 1000 };
 
 const getCacheStorage = () => {
   try {
