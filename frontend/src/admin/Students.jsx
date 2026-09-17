@@ -43,6 +43,10 @@ import {
   Loader2,
   CalendarDays,
   Wallet,
+  Edit3Icon,
+  Edit,
+  Info,
+  BadgeInfo,
 } from "lucide-react";
 import StudentEnrollWizard, { DocPreviewModal, getStudentDataGaps } from "./components/StudentEnrollWizard";
 import Swal from "sweetalert2";
@@ -4650,7 +4654,7 @@ const Students = ({ setShowAdminHeader }) => {
                                 className="inline-flex items-center px-1.5 py-1 text-blue-600 hover:bg-blue-50 rounded-md text-xs transition"
                                 title="View Details"
                               >
-                                <Eye size={14} />
+                                <BadgeInfo size={14} />
                               </button>
                               <button
                                 onClick={(e) => {
@@ -4660,7 +4664,7 @@ const Students = ({ setShowAdminHeader }) => {
                                 className="inline-flex items-center px-1.5 py-1 text-gray-500 hover:bg-gray-100 rounded-md text-xs transition"
                                 title="Edit Student"
                               >
-                                <Edit2 size={14} />
+                                <Edit size={14} />
                               </button>
                               <button
                                 onClick={(e) => {
@@ -5585,7 +5589,7 @@ const Students = ({ setShowAdminHeader }) => {
                   onClick={() => openEditWizard(viewStudent)}
                   className="px-5 py-2 bg-gradient-to-r from-yellow-500 to-amber-500 text-white text-sm rounded-lg hover:from-yellow-600 hover:to-amber-600 flex items-center gap-2 transition"
                 >
-                  <Edit2 size={14} />
+                  <Edit size={14} />
                   Edit
                 </button>
                 <button
