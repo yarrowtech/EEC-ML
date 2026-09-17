@@ -1,4 +1,5 @@
 import React, { useEffect, useRef, useState } from "react";
+import { createPortal } from "react-dom";
 import { motion as Motion, AnimatePresence } from "framer-motion";
 import toast from "react-hot-toast";
 import {
@@ -170,7 +171,7 @@ function AutoField({ label, hint, value }) {
 
 function PhotoUpload({ value, onFile, error }) {
   const inputRef = useRef(null);
-  const isImage = typeof value === "string" && value.startsWith("data:");
+  const isImage = typeof value === "string" && (value.startsWith("data:") || /^https?:\/\//i.test(value));
 
   return (
     <div className="flex flex-col">
@@ -219,7 +220,7 @@ function PhotoUpload({ value, onFile, error }) {
 
 function StepRail({ step, maxVisited, onJump }) {
   return (
-    <div className="rounded-2xl border border-gray-200 bg-white p-5">
+    <div className="rounded-2xl border border-gray-200 bg-white p-4 lg:p-5">
       <h3 className="mb-4 text-sm font-bold text-gray-900">Enrollment Steps</h3>
       <ol className="relative space-y-1">
         {STEPS.map((s, i) => {
@@ -229,7 +230,7 @@ function StepRail({ step, maxVisited, onJump }) {
             <li key={s.key} className="relative">
               {i < STEPS.length - 1 && (
                 <span
-                  className={`absolute left-[25px] top-8 h-[calc(100%-1rem)] w-px ${
+                  className={`absolute left-[21px] top-8 h-[calc(100%-1rem)] w-px lg:left-[25px] ${
                     i < step ? "bg-blue-300" : "bg-gray-200"
                   }`}
                 />
@@ -238,12 +239,12 @@ function StepRail({ step, maxVisited, onJump }) {
                 type="button"
                 disabled={!reachable}
                 onClick={() => reachable && onJump(i)}
-                className={`flex w-full items-start gap-3 rounded-xl px-2.5 py-2.5 text-left transition ${
+                className={`flex w-full items-start gap-2 rounded-xl px-2 py-2.5 text-left transition lg:gap-3 lg:px-2.5 ${
                   state === "active" ? "bg-yellow-50" : reachable ? "hover:bg-gray-50" : "cursor-default"
                 }`}
               >
                 <span
-                  className={`z-10 flex h-8 w-8 shrink-0 items-center justify-center rounded-full text-xs font-bold transition ${
+                  className={`z-10 flex h-7 w-7 shrink-0 items-center justify-center rounded-full text-xs font-bold transition lg:h-8 lg:w-8 ${
                     state === "done"
                       ? "bg-green-600 text-white"
                       : state === "active"
@@ -976,7 +977,7 @@ export function DocPreviewModal({ open, src, label, onClose }) {
     };
   }, [open, src, pdf]);
 
-  return (
+  return createPortal(
     <AnimatePresence>
       {open && src && (
         <Motion.div
@@ -1008,7 +1009,7 @@ export function DocPreviewModal({ open, src, label, onClose }) {
         </div>
         <div className="flex-1 overflow-auto bg-gray-100 p-3">
           {image ? (
-            <img src={src} alt={label || "document"} className="mx-auto max-h-[78vh] w-auto rounded-lg bg-white" />
+            <img src={src} alt={label || "document"} className="mx-auto max-h-[60vh] sm:max-h-[30vh] lg:max-h-[60vh] w-auto rounded-lg bg-white" />
           ) : pdf && state.status === "ready" ? (
             <iframe title={label || "document"} src={`${state.url}#toolbar=0&navpanes=0`} className="h-[78vh] w-full rounded-lg border border-gray-200 bg-white" />
           ) : pdf && state.status === "loading" ? (
@@ -1032,7 +1033,8 @@ export function DocPreviewModal({ open, src, label, onClose }) {
       </Motion.div>
         </Motion.div>
       )}
-    </AnimatePresence>
+    </AnimatePresence>,
+    document.body
   );
 }
 
@@ -1704,7 +1706,7 @@ export default function StudentEnrollWizard({
   }, []);
 
 
-  return (
+  return createPortal(
     <Motion.div
       className="fixed inset-0 z-50 flex flex-col bg-slate-50"
       initial={{ opacity: 0, y: 14, scale: 0.985 }}
@@ -1739,10 +1741,10 @@ export default function StudentEnrollWizard({
       </header>
 
       {/* Body */}
-      <div ref={scrollRef} className="flex-1 overflow-y-auto">
-        <div className="mx-auto max-w-7xl space-y-5 p-5 lg:p-6">
+      <div className="min-h-0 flex-1 overflow-hidden">
+        <div className="mx-auto flex h-full max-w-7xl flex-col p-4 md:p-5 lg:p-6">
           {dataGaps.length > 0 && (
-            <div className="flex items-start gap-3 rounded-2xl border border-amber-200 bg-amber-50 px-4 py-3">
+            <div className="mb-5 flex shrink-0 items-start gap-3 rounded-2xl border border-amber-200 bg-amber-50 px-4 py-3">
               <AlertTriangle className="mt-0.5 h-5 w-5 shrink-0 text-amber-500" />
               <div className="min-w-0">
                 <p className="text-sm font-semibold text-amber-800">
@@ -1754,9 +1756,9 @@ export default function StudentEnrollWizard({
               </div>
             </div>
           )}
-          <div className="grid grid-cols-1 gap-6 lg:grid-cols-[minmax(0,1fr)_320px]">
-          {/* form card */}
-          <div className="rounded-2xl border border-gray-200 bg-white p-5 sm:p-7">
+          <div className="grid min-h-0 flex-1 grid-cols-1 gap-5 md:grid-cols-[minmax(0,1fr)_240px] lg:gap-6 lg:grid-cols-[minmax(0,1fr)_320px]">
+          {/* form card — scrolls independently */}
+          <div ref={scrollRef} className="min-h-0 overflow-y-auto rounded-2xl border border-gray-200 bg-white p-4 sm:p-7">
             {step === 0 && (
               <PersonalStep data={newStudent} onChange={handleAddStudentChange} onPhoto={handlePhoto} errors={{ ...errors, photograph: errors.photograph || photoError }} />
             )}
@@ -1819,8 +1821,8 @@ export default function StudentEnrollWizard({
             )}
           </div>
 
-          {/* right rail */}
-          <aside className="space-y-4 lg:sticky lg:top-6 lg:self-start">
+          {/* right rail — scrolls independently */}
+          <aside className="min-h-0 space-y-4 overflow-y-auto">
             <StepRail step={step} maxVisited={maxVisited} onJump={goTo} />
             {isLast && (
               <div className="rounded-2xl border border-gray-200 bg-white p-5">
@@ -1918,6 +1920,7 @@ export default function StudentEnrollWizard({
           </button>
         </div>
       </footer>
-    </Motion.div>
+    </Motion.div>,
+    document.body
   );
 }

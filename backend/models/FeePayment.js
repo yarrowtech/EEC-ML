@@ -31,5 +31,12 @@ const feePaymentSchema = new mongoose.Schema(
 feePaymentSchema.index({ transactionId: 1 }, { unique: true, sparse: true });
 feePaymentSchema.index({ gatewayPaymentId: 1 }, { unique: true, sparse: true });
 feePaymentSchema.index({ gatewayOrderId: 1 }, { unique: true, sparse: true });
+// invoiceId — hit by the admin/summary $group-by-invoice aggregate (every
+// invoice's paid total) on every cache-miss request.
+feePaymentSchema.index({ invoiceId: 1 });
+// schoolId + paidOn — supports the recent-payments query (schoolId/studentId
+// filter, sorted by paidOn) without an in-memory sort of the whole collection.
+feePaymentSchema.index({ schoolId: 1, paidOn: -1 });
+feePaymentSchema.index({ schoolId: 1, studentId: 1 });
 
 module.exports = mongoose.model('FeePayment', feePaymentSchema);

@@ -423,22 +423,82 @@ const AdminHeader = ({ adminUser, onOpenMobileSidebar, onLogoutRequest, notifica
             transition={{ duration: 0.2 }}
             className="flex items-center gap-2 sm:gap-3 border border-white/70 bg-white/60 px-3 sm:px-5 pt-[max(0.5rem,env(safe-area-inset-top))] pb-2 shadow-[0_16px_44px_-12px_rgba(15,23,42,0.10),0_4px_12px_rgba(15,23,42,0.04)] backdrop-blur-xl saturate-150 transition-colors hover:bg-white/70"
           >
-            {/* ── Mobile hamburger ── */}
-            <button
-              onClick={onOpenMobileSidebar}
-              className="lg:hidden w-9 h-9 flex items-center justify-center rounded-full text-slate-500 hover:bg-white/70 active:scale-95 transition-all shrink-0"
-              aria-label="Open menu"
-            >
-              <Menu size={20} />
-            </button>
+            {!showSearch && (
+              <>
+                {/* ── Mobile hamburger ── */}
+                <button
+                  onClick={onOpenMobileSidebar}
+                  className="lg:hidden w-9 h-9 flex items-center justify-center rounded-full text-slate-500 hover:bg-white/70 active:scale-95 transition-all shrink-0"
+                  aria-label="Open menu"
+                >
+                  <Menu size={20} />
+                </button>
 
-            {/* ── School branding (mobile) ── */}
-            <div className="flex items-center gap-2 lg:hidden min-w-0 flex-1">
-              {schoolLogoSrc && (
-                <img src={schoolLogoSrc} alt={primaryName} className="w-7 h-7 rounded-lg object-cover shrink-0 ring-1 ring-white/60" />
-              )}
-              <span className="text-sm font-bold text-slate-800 truncate">{primaryName}</span>
-            </div>
+                {/* ── School branding (mobile) ── */}
+                <div className="flex items-center gap-2 lg:hidden min-w-0 flex-1">
+                  {schoolLogoSrc && (
+                    <img src={schoolLogoSrc} alt={primaryName} className="w-7 h-7 rounded-lg object-cover shrink-0 ring-1 ring-white/60" />
+                  )}
+                  <span className="text-sm font-bold text-slate-800 truncate">{primaryName}</span>
+                </div>
+              </>
+            )}
+
+            {/* ── Mobile search — expands to full navbar width ── */}
+            {showSearch && (
+              <div ref={mobileSearchRef} className="flex lg:hidden flex-1 min-w-0 items-center gap-2 relative">
+                <form
+                  className="relative w-full flex items-center gap-2 rounded-full border border-white/50 bg-white/70 pl-4 pr-1.5 py-0.5"
+                  onSubmit={handleSearch}
+                >
+                  <Search className="w-4 h-4 text-slate-400 shrink-0" strokeWidth={2} />
+                  <input
+                    type="text"
+                    placeholder="Search modules…"
+                    value={searchQuery}
+                    onChange={(e) => { setSearchQuery(e.target.value); setActiveSuggestionIndex(-1); }}
+                    onFocus={() => setShowSuggestions(true)}
+                    onBlur={() => closeSuggestionsIfFocusOutside(mobileSearchRef)}
+                    onKeyDown={handleSearchInputKeyDown}
+                    autoFocus
+                    aria-expanded={showSuggestions}
+                    aria-haspopup="listbox"
+                    aria-controls={MOBILE_SEARCH_LISTBOX_ID}
+                    aria-activedescendant={
+                      showSuggestions && activeSuggestionIndex >= 0
+                        ? `mobile-search-option-${activeSuggestionIndex}`
+                        : undefined
+                    }
+                    className="admin-search-input w-full border-none outline-none text-sm font-medium text-slate-900 placeholder:text-slate-400 placeholder:font-normal py-2 bg-transparent"
+                  />
+                  {searchQuery && (
+                    <button
+                      type="button"
+                      onMouseDown={(e) => e.preventDefault()}
+                      onClick={() => { setSearchQuery(''); setShowSuggestions(true); setActiveSuggestionIndex(-1); }}
+                      className="text-slate-400 hover:text-slate-600 shrink-0 pr-1"
+                      aria-label="Clear search"
+                    >
+                      <X size={14} />
+                    </button>
+                  )}
+                </form>
+                <button
+                  type="button"
+                  onClick={() => { setShowSearch(false); setSearchQuery(''); setShowSuggestions(false); setActiveSuggestionIndex(-1); }}
+                  className="w-9 h-9 flex items-center justify-center rounded-full text-slate-500 hover:bg-white/70 active:scale-95 transition-all shrink-0"
+                  aria-label="Cancel search"
+                >
+                  <X size={20} />
+                </button>
+
+                {showSuggestions && (
+                  <div className="absolute top-full left-0 right-9 mt-1">
+                    {suggestionList('mobile-search-option', MOBILE_SEARCH_LISTBOX_ID)}
+                  </div>
+                )}
+              </div>
+            )}
 
             {/* ── Desktop search — glass pill ── */}
             <div ref={desktopSearchRef} className="hidden lg:flex flex-1 max-w-md relative">
@@ -503,7 +563,7 @@ const AdminHeader = ({ adminUser, onOpenMobileSidebar, onLogoutRequest, notifica
             </div>
 
             {/* ── Right cluster ── */}
-            <div className="flex items-center gap-2 ml-auto">
+            <div className={`items-center gap-2 ml-auto ${showSearch ? 'hidden lg:flex' : 'flex'}`}>
               {/* Live clock — wide screens only */}
               <div className="hidden xl:flex items-center gap-2 rounded-full border border-white/30 bg-white/25 px-3.5 py-1.5 text-sm font-medium text-slate-900">
                 <Clock size={14} className="text-slate-400 shrink-0" />
@@ -546,11 +606,11 @@ const AdminHeader = ({ adminUser, onOpenMobileSidebar, onLogoutRequest, notifica
                 {notificationDropdown}
               </div>
 
-              {/* Profile pill */}
-              <div className="relative" data-dropdown>
+              {/* Profile pill — desktop only; mobile/tablet use the bottom nav's "More" dropdown instead */}
+              <div className="relative hidden lg:block" data-dropdown>
                 <button
                   onClick={() => { setShowProfileMenu((p) => !p); setShowNotifications(false); }}
-                  className="flex items-center gap-2.5 rounded-full border border-white/30 bg-white/25 pl-1.5 pr-2 sm:pr-3 py-1 hover:bg-white/50 hover:border-white/50 active:scale-[0.98] transition-all"
+                  className="flex items-center gap-2.5 rounded-full border border-white/30 bg-white/25 pl-1.5 pr-3 py-1 hover:bg-white/50 hover:border-white/50 active:scale-[0.98] transition-all"
                 >
                   <div className="w-9 h-9 rounded-full bg-gradient-to-br from-blue-400 to-purple-500 flex items-center justify-center overflow-hidden shrink-0 ring-2 ring-white/70 shadow-sm">
                     {!isSuperAdmin && schoolLogoSrc ? (
@@ -559,56 +619,16 @@ const AdminHeader = ({ adminUser, onOpenMobileSidebar, onLogoutRequest, notifica
                       <span className="text-white font-semibold text-xs">{avatarInitials}</span>
                     )}
                   </div>
-                  <div className="hidden sm:flex flex-col leading-tight min-w-0 text-left">
+                  <div className="flex flex-col leading-tight min-w-0 text-left">
                     <span className="text-sm font-semibold text-slate-900 truncate max-w-[160px]">{primaryName}</span>
                     <span className="text-[10px] font-medium text-slate-500 tracking-wide">{profileRole}</span>
                   </div>
-                  <ChevronDown size={14} className="text-slate-400 hidden sm:block" />
+                  <ChevronDown size={14} className="text-slate-400" />
                 </button>
                 {profileDropdown}
               </div>
             </div>
           </motion.div>
-
-          {/* ── Mobile search bar (expanded) ── */}
-          {showSearch && (
-            <div ref={mobileSearchRef} className="lg:hidden mt-2 animate-in fade-in slide-in-from-top-1 duration-150">
-              <form
-                className="relative flex items-center rounded-full border border-white/50 bg-white/60 backdrop-blur-xl pl-4 pr-2 py-1"
-                onSubmit={handleSearch}
-              >
-                <Search className="w-4 h-4 text-slate-400 pointer-events-none shrink-0" />
-                <input
-                  type="text"
-                  placeholder="Search modules…"
-                  value={searchQuery}
-                  onChange={(e) => { setSearchQuery(e.target.value); setActiveSuggestionIndex(-1); }}
-                  onFocus={() => setShowSuggestions(true)}
-                  onBlur={() => closeSuggestionsIfFocusOutside(mobileSearchRef)}
-                  onKeyDown={handleSearchInputKeyDown}
-                  autoFocus
-                  aria-expanded={showSuggestions}
-                  aria-haspopup="listbox"
-                  aria-controls={MOBILE_SEARCH_LISTBOX_ID}
-                  aria-activedescendant={
-                    showSuggestions && activeSuggestionIndex >= 0
-                      ? `mobile-search-option-${activeSuggestionIndex}`
-                      : undefined
-                  }
-                  className="admin-search-input w-full bg-transparent border-none outline-none text-sm font-medium text-slate-900 placeholder:text-slate-400 px-2 py-2"
-                />
-                <button
-                  type="button"
-                  onClick={() => { setShowSearch(false); setSearchQuery(''); setShowSuggestions(false); setActiveSuggestionIndex(-1); }}
-                  className="text-slate-400 hover:text-slate-600 active:scale-95 transition-transform shrink-0"
-                  aria-label="Close search"
-                >
-                  <X size={16} />
-                </button>
-              </form>
-              {showSuggestions && suggestionList('mobile-search-option', MOBILE_SEARCH_LISTBOX_ID)}
-            </div>
-          )}
         </div>
       </motion.header>
 

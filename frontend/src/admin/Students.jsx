@@ -4701,7 +4701,7 @@ const Students = ({ setShowAdminHeader }) => {
                           <button
                             key={page}
                             onClick={() => setCurrentPage(page)}
-                            className={`min-w-[28px] h-7 rounded-md text-xs font-medium transition ${
+                            className={`min-w-[28px] h-7 rounded-full text-xs font-medium transition ${
                               page === currentPage
                                 ? "bg-amber-500 text-white shadow-sm"
                                 : "text-gray-600 hover:bg-gray-100"
@@ -4739,7 +4739,6 @@ const Students = ({ setShowAdminHeader }) => {
         </div>
 
         {/* Enroll New Student — full-screen wizard */}
-        <AnimatePresence>
         {showAddForm && (
           <StudentEnrollWizard
             key={`enroll-${enrollSessionKey}`}
@@ -4769,7 +4768,6 @@ const Students = ({ setShowAdminHeader }) => {
             setSelectedSectionId={setSelectedSectionId}
           />
         )}
-        </AnimatePresence>
 
         {/* Enrollment Drafts modal */}
         <AnimatePresence>

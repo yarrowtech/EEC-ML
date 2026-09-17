@@ -104,7 +104,12 @@ const AdminLayout = ({
       </div>
 
       {/* Mobile-only bottom tab bar — "More" opens the full sidebar drawer */}
-      <AdminBottomNav onOpenMore={() => setMobileOpen(true)} getNotificationCount={notificationState.getModuleCount} />
+      <AdminBottomNav
+        onOpenMore={() => setMobileOpen(true)}
+        getNotificationCount={notificationState.getModuleCount}
+        adminUser={adminUser}
+        onLogoutRequest={handleLogoutRequest}
+      />
     </div>
   );
 };
