@@ -1108,6 +1108,12 @@ router.post('/teachers/:id/make-principal', adminAuth, async (req, res) => {
       return res.status(400).json({ error: 'Principal account already exists for this teacher' });
     }
 
+    // A school may only have one principal at a time.
+    const schoolAlreadyHasPrincipal = await Principal.exists({ schoolId: teacher.schoolId });
+    if (schoolAlreadyHasPrincipal) {
+      return res.status(400).json({ error: 'This school already has a principal. Remove the existing principal before assigning a new one.' });
+    }
+
     // Create principal account
     const principal = new Principal({
       username: principalUsername,
@@ -1929,6 +1935,7 @@ router.put('/principals/:id', adminAuth, async (req, res) => {
   // #swagger.tags = ['Admin Users']
   try {
     await updateByScope(Principal, req, res);
+    invalidateTeacherDirectoryCaches();
   } catch (err) {
     res.status(500).json({ error: err.message });
   }
@@ -1963,6 +1970,7 @@ router.delete('/principals/:id', adminAuth, async (req, res) => {
   // #swagger.tags = ['Admin Users']
   try {
     await deleteByScope(Principal, req, res);
+    invalidateTeacherDirectoryCaches();
   } catch (err) {
     res.status(500).json({ error: err.message });
   }

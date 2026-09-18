@@ -35,6 +35,11 @@ router.post('/register', adminAuth, async (req, res) => {
       return res.status(400).json({ error: 'email or username is required' });
     }
 
+    const schoolAlreadyHasPrincipal = await Principal.exists({ schoolId: resolvedSchoolId });
+    if (schoolAlreadyHasPrincipal) {
+      return res.status(400).json({ error: 'This school already has a principal. Remove the existing principal before assigning a new one.' });
+    }
+
     const principal = new Principal({
       username: normalize(username || principalEmail),
       email: principalEmail,

@@ -53,12 +53,14 @@ const loadLogoDataUrl = async (logoUrl) => {
   }
 };
 
-const drawTable = ({ doc, startY, title, columns, rows, accent }) => {
+// Draws a bordered, zebra-striped table using only core jsPDF primitives (no
+// jspdf-autotable dependency, which this project doesn't install). Every
+// column is centered by default; pass `align` per column to override.
+const drawTable = ({ doc, startY, columns, rows, accent, onNewPage }) => {
   const pageWidth = doc.internal.pageSize.getWidth();
   const marginX = 12;
   const tableWidth = pageWidth - marginX * 2;
   const rowHeight = 8;
-  const titleGap = 6;
   const [r, g, b] = accent;
 
   let y = startY;
@@ -69,212 +71,319 @@ const drawTable = ({ doc, startY, title, columns, rows, accent }) => {
     if (y + required <= pageHeight - 14) return;
     doc.addPage();
     y = 16;
+    onNewPage?.();
   };
 
-  ensureSpace(titleGap + rowHeight * 2);
-  doc.setFont('helvetica', 'bold');
-  doc.setFontSize(10);
-  doc.setTextColor(r, g, b);
-  doc.text(title, x, y);
-  y += titleGap;
+  ensureSpace(rowHeight * 2);
 
+  // Header row
   doc.setFillColor(r, g, b);
   doc.rect(x, y, tableWidth, rowHeight, 'F');
   doc.setDrawColor(200, 210, 220);
   doc.setLineWidth(0.2);
   doc.rect(x, y, tableWidth, rowHeight);
 
-  doc.setFontSize(8);
+  doc.setFont('helvetica', 'bold');
+  doc.setFontSize(8.5);
   doc.setTextColor(255, 255, 255);
   let colX = x;
   columns.forEach((col, idx) => {
     if (idx > 0) doc.line(colX, y, colX, y + rowHeight);
-    doc.text(col.label, colX + 2, y + 5.3);
+    doc.text(col.label, colX + col.width / 2, y + 5.3, { align: 'center' });
     colX += col.width;
   });
   y += rowHeight;
 
-  doc.setTextColor(32, 43, 58);
+  // Body rows
   doc.setFont('helvetica', 'normal');
+  doc.setFontSize(8.5);
 
   rows.forEach((row, rowIndex) => {
     ensureSpace(rowHeight + 2);
-    doc.setFillColor(rowIndex % 2 === 0 ? 248 : 255, rowIndex % 2 === 0 ? 250 : 255, rowIndex % 2 === 0 ? 252 : 255);
+    const shade = rowIndex % 2 === 0 ? [248, 250, 252] : [255, 255, 255];
+    doc.setFillColor(...shade);
     doc.rect(x, y, tableWidth, rowHeight, 'F');
     doc.setDrawColor(218, 226, 236);
     doc.rect(x, y, tableWidth, rowHeight);
+    doc.setTextColor(32, 43, 58);
 
     let cellX = x;
     columns.forEach((col, idx) => {
       if (idx > 0) doc.line(cellX, y, cellX, y + rowHeight);
       const value = toText(row[idx] ?? '');
       const clipped = doc.splitTextToSize(value, col.width - 4)[0] || '';
-      const align = col.align || 'left';
+      const align = col.align || 'center';
       if (align === 'right') {
         doc.text(clipped, cellX + col.width - 2, y + 5.3, { align: 'right' });
-      } else if (align === 'center') {
-        doc.text(clipped, cellX + col.width / 2, y + 5.3, { align: 'center' });
-      } else {
+      } else if (align === 'left') {
         doc.text(clipped, cellX + 2, y + 5.3);
+      } else {
+        doc.text(clipped, cellX + col.width / 2, y + 5.3, { align: 'center' });
       }
       cellX += col.width;
     });
     y += rowHeight;
   });
 
-  return y + 4;
+  return y;
 };
 
 export const downloadFeesStructurePdf = async ({ structure = {}, school = {} }) => {
   const doc = new jsPDF('p', 'mm', 'a4');
   const pageWidth = doc.internal.pageSize.getWidth();
-  const [r, g, b] = parseHexColor(school.accentColor || '#0f172a');
+  const pageHeight = doc.internal.pageSize.getHeight();
 
+  // ── Colors ────────────────────────────────────────────────────────────
+  const [r, g, b] = parseHexColor(school.accentColor || '#0f172a');
+  const darkText = [15, 23, 42];
+  const mutedText = [71, 85, 105];
+  const borderColor = [203, 213, 225];
+
+  // ── School info ───────────────────────────────────────────────────────
   const schoolName = toText(school.schoolName) || 'School';
   const schoolAddressLine = toText(school.schoolAddressLine);
-  const schoolContactLine = toText(school.schoolContactLine);
+  const rawContactLine = toText(school.schoolContactLine);
+  const schoolContactLine = [
+    ...new Set(rawContactLine.split(/[|\n]+/).map((item) => item.trim()).filter(Boolean)),
+  ].join('  |  ');
   const logoUrl = toText(school.logoUrl || school.logoUrlOverride);
   const logoDataUrl = await loadLogoDataUrl(logoUrl);
 
-  doc.setDrawColor(r, g, b);
-  doc.setLineWidth(0.35);
-  doc.rect(5, 5, pageWidth - 10, 287);
+  // ── Structure info ────────────────────────────────────────────────────
+  const classLabel = toText(structure.className || structure.class || '-');
+  const board = toText(structure.board || 'GENERAL');
+  const year = toText(structure.academicYearName || structure.academicYear || '');
+  const generatedOn = new Date().toLocaleDateString('en-IN', {
+    day: '2-digit', month: 'short', year: 'numeric',
+  });
 
+  const feeHeads = structure.feeHeads || [];
+  const totalAmount = toAmount(
+    structure.totalAmount || feeHeads.reduce((sum, item) => sum + toAmount(item?.amount), 0)
+  );
+  const lateFeeAmount = toAmount(structure.lateFeeAmount);
+
+  const redrawPageBorder = () => {
+    doc.setDrawColor(r, g, b);
+    doc.setLineWidth(0.35);
+    doc.rect(5, 5, pageWidth - 10, pageHeight - 10);
+  };
+
+  // ── Page border ───────────────────────────────────────────────────────
+  redrawPageBorder();
+
+  // ── School header ─────────────────────────────────────────────────────
+  const headerTop = 8;
+  const headerHeight = 32;
   doc.setFillColor(r, g, b);
-  doc.rect(8, 8, pageWidth - 16, 32, 'F');
+  doc.rect(8, headerTop, pageWidth - 16, headerHeight, 'F');
+
+  // Logo — plain square (no rounded corners), generous gap before the text
+  // block so a logo can never run into the school name.
+  const logoSize = 16;
+  const logoX = 12;
+  const logoY = headerTop + (headerHeight - logoSize) / 2;
+  let headerTextX = 16;
 
   if (logoDataUrl) {
     try {
       doc.setFillColor(255, 255, 255);
-      doc.roundedRect(12, 11, 18, 18, 2, 2, 'F');
-      doc.addImage(logoDataUrl, 'PNG', 13, 12, 16, 16);
+      doc.rect(logoX, logoY, logoSize, logoSize, 'F');
+      doc.addImage(logoDataUrl, 'PNG', logoX + 1, logoY + 1, logoSize - 2, logoSize - 2);
+      headerTextX = logoX + logoSize + 6;
     } catch {
-      // Ignore logo render failure.
+      // Ignore logo render failure — text still starts at the default margin.
     }
   }
 
+  const headerTextWidth = pageWidth - headerTextX - 12;
   doc.setTextColor(255, 255, 255);
-  doc.setFont('helvetica', 'bold');
-  doc.setFontSize(15);
-  doc.text(schoolName.toUpperCase(), pageWidth / 2, 18, { align: 'center' });
 
-  doc.setFont('helvetica', 'normal');
-  doc.setFontSize(8.5);
-  if (schoolAddressLine) doc.text(schoolAddressLine, pageWidth / 2, 24, { align: 'center' });
-  if (schoolContactLine) doc.text(schoolContactLine, pageWidth / 2, 28, { align: 'center' });
-
-  const classLabel = toText(structure.className || structure.class || '-');
-  const title = `Fees Structure for Class ${classLabel}`;
-  doc.setTextColor(30, 41, 59);
   doc.setFont('helvetica', 'bold');
   doc.setFontSize(13);
-  doc.text(title, pageWidth / 2, 48, { align: 'center' });
-
-  const board = toText(structure.board || 'GENERAL');
-  const year = toText(structure.academicYearName || structure.academicYear || '');
-  const generatedOn = new Date().toLocaleDateString('en-IN', {
-    day: '2-digit',
-    month: 'short',
-    year: 'numeric',
+  doc.text(schoolName.toUpperCase(), headerTextX, headerTop + 11, {
+    align: 'left', maxWidth: headerTextWidth,
   });
 
-  doc.setFont('helvetica', 'normal');
-  doc.setFontSize(9);
-  doc.setTextColor(71, 85, 105);
-  doc.text(`Board: ${board}`, 14, 56);
-  if (year) doc.text(`Academic Year: ${year}`, 14, 61);
-  doc.text(`Generated On: ${generatedOn}`, pageWidth - 14, 56, { align: 'right' });
-  doc.text(`Structure: ${toText(structure.name || '-')}`, pageWidth - 14, 61, { align: 'right' });
+  if (schoolAddressLine) {
+    doc.setFont('helvetica', 'normal');
+    doc.setFontSize(8);
+    doc.text(schoolAddressLine, headerTextX, headerTop + 18, {
+      align: 'left', maxWidth: headerTextWidth,
+    });
+  }
 
-  const headRows = (structure.feeHeads || []).map((head) => {
-    const payableDate =
-      (structure.installments || []).length > 1
-        ? 'As per installments'
-        : formatDate(structure.installments?.[0]?.dueDate);
-    return [toText(head?.label || '-'), formatCurrency(head?.amount), payableDate];
-  });
+  if (schoolContactLine) {
+    doc.setFont('helvetica', 'normal');
+    doc.setFontSize(7.8);
+    doc.text(schoolContactLine, headerTextX, headerTop + 24, {
+      align: 'left', maxWidth: headerTextWidth,
+    });
+  }
 
-  const headColumns = [
-    { label: 'Fee Breakdown', width: 98, align: 'left' },
-    { label: 'Amount', width: 40, align: 'right' },
-    { label: 'Date Payable', width: 48, align: 'center' },
-  ];
+  // ── Main title ────────────────────────────────────────────────────────
+  const titleY = headerTop + headerHeight + 13;
+  const title = `FEES STRUCTURE FOR CLASS ${classLabel}`;
+  doc.setTextColor(...darkText);
+  doc.setFont('helvetica', 'bold');
+  doc.setFontSize(14);
+  doc.text(title, pageWidth / 2, titleY, { align: 'center' });
 
-  const totalAmount = toAmount(
-    structure.totalAmount ||
-      (structure.feeHeads || []).reduce((sum, item) => sum + toAmount(item?.amount), 0)
-  );
-  const lateFeeAmount = toAmount(structure.lateFeeAmount);
+  const titleWidth = doc.getTextWidth(title);
+  doc.setDrawColor(...darkText);
+  doc.setLineWidth(0.45);
+  doc.line((pageWidth - titleWidth) / 2, titleY + 2, (pageWidth + titleWidth) / 2, titleY + 2);
+
+  // ── Information section — Class / Board / Academic Year as a real
+  //    2-row table (header labels, one values row underneath). ───────────
+  const infoTop = titleY + 9;
+  const infoMarginX = 12;
+  const infoWidth = pageWidth - infoMarginX * 2;
+  const infoColWidth = infoWidth / 3;
 
   let currentY = drawTable({
     doc,
-    startY: 70,
-    title: 'Fee Breakdown',
-    columns: headColumns,
-    rows: headRows.length ? headRows : [['No fee heads configured', '-', '-']],
+    startY: infoTop,
     accent: [r, g, b],
-  });
+    onNewPage: redrawPageBorder,
+    columns: [
+      { label: 'Class', width: infoColWidth },
+      { label: 'Board', width: infoColWidth },
+      { label: 'Academic Year', width: infoColWidth },
+    ],
+    rows: [[classLabel, board, year || '-']],
+  }) + 14;
 
-  const installmentRows = (structure.installments || []).map((item) => [
-    toText(item?.label || '-'),
-    formatCurrency(item?.amount),
-    formatDate(item?.dueDate),
-  ]);
+  // ── Fee breakdown ─────────────────────────────────────────────────────
+  doc.setFont('helvetica', 'bold');
+  doc.setFontSize(11);
+  doc.setTextColor(...darkText);
+  doc.text('Fee Breakdown', pageWidth / 2, currentY, { align: 'center' });
+  const feeTitleWidth = doc.getTextWidth('Fee Breakdown');
+  doc.setDrawColor(...darkText);
+  doc.setLineWidth(0.3);
+  doc.line((pageWidth - feeTitleWidth) / 2, currentY + 1.5, (pageWidth + feeTitleWidth) / 2, currentY + 1.5);
+
+  const feeRows = feeHeads.length
+    ? feeHeads.map((head, index) => [String(index + 1), toText(head?.label || '-'), formatCurrency(head?.amount)])
+    : [['-', 'No fee heads configured', '-']];
+
+  currentY = drawTable({
+    doc,
+    startY: currentY + 5,
+    accent: [r, g, b],
+    onNewPage: redrawPageBorder,
+    columns: [
+      { label: 'Sl No', width: 20 },
+      { label: 'Fee Breakdown', width: 105 },
+      { label: 'Amount', width: 61 },
+    ],
+    rows: feeRows,
+  }) + 10;
+
+  // ── Installment plan ──────────────────────────────────────────────────
+  if (currentY > 245) {
+    doc.addPage();
+    redrawPageBorder();
+    currentY = 20;
+  }
+
+  doc.setFont('helvetica', 'bold');
+  doc.setFontSize(11);
+  doc.setTextColor(...darkText);
+  doc.text('Installment Plan', pageWidth / 2, currentY, { align: 'center' });
+  const installmentTitleWidth = doc.getTextWidth('Installment Plan');
+  doc.setDrawColor(...darkText);
+  doc.setLineWidth(0.3);
+  doc.line(
+    (pageWidth - installmentTitleWidth) / 2, currentY + 1.5,
+    (pageWidth + installmentTitleWidth) / 2, currentY + 1.5
+  );
+
+  const installments = structure.installments || [];
+  const installmentRows = installments.length
+    ? installments.map((item, index) => [
+        String(index + 1), toText(item?.label || '-'), formatDate(item?.dueDate), formatCurrency(item?.amount),
+      ])
+    : [['1', 'Lump Sum Payment', '-', formatCurrency(totalAmount)]];
+  const installmentTotal = installments.length
+    ? installments.reduce((sum, item) => sum + toAmount(item?.amount), 0)
+    : totalAmount;
 
   const installmentColumns = [
-    { label: 'Installment', width: 98, align: 'left' },
-    { label: 'Amount', width: 40, align: 'right' },
-    { label: 'Date Payable', width: 48, align: 'center' },
+    { label: 'Sl No', width: 20 },
+    { label: 'Installment Name', width: 75 },
+    { label: 'Due Date', width: 45 },
+    { label: 'Amount', width: 46 },
   ];
 
   currentY = drawTable({
     doc,
-    startY: currentY,
-    title: 'Installment Plan',
-    columns: installmentColumns,
-    rows: installmentRows.length ? installmentRows : [['Lump Sum Payment', formatCurrency(totalAmount), '-']],
+    startY: currentY + 5,
     accent: [r, g, b],
+    onNewPage: redrawPageBorder,
+    columns: installmentColumns,
+    rows: installmentRows,
   });
 
-  if (currentY > 274) {
-    doc.addPage();
-    currentY = 18;
-  }
-  doc.setFillColor(241, 245, 249);
-  doc.setDrawColor(203, 213, 225);
-  doc.roundedRect(12, currentY, pageWidth - 24, 10, 2, 2, 'FD');
-  doc.setFont('helvetica', 'bold');
-  doc.setFontSize(10.5);
-  doc.setTextColor(15, 23, 42);
-  doc.text(`Total Fees: ${formatCurrency(totalAmount)}`, pageWidth - 16, currentY + 6.3, { align: 'right' });
-  currentY += 14;
+  // Total row — Sl No + Installment Name + Due Date merge into one centered
+  // "Total Fees" label (a 3-column colspan), Amount column holds the total.
+  {
+    const marginX = 12;
+    const totalRowHeight = 8;
+    const spanWidth = installmentColumns[0].width + installmentColumns[1].width + installmentColumns[2].width;
+    if (currentY + totalRowHeight > pageHeight - 14) {
+      doc.addPage();
+      redrawPageBorder();
+      currentY = 16;
+    }
+    doc.setFillColor(241, 245, 249);
+    doc.rect(marginX, currentY, pageWidth - marginX * 2, totalRowHeight, 'F');
+    doc.setDrawColor(...borderColor);
+    doc.setLineWidth(0.25);
+    doc.rect(marginX, currentY, pageWidth - marginX * 2, totalRowHeight);
+    doc.line(marginX + spanWidth, currentY, marginX + spanWidth, currentY + totalRowHeight);
 
-  if (currentY > 274) {
-    doc.addPage();
-    currentY = 18;
+    doc.setFont('helvetica', 'bold');
+    doc.setFontSize(8.5);
+    doc.setTextColor(...darkText);
+    doc.text('Total Fees', marginX + spanWidth / 2, currentY + 5.3, { align: 'center' });
+    doc.text(
+      formatCurrency(installmentTotal),
+      marginX + spanWidth + installmentColumns[3].width / 2,
+      currentY + 5.3,
+      { align: 'center' }
+    );
+    currentY += totalRowHeight + 12;
   }
-  doc.setFillColor(255, 247, 237);
-  doc.setDrawColor(253, 186, 116);
-  doc.roundedRect(12, currentY, pageWidth - 24, 12, 2, 2, 'FD');
+
+  // ── Late fine policy ──────────────────────────────────────────────────
+  if (currentY > 267) {
+    doc.addPage();
+    redrawPageBorder();
+    currentY = 20;
+  }
+
   doc.setFont('helvetica', 'bold');
-  doc.setFontSize(9.5);
-  doc.setTextColor(154, 52, 18);
-  doc.text('Late Fine Policy', 15, currentY + 5.1);
+  doc.setFontSize(10);
+  doc.setTextColor(...darkText);
+  doc.text('Late Fine Policy', pageWidth / 2, currentY, { align: 'center' });
+
   doc.setFont('helvetica', 'normal');
   doc.setFontSize(8.5);
-  doc.text(
-    lateFeeAmount > 0
-      ? `Fine Amount: ${formatCurrency(lateFeeAmount)} per day after due date (until payment).`
-      : 'Fine Amount: No late fine configured for this fee structure.',
-    15,
-    currentY + 9.2
-  );
-  currentY += 16;
+  doc.setTextColor(...mutedText);
+  const lateFineText = lateFeeAmount > 0
+    ? `Late Fine: ${formatCurrency(lateFeeAmount)} per day after the due date until payment.`
+    : 'Late Fine: No late fine configured for this fee structure.';
+  doc.text(lateFineText, pageWidth / 2, currentY + 6, { align: 'center', maxWidth: pageWidth - 30 });
 
+  // ── Footer ────────────────────────────────────────────────────────────
   doc.setTextColor(100, 116, 139);
   doc.setFont('helvetica', 'italic');
-  doc.setFontSize(8);
-  doc.text('This is a computer-generated fee structure document.', pageWidth / 2, 286, { align: 'center' });
+  doc.setFontSize(7.5);
+  doc.text('This is a computer-generated fee structure document.', pageWidth / 2, pageHeight - 13, {
+    align: 'center',
+  });
 
   const fileName = `fees_structure_${toFileSafe(classLabel) || 'class'}_${toFileSafe(year || generatedOn) || 'download'}.pdf`;
   doc.save(fileName);

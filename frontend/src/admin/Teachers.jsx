@@ -36,6 +36,9 @@ import {
   FileText,
   Info,
   FileClock,
+  Edit,
+  ArrowRight,
+  ArrowLeft,
 } from 'lucide-react';
 import toast from 'react-hot-toast';
 import CredentialGeneratorButton from './components/CredentialGeneratorButton';
@@ -114,7 +117,7 @@ const TEACHER_STEPS = [
 // to match the Teachers page instead of the Students page's yellow theme.
 function TeacherStepRail({ step, maxVisited, onJump }) {
   return (
-    <div className="rounded-2xl border border-gray-200 bg-white p-5">
+    <div className="rounded-2xl border border-gray-200 bg-white p-4 lg:p-5">
       <h3 className="mb-4 text-sm font-bold text-gray-900">Teacher Details Steps</h3>
       <ol className="relative space-y-1">
         {TEACHER_STEPS.map((s, i) => {
@@ -124,7 +127,7 @@ function TeacherStepRail({ step, maxVisited, onJump }) {
             <li key={s.key} className="relative">
               {i < TEACHER_STEPS.length - 1 && (
                 <span
-                  className={`absolute left-[25px] top-8 h-[calc(100%-1rem)] w-px ${i < step ? 'bg-sky-300' : 'bg-gray-200'
+                  className={`absolute left-[21px] top-8 h-[calc(100%-1rem)] w-px lg:left-[25px] ${i < step ? 'bg-sky-300' : 'bg-gray-200'
                     }`}
                 />
               )}
@@ -132,11 +135,11 @@ function TeacherStepRail({ step, maxVisited, onJump }) {
                 type="button"
                 disabled={!reachable}
                 onClick={() => reachable && onJump(i)}
-                className={`flex w-full items-start gap-3 rounded-xl px-2.5 py-2.5 text-left transition ${state === 'active' ? 'bg-sky-50' : reachable ? 'hover:bg-gray-50' : 'cursor-default'
+                className={`flex w-full items-start gap-2 rounded-xl px-2 py-2.5 text-left transition lg:gap-3 lg:px-2.5 ${state === 'active' ? 'bg-sky-50' : reachable ? 'hover:bg-gray-50' : 'cursor-default'
                   }`}
               >
                 <span
-                  className={`z-10 flex h-8 w-8 shrink-0 items-center justify-center rounded-full text-xs font-bold transition ${state === 'done'
+                  className={`z-10 flex h-7 w-7 shrink-0 items-center justify-center rounded-full text-xs font-bold transition lg:h-8 lg:w-8 ${state === 'done'
                       ? 'bg-emerald-600 text-white'
                       : state === 'active'
                         ? 'bg-sky-600 text-white ring-4 ring-sky-100'
@@ -171,7 +174,7 @@ const MAX_TEACHER_DOC_BYTES = 5 * 1024 * 1024;
 // Same row layout as StudentEnrollWizard's DocRow — a real file picker that
 // uploads straight to Cloudinary and stores the returned URL, with its own
 // upload/progress/preview/remove state, self-contained per field.
-function TeacherDocRow({ label, required, hint, value, onUpload, onRemove }) {
+function TeacherDocRow({ label, required, hint, value, onUpload, onRemove, onPreview }) {
   const inputRef = useRef(null);
   const [uploading, setUploading] = useState(false);
   const [progress, setProgress] = useState(null);
@@ -226,9 +229,20 @@ function TeacherDocRow({ label, required, hint, value, onUpload, onRemove }) {
           )}
 
           {value && (
-            <a href={value} target="_blank" rel="noreferrer" className="rounded-lg p-1.5 text-gray-400 hover:bg-gray-100 hover:text-gray-600" title="Preview">
-              <Eye className="h-4 w-4" />
-            </a>
+            onPreview ? (
+              <button
+                type="button"
+                onClick={() => onPreview(value, label)}
+                className="rounded-lg p-1.5 text-gray-400 hover:bg-gray-100 hover:text-gray-600"
+                title="Preview"
+              >
+                <Eye className="h-4 w-4" />
+              </button>
+            ) : (
+              <a href={value} target="_blank" rel="noreferrer" className="rounded-lg p-1.5 text-gray-400 hover:bg-gray-100 hover:text-gray-600" title="Preview">
+                <Eye className="h-4 w-4" />
+              </a>
+            )
           )}
           <button
             type="button"
@@ -367,6 +381,7 @@ const Teachers = ({ setShowAdminHeader }) => {
   const [filterStatus, setFilterStatus] = useState('All');
   const [teachers, setTeachers] = useState([]);
   const [showAddForm, setShowAddForm] = useState(false);
+  const [docPreview, setDocPreview] = useState(null); // { url, label } | null
   const [editingTeacherId, setEditingTeacherId] = useState(null);
   const [submitStatus, setSubmitStatus] = useState(null);
   const [credentialLoadingId, setCredentialLoadingId] = useState(null);
@@ -800,7 +815,6 @@ const Teachers = ({ setShowAdminHeader }) => {
   };
 
   useEffect(() => {
-    setShowAdminHeader(true);
     fetchTeachers({ useCache: true }).catch(err => {
       console.error("Error fetching teachers:", err);
     });
@@ -808,7 +822,12 @@ const Teachers = ({ setShowAdminHeader }) => {
       console.error('Error fetching archived teacher count:', err);
     });
     loadTeacherDrafts();
-  }, [setShowAdminHeader]);
+  }, []);
+
+  // Hide the admin navbar while the full-page Add/Edit Teacher form is open.
+  useEffect(() => {
+    setShowAdminHeader(!showAddForm);
+  }, [showAddForm, setShowAdminHeader]);
 
   useEffect(() => {
     if (activeTab !== 'teachers') return undefined;
@@ -1938,7 +1957,7 @@ const Teachers = ({ setShowAdminHeader }) => {
     // bottom of the viewport. The page's own scroll is already fully
     // contained by the flex/min-h-0 sizing further down, so this isn't
     // needed for that.
-    <div className="page-fade-in flex h-[calc(100dvh-94px)] flex-col bg-gray-50">
+    <div className="page-fade-in flex h-[calc(100dvh-94px)] md:h-[calc(100dvh-150px)] lg:h-[calc(100dvh-94px)] flex-col bg-gray-50">
       <div className="w-full flex-1 flex flex-col p-3 md:p-5 lg:p-6 overflow-hidden text-sm md:text-base">
         {/* Header */}
         <div className="flex flex-col sm:flex-wrap gap-3 sm:justify-between sm:items-center mb-1 flex-shrink-0">
@@ -1950,7 +1969,10 @@ const Teachers = ({ setShowAdminHeader }) => {
               Manage your teaching staff, credentials, and principal assignments
             </p>
           </div>
-          <div className="flex flex-wrap gap-2 w-full sm:w-auto justify-stretch sm:justify-start">
+          {/* On the Principals tab these actions (Add/Drafts/Demo/Bulk Upload/
+              Download Data/Archived/Refresh) don't apply, so hide them on
+              mobile/tablet to reclaim space — kept visible at lg+ either way. */}
+          <div className={`flex-wrap gap-2 w-full sm:w-auto justify-stretch sm:justify-center ${activeTab === 'principals' ? 'hidden lg:flex' : 'flex'}`}>
             <button
               onClick={startNewTeacherForm}
               className="bg-sky-500 text-white px-3 py-2 rounded-full hover:bg-sky-600 flex items-center gap-2 text-sm flex-1 sm:flex-none justify-center transition"
@@ -2150,8 +2172,8 @@ const Teachers = ({ setShowAdminHeader }) => {
           {/* Teachers Table */}
           {activeTab === 'teachers' && <div className="flex-1 min-h-0 flex flex-col bg-white rounded-xl border border-gray-200 shadow-sm overflow-hidden">
             <div className="flex-1 min-h-0 overflow-auto">
-              <table className="w-full">
-                <thead>
+              <table className="w-full min-w-[720px]">
+                <thead className="sticky top-0 z-10">
                   <tr className="bg-gradient-to-r from-gray-50 to-slate-50/80 border-b border-gray-100">
                     <th className="w-10 px-4 py-3.5 text-left">
                       <input
@@ -2168,8 +2190,8 @@ const Teachers = ({ setShowAdminHeader }) => {
                     {/* <th className="px-6 py-3.5 text-left text-xs font-semibold text-gray-500 uppercase tracking-wider">Subject & Dept</th> */}
                     <th className="px-6 py-3.5 text-left text-xs font-semibold text-gray-500 uppercase tracking-wider">Weekly Routine</th>
                     {/* <th className="px-6 py-3.5 text-left text-xs font-semibold text-gray-500 uppercase tracking-wider">Qualification</th> */}
-                    <th className="px-6 py-3.5 text-left text-xs font-semibold text-gray-500 uppercase tracking-wider">Status</th>
-                    <th className="px-6 py-3.5 text-left text-xs font-semibold text-gray-500 uppercase tracking-wider">Actions</th>
+                    {/* <th className="px-6 py-3.5 text-left text-xs font-semibold text-gray-500 uppercase tracking-wider">Status</th> */}
+                    <th className="px-6 py-3.5 text-center lg:text-left text-xs font-semibold text-gray-500 uppercase tracking-wider">Actions</th>
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-gray-50">
@@ -2190,8 +2212,10 @@ const Teachers = ({ setShowAdminHeader }) => {
                           />
                         </td>
                         <td className="px-6 py-4">
-                          <div className="flex items-center gap-3">
-                            <div className={`w-9 h-9 rounded-full ${avatarColor.bg} flex items-center justify-center text-sm font-bold ${avatarColor.text} flex-shrink-0 overflow-hidden`}>
+                          {/* Photo above name/ID on mobile/tablet; side-by-side
+                              from lg up. */}
+                          <div className="flex flex-col items-center text-center gap-1.5 lg:flex-row lg:items-center lg:text-left lg:gap-3">
+                            <div className={`w-12 h-12 lg:w-9 lg:h-9 rounded-full ${avatarColor.bg} flex items-center justify-center text-sm font-bold ${avatarColor.text} flex-shrink-0 overflow-hidden`}>
                               {teacher.profilePic ? (
                                 <img
                                   src={teacher.profilePic}
@@ -2203,7 +2227,7 @@ const Teachers = ({ setShowAdminHeader }) => {
                               )}
                             </div>
                             <div>
-                              <div className="text-sm font-semibold text-gray-900 flex items-center gap-1.5">
+                              <div className="text-sm font-semibold text-gray-900 flex flex-wrap items-center justify-center lg:justify-start gap-1.5">
                                 <span>{teacher.name}</span>
                                 {teacherIsPrincipal && (
                                   <span className="inline-flex items-center gap-1 rounded-full bg-sky-100 text-sky-700 px-2 py-0.5 text-[11px] font-semibold">
@@ -2241,7 +2265,7 @@ const Teachers = ({ setShowAdminHeader }) => {
                       </td> */}
                         <td className="px-6 py-4">
                           {teacher.scheduleTodayEntries?.length ? (
-                            <div className="space-y-2 min-w-[250px]">
+                            <div className="space-y-2 min-w-[50px]">
                               {teacher.scheduleTodayEntries.slice(0, 1).map((entry, idx) => (
                                 <div key={`${teacher.id || teacher._id}-sched-${idx}`} className="text-sm">
                                   <div className="font-medium text-gray-800">{entry.subjectName || 'Class'}</div>
@@ -2268,7 +2292,7 @@ const Teachers = ({ setShowAdminHeader }) => {
                           Joined: {teacher.joiningDate ? new Date(teacher.joiningDate).toLocaleDateString() : '-'}
                         </div>
                       </td> */}
-                        <td className="px-6 py-4">
+                        {/* <td className="px-6 py-4">
                           <span className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-semibold
                           ${teacher.status === 'Present'
                               ? 'bg-emerald-100 text-emerald-700'
@@ -2283,28 +2307,31 @@ const Teachers = ({ setShowAdminHeader }) => {
                               }`} />
                             {teacher.status}
                           </span>
-                        </td>
+                        </td> */}
                         <td className="px-6 py-4">
-                          <div className="flex items-center gap-1.5 flex-wrap">
+                          {/* Every action button is the same fixed h-7 w-7 size
+                              so they wrap into a neat grid on narrow (mobile/
+                              tablet) widths instead of a ragged flex-wrap row
+                              of mismatched shapes. */}
+                          <div className="grid grid-cols-3 gap-1.5 justify-items-center w-fit mx-auto lg:mx-0 lg:flex lg:flex-wrap lg:justify-start">
                             <button
                               type="button"
                               onClick={() => handleViewCredentials(teacher)}
                               disabled={credentialLoadingId === (teacher._id || teacher.id)}
-                              className="inline-flex items-center gap-1.5 rounded-full font-medium bg-amber-500 text-white hover:bg-amber-600 transition p-1 text-xs disabled:opacity-60 disabled:cursor-not-allowed"
+                              className="flex h-7 w-7 items-center justify-center rounded-full bg-amber-500 text-white hover:bg-amber-600 transition disabled:opacity-60 disabled:cursor-not-allowed"
                               title="View Credentials"
                             >
                               <KeyRound size={13} />
-                              {credentialLoadingId === (teacher._id || teacher.id) ? '' : ''}
                             </button>
                             <button
-                              className="p-1.5 rounded-lg text-slate-400 hover:text-sky-600 hover:bg-sky-50 transition-all"
+                              className="flex h-7 w-7 items-center justify-center rounded-lg text-slate-400 hover:text-sky-600 hover:bg-sky-50 transition-all"
                               title="View Details"
                               onClick={() => setViewTeacher(teacher)}
                             >
                               <Eye size={15} />
                             </button>
                             <button
-                              className="p-1.5 rounded-lg text-slate-400 hover:text-sky-600 hover:bg-sky-50 transition-all disabled:opacity-40"
+                              className="flex h-7 w-7 items-center justify-center rounded-lg text-slate-400 hover:text-sky-600 hover:bg-sky-50 transition-all disabled:opacity-40"
                               title={teacherIsPrincipal ? 'Already Principal' : 'Make Principal'}
                               onClick={() => setMakePrincipalConfirmTeacher(teacher)}
                               disabled={teacherIsPrincipal || principalLoadingId === (teacher._id || teacher.id)}
@@ -2312,14 +2339,14 @@ const Teachers = ({ setShowAdminHeader }) => {
                               <Crown size={15} />
                             </button>
                             <button
-                              className="p-1.5 rounded-lg text-slate-400 hover:text-amber-600 hover:bg-amber-50 transition-all"
+                              className="flex h-7 w-7 items-center justify-center rounded-lg text-slate-400 hover:text-amber-600 hover:bg-amber-50 transition-all"
                               title="Edit"
                               onClick={() => handleEditTeacher(teacher)}
                             >
-                              <Edit2 size={15} />
+                              <Edit size={15} />
                             </button>
                             <button
-                              className="p-1.5 rounded-lg text-slate-400 hover:text-sky-600 hover:bg-sky-50 transition-all disabled:opacity-40"
+                              className="flex h-7 w-7 items-center justify-center rounded-lg text-green-600 hover:text-green-800 hover:bg-green-50 transition-all disabled:opacity-40"
                               title="Archive"
                               onClick={() => handleArchiveTeacher(teacher)}
                               disabled={archivingTeacherId === (teacher._id || teacher.id)}
@@ -2329,7 +2356,7 @@ const Teachers = ({ setShowAdminHeader }) => {
                                 : <Archive size={15} />}
                             </button>
                             <button
-                              className="p-1.5 rounded-lg text-slate-400 hover:text-red-600 hover:bg-red-50 transition-all disabled:opacity-40"
+                              className="flex h-7 w-7 items-center justify-center rounded-lg text-red-600 hover:text-red-800 hover:bg-red-50 transition-all disabled:opacity-40"
                               title="Delete"
                               onClick={() => setDeleteConfirmTeacher(teacher)}
                               disabled={deletingTeacherId === (teacher._id || teacher.id)}
@@ -2348,7 +2375,7 @@ const Teachers = ({ setShowAdminHeader }) => {
             {/* Pagination */}
             {filteredTeachers.length > 0 && (
               <div className="flex-shrink-0 px-6 py-4 border-t border-gray-100 bg-gray-50/50">
-                <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
+                <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between lg:justify-between gap-4">
                   <div className="text-sm text-gray-500">
                     Showing{' '}
                     <span className="font-semibold text-gray-700">{indexOfFirstItem + 1}</span>
@@ -2361,9 +2388,9 @@ const Teachers = ({ setShowAdminHeader }) => {
                     <button
                       onClick={prevPage}
                       disabled={currentPage === 1}
-                      className="px-3 py-1.5 border border-gray-200 rounded-lg text-sm font-medium text-gray-600 bg-white hover:bg-gray-50 disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
+                      className="px-5 py-1.5 border border-gray-200 rounded-full text-sm font-medium text-gray-600 bg-white hover:bg-gray-50 disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
                     >
-                      Previous
+                       <ArrowLeft size={14} className="inline-block ml-1" />
                     </button>
                     <div className="flex gap-1">
                       {[...Array(totalPages)].map((_, i) => (
@@ -2383,9 +2410,9 @@ const Teachers = ({ setShowAdminHeader }) => {
                     <button
                       onClick={nextPage}
                       disabled={currentPage === totalPages}
-                      className="px-3 py-1.5 border border-gray-200 rounded-lg text-sm font-medium text-gray-600 bg-white hover:bg-gray-50 disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
+                      className="px-5 py-1.5 border border-gray-200 rounded-full text-sm font-medium text-gray-600 bg-white hover:bg-gray-50 disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
                     >
-                      Next
+                       <ArrowRight size={14} className="inline-block ml-1" />
                     </button>
                   </div>
                 </div>
@@ -2405,9 +2432,9 @@ const Teachers = ({ setShowAdminHeader }) => {
 
           {/* Principals Tab */}
           {activeTab === 'principals' && (
-            <div>
+            <div className="flex-1 min-h-0 flex flex-col">
               {/* Principals search */}
-              <div className="mb-4 flex flex-col sm:flex-row gap-3 mt-4">
+              <div className="mb-4 flex flex-col sm:flex-row gap-3 mt-4 flex-shrink-0">
                 <div className="flex-1 relative">
                   <Search size={17} className="absolute left-3.5 top-1/2 -translate-y-1/2 text-gray-400 pointer-events-none" />
                   <input
@@ -2420,21 +2447,23 @@ const Teachers = ({ setShowAdminHeader }) => {
                 </div>
                 <button
                   onClick={fetchPrincipals}
-                  className="sm:w-auto px-4 py-2.5 border border-gray-200 rounded-full bg-white hover:bg-gray-50 text-sm text-gray-600 font-medium shadow-sm transition-colors"
+                  disabled={loadingPrincipals}
+                  className="sm:w-auto px-4 py-2.5 border border-gray-200 rounded-full bg-white hover:bg-gray-50 text-sm text-gray-600 font-medium shadow-sm transition-colors disabled:opacity-60"
+                  title="Refresh principals"
                 >
-                  <RefreshCcw />
+                  <RefreshCcw className={loadingPrincipals ? 'animate-spin' : ''} />
                 </button>
               </div>
 
-              <div className="bg-white rounded-xl border border-gray-200 shadow-sm overflow-hidden">
-                <div className="overflow-x-auto">
-                  <table className="w-full">
-                    <thead>
+              <div className="flex-1 min-h-0 flex flex-col bg-white rounded-xl border border-gray-200 shadow-sm overflow-hidden">
+                <div className="flex-1 min-h-0 overflow-auto">
+                  <table className="w-full min-w-[640px]">
+                    <thead className="sticky top-0 z-10">
                       <tr className="bg-gradient-to-r from-sky-50 to-pink-50/50 border-b border-gray-100">
                         <th className="px-6 py-3.5 text-left text-xs font-semibold text-gray-500 uppercase tracking-wider">Principal</th>
-                        <th className="px-6 py-3.5 text-left text-xs font-semibold text-gray-500 uppercase tracking-wider">Contact</th>
-                        <th className="px-6 py-3.5 text-left text-xs font-semibold text-gray-500 uppercase tracking-wider">Login ID</th>
-                        <th className="px-6 py-3.5 text-left text-xs font-semibold text-gray-500 uppercase tracking-wider">Actions</th>
+                        {/* <th className="px-6 py-3.5 text-left text-xs font-semibold text-gray-500 uppercase tracking-wider">Contact</th> */}
+                        <th className="px-6 py-3.5 text-center lg:text-left text-xs font-semibold text-gray-500 uppercase tracking-wider">Login ID</th>
+                        <th className="px-6 py-3.5 text-center lg:text-left text-xs font-semibold text-gray-500 uppercase tracking-wider">Actions</th>
                       </tr>
                     </thead>
                     <tbody className="divide-y divide-gray-50">
@@ -2474,23 +2503,24 @@ const Teachers = ({ setShowAdminHeader }) => {
                             const principalPhoto = resolveImageUrl(principal?.profilePic) || teacherPhotoByIdentity.get(principalIdentity) || '';
                             return (
                               <tr key={principal._id || principal.id} className="hover:bg-sky-50/30 transition-colors">
-                                <td className="px-6 py-4">
-                                  <div className="flex items-center gap-3">
-                                    <div className={`w-9 h-9 rounded-xl ${avatarColor.bg} flex items-center justify-center text-sm font-bold ${avatarColor.text} flex-shrink-0 overflow-hidden`}>
+                                <td className="px-6 py-2.5">
+                                  {/* Photo above name/ID on mobile/tablet; side-by-side from lg up. */}
+                                  <div className="flex flex-col items-center text-center gap-1.5 lg:flex-row lg:items-center lg:text-left lg:gap-3">
+                                    <div className={`w-12 h-12 lg:w-9 lg:h-9 rounded-xl ${avatarColor.bg} flex items-center justify-center text-sm font-bold ${avatarColor.text} flex-shrink-0 overflow-hidden`}>
                                       {principalPhoto ? (
                                         <img src={principalPhoto} alt={principal.name} className="w-full h-full object-cover" />
                                       ) : initials}
                                     </div>
                                     <div>
-                                      <div className="text-sm font-semibold text-gray-900 flex items-center gap-1.5">
+                                      <div className="text-sm font-semibold text-gray-900 flex flex-wrap items-center justify-center lg:justify-start gap-1.5">
                                         {principal.name}
-                                        <Crown size={12} className="text-sky-400" />
+                                        {/* <Crown size={12} className="text-sky-400" /> */}
                                       </div>
-                                      <div className="text-xs text-gray-400">Principal</div>
+                                      <div className="text-xs text-gray-400 flex flex-wrap justify-center gap-2"> <Crown size={12} className="text-sky-400" />Principal</div>
                                     </div>
                                   </div>
                                 </td>
-                                <td className="px-6 py-4">
+                                {/* <td className="px-6 py-2.5">
                                   <div className="space-y-1.5">
                                     <div className="flex items-center text-sm text-gray-600">
                                       <Mail size={13} className="mr-2 text-sky-400 flex-shrink-0" />
@@ -2503,9 +2533,9 @@ const Teachers = ({ setShowAdminHeader }) => {
                                       </div>
                                     )}
                                   </div>
-                                </td>
-                                <td className="px-6 py-4">
-                                  <div className="flex items-center gap-2">
+                                </td> */}
+                                <td className="px-6 py-2.5">
+                                  <div className="flex items-center justify-center lg:justify-start gap-2">
                                     <code className="text-xs font-mono bg-gray-100 text-gray-700 px-2.5 py-1 rounded-lg">{loginId}</code>
                                     <button
                                       onClick={() => copyCredential(loginId, `pid_${principal._id || principal.id}`)}
@@ -2516,8 +2546,8 @@ const Teachers = ({ setShowAdminHeader }) => {
                                     </button>
                                   </div>
                                 </td>
-                                <td className="px-6 py-4">
-                                  <div className="flex items-center gap-2">
+                                <td className="px-6 py-2.5">
+                                  <div className="flex items-center justify-center lg:justify-start gap-2 flex-wrap">
                                     <button
                                       onClick={() => handleViewPrincipalCredentials(principal)}
                                       disabled={principalCredLoadingId === (principal._id || principal.id) || principalDeleteLoadingId === (principal._id || principal.id)}
@@ -2576,7 +2606,7 @@ const Teachers = ({ setShowAdminHeader }) => {
         // Same "one page per step" layout as StudentEnrollWizard.jsx —
         // full-screen takeover with a step rail on the right, not a small
         // centered dialog.
-        return (
+        return createPortal(
           <Motion.div
             className="fixed inset-0 z-50 flex flex-col bg-slate-50"
             initial={{ opacity: 0, y: 14, scale: 0.985 }}
@@ -2617,10 +2647,13 @@ const Teachers = ({ setShowAdminHeader }) => {
 
             {/* Body */}
             <form onSubmit={handleAddTeacherSubmit} className="flex-1 overflow-y-auto" noValidate>
-              <div className="mx-auto max-w-6xl p-5 lg:p-6">
-                <div className="grid grid-cols-1 gap-6 lg:grid-cols-[minmax(0,1fr)_320px]">
+              {/* Below lg this is a genuine full-bleed page (no card border/
+                  rounding, no max-width gutters) — the boxed two-column
+                  layout with a sticky side rail is a desktop-only affordance. */}
+              <div className="mx-auto max-w-none lg:max-w-6xl lg:p-6">
+                <div className="grid grid-cols-1 gap-5 md:grid-cols-[minmax(0,1fr)_240px] md:gap-5 lg:gap-6 lg:grid-cols-[minmax(0,1fr)_320px]">
                   {/* form card */}
-                  <div className="rounded-2xl border border-gray-200 bg-white p-5 sm:p-7 space-y-6">
+                  <div className="rounded-none border-0 bg-white p-4 sm:p-5 space-y-6 lg:rounded-2xl lg:border lg:border-gray-200 lg:p-7">
 
                     {/* Section: Basic Information */}
                     {teacherFormStep === 0 && (
@@ -2707,6 +2740,7 @@ const Teachers = ({ setShowAdminHeader }) => {
                                 setNewTeacher((prev) => ({ ...prev, profilePic: url }));
                               }}
                               onRemove={() => setNewTeacher((prev) => ({ ...prev, profilePic: '' }))}
+                              onPreview={(url, lbl) => setDocPreview({ url, label: lbl })}
                             />
                           </div>
                         </div>
@@ -3023,6 +3057,7 @@ const Teachers = ({ setShowAdminHeader }) => {
                               setNewTeacher((prev) => ({ ...prev, documents: { ...prev.documents, aadhaarUrl: url } }));
                             }}
                             onRemove={() => setNewTeacher((prev) => ({ ...prev, documents: { ...prev.documents, aadhaarUrl: '' } }))}
+                            onPreview={(url, lbl) => setDocPreview({ url, label: lbl })}
                           />
                           <TeacherDocRow
                             label="Qualification Certificate"
@@ -3032,6 +3067,7 @@ const Teachers = ({ setShowAdminHeader }) => {
                               setNewTeacher((prev) => ({ ...prev, documents: { ...prev.documents, qualificationCertUrl: url } }));
                             }}
                             onRemove={() => setNewTeacher((prev) => ({ ...prev, documents: { ...prev.documents, qualificationCertUrl: '' } }))}
+                            onPreview={(url, lbl) => setDocPreview({ url, label: lbl })}
                           />
                           <TeacherDocRow
                             label="Experience Certificate"
@@ -3041,6 +3077,7 @@ const Teachers = ({ setShowAdminHeader }) => {
                               setNewTeacher((prev) => ({ ...prev, documents: { ...prev.documents, experienceCertUrl: url } }));
                             }}
                             onRemove={() => setNewTeacher((prev) => ({ ...prev, documents: { ...prev.documents, experienceCertUrl: '' } }))}
+                            onPreview={(url, lbl) => setDocPreview({ url, label: lbl })}
                           />
                           <TeacherDocRow
                             label="Appointment Letter"
@@ -3050,6 +3087,7 @@ const Teachers = ({ setShowAdminHeader }) => {
                               setNewTeacher((prev) => ({ ...prev, documents: { ...prev.documents, appointmentLetterUrl: url } }));
                             }}
                             onRemove={() => setNewTeacher((prev) => ({ ...prev, documents: { ...prev.documents, appointmentLetterUrl: '' } }))}
+                            onPreview={(url, lbl) => setDocPreview({ url, label: lbl })}
                           />
                         </div>
                       </div>
@@ -3127,7 +3165,7 @@ const Teachers = ({ setShowAdminHeader }) => {
                   </div>
 
                   {/* right rail */}
-                  <aside className="space-y-4 lg:sticky lg:top-6 lg:self-start">
+                  <aside className="space-y-4 md:sticky md:top-6 md:self-start">
                     <TeacherStepRail step={teacherFormStep} maxVisited={maxVisitedTeacherStep} onJump={goToTeacherStep} />
                   </aside>
                 </div>
@@ -3173,7 +3211,8 @@ const Teachers = ({ setShowAdminHeader }) => {
                 </div>
               </div>
             </form>
-          </Motion.div>
+          </Motion.div>,
+          document.body
         );
       })()}
 
@@ -3186,7 +3225,7 @@ const Teachers = ({ setShowAdminHeader }) => {
             <p className="text-sm font-medium text-gray-800">{value || '—'}</p>
           </div>
         );
-        return (
+        return createPortal(
           <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 backdrop-blur-sm p-4">
             <div className="bg-white rounded-2xl shadow-2xl w-full max-w-5xl overflow-hidden max-h-[88vh] flex flex-col">
 
@@ -3314,12 +3353,13 @@ const Teachers = ({ setShowAdminHeader }) => {
                 </button>
               </div>
             </div>
-          </div>
+          </div>,
+          document.body
         );
       })()}
 
       {/* Schedule Details Modal */}
-      {scheduleModal && (
+      {scheduleModal && createPortal(
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 backdrop-blur-sm p-4">
           <div className="bg-white rounded-2xl shadow-2xl w-full max-w-2xl overflow-hidden max-h-[90vh] flex flex-col">
             <div className="px-6 py-4 border-b border-gray-100 flex items-center justify-between">
@@ -3355,12 +3395,13 @@ const Teachers = ({ setShowAdminHeader }) => {
               </button>
             </div>
           </div>
-        </div>
+        </div>,
+        document.body
       )}
 
       {/* Credentials Modal */}
       {/* Delete Confirmation Modal */}
-      {deleteConfirmTeacher && (
+      {deleteConfirmTeacher && createPortal(
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 backdrop-blur-sm p-4">
           <div className="bg-white rounded-2xl shadow-2xl w-full max-w-sm overflow-hidden">
             <div className="px-6 pt-6 pb-4 text-center">
@@ -3398,11 +3439,12 @@ const Teachers = ({ setShowAdminHeader }) => {
               </button>
             </div>
           </div>
-        </div>
+        </div>,
+        document.body
       )}
 
       {/* Bulk Delete Confirmation Modal */}
-      {showBulkDeleteConfirm && (
+      {showBulkDeleteConfirm && createPortal(
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 backdrop-blur-sm p-4">
           <div className="bg-white rounded-2xl shadow-2xl w-full max-w-sm overflow-hidden">
             <div className="px-6 pt-6 pb-4 text-center">
@@ -3440,10 +3482,11 @@ const Teachers = ({ setShowAdminHeader }) => {
               </button>
             </div>
           </div>
-        </div>
+        </div>,
+        document.body
       )}
 
-      {showArchiveModal && (
+      {showArchiveModal && createPortal(
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 backdrop-blur-sm p-4">
           <div className="bg-white rounded-2xl shadow-2xl w-full max-w-2xl max-h-[80vh] flex flex-col overflow-hidden">
             <div className="flex items-center justify-between px-6 py-4 border-b border-gray-100 flex-shrink-0">
@@ -3540,10 +3583,11 @@ const Teachers = ({ setShowAdminHeader }) => {
               )}
             </div>
           </div>
-        </div>
+        </div>,
+        document.body
       )}
 
-      {showTeacherDraftsModal && (
+      {showTeacherDraftsModal && createPortal(
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 backdrop-blur-sm p-4">
           <div className="bg-white rounded-2xl shadow-2xl w-full max-w-lg max-h-[80vh] flex flex-col overflow-hidden">
             <div className="flex items-center justify-between px-6 py-4 border-b border-gray-100 flex-shrink-0">
@@ -3605,10 +3649,11 @@ const Teachers = ({ setShowAdminHeader }) => {
               )}
             </div>
           </div>
-        </div>
+        </div>,
+        document.body
       )}
 
-      {deleteConfirmPrincipal && (
+      {deleteConfirmPrincipal && createPortal(
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 backdrop-blur-sm p-4">
           <div className="bg-white rounded-2xl shadow-2xl w-full max-w-sm overflow-hidden">
             <div className="px-6 pt-6 pb-4 text-center">
@@ -3646,10 +3691,11 @@ const Teachers = ({ setShowAdminHeader }) => {
               </button>
             </div>
           </div>
-        </div>
+        </div>,
+        document.body
       )}
 
-      {makePrincipalConfirmTeacher && (
+      {makePrincipalConfirmTeacher && createPortal(
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 backdrop-blur-sm p-4">
           <div className="bg-white rounded-2xl shadow-2xl w-full max-w-sm overflow-hidden">
             <div className="px-6 pt-6 pb-4 text-center">
@@ -3687,10 +3733,11 @@ const Teachers = ({ setShowAdminHeader }) => {
               </button>
             </div>
           </div>
-        </div>
+        </div>,
+        document.body
       )}
 
-      {credentialView && (
+      {credentialView && createPortal(
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 backdrop-blur-sm p-4">
           <div className="bg-white rounded-2xl shadow-2xl w-full max-w-md overflow-hidden">
             {/* Gradient Header */}
@@ -3795,11 +3842,12 @@ const Teachers = ({ setShowAdminHeader }) => {
               </button>
             </div>
           </div>
-        </div>
+        </div>,
+        document.body
       )}
 
       {/* Principal Credentials Modal */}
-      {principalCredentialView && (
+      {principalCredentialView && createPortal(
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 backdrop-blur-sm p-4">
           <div className="bg-white rounded-2xl shadow-2xl w-full max-w-md overflow-hidden">
             {/* Gradient Header */}
@@ -3899,7 +3947,51 @@ const Teachers = ({ setShowAdminHeader }) => {
               </button>
             </div>
           </div>
-        </div>
+        </div>,
+        document.body
+      )}
+
+      {/* Document / photo preview — opens whatever a TeacherDocRow's eye
+          button points to in-page instead of a new browser tab. */}
+      {docPreview && createPortal(
+        <div
+          className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 p-4"
+          onClick={() => setDocPreview(null)}
+        >
+          <div
+            className="flex max-h-[85vh] w-full max-w-3xl flex-col overflow-hidden rounded-2xl bg-white"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="flex items-center justify-between border-b border-gray-100 px-4 py-3">
+              <p className="truncate text-sm font-semibold text-gray-800">{docPreview.label || 'Preview'}</p>
+              <button
+                type="button"
+                onClick={() => setDocPreview(null)}
+                className="rounded-lg p-1.5 text-gray-400 hover:bg-gray-100 hover:text-gray-600"
+              >
+                <X className="h-4 w-4" />
+              </button>
+            </div>
+            <div className="flex-1 overflow-auto bg-gray-100 p-3">
+              {/\.(png|jpe?g|webp|gif)(\?.*)?$/i.test(docPreview.url) ? (
+                <img src={docPreview.url} alt={docPreview.label || 'Preview'} className="mx-auto max-h-[72vh] w-auto rounded-lg bg-white" />
+              ) : (
+                <iframe title={docPreview.label || 'Preview'} src={docPreview.url} className="h-[72vh] w-full rounded-lg border border-gray-200 bg-white" />
+              )}
+            </div>
+            <div className="flex items-center justify-end gap-2 border-t border-gray-100 px-4 py-3">
+              <a
+                href={docPreview.url}
+                target="_blank"
+                rel="noreferrer"
+                className="text-xs font-medium text-sky-600 hover:text-sky-700"
+              >
+                Open in a new tab
+              </a>
+            </div>
+          </div>
+        </div>,
+        document.body
       )}
 
       <TeacherBulkJobProgressModal
