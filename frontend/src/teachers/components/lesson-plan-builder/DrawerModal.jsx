@@ -738,14 +738,7 @@ const DrawerModal = ({
                 className="mb-3 resize-none"
                 style={{ color: '#0f172a', caretColor: '#0f172a' }}
               />
-              <Field label="Attach a file (image, video, PDF…)">
-                <Input
-                  type="file"
-                  accept="image/*,video/*,.pdf,.doc,.docx"
-                  onChange={(e) => onAddContentFile(e.target.files?.[0] || null, 'Explanation Attachments')}
-                  className="cursor-pointer"
-                />
-              </Field>
+              
             </Card>
 
             {/* Quick Recap */}

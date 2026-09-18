@@ -55,6 +55,7 @@ const ChapterItem = ({ chapter, index = 0, total = 1, isActive, onClick, onDragS
       transition={{ type: 'spring', stiffness: 360, damping: 26 }}
       onDragOver={(event) => event.preventDefault()}
       onDrop={() => onDrop(chapter.id)}
+      onClick={() => { if (!isRenaming) onClick(); }}
       className={`group relative cursor-pointer overflow-hidden rounded-[18px] border p-3 transition-all focus-within:ring-2 focus-within:ring-blue-300 ${isActive
           ? 'border-[#2563eb] bg-[#eef2ff] shadow-sm dark:border-blue-600 dark:bg-blue-950/40'
           : 'border-[#e9edf2] bg-white shadow-sm hover:border-[#bdd3ff] hover:bg-[#fafcff] dark:border-slate-800 dark:bg-slate-900 dark:hover:border-blue-700'
@@ -114,7 +115,7 @@ const ChapterItem = ({ chapter, index = 0, total = 1, isActive, onClick, onDragS
             />
           </div>
         ) : (
-          <button type="button" onClick={onClick} className="min-w-0 flex-1 text-left focus-visible:outline-none">
+          <button type="button" className="min-w-0 flex-1 text-left focus-visible:outline-none">
             <div className="mb-2 flex items-center gap-2">
               <span className={`flex size-6 shrink-0 items-center justify-center rounded-lg text-[11px] font-bold ${isActive ? 'bg-[#2563eb] text-white' : 'bg-slate-100 text-slate-500 dark:bg-slate-800 dark:text-slate-400'}`}>
                 {index + 1}

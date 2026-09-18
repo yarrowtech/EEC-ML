@@ -820,7 +820,7 @@ const ClassRoutine = () => {
 
         <section className="rounded-3xl border border-slate-200 bg-white p-4 shadow-sm">
           <div className="flex flex-col gap-3 xl:flex-row xl:items-center xl:justify-between">
-            <div className="inline-flex w-fit rounded-2xl border border-slate-200 bg-slate-50 p-1">
+            <div className="hidden w-fit rounded-2xl border border-slate-200 bg-slate-50 p-1 sm:inline-flex">
               {[{ id: 'weekly', label: 'Week' }, { id: 'daily', label: 'Day' }].map((tab) => (
                 <button key={tab.id} type="button" onClick={() => setViewMode(tab.id)} className={`rounded-xl px-4 py-2 text-xs font-semibold transition ${viewMode === tab.id ? 'bg-white text-slate-950 shadow-sm' : 'text-slate-500 hover:text-slate-800'}`}>{tab.label}</button>
               ))}
@@ -882,17 +882,29 @@ const ClassRoutine = () => {
             ) : totalClasses === 0 ? (
               <EmptyTimetable loadRoutine={loadRoutine} />
             ) : (
-              <AnimatePresence mode="wait">
-                {viewMode === 'weekly' ? (
-                  <Motion.div key="weekly" initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: -8 }}>
-                    <WeeklyWorkspace weeklySlots={weeklySlots} matrix={visibleWeeklyMatrix} selectedDay={selectedDay} currentMinutes={currentMinutes} timeToMinutes={timeToMinutes} />
-                  </Motion.div>
-                ) : (
-                  <Motion.div key="daily" initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: -8 }}>
-                    <DailyAgenda day={selectedDay} classes={visibleTodayClasses} currentMinutes={currentMinutes} timeToMinutes={timeToMinutes} />
-                  </Motion.div>
-                )}
-              </AnimatePresence>
+              <>
+                {/* Below `sm`, the weekly grid needs real horizontal-scroll room
+                    it doesn't have on a phone — always show the Day agenda
+                    there regardless of the Week/Day toggle (hidden at this
+                    width; see the toggle above), matching the admin portal's
+                    equivalent mobile timetable treatment. */}
+                <div className="sm:hidden">
+                  <DailyAgenda day={selectedDay} classes={visibleTodayClasses} currentMinutes={currentMinutes} timeToMinutes={timeToMinutes} />
+                </div>
+                <div className="hidden sm:block">
+                  <AnimatePresence mode="wait">
+                    {viewMode === 'weekly' ? (
+                      <Motion.div key="weekly" initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: -8 }}>
+                        <WeeklyWorkspace weeklySlots={weeklySlots} matrix={visibleWeeklyMatrix} selectedDay={selectedDay} currentMinutes={currentMinutes} timeToMinutes={timeToMinutes} />
+                      </Motion.div>
+                    ) : (
+                      <Motion.div key="daily" initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: -8 }}>
+                        <DailyAgenda day={selectedDay} classes={visibleTodayClasses} currentMinutes={currentMinutes} timeToMinutes={timeToMinutes} />
+                      </Motion.div>
+                    )}
+                  </AnimatePresence>
+                </div>
+              </>
             )}
           </main>
 

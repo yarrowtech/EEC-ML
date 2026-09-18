@@ -930,52 +930,7 @@ const MyWorkPortal = () => {
         <MetricCard icon={BellRing} label="Unread Alerts" value={unreadNotifications} hint="Workflow inbox" tone="violet" onClick={() => setActiveTab('notifications')} />
       </MotionDiv>
 
-      <div className="grid gap-5 xl:grid-cols-[1fr_0.8fr]">
-        <Card className="border-slate-200 bg-white py-0 shadow-sm">
-          <CardHeader className="border-b border-slate-100 p-4">
-            <CardTitle className="flex items-center gap-2"><Activity className="h-4 w-4 text-cyan-600" />Activity Timeline</CardTitle>
-            <CardDescription>Recent operational updates across attendance, leave, and claims.</CardDescription>
-          </CardHeader>
-          <CardContent className="p-4">
-            <div className="space-y-4">
-              {[
-                { icon: LogIn, title: todayAttendance.hasCheckedIn ? `Checked in at ${formatTime(todayAttendance.checkIn)}` : 'No check-in recorded yet', meta: 'Attendance', tone: 'emerald' },
-                { icon: CalendarRange, title: leaveData[0] ? `${leaveData[0].type} request is ${leaveData[0].status}` : 'No leave requests submitted', meta: 'Leave Management', tone: 'blue' },
-                { icon: Wallet, title: expenses[0] ? `${expenses[0].category} claim is ${expenses[0].status}` : 'No reimbursement claims submitted', meta: 'Expenses & Claims', tone: 'violet' }
-              ].map((item, index) => (
-                <MotionDiv key={item.meta} variants={itemMotion} className="flex gap-3">
-                  <div className="flex flex-col items-center">
-                    <div className={cn('flex h-9 w-9 items-center justify-center rounded-xl', item.tone === 'emerald' && 'bg-emerald-50 text-emerald-700', item.tone === 'blue' && 'bg-blue-50 text-blue-700', item.tone === 'violet' && 'bg-violet-50 text-violet-700')}>
-                      <item.icon className="h-4 w-4" />
-                    </div>
-                    {index < 2 && <div className="mt-2 h-8 w-px bg-slate-200" />}
-                  </div>
-                  <div className="min-w-0 pt-1">
-                    <p className="text-sm font-semibold text-slate-900">{item.title}</p>
-                    <p className="mt-0.5 text-xs text-slate-500">{item.meta}</p>
-                  </div>
-                </MotionDiv>
-              ))}
-            </div>
-          </CardContent>
-        </Card>
-
-        <Card className="border-slate-200 bg-white py-0 shadow-sm">
-          <CardHeader className="border-b border-slate-100 p-4">
-            <CardTitle className="flex items-center gap-2"><Zap className="h-4 w-4 text-amber-600" />Quick Actions</CardTitle>
-            <CardDescription>Common work operations stay one click away.</CardDescription>
-          </CardHeader>
-          <CardContent className="grid gap-3 p-4 sm:grid-cols-2 xl:grid-cols-1">
-            {quickActions.map((action) => (
-              <Button key={action.label} type="button" variant="outline" className="h-12 justify-start rounded-xl border-slate-200 bg-white text-slate-700 hover:bg-slate-50" disabled={action.disabled} onClick={action.onClick}>
-                <action.icon className="h-4 w-4" />
-                {action.label}
-                <ChevronRight className="ml-auto h-4 w-4 text-slate-400" />
-              </Button>
-            ))}
-          </CardContent>
-        </Card>
-      </div>
+      
     </MotionDiv>
   );
 

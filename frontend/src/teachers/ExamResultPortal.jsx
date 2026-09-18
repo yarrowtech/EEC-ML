@@ -805,7 +805,7 @@ const ExamResultPortal = () => {
               <div className="rounded-xl border border-indigo-100 bg-indigo-50 px-3 py-2 text-xs text-indigo-700">
                 {editResult.studentId?.name || 'Student'} · {editResult.examId?.title || 'Exam'}
               </div>
-              <div className="grid grid-cols-3 gap-3">
+              <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
                 <FL label="Marks">
                   <input type="number" min="0" className={IC} value={editResultForm.marks} onChange={e => setEditResultForm(p => ({ ...p, marks: e.target.value }))} disabled={editResultForm.status === 'absent'} />
                 </FL>
