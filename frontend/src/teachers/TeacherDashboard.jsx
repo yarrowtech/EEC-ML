@@ -401,7 +401,7 @@ const TeacherDashboard = () => {
 
   return (
     <div className="min-h-0 bg-[#f1f5f9] text-[#0f172a]">
-      <div className="mx-auto w-full max-w-md space-y-4 px-4 py-4 lg:hidden">
+      <div className="mx-auto w-full max-w-md space-y-4 px-4 py-4 sm:max-w-xl md:max-w-2xl lg:hidden">
         {dashboardError && (
           <div className={cx('flex items-center gap-2 rounded-2xl border-rose-200/70 bg-rose-50/80 px-4 py-3 text-xs font-medium text-rose-700 backdrop-blur-sm')}>
             <AlertCircle size={16} /> {dashboardError}

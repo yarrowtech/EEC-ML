@@ -2754,34 +2754,59 @@ const TrendsSubPanel = ({ ctxGrade, ctxSection }) => {
       {!trendData.length ? (
         <div className="text-center py-10 text-sm text-gray-400">No trend data available.</div>
       ) : (
-        <div className="overflow-x-auto rounded-2xl border border-[#eaedf0]">
-          <table className="w-full text-sm">
-            <thead>
-              <tr className="border-b border-[#eaedf0] bg-[#f7f9fc]">
-                {['Student', 'Recent Avg', 'Prior Avg', 'Δ Change', 'Trend'].map((h) => (
-                  <th key={h} className="px-4 py-3 text-left text-xs font-semibold uppercase tracking-wide text-gray-500">{h}</th>
-                ))}
-              </tr>
-            </thead>
-            <tbody className="divide-y divide-[#eaedf0]">
-              {trendData.map((s) => (
-                <tr key={String(s.studentId)} className="hover:bg-gray-50">
-                  <td className="px-4 py-3 font-semibold text-gray-900">{s.name}<br /><span className="text-xs text-gray-400 font-normal">Roll {s.roll}</span></td>
-                  <td className="px-4 py-3 font-bold text-gray-800">{s.recentAvg ?? '—'}</td>
-                  <td className="px-4 py-3 text-gray-500">{s.priorAvg ?? '—'}</td>
-                  <td className="px-4 py-3">
-                    {s.delta != null ? (
-                      <span className={`font-bold ${s.delta > 0 ? 'text-emerald-600' : s.delta < 0 ? 'text-red-600' : 'text-gray-400'}`}>
-                        {s.delta > 0 ? '+' : ''}{s.delta}
-                      </span>
-                    ) : '—'}
-                  </td>
-                  <td className="px-4 py-3">{trendIcon(s.trend)}</td>
+        <>
+          <div className="grid grid-cols-1 gap-2 sm:hidden">
+            {trendData.map((s) => (
+              <div key={String(s.studentId)} className="flex items-center justify-between gap-3 rounded-2xl border border-[#eaedf0] p-3.5">
+                <div className="min-w-0">
+                  <p className="truncate font-semibold text-gray-900">{s.name}</p>
+                  <p className="text-xs text-gray-400">Roll {s.roll}</p>
+                </div>
+                <div className="flex shrink-0 items-center gap-3 text-right text-xs">
+                  <div>
+                    <p className="text-gray-400">Recent → Prior</p>
+                    <p className="font-bold text-gray-800">{s.recentAvg ?? '—'} <span className="font-normal text-gray-400">/ {s.priorAvg ?? '—'}</span></p>
+                  </div>
+                  {s.delta != null && (
+                    <span className={`font-bold ${s.delta > 0 ? 'text-emerald-600' : s.delta < 0 ? 'text-red-600' : 'text-gray-400'}`}>
+                      {s.delta > 0 ? '+' : ''}{s.delta}
+                    </span>
+                  )}
+                  {trendIcon(s.trend)}
+                </div>
+              </div>
+            ))}
+          </div>
+
+          <div className="hidden overflow-x-auto rounded-2xl border border-[#eaedf0] sm:block">
+            <table className="w-full text-sm">
+              <thead>
+                <tr className="border-b border-[#eaedf0] bg-[#f7f9fc]">
+                  {['Student', 'Recent Avg', 'Prior Avg', 'Δ Change', 'Trend'].map((h) => (
+                    <th key={h} className="px-4 py-3 text-left text-xs font-semibold uppercase tracking-wide text-gray-500">{h}</th>
+                  ))}
                 </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
+              </thead>
+              <tbody className="divide-y divide-[#eaedf0]">
+                {trendData.map((s) => (
+                  <tr key={String(s.studentId)} className="hover:bg-gray-50">
+                    <td className="px-4 py-3 font-semibold text-gray-900">{s.name}<br /><span className="text-xs text-gray-400 font-normal">Roll {s.roll}</span></td>
+                    <td className="px-4 py-3 font-bold text-gray-800">{s.recentAvg ?? '—'}</td>
+                    <td className="px-4 py-3 text-gray-500">{s.priorAvg ?? '—'}</td>
+                    <td className="px-4 py-3">
+                      {s.delta != null ? (
+                        <span className={`font-bold ${s.delta > 0 ? 'text-emerald-600' : s.delta < 0 ? 'text-red-600' : 'text-gray-400'}`}>
+                          {s.delta > 0 ? '+' : ''}{s.delta}
+                        </span>
+                      ) : '—'}
+                    </td>
+                    <td className="px-4 py-3">{trendIcon(s.trend)}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </>
       )}
     </div>
   );
@@ -2892,65 +2917,121 @@ const MLInsightsTab = ({ data, loading, onFetch, detailStudent, setDetailStudent
           <p className="text-sm text-gray-400">No student data found for this class.</p>
         </div>
       ) : (
-        <div className="overflow-x-auto rounded-2xl border border-[#eaedf0]">
-          <table className="w-full text-sm">
-            <thead>
-              <tr className="border-b border-[#eaedf0] bg-[#f7f9fc]">
-                {['Student', 'Mastery', 'At-Risk', 'Engagement', 'Pace', 'Trend', ''].map((h) => (
-                  <th key={h} className="px-4 py-3 text-left text-xs font-semibold uppercase tracking-wide text-gray-500">{h}</th>
-                ))}
-              </tr>
-            </thead>
-            <tbody className="divide-y divide-[#eaedf0]">
-              {data.map((s) => (
-                <tr key={String(s.studentId)} className="hover:bg-gray-50 transition-colors">
-                  <td className="px-4 py-3">
+        <>
+          {/* Card list on narrow screens — a 7-column table has no room on a
+              phone; each student becomes a stacked card instead. */}
+          <div className="grid grid-cols-1 gap-3 sm:hidden">
+            {data.map((s) => (
+              <div key={String(s.studentId)} className="rounded-2xl border border-[#eaedf0] p-4">
+                <div className="flex items-start justify-between gap-2">
+                  <div>
                     <p className="font-semibold text-gray-900">{s.name}</p>
                     <p className="text-xs text-gray-400">Roll {s.roll}</p>
-                  </td>
-                  <td className="px-4 py-3">
+                  </div>
+                  <span className={`shrink-0 rounded-full px-2.5 py-0.5 text-xs font-bold ${s.atRisk?.isAtRisk ? 'bg-red-100 text-red-700' : 'bg-emerald-100 text-emerald-700'}`}>
+                    {s.atRisk?.isAtRisk ? 'At Risk' : 'Safe'}
+                  </span>
+                </div>
+                <div className="mt-3 grid grid-cols-2 gap-x-3 gap-y-3 text-xs">
+                  <div>
+                    <p className="text-gray-400">Mastery</p>
                     <span className={`font-bold ${getScoreColor(s.masteryAvg)}`}>{s.masteryAvg}%</span>
-                    <div className="mt-1 h-1 w-16 rounded-full bg-gray-100 overflow-hidden">
+                    <div className="mt-1 h-1 w-full rounded-full bg-gray-100 overflow-hidden">
                       <div className={`h-full rounded-full ${getBarColor(s.masteryAvg)}`} style={{ width: `${s.masteryAvg}%` }} />
                     </div>
-                  </td>
-                  <td className="px-4 py-3">
-                    <span className={`rounded-full px-2.5 py-0.5 text-xs font-bold ${s.atRisk?.isAtRisk ? 'bg-red-100 text-red-700' : 'bg-emerald-100 text-emerald-700'}`}>
-                      {s.atRisk?.isAtRisk ? 'At Risk' : 'Safe'}
-                    </span>
-                    {s.atRisk?.isAtRisk && <p className="text-[10px] text-gray-400 mt-0.5">Score {s.atRisk.riskScore}/100</p>}
-                  </td>
-                  <td className="px-4 py-3">
-                    <span className={`rounded-full px-2.5 py-0.5 text-xs font-semibold ${engagementColor(s.engagement?.label)}`}>
+                  </div>
+                  <div>
+                    <p className="text-gray-400">Engagement</p>
+                    <span className={`inline-block rounded-full px-2 py-0.5 text-xs font-semibold ${engagementColor(s.engagement?.label)}`}>
                       {s.engagement?.label?.replace('_', ' ') || '—'}
                     </span>
-                    <p className="text-[10px] text-gray-400 mt-0.5">{s.engagement?.engagementScore ?? '—'}/100</p>
-                  </td>
-                  <td className="px-4 py-3 text-xs text-gray-600 capitalize">
-                    {s.pace?.paceLabel?.replace('_', ' ') || '—'}
+                    <p className="mt-0.5 text-[10px] text-gray-400">{s.engagement?.engagementScore ?? '—'}/100</p>
+                  </div>
+                  <div>
+                    <p className="text-gray-400">Pace</p>
+                    <p className="text-gray-600 capitalize">{s.pace?.paceLabel?.replace('_', ' ') || '—'}</p>
                     {s.pace?.estimatedWeeksToTarget != null && (
                       <p className="text-[10px] text-gray-400">{s.pace.estimatedWeeksToTarget}w to target</p>
                     )}
-                  </td>
-                  <td className="px-4 py-3">
-                    <div className="flex items-center gap-1 text-xs">
+                  </div>
+                  <div>
+                    <p className="text-gray-400">Trend</p>
+                    <div className="flex items-center gap-1">
                       {trendIcon(s.trend?.overallTrend)}
                       <span className="text-gray-600 capitalize">{s.trend?.overallTrend || '—'}</span>
                     </div>
-                  </td>
-                  <td className="px-4 py-3">
-                    <button
-                      onClick={() => setDetailStudent(s)}
-                      className="rounded-full border border-indigo-200 bg-indigo-50 px-3 py-1 text-xs font-semibold text-indigo-600 hover:bg-indigo-100"
-                    >
-                      View Details
-                    </button>
-                  </td>
+                  </div>
+                </div>
+                <button
+                  onClick={() => setDetailStudent(s)}
+                  className="mt-3 w-full rounded-full border border-indigo-200 bg-indigo-50 px-3 py-1.5 text-xs font-semibold text-indigo-600 hover:bg-indigo-100"
+                >
+                  View Details
+                </button>
+              </div>
+            ))}
+          </div>
+
+          <div className="hidden overflow-x-auto rounded-2xl border border-[#eaedf0] sm:block">
+            <table className="w-full text-sm">
+              <thead>
+                <tr className="border-b border-[#eaedf0] bg-[#f7f9fc]">
+                  {['Student', 'Mastery', 'At-Risk', 'Engagement', 'Pace', 'Trend', ''].map((h) => (
+                    <th key={h} className="px-4 py-3 text-left text-xs font-semibold uppercase tracking-wide text-gray-500">{h}</th>
+                  ))}
                 </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
+              </thead>
+              <tbody className="divide-y divide-[#eaedf0]">
+                {data.map((s) => (
+                  <tr key={String(s.studentId)} className="hover:bg-gray-50 transition-colors">
+                    <td className="px-4 py-3">
+                      <p className="font-semibold text-gray-900">{s.name}</p>
+                      <p className="text-xs text-gray-400">Roll {s.roll}</p>
+                    </td>
+                    <td className="px-4 py-3">
+                      <span className={`font-bold ${getScoreColor(s.masteryAvg)}`}>{s.masteryAvg}%</span>
+                      <div className="mt-1 h-1 w-16 rounded-full bg-gray-100 overflow-hidden">
+                        <div className={`h-full rounded-full ${getBarColor(s.masteryAvg)}`} style={{ width: `${s.masteryAvg}%` }} />
+                      </div>
+                    </td>
+                    <td className="px-4 py-3">
+                      <span className={`rounded-full px-2.5 py-0.5 text-xs font-bold ${s.atRisk?.isAtRisk ? 'bg-red-100 text-red-700' : 'bg-emerald-100 text-emerald-700'}`}>
+                        {s.atRisk?.isAtRisk ? 'At Risk' : 'Safe'}
+                      </span>
+                      {s.atRisk?.isAtRisk && <p className="text-[10px] text-gray-400 mt-0.5">Score {s.atRisk.riskScore}/100</p>}
+                    </td>
+                    <td className="px-4 py-3">
+                      <span className={`rounded-full px-2.5 py-0.5 text-xs font-semibold ${engagementColor(s.engagement?.label)}`}>
+                        {s.engagement?.label?.replace('_', ' ') || '—'}
+                      </span>
+                      <p className="text-[10px] text-gray-400 mt-0.5">{s.engagement?.engagementScore ?? '—'}/100</p>
+                    </td>
+                    <td className="px-4 py-3 text-xs text-gray-600 capitalize">
+                      {s.pace?.paceLabel?.replace('_', ' ') || '—'}
+                      {s.pace?.estimatedWeeksToTarget != null && (
+                        <p className="text-[10px] text-gray-400">{s.pace.estimatedWeeksToTarget}w to target</p>
+                      )}
+                    </td>
+                    <td className="px-4 py-3">
+                      <div className="flex items-center gap-1 text-xs">
+                        {trendIcon(s.trend?.overallTrend)}
+                        <span className="text-gray-600 capitalize">{s.trend?.overallTrend || '—'}</span>
+                      </div>
+                    </td>
+                    <td className="px-4 py-3">
+                      <button
+                        onClick={() => setDetailStudent(s)}
+                        className="rounded-full border border-indigo-200 bg-indigo-50 px-3 py-1 text-xs font-semibold text-indigo-600 hover:bg-indigo-100"
+                      >
+                        View Details
+                      </button>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </>
       )}
 
       </>}

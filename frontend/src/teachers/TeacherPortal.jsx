@@ -1245,33 +1245,6 @@ const ClassWorkspace = ({ notifications = [], seenState = {} }) => {
   return (
     <div className="space-y-4">
 
-      <nav aria-label="Class workspace breadcrumb" className="flex flex-wrap items-center gap-1.5 px-1 text-xs font-semibold text-slate-500">
-        {[
-          { label: 'Classes & Work', to: '/teacher/classes', key: 'classes' },
-          { label: 'Students', to: `${basePath}/students`, key: 'students' },
-          { label: 'Assignments', to: `${basePath}/assignments/manage`, key: 'assignments' },
-          ...(rel.startsWith('assignments/evaluate') ? [{ label: 'Evaluate Submissions', to: `${basePath}/assignments/evaluate`, key: 'assignments-evaluate', current: true }] : []),
-        ].map((item, index) => (
-          <React.Fragment key={item.key}>
-            {index > 0 && <ChevronRight size={13} className="text-slate-300" aria-hidden="true" />}
-            <NavLink
-              to={item.to}
-              aria-current={item.current ? 'page' : undefined}
-              className={({ isActive }) => `inline-flex items-center gap-1.5 rounded-full px-2.5 py-1 transition ${item.current || isActive ? 'bg-indigo-50 text-indigo-700' : 'hover:bg-slate-100 hover:text-slate-800'}`}
-            >
-              {item.label}
-              <span
-                data-testid={`teacher-breadcrumb-notification-${item.key}`}
-                title={`${getTeacherModuleNotificationCount(notifications, item.key, seenState)} unread notification${getTeacherModuleNotificationCount(notifications, item.key, seenState) === 1 ? '' : 's'}`}
-                className={`inline-flex min-h-4 min-w-4 items-center justify-center rounded-full px-1 text-[9px] font-bold leading-none ${getTeacherModuleNotificationCount(notifications, item.key, seenState) > 0 ? 'bg-red-500 text-white' : 'bg-slate-200 text-slate-500'}`}
-              >
-                {getTeacherModuleNotificationCount(notifications, item.key, seenState) > 99 ? '99+' : getTeacherModuleNotificationCount(notifications, item.key, seenState)}
-              </span>
-            </NavLink>
-          </React.Fragment>
-        ))}
-      </nav>
-
       {/* ══════════════════════════════════════════════════
           Card  — white, rounded-[20px], subtle shadow
       ══════════════════════════════════════════════════ */}
@@ -1828,7 +1801,7 @@ const TeacherPortalShell = () => {
       <aside
         data-testid="teacher-sidebar"
         aria-label="Teacher portal navigation"
-        className={`fixed left-0 top-0 z-40 flex h-screen h-dvh max-h-screen max-h-dvh min-h-0 flex-col overflow-hidden border border-[#f0f2f5] bg-white shadow-[0_4px_24px_rgba(0,0,0,0.04),0_1px_4px_rgba(0,0,0,0.02)] lg:sticky lg:left-3 lg:top-3 lg:my-3 lg:ml-3 lg:h-[calc(100dvh-1.5rem)] lg:max-h-[calc(100dvh-1.5rem)] lg:rounded-[1.5rem] ${sidebarCollapsed ? 'lg:w-[76px]' : 'lg:w-[280px]'
+        className={`fixed left-0 top-0 z-50 flex h-screen h-dvh max-h-screen max-h-dvh min-h-0 flex-col overflow-hidden border border-[#f0f2f5] bg-white shadow-[0_4px_24px_rgba(0,0,0,0.04),0_1px_4px_rgba(0,0,0,0.02)] lg:z-40 lg:sticky lg:left-3 lg:top-3 lg:my-3 lg:ml-3 lg:h-[calc(100dvh-1.5rem)] lg:max-h-[calc(100dvh-1.5rem)] lg:rounded-[1.5rem] ${sidebarCollapsed ? 'lg:w-[76px]' : 'lg:w-[280px]'
           } w-80 ${sidebarOpen ? 'translate-x-0' : '-translate-x-full lg:translate-x-0'
           }`}
         style={{
@@ -1901,7 +1874,7 @@ const TeacherPortalShell = () => {
         </div>
 
         {/* ── Navigation ── */}
-        <nav className={`flex-1 overflow-y-auto overflow-x-hidden ${!sidebarCollapsed ? 'px-2.5 py-5' : 'px-1.5 py-3'}`}>
+        <nav className={`min-h-0 flex-1 overflow-y-auto overflow-x-hidden ${!sidebarCollapsed ? 'px-2.5 py-5' : 'px-1.5 py-3'}`}>
           <div className="space-y-0.5">
             {portalNavigation.map((item) => {
               const active = isItemActive(item.path);
@@ -2375,7 +2348,7 @@ const TeacherPortalShell = () => {
         </main>
 
         <nav aria-label="Teacher mobile navigation" className="fixed inset-x-0 bottom-0 z-40 border-t border-slate-200/80 bg-white/95 px-2 pb-[calc(.375rem+env(safe-area-inset-bottom))] pt-1.5 shadow-[0_-4px_20px_rgba(0,0,0,0.04)] backdrop-blur-md lg:hidden">
-          <div className="mx-auto flex max-w-md items-center justify-around">
+          <div className="mx-auto flex max-w-md items-center justify-around sm:max-w-xl md:max-w-2xl">
             {mobileNavigation.map((item) => {
               const Icon = item.icon;
               const notificationCount = item.action === 'menu'

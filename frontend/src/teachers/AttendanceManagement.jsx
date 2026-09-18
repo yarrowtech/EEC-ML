@@ -710,36 +710,68 @@ const AttendanceManagement = () => {
               ) : students.length === 0 ? (
                 <div className="flex min-h-[260px] flex-col items-center justify-center text-center"><Users className="mb-3 size-8 opacity-30" /><p className="text-sm font-medium text-black/60">No students found</p><p className="mt-1 text-xs text-black/40">Try adjusting your filters</p></div>
               ) : (
-                <table className="w-full min-w-[480px] border-collapse text-sm">
-                  <thead className="sticky top-0 z-10 border-b border-[#e2e8ee] bg-[#f0f4f8]">
-                    <tr>
-                      <th className="w-[80px] px-4 py-3 text-left text-[10px] font-semibold uppercase tracking-[0.04em] opacity-65">Roll No</th>
-                      <th className="px-4 py-3 text-left text-[10px] font-semibold uppercase tracking-[0.04em] opacity-65">Name</th>
-                      <th className="px-4 py-3 text-left text-[10px] font-semibold uppercase tracking-[0.04em] opacity-65">User ID</th>
-                      <th className="w-[90px] px-4 py-3 text-center text-[10px] font-semibold uppercase tracking-[0.04em] opacity-65">Present</th>
-                    </tr>
-                  </thead>
-                  <tbody>
+                <>
+                  {/* Card list on narrow screens — a data table with a tiny
+                      checkbox is hard to scan/tap on a phone; a stacked card
+                      with a full-width Present/Absent pill (student-portal
+                      style) is both easier to read and easier to hit. */}
+                  <div className="divide-y divide-[#e2e8ee] sm:hidden">
                     <AnimatePresence initial={false}>
                       {students.map((student, index) => {
                         const isPresent = (attendanceData[student._id] || STATUS.ABSENT) === STATUS.PRESENT;
                         return (
-                          <Motion.tr key={student._id} layout initial={{ opacity: 0, x: -8 }} animate={{ opacity: 1, x: 0 }} transition={{ delay: index * 0.035 }} className="border-b border-[#e2e8ee] bg-[#fafbfc] transition-colors last:border-0 hover:bg-[#f4f7fa]">
-                            <td className="px-4 py-3"><span className="text-xs font-semibold opacity-60">{student.roll || '—'}</span></td>
-                            <td className="px-4 py-3"><span className="text-sm font-medium">{student.name || '—'}</span></td>
-                            <td className="px-4 py-3"><span className="text-xs font-mono opacity-50">{student.username || '—'}</span></td>
-                            <td className="px-4 py-3">
-                              <label className="flex cursor-pointer items-center justify-center gap-2">
-                                <input type="checkbox" checked={isPresent} disabled={isAttendanceLocked} onChange={(e) => toggleStudentPresent(student._id, e.target.checked)} className="size-[18px] cursor-pointer appearance-none rounded-md border-2 border-[#c8d0d8] bg-white transition checked:border-emerald-500 checked:bg-emerald-500 disabled:cursor-not-allowed disabled:opacity-50" aria-label={`Mark ${student.name || 'student'} present`} />
-                                <span className="sr-only">{isPresent ? 'Present' : 'Absent'}</span>
-                              </label>
-                            </td>
-                          </Motion.tr>
+                          <Motion.div key={student._id} layout initial={{ opacity: 0, x: -8 }} animate={{ opacity: 1, x: 0 }} transition={{ delay: index * 0.035 }} className="flex items-center justify-between gap-3 bg-[#fafbfc] px-4 py-3">
+                            <div className="min-w-0">
+                              <p className="text-sm font-medium">{student.name || '—'}</p>
+                              <p className="mt-0.5 text-xs opacity-50">Roll {student.roll || '—'} · <span className="font-mono">{student.username || '—'}</span></p>
+                            </div>
+                            <button
+                              type="button"
+                              disabled={isAttendanceLocked}
+                              onClick={() => toggleStudentPresent(student._id, !isPresent)}
+                              aria-pressed={isPresent}
+                              aria-label={`Mark ${student.name || 'student'} ${isPresent ? 'absent' : 'present'}`}
+                              className={`shrink-0 rounded-full px-3.5 py-2 text-xs font-semibold transition disabled:cursor-not-allowed disabled:opacity-50 ${isPresent ? 'bg-emerald-500 text-white' : 'border border-[#c8d0d8] bg-white text-black/50'}`}
+                            >
+                              {isPresent ? 'Present' : 'Absent'}
+                            </button>
+                          </Motion.div>
                         );
                       })}
                     </AnimatePresence>
-                  </tbody>
-                </table>
+                  </div>
+
+                  <table className="hidden w-full min-w-[480px] border-collapse text-sm sm:table">
+                    <thead className="sticky top-0 z-10 border-b border-[#e2e8ee] bg-[#f0f4f8]">
+                      <tr>
+                        <th className="w-[80px] px-4 py-3 text-left text-[10px] font-semibold uppercase tracking-[0.04em] opacity-65">Roll No</th>
+                        <th className="px-4 py-3 text-left text-[10px] font-semibold uppercase tracking-[0.04em] opacity-65">Name</th>
+                        <th className="px-4 py-3 text-left text-[10px] font-semibold uppercase tracking-[0.04em] opacity-65">User ID</th>
+                        <th className="w-[90px] px-4 py-3 text-center text-[10px] font-semibold uppercase tracking-[0.04em] opacity-65">Present</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      <AnimatePresence initial={false}>
+                        {students.map((student, index) => {
+                          const isPresent = (attendanceData[student._id] || STATUS.ABSENT) === STATUS.PRESENT;
+                          return (
+                            <Motion.tr key={student._id} layout initial={{ opacity: 0, x: -8 }} animate={{ opacity: 1, x: 0 }} transition={{ delay: index * 0.035 }} className="border-b border-[#e2e8ee] bg-[#fafbfc] transition-colors last:border-0 hover:bg-[#f4f7fa]">
+                              <td className="px-4 py-3"><span className="text-xs font-semibold opacity-60">{student.roll || '—'}</span></td>
+                              <td className="px-4 py-3"><span className="text-sm font-medium">{student.name || '—'}</span></td>
+                              <td className="px-4 py-3"><span className="text-xs font-mono opacity-50">{student.username || '—'}</span></td>
+                              <td className="px-4 py-3">
+                                <label className="flex cursor-pointer items-center justify-center gap-2">
+                                  <input type="checkbox" checked={isPresent} disabled={isAttendanceLocked} onChange={(e) => toggleStudentPresent(student._id, e.target.checked)} className="size-[18px] cursor-pointer appearance-none rounded-md border-2 border-[#c8d0d8] bg-white transition checked:border-emerald-500 checked:bg-emerald-500 disabled:cursor-not-allowed disabled:opacity-50" aria-label={`Mark ${student.name || 'student'} present`} />
+                                  <span className="sr-only">{isPresent ? 'Present' : 'Absent'}</span>
+                                </label>
+                              </td>
+                            </Motion.tr>
+                          );
+                        })}
+                      </AnimatePresence>
+                    </tbody>
+                  </table>
+                </>
               )}
             </div>
           </Motion.div>

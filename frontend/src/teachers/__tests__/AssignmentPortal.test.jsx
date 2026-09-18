@@ -140,7 +140,11 @@ describe('AssignmentPortal workflow', () => {
     await user.click(screen.getByRole('button', { name: /Evaluate Submissions/i }));
 
     expect(screen.getByTestId('current-path')).toHaveTextContent('/teacher/classes/current/assignments/evaluate');
-    await user.click(await screen.findByRole('button', { name: /Review/i }));
+    // The submissions table renders both a mobile card list and a desktop
+    // table for the same data (only one is visible per viewport via CSS,
+    // which jsdom doesn't evaluate) — either "Review" button opens the same
+    // submission, so grab the first match.
+    await user.click((await screen.findAllByRole('button', { name: /Review/i }))[0]);
     expect(await screen.findByText('My submitted answer about equivalent fractions.')).toBeInTheDocument();
   });
 
@@ -149,7 +153,7 @@ describe('AssignmentPortal workflow', () => {
     renderPortal('/teacher/classes/5-a/assignments/evaluate');
 
     expect(screen.getByTestId('current-path')).toHaveTextContent('/teacher/classes/5-a/assignments/evaluate');
-    await user.click(await screen.findByRole('button', { name: /Review/i }));
+    await user.click((await screen.findAllByRole('button', { name: /Review/i }))[0]);
     expect(await screen.findByText('My submitted answer about equivalent fractions.')).toBeInTheDocument();
 
     await user.click(screen.getByRole('button', { name: /Close/i }));
@@ -191,7 +195,7 @@ describe('AssignmentPortal workflow', () => {
     });
 
     renderPortal('/teacher/classes/5-a/assignments/evaluate');
-    await user.click(await screen.findByRole('button', { name: /^Review$/i }));
+    await user.click((await screen.findAllByRole('button', { name: /^Review$/i }))[0]);
 
     const rubric = screen.getByRole('textbox', { name: 'Grading rubric' });
     await user.type(rubric, 'Content — 60%\nClarity — 40%');
@@ -323,7 +327,7 @@ describe('AssignmentPortal workflow', () => {
     const user = userEvent.setup();
     renderPortal('/teacher/classes/current/assignments/evaluate');
 
-    await user.click(await screen.findByRole('button', { name: /^Review$/i }));
+    await user.click((await screen.findAllByRole('button', { name: /^Review$/i }))[0]);
     await user.click(screen.getByRole('button', { name: /Publish Result/i }));
 
     expect(axios.post).toHaveBeenCalledWith(
