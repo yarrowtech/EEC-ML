@@ -96,33 +96,56 @@ const formatCompactINR = (value = 0) => {
 
 // ── Presentational ───────────────────────────────────────────────────────────
 
-const StatCard = ({ label, value, icon, sub, color, delay, loading }) => (
-  <motion.div
-    initial={{ opacity: 0, y: 20 }}
-    animate={{ opacity: 1, y: 0 }}
-    transition={{ delay, duration: 0.5, ease: 'easeOut' }}
-    whileHover={{ y: -4, transition: { duration: 0.15 } }}
-    className="glass-card p-5 flex flex-col"
-  >
-    <div className="flex items-center justify-between mb-2">
-      <span className="stat-label">{label}</span>
-      <span className="opacity-60" style={{ color }} aria-hidden="true">
-        {icon}
-      </span>
-    </div>
-    {loading ? (
-      <span className="stat-skeleton" aria-hidden="true" />
-    ) : (
-      <span className="stat-number">{value}</span>
-    )}
-    <div className="flex items-center gap-1.5 mt-1.5">
-      <span className="text-[10px] font-medium text-emerald-600 bg-emerald-50 px-2 py-0.5 rounded-full">
-        {loading ? '—' : sub}
-      </span>
-      <span className="text-[10px] text-slate-400">last 30 days</span>
-    </div>
-  </motion.div>
-);
+// Counts up from 0 to `target` over `duration` ms whenever `target` changes
+// (an ease-out curve so it settles rather than ticking at a constant rate).
+const useCountUp = (target, duration = 900) => {
+  const [value, setValue] = useState(0);
+  useEffect(() => {
+    const end = Number(target) || 0;
+    if (end <= 0) {
+      setValue(0);
+      return undefined;
+    }
+    let frame;
+    const start = performance.now();
+    const tick = (now) => {
+      const progress = Math.min(1, (now - start) / duration);
+      const eased = 1 - (1 - progress) ** 3;
+      setValue(Math.round(end * eased));
+      if (progress < 1) frame = requestAnimationFrame(tick);
+    };
+    frame = requestAnimationFrame(tick);
+    return () => cancelAnimationFrame(frame);
+  }, [target, duration]);
+  return value;
+};
+
+const StatCard = ({ label, value, icon, sub, color, delay, loading }) => {
+  const animatedValue = useCountUp(loading ? 0 : value);
+  return (
+    <motion.div
+      initial={{ opacity: 0, y: 20 }}
+      animate={{ opacity: 1, y: 0 }}
+      transition={{ delay, duration: 0.5, ease: 'easeOut' }}
+      whileHover={{ y: -4, transition: { duration: 0.15 } }}
+      className="glass-card p-5 flex flex-col"
+    >
+      <div className="flex items-center justify-between mb-2">
+        <span className="stat-label">{label}</span>
+        <span className="opacity-60" style={{ color }} aria-hidden="true">
+          {icon}
+        </span>
+      </div>
+      <span className="stat-number">{animatedValue.toLocaleString('en-IN')}</span>
+      <div className="flex items-center gap-1.5 mt-1.5">
+        <span className="text-[10px] font-medium text-emerald-600 bg-emerald-50 px-2 py-0.5 rounded-full">
+          {loading ? '—' : sub}
+        </span>
+        <span className="text-[10px] text-slate-400">last 30 days</span>
+      </div>
+    </motion.div>
+  );
+};
 
 const QuickAction = ({ label, icon, color, onClick }) => (
   <Button
@@ -227,7 +250,7 @@ const Dashboard = ({ setShowAdminHeader }) => {
     () => [
       {
         label: 'Students',
-        value: (stats?.students?.total ?? 0).toLocaleString('en-IN'),
+        value: stats?.students?.total ?? 0,
         sub: `+${stats?.students?.recent ?? 0} new`,
         icon: <Users size={24} strokeWidth={2} />,
         color: '#8b5cf6',
@@ -235,7 +258,7 @@ const Dashboard = ({ setShowAdminHeader }) => {
       },
       {
         label: 'Teachers',
-        value: (stats?.teachers?.total ?? 0).toLocaleString('en-IN'),
+        value: stats?.teachers?.total ?? 0,
         sub: `+${stats?.teachers?.recent ?? 0} new`,
         icon: <GraduationCap size={24} strokeWidth={2} />,
         color: '#60a5fa',
@@ -243,7 +266,7 @@ const Dashboard = ({ setShowAdminHeader }) => {
       },
       {
         label: 'Parents',
-        value: (stats?.parents?.total ?? 0).toLocaleString('en-IN'),
+        value: stats?.parents?.total ?? 0,
         sub: `+${stats?.parents?.recent ?? 0} new`,
         icon: <UserRound size={24} strokeWidth={2} />,
         color: '#a78bfa',
@@ -251,7 +274,7 @@ const Dashboard = ({ setShowAdminHeader }) => {
       },
       {
         label: 'All Users',
-        value: (stats?.totalUsers ?? 0).toLocaleString('en-IN'),
+        value: stats?.totalUsers ?? 0,
         sub: `+${stats?.recentTotal ?? 0} new`,
         icon: <User size={24} strokeWidth={2} />,
         color: '#10b981',

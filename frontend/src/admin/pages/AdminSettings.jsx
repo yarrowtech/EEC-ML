@@ -19,6 +19,7 @@ import {
   Lock,
   Sparkles,
   Pencil,
+  ChevronDown,
 } from 'lucide-react';
 import toast from 'react-hot-toast';
 
@@ -55,6 +56,19 @@ const EMPTY_SCHOOL = {
   logo: '',
 };
 
+// Same option lists as the school registration form (SchoolRegistrationForm.jsx),
+// so admins editing these fields later see the same fixed choices instead of a
+// free-text box that can drift from what the rest of the app expects.
+const SCHOOL_TYPES = ['Public', 'Private', 'Charter', 'International'];
+const BOARDS = ['CBSE', 'ICSE', 'IB', 'IGCSE', 'State Board', 'NIOS', 'Other'];
+const ACADEMIC_STRUCTURES = ['Semester', 'Trimester', 'Quarter'];
+const USER_RANGES = [
+  { label: 'Less than 100', value: '<100' },
+  { label: '100 - 500', value: '100-500' },
+  { label: '500 - 1,000', value: '500-1000' },
+  { label: 'More than 1,000', value: '1000+' },
+];
+
 const TABS = [
   { key: 'profile', label: 'Profile', icon: UserCircle, accent: 'amber' },
   { key: 'security', label: 'Security', icon: Shield, accent: 'rose' },
@@ -87,6 +101,34 @@ const Field = ({ label, icon: Icon, readOnly, className, ...props }) => (
             : 'bg-white border-gray-200 text-gray-800 shadow-xs hover:border-gray-300 focus:outline-none focus:ring-4 focus:ring-amber-400/15 focus:border-amber-400'
         }`}
       />
+    </div>
+  </div>
+);
+
+/* ─── reusable labelled select (same option lists as the school registration form) ─── */
+const SelectField = ({ label, icon: Icon, className, options, placeholder, ...props }) => (
+  <div className={className ?? ''}>
+    <label className="flex items-center gap-1.5 text-xs font-semibold text-gray-500 uppercase tracking-wide mb-1.5">
+      {label}
+    </label>
+    <div className="relative group">
+      {Icon && (
+        <div className="pointer-events-none absolute inset-y-0 left-0 flex items-center pl-3.5">
+          <Icon size={15} className="text-gray-400 group-focus-within:text-amber-500 transition-colors" />
+        </div>
+      )}
+      <select
+        {...props}
+        className={`w-full rounded-xl border px-3.5 py-2.5 pr-9 text-sm bg-white border-gray-200 text-gray-800 shadow-xs hover:border-gray-300 focus:outline-none focus:ring-4 focus:ring-amber-400/15 focus:border-amber-400 transition-all duration-150 appearance-none ${Icon ? 'pl-9' : ''}`}
+      >
+        <option value="">{placeholder || 'Select…'}</option>
+        {options.map((opt) => (
+          <option key={opt.value ?? opt} value={opt.value ?? opt}>{opt.label ?? opt}</option>
+        ))}
+      </select>
+      <div className="pointer-events-none absolute inset-y-0 right-0 flex items-center pr-3.5">
+        <ChevronDown size={15} className="text-gray-400 group-focus-within:text-amber-500 transition-colors" />
+      </div>
     </div>
   </div>
 );
@@ -130,16 +172,16 @@ const SectionCard = ({ icon: Icon, accent, title, subtitle, children }) => {
       transition={{ duration: 0.25, ease: 'easeOut' }}
       className="bg-white rounded-2xl border border-gray-200 shadow-xs overflow-hidden"
     >
-      <div className="flex items-center gap-3 px-6 py-4 border-b border-gray-100">
+      <div className="flex items-center gap-3 px-4 sm:px-6 py-3.5 sm:py-4 border-b border-gray-100">
         <div className={`flex h-9 w-9 shrink-0 items-center justify-center rounded-xl border ${accents[accent] || accents.amber}`}>
           <Icon size={17} />
         </div>
-        <div>
+        <div className="min-w-0">
           <h2 className="text-sm font-bold text-gray-900">{title}</h2>
           <p className="text-xs text-gray-400 mt-0.5">{subtitle}</p>
         </div>
       </div>
-      <div className="p-6 grid grid-cols-1 md:grid-cols-2 gap-5">{children}</div>
+      <div className="p-4 sm:p-6 grid grid-cols-1 md:grid-cols-2 gap-4 sm:gap-5">{children}</div>
     </motion.div>
   );
 };
@@ -341,7 +383,7 @@ const AdminSettings = ({ setShowAdminHeader, onSettingsUpdated }) => {
   /* ─── loading skeleton ─── */
   if (loading) {
     return (
-      <div className="min-h-full p-4 lg:p-8 bg-linear-to-b from-gray-50 to-gray-50/40">
+      <div className="min-h-full p-3 sm:p-4 md:p-6 lg:p-8 bg-linear-to-b from-gray-50 to-gray-50/40">
         <div className="max-w-4xl mx-auto space-y-6">
           <div className="h-48 bg-white rounded-2xl border border-gray-100 animate-pulse" />
           <div className="flex gap-2">
@@ -363,8 +405,8 @@ const AdminSettings = ({ setShowAdminHeader, onSettingsUpdated }) => {
   }
 
   return (
-    <div className="min-h-full p-4 lg:p-8 bg-linear-to-b from-gray-50 to-gray-50/40">
-      <form onSubmit={handleSave} className="max-w-4xl mx-auto space-y-6">
+    <div className="min-h-full p-3 sm:p-4 md:p-6 lg:p-8 pb-24 sm:pb-28 bg-linear-to-b from-gray-50 to-gray-50/40">
+      <form onSubmit={handleSave} className="max-w-4xl mx-auto space-y-4 sm:space-y-6">
 
         {/* ─── hero profile card ─── */}
         <motion.div
@@ -385,9 +427,9 @@ const AdminSettings = ({ setShowAdminHeader, onSettingsUpdated }) => {
             {/* <Sparkles size={18} className="absolute top-4 right-5 text-white/50" /> */}
           </div>
 
-          <div className="px-6 pb-5">
+          <div className="px-4 sm:px-6 pb-5">
             {/* avatar overlapping the banner */}
-            <div className="flex flex-col sm:flex-row sm:items-end gap-4 -mt-8">
+            <div className="flex flex-col items-center text-center sm:flex-row sm:items-end sm:text-left gap-3 sm:gap-4 -mt-8">
               <div className="relative group shrink-0">
                 {heroAvatarUrl ? (
                   <img
@@ -422,16 +464,20 @@ const AdminSettings = ({ setShowAdminHeader, onSettingsUpdated }) => {
                     e.target.value = '';
                   }}
                 />
+                {/* Facebook-style corner camera badge instead of a full-avatar
+                    hover overlay, so the upload action is always visible
+                    (and reachable on touch devices, where hover never fires). */}
                 <button
                   type="button"
                   disabled={uploadingAvatar}
                   onClick={() => avatarInputRef.current?.click()}
-                  className="absolute inset-0 rounded-full bg-black/0 group-hover:bg-black/45 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-all cursor-pointer"
+                  aria-label="Change photo"
+                  className="absolute bottom-0 right-0 flex h-8 w-8 items-center justify-center rounded-full border-2 border-white bg-gray-800 text-white shadow-md hover:bg-black active:scale-95 transition-all cursor-pointer disabled:opacity-60"
                 >
                   {uploadingAvatar ? (
-                    <Loader2 size={22} className="text-white animate-spin" />
+                    <Loader2 size={14} className="animate-spin" />
                   ) : (
-                    <Camera size={22} className="text-white drop-shadow" />
+                    <Camera size={14} />
                   )}
                 </button>
 
@@ -453,16 +499,16 @@ const AdminSettings = ({ setShowAdminHeader, onSettingsUpdated }) => {
                 )}
               </div>
 
-              <div className="flex-1 pb-1 mt-36 sm:mt-0">
-                <h1 className="text-xl font-bold text-gray-900 tracking-tight">{adminForm.name || 'Admin'}</h1>
-                <p className="text-sm text-gray-500 flex items-center gap-1.5 mt-0.5">
-                  <Mail size={12} className="text-gray-400" />
+              <div className="flex-1 pb-1 min-w-0">
+                <h1 className="text-lg sm:text-xl font-bold text-gray-900 tracking-tight truncate">{adminForm.name || 'Admin'}</h1>
+                <p className="text-sm text-gray-500 flex items-center justify-center sm:justify-start gap-1.5 mt-0.5 truncate">
+                  <Mail size={12} className="text-gray-400 shrink-0" />
                   {adminForm.email || 'No email set'}
                 </p>
               </div>
 
-              <div className="sm:pb-1">
-                <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-semibold bg-linear-to-r from-amber-50 to-orange-50 text-amber-700 border border-amber-200 shadow-xs">
+              <div className="pb-1">
+                <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-semibold bg-linear-to-r from-amber-50 to-orange-50 text-amber-700 border border-amber-200 shadow-xs whitespace-nowrap">
                   <Shield size={12} />
                   {isSuperAdmin ? 'Super Admin' : 'School Admin'}
                 </span>
@@ -478,7 +524,7 @@ const AdminSettings = ({ setShowAdminHeader, onSettingsUpdated }) => {
               key={key}
               type="button"
               onClick={() => setActiveTab(key)}
-              className={`relative flex-1 inline-flex items-center justify-center gap-2 px-4 py-2.5 rounded-lg text-sm font-medium transition-colors ${
+              className={`relative flex-1 inline-flex items-center justify-center gap-1.5 sm:gap-2 px-2 sm:px-4 py-2 sm:py-2.5 rounded-lg text-xs sm:text-sm font-medium transition-colors whitespace-nowrap ${
                 activeTab === key ? 'text-white' : 'text-gray-500 hover:text-gray-700 hover:bg-gray-50'
               }`}
             >
@@ -518,21 +564,21 @@ const AdminSettings = ({ setShowAdminHeader, onSettingsUpdated }) => {
               transition={{ duration: 0.25, ease: 'easeOut' }}
               className="bg-white rounded-2xl border border-gray-200 shadow-xs overflow-hidden"
             >
-              <div className="flex items-center gap-3 px-6 py-4 border-b border-gray-100">
+              <div className="flex items-center gap-3 px-4 sm:px-6 py-3.5 sm:py-4 border-b border-gray-100">
                 <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl border bg-rose-50 text-rose-600 border-rose-100">
                   <Shield size={17} />
                 </div>
-                <div>
+                <div className="min-w-0">
                   <h2 className="text-sm font-bold text-gray-900">Change Password</h2>
                   <p className="text-xs text-gray-400 mt-0.5">Ensure your account stays secure by using a strong password</p>
                 </div>
               </div>
-              <div className="p-6 grid grid-cols-1 md:grid-cols-2 gap-5">
+              <div className="p-4 sm:p-6 grid grid-cols-1 md:grid-cols-2 gap-4 sm:gap-5">
                 <PasswordField label="New Password" value={adminForm.newPassword} onChange={(e) => setAdminForm((p) => ({ ...p, newPassword: e.target.value }))} placeholder="Enter new password" />
                 <PasswordField label="Confirm Password" value={adminForm.confirmPassword} onChange={(e) => setAdminForm((p) => ({ ...p, confirmPassword: e.target.value }))} placeholder="Confirm new password" />
               </div>
               {passwordError && (
-                <div className="mx-6 mb-5 flex items-center gap-2 px-4 py-2.5 rounded-xl bg-rose-50 border border-rose-200 text-sm text-rose-600">
+                <div className="mx-4 sm:mx-6 mb-5 flex items-center gap-2 px-4 py-2.5 rounded-xl bg-rose-50 border border-rose-200 text-sm text-rose-600">
                   <Shield size={14} />
                   {passwordError}
                 </div>
@@ -558,36 +604,55 @@ const AdminSettings = ({ setShowAdminHeader, onSettingsUpdated }) => {
                 <Field label="Website URL" value={schoolForm.websiteURL} onChange={(e) => setSchoolForm((p) => ({ ...p, websiteURL: e.target.value }))} placeholder="https://..." icon={Globe} />
                 <Field label="Official Email" value={schoolForm.officialEmail} onChange={(e) => setSchoolForm((p) => ({ ...p, officialEmail: e.target.value }))} placeholder="Enter official email" icon={Mail} />
                 <Field label="Contact Person" value={schoolForm.contactPersonName} onChange={(e) => setSchoolForm((p) => ({ ...p, contactPersonName: e.target.value }))} placeholder="Enter contact person name" icon={UserCircle} />
-                <Field label="Primary Campus" value={schoolForm.campusName} onChange={(e) => setSchoolForm((p) => ({ ...p, campusName: e.target.value }))} placeholder="Enter campus name" icon={Building2} />
               </SectionCard>
 
               {/* academic details card */}
               <SectionCard icon={GraduationCap} accent="indigo" title="Academic Configuration" subtitle="Board affiliation, structure, and capacity">
-                <Field label="School Type" value={schoolForm.schoolType} onChange={(e) => setSchoolForm((p) => ({ ...p, schoolType: e.target.value }))} placeholder="Public / Private / ..." icon={GraduationCap} />
-                <Field label="Board" value={schoolForm.board} onChange={(e) => setSchoolForm((p) => ({ ...p, board: e.target.value }))} placeholder="CBSE / ICSE / ..." icon={GraduationCap} />
-                <Field label="Board (Other)" value={schoolForm.boardOther} onChange={(e) => setSchoolForm((p) => ({ ...p, boardOther: e.target.value }))} placeholder="If not listed above" />
-                <Field label="Academic Year Structure" value={schoolForm.academicYearStructure} onChange={(e) => setSchoolForm((p) => ({ ...p, academicYearStructure: e.target.value }))} placeholder="Semester / Trimester / ..." />
-                <Field label="Estimated Users" value={schoolForm.estimatedUsers} onChange={(e) => setSchoolForm((p) => ({ ...p, estimatedUsers: e.target.value }))} placeholder="Approx. number" icon={Users} />
+                <SelectField
+                  label="School Type" icon={GraduationCap} placeholder="Select type" options={SCHOOL_TYPES}
+                  value={schoolForm.schoolType} onChange={(e) => setSchoolForm((p) => ({ ...p, schoolType: e.target.value }))}
+                />
+                <SelectField
+                  label="Board / Affiliation" icon={GraduationCap} placeholder="Select board" options={BOARDS}
+                  value={schoolForm.board} onChange={(e) => setSchoolForm((p) => ({ ...p, board: e.target.value }))}
+                />
+                {schoolForm.board === 'Other' && (
+                  <Field
+                    label="Specify Board Name" value={schoolForm.boardOther} placeholder="Enter board / affiliation name"
+                    onChange={(e) => setSchoolForm((p) => ({ ...p, boardOther: e.target.value }))}
+                  />
+                )}
+                <SelectField
+                  label="Academic Year Structure" placeholder="Select structure" options={ACADEMIC_STRUCTURES}
+                  value={schoolForm.academicYearStructure} onChange={(e) => setSchoolForm((p) => ({ ...p, academicYearStructure: e.target.value }))}
+                />
+                <SelectField
+                  label="Estimated Users" icon={Users} placeholder="Select a range" options={USER_RANGES}
+                  value={schoolForm.estimatedUsers} onChange={(e) => setSchoolForm((p) => ({ ...p, estimatedUsers: e.target.value }))}
+                />
               </SectionCard>
             </motion.div>
           )}
         </AnimatePresence>
 
-        {/* ─── sticky save bar ─── */}
-        <div className="sticky bottom-4 z-10">
-          <div className="bg-white/85 backdrop-blur-lg rounded-2xl border border-gray-200 shadow-lg px-6 py-3 flex items-center justify-between">
+        {/* ─── fixed save bar — pinned to the viewport bottom the whole time
+            instead of a `sticky` bar that only appears once you've scrolled
+            past the rest of the form. ─── */}
+        {/* bottom-14 clears the mobile/tablet bottom tab bar (AdminBottomNav,
+            h-14, lg:hidden); at lg+ that bar doesn't render, so pin to 0. */}
+        <div className="fixed inset-x-0 bottom-14 lg:bottom-0 z-20 border-t border-gray-200 bg-white/90 backdrop-blur-lg px-3 sm:px-4 md:px-6 lg:px-8 py-3 shadow-[0_-4px_20px_rgba(0,0,0,0.06)]">
+          <div className="max-w-4xl mx-auto flex items-center justify-between gap-3">
             <p className="text-xs text-gray-400 hidden sm:block">Changes are saved to your profile and school settings</p>
             <button
               type="submit"
               disabled={saving}
-              className="inline-flex items-center gap-2 px-6 py-2.5 bg-linear-to-r from-amber-500 to-orange-500 text-white text-sm font-semibold rounded-xl hover:from-amber-600 hover:to-orange-600 active:scale-[0.98] disabled:opacity-60 disabled:cursor-not-allowed transition-all shadow-sm shadow-amber-500/25"
+              className="inline-flex items-center justify-center gap-2 w-full sm:w-auto px-6 py-2.5 bg-linear-to-r from-amber-500 to-orange-500 text-white text-sm font-semibold rounded-xl hover:from-amber-600 hover:to-orange-600 active:scale-[0.98] disabled:opacity-60 disabled:cursor-not-allowed transition-all shadow-sm shadow-amber-500/25"
             >
               {saving ? <Loader2 size={16} className="animate-spin" /> : <Save size={16} />}
               {saving ? 'Saving...' : 'Save Changes'}
             </button>
           </div>
         </div>
-
       </form>
     </div>
   );

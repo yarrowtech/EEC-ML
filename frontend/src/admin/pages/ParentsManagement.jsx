@@ -1,4 +1,5 @@
 import React, { useEffect, useState, useMemo, useRef, useCallback } from 'react';
+import { createPortal } from 'react-dom';
 import { motion as Motion, AnimatePresence } from 'framer-motion';
 import {
   Search,
@@ -22,6 +23,8 @@ import {
   KeyRound,
   Copy,
   Check,
+  Edit,
+  InfoIcon,
 } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 import Swal from 'sweetalert2';
@@ -903,7 +906,7 @@ const ParentsManagement = ({ setShowAdminHeader }) => {
                                   className="inline-flex items-center px-1.5 py-1 text-emerald-600 hover:bg-emerald-50 rounded-md text-xs transition"
                                   title="View Details"
                                 >
-                                  <Eye size={14} />
+                                  <InfoIcon size={14} />
                                 </button>
                                 <button
                                   onClick={() => openEditModal(parent)}
@@ -911,7 +914,7 @@ const ParentsManagement = ({ setShowAdminHeader }) => {
                                   className="inline-flex items-center px-1.5 py-1 text-gray-500 hover:bg-gray-100 rounded-md text-xs transition disabled:opacity-50"
                                   title="Edit Parent"
                                 >
-                                  <Edit2 size={14} />
+                                  <Edit size={14} />
                                 </button>
                                 <button
                                   onClick={() => setDeleteConfirmParent(parent)}
@@ -1041,7 +1044,10 @@ const ParentsManagement = ({ setShowAdminHeader }) => {
           </div>
         </div>
 
-        {/* Delete Parent Confirmation Modal */}
+        {/* Delete Parent Confirmation Modal — portaled to document.body so its
+            backdrop covers the full viewport instead of being clipped to the
+            page's transformed (page-fade-in) ancestor. */}
+        {createPortal(
         <AnimatePresence>
           {deleteConfirmParent && (
             <Motion.div
@@ -1095,9 +1101,12 @@ const ParentsManagement = ({ setShowAdminHeader }) => {
               </Motion.div>
             </Motion.div>
           )}
-        </AnimatePresence>
+        </AnimatePresence>,
+        document.body
+        )}
 
-        {/* Delete Child Confirmation Modal */}
+        {/* Delete Child Confirmation Modal — portaled to document.body */}
+        {createPortal(
         <AnimatePresence>
           {deleteConfirmChild && (
             <Motion.div
@@ -1151,9 +1160,12 @@ const ParentsManagement = ({ setShowAdminHeader }) => {
               </Motion.div>
             </Motion.div>
           )}
-        </AnimatePresence>
+        </AnimatePresence>,
+        document.body
+        )}
 
-        {/* Parent Credentials Modal */}
+        {/* Parent Credentials Modal — portaled to document.body */}
+        {createPortal(
         <AnimatePresence>
           {credsParent && (
             <Motion.div
@@ -1257,9 +1269,12 @@ const ParentsManagement = ({ setShowAdminHeader }) => {
               </Motion.div>
             </Motion.div>
           )}
-        </AnimatePresence>
+        </AnimatePresence>,
+        document.body
+        )}
 
-        {/* Edit Parent Modal */}
+        {/* Edit Parent Modal — portaled to document.body */}
+        {createPortal(
         <AnimatePresence>
           {showEditModal && editForm && (
             <Motion.div
@@ -1363,9 +1378,12 @@ const ParentsManagement = ({ setShowAdminHeader }) => {
               </Motion.div>
             </Motion.div>
           )}
-        </AnimatePresence>
+        </AnimatePresence>,
+        document.body
+        )}
 
-        {/* Parent Details Modal */}
+        {/* Parent Details Modal — portaled to document.body */}
+        {createPortal(
         <AnimatePresence>
           {showChildrenModal && selectedParent && (
             <Motion.div
@@ -1477,7 +1495,7 @@ const ParentsManagement = ({ setShowAdminHeader }) => {
                                   onClick={() => handleEditChild(child.name)}
                                   className="inline-flex items-center gap-1 rounded-lg border border-emerald-200 bg-emerald-50 px-2.5 py-1.5 text-xs text-emerald-700 hover:bg-emerald-100 transition-colors"
                                 >
-                                  <Edit2 size={12} />
+                                  <Edit size={12} />
                                   Edit
                                 </button>
                                 {/* <button
@@ -1510,7 +1528,9 @@ const ParentsManagement = ({ setShowAdminHeader }) => {
               </Motion.div>
             </Motion.div>
           )}
-        </AnimatePresence>
+        </AnimatePresence>,
+        document.body
+        )}
       </div>
     </div>
   );
