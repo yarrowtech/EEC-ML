@@ -22,11 +22,9 @@ import {
   ArrowUpCircle,
   CalendarDays,
   CreditCard,
-  FileBadge,
   Plus,
   Eye,
-  UserX,
-  MessagesSquare
+  Activity
 } from 'lucide-react';
 
 export const ADMIN_MENU_ITEMS = [
@@ -40,6 +38,11 @@ export const ADMIN_MENU_ITEMS = [
     icon: BarChart3,
     label: 'Analytics',
     path: '/admin/analytics'
+  },
+  {
+    icon: Activity,
+    label: 'Activity Log',
+    path: '/admin/activity-log'
   },
   {
     icon: IndianRupee,
@@ -56,11 +59,6 @@ export const ADMIN_MENU_ITEMS = [
         icon: Receipt,
         label: 'Fees Collection',
         path: '/admin/fees/collection'
-      },
-      {
-        icon: FileText,
-        label: 'Fee Receipts',
-        path: '/admin/fees/receipts'
       }
     ]
   },
@@ -88,24 +86,14 @@ export const ADMIN_MENU_ITEMS = [
     path: '/admin/holidays'
   },
   {
-    icon: MessagesSquare,
-    label: 'Community Wall',
-    path: '/admin/community-wall'
-  },
-  {
     icon: GraduationCap,
     label: 'Students',
     path: '/admin/students'
   },
   {
     icon: ArrowUpCircle,
-    label: 'Student Promotion',
+    label: 'Promotion & Leave',
     path: '/admin/promotion'
-  },
-  {
-    icon: UserX,
-    label: 'Leave & Left Students',
-    path: '/admin/left-students'
   },
   {
     icon: ClipboardList,
@@ -151,11 +139,6 @@ export const ADMIN_MENU_ITEMS = [
     icon: Calendar,
     label: 'Exam Management',
     path: '/admin/examination'
-  },
-  {
-    icon: FileBadge,
-    label: 'Admit Cards',
-    path: '/admin/admit-cards'
   },
   {
     icon: FileText,
@@ -206,17 +189,16 @@ export const ADMIN_MENU_ITEMS = [
 // Labels resolve against ADMIN_MENU_ITEMS (top-level items and submenu children).
 export const ADMIN_MENU_SECTIONS = [
   { items: ['Dashboard'] },
-  { section: 'OVERVIEW', items: ['Analytics'] },
+  { section: 'OVERVIEW', items: ['Analytics', 'Activity Log'] },
   {
     section: 'ACADEMIC MANAGEMENT',
-    items: ['Academic Setup', 'Teachers Management', 'Teacher Feedback', 'Routine Management', 'Exam Management', 'Admit Cards', 'Result Management', 'Report Cards'],
+    items: ['Academic Setup', 'Teachers Management', 'Teacher Feedback', 'Routine Management', 'Exam Management', 'Result Management', 'Report Cards'],
   },
-  { section: 'STUDENTS', items: ['Students', 'Parents', 'Student Promotion', 'Leave & Left Students'] },
-  { section: 'FEES MANAGEMENT', items: ['Create Fees', 'Fees Collection', 'Fee Receipts'] },
-  { section: 'COMMUNICATION', items: ['Notices', 'Holiday List', 'Community Wall'] },
+  { section: 'STUDENTS', items: ['Students', 'Parents', 'Promotion & Leave'] },
+  { section: 'FEES MANAGEMENT', items: ['Create Fees', 'Fees Collection'] },
+  { section: 'COMMUNICATION', items: ['Notices', 'Holiday List'] },
   { section: 'CAMPUS', items: ['Floor & Rooms'] },
   { section: 'HUMAN RESOURCES', items: ['HR'] },
   { section: 'SUPPORT', items: ['Support'] },
   { section: 'SETTINGS', items: ['Profile & School', 'Payment Gateway'] },
 ];
-
