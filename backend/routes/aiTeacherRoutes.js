@@ -147,6 +147,82 @@ const BLOOM_NOTES = {
   create: "Target Bloom's level: Create — every question must require compiling ideas in a new way or proposing an original solution.",
 };
 
+// Per-type JSON schema instructions for AI-generated tryout questions. Each
+// shape mirrors what the matching Creator component in
+// frontend/.../TryoutBuilder.jsx (and the student-facing renderer in
+// AILearningTryoutSection.jsx) expects, so generated items drop straight
+// into the builder without any reshaping. Only mcq is auto-graded
+// server-side (tryout-submit) — the rest just need to render correctly.
+const TRYOUT_TYPE_SCHEMAS = {
+  mcq: [
+    'Return ONLY a valid JSON array with no markdown, heading, or commentary.',
+    'Each array item must use this exact shape:',
+    '{"questionText":"Question","options":[{"text":"Option 1","isCorrect":false},{"text":"Option 2","isCorrect":true},{"text":"Option 3","isCorrect":false},{"text":"Option 4","isCorrect":false}],"explanation":"Why the marked option is correct","difficulty":"medium"}',
+    'Every question must have exactly four distinct, non-empty options and exactly one option with isCorrect set to true.',
+    'Do not add A, B, C, or D prefixes inside option text.',
+  ],
+  choice_matrix: [
+    'Return ONLY a valid JSON array with no markdown, heading, or commentary.',
+    'Each array item must use this exact shape:',
+    '{"question":"Instruction shown above the table","statements":["Statement 1","Statement 2","Statement 3"],"answers":[true,false,true],"explanation":"Why each true/false answer is correct"}',
+    'Include at least 3 statements per item. "answers" must be the same length as "statements", using boolean true/false values only.',
+  ],
+  cloze_drag_drop: [
+    'Return ONLY a valid JSON array with no markdown, heading, or commentary.',
+    'Each array item must use this exact shape:',
+    '{"text":"Sentence(s) with ${{blank}} where each word should go","options":["word for blank 1","word for blank 2"],"hints":["optional hint 1","optional hint 2"],"explanation":"..."}',
+    'The Nth ${{blank}} in "text" must be filled by the Nth entry in "options", in order. "hints" must be the same length as "options" (use empty strings for no hint).',
+  ],
+  cloze_dropdown: [
+    'Return ONLY a valid JSON array with no markdown, heading, or commentary.',
+    'Each array item must use this exact shape:',
+    '{"text":"Sentence(s) with ${{input}} where each dropdown should go","dropdownOptions":[["correct answer","distractor 1","distractor 2"],["correct answer","distractor 1"]],"explanation":"..."}',
+    'The Nth ${{input}} in "text" must be answered by dropdownOptions[N]. The correct answer for each blank must always be listed FIRST in its options array, followed by 1-3 plausible distractors.',
+  ],
+  cloze_text: [
+    'Return ONLY a valid JSON array with no markdown, heading, or commentary.',
+    'Each array item must use this exact shape:',
+    '{"text":"Sentence(s) with ${{input}} where each blank goes","correctAnswers":["answer for blank 1","answer for blank 2"],"explanation":"..."}',
+    'The Nth ${{input}} in "text" must be answered by correctAnswers[N], in order.',
+  ],
+  match_list: [
+    'Return ONLY a valid JSON array with no markdown, heading, or commentary.',
+    'Each array item must use this exact shape:',
+    '{"question":"Instruction shown above the two columns","items":["Left item 1","Left item 2","Left item 3"],"pairs":["Right match for item 1","Right match for item 2","Right match for item 3"],"explanation":"..."}',
+    'items[N] must correctly pair with pairs[N], in order. Include at least 3 pairs per item.',
+  ],
+  sort_list: [
+    'Return ONLY a valid JSON array with no markdown, heading, or commentary.',
+    'Each array item must use this exact shape:',
+    '{"question":"Instruction telling the student what to sort and by what criteria","items":["item in correct order 1","item in correct order 2","item in correct order 3"],"explanation":"..."}',
+    '"items" must already be listed in the single correct order — the UI shuffles them for the student. Include at least 3 items per item.',
+  ],
+  plain_text: [
+    'Return ONLY a valid JSON array with no markdown, heading, or commentary.',
+    'Each array item must use this exact shape:',
+    '{"question":"An open-ended question that requires a written answer grounded in the material","maxWords":200}',
+  ],
+  rich_text: [
+    'Return ONLY a valid JSON array with no markdown, heading, or commentary.',
+    'Each array item must use this exact shape:',
+    '{"question":"An open-ended question that requires a longer, formatted written answer grounded in the material","maxWords":300}',
+  ],
+  file_upload: [
+    'Return ONLY a valid JSON array with no markdown, heading, or commentary.',
+    'Each array item must use this exact shape:',
+    '{"question":"Instructions describing what the student should create/complete and upload, grounded in the material","allowedTypes":["image","pdf","document"]}',
+  ],
+  image_highlighter: [
+    'Return ONLY a valid JSON array with no markdown, heading, or commentary.',
+    'Each array item must use this exact shape:',
+    '{"question":"Instructions telling the student what to mark/highlight — the teacher will attach the image separately, so describe the task in words only"}',
+  ],
+};
+
+const buildTryoutTypeInstruction = (requestedType) => (
+  (TRYOUT_TYPE_SCHEMAS[requestedType] || TRYOUT_TYPE_SCHEMAS.plain_text).join(' ')
+);
+
 const normalizeMcqQuestion = (item) => {
   if (!item || typeof item !== 'object') return null;
   const questionText = String(item.questionText || item.question || item.stem || item.text || '').trim();
@@ -799,15 +875,7 @@ router.post('/quiz-generate', authTeacher, async (req, res) => {
       normalizedBloom ? BLOOM_NOTES[normalizedBloom] : null,
       `Generate exactly ${safeCount} ${questionTypeText}.`,
       'Base all questions only on the uploaded course material for this topic.',
-      requestedType === 'mcq'
-        ? [
-          'Return ONLY a valid JSON array with no markdown, heading, or commentary.',
-          'Each array item must use this exact shape:',
-          `{"questionText":"Question","options":[{"text":"Option 1","isCorrect":false},{"text":"Option 2","isCorrect":true},{"text":"Option 3","isCorrect":false},{"text":"Option 4","isCorrect":false}],"explanation":"Why the marked option is correct","difficulty":"medium","bloomLevel":"${normalizedBloom || 'remember|understand|apply|analyse|evaluate|create'}"}`,
-          'Every question must have exactly four distinct, non-empty options and exactly one option with isCorrect set to true.',
-          'Do not add A, B, C, or D prefixes inside option text.',
-        ].join(' ')
-        : `Create questions in the ${requestedType} format and return a valid JSON array with no markdown.`,
+      buildTryoutTypeInstruction(requestedType),
     ].filter(Boolean).join(' ');
 
     const payload = {

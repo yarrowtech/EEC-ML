@@ -26,7 +26,7 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Textarea } from '@/components/ui/textarea';
 
-const API_BASE = (typeof import.meta !== 'undefined' ? import.meta.env?.VITE_API_URL : '') || 'http://localhost:5000';
+const API_BASE = (import.meta.env.VITE_API_URL || 'http://localhost:5000').replace(/\/$/, '');
 
 const TRYOUT_TYPES = [
   { id: 'mcq', label: 'Multiple Choice (MCQ)', icon: CheckCircle2, description: 'Single correct answer from options' },
@@ -1246,6 +1246,17 @@ export const InlineTryoutBuilder = ({
       dropdownOptions: Array.isArray(item.dropdownOptions) ? item.dropdownOptions : (questionType === 'cloze_dropdown' ? [options] : []),
       items: Array.isArray(item.items) ? item.items : [],
       pairs: Array.isArray(item.pairs) ? item.pairs : [],
+      // choice_matrix: true/false per statement, same order as `statements`.
+      answers: Array.isArray(item.answers) ? item.answers.map((a) => a === true) : [],
+      // cloze_text: correct fill-in value per ${{input}} blank, in order.
+      correctAnswers: Array.isArray(item.correctAnswers) ? item.correctAnswers.map((a) => String(a || '').trim()) : [],
+      // cloze_drag_drop: optional hint per word-bank option, same order as `options`.
+      hints: Array.isArray(item.hints) ? item.hints.map((h) => String(h || '').trim()) : [],
+      optionPosition: String(item.optionPosition || 'down').trim(),
+      maxWords: Number.isFinite(Number(item.maxWords)) ? Number(item.maxWords) : (questionType === 'rich_text' ? 300 : 10000),
+      allowedTypes: Array.isArray(item.allowedTypes) && item.allowedTypes.length > 0
+        ? item.allowedTypes
+        : (questionType === 'file_upload' ? ['image', 'pdf', 'document'] : []),
       raw: item.raw || false,
     };
 
@@ -1431,7 +1442,7 @@ export const InlineTryoutBuilder = ({
             </div>
           </div>
 
-          <div className="flex items-center gap-3 sm:justify-end">
+          <div className="flex items-center gap- sm:justify-end">
             <Button
               variant="outline"
               size="sm"
@@ -1439,8 +1450,8 @@ export const InlineTryoutBuilder = ({
               disabled={generating}
               className="text-xs"
             >
-              <Zap className="size-4 mr-2" />
-              {generating ? 'Generating…' : aiAppend ? 'Append AI Questions' : 'Replace with AI Questions'}
+              <Zap className="size-3 mr-2" />
+              {generating ? 'Generating…' : aiAppend ? 'Generate With AI' : 'Replace with AI Questions'}
             </Button>
           </div>
         </div>
