@@ -134,4 +134,36 @@ describe('PracticePapersPortal', () => {
     await user.click(startReading);
     expect(await screen.findByText('Reading practice')).toBeInTheDocument();
   });
+
+  test('still lists a chapter that has no Topic Tryout assigned', async () => {
+    global.fetch = jest.fn((input) => {
+      const url = String(input);
+      if (url.includes('/api/practice/student/meta')) {
+        return jsonResponse({ subjects: [{ id: 'subject-1', name: 'Mathematics' }] });
+      }
+      if (url.includes('/api/lesson-plans/student/smart-learning-map')) {
+        return jsonResponse({
+          subjects: [{
+            subjectId: 'subject-1',
+            title: 'Mathematics',
+            chapters: [{
+              id: 'chapter-2',
+              title: 'Fractions',
+              // No tryoutSections on this topic — the chapter must still show up.
+              topics: [{ id: 'topic-2', title: 'Basic Fractions' }],
+            }],
+            topics: [{ title: 'Basic Fractions', tryoutSections: [] }],
+          }],
+        });
+      }
+      return jsonResponse({});
+    });
+
+    render(<MemoryRouter><PracticePapersPortal /></MemoryRouter>);
+
+    await screen.findByRole('option', { name: 'Mathematics' });
+    await userEvent.setup().selectOptions(screen.getByRole('combobox', { name: 'Select Subject' }), 'subject-1');
+
+    expect(await screen.findByRole('option', { name: 'Fractions' })).toBeInTheDocument();
+  });
 });
