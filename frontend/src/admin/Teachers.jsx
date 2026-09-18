@@ -375,13 +375,7 @@ const resolveTeacherStatus = (teacher, todayCheckedInTeacherIds, todayApprovedLe
   return 'Absent';
 };
 
-const BULK_JOB_POLL_INTERVAL_MS = 900;
-const BULK_JOB_MAX_POLL_ATTEMPTS = 200; // ~3 minutes at the interval above
-
 const Teachers = ({ setShowAdminHeader }) => {
-  const isMountedRef = useRef(true);
-  useEffect(() => () => { isMountedRef.current = false; }, []);
-
   const [activeTab, setActiveTab] = useState('teachers');
   const [searchTerm, setSearchTerm] = useState('');
   const [filterStatus, setFilterStatus] = useState('All');
@@ -389,6 +383,7 @@ const Teachers = ({ setShowAdminHeader }) => {
   const [showAddForm, setShowAddForm] = useState(false);
   const [docPreview, setDocPreview] = useState(null); // { url, label } | null
   const [editingTeacherId, setEditingTeacherId] = useState(null);
+  const [submitStatus, setSubmitStatus] = useState(null);
   const [credentialLoadingId, setCredentialLoadingId] = useState(null);
   const [deletingTeacherId, setDeletingTeacherId] = useState(null);
   const [deleteConfirmTeacher, setDeleteConfirmTeacher] = useState(null);
@@ -451,14 +446,6 @@ const Teachers = ({ setShowAdminHeader }) => {
 
   // Pagination states
   const [currentPage, setCurrentPage] = useState(1);
-  const teacherTableScrollRef = useRef(null);
-
-  // Changing page must show the new page from its first row, not keep the
-  // previous page's scroll offset.
-  useEffect(() => {
-    const el = teacherTableScrollRef.current;
-    if (el) el.scrollTop = 0;
-  }, [currentPage]);
   const [itemsPerPage] = useState(10);
 
   const NEW_TEACHER_INITIAL = {
@@ -547,22 +534,14 @@ const Teachers = ({ setShowAdminHeader }) => {
     const dayKey = getTodayCacheDateKey();
     if (!token) return `${TEACHERS_CACHE_PREFIX}_anonymous_${dayKey}`;
     try {
-      // Base64url payloads aren't always a multiple of 4 chars — missing the
-      // re-padding step here (unlike HR.jsx's equivalent) made `atob` throw
-      // on a legitimately-valid token, falling back to a single shared
-      // `_fallback_` cache key that any admin hitting this path would also
-      // land on, leaking one admin's cached teacher list to another.
-      const base64 = token.split('.')[1]?.replace(/-/g, '+').replace(/_/g, '/') || '';
-      const padded = base64 + '='.repeat((4 - (base64.length % 4)) % 4);
-      const payload = JSON.parse(atob(padded));
+      const base64 = token.split('.')[1]?.replace(/-/g, '+').replace(/_/g, '/');
+      const payload = JSON.parse(atob(base64));
       const adminId = payload?.id || 'unknown';
       const schoolId = payload?.schoolId || 'school';
       const campusId = payload?.campusId || 'campus';
       return `${TEACHERS_CACHE_PREFIX}_${adminId}_${schoolId}_${campusId}_${dayKey}`;
     } catch {
-      // Scope the fallback to this token (not shared across sessions) so a
-      // genuinely undecodable token still can't collide with another admin.
-      return `${TEACHERS_CACHE_PREFIX}_fallback_${token.slice(-16)}_${dayKey}`;
+      return `${TEACHERS_CACHE_PREFIX}_fallback_${dayKey}`;
     }
   };
 
@@ -592,16 +571,7 @@ const Teachers = ({ setShowAdminHeader }) => {
     }
   };
 
-  // A 30s auto-refresh interval runs concurrently with manual/CRUD-triggered
-  // calls to this function (every add/edit/delete re-fetches). Without this
-  // guard, a slower in-flight response (e.g. the interval's) can resolve
-  // after a newer one (e.g. right after an edit) and silently clobber the
-  // just-edited data with stale state.
-  const fetchTeachersRequestIdRef = useRef(0);
-
   const fetchTeachers = async ({ useCache = false } = {}) => {
-    const requestId = ++fetchTeachersRequestIdRef.current;
-    const isStale = () => fetchTeachersRequestIdRef.current !== requestId;
     if (useCache) {
       const cached = readTeachersCache();
       if (cached?.teachers?.length) {
@@ -727,7 +697,6 @@ const Teachers = ({ setShowAdminHeader }) => {
       isPrincipal: principalEmailSet.has(String(teacher.email || '').trim().toLowerCase()),
       status: resolveTeacherStatus(teacher, todayCheckedInTeacherIds, todayApprovedLeaveTeacherIds)
     }));
-    if (isStale()) return;
     setTeachers(normalized);
     writeTeachersCache(normalized);
   };
@@ -795,7 +764,7 @@ const Teachers = ({ setShowAdminHeader }) => {
         password: passwordValue
       });
     } catch (error) {
-      toast.error(error.message || 'Unable to load credentials');
+      setSubmitStatus({ type: 'error', message: error.message || 'Unable to load credentials' });
     } finally {
       setPrincipalCredLoadingId(null);
     }
@@ -830,12 +799,14 @@ const Teachers = ({ setShowAdminHeader }) => {
           })
         );
       }
+      setSubmitStatus(null);
       toast.success(`${principal?.name || 'Principal'} deleted successfully.`);
       await Promise.allSettled([
         fetchPrincipals(),
         fetchTeachers({ useCache: false }),
       ]);
     } catch (error) {
+      setSubmitStatus(null);
       toast.error(error.message || 'Unable to delete principal');
     } finally {
       setPrincipalDeleteLoadingId(null);
@@ -1090,17 +1061,6 @@ const Teachers = ({ setShowAdminHeader }) => {
     setShowAddForm(true);
   };
 
-  // Dashboard "Add Teacher" quick action links here with ?add=1 — open the
-  // form straight away, then drop the flag so a refresh doesn't reopen it.
-  useEffect(() => {
-    const params = new URLSearchParams(window.location.search);
-    if (params.get('add') !== '1') return;
-    startNewTeacherForm();
-    params.delete('add');
-    const qs = params.toString();
-    window.history.replaceState(window.history.state, '', `${window.location.pathname}${qs ? `?${qs}` : ''}`);
-  }, []);
-
   // Auto-save the Add Teacher form as a draft, 2.5s after the last edit —
   // mirrors StudentEnrollWizard's auto-save exactly. New teachers only;
   // editing an existing teacher never creates/updates a draft.
@@ -1137,6 +1097,7 @@ const Teachers = ({ setShowAdminHeader }) => {
     setFormErrors(errors);
     if (Object.values(errors).some(Boolean)) return;
     try {
+      setSubmitStatus(null);
       const payload = {
         name: newTeacher.name,
         email: newTeacher.email,
@@ -1191,8 +1152,9 @@ const Teachers = ({ setShowAdminHeader }) => {
       }
 
       if (isEditMode) {
-        toast.success('Teacher updated successfully.');
+        setSubmitStatus({ type: 'success', message: 'Teacher updated successfully.' });
       } else {
+        setSubmitStatus(null);
         // The teacher is now real — the draft it was saved from is stale, drop it.
         if (activeTeacherDraftId) deleteTeacherDraft(activeTeacherDraftId).catch(() => { });
         toast.success(
@@ -1216,8 +1178,9 @@ const Teachers = ({ setShowAdminHeader }) => {
     catch (error) {
       console.error('Error saving teacher:', error);
       if (editingTeacherId) {
-        toast.error(error.message || 'Unable to save teacher');
+        setSubmitStatus({ type: 'error', message: error.message || 'Unable to save teacher' });
       } else {
+        setSubmitStatus(null);
         toast.error(error.message || 'Unable to add teacher');
       }
     }
@@ -1253,7 +1216,7 @@ const Teachers = ({ setShowAdminHeader }) => {
         canCopyPassword: !hasUserReset && Boolean(data?.initialPassword)
       });
     } catch (error) {
-      toast.error(error.message || 'Unable to load credentials');
+      setSubmitStatus({ type: 'error', message: error.message || 'Unable to load credentials' });
     } finally {
       setCredentialLoadingId(null);
     }
@@ -1284,9 +1247,9 @@ const Teachers = ({ setShowAdminHeader }) => {
         password: data?.password || 'Not available',
         canCopyPassword: Boolean(data?.password)
       }));
-      toast.success('Teacher password reset successfully.');
+      setSubmitStatus({ type: 'success', message: 'Teacher password reset successfully.' });
     } catch (error) {
-      toast.error(error.message || 'Unable to reset credentials');
+      setSubmitStatus({ type: 'error', message: error.message || 'Unable to reset credentials' });
     } finally {
       setCredentialLoadingId(null);
     }
@@ -1322,9 +1285,11 @@ const Teachers = ({ setShowAdminHeader }) => {
       }
 
       setTeachers((prev) => prev.filter((item) => String(item._id || item.id) !== String(teacherId)));
+      setSubmitStatus(null);
       toast.success(`${teacher.name || 'Teacher'} deleted successfully.`);
       fetchTeachers().catch(console.error);
     } catch (error) {
+      setSubmitStatus(null);
       toast.error(error.message || 'Unable to delete teacher');
     } finally {
       setDeletingTeacherId(null);
@@ -1407,35 +1372,25 @@ const Teachers = ({ setShowAdminHeader }) => {
       setTeacherBulkArchiveJob({ total: jobTotal, processed: 0, archived: 0, mode: 'archive' });
 
       let data;
-      let attempts = 0;
-      while (isMountedRef.current && attempts < BULK_JOB_MAX_POLL_ATTEMPTS) {
-        attempts += 1;
-        await new Promise((resolve) => setTimeout(resolve, BULK_JOB_POLL_INTERVAL_MS));
-        if (!isMountedRef.current) break;
+      for (; ;) {
+        await new Promise((resolve) => setTimeout(resolve, 900));
         const statusRes = await fetch(`${API_BASE}/api/admin/users/teachers/bulk/archive/status/${jobId}`, {
           headers: { authorization: `Bearer ${localStorage.getItem('token')}` },
         });
         if (!statusRes.ok) continue;
         data = await statusRes.json().catch(() => null);
         if (!data) continue;
-        if (isMountedRef.current) {
-          setTeacherBulkArchiveJob({
-            total: data.total || jobTotal,
-            processed: data.processed || 0,
-            archived: data.archived || 0,
-            mode: 'archive',
-          });
-        }
+        setTeacherBulkArchiveJob({
+          total: data.total || jobTotal,
+          processed: data.processed || 0,
+          archived: data.archived || 0,
+          mode: 'archive',
+        });
         if (data.status === 'completed' || data.status === 'failed') break;
       }
 
-      if (!isMountedRef.current) return;
-
       setTeacherBulkArchiveJob(null);
 
-      if (!data || (data.status !== 'completed' && data.status !== 'failed')) {
-        throw new Error('Bulk archive is taking longer than expected — check back shortly.');
-      }
       if (data.status === 'failed') {
         throw new Error(data.error || 'Bulk archive failed');
       }
@@ -1446,12 +1401,10 @@ const Teachers = ({ setShowAdminHeader }) => {
       setArchivedTeacherCount((prev) => prev + (data?.archived ?? ids.length));
       toast.success(`${data?.archived ?? ids.length} teacher(s) archived.`);
     } catch (error) {
-      if (isMountedRef.current) toast.error(error.message || 'Unable to archive teachers');
+      toast.error(error.message || 'Unable to archive teachers');
     } finally {
-      if (isMountedRef.current) {
-        setIsBulkArchiving(false);
-        setTeacherBulkArchiveJob(null);
-      }
+      setIsBulkArchiving(false);
+      setTeacherBulkArchiveJob(null);
     }
   };
 
@@ -1482,39 +1435,25 @@ const Teachers = ({ setShowAdminHeader }) => {
       const jobTotal = startData.total || ids.length;
       setTeacherBulkDeleteJob({ total: jobTotal, processed: 0, deleted: 0 });
 
-      // Bounded by a mounted-check (stop polling if the admin navigates away
-      // from this page) and a max-attempts cap (stop if the job gets stuck
-      // or the status endpoint keeps failing) — this previously had neither,
-      // so it could poll forever.
       let data;
-      let attempts = 0;
-      while (isMountedRef.current && attempts < BULK_JOB_MAX_POLL_ATTEMPTS) {
-        attempts += 1;
-        await new Promise((resolve) => setTimeout(resolve, BULK_JOB_POLL_INTERVAL_MS));
-        if (!isMountedRef.current) break;
+      for (; ;) {
+        await new Promise((resolve) => setTimeout(resolve, 900));
         const statusRes = await fetch(`${API_BASE}/api/admin/users/teachers/bulk/status/${jobId}`, {
           headers: { authorization: `Bearer ${localStorage.getItem('token')}` },
         });
         if (!statusRes.ok) continue;
         data = await statusRes.json().catch(() => null);
         if (!data) continue;
-        if (isMountedRef.current) {
-          setTeacherBulkDeleteJob({
-            total: data.total || jobTotal,
-            processed: data.processed || 0,
-            deleted: data.deleted || 0,
-          });
-        }
+        setTeacherBulkDeleteJob({
+          total: data.total || jobTotal,
+          processed: data.processed || 0,
+          deleted: data.deleted || 0,
+        });
         if (data.status === 'completed' || data.status === 'failed') break;
       }
 
-      if (!isMountedRef.current) return;
-
       setTeacherBulkDeleteJob(null);
 
-      if (!data || (data.status !== 'completed' && data.status !== 'failed')) {
-        throw new Error('Bulk delete is taking longer than expected — check back shortly.');
-      }
       if (data.status === 'failed') {
         throw new Error(data.error || 'Bulk delete failed');
       }
@@ -1527,12 +1466,10 @@ const Teachers = ({ setShowAdminHeader }) => {
       // refetch reflects the deletion immediately.
       fetchTeachers({ useCache: false }).catch(console.error);
     } catch (error) {
-      if (isMountedRef.current) toast.error(error.message || 'Unable to delete teachers');
+      toast.error(error.message || 'Unable to delete teachers');
     } finally {
-      if (isMountedRef.current) {
-        setIsBulkDeleting(false);
-        setTeacherBulkDeleteJob(null);
-      }
+      setIsBulkDeleting(false);
+      setTeacherBulkDeleteJob(null);
     }
   };
 
@@ -1998,8 +1935,10 @@ const Teachers = ({ setShowAdminHeader }) => {
         email: data.email,
         password: data.password
       });
+      setSubmitStatus(null);
       toast.success(`Principal account created for ${teacher.name || 'teacher'}`);
     } catch (error) {
+      setSubmitStatus(null);
       toast.error(error.message || 'Unable to create principal account');
     } finally {
       setPrincipalLoadingId(null);
@@ -2030,11 +1969,10 @@ const Teachers = ({ setShowAdminHeader }) => {
               Manage your teaching staff, credentials, and principal assignments
             </p>
           </div>
-          {/* Teacher actions (Add/Drafts/Demo/Bulk Upload/Download Data/
-              Select All/Archived/Refresh) only apply to the Teachers tab —
-              the Principals tab has its own search + refresh. */}
-          {activeTab === 'teachers' && (
-          <div className="flex flex-wrap gap-2 w-full sm:w-auto justify-stretch sm:justify-center">
+          {/* On the Principals tab these actions (Add/Drafts/Demo/Bulk Upload/
+              Download Data/Archived/Refresh) don't apply, so hide them on
+              mobile/tablet to reclaim space — kept visible at lg+ either way. */}
+          <div className={`flex-wrap gap-2 w-full sm:w-auto justify-stretch sm:justify-center ${activeTab === 'principals' ? 'hidden lg:flex' : 'flex'}`}>
             <button
               onClick={startNewTeacherForm}
               className="bg-sky-500 text-white px-3 py-2 rounded-full hover:bg-sky-600 flex items-center gap-2 text-sm flex-1 sm:flex-none justify-center transition"
@@ -2136,8 +2074,21 @@ const Teachers = ({ setShowAdminHeader }) => {
               {tableRefreshing ? 'Refreshing...' : 'Refresh'}
             </button>
           </div>
-          )}
         </div>
+
+        {submitStatus && (
+          <div
+            className={`mt-2 rounded-xl border px-4 py-3 text-sm flex items-center gap-2 flex-shrink-0 ${submitStatus.type === 'success'
+                ? 'border-emerald-200 bg-emerald-50 text-emerald-700'
+                : 'border-red-200 bg-red-50 text-red-700'
+              }`}
+          >
+            {submitStatus.type === 'success'
+              ? <Check size={15} className="flex-shrink-0" />
+              : <XCircle size={15} className="flex-shrink-0" />}
+            {submitStatus.message}
+          </div>
+        )}
 
         <div className="flex-1 flex flex-col min-h-0">
           {/* Tabs */}
@@ -2172,17 +2123,6 @@ const Teachers = ({ setShowAdminHeader }) => {
                 );
               })}
             </div>
-            {activeTab === 'principals' && (
-              <button
-                onClick={fetchPrincipals}
-                disabled={loadingPrincipals}
-                className="ml-2 mt-1 mb-2 px-4 py-2.5 border border-gray-200 rounded-full bg-white hover:bg-gray-50 text-sm text-gray-600 font-medium shadow-sm transition-colors disabled:opacity-60 flex items-center gap-2 flex-shrink-0"
-                title="Refresh principals"
-              >
-                <RefreshCcw size={15} className={loadingPrincipals ? 'animate-spin' : ''} />
-                {loadingPrincipals ? 'Refreshing...' : 'Refresh'}
-              </button>
-            )}
           </div>
           {/* Filter Bar — Teachers only */}
           {activeTab === 'teachers' && (
@@ -2231,7 +2171,7 @@ const Teachers = ({ setShowAdminHeader }) => {
 
           {/* Teachers Table */}
           {activeTab === 'teachers' && <div className="flex-1 min-h-0 flex flex-col bg-white rounded-xl border border-gray-200 shadow-sm overflow-hidden">
-            <div ref={teacherTableScrollRef} className="flex-1 min-h-0 overflow-auto">
+            <div className="flex-1 min-h-0 overflow-auto">
               <table className="w-full min-w-[720px]">
                 <thead className="sticky top-0 z-10">
                   <tr className="bg-gradient-to-r from-gray-50 to-slate-50/80 border-b border-gray-100">
@@ -2494,7 +2434,8 @@ const Teachers = ({ setShowAdminHeader }) => {
           {activeTab === 'principals' && (
             <div className="flex-1 min-h-0 flex flex-col">
               {/* Principals search */}
-               {/* <div className="flex-1 relative">
+              <div className="mb-4 flex flex-col sm:flex-row gap-3 mt-4 flex-shrink-0">
+                <div className="flex-1 relative">
                   <Search size={17} className="absolute left-3.5 top-1/2 -translate-y-1/2 text-gray-400 pointer-events-none" />
                   <input
                     type="text"
@@ -2504,124 +2445,144 @@ const Teachers = ({ setShowAdminHeader }) => {
                     onChange={(e) => setPrincipalSearchTerm(e.target.value)}
                   />
                 </div>
-               */}
+                <button
+                  onClick={fetchPrincipals}
+                  disabled={loadingPrincipals}
+                  className="sm:w-auto px-4 py-2.5 border border-gray-200 rounded-full bg-white hover:bg-gray-50 text-sm text-gray-600 font-medium shadow-sm transition-colors disabled:opacity-60"
+                  title="Refresh principals"
+                >
+                  <RefreshCcw className={loadingPrincipals ? 'animate-spin' : ''} />
+                </button>
+              </div>
 
-              <div className="flex-1 min-h-0 overflow-auto mt-4">
-                {(() => {
-                  const q = principalSearchTerm.toLowerCase();
-                  const visiblePrincipals = principals.filter(
-                    (p) => !q || (p.name || '').toLowerCase().includes(q) || (p.email || '').toLowerCase().includes(q)
-                  );
-                  if (loadingPrincipals) {
-                    return (
-                      <div className="py-16 flex items-center justify-center gap-2 text-gray-400">
-                        <span className="w-5 h-5 border-2 border-sky-300 border-t-sky-600 rounded-full animate-spin" />
-                        {loadingPrincipals ? 'Refreshing principals...' : 'Loading principals...'}
-                      </div>
-                    );
-                  }
-                  if (visiblePrincipals.length === 0) {
-                    return (
-                      <div className="py-16 text-center bg-white rounded-xl border border-gray-200 shadow-sm">
-                        <div className="w-14 h-14 rounded-2xl bg-sky-50 flex items-center justify-center mx-auto mb-3">
-                          <Crown size={24} className="text-sky-300" />
-                        </div>
-                        <p className="text-gray-500 font-medium text-sm">No principals found</p>
-                        <p className="text-gray-400 text-xs mt-1">Assign a teacher as principal using the Teachers tab</p>
-                      </div>
-                    );
-                  }
-                  return (
-                    <div className="flex flex-wrap justify-center gap-4">
-                      {visiblePrincipals.map((principal) => {
-                        const principalId = principal._id || principal.id;
-                        const avatarColor = getAvatarColor(principal.name);
-                        const initials = (principal.name || 'P').split(' ').map(n => n[0]).join('').slice(0, 2).toUpperCase();
-                        const loginId = principal.username || principal.employeeCode || principal.email || '—';
-                        const principalIdentity = String(principal?.email || principal?.username || '').trim().toLowerCase();
-                        const principalPhoto = resolveImageUrl(principal?.profilePic) || teacherPhotoByIdentity.get(principalIdentity) || '';
-                        const isBusy = principalCredLoadingId === principalId || principalDeleteLoadingId === principalId;
-                        return (
-                          <div
-                            key={principalId}
-                            className="w-full max-w-sm bg-white rounded-2xl border border-gray-200 shadow-sm overflow-hidden"
-                          >
-                            <div className="h-16 bg-gradient-to-r from-sky-100 to-pink-50" />
-                            <div className="px-6 pb-6 -mt-10 flex flex-col items-center text-center">
-                              <div className={`w-20 h-20 rounded-full ring-4 ring-white ${avatarColor.bg} flex items-center justify-center text-xl font-bold ${avatarColor.text} overflow-hidden shadow-sm`}>
-                                {principalPhoto ? (
-                                  <img src={principalPhoto} alt={principal.name} className="w-full h-full object-cover" />
-                                ) : initials}
-                              </div>
-                              <h3 className="mt-3 text-base font-semibold text-gray-900">{principal.name}</h3>
-                              <div className="mt-1 inline-flex items-center gap-1.5 text-xs font-medium text-sky-700 bg-sky-50 px-2.5 py-1 rounded-full">
-                                <Crown size={12} /> Principal
-                              </div>
-
-                              <div className="mt-4 w-full space-y-2 text-sm text-gray-600">
-                                {principal.email && (
-                                  <div className="flex items-center justify-center gap-2">
-                                    <Mail size={14} className="text-sky-400 flex-shrink-0" />
-                                    <span className="truncate">{principal.email}</span>
-                                  </div>
-                                )}
-                                {principal.mobile && (
-                                  <div className="flex items-center justify-center gap-2">
-                                    <Phone size={14} className="text-emerald-400 flex-shrink-0" />
-                                    <span>{principal.mobile}</span>
-                                  </div>
-                                )}
-                              </div>
-
-                              <div className="mt-4 w-full rounded-xl bg-gray-50 border border-gray-100 px-3 py-2.5">
-                                <div className="text-[11px] font-semibold text-gray-400 uppercase tracking-wider mb-1">Login ID</div>
-                                <div className="flex items-center justify-center gap-2">
-                                  <code className="text-xs font-mono text-gray-700 truncate">{loginId}</code>
-                                  <button
-                                    onClick={() => copyCredential(loginId, `pid_${principalId}`)}
-                                    className={`p-1 rounded-lg transition-all ${copiedField === `pid_${principalId}` ? 'text-emerald-600' : 'text-gray-400 hover:text-sky-600 hover:bg-sky-50'}`}
-                                    title="Copy Login ID"
-                                  >
-                                    {copiedField === `pid_${principalId}` ? <Check size={13} /> : <Copy size={13} />}
-                                  </button>
-                                </div>
-                              </div>
-
-                              <div className="mt-4 w-full grid grid-cols-2 gap-2">
-                                <button
-                                  onClick={() => handleViewPrincipalCredentials(principal)}
-                                  disabled={isBusy}
-                                  className="inline-flex items-center justify-center gap-1.5 px-3 py-2 rounded-lg bg-sky-50 text-sky-700 hover:bg-sky-100 transition-colors text-xs font-medium disabled:opacity-50"
-                                  title="Reset & View Credentials"
-                                >
-                                  {principalCredLoadingId === principalId ? (
-                                    <span className="w-3 h-3 border border-sky-400 border-t-transparent rounded-full animate-spin" />
-                                  ) : (
-                                    <KeyRound size={13} />
-                                  )}
-                                  Credentials
-                                </button>
-                                <button
-                                  onClick={() => setDeleteConfirmPrincipal(principal)}
-                                  disabled={isBusy}
-                                  className="inline-flex items-center justify-center gap-1.5 px-3 py-2 rounded-lg bg-rose-50 text-rose-700 hover:bg-rose-100 transition-colors text-xs font-medium disabled:opacity-50"
-                                  title="Delete Principal"
-                                >
-                                  {principalDeleteLoadingId === principalId ? (
-                                    <span className="w-3 h-3 border border-rose-400 border-t-transparent rounded-full animate-spin" />
-                                  ) : (
-                                    <Trash2 size={13} />
-                                  )}
-                                  Delete
-                                </button>
-                              </div>
+              <div className="flex-1 min-h-0 flex flex-col bg-white rounded-xl border border-gray-200 shadow-sm overflow-hidden">
+                <div className="flex-1 min-h-0 overflow-auto">
+                  <table className="w-full min-w-[640px]">
+                    <thead className="sticky top-0 z-10">
+                      <tr className="bg-gradient-to-r from-sky-50 to-pink-50/50 border-b border-gray-100">
+                        <th className="px-6 py-3.5 text-left text-xs font-semibold text-gray-500 uppercase tracking-wider">Principal</th>
+                        {/* <th className="px-6 py-3.5 text-left text-xs font-semibold text-gray-500 uppercase tracking-wider">Contact</th> */}
+                        <th className="px-6 py-3.5 text-center lg:text-left text-xs font-semibold text-gray-500 uppercase tracking-wider">Login ID</th>
+                        <th className="px-6 py-3.5 text-center lg:text-left text-xs font-semibold text-gray-500 uppercase tracking-wider">Actions</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-gray-50">
+                      {loadingPrincipals ? (
+                        <tr>
+                          <td colSpan={4} className="py-16 text-center">
+                            <div className="flex items-center justify-center gap-2 text-gray-400">
+                              <span className="w-5 h-5 border-2 border-sky-300 border-t-sky-600 rounded-full animate-spin" />
+                              Loading principals...
                             </div>
-                          </div>
-                        );
-                      })}
-                    </div>
-                  );
-                })()}
+                          </td>
+                        </tr>
+                      ) : principals.filter(p => {
+                        const q = principalSearchTerm.toLowerCase();
+                        return !q || (p.name || '').toLowerCase().includes(q) || (p.email || '').toLowerCase().includes(q);
+                      }).length === 0 ? (
+                        <tr>
+                          <td colSpan={4} className="py-16 text-center">
+                            <div className="w-14 h-14 rounded-2xl bg-sky-50 flex items-center justify-center mx-auto mb-3">
+                              <Crown size={24} className="text-sky-300" />
+                            </div>
+                            <p className="text-gray-500 font-medium text-sm">No principals found</p>
+                            <p className="text-gray-400 text-xs mt-1">Assign a teacher as principal using the Teachers tab</p>
+                          </td>
+                        </tr>
+                      ) : (
+                        principals
+                          .filter(p => {
+                            const q = principalSearchTerm.toLowerCase();
+                            return !q || (p.name || '').toLowerCase().includes(q) || (p.email || '').toLowerCase().includes(q);
+                          })
+                          .map((principal) => {
+                            const avatarColor = getAvatarColor(principal.name);
+                            const initials = (principal.name || 'P').split(' ').map(n => n[0]).join('').slice(0, 2).toUpperCase();
+                            const loginId = principal.username || principal.employeeCode || principal.email || '—';
+                            const principalIdentity = String(principal?.email || principal?.username || '').trim().toLowerCase();
+                            const principalPhoto = resolveImageUrl(principal?.profilePic) || teacherPhotoByIdentity.get(principalIdentity) || '';
+                            return (
+                              <tr key={principal._id || principal.id} className="hover:bg-sky-50/30 transition-colors">
+                                <td className="px-6 py-2.5">
+                                  {/* Photo above name/ID on mobile/tablet; side-by-side from lg up. */}
+                                  <div className="flex flex-col items-center text-center gap-1.5 lg:flex-row lg:items-center lg:text-left lg:gap-3">
+                                    <div className={`w-12 h-12 lg:w-9 lg:h-9 rounded-xl ${avatarColor.bg} flex items-center justify-center text-sm font-bold ${avatarColor.text} flex-shrink-0 overflow-hidden`}>
+                                      {principalPhoto ? (
+                                        <img src={principalPhoto} alt={principal.name} className="w-full h-full object-cover" />
+                                      ) : initials}
+                                    </div>
+                                    <div>
+                                      <div className="text-sm font-semibold text-gray-900 flex flex-wrap items-center justify-center lg:justify-start gap-1.5">
+                                        {principal.name}
+                                        {/* <Crown size={12} className="text-sky-400" /> */}
+                                      </div>
+                                      <div className="text-xs text-gray-400 flex flex-wrap justify-center gap-2"> <Crown size={12} className="text-sky-400" />Principal</div>
+                                    </div>
+                                  </div>
+                                </td>
+                                {/* <td className="px-6 py-2.5">
+                                  <div className="space-y-1.5">
+                                    <div className="flex items-center text-sm text-gray-600">
+                                      <Mail size={13} className="mr-2 text-sky-400 flex-shrink-0" />
+                                      <span className="truncate max-w-[180px]">{principal.email || '—'}</span>
+                                    </div>
+                                    {principal.mobile && (
+                                      <div className="flex items-center text-sm text-gray-600">
+                                        <Phone size={13} className="mr-2 text-emerald-400 flex-shrink-0" />
+                                        <span>{principal.mobile}</span>
+                                      </div>
+                                    )}
+                                  </div>
+                                </td> */}
+                                <td className="px-6 py-2.5">
+                                  <div className="flex items-center justify-center lg:justify-start gap-2">
+                                    <code className="text-xs font-mono bg-gray-100 text-gray-700 px-2.5 py-1 rounded-lg">{loginId}</code>
+                                    <button
+                                      onClick={() => copyCredential(loginId, `pid_${principal._id || principal.id}`)}
+                                      className={`p-1 rounded-lg transition-all ${copiedField === `pid_${principal._id || principal.id}` ? 'text-emerald-600' : 'text-gray-400 hover:text-sky-600 hover:bg-sky-50'}`}
+                                      title="Copy Login ID"
+                                    >
+                                      {copiedField === `pid_${principal._id || principal.id}` ? <Check size={13} /> : <Copy size={13} />}
+                                    </button>
+                                  </div>
+                                </td>
+                                <td className="px-6 py-2.5">
+                                  <div className="flex items-center justify-center lg:justify-start gap-2 flex-wrap">
+                                    <button
+                                      onClick={() => handleViewPrincipalCredentials(principal)}
+                                      disabled={principalCredLoadingId === (principal._id || principal.id) || principalDeleteLoadingId === (principal._id || principal.id)}
+                                      className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-sky-50 text-sky-700 hover:bg-sky-100 transition-colors text-xs font-medium disabled:opacity-50"
+                                      title="Reset & View Credentials"
+                                    >
+                                      {principalCredLoadingId === (principal._id || principal.id) ? (
+                                        <span className="w-3 h-3 border border-sky-400 border-t-transparent rounded-full animate-spin" />
+                                      ) : (
+                                        <KeyRound size={13} />
+                                      )}
+                                      Credentials
+                                    </button>
+                                    <button
+                                      onClick={() => setDeleteConfirmPrincipal(principal)}
+                                      disabled={principalDeleteLoadingId === (principal._id || principal.id) || principalCredLoadingId === (principal._id || principal.id)}
+                                      className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-rose-50 text-rose-700 hover:bg-rose-100 transition-colors text-xs font-medium disabled:opacity-50"
+                                      title="Delete Principal"
+                                    >
+                                      {principalDeleteLoadingId === (principal._id || principal.id) ? (
+                                        <span className="w-3 h-3 border border-rose-400 border-t-transparent rounded-full animate-spin" />
+                                      ) : (
+                                        <Trash2 size={13} />
+                                      )}
+                                      Delete
+                                    </button>
+                                  </div>
+                                </td>
+                              </tr>
+                            );
+                          })
+                      )}
+                    </tbody>
+                  </table>
+                </div>
               </div>
             </div>
           )}

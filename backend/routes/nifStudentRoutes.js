@@ -183,6 +183,15 @@ const runBulkImportJob = async (jobId, { students, schoolId, campusId, admin, is
         .map((item) => normalizeLookupKey(item?.name))
         .filter(Boolean)
     );
+    // student.grade is stored in its normalized/short form (e.g. "5"), which
+    // rarely matches the real Class.name ("Class 5") a fee structure is keyed
+    // to — this map recovers the real name so fee auto-assignment can look
+    // the class up correctly.
+    const realClassNameByKey = new Map(
+      classDocs
+        .map((item) => [normalizeLookupKey(item?.name), item?.name])
+        .filter(([key]) => key)
+    );
 
     // Session for the login-id code & auto numbers: the row's session name if it
     // matches a real year, else the school's active academic year.
@@ -530,12 +539,15 @@ const runBulkImportJob = async (jobId, { students, schoolId, campusId, admin, is
 
         // Best-effort: bill this row against whatever active fee structure
         // matches its class, same as a single enrollment does — bulk-import
-        // was the one student-creation path that skipped this.
+        // was the one student-creation path that skipped this. Fee
+        // structures are keyed to the real Class.name ("Class 5"), not the
+        // short form stored on the student record ("5"), so resolve it back.
+        const realClassName = realClassNameByKey.get(normalizeLookupKey(payload.grade)) || payload.grade;
         autoAssignFeeStructure({
           studentId: studentUser._id,
           schoolId,
           campusId,
-          grade: payload.grade,
+          grade: realClassName,
           section: payload.section,
         }).catch(() => {});
 
