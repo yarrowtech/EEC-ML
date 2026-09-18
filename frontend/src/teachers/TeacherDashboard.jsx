@@ -16,7 +16,6 @@ import {
   BarChart3,
   Bell,
   BookOpen,
-  Brain,
   Calendar,
   CheckCircle2,
   ChevronRight,
@@ -24,6 +23,7 @@ import {
   Clock,
   Eye,
   FileText,
+  MessageSquare,
   Sparkles,
   Users,
   Zap,
@@ -392,137 +392,181 @@ const TeacherDashboard = () => {
         .join(' • ')
     : 'No class assigned';
 
-  const MobileSectionTitle = ({ children, meta }) => (
-    <div className="flex items-center justify-between px-1">
-      <h2 className="text-base font-bold text-[#0f172a]">{children}</h2>
-      {meta && <span className="text-[11px] font-medium text-[#8e9aaf]">{meta}</span>}
-    </div>
-  );
-
   return (
     <div className="min-h-0 bg-[#f1f5f9] text-[#0f172a]">
-      <div className="mx-auto w-full max-w-md space-y-4 px-4 py-4 sm:max-w-xl md:max-w-2xl lg:hidden">
+      <div className="mx-auto w-full max-w-md space-y-4 px-4 pt-1 pb-4 sm:max-w-xl md:max-w-none md:px-8 lg:hidden">
         {dashboardError && (
           <div className={cx('flex items-center gap-2 rounded-2xl border-rose-200/70 bg-rose-50/80 px-4 py-3 text-xs font-medium text-rose-700 backdrop-blur-sm')}>
             <AlertCircle size={16} /> {dashboardError}
           </div>
         )}
 
-        <section className={cx('relative overflow-hidden rounded-2xl p-5', GLASS_PANEL_SOLID)}>
+        {/* Top app bar */}
+        <header className="flex items-center justify-between gap-3 px-1 py-1">
+          <div className="flex min-w-0 items-center gap-3">
+            <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-2xl bg-gradient-to-tr from-violet-600 via-indigo-600 to-sky-400 p-[2px] shadow-sm shadow-violet-200">
+              <div className="flex h-full w-full items-center justify-center overflow-hidden rounded-[14px] bg-white text-[#8b5cf6]">
+                <BookOpen size={19} />
+              </div>
+            </div>
+            <div className="min-w-0">
+              <div className="flex items-center gap-1.5">
+                <h1 className="truncate text-sm font-bold tracking-tight text-[#0f172a]">{teacherName}</h1>
+                <span className="shrink-0 rounded-md bg-violet-100 px-1.5 py-0.5 text-[10px] font-semibold text-[#7c3aed]">Portal</span>
+              </div>
+              <p className="truncate text-xs font-medium text-[#64748b]">{mobileClassLabel}</p>
+            </div>
+          </div>
+          <div className="flex shrink-0 items-center gap-2.5">
+            <Link to="/teacher/notifications" aria-label="Notifications" className="relative flex h-9 w-9 items-center justify-center rounded-full border border-slate-200/80 bg-white text-[#64748b] shadow-sm transition active:scale-95">
+              <Bell size={16} />
+              <span className="absolute right-2 top-2 h-2 w-2 rounded-full bg-rose-500 ring-2 ring-white" />
+            </Link>
+            <Link to="/teacher/settings" aria-label="Open profile" className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-gradient-to-tr from-[#7c3aed] to-indigo-500 p-[2px] shadow-sm transition active:scale-95">
+              <span className="flex h-full w-full items-center justify-center rounded-full bg-white text-xs font-bold text-[#7c3aed]">
+                {teacherName.split(/\s+/).slice(0, 2).map((part) => part[0]).join('').toUpperCase() || 'T'}
+              </span>
+            </Link>
+          </div>
+        </header>
+
+        {/* Hero card */}
+        <section className={cx('relative overflow-hidden rounded-3xl p-5', GLASS_PANEL_SOLID)}>
           <div className="pointer-events-none absolute inset-0 bg-[radial-gradient(circle_at_top_right,rgba(139,92,246,0.14),transparent_55%),radial-gradient(circle_at_bottom_left,rgba(16,185,129,0.1),transparent_50%)]" />
           <div className="relative z-10">
-            <div className="mb-2 flex items-center justify-between gap-2">
+            <div className="mb-3 flex flex-wrap items-center gap-2">
               <span className="inline-flex items-center gap-1.5 rounded-full border border-white/70 bg-white/70 px-2.5 py-1 text-[10px] font-bold text-[#8b5cf6] shadow-sm">
-                <span className="h-1.5 w-1.5 rounded-full bg-emerald-400" />
-                Teacher workspace
+                <span className="h-1.5 w-1.5 rounded-full bg-emerald-400 animate-pulse" />
+                Live workspace
               </span>
-              <span className="text-[10px] font-medium text-[#64748b]">
-                {currentDateTime.toLocaleDateString('en-US', { month: 'long', day: 'numeric', year: 'numeric' })}
+              <span className="rounded-full border border-white/70 bg-white/70 px-2.5 py-1 text-[10px] font-medium text-[#64748b] shadow-sm">
+                {currentDateTime.toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' })} • {currentDateTime.toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit' })}
               </span>
             </div>
-            <h1 className="text-xl font-extrabold leading-snug tracking-tight text-[#0f172a]">
-              {getGreeting()},<br /><span className="text-[#8b5cf6]">{teacherName.split(' ')[0]}</span>
-            </h1>
-            <p className="mt-2 text-xs leading-relaxed text-[#64748b]">
+            <h2 className="text-2xl font-black leading-snug tracking-tight text-[#0f172a]">
+              {getGreeting()}, {teacherName.split(' ')[0]}.
+            </h2>
+            <p className="mt-1 mb-4 text-xs leading-relaxed text-[#64748b]">
               {dashboardLoading
-                ? 'Preparing your teaching workspace…'
+                ? 'Loading today\'s timetable and workload context…'
                 : `You have ${todaysClasses.length} ${todaysClasses.length === 1 ? 'class' : 'classes'} today and ${pendingTasks} tasks waiting.`}
             </p>
-          </div>
-        </section>
-
-        <section className="space-y-3">
-          <MobileSectionTitle meta="Live overview">My classroom</MobileSectionTitle>
-          <div className={cx('space-y-4 rounded-2xl p-4', GLASS_PANEL)}>
-            <div className="flex items-center gap-3.5 border-b border-white/60 pb-3">
-              <div className="flex h-12 w-12 shrink-0 items-center justify-center rounded-full bg-[#8b5cf6] text-sm font-bold text-white shadow-sm ring-2 ring-white/70">
-                {teacherName.split(/\s+/).slice(0, 2).map((part) => part[0]).join('').toUpperCase() || 'T'}
-              </div>
-              <div className="min-w-0 flex-1">
-                <h2 className="truncate text-base font-bold text-[#0f172a]">{teacherName}</h2>
-                <p className="truncate text-[11px] font-medium text-[#64748b]">Class teacher • {mobileClassLabel}</p>
-              </div>
-              <Link to="/teacher/classes" aria-label="Open classes" className="flex h-8 w-8 items-center justify-center rounded-full border border-white/70 bg-white/70 text-[#8b5cf6] transition hover:-translate-y-0.5">
-                <ChevronRight size={17} />
+            <div className="flex items-center gap-2.5">
+              <Link to="/teacher/classes" className="inline-flex flex-1 items-center justify-center gap-1.5 rounded-xl bg-[#8b5cf6] px-4 py-2.5 text-xs font-semibold text-white shadow-sm shadow-violet-300/50 transition active:scale-[.98]">
+                Open classes <ArrowUpRight size={14} />
+              </Link>
+              <Link to="/teacher/lesson-plan" className="inline-flex items-center justify-center gap-1.5 rounded-xl border border-white/70 bg-white/80 px-4 py-2.5 text-xs font-semibold text-[#0f172a] shadow-sm backdrop-blur-sm transition active:scale-[.98]">
+                Ask AI <Sparkles size={14} className="text-[#8b5cf6]" />
               </Link>
             </div>
-            <div className="grid grid-cols-3 gap-2 text-center">
-              {[
-                { value: stats.totalStudents ?? 0, label: 'Students', icon: Users, to: '/teacher/classes', tone: 'text-[#8b5cf6]' },
-                { value: `${stats.attendanceRate ?? 0}%`, label: 'Attendance', icon: ClipboardCheck, to: '/teacher/classes/current/students/attendance', tone: 'text-emerald-600' },
-                { value: pendingTasks, label: 'Tasks', icon: FileText, to: '/teacher/classes/current/assignments', tone: 'text-amber-600' },
-              ].map((item) => {
-                const Icon = item.icon;
-                return (
-                  <Link key={item.label} to={item.to} className={cx('flex min-h-[76px] flex-col items-center justify-center rounded-xl p-2.5 transition active:scale-95', GLASS_INSET)}>
-                    <span className={`text-lg font-black ${item.tone}`}>{item.value}</span>
-                    <span className="mt-1 flex items-center gap-1 text-[9px] font-bold uppercase tracking-tight text-[#64748b]"><Icon size={11} />{item.label}</span>
-                  </Link>
-                );
-              })}
-            </div>
           </div>
         </section>
 
-        <div className="grid grid-cols-2 gap-3">
-          <Link to="/teacher/classes/current/students/attendance" className={cx('rounded-2xl p-4 transition active:scale-[.98]', GLASS_PANEL)}>
-            <div className="mb-3 flex h-9 w-9 items-center justify-center rounded-xl border border-white/70 bg-emerald-50/80 text-emerald-600"><ClipboardCheck size={18} /></div>
-            <p className="text-xs font-bold text-[#0f172a]">Mark attendance</p>
-            <p className="mt-1 text-[10px] leading-4 text-[#8e9aaf]">Record today’s class presence</p>
-          </Link>
-          <Link to="/teacher/lesson-plan" className={cx('rounded-2xl p-4 transition active:scale-[.98]', GLASS_PANEL)}>
-            <div className="mb-3 flex h-9 w-9 items-center justify-center rounded-xl border border-white/70 bg-violet-50/80 text-[#8b5cf6]"><Sparkles size={18} /></div>
-            <p className="text-xs font-bold text-[#0f172a]">Plan with AI</p>
-            <p className="mt-1 text-[10px] leading-4 text-[#8e9aaf]">Create your next lesson faster</p>
-          </Link>
-        </div>
-
-        <section className="space-y-3">
-          <MobileSectionTitle meta={nextClass ? `Next ${nextClass.time}` : 'Today'}>Today’s schedule</MobileSectionTitle>
-          <div className={cx('rounded-2xl p-4', GLASS_PANEL)}>
-            {todaysClasses.length === 0 ? (
-              <div className="flex flex-col items-center py-5 text-center">
-                <div className="flex h-9 w-9 items-center justify-center rounded-full border border-white/70 bg-emerald-50/80 text-emerald-600"><CheckCircle2 size={18} /></div>
-                <p className="mt-2 text-xs font-semibold text-[#0f172a]">Your schedule is clear</p>
-                <p className="mt-1 text-[11px] text-[#64748b]">No classes scheduled for today</p>
-              </div>
-            ) : (
-              <div className="space-y-2.5">
-                {todaysClasses.slice(0, 3).map((classItem, index) => (
-                  <div key={classItem.id || index} className={cx('flex items-center gap-3 rounded-xl p-3', GLASS_INSET)}>
-                    <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl border border-white/70 bg-violet-50/80 text-[#8b5cf6]"><BookOpen size={17} /></div>
-                    <div className="min-w-0 flex-1"><p className="truncate text-xs font-bold text-[#0f172a]">{classItem.subject || classItem.class}</p><p className="truncate text-[10px] text-[#8e9aaf]">{classItem.class} {classItem.section ? `• ${classItem.section}` : ''}</p></div>
-                    <span className="text-[11px] font-bold text-[#64748b]">{classItem.time}</span>
+        {/* Quick status overview */}
+        <section className="space-y-2.5">
+          <div className="flex items-center justify-between px-1">
+            <span className="text-xs font-bold uppercase tracking-wider text-[#94a3b8]">Class &amp; Schedule Status</span>
+          </div>
+          <div className="grid grid-cols-1 gap-2.5 md:grid-cols-3">
+            {[
+              { icon: Users, label: 'Class Teacher', value: classTeacherLabel, to: '/teacher/classes', tone: 'bg-slate-100 text-slate-500' },
+              {
+                icon: Clock,
+                label: 'Next Class',
+                value: dashboardLoading
+                  ? 'Loading from timetable…'
+                  : nextClass ? `${nextClass.subject || nextClass.class || 'Details unavailable'} • ${nextClass.time}` : 'No more classes today',
+                to: '/teacher/classes',
+                tone: 'bg-violet-50 text-[#8b5cf6]',
+              },
+              {
+                icon: CheckCircle2,
+                label: 'Workload',
+                value: pendingTasks > 0 ? `${pendingTasks} actions need review` : 'Clear for focused teaching',
+                to: '/teacher/classes/current/assignments',
+                tone: 'bg-emerald-50 text-emerald-600',
+              },
+            ].map((item) => {
+              const Icon = item.icon;
+              return (
+                <Link key={item.label} to={item.to} className={cx('flex items-center justify-between gap-3 rounded-2xl p-3.5 transition active:scale-[.99]', GLASS_PANEL)}>
+                  <div className="flex min-w-0 items-center gap-3">
+                    <div className={cx('flex h-9 w-9 shrink-0 items-center justify-center rounded-xl', item.tone)}><Icon size={17} /></div>
+                    <div className="min-w-0">
+                      <p className="text-[10px] font-bold uppercase tracking-wide text-[#94a3b8]">{item.label}</p>
+                      <p className="truncate text-xs font-semibold text-[#0f172a]">{item.value}</p>
+                    </div>
                   </div>
-                ))}
-              </div>
-            )}
-          </div>
-        </section>
-
-        <section className={cx('rounded-2xl p-4', GLASS_PANEL)}>
-          <div className="flex items-center justify-between border-b border-white/60 pb-3">
-            <div className="flex items-center gap-1.5 text-[11px] font-bold uppercase tracking-wide text-[#0f172a]"><CheckCircle2 size={15} className="text-[#8b5cf6]" />Priority tasks</div>
-            <span className="rounded-full border border-white/70 bg-violet-50/80 px-2 py-0.5 text-[10px] font-semibold text-[#8b5cf6]">{visibleDeadlines.length} pending</span>
-          </div>
-          {visibleDeadlines.length === 0 ? (
-            <div className="flex flex-col items-center py-5 text-center"><CheckCircle2 size={24} className="text-slate-300" /><p className="mt-2 text-xs font-medium text-[#8e9aaf]">All caught up</p></div>
-          ) : (
-            <div className="mt-3 space-y-2">
-              {visibleDeadlines.slice(0, 3).map((task) => (
-                <Link key={deadlineKey(task)} to="/teacher/classes/current/assignments" className={cx('flex items-center gap-3 rounded-xl p-3', GLASS_INSET)}>
-                  <span className="h-2 w-2 rounded-full bg-amber-400" />
-                  <span className="min-w-0 flex-1 truncate text-xs font-semibold text-[#0f172a]">{task.title}</span>
-                  <span className="text-[10px] font-medium text-amber-700">{daysUntil(task.dueDate)}</span>
+                  <ChevronRight size={16} className="shrink-0 text-slate-300" />
                 </Link>
-              ))}
-            </div>
-          )}
+              );
+            })}
+          </div>
         </section>
 
-        <section className={cx('flex items-start gap-3.5 rounded-2xl p-4', GLASS_PANEL)}>
-          <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl border border-white/70 bg-violet-50/80 text-[#8b5cf6]"><Brain size={20} /></div>
-          <div><h2 className="text-xs font-bold text-[#0f172a]">Need teaching support?</h2><p className="mt-0.5 text-[11px] leading-relaxed text-[#64748b]">Use AI tools for lesson ideas, class insights, and differentiated activities.</p><Link to="/teacher/ai-tools" className="mt-2 inline-flex text-xs font-semibold text-[#8b5cf6]">Open AI tools →</Link></div>
+        {/* Quick pill shortcuts */}
+        <section className="space-y-2 pt-1">
+          <span className="px-1 text-xs font-bold uppercase tracking-wider text-[#94a3b8]">Quick Shortcuts</span>
+          <div className="flex items-center gap-2 overflow-x-auto no-scrollbar py-1">
+            {[
+              { label: 'Lesson Plan', icon: Calendar, to: '/teacher/lesson-plan' },
+              { label: 'PTM', icon: Users, to: '/teacher/ptm' },
+              { label: 'Student Chat', icon: MessageSquare, to: '/teacher/classes/current/communication/chat' },
+              { label: 'Excuse Letters', icon: FileText, to: '/teacher/classes/current/communication/excuse-letters' },
+              { label: 'Academic Alcove', icon: BookOpen, to: '/teacher/resource-library' },
+            ].map((item) => {
+              const Icon = item.icon;
+              return (
+                <Link key={item.label} to={item.to} className="inline-flex shrink-0 items-center gap-1.5 rounded-xl border border-slate-200/70 bg-white px-3 py-2 text-xs font-medium text-[#0f172a] shadow-sm transition active:bg-slate-50">
+                  <Icon size={14} className="text-[#8b5cf6]" /> {item.label}
+                </Link>
+              );
+            })}
+          </div>
+        </section>
+
+        {/* Workflow actions */}
+        <section className={cx('rounded-3xl p-4', GLASS_PANEL)}>
+          <div className="flex items-start justify-between gap-3 border-b border-white/60 pb-3">
+            <div className="flex items-center gap-2.5">
+              <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-xl border border-white/70 bg-violet-50/80 text-[#8b5cf6]"><Zap size={16} /></div>
+              <div>
+                <h3 className="text-sm font-bold text-[#0f172a]">Workflow Actions</h3>
+                <p className="text-[11px] text-[#64748b]">Grouped by how teachers actually move through the day.</p>
+              </div>
+            </div>
+            <Link to="/teacher/classes" className="shrink-0 text-xs font-semibold text-[#8b5cf6]">View modules</Link>
+          </div>
+          <div className="md:grid md:grid-cols-2 md:gap-x-6">
+          {[
+            { title: 'Core Actions', items: [
+              { title: 'Open Classes', description: 'Jump into roster and class context.', icon: Users, path: '/teacher/classes' },
+              { title: 'Attendance', description: 'Mark today and review exceptions.', icon: ClipboardCheck, path: '/teacher/classes/current/students/attendance' },
+            ] },
+            { title: 'Support', items: [
+              { title: 'Teaching', description: 'Lesson materials and notes.', icon: BookOpen, path: '/teacher/classes/current/teaching' },
+              { title: 'AI Center', description: 'Get class insights and teaching support.', icon: Sparkles, path: '/teacher/lesson-plan' },
+            ] },
+          ].map((group) => (
+            <div key={group.title} className="mt-4">
+              <p className="mb-2.5 text-[10px] font-bold uppercase tracking-wider text-[#94a3b8]">{group.title}</p>
+              <div className="grid grid-cols-1 gap-2.5 sm:grid-cols-2 md:grid-cols-1">
+                {group.items.map((item) => {
+                  const Icon = item.icon;
+                  return (
+                    <Link key={item.title} to={item.path} className="flex items-start gap-3 rounded-2xl border border-white/60 bg-white/50 p-3 transition active:scale-[.99] hover:bg-white/80">
+                      <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg border border-white/70 bg-white text-[#64748b] shadow-sm"><Icon size={16} /></div>
+                      <div className="min-w-0">
+                        <h4 className="text-xs font-bold text-[#0f172a]">{item.title}</h4>
+                        <p className="mt-0.5 text-[11px] leading-snug text-[#64748b]">{item.description}</p>
+                      </div>
+                    </Link>
+                  );
+                })}
+              </div>
+            </div>
+          ))}
+          </div>
         </section>
       </div>
 

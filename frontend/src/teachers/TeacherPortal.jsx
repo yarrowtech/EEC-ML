@@ -36,6 +36,8 @@ import {
   RefreshCw,
   CalendarCheck,
   Activity,
+  Sparkles,
+  CircleUser,
 } from 'lucide-react';
 import { Button } from '../components/ui/button';
 import { useTenant } from '../context/TenantContext';
@@ -101,8 +103,8 @@ const mobileNavigation = [
   { icon: Home, label: 'Dashboard', path: `${PORTAL_BASE}/dashboard` },
   { icon: Users, label: 'Classes', path: `${PORTAL_BASE}/classes` },
   { icon: Clock, label: 'Timetable', path: `${PORTAL_BASE}/timetable` },
-  { icon: MessageSquare, label: 'Chat', path: `${PORTAL_BASE}/classes/current/communication/chat` },
-  { icon: Menu, label: 'More', action: 'menu' },
+  { icon: Sparkles, label: 'AI Copilot', path: `${PORTAL_BASE}/lesson-plan` },
+  { icon: CircleUser, label: 'Profile', action: 'profile' },
 ];
 
 const studentsLinks = [
@@ -1414,6 +1416,10 @@ const TeacherPortalShell = () => {
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
   const [showLogoutConfirm, setShowLogoutConfirm] = useState(false);
+  // Self-contained mobile profile popover (My Profile / Sign out) — deliberately
+  // independent of `sidebarOpen`/the drawer, so logout stays reachable even if
+  // the drawer mechanism ever regresses again.
+  const [showMobileProfileMenu, setShowMobileProfileMenu] = useState(false);
   const { name: schoolName, logo: schoolLogo } = useTenant();
   const location = useLocation();
   const navigate = useNavigate();
@@ -1469,6 +1475,7 @@ const TeacherPortalShell = () => {
   const [moduleSeenState, setModuleSeenState] = useState(() => readModuleSeenState('teacher'));
   const profileRef = useRef(null);
   const notificationsRef = useRef(null);
+  const mobileProfileMenuRef = useRef(null);
 
   // Fetch teacher profile
   useEffect(() => {
@@ -1500,10 +1507,17 @@ const TeacherPortalShell = () => {
       if (notificationsRef.current && !notificationsRef.current.contains(e.target)) {
         setShowNotifications(false);
       }
+      if (mobileProfileMenuRef.current && !mobileProfileMenuRef.current.contains(e.target)) {
+        setShowMobileProfileMenu(false);
+      }
     };
     document.addEventListener('mousedown', handler);
     return () => document.removeEventListener('mousedown', handler);
   }, []);
+
+  useEffect(() => {
+    setShowMobileProfileMenu(false);
+  }, [location.pathname]);
 
   const toggleProfile = useCallback(() => {
     setProfileOpen((prev) => !prev);
@@ -1874,7 +1888,7 @@ const TeacherPortalShell = () => {
         </div>
 
         {/* ── Navigation ── */}
-        <nav className={`min-h-0 flex-1 overflow-y-auto overflow-x-hidden ${!sidebarCollapsed ? 'px-2.5 py-5' : 'px-1.5 py-3'}`}>
+        <nav className={`min-h-0 flex-1 overflow-y-auto overflow-x-hidden overscroll-contain ${!sidebarCollapsed ? 'px-2.5 py-5' : 'px-1.5 py-3'}`}>
           <div className="space-y-0.5">
             {portalNavigation.map((item) => {
               const active = isItemActive(item.path);
@@ -2198,12 +2212,12 @@ const TeacherPortalShell = () => {
                   )}
                 </AnimatePresence>
               </div>
-              <button type="button" onClick={() => navigate('/teacher/settings')} className="flex h-9 w-9 items-center justify-center rounded-full bg-white/10 transition active:scale-95" aria-label="Account details"><ChevronRight size={19} /></button>
+              <button type="button" onClick={() => setSidebarOpen(true)} className="flex h-9 w-9 items-center justify-center rounded-full bg-white/10 transition active:scale-95" aria-label="Open all teacher options" aria-expanded={sidebarOpen}><Menu size={19} /></button>
             </div>
           </div>
         </header>
 
-        <main className={`flex-1 min-h-0 pb-[calc(4.5rem+env(safe-area-inset-bottom))] lg:pb-0 ${isSmartPlannerRoute ? 'p-0' : ''} ${hasContainedPageScroll ? 'overflow-hidden' : 'overflow-y-auto'}`}>
+        <main className={`flex-1 min-h-0 pb-[calc(4.5rem+env(safe-area-inset-bottom))] lg:pb-0 ${isSmartPlannerRoute ? 'p-0' : ''} ${hasContainedPageScroll ? 'overflow-hidden' : 'overflow-y-auto overscroll-contain'}`}>
           <div className={isChatRoute
             ? 'flex h-full min-h-0 flex-col'
             : isSmartPlannerRoute
@@ -2347,15 +2361,15 @@ const TeacherPortalShell = () => {
           </div>
         </main>
 
-        <nav aria-label="Teacher mobile navigation" className="fixed inset-x-0 bottom-0 z-40 border-t border-slate-200/80 bg-white/95 px-2 pb-[calc(.375rem+env(safe-area-inset-bottom))] pt-1.5 shadow-[0_-4px_20px_rgba(0,0,0,0.04)] backdrop-blur-md lg:hidden">
+        <nav aria-label="Teacher mobile navigation" className="fixed inset-x-0 bottom-0 z-40 border-t border-slate-200/80 bg-white/95 px-2 pb-[calc(.375rem+env(safe-area-inset-bottom))] pt-1.5 shadow-[0_-4px_20px_rgba(0,0,0,0.04)] backdrop-blur-md will-change-transform lg:hidden">
           <div className="mx-auto flex max-w-md items-center justify-around sm:max-w-xl md:max-w-2xl">
             {mobileNavigation.map((item) => {
               const Icon = item.icon;
-              const notificationCount = item.action === 'menu'
+              const notificationCount = item.action === 'profile'
                 ? getTeacherModuleNotificationCount(notificationItems, 'notifications', moduleSeenState)
                 : getTeacherModuleNotificationCount(notificationItems, teacherNotificationModuleKeyForPath(item.path), moduleSeenState);
-              const active = item.action === 'menu'
-                ? sidebarOpen
+              const active = item.action === 'profile'
+                ? showMobileProfileMenu || location.pathname.startsWith('/teacher/settings')
                 : isItemActive(item.path) || (item.label === 'Classes' && location.pathname.startsWith('/teacher/classes') && !location.pathname.includes('/communication/chat'));
               const itemClasses = `flex min-w-[58px] flex-col items-center rounded-xl px-2 py-1 text-[10px] font-semibold transition active:scale-95 ${active ? 'text-violet-600' : 'text-slate-400'}`;
               const content = (
@@ -2365,11 +2379,49 @@ const TeacherPortalShell = () => {
                 </>
               );
 
-              if (item.action === 'menu') {
+              if (item.action === 'profile') {
                 return (
-                  <button key={item.label} type="button" onClick={() => setSidebarOpen(true)} aria-label="Open all teacher options" aria-expanded={sidebarOpen} className={itemClasses}>
-                    {content}
-                  </button>
+                  <div key={item.label} className="relative" ref={mobileProfileMenuRef}>
+                    <button
+                      type="button"
+                      onClick={() => setShowMobileProfileMenu((prev) => !prev)}
+                      aria-label="Open profile menu"
+                      aria-haspopup="menu"
+                      aria-expanded={showMobileProfileMenu}
+                      className={itemClasses}
+                    >
+                      {content}
+                    </button>
+                    <AnimatePresence>
+                      {showMobileProfileMenu && (
+                        <Motion.div
+                          initial={{ opacity: 0, y: 8, scale: 0.97 }}
+                          animate={{ opacity: 1, y: 0, scale: 1 }}
+                          exit={{ opacity: 0, y: 8, scale: 0.97 }}
+                          transition={{ type: 'spring', stiffness: 420, damping: 30 }}
+                          role="menu"
+                          className="absolute bottom-full right-0 z-50 mb-3 w-48 overflow-hidden rounded-2xl border border-slate-100 bg-white p-1.5 shadow-[0_16px_40px_-16px_rgba(15,23,42,0.25),0_4px_12px_rgba(15,23,42,0.08)]"
+                        >
+                          <button
+                            type="button"
+                            role="menuitem"
+                            onClick={() => { setShowMobileProfileMenu(false); navigate('/teacher/settings'); }}
+                            className="flex w-full items-center gap-2.5 rounded-xl px-3 py-2.5 text-left text-sm font-medium text-slate-700 transition hover:bg-slate-50"
+                          >
+                            <CircleUser size={16} className="text-slate-400" /> My Profile
+                          </button>
+                          <button
+                            type="button"
+                            role="menuitem"
+                            onClick={() => { setShowMobileProfileMenu(false); handleLogout(); }}
+                            className="flex w-full items-center gap-2.5 rounded-xl px-3 py-2.5 text-left text-sm font-medium text-red-500 transition hover:bg-red-50"
+                          >
+                            <LogOut size={16} /> Sign out
+                          </button>
+                        </Motion.div>
+                      )}
+                    </AnimatePresence>
+                  </div>
                 );
               }
 
