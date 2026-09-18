@@ -3,15 +3,16 @@ import Swal from 'sweetalert2';
 import {
   AlertCircle,
   BookOpen,
+  Calendar,
   CheckCircle2,
   Edit3,
   Download,
+  FileText,
   IndianRupee,
   Layers,
   Loader2,
   Plus,
   RefreshCw,
-  Save,
   Search,
   Trash2,
   X,
@@ -92,9 +93,13 @@ const FeesManagement = ({ setShowAdminHeader }) => {
   const [notice, setNotice] = useState('');
   const [pdfSchool, setPdfSchool] = useState(DEFAULT_PDF_SCHOOL);
 
+  const [formOpen, setFormOpen] = useState(false);
+  const [page, setPage] = useState(1);
+  const PAGE_SIZE = 8;
+
   useEffect(() => {
-    setShowAdminHeader?.(false);
-  }, [setShowAdminHeader]);
+    setShowAdminHeader?.(!formOpen);
+  }, [setShowAdminHeader, formOpen]);
 
   const classNameById = useMemo(
     () => new Map((filters.classes || []).map((item) => [String(item.id), item.name])),
@@ -150,8 +155,9 @@ const FeesManagement = ({ setShowAdminHeader }) => {
   const basicsDone = Boolean(form.classId && String(form.name || '').trim());
   const headsDone = configuredHeads > 0;
   const installmentsDone = configuredInstallments > 0;
-  const FLOW_COMPLETED = [basicsDone, headsDone, installmentsDone].filter(Boolean).length;
-
+  // The first step that isn't finished yet is the one the stepper highlights
+  // as "current" — once everything is filled in, it just stays on the last step.
+  const currentStepIndex = !basicsDone ? 0 : !headsDone ? 1 : !installmentsDone ? 2 : 2;
 
   const filteredStructures = useMemo(() => {
     return structures.filter((item) => {
@@ -162,6 +168,18 @@ const FeesManagement = ({ setShowAdminHeader }) => {
       return haystack.includes(search.toLowerCase());
     });
   }, [structures, selectedClass, selectedYear, selectedBoard, search]);
+
+  const totalPages = Math.max(1, Math.ceil(filteredStructures.length / PAGE_SIZE));
+  useEffect(() => {
+    setPage(1);
+  }, [selectedClass, selectedYear, selectedBoard, search]);
+  useEffect(() => {
+    setPage((prev) => Math.min(prev, totalPages));
+  }, [totalPages]);
+  const paginatedStructures = useMemo(
+    () => filteredStructures.slice((page - 1) * PAGE_SIZE, page * PAGE_SIZE),
+    [filteredStructures, page]
+  );
 
   const dashboardStats = useMemo(() => {
     if (!filteredStructures.length) {
@@ -251,10 +269,21 @@ const FeesManagement = ({ setShowAdminHeader }) => {
     setNotice('');
   };
 
+  const openCreateForm = () => {
+    resetForm();
+    setFormOpen(true);
+  };
+
+  const closeForm = () => {
+    setFormOpen(false);
+    resetForm();
+  };
+
   const editStructure = (structure) => {
     setActiveId(structure._id || '');
     setError('');
     setNotice('');
+    setFormOpen(true);
     setForm({
       classId: structure.classId || '',
       className: structure.className || '',
@@ -369,6 +398,7 @@ const FeesManagement = ({ setShowAdminHeader }) => {
       if (!res.ok) throw new Error(data?.error || 'Unable to save structure');
       await loadAll();
       resetForm();
+      setFormOpen(false);
       setNotice(isEdit ? 'Fee structure updated.' : 'Fee structure created.');
     } catch (err) {
       setError(err.message || 'Unable to save structure');
@@ -424,19 +454,432 @@ const FeesManagement = ({ setShowAdminHeader }) => {
     }
   };
 
-  // ── Glass morphism design tokens ──────────────────────────────────────────
+  // ── Glass morphism design tokens (list page) ──────────────────────────────
   const glassCard =
     'rounded-3xl border border-white/60 bg-white/55 shadow-[0_8px_30px_rgba(15,23,42,0.06)] backdrop-blur-2xl backdrop-saturate-[1.8]';
-  const glassInset =
-    'rounded-xl border border-white/70 bg-white/45 backdrop-blur-md backdrop-saturate-[1.8]';
   const iCls =
     'w-full rounded-xl border border-white/70 bg-white/50 px-3.5 py-2.5 text-sm text-slate-900 placeholder-slate-400 outline-none backdrop-blur-md transition-all duration-200 focus:border-violet-300 focus:bg-white/85 focus:ring-4 focus:ring-violet-100';
   const sCls = iCls;
   const ghostBtn =
-    'inline-flex items-center gap-1.5 rounded-xl border border-white/70 bg-white/55 px-3 py-1.5 text-xs font-semibold text-slate-600 backdrop-blur-md transition-all duration-150 hover:-translate-y-0.5 hover:bg-white/80';
+    'inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold text-slate-600 backdrop-blur-md transition-all duration-150 hover:-translate-y-0.5 hover:bg-white/80';
+
+  // ── Plain-form tokens (create/edit full page) ─────────────────────────────
+  const fInput =
+    'w-full rounded-lg border border-gray-200 bg-white px-3 py-2 text-sm text-gray-900 placeholder-gray-400 outline-none transition-colors focus:border-violet-400 focus:ring-4 focus:ring-violet-100';
+  const fSelect = fInput;
+  const tblInput =
+    'w-full rounded-md border border-transparent bg-transparent px-1.5 py-1 text-sm text-gray-800 outline-none transition-colors hover:border-gray-200 focus:border-violet-400 focus:bg-white focus:ring-2 focus:ring-violet-100';
+
+  if (formOpen) {
+    const STEPS = [
+      { label: 'Basics', icon: FileText },
+      { label: 'Fee Heads', icon: Layers },
+      { label: 'Installments', icon: Calendar },
+    ];
+
+    // AdminHeader is hidden while this page is open, so no header-height
+    // offset is needed here — just the mobile/tablet bottom tab bar
+    // (AdminBottomNav, h-14, lg:hidden) that still renders underneath.
+    return (
+      <div className="flex h-[calc(100dvh-56px)] lg:h-dvh flex-col overflow-hidden bg-gray-50">
+        {/* ── Full-page header ── */}
+        <div className="flex shrink-0 items-center justify-between border-b border-gray-200 bg-white px-6 py-4">
+          <div>
+            <h1 className="text-lg font-bold text-gray-900">{activeId ? 'Edit Fee Structure' : 'Create Fee Structure'}</h1>
+            <p className="mt-0.5 text-xs text-gray-500">Fill all 3 steps then save</p>
+          </div>
+          <button
+            onClick={closeForm}
+            className="flex h-9 w-9 items-center justify-center rounded-xl text-gray-400 transition-colors hover:bg-gray-100 hover:text-gray-600"
+          >
+            <X className="h-5 w-5" />
+          </button>
+        </div>
+
+        {/* ── Stepper ── */}
+        <div className="shrink-0 border-b border-gray-200 bg-white px-6 py-5">
+          <div className="mx-auto flex max-w-3xl items-center">
+            {STEPS.map((step, i) => {
+              const done = i < currentStepIndex;
+              const active = i === currentStepIndex;
+              return (
+                <React.Fragment key={step.label}>
+                  <div className="flex items-center gap-2.5">
+                    <span
+                      className={`flex h-9 w-9 shrink-0 items-center justify-center rounded-full text-sm font-bold transition-colors ${
+                        done
+                          ? 'bg-emerald-500 text-white'
+                          : active
+                            ? 'bg-violet-600 text-white'
+                            : 'border-2 border-gray-200 bg-white text-gray-400'
+                      }`}
+                    >
+                      {done ? <CheckCircle2 className="h-4.5 w-4.5" /> : i + 1}
+                    </span>
+                    <span className={`text-sm font-semibold ${active || done ? 'text-gray-900' : 'text-gray-400'}`}>
+                      {step.label}
+                    </span>
+                  </div>
+                  {i < STEPS.length - 1 && (
+                    <div className={`mx-4 h-0.5 flex-1 rounded-full ${done ? 'bg-emerald-400' : 'bg-gray-200'}`} />
+                  )}
+                </React.Fragment>
+              );
+            })}
+          </div>
+        </div>
+
+        {/* ── Body ── */}
+        <div className="flex-1 min-h-0 overflow-y-auto px-6 py-6">
+          <div className="mx-auto max-w-[1500px] space-y-5">
+            {error && (
+              <div className="flex items-center gap-2.5 rounded-xl border border-rose-200 bg-rose-50 px-4 py-3 text-sm text-rose-700">
+                <AlertCircle className="h-4 w-4 shrink-0" />{error}
+              </div>
+            )}
+
+            {/* Panel 1 — Basics (full width) */}
+            <div className="rounded-2xl border border-gray-200 bg-white">
+              <div className="flex items-center gap-3 border-b border-gray-100 px-5 py-4">
+                <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-violet-50 text-violet-600">
+                  <FileText className="h-4.5 w-4.5" />
+                </span>
+                <div className="min-w-0">
+                  <p className="text-sm font-bold text-gray-900">1. Basics</p>
+                  <p className="truncate text-xs text-gray-400">Set the basic details for this fee structure</p>
+                </div>
+              </div>
+              <div className="grid grid-cols-1 gap-4 p-5 sm:grid-cols-2 lg:grid-cols-5">
+                <div>
+                  <label className="mb-1.5 block text-xs font-semibold text-gray-600">Board <span className="text-rose-500">*</span></label>
+                  <select value={form.board} onChange={(e) => setForm((prev) => ({ ...prev, board: e.target.value }))} className={fSelect}>
+                    {BOARD_OPTIONS.map((b) => <option key={b} value={b}>{b}</option>)}
+                  </select>
+                </div>
+                <div>
+                  <label className="mb-1.5 block text-xs font-semibold text-gray-600">Session <span className="text-rose-500">*</span></label>
+                  <select
+                    value={form.academicYearId}
+                    onChange={(e) =>
+                      setForm((prev) => ({
+                        ...prev,
+                        academicYearId: e.target.value,
+                        classId: '',
+                        className: '',
+                      }))
+                    }
+                    className={fSelect}
+                  >
+                    <option value="">Select session</option>
+                    {activeAcademicYears.map((y) => <option key={y.id} value={y.id}>{y.name}</option>)}
+                  </select>
+                </div>
+                <div>
+                  <label className="mb-1.5 block text-xs font-semibold text-gray-600">Class <span className="text-rose-500">*</span></label>
+                  <select
+                    value={form.classId}
+                    onChange={(e) =>
+                      setForm((prev) => ({
+                        ...prev,
+                        classId: e.target.value,
+                        className: classNameById.get(String(e.target.value)) || '',
+                      }))
+                    }
+                    className={fSelect}
+                    disabled={!form.academicYearId}
+                  >
+                    <option value="">{form.academicYearId ? 'Select class' : 'Select session first'}</option>
+                    {classOptionsByFormYear.map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}
+                  </select>
+                </div>
+                <div>
+                  <label className="mb-1.5 block text-xs font-semibold text-gray-600">Structure Name <span className="text-rose-500">*</span></label>
+                  <input
+                    value={form.name}
+                    onChange={(e) => setForm((prev) => ({ ...prev, name: e.target.value }))}
+                    placeholder="e.g. Class 5 Annual Fees 2026"
+                    className={fInput}
+                  />
+                </div>
+                <div>
+                  <label className="mb-1.5 block text-xs font-semibold text-gray-600">Late Fine Amount (Per Day)</label>
+                  <div className="relative">
+                    <span className="absolute left-3 top-1/2 -translate-y-1/2 text-sm font-medium text-gray-400">₹</span>
+                    <input
+                      type="number"
+                      min="0"
+                      value={form.lateFeeAmount}
+                      onChange={(e) => setForm((prev) => ({ ...prev, lateFeeAmount: e.target.value }))}
+                      placeholder="0"
+                      className={`${fInput} pl-7`}
+                    />
+                  </div>
+                  <p className="mt-1 text-[11px] text-gray-400">Auto-added daily after due date while unpaid.</p>
+                </div>
+              </div>
+            </div>
+
+            {/* Panels 2 & 3 — Fee Heads / Installments, 50/50 */}
+            <div className="grid grid-cols-1 items-start gap-5 lg:grid-cols-2">
+              {/* Panel 2 — Fee Heads */}
+              <div className="rounded-2xl border border-gray-200 bg-white">
+                <div className="flex items-center justify-between gap-3 border-b border-gray-100 px-5 py-4">
+                  <div className="flex items-center gap-3 min-w-0">
+                    <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-sky-50 text-sky-600">
+                      <Layers className="h-4.5 w-4.5" />
+                    </span>
+                    <div className="min-w-0">
+                      <p className="text-sm font-bold text-gray-900">2. Fee Heads</p>
+                      <p className="truncate text-xs text-gray-400">Add fee components for this structure</p>
+                    </div>
+                  </div>
+                  <button
+                    onClick={addHead}
+                    className="inline-flex shrink-0 items-center gap-1.5 rounded-lg border border-violet-200 bg-violet-50 px-3 py-1.5 text-xs font-semibold text-violet-700 transition-colors hover:bg-violet-100"
+                  >
+                    <Plus className="h-3.5 w-3.5" />
+                    Add Head
+                  </button>
+                </div>
+
+                {form.feeHeads.length === 0 ? (
+                  <div className="p-5">
+                    <div className="rounded-xl border border-dashed border-gray-200 bg-gray-50/60 py-8 text-center text-xs text-gray-400">
+                      No fee heads added — click &quot;Add Head&quot; above.
+                    </div>
+                  </div>
+                ) : (
+                  <div className="overflow-x-auto px-5 pt-2">
+                    <table className="w-full min-w-[360px] border-collapse text-left">
+                      <thead>
+                        <tr className="border-b border-gray-100">
+                          <th className="w-8 py-2 text-[11px] font-semibold uppercase tracking-wider text-gray-400">#</th>
+                          <th className="py-2 text-[11px] font-semibold uppercase tracking-wider text-gray-400">Fee Head</th>
+                          <th className="w-28 py-2 text-[11px] font-semibold uppercase tracking-wider text-gray-400">Amount (₹)</th>
+                          <th className="w-10 py-2 text-[11px] font-semibold uppercase tracking-wider text-gray-400 text-right">Actions</th>
+                        </tr>
+                      </thead>
+                      <tbody className="divide-y divide-gray-50">
+                        {form.feeHeads.map((item, index) => (
+                          <tr key={index} className="align-top">
+                            <td className="py-2 text-sm text-gray-400">{index + 1}</td>
+                            <td className="py-2 pr-2">
+                              <select
+                                value={FEE_HEAD_OPTIONS.includes(item.label) ? item.label : (item.label ? 'CUSTOM' : '')}
+                                onChange={(e) => {
+                                  const v = e.target.value;
+                                  const isCustom = v === 'CUSTOM';
+                                  updateHead(index, 'label', isCustom ? '' : v);
+                                  if (!isCustom) updateHead(index, 'customLabel', '');
+                                }}
+                                className={tblInput}
+                              >
+                                <option value="">Select fee head</option>
+                                {FEE_HEAD_OPTIONS.map((o) => <option key={o} value={o}>{o}</option>)}
+                                <option value="CUSTOM">Custom…</option>
+                              </select>
+                              {!FEE_HEAD_OPTIONS.includes(item.label) && (
+                                <input
+                                  value={item.customLabel || ''}
+                                  onChange={(e) => updateHead(index, 'customLabel', e.target.value)}
+                                  placeholder="Custom fee head name"
+                                  className={`${tblInput} mt-1`}
+                                />
+                              )}
+                            </td>
+                            <td className="py-2 pr-2">
+                              <input
+                                type="number"
+                                min="0"
+                                value={item.amount}
+                                onChange={(e) => updateHead(index, 'amount', e.target.value)}
+                                placeholder="0"
+                                className={tblInput}
+                              />
+                            </td>
+                            <td className="py-2 text-right">
+                              <button
+                                onClick={() => removeHead(index)}
+                                className="inline-flex h-7 w-7 items-center justify-center rounded-lg text-rose-400 transition-colors hover:bg-rose-50 hover:text-rose-600"
+                              >
+                                <Trash2 className="h-3.5 w-3.5" />
+                              </button>
+                            </td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                )}
+
+                {/* Panel footer stats */}
+                <div className="mt-3 grid grid-cols-2 divide-x divide-gray-100 border-t border-gray-100 bg-gray-50/60 px-5 py-3">
+                  <div>
+                    <p className="text-[11px] font-medium text-gray-400">Total Fee Heads</p>
+                    <p className="mt-0.5 text-base font-bold text-gray-900">{configuredHeads}</p>
+                  </div>
+                  <div className="pl-4">
+                    <p className="text-[11px] font-medium text-gray-400">Total Amount</p>
+                    <p className="mt-0.5 text-base font-bold text-violet-600">{money(formTotal)}</p>
+                  </div>
+                </div>
+              </div>
+
+              {/* Panel 3 — Installments */}
+              <div className="rounded-2xl border border-gray-200 bg-white">
+                <div className="flex items-center justify-between gap-3 border-b border-gray-100 px-5 py-4">
+                  <div className="flex items-center gap-3 min-w-0">
+                    <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-amber-50 text-amber-600">
+                      <Calendar className="h-4.5 w-4.5" />
+                    </span>
+                    <div className="min-w-0">
+                      <p className="text-sm font-bold text-gray-900">3. Installments</p>
+                      <p className="truncate text-xs text-gray-400">Configure payment schedule</p>
+                    </div>
+                  </div>
+                  <button
+                    onClick={addInstallment}
+                    className="inline-flex shrink-0 items-center gap-1.5 rounded-lg border border-violet-200 bg-violet-50 px-3 py-1.5 text-xs font-semibold text-violet-700 transition-colors hover:bg-violet-100"
+                  >
+                    <Plus className="h-3.5 w-3.5" />
+                    Add Installment
+                  </button>
+                </div>
+
+                {form.installments.length === 0 ? (
+                  <div className="p-5">
+                    <div className="rounded-xl border border-dashed border-gray-200 bg-gray-50/60 py-8 text-center text-xs text-gray-400">
+                      No installments — fee will be collected as a lump sum.
+                    </div>
+                  </div>
+                ) : (
+                  <div className="overflow-x-auto px-5 pt-2">
+                    <table className="w-full min-w-[420px] border-collapse text-left">
+                      <thead>
+                        <tr className="border-b border-gray-100">
+                          <th className="w-8 py-2 text-[11px] font-semibold uppercase tracking-wider text-gray-400">#</th>
+                          <th className="py-2 text-[11px] font-semibold uppercase tracking-wider text-gray-400">Installment</th>
+                          <th className="w-24 py-2 text-[11px] font-semibold uppercase tracking-wider text-gray-400">Amount (₹)</th>
+                          <th className="w-36 py-2 text-[11px] font-semibold uppercase tracking-wider text-gray-400">Due Date</th>
+                          <th className="w-10 py-2 text-right text-[11px] font-semibold uppercase tracking-wider text-gray-400">Actions</th>
+                        </tr>
+                      </thead>
+                      <tbody className="divide-y divide-gray-50">
+                        {form.installments.map((item, index) => (
+                          <tr key={index}>
+                            <td className="py-2 text-sm text-gray-400">{index + 1}</td>
+                            <td className="py-2 pr-2">
+                              <input
+                                value={item.label}
+                                onChange={(e) => updateInstallment(index, 'label', e.target.value)}
+                                placeholder="e.g. Term 1"
+                                className={tblInput}
+                              />
+                            </td>
+                            <td className="py-2 pr-2">
+                              <input
+                                type="number"
+                                min="0"
+                                value={item.amount}
+                                onChange={(e) => updateInstallment(index, 'amount', e.target.value)}
+                                placeholder="0"
+                                className={tblInput}
+                              />
+                            </td>
+                            <td className="py-2 pr-2">
+                              <input
+                                type="date"
+                                value={item.dueDate || ''}
+                                onChange={(e) => updateInstallment(index, 'dueDate', e.target.value)}
+                                className={tblInput}
+                              />
+                            </td>
+                            <td className="py-2 text-right">
+                              <button
+                                onClick={() => removeInstallment(index)}
+                                className="inline-flex h-7 w-7 items-center justify-center rounded-lg text-rose-400 transition-colors hover:bg-rose-50 hover:text-rose-600"
+                              >
+                                <Trash2 className="h-3.5 w-3.5" />
+                              </button>
+                            </td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                )}
+
+                {/* Panel footer stats */}
+                <div className="mt-3 grid grid-cols-2 divide-x divide-gray-100 border-t border-gray-100 bg-gray-50/60 px-5 py-3">
+                  <div>
+                    <p className="text-[11px] font-medium text-gray-400">Total Installments</p>
+                    <p className="mt-0.5 text-base font-bold text-gray-900">{configuredInstallments}</p>
+                  </div>
+                  <div className="pl-4">
+                    <p className="text-[11px] font-medium text-gray-400">Total Amount</p>
+                    <p className="mt-0.5 text-base font-bold text-violet-600">{money(installmentTotal)}</p>
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            {/* Balanced / difference banner */}
+            {(configuredHeads > 0 || configuredInstallments > 0) && (
+              <div
+                className={`flex items-center gap-3 rounded-2xl border px-5 py-4 ${
+                  differenceTotal === 0 ? 'border-emerald-200 bg-emerald-50' : 'border-amber-200 bg-amber-50'
+                }`}
+              >
+                <span className={`flex h-9 w-9 shrink-0 items-center justify-center rounded-full ${differenceTotal === 0 ? 'bg-emerald-500' : 'bg-amber-500'} text-white`}>
+                  {differenceTotal === 0 ? <CheckCircle2 className="h-5 w-5" /> : <AlertCircle className="h-5 w-5" />}
+                </span>
+                <div>
+                  <p className={`text-sm font-bold ${differenceTotal === 0 ? 'text-emerald-800' : 'text-amber-800'}`}>
+                    {differenceTotal === 0 ? 'Structure is balanced' : 'Installments don’t add up yet'}
+                  </p>
+                  <p className={`mt-0.5 text-xs ${differenceTotal === 0 ? 'text-emerald-700' : 'text-amber-700'}`}>
+                    {differenceTotal === 0
+                      ? 'All amounts and installments are valid.'
+                      : configuredInstallments > 0
+                        ? `Off by ${money(Math.abs(differenceTotal))} — the last installment will be auto-adjusted on save.`
+                        : 'Add installments, or leave them empty to collect the full amount as a lump sum.'}
+                  </p>
+                </div>
+              </div>
+            )}
+          </div>
+        </div>
+
+        {/* ── Action bar ── */}
+        <div className="flex shrink-0 flex-col-reverse items-stretch gap-3 border-t border-gray-200 bg-white px-6 py-4 sm:flex-row sm:items-center sm:justify-end">
+          <button
+            onClick={closeForm}
+            className="rounded-xl border border-gray-200 bg-white px-4 py-2.5 text-sm font-semibold text-gray-700 transition-colors hover:bg-gray-50"
+          >
+            Cancel
+          </button>
+          <button
+            onClick={resetForm}
+            className="inline-flex items-center justify-center gap-2 rounded-xl border border-gray-200 bg-white px-4 py-2.5 text-sm font-semibold text-gray-700 transition-colors hover:bg-gray-50"
+          >
+            <RefreshCw className="h-4 w-4" />
+            Reset
+          </button>
+          <button
+            onClick={saveStructure}
+            disabled={saving}
+            className="inline-flex items-center justify-center gap-2 rounded-xl bg-violet-600 px-5 py-2.5 text-sm font-semibold text-white shadow-sm transition-colors hover:bg-violet-700 disabled:opacity-60"
+          >
+            {saving ? <Loader2 className="h-4 w-4 animate-spin" /> : <CheckCircle2 className="h-4 w-4" />}
+            {saving ? 'Saving…' : activeId ? 'Update Structure' : 'Save Structure'}
+          </button>
+        </div>
+      </div>
+    );
+  }
 
   return (
-    <div className="relative min-h-screen overflow-hidden bg-[#f1f5f9] p-4 sm:p-6">
+    <div className="page-fade-in relative flex h-[calc(100dvh-94px)] md:h-[calc(100dvh-150px)] lg:h-[calc(100dvh-94px)] flex-col overflow-hidden bg-[#f1f5f9] p-4 sm:p-6">
       <style>{`
         @keyframes fmFadeUp { from { opacity: 0; transform: translateY(14px); } to { opacity: 1; transform: none; } }
         .fm-in { animation: fmFadeUp .5s cubic-bezier(.22,1,.36,1) both; }
@@ -447,10 +890,10 @@ const FeesManagement = ({ setShowAdminHeader }) => {
       <div className="pointer-events-none absolute -right-24 top-1/3 h-96 w-96 rounded-full bg-sky-300/25 blur-3xl" />
       <div className="pointer-events-none absolute -bottom-24 left-1/3 h-80 w-80 rounded-full bg-emerald-200/25 blur-3xl" />
 
-      <div className="relative mx-auto max-w-[1400px] space-y-5">
+      <div className="relative mx-auto flex w-full max-w-[1400px] flex-1 min-h-0 flex-col space-y-4">
 
       {/* ── Page header ── */}
-      <div className="fm-in flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between" style={{ animationDelay: '0ms' }}>
+      <div className="fm-in flex shrink-0 flex-col gap-3 sm:flex-row sm:items-center sm:justify-between" style={{ animationDelay: '0ms' }}>
         <div className="flex items-center gap-3">
           <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-2xl border border-white/60 bg-white/60 shadow-[0_8px_24px_rgba(139,92,246,0.25)] backdrop-blur-md">
             <Layers className="h-5 w-5 text-violet-500" />
@@ -469,11 +912,18 @@ const FeesManagement = ({ setShowAdminHeader }) => {
             {loading ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <RefreshCw className="h-3.5 w-3.5" />}
             Refresh
           </button>
+          <button
+            onClick={openCreateForm}
+            className="inline-flex w-full items-center justify-center gap-2 rounded-xl bg-violet-500 px-4 py-2.5 text-xs font-semibold text-white shadow-[0_8px_24px_rgba(139,92,246,0.35)] transition-all duration-150 hover:-translate-y-0.5 hover:bg-violet-600 sm:w-auto"
+          >
+            <Plus className="h-3.5 w-3.5" />
+            Add Fees
+          </button>
         </div>
       </div>
 
       {/* ── Stats cards ── */}
-      <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
+      <div className="grid shrink-0 grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
         {[
           { label: 'Structures',      value: loading ? '…' : dashboardStats.count,               icon: BookOpen,    ic: 'text-violet-500'  },
           { label: 'Total Value',     value: loading ? '…' : money(dashboardStats.totalValue),   icon: IndianRupee, ic: 'text-violet-500'  },
@@ -497,398 +947,159 @@ const FeesManagement = ({ setShowAdminHeader }) => {
       </div>
 
       {/* ── Notices ── */}
-      {error  && <div className="fm-in flex items-center gap-2.5 rounded-2xl border border-rose-200/70 bg-rose-50/70 px-4 py-3 text-sm text-rose-700 backdrop-blur-md"><AlertCircle className="h-4 w-4 shrink-0" />{error}</div>}
-      {notice && <div className="fm-in flex items-center gap-2.5 rounded-2xl border border-emerald-200/70 bg-emerald-50/70 px-4 py-3 text-sm text-emerald-700 backdrop-blur-md"><CheckCircle2 className="h-4 w-4 shrink-0" />{notice}</div>}
+      {error  && <div className="fm-in flex shrink-0 items-center gap-2.5 rounded-2xl border border-rose-200/70 bg-rose-50/70 px-4 py-3 text-sm text-rose-700 backdrop-blur-md"><AlertCircle className="h-4 w-4 shrink-0" />{error}</div>}
+      {notice && <div className="fm-in flex shrink-0 items-center gap-2.5 rounded-2xl border border-emerald-200/70 bg-emerald-50/70 px-4 py-3 text-sm text-emerald-700 backdrop-blur-md"><CheckCircle2 className="h-4 w-4 shrink-0" />{notice}</div>}
 
-      {/* ── Two-column layout ── */}
-      <div className="grid grid-cols-1 gap-5 xl:grid-cols-[1fr_480px]">
-
-        {/* ── Left: Saved Structures ── */}
-        <div className={`fm-in overflow-hidden ${glassCard}`} style={{ animationDelay: '300ms' }}>
-          {/* Filter bar */}
-          <div className="space-y-3 border-b border-white/50 px-6 py-4">
-            <div className="flex items-center justify-between gap-2">
-              <span className="text-sm font-semibold text-slate-800">Saved Structures</span>
-              {!loading && (
-                <span className="rounded-full border border-violet-200/70 bg-violet-50/70 px-2.5 py-1 text-xs font-semibold text-violet-700">
-                  {filteredStructures.length} {filteredStructures.length === 1 ? 'structure' : 'structures'}
-                </span>
-              )}
-            </div>
-            <div className="grid grid-cols-1 gap-2.5 sm:grid-cols-2 lg:grid-cols-4">
-              <div className="relative sm:col-span-2 lg:col-span-1">
-                <Search className="absolute left-3 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-slate-400" />
-                <input value={search} onChange={(e) => setSearch(e.target.value)} placeholder="Search name…" className={`${iCls} pl-9`} />
-              </div>
-              <select value={selectedYear} onChange={(e) => setSelectedYear(e.target.value)} className={sCls}>
-                <option value="">Select Active Session</option>
-                {activeAcademicYears.map((y) => <option key={y.id} value={y.id}>{y.name}</option>)}
-              </select>
-              <select
-                value={selectedClass}
-                onChange={(e) => setSelectedClass(e.target.value)}
-                className={sCls}
-                disabled={!selectedYear}
-              >
-                <option value="">{selectedYear ? 'All Classes' : 'Select session first'}</option>
-                {classOptionsBySelectedYear.map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}
-              </select>
-              <select value={selectedBoard} onChange={(e) => setSelectedBoard(e.target.value)} className={sCls}>
-                <option value="">All Boards</option>
-                {BOARD_OPTIONS.map((b) => <option key={b} value={b}>{b}</option>)}
-              </select>
-            </div>
+      {/* ── Saved Structures table ── */}
+      <div className={`fm-in flex flex-1 min-h-0 flex-col overflow-hidden ${glassCard}`} style={{ animationDelay: '300ms' }}>
+        {/* Filter bar */}
+        <div className="shrink-0 space-y-3 border-b border-white/50 px-6 py-4">
+          <div className="flex items-center justify-between gap-2">
+            <span className="text-sm font-semibold text-slate-800">Saved Structures</span>
+            {!loading && (
+              <span className="rounded-full border border-violet-200/70 bg-violet-50/70 px-2.5 py-1 text-xs font-semibold text-violet-700">
+                {filteredStructures.length} {filteredStructures.length === 1 ? 'structure' : 'structures'}
+              </span>
+            )}
           </div>
+          <div className="grid grid-cols-1 gap-2.5 sm:grid-cols-2 lg:grid-cols-4">
+            <div className="relative sm:col-span-2 lg:col-span-1">
+              <Search className="absolute left-3 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-slate-400" />
+              <input value={search} onChange={(e) => setSearch(e.target.value)} placeholder="Search name…" className={`${iCls} pl-9`} />
+            </div>
+            <select value={selectedYear} onChange={(e) => setSelectedYear(e.target.value)} className={sCls}>
+              <option value="">Select Active Session</option>
+              {activeAcademicYears.map((y) => <option key={y.id} value={y.id}>{y.name}</option>)}
+            </select>
+            <select
+              value={selectedClass}
+              onChange={(e) => setSelectedClass(e.target.value)}
+              className={sCls}
+              disabled={!selectedYear}
+            >
+              <option value="">{selectedYear ? 'All Classes' : 'Select session first'}</option>
+              {classOptionsBySelectedYear.map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}
+            </select>
+            <select value={selectedBoard} onChange={(e) => setSelectedBoard(e.target.value)} className={sCls}>
+              <option value="">All Boards</option>
+              {BOARD_OPTIONS.map((b) => <option key={b} value={b}>{b}</option>)}
+            </select>
+          </div>
+        </div>
 
-          {/* Structure list */}
-          <div className="max-h-[620px] divide-y divide-white/50 overflow-y-auto">
-            {loading && (
-              <div className="flex flex-col items-center justify-center gap-3 py-16">
-                <div className="flex h-10 w-10 items-center justify-center rounded-xl border border-white/60 bg-white/60 backdrop-blur-md">
-                  <Loader2 className="h-5 w-5 animate-spin text-violet-500" />
-                </div>
-                <p className="text-sm text-slate-400">Loading structures…</p>
-              </div>
-            )}
-            {!loading && filteredStructures.length === 0 && (
-              <div className="m-6 flex flex-col items-center justify-center gap-3 rounded-2xl border border-dashed border-slate-300/70 py-14">
-                <div className="flex h-14 w-14 items-center justify-center rounded-2xl border border-white/60 bg-white/50 backdrop-blur-md">
-                  <BookOpen className="h-7 w-7 text-slate-300" />
-                </div>
-                <p className="text-sm font-semibold text-slate-500">No structures found</p>
-                <p className="text-xs text-slate-400">Try adjusting filters or create a new structure.</p>
-              </div>
-            )}
-            {!loading && filteredStructures.map((item, i) => (
-              <div
-                key={item._id}
-                className={`fm-in px-6 py-4 transition-colors duration-150 ${activeId === item._id ? 'border-l-4 border-l-violet-400 bg-violet-50/50' : 'border-l-4 border-l-transparent hover:bg-white/50'}`}
-                style={{ animationDelay: `${Math.min(i * 40, 320)}ms` }}
-              >
-                <div className="flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between sm:gap-3">
-                  <div className="min-w-0">
-                    <h3 className="truncate text-sm font-semibold text-slate-900">{item.name || 'Unnamed'}</h3>
-                    <div className="mt-1.5 flex flex-wrap items-center gap-1.5">
+        {/* Structure table */}
+        {loading && (
+          <div className="flex flex-col items-center justify-center gap-3 py-16">
+            <div className="flex h-10 w-10 items-center justify-center rounded-xl border border-white/60 bg-white/60 backdrop-blur-md">
+              <Loader2 className="h-5 w-5 animate-spin text-violet-500" />
+            </div>
+            <p className="text-sm text-slate-400">Loading structures…</p>
+          </div>
+        )}
+        {!loading && filteredStructures.length === 0 && (
+          <div className="m-6 flex flex-col items-center justify-center gap-3 rounded-2xl border border-dashed border-slate-300/70 py-14">
+            <div className="flex h-14 w-14 items-center justify-center rounded-2xl border border-white/60 bg-white/50 backdrop-blur-md">
+              <BookOpen className="h-7 w-7 text-slate-300" />
+            </div>
+            <p className="text-sm font-semibold text-slate-500">No structures found</p>
+            <p className="text-xs text-slate-400">Try adjusting filters, or click &quot;Add Fees&quot; to create one.</p>
+          </div>
+        )}
+        {!loading && filteredStructures.length > 0 && (
+          <div className="flex-1 min-h-0 overflow-auto">
+            <table className="w-full min-w-[860px] border-collapse text-left">
+              <thead className="sticky top-0 z-[1] bg-white/85 backdrop-blur-md">
+                <tr className="border-b border-white/60">
+                  <th className="px-6 py-3 text-[11px] font-semibold uppercase tracking-wider text-slate-500">Structure</th>
+                  <th className="px-4 py-3 text-[11px] font-semibold uppercase tracking-wider text-slate-500">Class</th>
+                  <th className="px-4 py-3 text-[11px] font-semibold uppercase tracking-wider text-slate-500">Board</th>
+                  <th className="px-4 py-3 text-[11px] font-semibold uppercase tracking-wider text-slate-500">Session</th>
+                  <th className="px-4 py-3 text-[11px] font-semibold uppercase tracking-wider text-slate-500">Late Fine</th>
+                  <th className="px-4 py-3 text-right text-[11px] font-semibold uppercase tracking-wider text-slate-500">Total</th>
+                  <th className="px-4 py-3 text-center text-[11px] font-semibold uppercase tracking-wider text-slate-500">Actions</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-white/50">
+                {paginatedStructures.map((item, i) => (
+                  <tr
+                    key={item._id}
+                    className={`fm-in transition-colors duration-150 ${activeId === item._id ? 'bg-violet-50/50' : 'hover:bg-white/50'}`}
+                    style={{ animationDelay: `${Math.min(i * 40, 320)}ms` }}
+                  >
+                    <td className="px-6 py-3.5">
+                      <p className="text-sm font-semibold text-slate-900">{item.name || 'Unnamed'}</p>
+                      <p className="mt-0.5 text-[11px] text-slate-400">{(item.feeHeads || []).length} heads · {(item.installments || []).length} installments</p>
+                    </td>
+                    <td className="px-4 py-3.5">
                       <span className="inline-flex items-center rounded-full border border-violet-200/70 bg-violet-50/70 px-2 py-0.5 text-[11px] font-semibold text-violet-700">
                         {item.className || classNameById.get(String(item.classId)) || '—'}
                       </span>
+                    </td>
+                    <td className="px-4 py-3.5">
                       <span className="inline-flex items-center rounded-full border border-slate-200/70 bg-slate-100/70 px-2 py-0.5 text-[11px] font-semibold text-slate-600">
                         {item.board || 'GENERAL'}
                       </span>
-                      <span className="inline-flex items-center rounded-full border border-rose-200/70 bg-rose-50/70 px-2 py-0.5 text-[11px] font-semibold text-rose-700">
-                        Fine {money(item.lateFeeAmount || 0)}/day
-                      </span>
-                      {item.academicYearId && (
+                    </td>
+                    <td className="px-4 py-3.5">
+                      {item.academicYearId ? (
                         <span className="inline-flex items-center rounded-full border border-sky-200/70 bg-sky-50/70 px-2 py-0.5 text-[11px] font-semibold text-sky-700">
                           {yearNameById.get(String(item.academicYearId)) || 'Academic Year'}
                         </span>
+                      ) : (
+                        <span className="text-xs text-slate-300">—</span>
                       )}
-                    </div>
-                  </div>
-                  <div className="shrink-0 text-left sm:text-right">
-                    <p className="text-base font-semibold text-slate-900">{money(item.totalAmount)}</p>
-                    <p className="mt-0.5 text-[11px] text-slate-400">{(item.feeHeads || []).length} heads · {(item.installments || []).length} installments</p>
-                  </div>
-                </div>
-                <div className="mt-3 flex flex-wrap gap-2">
-                  <button onClick={() => editStructure(item)} className={ghostBtn}>
-                    <Edit3 className="h-3 w-3 text-violet-500" />
-                    Edit
-                  </button>
-                  <button onClick={() => handleDownloadStructurePdf(item)} className={ghostBtn}>
-                    <Download className="h-3 w-3 text-emerald-500" />
-                    PDF
-                  </button>
-                  <button onClick={() => deleteStructure(item)} className={ghostBtn}>
-                    <Trash2 className="h-3 w-3 text-rose-500" />
-                    Delete
-                  </button>
-                </div>
-              </div>
-            ))}
-          </div>
-        </div>
-
-        {/* ── Right: Form Builder ── */}
-        <div className={`fm-in ${glassCard} xl:sticky xl:top-6 xl:max-h-[calc(100vh-6rem)] xl:overflow-y-auto`} style={{ animationDelay: '360ms' }}>
-          {/* Form header */}
-          <div className="flex items-center justify-between border-b border-white/50 px-6 py-5">
-            <div>
-              <h2 className="text-sm font-semibold text-slate-900">{activeId ? 'Edit Structure' : 'Create Structure'}</h2>
-              <p className="mt-0.5 text-xs text-slate-500">Fill all 3 steps then save</p>
-            </div>
-            {activeId && (
-              <button
-                onClick={resetForm}
-                className="flex h-8 w-8 items-center justify-center rounded-xl text-slate-400 transition-all duration-150 hover:bg-white/70 hover:text-slate-600"
-              >
-                <X className="h-4 w-4" />
-              </button>
-            )}
-          </div>
-
-          <div className="space-y-6 p-6">
-            {/* Step indicators */}
-            <div className="grid grid-cols-3 gap-2">
-              {[
-                { label: '1. Basics',       done: basicsDone },
-                { label: '2. Fee Heads',    done: headsDone },
-                { label: '3. Installments', done: installmentsDone },
-              ].map((step) => (
-                <div
-                  key={step.label}
-                  className={`flex items-center justify-center gap-1.5 rounded-xl border py-2 text-xs font-semibold backdrop-blur-md transition-all duration-200 ${
-                    step.done
-                      ? 'border-emerald-200/70 bg-emerald-50/70 text-emerald-700'
-                      : 'border-white/70 bg-white/45 text-slate-400'
-                  }`}
-                >
-                  {step.done && <CheckCircle2 className="h-3.5 w-3.5" />}
-                  {step.label}
-                </div>
-              ))}
-            </div>
-
-            {/* Step 1 — Basics */}
-            <div className="space-y-3">
-              <p className="text-[11px] font-semibold uppercase tracking-wider text-slate-500">Step 1 — Basics</p>
-              <div className="space-y-1.5">
-                <label className="block text-[11px] font-semibold uppercase tracking-wider text-slate-500">Board</label>
-                <select value={form.board} onChange={(e) => setForm((prev) => ({ ...prev, board: e.target.value }))} className={sCls}>
-                  {BOARD_OPTIONS.map((b) => <option key={b} value={b}>{b}</option>)}
-                </select>
-              </div>
-              <div className="space-y-1.5">
-                <label className="block text-[11px] font-semibold uppercase tracking-wider text-slate-500">Structure Name <span className="text-rose-400">*</span></label>
-                <input
-                  value={form.name}
-                  onChange={(e) => setForm((prev) => ({ ...prev, name: e.target.value }))}
-                  placeholder="e.g. Class 9 Annual Fees 2026"
-                  className={iCls}
-                />
-              </div>
-              <div className="space-y-1.5">
-                <label className="block text-[11px] font-semibold uppercase tracking-wider text-slate-500">Session <span className="text-rose-400">*</span></label>
-                <select
-                  value={form.academicYearId}
-                  onChange={(e) =>
-                    setForm((prev) => ({
-                      ...prev,
-                      academicYearId: e.target.value,
-                      classId: '',
-                      className: '',
-                    }))
-                  }
-                  className={sCls}
-                >
-                  <option value="">Select active session</option>
-                  {activeAcademicYears.map((y) => <option key={y.id} value={y.id}>{y.name}</option>)}
-                </select>
-              </div>
-              <div className="space-y-1.5">
-                <label className="block text-[11px] font-semibold uppercase tracking-wider text-slate-500">Class <span className="text-rose-400">*</span></label>
-                <select
-                  value={form.classId}
-                  onChange={(e) =>
-                    setForm((prev) => ({
-                      ...prev,
-                      classId: e.target.value,
-                      className: classNameById.get(String(e.target.value)) || '',
-                    }))
-                  }
-                  className={sCls}
-                  disabled={!form.academicYearId}
-                >
-                  <option value="">{form.academicYearId ? 'Select class' : 'Select session first'}</option>
-                  {classOptionsByFormYear.map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}
-                </select>
-              </div>
-              <div className="space-y-1.5">
-                <label className="block text-[11px] font-semibold uppercase tracking-wider text-slate-500">Late Fine Amount (Per Day)</label>
-                <div className="relative">
-                  <span className="absolute left-3.5 top-1/2 -translate-y-1/2 text-sm font-medium text-slate-400">₹</span>
-                  <input
-                    type="number"
-                    min="0"
-                    value={form.lateFeeAmount}
-                    onChange={(e) => setForm((prev) => ({ ...prev, lateFeeAmount: e.target.value }))}
-                    placeholder="0"
-                    className={`${iCls} pl-7`}
-                  />
-                </div>
-                <p className="text-[11px] text-slate-400">Auto-added daily after due date while invoice remains unpaid.</p>
-              </div>
-            </div>
-
-            {/* Step 2 — Fee Heads */}
-            <div className="space-y-3">
-              <div className="flex items-center justify-between">
-                <p className="text-[11px] font-semibold uppercase tracking-wider text-slate-500">Step 2 — Fee Heads</p>
-                <button onClick={addHead} className={ghostBtn}>
-                  <Plus className="h-3.5 w-3.5 text-violet-500" />
-                  Add Head
-                </button>
-              </div>
-
-              {form.feeHeads.length === 0 ? (
-                <div className="rounded-xl border border-dashed border-slate-300/70 bg-white/30 py-6 text-center text-xs text-slate-400">
-                  No fee heads added — click "Add Head" above.
-                </div>
-              ) : (
-                <div className="space-y-2">
-                  {form.feeHeads.map((item, index) => (
-                    <div key={index} className={`space-y-2 p-3 ${glassInset}`}>
-                      <div className="flex items-center justify-between gap-2">
-                        <span className="text-[11px] font-semibold uppercase tracking-wider text-slate-500">Head {index + 1}</span>
-                        <button onClick={() => removeHead(index)} className="flex h-6 w-6 items-center justify-center rounded-lg text-rose-400 transition-all duration-150 hover:bg-rose-50/70 hover:text-rose-600">
-                          <X className="h-3.5 w-3.5" />
+                    </td>
+                    <td className="px-4 py-3.5">
+                      <span className="inline-flex items-center rounded-full border border-rose-200/70 bg-rose-50/70 px-2 py-0.5 text-[11px] font-semibold text-rose-700">
+                        {money(item.lateFeeAmount || 0)}/day
+                      </span>
+                    </td>
+                    <td className="px-4 py-3.5 text-right text-sm font-semibold text-slate-900">{money(item.totalAmount)}</td>
+                    <td className="px-4 py-3.5">
+                      <div className="flex flex-wrap items-center justify-center gap-2">
+                        <button onClick={() => editStructure(item)} className={ghostBtn} title="Edit">
+                          <Edit3 className="h-3.5 w-3.5 text-violet-500" />
+                        </button>
+                        <button onClick={() => handleDownloadStructurePdf(item)} className={ghostBtn} title="Download PDF">
+                          <Download className="h-3.5 w-3.5 text-emerald-500" />
+                        </button>
+                        <button onClick={() => deleteStructure(item)} className={ghostBtn} title="Delete">
+                          <Trash2 className="h-3.5 w-3.5 text-rose-500" />
                         </button>
                       </div>
-                      <select
-                        value={FEE_HEAD_OPTIONS.includes(item.label) ? item.label : 'CUSTOM'}
-                        onChange={(e) => {
-                          const v = e.target.value;
-                          const isCustom = v === 'CUSTOM';
-                          updateHead(index, 'label', isCustom ? '' : v);
-                          if (!isCustom) updateHead(index, 'customLabel', '');
-                        }}
-                        className={sCls}
-                      >
-                        <option value="">Select fee head</option>
-                        {FEE_HEAD_OPTIONS.map((o) => <option key={o} value={o}>{o}</option>)}
-                        <option value="CUSTOM">Custom…</option>
-                      </select>
-                      {!FEE_HEAD_OPTIONS.includes(item.label) && (
-                        <input
-                          value={item.customLabel || ''}
-                          onChange={(e) => updateHead(index, 'customLabel', e.target.value)}
-                          placeholder="Enter custom fee head name"
-                          className={iCls}
-                        />
-                      )}
-                      <div className="relative">
-                        <span className="absolute left-3.5 top-1/2 -translate-y-1/2 text-sm font-medium text-slate-400">₹</span>
-                        <input
-                          type="number"
-                          min="0"
-                          value={item.amount}
-                          onChange={(e) => updateHead(index, 'amount', e.target.value)}
-                          placeholder="Amount"
-                          className={`${iCls} pl-7`}
-                        />
-                      </div>
-                    </div>
-                  ))}
-                  <div className="flex items-center justify-between rounded-xl border border-violet-200/70 bg-violet-50/70 px-4 py-2.5 backdrop-blur-md">
-                    <span className="text-xs font-semibold text-violet-700">Heads Total</span>
-                    <span className="text-sm font-semibold text-violet-900">{money(formTotal)}</span>
-                  </div>
-                </div>
-              )}
-            </div>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        )}
 
-            {/* Step 3 — Installments */}
-            <div className="space-y-3">
-              <div className="flex items-center justify-between">
-                <p className="text-[11px] font-semibold uppercase tracking-wider text-slate-500">Step 3 — Installments</p>
-                <button onClick={addInstallment} className={ghostBtn}>
-                  <Plus className="h-3.5 w-3.5 text-violet-500" />
-                  Add Installment
-                </button>
-              </div>
-
-              {form.installments.length === 0 ? (
-                <div className="rounded-xl border border-dashed border-slate-300/70 bg-white/30 py-6 text-center text-xs text-slate-400">
-                  No installments — fee will be collected as a lump sum.
-                </div>
-              ) : (
-                <div className="space-y-2">
-                  {form.installments.map((item, index) => (
-                    <div key={index} className={`space-y-2 p-3 ${glassInset}`}>
-                      <div className="flex items-center justify-between gap-2">
-                        <span className="text-[11px] font-semibold uppercase tracking-wider text-slate-500">Installment {index + 1}</span>
-                        <button onClick={() => removeInstallment(index)} className="flex h-6 w-6 items-center justify-center rounded-lg text-rose-400 transition-all duration-150 hover:bg-rose-50/70 hover:text-rose-600">
-                          <X className="h-3.5 w-3.5" />
-                        </button>
-                      </div>
-                      <input
-                        value={item.label}
-                        onChange={(e) => updateInstallment(index, 'label', e.target.value)}
-                        placeholder="e.g. Term 1, Quarter 2"
-                        className={iCls}
-                      />
-                      <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
-                        <div className="relative">
-                          <span className="absolute left-3.5 top-1/2 -translate-y-1/2 text-sm font-medium text-slate-400">₹</span>
-                          <input
-                            type="number"
-                            min="0"
-                            value={item.amount}
-                            onChange={(e) => updateInstallment(index, 'amount', e.target.value)}
-                            placeholder="Amount"
-                            className={`${iCls} pl-7`}
-                          />
-                        </div>
-                        <input
-                          type="date"
-                          value={item.dueDate || ''}
-                          onChange={(e) => updateInstallment(index, 'dueDate', e.target.value)}
-                          className={iCls}
-                        />
-                      </div>
-                    </div>
-                  ))}
-                </div>
-              )}
-            </div>
-
-            {/* Totals summary */}
-            {(form.feeHeads.length > 0 || form.installments.length > 0) && (
-              <div className="divide-y divide-white/50 overflow-hidden rounded-2xl border border-white/70 bg-white/45 backdrop-blur-md">
-                <div className="flex items-center justify-between px-4 py-3">
-                  <span className="text-xs font-semibold text-slate-600">Fee Heads Total</span>
-                  <span className="text-sm font-semibold text-slate-900">{money(formTotal)}</span>
-                </div>
-                <div className="flex items-center justify-between px-4 py-3">
-                  <span className="text-xs font-semibold text-slate-600">Installments Total</span>
-                  <span className="text-sm font-semibold text-slate-900">{money(installmentTotal)}</span>
-                </div>
-                <div className={`flex items-center justify-between px-4 py-3 ${differenceTotal === 0 ? 'bg-emerald-50/70' : 'bg-amber-50/70'}`}>
-                  <span className={`flex items-center gap-1.5 text-xs font-semibold ${differenceTotal === 0 ? 'text-emerald-700' : 'text-amber-700'}`}>
-                    {differenceTotal === 0 && <CheckCircle2 className="h-3.5 w-3.5" />}
-                    {differenceTotal === 0 ? 'Balanced' : 'Difference'}
-                  </span>
-                  <span className={`text-sm font-semibold ${differenceTotal === 0 ? 'text-emerald-700' : 'text-amber-700'}`}>
-                    {differenceTotal === 0 ? 'Matched' : money(Math.abs(differenceTotal))}
-                  </span>
-                </div>
-                {configuredInstallments > 0 && differenceTotal !== 0 && (
-                  <div className="bg-amber-50/70 px-4 py-2.5">
-                    <p className="text-[11px] text-amber-700">Last installment will be auto-adjusted on save to match the total.</p>
-                  </div>
-                )}
-              </div>
-            )}
-
-            {/* Actions */}
-            <div className="flex flex-col-reverse gap-3 border-t border-white/50 pt-4 sm:flex-row sm:items-center sm:justify-end">
+        {/* Pagination */}
+        {!loading && filteredStructures.length > 0 && (
+          <div className="flex shrink-0 flex-wrap items-center justify-between gap-3 border-t border-white/50 px-6 py-3">
+            <p className="text-xs text-slate-400">
+              Showing {(page - 1) * PAGE_SIZE + 1}–{Math.min(page * PAGE_SIZE, filteredStructures.length)} of {filteredStructures.length}
+            </p>
+            <div className="flex items-center gap-1.5">
               <button
-                onClick={resetForm}
-                className="w-full rounded-xl border border-white/70 bg-white/55 px-4 py-2.5 text-sm font-semibold text-slate-600 backdrop-blur-md transition-all duration-150 hover:-translate-y-0.5 hover:bg-white/80 sm:w-auto"
+                onClick={() => setPage((p) => Math.max(1, p - 1))}
+                disabled={page <= 1}
+                className="rounded-lg border border-white/70 bg-white/55 px-3 py-1.5 text-xs font-semibold text-slate-600 backdrop-blur-md transition-all duration-150 hover:bg-white/80 disabled:cursor-not-allowed disabled:opacity-40"
               >
-                Reset
+                Prev
               </button>
+              <span className="px-2 text-xs font-semibold text-slate-500">{page} / {totalPages}</span>
               <button
-                onClick={saveStructure}
-                disabled={saving}
-                className="inline-flex w-full items-center justify-center gap-2 rounded-xl bg-violet-500 px-5 py-2.5 text-sm font-semibold text-white shadow-[0_8px_24px_rgba(139,92,246,0.35)] transition-all duration-150 hover:-translate-y-0.5 hover:bg-violet-600 disabled:opacity-60 sm:w-auto"
+                onClick={() => setPage((p) => Math.min(totalPages, p + 1))}
+                disabled={page >= totalPages}
+                className="rounded-lg border border-white/70 bg-white/55 px-3 py-1.5 text-xs font-semibold text-slate-600 backdrop-blur-md transition-all duration-150 hover:bg-white/80 disabled:cursor-not-allowed disabled:opacity-40"
               >
-                {saving ? <Loader2 className="h-4 w-4 animate-spin" /> : <Save className="h-4 w-4" />}
-                {saving ? 'Saving…' : activeId ? 'Update Structure' : 'Save Structure'}
+                Next
               </button>
             </div>
           </div>
-        </div>
+        )}
       </div>
       </div>
     </div>
