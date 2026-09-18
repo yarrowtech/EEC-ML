@@ -850,7 +850,7 @@ const DrawerModal = ({
               <SectionTitle icon={FileText} iconColor="text-purple-400">Reports & Additional Files</SectionTitle>
               <div className="grid gap-3 sm:grid-cols-2">
                 <UploadDropzone
-                  title="Report Upload"
+                  title="Class Notes"
                   accept=".pdf,.doc,.docx,.xls,.xlsx,image/*"
                   files={chapter.contentUploads?.['Report Upload'] || []}
                   onAddFile={(file) => onAddContentFile(file, 'Report Upload')}
@@ -899,29 +899,7 @@ const DrawerModal = ({
               </div>
             </Card>
 
-            {/* Worksheets */}
-            <Card>
-              
-              <div className="grid gap-3 sm:grid-cols-2">
-                <UploadDropzone
-                  title="Worksheet Files"
-                  accept=".pdf,.doc,.docx,.xls,.xlsx,image/*"
-                  files={chapter.contentUploads?.['Upload Worksheet'] || []}
-                  onAddFile={(file) => onAddContentFile(file, 'Upload Worksheet')}
-                  onRemoveFile={(fileId) => onRemoveContentFile(fileId, 'Upload Worksheet')}
-                />
-                <div className="flex flex-col justify-center rounded-xl border border-dashed border-slate-300 bg-slate-50 p-3 dark:border-slate-700 dark:bg-slate-800/40">
-                  <p className="mb-2 text-xs font-semibold text-slate-600 dark:text-slate-300">Worksheet Link</p>
-                  <Input
-                    value={chapter.worksheetLink || ''}
-                    onChange={(e) => onUpdate({ ...chapter, worksheetLink: e.target.value })}
-                    placeholder="Paste a Google Docs / Drive URL…"
-                    className="text-xs"
-                    style={{ color: '#0f172a', caretColor: '#0f172a' }}
-                  />
-                </div>
-              </div>
-            </Card>
+            {/* Worksheets */}        
 
           </div>
         );
@@ -1197,7 +1175,7 @@ const DrawerModal = ({
                   </div>
 
                   <div>
-                    <label className="mb-1 block text-xs font-semibold uppercase tracking-wide text-slate-500">Prompt / Question *</label>
+                    <label className="mb-1 block text-xs font-semibold uppercase tracking-wide text-slate-500">Question *</label>
                     <textarea
                       className={`${inputCls} resize-y`}
                       rows={3}
@@ -1296,9 +1274,7 @@ const DrawerModal = ({
       case 'publish':
         return (
           <div className="space-y-4">
-            <p className={`rounded-lg px-3 py-2 text-sm font-medium ${accent.banner}`}>
-              Add private notes, rate the class, then publish this chapter to students.
-            </p>
+            
 
             <Card>
               <p className="mb-2 text-sm font-semibold text-slate-800 dark:text-slate-100">
@@ -1456,7 +1432,7 @@ const DrawerModal = ({
                 disabled={isPublishing}
                 className="gap-1 rounded-full bg-[#059669] px-4 text-white shadow-[0_4px_12px_-4px_rgba(5,150,105,0.4)] hover:bg-emerald-700 disabled:opacity-50 sm:px-6"
               >
-                {isPublishing ? (isPublished ? 'Updating...' : 'Publishing...') : <><Send className="size-3.5" /> {isPublished ? 'Update' : 'Publish'}</>}
+                {isPublishing ? (isPublished ? 'Updating...' : 'Publishing...') : <><Send className="size-3.5" /> {isPublished ? 'Publish ' : 'Publish'}</>}
               </Button>
             )}
           </div>
