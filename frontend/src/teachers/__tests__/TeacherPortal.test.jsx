@@ -115,7 +115,9 @@ describe('TeacherPortal', () => {
 
   test('opens profile dropdown when avatar is clicked', async () => {
     renderPortal('/teacher/dashboard');
-    const profileButton = await screen.findByLabelText(/profile menu/i);
+    // Exact match: the mobile bottom nav's "Open profile menu" button also
+    // contains the substring "profile menu" and would otherwise also match.
+    const profileButton = await screen.findByLabelText('Profile menu');
 
     await userEvent.click(profileButton);
 
