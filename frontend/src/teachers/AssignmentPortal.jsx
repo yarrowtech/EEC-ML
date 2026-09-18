@@ -2015,25 +2015,63 @@ const EvaluateSubmissions = ({
         />
       ) : null}
 
-      <Motion.section layout className={`mb-7 overflow-x-auto rounded-[1.25rem] border border-[#edf0f5] bg-white p-1 shadow-[0_2px_12px_rgba(0,0,0,0.02)]${typeFilter === 'tryout' ? ' hidden' : ''}`}>
-        <table className="w-full min-w-[900px] border-collapse text-sm">
-          <thead><tr className="border-b border-[#edf0f5] bg-[#fafcff] text-left text-[10px] uppercase tracking-[0.04em] text-[#8e9aaf]"><th className="px-4 py-3">Student</th><th className="px-4 py-3">Assignment</th><th className="px-4 py-3">Type</th><th className="px-4 py-3">Status</th><th className="px-4 py-3">Score</th><th className="px-4 py-3">Action</th></tr></thead>
-          <tbody>
-            {loadingSubmissions ? <tr><td colSpan="6" className="px-4 py-12 text-center text-sm text-[#5f738f]"><Loader className="mx-auto mb-2 size-5 animate-spin text-blue-600" />Loading submissions...</td></tr> : visibleSubmissions.length === 0 ? <tr><td colSpan="6" className="px-4 py-12 text-center text-sm text-[#5f738f]"><FileText className="mx-auto mb-2 size-8 opacity-30" />No submissions match the current filters.</td></tr> : visibleSubmissions.map((submission, index) => {
-              const type = normalizeType(submission);
-              const typeClass = type.includes('worksheet') ? 'bg-amber-100 text-amber-800' : type.includes('mcq') ? 'bg-emerald-100 text-emerald-800' : type.includes('fill') ? 'bg-rose-100 text-rose-800' : type.includes('writing') ? 'bg-purple-100 text-purple-800' : 'bg-indigo-100 text-indigo-800';
-              const canAiEvaluate = Boolean(submission.rubric && submission.submissionText);
-              return <Motion.tr key={submission.submissionId} initial={{ opacity: 0, x: -8 }} animate={{ opacity: 1, x: 0 }} transition={{ delay: index * 0.035 }} onClick={() => openSubmission(submission)} className={`cursor-pointer border-b border-[#f0f5fd] transition last:border-0 ${selected?.submissionId === submission.submissionId ? 'bg-[#eef4ff]' : 'hover:bg-[#f8fbff]'}`}>
-                <td className="px-4 py-3"><div className="flex items-center gap-2.5 font-semibold"><span className="flex size-7 items-center justify-center rounded-full bg-[#e4ecf7] text-[10px] text-[#1e3b5a]">{String(submission.studentName || 'S').split(' ').map((part) => part[0]).join('').slice(0, 2)}</span>{submission.studentName || 'Student'}</div></td>
-                <td className="px-4 py-3 font-medium text-[#1a304a]">{submission.assignmentTitle || 'Assignment'}</td>
-                <td className="px-4 py-3"><span className={`rounded-full px-3 py-1 text-[10px] font-semibold ${typeClass}`}>{submission.type || submission.assignmentType || 'Assignment'}</span></td>
-                <td className="px-4 py-3">{renderStatus(submission)}</td>
-                <td className="px-4 py-3"><span className="rounded-full border border-[#e2eaf2] bg-[#f8fafc] px-3 py-1 text-xs font-semibold">{submission.score !== null && submission.score !== undefined ? `${submission.score}/${submission.totalMarks}` : '—'}</span></td>
-                <td className="px-4 py-3"><div className="flex gap-1.5"><button type="button" onClick={(event) => { event.stopPropagation(); openSubmission(submission); }} className="inline-flex items-center gap-1 rounded-full bg-[#f0f6ff] px-3 py-1.5 text-[10px] font-medium text-blue-600"><Edit3 className="size-3" /> {submission.score !== null && submission.score !== undefined ? 'Review' : 'Evaluate'}</button><button type="button" onClick={(event) => { event.stopPropagation(); openSubmission(submission); if (canAiEvaluate) onAiEvaluate(submission); }} disabled={Boolean(aiEvaluatingId)} className="inline-flex items-center gap-1 rounded-full border border-green-200 bg-green-50 px-3 py-1.5 text-[10px] font-medium text-green-600 disabled:cursor-not-allowed disabled:opacity-50">{aiEvaluatingId === submission.submissionId ? <Loader className="size-3 animate-spin" /> : <Sparkles className="size-3" />} {aiEvaluatingId === submission.submissionId ? 'Evaluating…' : canAiEvaluate ? 'AI Evaluate' : 'Add rubric'}</button></div></td>
-              </Motion.tr>;
-            })}
-          </tbody>
-        </table>
+      <Motion.section layout className={`mb-7 rounded-[1.25rem] border border-[#edf0f5] bg-white p-1 shadow-[0_2px_12px_rgba(0,0,0,0.02)]${typeFilter === 'tryout' ? ' hidden' : ''}`}>
+        {loadingSubmissions ? (
+          <div className="px-4 py-12 text-center text-sm text-[#5f738f]"><Loader className="mx-auto mb-2 size-5 animate-spin text-blue-600" />Loading submissions...</div>
+        ) : visibleSubmissions.length === 0 ? (
+          <div className="px-4 py-12 text-center text-sm text-[#5f738f]"><FileText className="mx-auto mb-2 size-8 opacity-30" />No submissions match the current filters.</div>
+        ) : (
+          <>
+            {/* Card list on narrow screens — a 6-column table needs real
+                horizontal room a phone doesn't have; each submission becomes
+                a stacked card instead, student-portal style. */}
+            <div className="divide-y divide-[#f0f5fd] sm:hidden">
+              {visibleSubmissions.map((submission, index) => {
+                const type = normalizeType(submission);
+                const typeClass = type.includes('worksheet') ? 'bg-amber-100 text-amber-800' : type.includes('mcq') ? 'bg-emerald-100 text-emerald-800' : type.includes('fill') ? 'bg-rose-100 text-rose-800' : type.includes('writing') ? 'bg-purple-100 text-purple-800' : 'bg-indigo-100 text-indigo-800';
+                const canAiEvaluate = Boolean(submission.rubric && submission.submissionText);
+                return (
+                  <Motion.div key={submission.submissionId} initial={{ opacity: 0, x: -8 }} animate={{ opacity: 1, x: 0 }} transition={{ delay: index * 0.035 }} onClick={() => openSubmission(submission)} className={`px-4 py-3.5 transition ${selected?.submissionId === submission.submissionId ? 'bg-[#eef4ff]' : ''}`}>
+                    <div className="flex items-center justify-between gap-2">
+                      <div className="flex min-w-0 items-center gap-2.5 font-semibold"><span className="flex size-7 shrink-0 items-center justify-center rounded-full bg-[#e4ecf7] text-[10px] text-[#1e3b5a]">{String(submission.studentName || 'S').split(' ').map((part) => part[0]).join('').slice(0, 2)}</span><span className="truncate">{submission.studentName || 'Student'}</span></div>
+                      {renderStatus(submission)}
+                    </div>
+                    <p className="mt-1.5 truncate pl-9 text-xs font-medium text-[#1a304a]">{submission.assignmentTitle || 'Assignment'}</p>
+                    <div className="mt-2 flex flex-wrap items-center gap-1.5 pl-9">
+                      <span className={`rounded-full px-2.5 py-0.5 text-[10px] font-semibold ${typeClass}`}>{submission.type || submission.assignmentType || 'Assignment'}</span>
+                      <span className="rounded-full border border-[#e2eaf2] bg-[#f8fafc] px-2.5 py-0.5 text-[10px] font-semibold">{submission.score !== null && submission.score !== undefined ? `${submission.score}/${submission.totalMarks}` : 'Not scored'}</span>
+                    </div>
+                    <div className="mt-3 flex gap-1.5">
+                      <button type="button" onClick={(event) => { event.stopPropagation(); openSubmission(submission); }} className="inline-flex flex-1 items-center justify-center gap-1 rounded-full bg-[#f0f6ff] px-3 py-1.5 text-[11px] font-medium text-blue-600"><Edit3 className="size-3" /> {submission.score !== null && submission.score !== undefined ? 'Review' : 'Evaluate'}</button>
+                      <button type="button" onClick={(event) => { event.stopPropagation(); openSubmission(submission); if (canAiEvaluate) onAiEvaluate(submission); }} disabled={Boolean(aiEvaluatingId)} className="inline-flex flex-1 items-center justify-center gap-1 rounded-full border border-green-200 bg-green-50 px-3 py-1.5 text-[11px] font-medium text-green-600 disabled:cursor-not-allowed disabled:opacity-50">{aiEvaluatingId === submission.submissionId ? <Loader className="size-3 animate-spin" /> : <Sparkles className="size-3" />} {aiEvaluatingId === submission.submissionId ? 'Evaluating…' : canAiEvaluate ? 'AI Evaluate' : 'Add rubric'}</button>
+                    </div>
+                  </Motion.div>
+                );
+              })}
+            </div>
+
+            <div className="hidden overflow-x-auto sm:block">
+              <table className="w-full min-w-[900px] border-collapse text-sm">
+                <thead><tr className="border-b border-[#edf0f5] bg-[#fafcff] text-left text-[10px] uppercase tracking-[0.04em] text-[#8e9aaf]"><th className="px-4 py-3">Student</th><th className="px-4 py-3">Assignment</th><th className="px-4 py-3">Type</th><th className="px-4 py-3">Status</th><th className="px-4 py-3">Score</th><th className="px-4 py-3">Action</th></tr></thead>
+                <tbody>
+                  {visibleSubmissions.map((submission, index) => {
+                    const type = normalizeType(submission);
+                    const typeClass = type.includes('worksheet') ? 'bg-amber-100 text-amber-800' : type.includes('mcq') ? 'bg-emerald-100 text-emerald-800' : type.includes('fill') ? 'bg-rose-100 text-rose-800' : type.includes('writing') ? 'bg-purple-100 text-purple-800' : 'bg-indigo-100 text-indigo-800';
+                    const canAiEvaluate = Boolean(submission.rubric && submission.submissionText);
+                    return <Motion.tr key={submission.submissionId} initial={{ opacity: 0, x: -8 }} animate={{ opacity: 1, x: 0 }} transition={{ delay: index * 0.035 }} onClick={() => openSubmission(submission)} className={`cursor-pointer border-b border-[#f0f5fd] transition last:border-0 ${selected?.submissionId === submission.submissionId ? 'bg-[#eef4ff]' : 'hover:bg-[#f8fbff]'}`}>
+                      <td className="px-4 py-3"><div className="flex items-center gap-2.5 font-semibold"><span className="flex size-7 items-center justify-center rounded-full bg-[#e4ecf7] text-[10px] text-[#1e3b5a]">{String(submission.studentName || 'S').split(' ').map((part) => part[0]).join('').slice(0, 2)}</span>{submission.studentName || 'Student'}</div></td>
+                      <td className="px-4 py-3 font-medium text-[#1a304a]">{submission.assignmentTitle || 'Assignment'}</td>
+                      <td className="px-4 py-3"><span className={`rounded-full px-3 py-1 text-[10px] font-semibold ${typeClass}`}>{submission.type || submission.assignmentType || 'Assignment'}</span></td>
+                      <td className="px-4 py-3">{renderStatus(submission)}</td>
+                      <td className="px-4 py-3"><span className="rounded-full border border-[#e2eaf2] bg-[#f8fafc] px-3 py-1 text-xs font-semibold">{submission.score !== null && submission.score !== undefined ? `${submission.score}/${submission.totalMarks}` : '—'}</span></td>
+                      <td className="px-4 py-3"><div className="flex gap-1.5"><button type="button" onClick={(event) => { event.stopPropagation(); openSubmission(submission); }} className="inline-flex items-center gap-1 rounded-full bg-[#f0f6ff] px-3 py-1.5 text-[10px] font-medium text-blue-600"><Edit3 className="size-3" /> {submission.score !== null && submission.score !== undefined ? 'Review' : 'Evaluate'}</button><button type="button" onClick={(event) => { event.stopPropagation(); openSubmission(submission); if (canAiEvaluate) onAiEvaluate(submission); }} disabled={Boolean(aiEvaluatingId)} className="inline-flex items-center gap-1 rounded-full border border-green-200 bg-green-50 px-3 py-1.5 text-[10px] font-medium text-green-600 disabled:cursor-not-allowed disabled:opacity-50">{aiEvaluatingId === submission.submissionId ? <Loader className="size-3 animate-spin" /> : <Sparkles className="size-3" />} {aiEvaluatingId === submission.submissionId ? 'Evaluating…' : canAiEvaluate ? 'AI Evaluate' : 'Add rubric'}</button></div></td>
+                    </Motion.tr>;
+                  })}
+                </tbody>
+              </table>
+            </div>
+          </>
+        )}
       </Motion.section>
 
       {typeFilter !== 'tryout' && evaluationMode === 'bulk' ? (
