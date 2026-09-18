@@ -194,36 +194,24 @@ const PracticePapersPortal = () => {
     )) || null;
   }, [mapSubjects, subjectFilter, selectedSubjectName]);
 
-  // Only topics the teacher actually assigned a tryout to should be pickable —
-  // the lesson-plan tree otherwise lists every topic in the curriculum,
-  // assigned or not.
-  const assignedTopicTitles = useMemo(() => {
-    const titles = new Set();
-    (selectedSubjectMapEntry?.topics || []).forEach((topic) => {
-      if (Array.isArray(topic.tryoutSections) && topic.tryoutSections.length > 0) {
-        titles.add(String(topic.title || '').toLowerCase());
-      }
-    });
-    return titles;
-  }, [selectedSubjectMapEntry]);
-
-  const chapters = useMemo(() => {
-    const allChapters = selectedSubjectMapEntry?.chapters || [];
-    return allChapters
-      .map((chapter) => ({
-        ...chapter,
-        topics: (chapter.topics || []).filter((t) => assignedTopicTitles.has(String(t.title || '').toLowerCase())),
-      }))
-      .filter((chapter) => chapter.topics.length > 0);
-  }, [selectedSubjectMapEntry, assignedTopicTitles]);
+  // Every chapter from the student's published lesson plans is selectable —
+  // not just ones with a Topic Tryout, since a chapter can still have MCQ,
+  // Fill-in-the-Blank, Reading, or Writing content without a tryout.
+  const chapters = useMemo(
+    () => selectedSubjectMapEntry?.chapters || [],
+    [selectedSubjectMapEntry]
+  );
   const selectedChapterEntry = useMemo(
     () => chapters.find((c) => c.id === chapterFilter) || null,
     [chapters, chapterFilter]
   );
-  // A chapter maps to exactly one assigned topic in practice (each lesson
-  // plan covers one chapter/topic), so the topic is just the chapter's
-  // first — and only — real one, with no separate picker needed.
-  const selectedTopicEntry = selectedChapterEntry?.topics?.[0] || null;
+  // A chapter usually maps to one topic in practice, but now that chapters
+  // aren't filtered down to tryout-only topics, prefer whichever topic
+  // actually has a tryout (if any) over just the first one in the list.
+  const selectedTopicEntry = useMemo(() => {
+    const topics = selectedChapterEntry?.topics || [];
+    return topics.find((t) => Array.isArray(t.tryoutSections) && t.tryoutSections.length > 0) || topics[0] || null;
+  }, [selectedChapterEntry]);
   const selectedChapterTitle = selectedChapterEntry?.title || '';
   const selectedTopicTitle = selectedTopicEntry?.title || '';
 
@@ -379,7 +367,7 @@ const PracticePapersPortal = () => {
                 disabled={subjectFilter === 'all' || chapters.length === 0}
                 className="w-full appearance-none rounded-lg border border-slate-200 bg-slate-50 py-2 pl-9 pr-8 text-sm font-medium text-slate-700 hover:bg-slate-100 focus:outline-none focus:ring-2 focus:ring-indigo-500/30 disabled:cursor-not-allowed disabled:opacity-50"
               >
-                <option value="all">{chapters.length ? 'All Chapters' : 'No assigned topics yet'}</option>
+                <option value="all">{chapters.length ? 'All Chapters' : 'No assigned chapters yet'}</option>
                 {chapters.map((chapter) => (
                   <option key={chapter.id} value={chapter.id}>{chapter.title}</option>
                 ))}
