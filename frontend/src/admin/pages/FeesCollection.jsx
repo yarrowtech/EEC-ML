@@ -3,6 +3,7 @@ import { useNavigate } from 'react-router-dom';
 import { jsPDF } from 'jspdf';
 import {
   AlertCircle,
+  BarChart4,
   CheckCircle2,
   CreditCard,
   Download,
@@ -17,6 +18,7 @@ import {
   ListFilter,
   FileText,
 } from 'lucide-react';
+import FeesDashboard from './FeesDashboard';
 
 const API_BASE = (import.meta.env.VITE_API_URL || 'http://localhost:5000').replace(/\/$/, '');
 
@@ -79,6 +81,7 @@ const FeesCollection = ({ setShowAdminHeader }) => {
     notes: '',
   });
   const [onlinePaymentLoading, setOnlinePaymentLoading] = useState(false);
+  const [activeView, setActiveView] = useState('overview');
 
   useEffect(() => {
     setShowAdminHeader?.(false);
@@ -638,6 +641,34 @@ const FeesCollection = ({ setShowAdminHeader }) => {
         </div>
       </div>
 
+      {/* ── View tabs ── */}
+      <div className="fc-in inline-flex items-center gap-1 rounded-2xl border border-white/60 bg-white/55 p-1 backdrop-blur-md">
+        {[
+          { key: 'overview', label: 'Overview', icon: BarChart4 },
+          { key: 'payments', label: 'Collect & Manage', icon: CreditCard },
+        ].map((tab) => (
+          <button
+            key={tab.key}
+            type="button"
+            onClick={() => setActiveView(tab.key)}
+            className={`inline-flex items-center gap-2 rounded-xl px-4 py-2 text-xs font-semibold transition-all duration-150 ${
+              activeView === tab.key
+                ? 'bg-violet-500 text-white shadow-[0_8px_20px_rgba(139,92,246,0.3)]'
+                : 'text-slate-500 hover:bg-white/70'
+            }`}
+          >
+            <tab.icon className="h-3.5 w-3.5" />
+            {tab.label}
+          </button>
+        ))}
+      </div>
+
+      {activeView === 'overview' && (
+        <FeesDashboard embedded setShowAdminHeader={setShowAdminHeader} />
+      )}
+
+      {activeView === 'payments' && (
+      <>
       {/* ── Summary cards ── */}
       <div className="grid grid-cols-2 gap-4 lg:grid-cols-4">
         {CARD_CONFIG.map((card, i) => (
@@ -964,6 +995,8 @@ const FeesCollection = ({ setShowAdminHeader }) => {
           </table>
         </div>
       </div>
+      </>
+      )}
 
       {/* ── Online Payment Modal ── */}
       {onlinePaymentModal.open && (

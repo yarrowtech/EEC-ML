@@ -13,7 +13,6 @@ import {
   Settings,
   Receipt,
   UserSearch,
-  BarChart4,
   Layers,
   Building2,
   Shield,
@@ -48,23 +47,18 @@ export const ADMIN_MENU_ITEMS = [
   {
     icon: IndianRupee,
     label: 'Fees Management',
-    path: '/admin/fees/collection',
+    path: '/admin/fees/manage',
     hasSubmenu: true,
     submenu: [
       {
         icon: Layers,
-        label: 'Fees Manage',
+        label: 'Create Fees',
         path: '/admin/fees/manage'
       },
       {
         icon: Receipt,
         label: 'Fees Collection',
         path: '/admin/fees/collection'
-      },
-      {
-        icon: BarChart4,
-        label: 'Fees Dashboard',
-        path: '/admin/fees/dashboard'
       }
     ]
   },
@@ -201,7 +195,7 @@ export const ADMIN_MENU_SECTIONS = [
     items: ['Academic Setup', 'Teachers Management', 'Teacher Feedback', 'Routine Management', 'Exam Management', 'Result Management', 'Report Cards'],
   },
   { section: 'STUDENTS', items: ['Students', 'Parents', 'Promotion & Leave'] },
-  { section: 'FEES MANAGEMENT', items: ['Fees Dashboard', 'Fees Manage', 'Fees Collection'] },
+  { section: 'FEES MANAGEMENT', items: ['Create Fees', 'Fees Collection'] },
   { section: 'COMMUNICATION', items: ['Notices', 'Holiday List'] },
   { section: 'CAMPUS', items: ['Floor & Rooms'] },
   { section: 'HUMAN RESOURCES', items: ['HR'] },

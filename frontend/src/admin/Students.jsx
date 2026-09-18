@@ -777,7 +777,7 @@ const Students = ({ setShowAdminHeader }) => {
 
     try {
     const [studentsResult, parentsResult, invoicesResult] = await Promise.allSettled([
-      fetch(`${API_BASE}/api/admin/users/get-students`, {
+      fetch(`${API_BASE}/api/admin/users/get-students${useCache ? '' : '?fresh=1'}`, {
         method: "GET",
         headers: {
           "Content-Type": "application/json",
@@ -901,12 +901,10 @@ const Students = ({ setShowAdminHeader }) => {
       setStudentsLoadError(null);
       setStudentData(withFees);
       try {
-        if (withFees.length > 0) {
-          sessionStorage.setItem(
-            getStudentsCacheKey(),
-            JSON.stringify({ students: withFees, parents, cachedAt: Date.now() })
-          );
-        }
+        sessionStorage.setItem(
+          getStudentsCacheKey(),
+          JSON.stringify({ students: withFees, parents, cachedAt: Date.now() })
+        );
       } catch (err) {
         console.warn("Unable to cache students data", err);
       }
@@ -965,12 +963,10 @@ const Students = ({ setShowAdminHeader }) => {
     setStudentsLoadError(null);
     setStudentData(enriched);
     try {
-      if (enriched.length > 0) {
-        sessionStorage.setItem(
-          getStudentsCacheKey(),
-          JSON.stringify({ students: enriched, parents, cachedAt: Date.now() })
-        );
-      }
+      sessionStorage.setItem(
+        getStudentsCacheKey(),
+        JSON.stringify({ students: enriched, parents, cachedAt: Date.now() })
+      );
     } catch (err) {
       console.warn("Unable to cache students data", err);
     }

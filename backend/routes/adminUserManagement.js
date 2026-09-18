@@ -578,7 +578,13 @@ router.get("/get-students", adminAuth, async (req, res) => {
   // #swagger.tags = ['Admin Users']
   try {
     const cacheKey = directoryCacheKey(req);
-    const cached = studentsListCache.get(cacheKey);
+    // A request right after a mutation (bulk delete, import, etc.) passes
+    // ?fresh=1 to skip the cache read entirely — protects against the case
+    // where a slow concurrent request that started before the mutation's
+    // cache invalidation finishes just after it and re-populates the cache
+    // with stale (pre-mutation) data.
+    const skipCache = req.query?.fresh === '1';
+    const cached = skipCache ? null : studentsListCache.get(cacheKey);
     if (cached && cached.expires > Date.now()) {
       return res.status(200).json(cached.data);
     }

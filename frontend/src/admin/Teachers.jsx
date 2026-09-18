@@ -383,7 +383,6 @@ const Teachers = ({ setShowAdminHeader }) => {
   const [showAddForm, setShowAddForm] = useState(false);
   const [docPreview, setDocPreview] = useState(null); // { url, label } | null
   const [editingTeacherId, setEditingTeacherId] = useState(null);
-  const [submitStatus, setSubmitStatus] = useState(null);
   const [credentialLoadingId, setCredentialLoadingId] = useState(null);
   const [deletingTeacherId, setDeletingTeacherId] = useState(null);
   const [deleteConfirmTeacher, setDeleteConfirmTeacher] = useState(null);
@@ -764,7 +763,7 @@ const Teachers = ({ setShowAdminHeader }) => {
         password: passwordValue
       });
     } catch (error) {
-      setSubmitStatus({ type: 'error', message: error.message || 'Unable to load credentials' });
+      toast.error(error.message || 'Unable to load credentials');
     } finally {
       setPrincipalCredLoadingId(null);
     }
@@ -799,14 +798,12 @@ const Teachers = ({ setShowAdminHeader }) => {
           })
         );
       }
-      setSubmitStatus(null);
       toast.success(`${principal?.name || 'Principal'} deleted successfully.`);
       await Promise.allSettled([
         fetchPrincipals(),
         fetchTeachers({ useCache: false }),
       ]);
     } catch (error) {
-      setSubmitStatus(null);
       toast.error(error.message || 'Unable to delete principal');
     } finally {
       setPrincipalDeleteLoadingId(null);
@@ -1097,7 +1094,6 @@ const Teachers = ({ setShowAdminHeader }) => {
     setFormErrors(errors);
     if (Object.values(errors).some(Boolean)) return;
     try {
-      setSubmitStatus(null);
       const payload = {
         name: newTeacher.name,
         email: newTeacher.email,
@@ -1152,9 +1148,8 @@ const Teachers = ({ setShowAdminHeader }) => {
       }
 
       if (isEditMode) {
-        setSubmitStatus({ type: 'success', message: 'Teacher updated successfully.' });
+        toast.success('Teacher updated successfully.');
       } else {
-        setSubmitStatus(null);
         // The teacher is now real — the draft it was saved from is stale, drop it.
         if (activeTeacherDraftId) deleteTeacherDraft(activeTeacherDraftId).catch(() => { });
         toast.success(
@@ -1178,9 +1173,8 @@ const Teachers = ({ setShowAdminHeader }) => {
     catch (error) {
       console.error('Error saving teacher:', error);
       if (editingTeacherId) {
-        setSubmitStatus({ type: 'error', message: error.message || 'Unable to save teacher' });
+        toast.error(error.message || 'Unable to save teacher');
       } else {
-        setSubmitStatus(null);
         toast.error(error.message || 'Unable to add teacher');
       }
     }
@@ -1216,7 +1210,7 @@ const Teachers = ({ setShowAdminHeader }) => {
         canCopyPassword: !hasUserReset && Boolean(data?.initialPassword)
       });
     } catch (error) {
-      setSubmitStatus({ type: 'error', message: error.message || 'Unable to load credentials' });
+      toast.error(error.message || 'Unable to load credentials');
     } finally {
       setCredentialLoadingId(null);
     }
@@ -1247,9 +1241,9 @@ const Teachers = ({ setShowAdminHeader }) => {
         password: data?.password || 'Not available',
         canCopyPassword: Boolean(data?.password)
       }));
-      setSubmitStatus({ type: 'success', message: 'Teacher password reset successfully.' });
+      toast.success('Teacher password reset successfully.');
     } catch (error) {
-      setSubmitStatus({ type: 'error', message: error.message || 'Unable to reset credentials' });
+      toast.error(error.message || 'Unable to reset credentials');
     } finally {
       setCredentialLoadingId(null);
     }
@@ -1285,11 +1279,9 @@ const Teachers = ({ setShowAdminHeader }) => {
       }
 
       setTeachers((prev) => prev.filter((item) => String(item._id || item.id) !== String(teacherId)));
-      setSubmitStatus(null);
       toast.success(`${teacher.name || 'Teacher'} deleted successfully.`);
       fetchTeachers().catch(console.error);
     } catch (error) {
-      setSubmitStatus(null);
       toast.error(error.message || 'Unable to delete teacher');
     } finally {
       setDeletingTeacherId(null);
@@ -1935,10 +1927,8 @@ const Teachers = ({ setShowAdminHeader }) => {
         email: data.email,
         password: data.password
       });
-      setSubmitStatus(null);
       toast.success(`Principal account created for ${teacher.name || 'teacher'}`);
     } catch (error) {
-      setSubmitStatus(null);
       toast.error(error.message || 'Unable to create principal account');
     } finally {
       setPrincipalLoadingId(null);
@@ -2075,20 +2065,6 @@ const Teachers = ({ setShowAdminHeader }) => {
             </button>
           </div>
         </div>
-
-        {submitStatus && (
-          <div
-            className={`mt-2 rounded-xl border px-4 py-3 text-sm flex items-center gap-2 flex-shrink-0 ${submitStatus.type === 'success'
-                ? 'border-emerald-200 bg-emerald-50 text-emerald-700'
-                : 'border-red-200 bg-red-50 text-red-700'
-              }`}
-          >
-            {submitStatus.type === 'success'
-              ? <Check size={15} className="flex-shrink-0" />
-              : <XCircle size={15} className="flex-shrink-0" />}
-            {submitStatus.message}
-          </div>
-        )}
 
         <div className="flex-1 flex flex-col min-h-0">
           {/* Tabs */}
