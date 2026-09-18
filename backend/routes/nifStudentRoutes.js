@@ -11,6 +11,7 @@ const { hashPasswordsBulk } = require('../utils/passwordHash');
 const { buildRollAllocator } = require('../utils/rollAllocator');
 const { deriveGuardianMeta } = require('../utils/guardianMeta');
 const { syncParentArchiveStatusForStudents } = require('../utils/parentArchiveSync');
+const { autoAssignFeeStructure } = require('../services/feeService');
 
 const router = express.Router();
 
@@ -526,6 +527,18 @@ const runBulkImportJob = async (jobId, { students, schoolId, campusId, admin, is
           parentChain.set(key, run.catch(() => {}));
           await run;
         }
+
+        // Best-effort: bill this row against whatever active fee structure
+        // matches its class, same as a single enrollment does — bulk-import
+        // was the one student-creation path that skipped this.
+        autoAssignFeeStructure({
+          studentId: studentUser._id,
+          schoolId,
+          campusId,
+          grade: payload.grade,
+          section: payload.section,
+        }).catch(() => {});
+
         results.imported += 1;
       } catch (err) {
         results.failed += 1;

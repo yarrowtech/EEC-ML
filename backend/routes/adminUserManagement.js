@@ -999,6 +999,11 @@ const autoGeneratePromotionInvoice = async ({ student, oldGrade, schoolId }) => 
     balanceAmount: snapshots.totalAmount,
     discountAmount: 0,
     discountNote: '',
+    lateFeeRuleSnapshot: {
+      amount: Number(structure.lateFeeAmount || 0),
+      excludeSundays: Boolean(structure.lateFeeExcludeSundays),
+      excludeHolidays: Boolean(structure.lateFeeExcludeHolidays),
+    },
     feeHeadsSnapshot: snapshots.feeHeadsSnapshot,
     installmentsSnapshot: snapshots.installmentsSnapshot,
     status: 'due',

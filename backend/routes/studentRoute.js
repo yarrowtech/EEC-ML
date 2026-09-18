@@ -3,6 +3,7 @@ const router = express.Router();
 const mongoose = require('mongoose');
 const StudentUser = require('../models/StudentUser');
 const ParentUser = require('../models/ParentUser');
+const { autoAssignFeeStructure } = require('../services/feeService');
 const Class = require('../models/Class');
 const AcademicYear = require('../models/AcademicYear');
 const Timetable = require('../models/Timetable');
@@ -793,6 +794,17 @@ router.post('/register', adminAuth, async (req, res) => {
         await parentUser.save();
       }
     }
+
+    // Best-effort: bill the student against whatever active fee structure
+    // matches their class this year, same as the admin's manual "assign"
+    // flow — never blocks registration if no structure exists yet.
+    autoAssignFeeStructure({
+      studentId: studentUser._id,
+      schoolId: resolvedSchoolId,
+      campusId: resolvedCampusId,
+      grade: resolvedGrade,
+      section: resolvedSection,
+    }).catch(() => {});
 
     res.status(201).json({
       message: 'Student registered successfully',

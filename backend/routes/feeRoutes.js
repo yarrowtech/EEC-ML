@@ -18,6 +18,7 @@ const ClassModel = require('../models/Class');
 const Section = require('../models/Section');
 const AcademicYear = require('../models/AcademicYear');
 const School = require('../models/School');
+const Holiday = require('../models/Holiday');
 const NotificationService = require('../utils/notificationService');
 const { logger } = require('../utils/logger');
 const {
@@ -173,15 +174,6 @@ const normalizeInstallments = (installments) => {
 const sumAmounts = (items) =>
   items.reduce((sum, item) => sum + Number(item.amount || 0), 0);
 
-const getEarliestInstallmentDueDate = (installments = []) => {
-  if (!Array.isArray(installments) || installments.length === 0) return undefined;
-  const dates = installments
-    .map((item) => (item?.dueDate ? new Date(item.dueDate) : null))
-    .filter((date) => date && !Number.isNaN(date.getTime()))
-    .sort((a, b) => a.getTime() - b.getTime());
-  return dates[0] || undefined;
-};
-
 const normalizeLateFeeAmount = (value) => {
   const amount = Number(value);
   return Number.isFinite(amount) && amount >= 0 ? amount : 0;
@@ -230,13 +222,32 @@ const ensureInvoiceCampusAccess = async ({ invoice, schoolId, campusId }) => {
 
 const getOverdueDate = (invoice) => {
   if (invoice?.dueDate) return new Date(invoice.dueDate);
-  const installmentDates = Array.isArray(invoice?.installmentsSnapshot)
+
+  const installments = Array.isArray(invoice?.installmentsSnapshot)
     ? invoice.installmentsSnapshot
-        .map((item) => (item?.dueDate ? new Date(item.dueDate) : null))
-        .filter((date) => date && !Number.isNaN(date.getTime()))
+        .map((item) => ({
+          amount: Number(item?.amount || 0),
+          dueDate: item?.dueDate ? new Date(item.dueDate) : null,
+        }))
+        .filter((item) => item.dueDate && !Number.isNaN(item.dueDate.getTime()))
+        .sort((a, b) => a.dueDate.getTime() - b.dueDate.getTime())
     : [];
-  if (!installmentDates.length) return null;
-  return installmentDates.sort((a, b) => a.getTime() - b.getTime())[0];
+  if (!installments.length) return null;
+
+  // Walk the payment waterfall instead of just taking the earliest
+  // installment date: once enough has been paid to cover April + August,
+  // the invoice isn't overdue again until December's own due date arrives,
+  // even though April's date is long in the past.
+  const paid = Number(invoice?.paidAmount || 0);
+  let cumulative = 0;
+  for (const installment of installments) {
+    cumulative += installment.amount;
+    if (cumulative > paid + 0.01) {
+      return installment.dueDate;
+    }
+  }
+  // Every installment is already covered by payments made so far.
+  return null;
 };
 
 const shouldAutoApplyLateFee = (invoice) => {
@@ -253,41 +264,107 @@ const startOfDay = (value) => {
   return new Date(date.getFullYear(), date.getMonth(), date.getDate());
 };
 
-const getOverdueDays = (invoice) => {
+const toDateKey = (date) => {
+  const y = date.getFullYear();
+  const m = String(date.getMonth() + 1).padStart(2, '0');
+  const d = String(date.getDate()).padStart(2, '0');
+  return `${y}-${m}-${d}`;
+};
+
+// Expands every Holiday doc's startDate..endDate range for a school/campus
+// into a flat set of 'YYYY-MM-DD' keys, so per-day exclusion checks during
+// late-fee counting are O(1) lookups instead of a query per invoice.
+const fetchHolidayDateSet = async (schoolId, campusId) => {
+  const filter = { schoolId };
+  if (campusId) filter.campusId = campusId;
+  const holidays = await Holiday.find(filter).select('startDate endDate').lean();
+  const keys = new Set();
+  holidays.forEach((h) => {
+    const start = startOfDay(h.startDate);
+    const end = startOfDay(h.endDate) || start;
+    if (!start) return;
+    const cursor = new Date(start);
+    // Holiday ranges are school calendar spans, not decades — this loop is
+    // always small (days within a single break), never unbounded.
+    while (cursor.getTime() <= end.getTime()) {
+      keys.add(toDateKey(cursor));
+      cursor.setDate(cursor.getDate() + 1);
+    }
+  });
+  return keys;
+};
+
+// Counts calendar days strictly between dueStart and todayStart (i.e. days
+// the invoice has actually been overdue), skipping Sundays and/or school
+// holidays when the structure asked to exclude them.
+const getOverdueDays = (invoice, { excludeSundays = false, excludeHolidays = false, holidayDateSet = null } = {}) => {
   const dueDate = getOverdueDate(invoice);
   const dueStart = startOfDay(dueDate);
   const todayStart = startOfDay(new Date());
   if (!dueStart || !todayStart) return 0;
-  const diffMs = todayStart.getTime() - dueStart.getTime();
-  if (diffMs <= 0) return 0;
-  return Math.floor(diffMs / (1000 * 60 * 60 * 24));
+  if (todayStart.getTime() <= dueStart.getTime()) return 0;
+
+  if (!excludeSundays && !excludeHolidays) {
+    const diffMs = todayStart.getTime() - dueStart.getTime();
+    return Math.floor(diffMs / (1000 * 60 * 60 * 24));
+  }
+
+  let count = 0;
+  const cursor = new Date(dueStart);
+  cursor.setDate(cursor.getDate() + 1);
+  while (cursor.getTime() <= todayStart.getTime()) {
+    const isSunday = excludeSundays && cursor.getDay() === 0;
+    const isHoliday = excludeHolidays && holidayDateSet?.has(toDateKey(cursor));
+    if (!isSunday && !isHoliday) count += 1;
+    cursor.setDate(cursor.getDate() + 1);
+  }
+  return count;
 };
 
-const resolveInvoiceLateFeeAmount = async ({ invoice, schoolId, structureCache }) => {
-  const fromSnapshot = normalizeLateFeeAmount(invoice?.lateFeeRuleSnapshot?.amount);
-  if (fromSnapshot > 0) return fromSnapshot;
+const resolveInvoiceLateFeeRule = async ({ invoice, schoolId, structureCache }) => {
+  const snapshot = invoice?.lateFeeRuleSnapshot;
+  const snapshotAmount = normalizeLateFeeAmount(snapshot?.amount);
+  if (snapshotAmount > 0) {
+    return {
+      amount: snapshotAmount,
+      excludeSundays: Boolean(snapshot?.excludeSundays),
+      excludeHolidays: Boolean(snapshot?.excludeHolidays),
+    };
+  }
 
   const structureId = String(invoice?.feeStructureId || '');
-  if (!structureId || !mongoose.isValidObjectId(structureId)) return 0;
+  if (!structureId || !mongoose.isValidObjectId(structureId)) {
+    return { amount: 0, excludeSundays: false, excludeHolidays: false };
+  }
 
   if (structureCache && structureCache.has(structureId)) {
     return structureCache.get(structureId);
   }
 
   const structure = await FeeStructure.findOne({ _id: structureId, schoolId })
-    .select('lateFeeAmount')
+    .select('lateFeeAmount lateFeeExcludeSundays lateFeeExcludeHolidays')
     .lean();
-  const amount = normalizeLateFeeAmount(structure?.lateFeeAmount);
-  if (structureCache) structureCache.set(structureId, amount);
-  return amount;
+  const rule = {
+    amount: normalizeLateFeeAmount(structure?.lateFeeAmount),
+    excludeSundays: Boolean(structure?.lateFeeExcludeSundays),
+    excludeHolidays: Boolean(structure?.lateFeeExcludeHolidays),
+  };
+  if (structureCache) structureCache.set(structureId, rule);
+  return rule;
 };
 
 const applyLateFeeToInvoiceIfEligible = async ({ invoice, schoolId, structureCache }) => {
   if (!shouldAutoApplyLateFee(invoice)) return false;
-  const perDayLateFeeAmount = await resolveInvoiceLateFeeAmount({ invoice, schoolId, structureCache });
-  if (perDayLateFeeAmount <= 0) return false;
-  const overdueDays = getOverdueDays(invoice);
+  const rule = await resolveInvoiceLateFeeRule({ invoice, schoolId, structureCache });
+  if (rule.amount <= 0) return false;
+  const holidayDateSet = rule.excludeHolidays ? await fetchHolidayDateSet(schoolId) : null;
+  const overdueDays = getOverdueDays(invoice, {
+    excludeSundays: rule.excludeSundays,
+    excludeHolidays: rule.excludeHolidays,
+    holidayDateSet,
+  });
   if (overdueDays <= 0) return false;
+  const perDayLateFeeAmount = rule.amount;
 
   const expectedLateFeeTotal = perDayLateFeeAmount * overdueDays;
   const alreadyAppliedLateFee = normalizeLateFeeAmount(invoice.lateFeeAmountApplied);
@@ -330,14 +407,26 @@ const applyLateFeesForFilter = async ({ schoolId, filter = {} }) => {
   if (!overdueInvoices.length) return 0;
 
   const structureCache = new Map();
+  // Fetched lazily and once per batch (not per-invoice) the first time any
+  // invoice's rule actually needs holiday exclusion.
+  let holidayDateSet = null;
   const bulkOps = [];
   for (const invoice of overdueInvoices) {
     if (!shouldAutoApplyLateFee(invoice)) continue;
     // eslint-disable-next-line no-await-in-loop
-    const perDayLateFeeAmount = await resolveInvoiceLateFeeAmount({ invoice, schoolId, structureCache });
-    if (perDayLateFeeAmount <= 0) continue;
-    const overdueDays = getOverdueDays(invoice);
+    const rule = await resolveInvoiceLateFeeRule({ invoice, schoolId, structureCache });
+    if (rule.amount <= 0) continue;
+    if (rule.excludeHolidays && !holidayDateSet) {
+      // eslint-disable-next-line no-await-in-loop
+      holidayDateSet = await fetchHolidayDateSet(schoolId);
+    }
+    const overdueDays = getOverdueDays(invoice, {
+      excludeSundays: rule.excludeSundays,
+      excludeHolidays: rule.excludeHolidays,
+      holidayDateSet,
+    });
     if (overdueDays <= 0) continue;
+    const perDayLateFeeAmount = rule.amount;
 
     const expectedLateFeeTotal = perDayLateFeeAmount * overdueDays;
     const alreadyAppliedLateFee = normalizeLateFeeAmount(invoice.lateFeeAmountApplied);
@@ -394,6 +483,8 @@ router.post('/structures', adminAuth, async (req, res) => {
       feeHeads,
       board,
       lateFeeAmount,
+      lateFeeExcludeSundays,
+      lateFeeExcludeHolidays,
     } = req.body || {};
     if (!name || !String(name).trim()) {
       return res.status(400).json({ error: 'Structure name is required' });
@@ -425,6 +516,8 @@ router.post('/structures', adminAuth, async (req, res) => {
       name: String(name).trim(),
       totalAmount: total,
       lateFeeAmount: normalizedLateFeeAmount,
+      lateFeeExcludeSundays: Boolean(lateFeeExcludeSundays),
+      lateFeeExcludeHolidays: Boolean(lateFeeExcludeHolidays),
       feeHeads: normalizedFeeHeads,
       installments: normalizedInstallments,
     });
@@ -582,6 +675,8 @@ router.put('/structures/:id', adminAuth, async (req, res) => {
       board,
       isActive,
       lateFeeAmount,
+      lateFeeExcludeSundays,
+      lateFeeExcludeHolidays,
     } = req.body || {};
 
     if (typeof name !== 'undefined' && !String(name).trim()) {
@@ -604,6 +699,12 @@ router.put('/structures/:id', adminAuth, async (req, res) => {
     if (typeof isActive !== 'undefined') updates.isActive = Boolean(isActive);
     if (typeof lateFeeAmount !== 'undefined') {
       updates.lateFeeAmount = normalizeLateFeeAmount(lateFeeAmount);
+    }
+    if (typeof lateFeeExcludeSundays !== 'undefined') {
+      updates.lateFeeExcludeSundays = Boolean(lateFeeExcludeSundays);
+    }
+    if (typeof lateFeeExcludeHolidays !== 'undefined') {
+      updates.lateFeeExcludeHolidays = Boolean(lateFeeExcludeHolidays);
     }
 
     let normalizedFeeHeads = null;
@@ -641,10 +742,12 @@ router.put('/structures/:id', adminAuth, async (req, res) => {
         feeStructureId: existing._id,
         status: { $in: ['due', 'partial'] },
       });
-      const nextDueDate = getEarliestInstallmentDueDate(normalizedInstallments);
+      // Don't stamp a top-level invoice.dueDate here — leave it unset so
+      // getOverdueDate()'s payment-waterfall logic keeps picking whichever
+      // installment isn't covered by payments yet, instead of pinning
+      // lateness to the earliest installment regardless of what's been paid.
       for (const invoice of invoicesToSync) {
         invoice.installmentsSnapshot = normalizedInstallments;
-        invoice.dueDate = nextDueDate;
         await invoice.save();
       }
     }
@@ -678,13 +781,35 @@ router.delete('/structures/:id', adminAuth, async (req, res) => {
       }
     }
 
-    const hasInvoices = await FeeInvoice.exists({ schoolId, feeStructureId: structureId });
-    if (hasInvoices) {
-      return res.status(400).json({ error: 'Cannot delete structure with invoices' });
+    const linkedInvoices = await FeeInvoice.find({ schoolId, feeStructureId: structureId })
+      .select('_id')
+      .lean();
+
+    if (linkedInvoices.length > 0) {
+      const force = String(req.query.force || '').toLowerCase() === 'true';
+      if (!force) {
+        return res.status(400).json({ error: 'Cannot delete structure with invoices' });
+      }
+
+      // Force delete still refuses to touch an invoice that has real money
+      // collected against it — cascading the delete into paid/partial
+      // invoices would destroy payment history, which no confirmation dialog
+      // should be able to authorize from this endpoint.
+      const invoiceIds = linkedInvoices.map((inv) => inv._id);
+      const hasPayments = await FeePayment.exists({ schoolId, invoiceId: { $in: invoiceIds } });
+      if (hasPayments) {
+        return res.status(400).json({
+          error: 'Cannot force delete — some invoices for this structure have recorded payments. Refund/void those first.',
+        });
+      }
+
+      await FeeInvoice.deleteMany({ _id: { $in: invoiceIds }, schoolId });
     }
 
     await FeeStructure.deleteOne({ _id: structureId, schoolId });
-    res.json({ success: true });
+    feeSummaryCache.clear();
+    invoicesListCache.clear();
+    res.json({ success: true, invoicesDeleted: linkedInvoices.length });
   } catch (err) {
     res.status(400).json({ error: err.message || 'Unable to delete structure' });
   }
@@ -767,6 +892,8 @@ router.post('/invoices', adminAuth, async (req, res) => {
       discountNote: '',
       lateFeeRuleSnapshot: {
         amount: normalizeLateFeeAmount(structure?.lateFeeAmount),
+        excludeSundays: Boolean(structure?.lateFeeExcludeSundays),
+        excludeHolidays: Boolean(structure?.lateFeeExcludeHolidays),
       },
       lateFeeAmountApplied: 0,
       feeHeadsSnapshot: structureSnapshots?.feeHeadsSnapshot || [],
@@ -1963,6 +2090,8 @@ router.post('/admin/invoices/bulk', adminAuth, async (req, res) => {
           discountNote: '',
           lateFeeRuleSnapshot: {
             amount: normalizeLateFeeAmount(structure?.lateFeeAmount),
+            excludeSundays: Boolean(structure?.lateFeeExcludeSundays),
+            excludeHolidays: Boolean(structure?.lateFeeExcludeHolidays),
           },
           lateFeeAmountApplied: 0,
           feeHeadsSnapshot: snapshots.feeHeadsSnapshot,

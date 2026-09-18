@@ -17,6 +17,8 @@ const feeInvoiceSchema = new mongoose.Schema(
     discountNote: { type: String, trim: true },
     lateFeeRuleSnapshot: {
       amount: { type: Number, default: 0, min: 0 },
+      excludeSundays: { type: Boolean, default: false },
+      excludeHolidays: { type: Boolean, default: false },
     },
     lateFeeAmountApplied: { type: Number, default: 0, min: 0 },
     lateFeeAppliedAt: { type: Date },

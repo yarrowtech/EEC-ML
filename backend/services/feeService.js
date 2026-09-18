@@ -1,5 +1,10 @@
 const mongoose = require('mongoose');
 const StudentUser = require('../models/StudentUser');
+const ClassModel = require('../models/Class');
+const AcademicYear = require('../models/AcademicYear');
+const FeeStructure = require('../models/FeeStructure');
+const FeeInvoice = require('../models/FeeInvoice');
+const { buildInvoiceSnapshotsForStudent } = require('../utils/feeHeadPolicy');
 
 /**
  * Mutates an invoice object to recompute its status and balanceAmount
@@ -84,9 +89,84 @@ const buildPaymentsByInvoice = (payments = []) => {
   }, {});
 };
 
+/**
+ * Auto-assigns the active fee structure for a student's current class (in
+ * the school's active academic year) by creating a FeeInvoice, if one
+ * doesn't already exist for that structure. Called right after a student is
+ * enrolled/edited into a class, and after a promotion moves them into a new
+ * one — mirrors the admin's manual "assign" flow (POST /admin/invoices/bulk)
+ * so invoices come out identical either way. Silently no-ops (returns null)
+ * when there's no active year, no matching class, no fee structure for that
+ * class yet, or the student already has an invoice for it — none of those
+ * are error conditions worth surfacing to whatever caller triggered this.
+ */
+const autoAssignFeeStructure = async ({ studentId, schoolId, campusId, grade, section }) => {
+  try {
+    if (!studentId || !schoolId || !grade) return null;
+
+    const activeYear = await AcademicYear.findOne({ schoolId, isActive: true }).lean();
+    if (!activeYear) return null;
+
+    const classFilter = { schoolId, name: grade, academicYearId: activeYear._id };
+    if (campusId) classFilter.campusId = campusId;
+    const classDoc = await ClassModel.findOne(classFilter).select('_id name').lean();
+    if (!classDoc) return null;
+
+    const structure = await FeeStructure.findOne({
+      schoolId,
+      classId: classDoc._id,
+      academicYearId: activeYear._id,
+      isActive: true,
+    })
+      .sort({ createdAt: -1 })
+      .lean();
+    if (!structure) return null;
+
+    const alreadyAssigned = await FeeInvoice.exists({
+      schoolId,
+      feeStructureId: structure._id,
+      studentId,
+    });
+    if (alreadyAssigned) return null;
+
+    const hasPriorInvoice = await FeeInvoice.exists({ schoolId, studentId });
+    const snapshots = buildInvoiceSnapshotsForStudent({ structure, hasPriorInvoice: Boolean(hasPriorInvoice) });
+
+    const invoice = await FeeInvoice.create({
+      schoolId,
+      academicYearId: structure.academicYearId || activeYear._id,
+      classId: structure.classId,
+      className: grade,
+      section: section || '',
+      studentId,
+      feeStructureId: structure._id,
+      title: structure.name || 'Fee Invoice',
+      totalAmount: snapshots.totalAmount,
+      paidAmount: 0,
+      balanceAmount: snapshots.totalAmount,
+      discountAmount: 0,
+      discountNote: '',
+      lateFeeRuleSnapshot: {
+        amount: Number(structure.lateFeeAmount || 0),
+        excludeSundays: Boolean(structure.lateFeeExcludeSundays),
+        excludeHolidays: Boolean(structure.lateFeeExcludeHolidays),
+      },
+      lateFeeAmountApplied: 0,
+      feeHeadsSnapshot: snapshots.feeHeadsSnapshot,
+      installmentsSnapshot: snapshots.installmentsSnapshot,
+      status: 'due',
+    });
+    return invoice;
+  } catch {
+    // Best-effort — a fee-assignment hiccup must never block enrollment/promotion.
+    return null;
+  }
+};
+
 module.exports = {
   recomputeInvoiceStatus,
   resolveSchoolId,
   resolveParentStudents,
   buildPaymentsByInvoice,
+  autoAssignFeeStructure,
 };

@@ -259,6 +259,8 @@ const autoGeneratePromotionFees = async ({
         discountNote: '',
         lateFeeRuleSnapshot: {
           amount: normalizeAmount(structure?.lateFeeAmount),
+          excludeSundays: Boolean(structure?.lateFeeExcludeSundays),
+          excludeHolidays: Boolean(structure?.lateFeeExcludeHolidays),
         },
         lateFeeAmountApplied: 0,
         feeHeadsSnapshot: snapshots.feeHeadsSnapshot,
