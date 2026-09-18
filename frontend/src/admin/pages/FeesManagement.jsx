@@ -1,5 +1,6 @@
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import Swal from 'sweetalert2';
+import toast from 'react-hot-toast';
 import {
   AlertCircle,
   BookOpen,
@@ -16,6 +17,7 @@ import {
   Search,
   Trash2,
   X,
+  Edit,
 } from 'lucide-react';
 import { downloadFeesStructurePdf } from '../../utils/feesStructurePdf';
 
@@ -41,6 +43,8 @@ const EMPTY_FORM = {
   board: 'GENERAL',
   name: '',
   lateFeeAmount: '',
+  lateFeeExcludeSundays: false,
+  lateFeeExcludeHolidays: false,
   feeHeads: [],
   installments: [],
 };
@@ -66,6 +70,11 @@ const money = (value) =>
     maximumFractionDigits: 0,
   }).format(Number(value || 0));
 
+const escapeHtmlLite = (value) =>
+  String(value || '').replace(/[&<>"']/g, (ch) => ({
+    '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;',
+  }[ch]));
+
 const authHeaders = () => ({
   'Content-Type': 'application/json',
   authorization: `Bearer ${localStorage.getItem('token')}`,
@@ -89,8 +98,6 @@ const FeesManagement = ({ setShowAdminHeader }) => {
   const [selectedBoard, setSelectedBoard] = useState('');
   const [loading, setLoading] = useState(false);
   const [saving, setSaving] = useState(false);
-  const [error, setError] = useState('');
-  const [notice, setNotice] = useState('');
   const [pdfSchool, setPdfSchool] = useState(DEFAULT_PDF_SCHOOL);
 
   const [formOpen, setFormOpen] = useState(false);
@@ -213,7 +220,6 @@ const FeesManagement = ({ setShowAdminHeader }) => {
 
   const loadAll = useCallback(async () => {
     setLoading(true);
-    setError('');
     try {
       const [filtersRes, structuresRes, templateRes] = await Promise.all([
         fetch(`${API_BASE}/api/fees/admin/filters`, { headers: authHeaders() }),
@@ -252,7 +258,7 @@ const FeesManagement = ({ setShowAdminHeader }) => {
         );
       }
     } catch (err) {
-      setError(err.message || 'Unable to load fee builder data');
+      toast.error(err.message || 'Unable to load fee builder data');
     } finally {
       setLoading(false);
     }
@@ -264,9 +270,23 @@ const FeesManagement = ({ setShowAdminHeader }) => {
 
   const resetForm = () => {
     setActiveId('');
-    setForm(EMPTY_FORM);
-    setError('');
-    setNotice('');
+    // Session is no longer picked in the UI — keep it defaulted to the
+    // active academic year instead of wiping it back to '' along with the
+    // rest of the form, otherwise the Class dropdown has nothing to scope to.
+    setForm({ ...EMPTY_FORM, academicYearId: activeAcademicYears[0]?.id || '' });
+  };
+
+  const handleResetClick = async () => {
+    const confirm = await Swal.fire({
+      icon: 'warning',
+      title: 'Reset this form?',
+      text: 'Are you sure you want to reset? Everything filled in on this form will be cleared.',
+      showCancelButton: true,
+      confirmButtonText: 'Yes, reset',
+      cancelButtonText: 'Cancel',
+      confirmButtonColor: '#dc2626',
+    });
+    if (confirm.isConfirmed) resetForm();
   };
 
   const openCreateForm = () => {
@@ -281,8 +301,6 @@ const FeesManagement = ({ setShowAdminHeader }) => {
 
   const editStructure = (structure) => {
     setActiveId(structure._id || '');
-    setError('');
-    setNotice('');
     setFormOpen(true);
     setForm({
       classId: structure.classId || '',
@@ -291,11 +309,18 @@ const FeesManagement = ({ setShowAdminHeader }) => {
       board: structure.board || 'GENERAL',
       name: structure.name || '',
       lateFeeAmount: toAmount(structure.lateFeeAmount),
-      feeHeads: (structure.feeHeads || []).map((item) => ({
-        label: item.label || '',
-        customLabel: '',
-        amount: toAmount(item.amount),
-      })),
+      lateFeeExcludeSundays: Boolean(structure.lateFeeExcludeSundays),
+      lateFeeExcludeHolidays: Boolean(structure.lateFeeExcludeHolidays),
+      feeHeads: (structure.feeHeads || []).map((item) => {
+        const label = item.label || '';
+        const isCustom = Boolean(label) && !FEE_HEAD_OPTIONS.includes(label);
+        return {
+          label: isCustom ? '' : label,
+          customLabel: isCustom ? label : '',
+          isCustom,
+          amount: toAmount(item.amount),
+        };
+      }),
       installments: normalizeInstallments(structure.installments || []),
     });
   };
@@ -303,7 +328,7 @@ const FeesManagement = ({ setShowAdminHeader }) => {
   const addHead = () =>
     setForm((prev) => ({
       ...prev,
-      feeHeads: [...prev.feeHeads, { label: '', customLabel: '', amount: '' }],
+      feeHeads: [...prev.feeHeads, { label: '', customLabel: '', amount: '', isCustom: false }],
     }));
 
   const removeHead = (index) =>
@@ -337,10 +362,8 @@ const FeesManagement = ({ setShowAdminHeader }) => {
     }));
 
   const saveStructure = async () => {
-    setError('');
-    setNotice('');
-    if (!form.classId) return setError('Class is required.');
-    if (!String(form.name || '').trim()) return setError('Structure name is required.');
+    if (!form.classId) return toast.error('Class is required.');
+    if (!String(form.name || '').trim()) return toast.error('Structure name is required.');
 
     const heads = form.feeHeads
       .map((item) => ({
@@ -348,8 +371,8 @@ const FeesManagement = ({ setShowAdminHeader }) => {
         amount: toAmount(item.amount),
       }))
       .filter((item) => item.label);
-    if (!heads.length) return setError('Add at least one fee head.');
-    if (heads.every((item) => item.amount === 0)) return setError('Fee head amount cannot be all zero.');
+    if (!heads.length) return toast.error('Add at least one fee head.');
+    if (heads.every((item) => item.amount === 0)) return toast.error('Fee head amount cannot be all zero.');
 
     const sameScope = structures.find(
       (item) =>
@@ -359,7 +382,7 @@ const FeesManagement = ({ setShowAdminHeader }) => {
         item._id !== activeId
     );
     if (sameScope) {
-      return setError('A structure already exists for this class, board, and academic year.');
+      return toast.error('A structure already exists for this class, board, and academic year.');
     }
 
     const totalAmount = heads.reduce((sum, item) => sum + item.amount, 0);
@@ -381,6 +404,8 @@ const FeesManagement = ({ setShowAdminHeader }) => {
         board: form.board || 'GENERAL',
         name: String(form.name || '').trim(),
         lateFeeAmount: toAmount(form.lateFeeAmount),
+        lateFeeExcludeSundays: Boolean(form.lateFeeExcludeSundays),
+        lateFeeExcludeHolidays: Boolean(form.lateFeeExcludeHolidays),
         totalAmount,
         feeHeads: heads,
         installments,
@@ -399,12 +424,22 @@ const FeesManagement = ({ setShowAdminHeader }) => {
       await loadAll();
       resetForm();
       setFormOpen(false);
-      setNotice(isEdit ? 'Fee structure updated.' : 'Fee structure created.');
+      toast.success(isEdit ? 'Fee structure updated.' : 'Fee structure created.');
     } catch (err) {
-      setError(err.message || 'Unable to save structure');
+      toast.error(err.message || 'Unable to save structure');
     } finally {
       setSaving(false);
     }
+  };
+
+  const setStructureActive = async (structure, isActive) => {
+    const res = await fetch(`${API_BASE}/api/fees/structures/${structure._id}`, {
+      method: 'PUT',
+      headers: authHeaders(),
+      body: JSON.stringify({ isActive }),
+    });
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok) throw new Error(data?.error || 'Unable to update structure');
   };
 
   const deleteStructure = async (structure) => {
@@ -425,19 +460,89 @@ const FeesManagement = ({ setShowAdminHeader }) => {
         headers: authHeaders(),
       });
       const data = await res.json().catch(() => ({}));
-      if (!res.ok) throw new Error(data?.error || 'Unable to delete structure');
+      if (!res.ok) {
+        // Deleting would orphan the invoices already billed against this
+        // structure — the backend refuses on purpose. Offer deactivating it
+        // instead: it disappears from future use but existing invoices keep
+        // their reference intact.
+        if (res.status === 400 && /invoices/i.test(data?.error || '')) {
+          const offer = await Swal.fire({
+            icon: 'info',
+            title: "Can't delete — invoices exist",
+            text: `Students already have invoices billed against "${structure.name || 'this structure'}". Deactivating is the safe option (existing invoices keep working); force deleting removes the structure and every unpaid invoice tied to it — invoices with a recorded payment always block it.`,
+            showCancelButton: true,
+            showDenyButton: true,
+            confirmButtonText: 'Deactivate instead',
+            denyButtonText: 'Force delete…',
+            cancelButtonText: 'Cancel',
+            confirmButtonColor: '#7c3aed',
+            denyButtonColor: '#dc2626',
+          });
+          if (offer.isConfirmed) {
+            await setStructureActive(structure, false);
+            await loadAll();
+            toast.success('Fee structure deactivated — existing invoices are unaffected.');
+          } else if (offer.isDenied) {
+            await forceDeleteStructure(structure);
+          }
+          return;
+        }
+        throw new Error(data?.error || 'Unable to delete structure');
+      }
       await loadAll();
       if (activeId === structure._id) resetForm();
-      setNotice('Fee structure deleted.');
+      toast.success('Fee structure deleted.');
     } catch (err) {
-      setError(err.message || 'Unable to delete structure');
+      toast.error(err.message || 'Unable to delete structure');
+    }
+  };
+
+  const forceDeleteStructure = async (structure) => {
+    const structureName = structure.name || 'this structure';
+    const typed = await Swal.fire({
+      icon: 'warning',
+      title: 'Type to confirm force delete',
+      html: `This permanently deletes <b>${escapeHtmlLite(structureName)}</b> and every <u>unpaid</u> invoice billed against it. This cannot be undone.<br/><br/>Type <b>DELETE</b> to continue.`,
+      input: 'text',
+      inputPlaceholder: 'DELETE',
+      showCancelButton: true,
+      confirmButtonText: 'Force Delete',
+      cancelButtonText: 'Cancel',
+      confirmButtonColor: '#dc2626',
+      inputValidator: (value) => (value === 'DELETE' ? undefined : 'Type DELETE (all caps) to confirm'),
+    });
+    if (!typed.isConfirmed) return;
+    try {
+      const res = await fetch(`${API_BASE}/api/fees/structures/${structure._id}?force=true`, {
+        method: 'DELETE',
+        headers: authHeaders(),
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(data?.error || 'Unable to force delete structure');
+      await loadAll();
+      if (activeId === structure._id) resetForm();
+      toast.success(
+        data.invoicesDeleted > 0
+          ? `Fee structure deleted along with ${data.invoicesDeleted} invoice(s).`
+          : 'Fee structure deleted.'
+      );
+    } catch (err) {
+      toast.error(err.message || 'Unable to force delete structure');
+    }
+  };
+
+  const reactivateStructure = async (structure) => {
+    try {
+      await setStructureActive(structure, true);
+      await loadAll();
+      toast.success('Fee structure reactivated.');
+    } catch (err) {
+      toast.error(err.message || 'Unable to reactivate structure');
     }
   };
 
   const handleDownloadStructurePdf = async (structure) => {
     if (!structure) return;
-    setError('');
-    setNotice('');
     try {
       const academicYearName =
         yearNameById.get(String(structure.academicYearId || '')) || '';
@@ -448,9 +553,9 @@ const FeesManagement = ({ setShowAdminHeader }) => {
         },
         school: pdfSchool,
       });
-      setNotice('Fee structure PDF downloaded.');
+      toast.success('Fee structure PDF downloaded.');
     } catch {
-      setError('Unable to generate fee structure PDF');
+      toast.error('Unable to generate fee structure PDF');
     }
   };
 
@@ -532,12 +637,6 @@ const FeesManagement = ({ setShowAdminHeader }) => {
         {/* ── Body ── */}
         <div className="flex-1 min-h-0 overflow-y-auto px-6 py-6">
           <div className="mx-auto max-w-[1500px] space-y-5">
-            {error && (
-              <div className="flex items-center gap-2.5 rounded-xl border border-rose-200 bg-rose-50 px-4 py-3 text-sm text-rose-700">
-                <AlertCircle className="h-4 w-4 shrink-0" />{error}
-              </div>
-            )}
-
             {/* Panel 1 — Basics (full width) */}
             <div className="rounded-2xl border border-gray-200 bg-white">
               <div className="flex items-center gap-3 border-b border-gray-100 px-5 py-4">
@@ -549,29 +648,11 @@ const FeesManagement = ({ setShowAdminHeader }) => {
                   <p className="truncate text-xs text-gray-400">Set the basic details for this fee structure</p>
                 </div>
               </div>
-              <div className="grid grid-cols-1 gap-4 p-5 sm:grid-cols-2 lg:grid-cols-5">
+              <div className="grid grid-cols-1 gap-4 p-5 sm:grid-cols-2 lg:grid-cols-4">
                 <div>
                   <label className="mb-1.5 block text-xs font-semibold text-gray-600">Board <span className="text-rose-500">*</span></label>
                   <select value={form.board} onChange={(e) => setForm((prev) => ({ ...prev, board: e.target.value }))} className={fSelect}>
                     {BOARD_OPTIONS.map((b) => <option key={b} value={b}>{b}</option>)}
-                  </select>
-                </div>
-                <div>
-                  <label className="mb-1.5 block text-xs font-semibold text-gray-600">Session <span className="text-rose-500">*</span></label>
-                  <select
-                    value={form.academicYearId}
-                    onChange={(e) =>
-                      setForm((prev) => ({
-                        ...prev,
-                        academicYearId: e.target.value,
-                        classId: '',
-                        className: '',
-                      }))
-                    }
-                    className={fSelect}
-                  >
-                    <option value="">Select session</option>
-                    {activeAcademicYears.map((y) => <option key={y.id} value={y.id}>{y.name}</option>)}
                   </select>
                 </div>
                 <div>
@@ -588,9 +669,10 @@ const FeesManagement = ({ setShowAdminHeader }) => {
                     className={fSelect}
                     disabled={!form.academicYearId}
                   >
-                    <option value="">{form.academicYearId ? 'Select class' : 'Select session first'}</option>
+                    <option value="">{form.academicYearId ? 'Select class' : 'No active academic session'}</option>
                     {classOptionsByFormYear.map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}
                   </select>
+                  <p className="mt-1 text-[11px] text-gray-400">Classes for the current active academic session.</p>
                 </div>
                 <div>
                   <label className="mb-1.5 block text-xs font-semibold text-gray-600">Structure Name <span className="text-rose-500">*</span></label>
@@ -616,6 +698,31 @@ const FeesManagement = ({ setShowAdminHeader }) => {
                   </div>
                   <p className="mt-1 text-[11px] text-gray-400">Auto-added daily after due date while unpaid.</p>
                 </div>
+              </div>
+
+              {/* Late fine day-counting exclusions */}
+              <div className="flex flex-wrap items-center gap-5 border-t border-gray-100 px-5 py-4">
+                <label className="flex items-center gap-2 text-sm text-gray-700">
+                  <input
+                    type="checkbox"
+                    checked={form.lateFeeExcludeSundays}
+                    onChange={(e) => setForm((prev) => ({ ...prev, lateFeeExcludeSundays: e.target.checked }))}
+                    className="h-4 w-4 rounded border-gray-300 text-violet-600 focus:ring-violet-400"
+                  />
+                  Exclude Sundays
+                </label>
+                <label className="flex items-center gap-2 text-sm text-gray-700">
+                  <input
+                    type="checkbox"
+                    checked={form.lateFeeExcludeHolidays}
+                    onChange={(e) => setForm((prev) => ({ ...prev, lateFeeExcludeHolidays: e.target.checked }))}
+                    className="h-4 w-4 rounded border-gray-300 text-violet-600 focus:ring-violet-400"
+                  />
+                  Exclude School Holidays
+                </label>
+                <p className="w-full text-[11px] text-gray-400">
+                  When checked, Sundays and/or this school&apos;s holiday-calendar dates don&apos;t count toward the late fine, even while an installment is overdue.
+                </p>
               </div>
             </div>
 
@@ -665,12 +772,18 @@ const FeesManagement = ({ setShowAdminHeader }) => {
                             <td className="py-2 text-sm text-gray-400">{index + 1}</td>
                             <td className="py-2 pr-2">
                               <select
-                                value={FEE_HEAD_OPTIONS.includes(item.label) ? item.label : (item.label ? 'CUSTOM' : '')}
+                                value={item.isCustom ? 'CUSTOM' : item.label}
                                 onChange={(e) => {
                                   const v = e.target.value;
                                   const isCustom = v === 'CUSTOM';
-                                  updateHead(index, 'label', isCustom ? '' : v);
-                                  if (!isCustom) updateHead(index, 'customLabel', '');
+                                  setForm((prev) => ({
+                                    ...prev,
+                                    feeHeads: prev.feeHeads.map((head, idx) =>
+                                      idx === index
+                                        ? { ...head, isCustom, label: isCustom ? '' : v, customLabel: isCustom ? head.customLabel : '' }
+                                        : head
+                                    ),
+                                  }));
                                 }}
                                 className={tblInput}
                               >
@@ -678,7 +791,7 @@ const FeesManagement = ({ setShowAdminHeader }) => {
                                 {FEE_HEAD_OPTIONS.map((o) => <option key={o} value={o}>{o}</option>)}
                                 <option value="CUSTOM">Custom…</option>
                               </select>
-                              {!FEE_HEAD_OPTIONS.includes(item.label) && (
+                              {item.isCustom && (
                                 <input
                                   value={item.customLabel || ''}
                                   onChange={(e) => updateHead(index, 'customLabel', e.target.value)}
@@ -859,7 +972,7 @@ const FeesManagement = ({ setShowAdminHeader }) => {
             Cancel
           </button>
           <button
-            onClick={resetForm}
+            onClick={handleResetClick}
             className="inline-flex items-center justify-center gap-2 rounded-xl border border-gray-200 bg-white px-4 py-2.5 text-sm font-semibold text-gray-700 transition-colors hover:bg-gray-50"
           >
             <RefreshCw className="h-4 w-4" />
@@ -946,10 +1059,6 @@ const FeesManagement = ({ setShowAdminHeader }) => {
         ))}
       </div>
 
-      {/* ── Notices ── */}
-      {error  && <div className="fm-in flex shrink-0 items-center gap-2.5 rounded-2xl border border-rose-200/70 bg-rose-50/70 px-4 py-3 text-sm text-rose-700 backdrop-blur-md"><AlertCircle className="h-4 w-4 shrink-0" />{error}</div>}
-      {notice && <div className="fm-in flex shrink-0 items-center gap-2.5 rounded-2xl border border-emerald-200/70 bg-emerald-50/70 px-4 py-3 text-sm text-emerald-700 backdrop-blur-md"><CheckCircle2 className="h-4 w-4 shrink-0" />{notice}</div>}
-
       {/* ── Saved Structures table ── */}
       <div className={`fm-in flex flex-1 min-h-0 flex-col overflow-hidden ${glassCard}`} style={{ animationDelay: '300ms' }}>
         {/* Filter bar */}
@@ -1027,7 +1136,14 @@ const FeesManagement = ({ setShowAdminHeader }) => {
                     style={{ animationDelay: `${Math.min(i * 40, 320)}ms` }}
                   >
                     <td className="px-6 py-3.5">
-                      <p className="text-sm font-semibold text-slate-900">{item.name || 'Unnamed'}</p>
+                      <div className="flex items-center gap-2">
+                        <p className="text-sm font-semibold text-slate-900">{item.name || 'Unnamed'}</p>
+                        {item.isActive === false && (
+                          <span className="inline-flex items-center rounded-full border border-gray-200 bg-gray-100 px-2 py-0.5 text-[10px] font-semibold text-gray-500">
+                            Inactive
+                          </span>
+                        )}
+                      </div>
                       <p className="mt-0.5 text-[11px] text-slate-400">{(item.feeHeads || []).length} heads · {(item.installments || []).length} installments</p>
                     </td>
                     <td className="px-4 py-3.5">
@@ -1058,7 +1174,7 @@ const FeesManagement = ({ setShowAdminHeader }) => {
                     <td className="px-4 py-3.5">
                       <div className="flex flex-wrap items-center justify-center gap-2">
                         <button onClick={() => editStructure(item)} className={ghostBtn} title="Edit">
-                          <Edit3 className="h-3.5 w-3.5 text-violet-500" />
+                          <Edit className="h-3.5 w-3.5 text-violet-500" />
                         </button>
                         <button onClick={() => handleDownloadStructurePdf(item)} className={ghostBtn} title="Download PDF">
                           <Download className="h-3.5 w-3.5 text-emerald-500" />
@@ -1066,6 +1182,11 @@ const FeesManagement = ({ setShowAdminHeader }) => {
                         <button onClick={() => deleteStructure(item)} className={ghostBtn} title="Delete">
                           <Trash2 className="h-3.5 w-3.5 text-rose-500" />
                         </button>
+                        {item.isActive === false && (
+                          <button onClick={() => reactivateStructure(item)} className={ghostBtn} title="Reactivate">
+                            <RefreshCw className="h-3.5 w-3.5 text-emerald-500" />
+                          </button>
+                        )}
                       </div>
                     </td>
                   </tr>

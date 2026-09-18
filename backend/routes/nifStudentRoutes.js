@@ -177,28 +177,11 @@ const runBulkImportJob = async (jobId, { students, schoolId, campusId, admin, is
   if (!job) return;
 
   try {
-    // Scoped by campus like every other lookup in this job (admission/parent
-    // sequences, roll allocator) — Class docs carry campusId, so without this
-    // filter a multi-campus school's classLookup would accept a class name
-    // that only exists on a sibling campus, silently passing validation for
-    // rows that should have been rejected as "Class X is not created for this
-    // school".
-    const classDocFilter = { schoolId };
-    if (campusId) classDocFilter.campusId = campusId;
-    const classDocs = await ClassModel.find(classDocFilter).select('name').lean();
+    const classDocs = await ClassModel.find({ schoolId }).select('name').lean();
     const classLookup = new Set(
       classDocs
         .map((item) => normalizeLookupKey(item?.name))
         .filter(Boolean)
-    );
-    // student.grade is stored in its normalized/short form (e.g. "5"), which
-    // rarely matches the real Class.name ("Class 5") a fee structure is keyed
-    // to — this map recovers the real name so fee auto-assignment can look
-    // the class up correctly.
-    const realClassNameByKey = new Map(
-      classDocs
-        .map((item) => [normalizeLookupKey(item?.name), item?.name])
-        .filter(([key]) => key)
     );
 
     // Session for the login-id code & auto numbers: the row's session name if it
@@ -547,15 +530,12 @@ const runBulkImportJob = async (jobId, { students, schoolId, campusId, admin, is
 
         // Best-effort: bill this row against whatever active fee structure
         // matches its class, same as a single enrollment does — bulk-import
-        // was the one student-creation path that skipped this. Fee
-        // structures are keyed to the real Class.name ("Class 5"), not the
-        // short form stored on the student record ("5"), so resolve it back.
-        const realClassName = realClassNameByKey.get(normalizeLookupKey(payload.grade)) || payload.grade;
+        // was the one student-creation path that skipped this.
         autoAssignFeeStructure({
           studentId: studentUser._id,
           schoolId,
           campusId,
-          grade: realClassName,
+          grade: payload.grade,
           section: payload.section,
         }).catch(() => {});
 
@@ -1057,12 +1037,3 @@ router.patch('/students/:id/unarchive', adminAuth, async (req, res) => {
 });
 
 module.exports = router;
-// Exposed so the data-migration portal (backend/services/migration/student.js)
-// can drive the exact same import pipeline — password hashing, roll
-// allocation, parent auto-creation, fee auto-assignment — instead of
-// reimplementing it. bulkImportJobs must hold the job entry before
-// runBulkImportJob is called (see the /students/bulk handler above for the
-// shape it expects).
-module.exports.runBulkImportJob = runBulkImportJob;
-module.exports.bulkImportJobs = bulkImportJobs;
-module.exports.pruneBulkImportJob = pruneBulkImportJob;
