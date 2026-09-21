@@ -66,12 +66,16 @@ describe('PracticePapersPortal', () => {
     const user = userEvent.setup();
     render(<MemoryRouter><PracticePapersPortal /></MemoryRouter>);
 
-    expect(await screen.findByText('Quick Activities')).toBeInTheDocument();
-    expect(await screen.findAllByText('Mathematics')).toHaveLength(3);
-    expect(screen.getByText('Assigned Tryouts')).toBeInTheDocument();
-    expect(screen.getByText('Living Things')).toBeInTheDocument();
-    expect(screen.getByRole('button', { name: 'Practice papers' })).toBeInTheDocument();
-    expect(screen.getByRole('button', { name: 'Homework' })).toBeInTheDocument();
+    expect(await screen.findByText('Choose Your Tryout Format')).toBeInTheDocument();
+    expect(await screen.findByText('Pick a subject above to see what you can practice.')).toBeInTheDocument();
+
+    await screen.findByRole('option', { name: 'Mathematics' });
+    await user.selectOptions(screen.getByRole('combobox', { name: 'Select Subject' }), 'subject-1');
+
+    // MCQ and Fill in the Blanks both report a count of 1 from the mocked question bank.
+    expect(await screen.findAllByText('1 question available')).toHaveLength(2);
+    expect(screen.getByRole('button', { name: 'Start MCQ' })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Start Blanks' })).toBeInTheDocument();
   });
 
   test('opens a teacher MCQ inside the practice-papers page', async () => {
@@ -80,15 +84,22 @@ describe('PracticePapersPortal', () => {
 
     await screen.findByRole('option', { name: 'Mathematics' });
     await user.selectOptions(screen.getByRole('combobox', { name: 'Select Subject' }), 'subject-1');
+<<<<<<< HEAD
     await screen.findByRole('option', { name: 'Numbers' });
     await user.selectOptions(screen.getByRole('combobox', { name: 'Select Chapter' }), 'chapter-1');
+=======
+>>>>>>> 58b9a3c7 (Practice Paper section update)
     await user.click(await screen.findByRole('button', { name: 'Start MCQ' }));
 
     await waitFor(() => expect(screen.getByText('What is 2 + 2?')).toBeInTheDocument());
     expect(screen.getByRole('button', { name: 'Back to activities' })).toBeInTheDocument();
   });
 
+<<<<<<< HEAD
   test('opens the assigned tryout for the chapter\'s topic', async () => {
+=======
+  test('opens an assigned tryout once a subject and topic are selected', async () => {
+>>>>>>> 58b9a3c7 (Practice Paper section update)
     const user = userEvent.setup();
     render(<MemoryRouter initialEntries={['/student/practice-papers']}><PracticePapersPortal /></MemoryRouter>);
 
@@ -96,6 +107,10 @@ describe('PracticePapersPortal', () => {
     await user.selectOptions(screen.getByRole('combobox', { name: 'Select Subject' }), 'subject-1');
     await screen.findByRole('option', { name: 'Numbers' });
     await user.selectOptions(screen.getByRole('combobox', { name: 'Select Chapter' }), 'chapter-1');
+<<<<<<< HEAD
+=======
+    await user.selectOptions(await screen.findByRole('combobox', { name: 'Select Topic' }), 'topic-1');
+>>>>>>> 58b9a3c7 (Practice Paper section update)
     await user.click(await screen.findByRole('button', { name: 'Start Tryout' }));
 
     expect(await screen.findByText('Assigned Tryout')).toBeInTheDocument();
