@@ -69,17 +69,14 @@ describe('DrawerModal content generation', () => {
 
     fireEvent.click(await screen.findByRole('button', { name: 'Generate with AI' }));
 
-    // Generated fields stream in progressively (see streamContentIntoChapter in
-    // DrawerModal), so wait for the final tick rather than the first onUpdate call.
-    await waitFor(() => {
-      const [updatedChapter] = onUpdate.mock.calls.at(-1) || [];
-      expect(updatedChapter?.learningObjectives).toEqual([
-        'Understand place value',
-        'Round large numbers',
-      ]);
-      expect(updatedChapter?.explanation).toContain('Identify each digit position');
-      expect(updatedChapter?.recap).toContain('Place determines digit value');
-    });
+    await waitFor(() => expect(onUpdate).toHaveBeenCalled());
+    const [updatedChapter] = onUpdate.mock.calls.at(-1);
+    expect(updatedChapter.learningObjectives).toEqual([
+      'Understand place value',
+      'Round large numbers',
+    ]);
+    expect(updatedChapter.explanation).toContain('Identify each digit position');
+    expect(updatedChapter.recap).toContain('Place determines digit value');
 
     // The curriculum-map lookup also fires (now that it's fed real subject/
     // class context instead of the always-empty legacy localStorage keys),
