@@ -1,9 +1,14 @@
 import React, { useState, useEffect } from 'react';
+import { useNavigate } from 'react-router-dom';
+import { createPortal } from 'react-dom';
+import { motion, AnimatePresence } from 'framer-motion';
 import {
   Search, Filter, Download, FileSpreadsheet, Plus, Send, Upload, X,
   BookOpen, Edit2, Trash2, Clock, MapPin, User, Calendar,
   RefreshCw, ChevronRight, ChevronLeft, CheckCircle, XCircle, AlertCircle,
-  Loader2, Award, TrendingUp, Eye, EyeOff, FileUp, FileDown, Info
+  Loader2, Award, TrendingUp, Eye, EyeOff, FileUp, FileDown, Info,
+  ArrowRight,
+  Edit
 } from 'lucide-react';
 import toast from 'react-hot-toast';
 import Swal from 'sweetalert2';
@@ -23,15 +28,6 @@ const STATUS_STYLE = {
   pass:   'bg-emerald-50 text-emerald-700 border border-emerald-200',
   fail:   'bg-red-50 text-red-600 border border-red-200',
   absent: 'bg-slate-100 text-slate-600 border border-slate-200',
-};
-
-const TERM_STYLE = {
-  'Term 1':   'bg-blue-50 text-blue-700 border-blue-100',
-  'Term 2':   'bg-violet-50 text-violet-700 border-violet-100',
-  'Term 3':   'bg-orange-50 text-orange-700 border-orange-100',
-  'Final':    'bg-rose-50 text-rose-700 border-rose-100',
-  'Annual':   'bg-red-50 text-red-700 border-red-100',
-  'Half Yearly':'bg-amber-50 text-amber-700 border-amber-100',
 };
 
 const EXAM_STATUS_STYLE = {
@@ -67,7 +63,7 @@ const deriveRemarkFromMarks = (marks, maxMarks, status = 'pass') => {
 };
 
 /* ── modal shell ── */
-const Modal = ({ show, onClose, title, subtitle, icon: Icon, iconColor = 'bg-indigo-600', children, maxWidth = 'sm:max-w-3xl' }) => {
+const Modal = ({ show, onClose, title, subtitle, icon: Icon, iconColor = 'bg-indigo-600', children, maxWidth = 'sm:max-w-3xl', fullPage = false }) => {
   // Lock page scroll behind the modal while it's open — restores whatever
   // the body had before in case another modal/overlay already set it.
   useEffect(() => {
@@ -78,6 +74,32 @@ const Modal = ({ show, onClose, title, subtitle, icon: Icon, iconColor = 'bg-ind
   }, [show]);
 
   if (!show) return null;
+  if (fullPage) {
+    return createPortal(
+      <div className="fixed inset-0 z-50 flex flex-col bg-slate-50">
+        <div className="flex items-center justify-between px-4 sm:px-6 py-4 border-b border-slate-200 bg-white shrink-0">
+          <div className="flex items-center gap-3">
+            {Icon && (
+              <div className={`h-9 w-9 rounded-xl ${iconColor} flex items-center justify-center shadow-sm`}>
+                <Icon size={16} className="text-white" />
+              </div>
+            )}
+            <div>
+              <h3 className="font-bold text-slate-900 text-base leading-tight">{title}</h3>
+              {subtitle && <p className="text-xs text-slate-400">{subtitle}</p>}
+            </div>
+          </div>
+          <button onClick={onClose} className="h-8 w-8 flex items-center justify-center rounded-xl text-slate-400 hover:text-slate-600 hover:bg-slate-100 transition-colors">
+            <X size={16} />
+          </button>
+        </div>
+        <div className="flex-1 overflow-y-auto">
+          <div className="mx-auto w-full max-w-5xl px-4 sm:px-6 py-5">{children}</div>
+        </div>
+      </div>,
+      document.body
+    );
+  }
   return (
     <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center p-0 sm:p-4">
       <div className="absolute inset-0 bg-black/40 backdrop-blur-sm" onClick={onClose} />
@@ -125,9 +147,157 @@ const StatCard = ({ label, value, icon: Icon, bg, text, border }) => (
   </div>
 );
 
+const fmtDateTime = (v) =>
+  v ? new Date(v).toLocaleString('en-IN', { day: 'numeric', month: 'short', year: 'numeric', hour: 'numeric', minute: '2-digit' }) : '';
+
+const toLocalInputValue = (d) => {
+  const pad = (n) => String(n).padStart(2, '0');
+  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`;
+};
+
+/* ── full-page, non-dismissible processing overlay ── */
+const ProcessingOverlay = ({ open, title, text, percent = 0 }) => {
+  useEffect(() => {
+    if (!open) return undefined;
+    const prev = document.body.style.overflow;
+    document.body.style.overflow = 'hidden';
+    return () => { document.body.style.overflow = prev; };
+  }, [open]);
+
+  return createPortal(
+    <AnimatePresence>
+      {open && (
+        <motion.div
+          className="fixed inset-0 z-[2147483647] flex items-center justify-center bg-black/70 p-4"
+          initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} transition={{ duration: 0.18 }}
+        >
+          <motion.div
+            className="w-full max-w-sm rounded-2xl bg-white p-6 shadow-2xl text-center"
+            initial={{ opacity: 0, scale: 0.95 }} animate={{ opacity: 1, scale: 1 }} exit={{ opacity: 0, scale: 0.95 }}
+            transition={{ duration: 0.22, ease: [0.16, 1, 0.3, 1] }}
+          >
+            <div className="mx-auto mb-3 flex h-12 w-12 items-center justify-center rounded-full bg-indigo-50">
+              <Loader2 className="h-6 w-6 animate-spin text-indigo-600" />
+            </div>
+            <h3 className="text-base font-bold text-gray-900">{title}</h3>
+            <p className="mt-1 text-xs text-gray-500">Do not refresh or close this window.</p>
+            <div className="mt-4 h-2 w-full overflow-hidden rounded-full bg-gray-100">
+              <div className="h-full rounded-full bg-indigo-600 transition-[width] duration-300" style={{ width: `${percent}%` }} />
+            </div>
+            <p className="mt-2 text-sm font-semibold text-gray-800">{percent}%</p>
+            <p className="mt-1 text-xs text-slate-400">{text}</p>
+          </motion.div>
+        </motion.div>
+      )}
+    </AnimatePresence>,
+    document.body
+  );
+};
+
+/* ── publish / schedule modal for one main exam ── */
+const PublishResultModal = ({ group, summary, canSchedule, saving, onClose, onPublishNow, onUnpublish, onSchedule, onCancelSchedule }) => {
+  const [mode, setMode] = useState('now');
+  const [at, setAt] = useState('');
+  const open = Boolean(group);
+  const scheduledFor = group?.resultPublishAt && new Date(group.resultPublishAt).getTime() > Date.now() ? group.resultPublishAt : null;
+  const minValue = toLocalInputValue(new Date(Date.now() + 60 * 1000));
+  const invalidSchedule = mode === 'schedule' && (!at || new Date(at).getTime() <= Date.now());
+
+  useEffect(() => {
+    if (open) { setMode('now'); setAt(''); }
+  }, [open, group?._id]);
+
+  return createPortal(
+    <AnimatePresence>
+      {open && (
+        <motion.div
+          className="fixed inset-0 z-50 flex items-end sm:items-center justify-center bg-black/40 backdrop-blur-sm p-0 sm:p-4"
+          initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} transition={{ duration: 0.18 }}
+          onClick={saving ? undefined : onClose}
+        >
+          <motion.div
+            className="w-full sm:max-w-md bg-white rounded-t-3xl sm:rounded-2xl shadow-2xl border border-slate-100 overflow-hidden"
+            initial={{ opacity: 0, y: 24, scale: 0.98 }} animate={{ opacity: 1, y: 0, scale: 1 }} exit={{ opacity: 0, y: 24, scale: 0.98 }}
+            transition={{ duration: 0.24, ease: [0.16, 1, 0.3, 1] }}
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="flex items-start justify-between gap-3 px-5 py-4 border-b border-slate-100">
+              <div className="min-w-0">
+                <p className="text-[11px] font-bold uppercase tracking-wide text-slate-400">Publish Results</p>
+                <h3 className="font-bold text-slate-900 truncate">{group?.title}{group?.term ? ` (${group.term})` : ''}</h3>
+                <p className="text-xs text-slate-500 mt-0.5">{summary?.publishedCount || 0}/{summary?.totalCount || 0} subject results visible to students</p>
+              </div>
+              <button onClick={onClose} disabled={saving} className="h-8 w-8 shrink-0 flex items-center justify-center rounded-xl text-slate-400 hover:text-slate-600 hover:bg-slate-100">
+                <X size={16} />
+              </button>
+            </div>
+
+            <div className="px-5 py-4 space-y-3">
+              {scheduledFor && (
+                <div className="flex items-center justify-between gap-2 rounded-xl border border-indigo-100 bg-indigo-50 px-3 py-2.5">
+                  <p className="text-xs text-indigo-700"><Clock size={12} className="inline mr-1 -mt-0.5" />Scheduled for <span className="font-semibold">{fmtDateTime(scheduledFor)}</span></p>
+                  <button type="button" onClick={onCancelSchedule} disabled={saving} className="text-xs font-semibold text-rose-600 hover:text-rose-700 disabled:opacity-50">Cancel schedule</button>
+                </div>
+              )}
+
+              <button type="button" onClick={() => setMode('now')}
+                className={`w-full text-left rounded-xl border p-3 transition-colors ${mode === 'now' ? 'border-emerald-300 bg-emerald-50' : 'border-slate-200 hover:bg-slate-50'}`}>
+                <p className="text-sm font-bold text-slate-800 flex items-center gap-2"><Send size={14} className="text-emerald-600" /> Publish now</p>
+                <p className="text-xs text-slate-500 mt-0.5">Every subject result under this exam becomes visible to students immediately.</p>
+              </button>
+
+              {canSchedule && (
+                <button type="button" onClick={() => setMode('schedule')}
+                  className={`w-full text-left rounded-xl border p-3 transition-colors ${mode === 'schedule' ? 'border-indigo-300 bg-indigo-50' : 'border-slate-200 hover:bg-slate-50'}`}>
+                  <p className="text-sm font-bold text-slate-800 flex items-center gap-2"><Calendar size={14} className="text-indigo-600" /> Schedule publish</p>
+                  <p className="text-xs text-slate-500 mt-0.5">Results are published automatically when the chosen date and time arrive.</p>
+                </button>
+              )}
+
+              {mode === 'schedule' && canSchedule && (
+                <div>
+                  <label className="mb-1.5 block text-xs font-semibold text-slate-500 uppercase tracking-wide">Publish on</label>
+                  <input type="datetime-local" value={at} min={minValue} onChange={(e) => setAt(e.target.value)}
+                    className="w-full rounded-xl border border-slate-200 bg-slate-50 px-3 py-2.5 text-sm text-slate-800 focus:border-indigo-400 focus:bg-white focus:outline-none focus:ring-2 focus:ring-indigo-100" />
+                </div>
+              )}
+            </div>
+
+            <div className="flex items-center justify-between gap-2 px-5 py-4 border-t border-slate-100 bg-slate-50/60">
+              {summary?.publishedCount > 0 ? (
+                <button type="button" onClick={onUnpublish} disabled={saving}
+                  className="px-3 py-2 rounded-xl border border-amber-200 text-xs font-semibold text-amber-700 hover:bg-amber-50 disabled:opacity-50">
+                  Unpublish all
+                </button>
+              ) : <span />}
+              <div className="flex items-center gap-2">
+                <button type="button" onClick={onClose} disabled={saving} className="px-4 py-2 rounded-xl border border-slate-200 text-sm text-slate-600 hover:bg-white">Cancel</button>
+                {mode === 'now' ? (
+                  <button type="button" onClick={onPublishNow} disabled={saving || !summary?.totalCount}
+                    className="px-5 py-2 rounded-xl bg-emerald-600 text-white text-sm font-semibold hover:bg-emerald-700 shadow-md shadow-emerald-200 disabled:opacity-60">
+                    Publish
+                  </button>
+                ) : (
+                  <button type="button" onClick={() => onSchedule(at)} disabled={saving || invalidSchedule}
+                    className="px-5 py-2 rounded-xl bg-indigo-600 text-white text-sm font-semibold hover:bg-indigo-700 shadow-md shadow-indigo-200 disabled:opacity-60">
+                    {saving ? 'Saving…' : 'Save schedule'}
+                  </button>
+                )}
+              </div>
+            </div>
+          </motion.div>
+        </motion.div>
+      )}
+    </AnimatePresence>,
+    document.body
+  );
+};
+
 /* ════════════════════════════════════════════════════════ */
 const Result = ({ setShowAdminHeader }) => {
   useEffect(() => { setShowAdminHeader?.(true); }, [setShowAdminHeader]);
+  const navigate = useNavigate();
+  const [refreshing, setRefreshing] = useState(false);
 
   const [results, setResults]   = useState([]);
   const [exams, setExams]       = useState([]);
@@ -145,10 +315,10 @@ const Result = ({ setShowAdminHeader }) => {
   const [loadingStudents, setLoadingStudents] = useState(false);
 
   const [searchTerm, setSearchTerm]     = useState('');
-  const [selectedSession, setSelectedSession] = useState('');
-  const [selectedClass, setSelectedClass]   = useState('');
-  const [selectedSection, setSelectedSection] = useState('');
-  const [filterSubject, setFilterSubject]   = useState('all');
+  const [selectedSession] = useState('');
+  const [selectedClass]   = useState('');
+  const [selectedSection] = useState('');
+  const filterSubject = 'all';
 
   const [showAddResult, setShowAddResult]   = useState(false);
   const [showEditResult, setShowEditResult] = useState(false);
@@ -160,8 +330,17 @@ const Result = ({ setShowAdminHeader }) => {
   const [editingResultId, setEditingResultId] = useState(null);
   const [bulkFile, setBulkFile]             = useState(null);
   const [bulkExamId, setBulkExamId]         = useState('');
-  const [expandedExams, setExpandedExams]   = useState(new Set());
-  const [examTabState, setExamTabState]     = useState({});   // { [examId]: { cls: 'all', sec: 'all' } }
+  const [selectedGroupId, setSelectedGroupId] = useState('');
+  const [examSessionFilter, setExamSessionFilter] = useState('');
+  const [examNameFilter, setExamNameFilter] = useState('');
+  const [examSearchTerm, setExamSearchTerm] = useState('');
+  const [examFiltersOpen, setExamFiltersOpen] = useState(false);
+  const [navCls, setNavCls] = useState('');
+  const [navSec, setNavSec] = useState('');
+  const [navSubj, setNavSubj] = useState('');
+  const [publishModalGroup, setPublishModalGroup] = useState(null);
+  const [scheduleSaving, setScheduleSaving] = useState(false);
+  const [publishJob, setPublishJob] = useState({ open: false, percent: 0, title: '', text: '' });
   const [updatingCompletedExamGroupId, setUpdatingCompletedExamGroupId] = useState('');
   const [addResultMode, setAddResultMode] = useState('single');
   const [bulkEntryForm, setBulkEntryForm] = useState({ session: '', className: '', sectionName: '', term: '', examId: '' });
@@ -304,20 +483,75 @@ const Result = ({ setShowAdminHeader }) => {
     } catch { toast.error('Failed to update publish status'); }
   };
 
-  const handlePublishExam = async (examId, publish) => {
-    const examResults = results.filter(r => (r.examId?._id || String(r.examId)) === examId);
-    const resultIds = examResults.map(r => r._id);
-    if (!resultIds.length) return;
-    const label = publish ? 'Publish' : 'Unpublish';
-    const c = await Swal.fire({ title: `${label} All Results?`, html: `${label} all <strong>${examResults.length}</strong> results for this exam?`, icon: 'question', showCancelButton: true, confirmButtonColor: publish ? '#059669' : '#d97706', confirmButtonText: label });
-    if (!c.isConfirmed) return;
+  const getGroupExamIds = (group) => new Set((group?.subjects || []).map((s) => String(s?._id || '')));
+  const resultsOfGroup = (group, source = results) => {
+    const ids = getGroupExamIds(group);
+    return ids.size ? source.filter((r) => ids.has(String(r.examId?._id || r.examId))) : [];
+  };
+
+  const openPublishModal = (group) => setPublishModalGroup(group);
+
+  const runGroupPublish = async (group, publish) => {
+    const ids = resultsOfGroup(group).map((r) => r._id).filter(Boolean);
+    if (!ids.length) { toast.error('No result entries found for this exam'); return; }
+    setPublishModalGroup(null);
+    const CHUNK = 200;
+    let done = 0;
+    let skipped = 0;
+    setPublishJob({ open: true, percent: 0, title: publish ? 'Please wait, publishing results…' : 'Please wait, unpublishing results…', text: `0 of ${ids.length} results` });
     try {
-      const r = await fetch(`${API_BASE}/api/exam/results/bulk-publish`, { method: 'PUT', headers: authH(), body: JSON.stringify({ resultIds, published: publish }) });
-      if (!r.ok) throw new Error();
-      const d = await r.json();
-      toast.success(d.message || `Results ${publish ? 'published' : 'unpublished'}`);
-      fetchResults();
-    } catch { toast.error('Failed to update publish status'); }
+      for (let i = 0; i < ids.length; i += CHUNK) {
+        const chunk = ids.slice(i, i + CHUNK);
+        const r = await fetch(`${API_BASE}/api/exam/results/bulk-publish`, {
+          method: 'PUT', headers: authH(), body: JSON.stringify({ resultIds: chunk, published: publish }),
+        });
+        const d = await r.json().catch(() => ({}));
+        if (!r.ok) {
+          if (publish && String(d?.error || '').toLowerCase().includes('completed')) skipped += chunk.length;
+          else throw new Error(d?.error || 'Failed to update results');
+        } else {
+          skipped += d?.skippedCount || 0;
+        }
+        done += chunk.length;
+        setPublishJob((j) => ({ ...j, percent: Math.round((done / ids.length) * 100), text: `${done} of ${ids.length} results` }));
+      }
+      if (publish && !group?.pseudo) {
+        for (const member of (group?.memberGroups || [group]).filter((g) => g?._id && g.resultPublishAt)) {
+          await fetch(`${API_BASE}/api/exam/groups/${member._id}/result-schedule`, {
+            method: 'PUT', headers: authH(), body: JSON.stringify({ scheduledAt: null }),
+          }).catch(() => {});
+        }
+      }
+      toast.success(`${ids.length - skipped} result(s) ${publish ? 'published' : 'unpublished'}${skipped ? ` (${skipped} skipped: exam not completed)` : ''}`);
+    } catch (err) {
+      toast.error(err.message || 'Failed to update results');
+    } finally {
+      await Promise.all([fetchResults(), fetchExamGroups()]);
+      setPublishJob((j) => ({ ...j, open: false }));
+    }
+  };
+
+  const saveGroupSchedule = async (group, localValue) => {
+    const members = (group?.memberGroups || [group]).filter((g) => g?._id && !g.pseudo);
+    if (!members.length) return;
+    setScheduleSaving(true);
+    try {
+      const scheduledAt = localValue ? new Date(localValue).toISOString() : null;
+      for (const member of members) {
+        const r = await fetch(`${API_BASE}/api/exam/groups/${member._id}/result-schedule`, {
+          method: 'PUT', headers: authH(), body: JSON.stringify({ scheduledAt }),
+        });
+        const d = await r.json().catch(() => ({}));
+        if (!r.ok) throw new Error(d?.error || 'Failed to save schedule');
+      }
+      toast.success(scheduledAt ? 'Result publishing scheduled' : 'Schedule cancelled');
+      await fetchExamGroups();
+      setPublishModalGroup(null);
+    } catch (err) {
+      toast.error(err.message || 'Failed to save schedule');
+    } finally {
+      setScheduleSaving(false);
+    }
   };
 
   const getCompletedExamGroupSummary = (group) => {
@@ -365,9 +599,6 @@ const Result = ({ setShowAdminHeader }) => {
     }
   };
 
-  const toggleExamExpand = (examId) => {
-    setExpandedExams(prev => { const s = new Set(prev); s.has(examId) ? s.delete(examId) : s.add(examId); return s; });
-  };
 
   /* ── add result ── */
   const handleAddResult = async (e) => {
@@ -753,7 +984,6 @@ const Result = ({ setShowAdminHeader }) => {
   };
 
   /* ── computed ── */
-  const uniqueSubjects = [...new Set(results.map(r => r.examId?.subject).filter(Boolean))];
   const studentSessionById = new Map(
     students
       .map((student) => [String(student?._id || ''), String(student?.academicYear || student?.session || '').trim()])
@@ -766,22 +996,6 @@ const Result = ({ setShowAdminHeader }) => {
       studentSessionById.get(String(result?.studentId?._id || result?.studentId || '')) ||
       ''
     ).trim();
-  const filterSessionOptions = [...new Set(
-    results.map((result) => getResultSession(result)).filter(Boolean)
-  )].sort();
-  const filterClassOptions = [...new Set(
-    results
-      .filter((result) => !selectedSession || getResultSession(result) === selectedSession)
-      .map((result) => String(result?.studentId?.grade || '').trim())
-      .filter(Boolean)
-  )].sort();
-  const filterSectionOptions = [...new Set(
-    results
-      .filter((result) => !selectedSession || getResultSession(result) === selectedSession)
-      .filter((result) => !selectedClass || String(result?.studentId?.grade || '').trim() === selectedClass)
-      .map((result) => String(result?.studentId?.section || '').trim())
-      .filter(Boolean)
-  )].sort();
   const completedExamGroupOptions = (Array.isArray(examGroups) ? examGroups : [])
     .filter(group => String(group?.status || '').toLowerCase() === 'completed')
     .sort((a, b) => {
@@ -813,12 +1027,90 @@ const Result = ({ setShowAdminHeader }) => {
 
   const passRate = stats.total > 0 ? Math.round((stats.pass / stats.total) * 100) : 0;
   const examById = new Map((Array.isArray(exams) ? exams : []).map((exam) => [String(exam._id), exam]));
-  const resultsByExam = filteredResults.reduce((acc, r) => {
-    const eid = r.examId?._id || String(r.examId) || 'unknown';
-    if (!acc[eid]) acc[eid] = { exam: r.examId, results: [] };
-    acc[eid].results.push(r);
-    return acc;
-  }, {});
+
+  /* ── main-exam cards + class → section → subject drill-down ── */
+  const sessionOfGroup = (g) => String(g?.classId?.academicYearId?.name || '').trim();
+
+  const allResultGroups = (() => {
+    const list = (Array.isArray(examGroups) ? examGroups : [])
+      .filter((g) => String(g?.status || '').toLowerCase() === 'completed' || getCompletedExamGroupSummary(g).totalCount > 0)
+      .sort((a, b) => {
+        const d1 = a?.startDate ? new Date(a.startDate).getTime() : (a?.createdAt ? new Date(a.createdAt).getTime() : 0);
+        const d2 = b?.startDate ? new Date(b.startDate).getTime() : (b?.createdAt ? new Date(b.createdAt).getTime() : 0);
+        return d2 - d1;
+      });
+    const groupedIds = new Set((Array.isArray(examGroups) ? examGroups : []).flatMap((g) => (g.subjects || []).map((s) => String(s._id))));
+    // The same exam name (e.g. "Class Test 1") can exist once per class/section —
+    // show it as a single card that covers all of them, grouped by session too
+    // so "Class Test 1" from two different academic years stays separate.
+    const mergedByTitle = new Map();
+    list.forEach((g) => {
+      const key = `${String(g.title || '').trim().toLowerCase()}::${sessionOfGroup(g)}`;
+      if (!mergedByTitle.has(key)) {
+        mergedByTitle.set(key, { ...g, _id: `merged:${key}`, session: sessionOfGroup(g), memberGroups: [g], subjects: [...(g.subjects || [])] });
+      } else {
+        const m = mergedByTitle.get(key);
+        m.memberGroups.push(g);
+        m.subjects.push(...(g.subjects || []));
+        if (!m.resultPublishAt && g.resultPublishAt) m.resultPublishAt = g.resultPublishAt;
+      }
+    });
+    list.length = 0;
+    list.push(...mergedByTitle.values());
+    const ungrouped = new Map();
+    results.forEach((r) => {
+      const id = String(r.examId?._id || r.examId || '');
+      if (id && !groupedIds.has(id)) ungrouped.set(id, r.examId);
+    });
+    if (ungrouped.size) {
+      list.push({
+        _id: '__ungrouped__', pseudo: true, title: 'Other Exams', term: '', status: 'completed', session: '',
+        subjects: [...ungrouped.entries()].map(([id, ex]) => ({ ...(ex && typeof ex === 'object' ? ex : {}), _id: id })),
+      });
+    }
+    return list;
+  })();
+
+  const examSessionOptions = [...new Set(allResultGroups.map((g) => g.session).filter(Boolean))].sort();
+  const examNameOptions = [...new Set(allResultGroups.map((g) => g.title).filter(Boolean))].sort();
+  const resultGroups = allResultGroups.filter((g) =>
+    (!examSessionFilter || g.session === examSessionFilter) &&
+    (!examNameFilter || g.title === examNameFilter) &&
+    (!examSearchTerm.trim() || String(g.title || '').toLowerCase().includes(examSearchTerm.trim().toLowerCase()))
+  );
+  const selectedGroup = resultGroups.find((g) => String(g._id) === String(selectedGroupId)) || null;
+  const openGroupDetail = (group) => {
+    setSelectedGroupId(String(group._id));
+    setNavCls('');
+    setNavSec('');
+    setNavSubj('');
+  };
+
+  const detailResults = selectedGroup ? resultsOfGroup(selectedGroup, filteredResults) : [];
+  const gradeOf = (r) => String(r.studentId?.grade || '—').trim() || '—';
+  const sectionOf = (r) => String(r.studentId?.section || '—').trim() || '—';
+  const groupRowsBy = (rows, keyFn) => {
+    const m = new Map();
+    rows.forEach((r) => { const k = keyFn(r); if (!m.has(k)) m.set(k, []); m.get(k).push(r); });
+    return m;
+  };
+  const naturalSort = (a, b) => String(a).localeCompare(String(b), undefined, { numeric: true });
+  const classNodes = [...groupRowsBy(detailResults, gradeOf).entries()]
+    .sort((a, b) => naturalSort(a[0], b[0])).map(([cls, rows]) => ({ cls, rows }));
+  const clsRows = navCls ? detailResults.filter((r) => gradeOf(r) === navCls) : [];
+  const secNodes = [...groupRowsBy(clsRows, sectionOf).entries()]
+    .sort((a, b) => naturalSort(a[0], b[0])).map(([sec, rows]) => ({ sec, rows }));
+  const secRows = navSec ? clsRows.filter((r) => sectionOf(r) === navSec) : [];
+  const subjNodes = [...groupRowsBy(secRows, (r) => String(r.examId?._id || r.examId)).entries()]
+    .map(([examId, rows]) => ({ examId, exam: rows[0]?.examId, rows }))
+    .sort((a, b) => naturalSort(a.exam?.subject || '', b.exam?.subject || ''));
+  const activeSubj = navSubj ? subjNodes.find((n) => n.examId === navSubj) || null : null;
+  const goBackLevel = () => {
+    if (navSubj) setNavSubj('');
+    else if (navSec) setNavSec('');
+    else if (navCls) setNavCls('');
+    else setSelectedGroupId('');
+  };
 
   /* ── result form fields (reusable) ── */
   const renderResultFields = (form, setForm, options = {}) => {
@@ -1231,16 +1523,9 @@ const Result = ({ setShowAdminHeader }) => {
     };
 
     const includedRows = bulkEntryRows.filter((row) => !bulkExcludedIds.has(row.studentId) && String(row.marks ?? '').trim() !== '');
-    const reviewCounts = includedRows.reduce((acc, row) => {
-      const key = row.status === 'absent' ? 'absent' : row.status === 'fail' ? 'fail' : 'pass';
-      acc[key] += 1;
-      return acc;
-    }, { pass: 0, fail: 0, absent: 0 });
-
     const stepMeta = [
       { id: 1, title: 'Select Exam', sub: 'Choose session, class and exam' },
-      { id: 2, title: 'Enter Marks', sub: 'Fill or upload marks' },
-      { id: 3, title: 'Review & Submit', sub: 'Check and save results' },
+      { id: 2, title: 'Enter Marks', sub: 'Fill marks and save results' },
     ];
 
     return (
@@ -1363,6 +1648,18 @@ const Result = ({ setShowAdminHeader }) => {
 
         {bulkStep === 2 && (
           <div className="space-y-3">
+            <div className="flex flex-wrap items-center gap-2 text-xs">
+              <span className="text-slate-500 font-semibold uppercase tracking-wide">Entering marks for:</span>
+              <span className="rounded-full bg-indigo-50 border border-indigo-100 text-indigo-700 font-semibold px-2.5 py-1">Class {bulkEntryForm.className || '—'}</span>
+              <ArrowRight size={13} className="text-slate-400"  />
+              <span className="rounded-full bg-violet-50 border border-violet-100 text-violet-700 font-semibold px-2.5 py-1">Section {bulkEntryForm.sectionName || '—'}</span>
+              <ArrowRight size={13} className="text-slate-400" />
+              <span className="rounded-full bg-emerald-50 border border-emerald-100 text-emerald-700 font-semibold px-2.5 py-1">{selectedExam?.subject || selectedExam?.title || '—'}</span>
+              <ArrowRight size={13} className="text-slate-400" />
+              {selectedExam?.title && selectedExam?.subject && (
+                <span className="rounded-full bg-slate-100 border border-slate-200 text-slate-600 font-semibold px-2.5 py-1">{selectedExam.title}</span>
+              )}
+            </div>
             <div className="rounded-xl border border-slate-200 overflow-hidden">
               <div className="flex flex-wrap items-center justify-between gap-2 px-4 py-2.5 bg-slate-50 border-b border-slate-200">
                 <p className="text-xs font-semibold text-slate-500 uppercase tracking-wide">Students ({searchedRows.length})</p>
@@ -1395,7 +1692,7 @@ const Result = ({ setShowAdminHeader }) => {
               ) : bulkEntryRows.length === 0 ? (
                 <div className="p-6 text-sm text-slate-500">No students found for this class/section.</div>
               ) : (
-                <div className="max-h-[420px] overflow-auto">
+                <div className="max-h-[260px] min-h-[180px] overflow-auto">
                   <table className="w-full text-sm">
                     <thead className="bg-gray-100 sticky top-0">
                       <tr className="border-b border-slate-100">
@@ -1424,7 +1721,7 @@ const Result = ({ setShowAdminHeader }) => {
                     <tbody className="divide-y divide-slate-50">
                       {pagedRows.map((row) => (
                         <tr key={row.studentId} className={bulkExcludedIds.has(row.studentId) ? 'opacity-50' : ''}>
-                          <td className="px-3 py-2">
+                          <td className="px-3 py-1">
                             <input
                               type="checkbox"
                               checked={!bulkExcludedIds.has(row.studentId)}
@@ -1440,32 +1737,32 @@ const Result = ({ setShowAdminHeader }) => {
                           </td>
                           {/* <td className="px-3 py-2 text-slate-500">{(currentPage - 1) * BULK_ROWS_PER_PAGE + idx + 1}</td> */}
                           <td className="px-3 py-2 text-slate-600">{row.roll || '—'}</td>
-                          <td className="px-3 py-2">
+                          <td className="px-3 py-1">
                             <div className="font-medium text-slate-800">{row.name || '—'}</div>
                             <div className="text-xs text-slate-400">{row.studentCode || ''}</div>
                           </td>
-                          <td className="px-3 py-2">
+                          <td className="px-3 py-1">
                             <input
                               type="text"
                               inputMode="numeric"
                               pattern="[0-9]*"
                               value={row.marks}
                               onChange={(e) => handleBulkRowMarksChange(row.studentId, e.target.value)}
-                              className="w-20 rounded-lg border border-slate-200 px-2 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-100 focus:border-indigo-400"
+                              className="w-20 rounded-lg border border-slate-200 px-2 py-1 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-100 focus:border-indigo-400"
                             />
                           </td>
-                          <td className="px-3 py-2">
+                          <td className="px-3 py-1">
                             <span className={`inline-flex min-w-9 justify-center rounded-md px-2 py-1 text-xs font-bold ${
                               row.grade ? 'bg-emerald-100 text-emerald-700' : 'bg-slate-100 text-slate-400'
                             }`}>
                               {row.grade || '—'}
                             </span>
                           </td>
-                          <td className="px-3 py-2">
+                          <td className="px-3 py-1">
                             <select
                               value={row.status}
                               onChange={(e) => handleBulkRowStatusChange(row.studentId, e.target.value)}
-                              className={`rounded-lg border px-2 py-1.5 text-xs font-semibold ${
+                              className={`rounded-lg border px-2 py-1 text-xs font-semibold ${
                                 row.status === 'fail' ? 'border-red-200 bg-red-50 text-red-700' : row.status === 'absent' ? 'border-slate-200 bg-slate-100 text-slate-600' : 'border-emerald-200 bg-emerald-50 text-emerald-700'
                               }`}
                             >
@@ -1474,12 +1771,12 @@ const Result = ({ setShowAdminHeader }) => {
                               <option value="absent">Absent</option>
                             </select>
                           </td>
-                          <td className="px-3 py-2">
+                          <td className="px-3 py-1">
                             <input
                               type="text"
                               value={row.remarks}
                               readOnly
-                              className="w-full rounded-lg border border-slate-200 bg-slate-100 px-2 py-1.5 text-sm text-slate-600 focus:outline-none"
+                              className="w-full rounded-lg border border-slate-200 bg-slate-100 px-2 py-1 text-sm text-slate-600 focus:outline-none"
                             />
                           </td>
                         </tr>
@@ -1516,57 +1813,6 @@ const Result = ({ setShowAdminHeader }) => {
           </div>
         )}
 
-        {bulkStep === 3 && (
-          <div className="space-y-3">
-            <p className="text-center text-xs text-slate-500">
-              <span className="font-semibold text-slate-700">{selectedExam?.title}</span>
-              {bulkEntryForm.session ? ` (${bulkEntryForm.session})` : ''} • Class {bulkEntryForm.className}
-              {bulkEntryForm.sectionName ? ` - ${bulkEntryForm.sectionName}` : ''} • {selectedExam?.subject || selectedExam?.title}
-            </p>
-            <div className="grid grid-cols-3 gap-3">
-              <div className="rounded-xl border border-emerald-100 bg-emerald-50 p-3 text-center">
-                <p className="text-xl font-bold text-emerald-700">{reviewCounts.pass}</p>
-                <p className="text-xs font-semibold text-emerald-600 uppercase">Pass</p>
-              </div>
-              <div className="rounded-xl border border-red-100 bg-red-50 p-3 text-center">
-                <p className="text-xl font-bold text-red-700">{reviewCounts.fail}</p>
-                <p className="text-xs font-semibold text-red-600 uppercase">Fail</p>
-              </div>
-              <div className="rounded-xl border border-slate-200 bg-slate-100 p-3 text-center">
-                <p className="text-xl font-bold text-slate-700">{reviewCounts.absent}</p>
-                <p className="text-xs font-semibold text-slate-500 uppercase">Absent</p>
-              </div>
-            </div>
-            <div className="rounded-xl border border-slate-200 overflow-hidden">
-              <div className="max-h-[30px] overflow-auto">
-                <table className="w-full text-sm">
-                  <thead className="bg-gray-100 sticky top-0">
-                    <tr>
-                      <th className="px-3 py-2 text-left text-xs font-semibold text-slate-500">Student</th>
-                      <th className="px-3 py-2 text-left text-xs font-semibold text-slate-500">Marks</th>
-                      <th className="px-3 py-2 text-left text-xs font-semibold text-slate-500">Grade</th>
-                      <th className="px-3 py-2 text-left text-xs font-semibold text-slate-500">Status</th>
-                    </tr>
-                  </thead>
-                  <tbody className="divide-y divide-slate-50">
-                    {includedRows.map((row) => (
-                      <tr key={row.studentId}>
-                        <td className="px-3 py-2 text-slate-700">{row.name}</td>
-                        <td className="px-3 py-2 text-slate-600">{row.marks} / {maxMarks}</td>
-                        <td className="px-3 py-2 text-slate-600">{row.grade || '—'}</td>
-                        <td className="px-3 py-2 capitalize text-slate-600">{row.status}</td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </div>
-            </div>
-            {!includedRows.length && (
-              <p className="text-center text-sm text-amber-600">No marks entered yet — go back to Enter Marks first.</p>
-            )}
-          </div>
-        )}
-
         <div className="flex items-center justify-between gap-2.5 pt-2 border-t border-slate-100">
           <div className="flex items-center gap-2.5">
             <Info size={14} className="text-slate-400 shrink-0" />
@@ -1581,11 +1827,11 @@ const Result = ({ setShowAdminHeader }) => {
             <button type="button" onClick={closeAddResultModal} className="px-4 py-2 rounded-xl border border-slate-200 text-sm text-slate-600 hover:bg-slate-50">
               Cancel
             </button>
-            {bulkStep < 3 ? (
+            {bulkStep < 2 ? (
               <button
                 type="button"
                 onClick={() => setBulkStep((s) => s + 1)}
-                disabled={(bulkStep === 1 && !canProceedToStep2) || (bulkStep === 2 && !bulkEntryRows.length)}
+                disabled={!canProceedToStep2}
                 className="px-5 py-2 rounded-xl bg-indigo-600 text-white text-sm font-semibold hover:bg-indigo-700 shadow-md shadow-indigo-200 disabled:opacity-60 disabled:cursor-not-allowed"
               >
                 Next
@@ -1663,25 +1909,38 @@ const Result = ({ setShowAdminHeader }) => {
             </div>
           </div>
           <div className="flex items-center gap-2 flex-wrap">
-            <button onClick={() => { fetchResults(); fetchExams(); fetchExamGroups(); }}
-              className="flex items-center gap-1.5 px-3 py-2 rounded-xl border border-slate-200 text-xs text-slate-600 hover:bg-slate-50 transition-colors">
-              <RefreshCw size={13} /> Refresh
-            </button>
-            <button onClick={() => { window.location.href = '/admin/examination'; }}
+            
+            {/* <button onClick={() => navigate('/admin/examination')}
               className="flex items-center gap-1.5 px-3 py-2 rounded-xl border border-indigo-200 bg-indigo-50 text-xs text-indigo-700 hover:bg-indigo-100 transition-colors font-semibold">
-              <BookOpen size={13} /> Exam Manager
+              <BookOpen size
+              ={13} /> Exam Manager
+            </button> */}
+            <button onClick={openAddResultModal}
+              className="flex items-center gap-1.5 px-4 py-2 rounded-xl bg-indigo-600 text-white text-xs font-semibold hover:bg-indigo-700 shadow-md shadow-indigo-200 transition-colors">
+              <Plus size={13} /> Add
             </button>
             <button onClick={() => setShowBulkUpload(true)}
               className="flex items-center gap-1.5 px-3 py-2 rounded-xl border border-slate-200 text-xs text-slate-600 hover:bg-slate-50 transition-colors">
-              <FileUp size={13} /> Bulk Upload
+              <FileUp size={13} /> Bulk
             </button>
             <button onClick={exportToCSV}
               className="flex items-center gap-1.5 px-3 py-2 rounded-xl border border-slate-200 text-xs text-slate-600 hover:bg-slate-50 transition-colors">
               <FileDown size={13} /> Export
             </button>
-            <button onClick={openAddResultModal}
-              className="flex items-center gap-1.5 px-4 py-2 rounded-xl bg-indigo-600 text-white text-xs font-semibold hover:bg-indigo-700 shadow-md shadow-indigo-200 transition-colors">
-              <Plus size={13} /> Add Result
+            
+            <button
+              onClick={async () => {
+                if (refreshing) return;
+                setRefreshing(true);
+                try {
+                  await Promise.all([fetchResults(), fetchExams(), fetchExamGroups()]);
+                } finally {
+                  setRefreshing(false);
+                }
+              }}
+              disabled={refreshing}
+              className="flex items-center gap-1.5 px-3 py-2 rounded-xl border border-slate-200 text-xs text-slate-600 hover:bg-slate-50 transition-colors disabled:opacity-60">
+              <RefreshCw size={13} className={refreshing ? 'animate-spin' : ''} /> {refreshing ? 'Refreshing...' : 'Refresh'}
             </button>
           </div>
         </div>
@@ -1707,7 +1966,7 @@ const Result = ({ setShowAdminHeader }) => {
         </div>
 
         {/* ── Completed Exam Publish Toggles ── */}
-        <div className="bg-white rounded-2xl border border-slate-200 p-4 shadow-sm">
+        {/* <div className="bg-white rounded-2xl border border-slate-200 p-4 shadow-sm">
           <label className="mb-2 block text-xs font-semibold text-slate-500 uppercase tracking-wide">
             Completed Main Exams
           </label>
@@ -1749,214 +2008,267 @@ const Result = ({ setShowAdminHeader }) => {
               })}
             </div>
           )}
-        </div>
+        </div> */}
 
-        {/* ── Filters ── */}
-        <div className="bg-white rounded-2xl border border-slate-200 p-4 shadow-sm">
-          <div className="flex flex-wrap items-center gap-3">
-            <div className="relative">
-              <Search size={13} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
-              <input value={searchTerm} onChange={e => setSearchTerm(e.target.value)} placeholder="Search student or subject…"
-                className="pl-8 pr-4 py-2.5 rounded-xl border border-slate-200 bg-slate-50 text-sm focus:border-indigo-400 focus:outline-none focus:ring-2 focus:ring-indigo-100 w-52" />
+        {!selectedGroup ? (
+          /* ══════════ LEVEL 1: exam name cards ══════════ */
+          <>
+          <div className="p-4 space-y-3">
+            <div className="flex items-center gap-2">
+              <div className="relative flex-1">
+                <Search size={13} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
+                <input value={examSearchTerm} onChange={(e) => setExamSearchTerm(e.target.value)} placeholder="Search exam name…"
+                  className="bg-white w-full pl-8 pr-4 py-2.5 rounded-full border border-slate-200 bg-slate-50 text-sm focus:border-indigo-400 focus:outline-none focus:ring-2 focus:ring-indigo-100" />
+              </div>
+              <button type="button"
+                onClick={() => {
+                  if (examFiltersOpen) { setExamSessionFilter(''); setExamNameFilter(''); }
+                  setExamFiltersOpen((v) => !v);
+                }}
+                title={examFiltersOpen ? 'Close filters' : 'Filter by session or exam name'}
+                className={`shrink-0 h-[42px] w-[42px] flex items-center justify-center rounded-full border transition-colors ${
+                  examFiltersOpen || examSessionFilter || examNameFilter
+                    ? 'border-indigo-300 bg-indigo-50 text-indigo-600'
+                    : 'border-slate-200 bg-slate-50 text-slate-500 hover:bg-slate-100'
+                }`}>
+                {examFiltersOpen ? <X size={16} /> : <Filter size={16} />}
+              </button>
             </div>
-            <select value={selectedSession} onChange={e => { setSelectedSession(e.target.value); setSelectedClass(''); setSelectedSection(''); }}
-              className="rounded-xl border border-slate-200 bg-slate-50 px-3 py-2.5 text-sm text-slate-700 focus:border-indigo-400 focus:outline-none min-w-[140px]">
-              <option value="">All Sessions</option>
-              {filterSessionOptions.map(session => <option key={session} value={session}>{session}</option>)}
-            </select>
-            <select value={selectedClass} onChange={e => { setSelectedClass(e.target.value); setSelectedSection(''); }}
-              className="rounded-xl border border-slate-200 bg-slate-50 px-3 py-2.5 text-sm text-slate-700 focus:border-indigo-400 focus:outline-none min-w-[120px]">
-              <option value="">All Classes</option>
-              {filterClassOptions.map(className => <option key={className} value={className}>{className}</option>)}
-            </select>
-            <select value={selectedSection} onChange={e => setSelectedSection(e.target.value)}
-              className="rounded-xl border border-slate-200 bg-slate-50 px-3 py-2.5 text-sm text-slate-700 focus:border-indigo-400 focus:outline-none min-w-[120px]">
-              <option value="">All Sections</option>
-              {filterSectionOptions.map(sectionName => <option key={sectionName} value={sectionName}>{sectionName}</option>)}
-            </select>
-            <div className="relative">
-              <Filter size={13} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400 pointer-events-none" />
-              <select value={filterSubject} onChange={e => setFilterSubject(e.target.value)}
-                className="rounded-xl border border-slate-200 bg-slate-50 pl-8 pr-4 py-2.5 text-sm text-slate-700 focus:border-indigo-400 focus:outline-none min-w-[140px]">
-                <option value="all">All Subjects</option>
-                {uniqueSubjects.map(s => <option key={s} value={s}>{s}</option>)}
-              </select>
+            {examFiltersOpen && (
+              <div className="flex flex-wrap items-center gap-3 pt-1 border-t border-slate-100">
+                <select value={examSessionFilter} onChange={(e) => setExamSessionFilter(e.target.value)}
+                  className="rounded-xl border border-slate-200 bg-slate-50 px-3 py-2.5 text-sm text-slate-700 focus:border-indigo-400 focus:outline-none min-w-[140px]">
+                  <option value="">All Sessions</option>
+                  {examSessionOptions.map((s) => <option key={s} value={s}>{s}</option>)}
+                </select>
+                <select value={examNameFilter} onChange={(e) => setExamNameFilter(e.target.value)}
+                  className="rounded-xl border border-slate-200 bg-slate-50 px-3 py-2.5 text-sm text-slate-700 focus:border-indigo-400 focus:outline-none min-w-[160px]">
+                  <option value="">All Exam Names</option>
+                  {examNameOptions.map((n) => <option key={n} value={n}>{n}</option>)}
+                </select>
+                <span className="ml-auto text-xs text-slate-400 font-medium">{resultGroups.length} exam{resultGroups.length !== 1 ? 's' : ''}</span>
+              </div>
+            )}
+          </div>
+          {loading ? (
+            <div className="bg-white rounded-2xl border border-slate-200 shadow-sm flex flex-col items-center justify-center py-16 gap-3">
+              <Loader2 size={28} className="animate-spin text-indigo-400" />
+              <p className="text-sm text-slate-400">Loading results…</p>
             </div>
-            <span className="ml-auto text-xs text-slate-400 font-medium">{filteredResults.length} result{filteredResults.length !== 1 ? 's' : ''}</span>
-          </div>
-        </div>
-
-        {/* ── Results by Exam ── */}
-        {loading ? (
-          <div className="bg-white rounded-2xl border border-slate-200 shadow-sm flex flex-col items-center justify-center py-16 gap-3">
-            <Loader2 size={28} className="animate-spin text-indigo-400" />
-            <p className="text-sm text-slate-400">Loading results…</p>
-          </div>
-        ) : Object.keys(resultsByExam).length === 0 ? (
-          <div className="bg-white rounded-2xl border border-slate-200 shadow-sm flex flex-col items-center justify-center py-16 gap-3">
-            <div className="h-14 w-14 rounded-2xl bg-slate-100 flex items-center justify-center">
-              <FileSpreadsheet size={22} className="text-slate-400" />
+          ) : resultGroups.length === 0 ? (
+            <div className="bg-white rounded-2xl border border-slate-200 shadow-sm flex flex-col items-center justify-center py-16 gap-3">
+              <div className="h-14 w-14 rounded-2xl bg-slate-100 flex items-center justify-center">
+                <FileSpreadsheet size={22} className="text-slate-400" />
+              </div>
+              <p className="text-sm font-semibold text-slate-500">No completed exams yet</p>
+              <p className="text-xs text-slate-400">Completed exams show up here as cards once they have results</p>
+              <button onClick={openAddResultModal}
+                className="mt-1 flex items-center gap-1.5 text-xs font-semibold text-indigo-600 hover:text-indigo-700">
+                <Plus size={13} /> Add Result
+              </button>
             </div>
-            <p className="text-sm font-semibold text-slate-500">No results found</p>
-            <p className="text-xs text-slate-400">Try adjusting filters or add a new result</p>
-            <button onClick={openAddResultModal}
-              className="mt-1 flex items-center gap-1.5 text-xs font-semibold text-indigo-600 hover:text-indigo-700">
-              <Plus size={13} /> Add Result
-            </button>
-          </div>
-        ) : (
-          <div className="space-y-3">
-            {Object.entries(resultsByExam).map(([examId, { exam, results: examResults }]) => {
-              const isExpanded = expandedExams.has(examId);
-              const passCount      = examResults.filter(r => r.status?.toLowerCase() === 'pass').length;
-              const failCount      = examResults.filter(r => r.status?.toLowerCase() === 'fail').length;
-              const publishedCount = examResults.filter(r => r.published).length;
-              const allPublished   = publishedCount === examResults.length && examResults.length > 0;
-              const termStyle      = TERM_STYLE[exam?.term] || 'bg-slate-50 text-slate-600 border-slate-100';
-              const fullExam       = examById.get(String(examId)) || {};
-              const examStatusRaw  = String(fullExam?.status || exam?.status || '').trim();
-              const examStatusKey  = examStatusRaw.toLowerCase();
-              const examIsCompleted = examStatusKey === 'completed';
-              const examStatusStyle = EXAM_STATUS_STYLE[examStatusKey] || 'bg-slate-50 text-slate-600 border-slate-100';
-              const canUnpublishAll = allPublished;
-              const canPublishAll = examIsCompleted && !allPublished;
-              const publishAllDisabled = !canPublishAll && !canUnpublishAll;
-
-              // per-exam tab state
-              const tabCls  = examTabState[examId]?.cls  || 'all';
-              const tabSec  = examTabState[examId]?.sec  || 'all';
-              const setTab  = (patch) => setExamTabState(prev => ({ ...prev, [examId]: { cls: 'all', sec: 'all', ...prev[examId], ...patch } }));
-
-              const examClasses  = [...new Set(examResults.map(r => r.studentId?.grade).filter(Boolean))].sort();
-              const examSections = [...new Set(
-                examResults
-                  .filter(r => tabCls === 'all' || r.studentId?.grade === tabCls)
-                  .map(r => r.studentId?.section).filter(Boolean)
-              )].sort();
-              const visibleResults = examResults.filter(r => {
-                const mc = tabCls === 'all' || r.studentId?.grade === tabCls;
-                const ms = tabSec === 'all' || r.studentId?.section === tabSec;
-                return mc && ms;
-              });
-              return (
-                <div key={examId} className="bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden">
-                  {/* ── Exam header ── */}
-                  <div className="px-5 py-4">
-                    <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
-                      <div className="flex flex-col gap-1">
-                        <div className="flex items-center gap-2 flex-wrap">
-                          {exam?.term && <span className={`inline-flex rounded-lg px-2 py-0.5 text-[10px] font-bold border ${termStyle}`}>{exam.term}</span>}
-                          {!!examStatusRaw && (
-                            <span className={`inline-flex rounded-lg px-2 py-0.5 text-[10px] font-bold border capitalize ${examStatusStyle}`}>
-                              {examStatusKey}
-                            </span>
-                          )}
-                          <h3 className="font-bold text-slate-800">{exam?.title || 'Unknown Exam'}</h3>
-                        </div>
-                        <div className="flex items-center gap-2 text-xs text-slate-400 flex-wrap">
-                          <span>{exam?.subject || '—'}</span>
-                          {(exam?.classId?.name || exam?.grade) && <><span>·</span><span>Class {exam?.classId?.name || exam?.grade}</span></>}
-                          {(exam?.sectionId?.name || exam?.section) && <><span>·</span><span>Section {exam?.sectionId?.name || exam?.section}</span></>}
-                          {exam?.marks && <><span>·</span><span>Max: {exam.marks}</span></>}
+          ) : (
+            <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-3 gap-4">
+              {resultGroups.map((group) => {
+                const summary = getCompletedExamGroupSummary(group);
+                const scheduledFor = group.resultPublishAt && new Date(group.resultPublishAt).getTime() > Date.now() ? group.resultPublishAt : null;
+                const pct = summary.totalCount ? Math.round((summary.publishedCount / summary.totalCount) * 100) : 0;
+                const statusPill = summary.fullyPublished
+                  ? { label: 'Published', cls: 'bg-emerald-50 text-emerald-700 border-emerald-100', Icon: Eye }
+                  : scheduledFor
+                    ? { label: 'Scheduled', cls: 'bg-indigo-50 text-indigo-700 border-indigo-100', Icon: Clock }
+                    : summary.publishedCount > 0
+                      ? { label: 'Partly published', cls: 'bg-sky-50 text-sky-700 border-sky-100', Icon: Eye }
+                      : { label: 'Unpublished', cls: 'bg-amber-50 text-amber-700 border-amber-100', Icon: EyeOff };
+                return (
+                  <div key={group._id}
+                    role="button" tabIndex={0}
+                    onClick={() => openGroupDetail(group)}
+                    onKeyDown={(e) => { if (e.key === 'Enter') openGroupDetail(group); }}
+                    className="group bg-white rounded-2xl border border-slate-200 shadow-sm p-5 cursor-pointer hover:shadow-md hover:border-indigo-200 transition-all flex flex-col gap-3">
+                    <div className="flex items-start justify-between gap-3">
+                      <div className="flex items-center gap-3 min-w-0">
+                        <span className="h-11 w-11 rounded-xl bg-indigo-600 flex items-center justify-center shrink-0 shadow-sm">
+                          <BookOpen size={18} className="text-white" />
+                        </span>
+                        <div className="min-w-0">
+                          <h3 className="font-bold text-slate-800 truncate">{group.title}</h3>
+                          {group.session && <p className="text-xs text-slate-400 mt-0.5">{group.session}</p>}
                         </div>
                       </div>
-                      <div className="flex items-center gap-2 flex-wrap">
-                        <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-lg bg-slate-50 text-slate-600 text-xs font-semibold border border-slate-200">
-                          <FileSpreadsheet size={11} /> {examResults.length}
-                        </span>
-                        <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-lg bg-emerald-50 text-emerald-700 text-xs font-semibold border border-emerald-100">
-                          <CheckCircle size={11} /> {passCount} Pass
-                        </span>
-                        <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-lg bg-red-50 text-red-600 text-xs font-semibold border border-red-100">
-                          <XCircle size={11} /> {failCount} Fail
-                        </span>
-                        <span className={`inline-flex items-center gap-1 px-2.5 py-1 rounded-lg text-xs font-semibold border ${publishedCount > 0 ? 'bg-indigo-50 text-indigo-700 border-indigo-100' : 'bg-amber-50 text-amber-700 border-amber-100'}`}>
-                          {publishedCount > 0 ? <Eye size={11} /> : <EyeOff size={11} />}
-                          {publishedCount}/{examResults.length} Published
-                        </span>
-                        <button
-                          onClick={() => handlePublishExam(examId, !allPublished)}
-                          disabled={publishAllDisabled}
-                          title={!examIsCompleted && !allPublished ? 'Only completed exams can be published' : ''}
-                          className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-semibold shadow-sm transition-colors ${
-                            allPublished
-                              ? 'bg-amber-500 text-white hover:bg-amber-600'
-                              : 'bg-emerald-600 text-white hover:bg-emerald-700 shadow-emerald-200'
-                          } ${publishAllDisabled ? 'opacity-50 cursor-not-allowed hover:bg-inherit' : ''}`}
-                        >
-                          <Send size={11} /> {allPublished ? 'Unpublish All' : 'Publish Completed'}
-                        </button>
-                        <button onClick={() => toggleExamExpand(examId)}
-                          className="inline-flex items-center gap-1 px-2.5 py-1.5 rounded-xl border border-slate-200 text-xs text-slate-600 hover:bg-slate-50 transition-colors">
-                          <ChevronRight size={13} className={`transition-transform duration-200 ${isExpanded ? 'rotate-90' : ''}`} />
-                          {isExpanded ? 'Hide' : 'View'} Students
-                        </button>
+                      <ChevronRight size={16} className="shrink-0 text-slate-300 group-hover:text-indigo-400 transition-colors mt-1.5" />
+                    </div>
+
+                    <span className={`inline-flex self-start items-center gap-1 rounded-lg px-2 py-1 text-[11px] font-bold border ${statusPill.cls}`}>
+                      <statusPill.Icon size={11} /> {statusPill.label}
+                    </span>
+
+                    <div>
+                      <div className="flex items-center justify-between text-[11px] font-semibold mb-1">
+                        <span className="text-slate-500">{summary.publishedCount}/{summary.totalCount} results published</span>
+                        <span className="text-slate-400">{pct}%</span>
+                      </div>
+                      <div className="h-1.5 rounded-full bg-slate-100 overflow-hidden">
+                        <div className="h-full bg-emerald-500 rounded-full transition-all" style={{ width: `${pct}%` }} />
                       </div>
                     </div>
+
+                    <div className="flex items-center justify-between gap-2 pt-1 border-t border-slate-100 mt-1">
+                      {scheduledFor ? (
+                        <span className="text-[11px] text-indigo-600 font-semibold flex items-center gap-1 truncate"><Clock size={11} className="shrink-0" /> {fmtDateTime(scheduledFor)}</span>
+                      ) : <span />}
+                      <button type="button"
+                        onClick={(e) => { e.stopPropagation(); openPublishModal(group); }}
+                        className="shrink-0 inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full border border-slate-200 text-xs font-semibold text-slate-600 hover:bg-slate-50 transition-colors">
+                        <Edit size={12} />
+                      </button>
+                    </div>
                   </div>
-                  {/* ── Expanded student rows ── */}
-                  {isExpanded && (
-                    <div className="border-t border-slate-100">
-                      {/* Class tabs */}
-                      {examClasses.length > 1 && (
-                        <div className="flex items-center gap-1.5 px-5 py-3 border-b border-slate-100 flex-wrap bg-slate-50/60">
-                          <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wide mr-1">Class</span>
-                          {['all', ...examClasses].map(cls => (
-                            <button key={cls} onClick={() => setTab({ cls, sec: 'all' })}
-                              className={`px-3 py-1 rounded-lg text-xs font-semibold transition-colors ${tabCls === cls ? 'bg-indigo-600 text-white shadow-sm' : 'bg-white text-slate-600 border border-slate-200 hover:bg-indigo-50 hover:text-indigo-700'}`}>
-                              {cls === 'all' ? 'All Classes' : `Class ${cls}`}
-                            </button>
-                          ))}
+                );
+              })}
+            </div>
+          )}
+          </>
+        ) : (
+          /* ══════════ LEVEL 2+: class cards → section cards → subject cards → students ══════════ */
+          <div className="space-y-4">
+            <div className="flex flex-wrap items-center justify-between gap-3">
+              <button onClick={goBackLevel}
+                className="inline-flex items-center gap-1.5 text-sm font-semibold text-indigo-600 hover:text-indigo-700">
+                <ChevronLeft size={15} /> {navSubj ? 'Subjects' : navSec ? 'Sections' : navCls ? 'Classes' : 'All exams'}
+              </button>
+              <div className="flex items-center gap-2 flex-wrap justify-end">
+                <p className="text-sm font-bold text-slate-800 flex items-center gap-1.5 flex-wrap">
+                  <span>{selectedGroup.title}</span>
+                  {navCls && <><ChevronRight size={13} className="text-slate-300" /><span>Class {navCls}</span></>}
+                  {navSec && <><ChevronRight size={13} className="text-slate-300" /><span>Section {navSec}</span></>}
+                  {activeSubj && <><ChevronRight size={13} className="text-slate-300" /><span>{activeSubj.exam?.subject || activeSubj.exam?.title}</span></>}
+                </p>
+                <button type="button" onClick={() => openPublishModal(selectedGroup)}
+                  className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl border border-slate-200 text-xs font-semibold text-slate-600 hover:bg-slate-50">
+                  <Edit2 size={12} /> Edit
+                </button>
+              </div>
+            </div>
+
+            {detailResults.length === 0 ? (
+              <div className="bg-white rounded-2xl border border-slate-200 shadow-sm flex flex-col items-center justify-center py-14 gap-2">
+                <FileSpreadsheet size={22} className="text-slate-300" />
+                <p className="text-sm font-semibold text-slate-500">No results found</p>
+              </div>
+            ) : !navCls ? (
+              /* classes */
+              <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-3 gap-3">
+                {classNodes.map(({ cls, rows }) => {
+                  const pub = rows.filter((r) => r.published).length;
+                  const secCount = new Set(rows.map(sectionOf)).size;
+                  return (
+                    <button key={cls} type="button" onClick={() => setNavCls(cls)}
+                      className="bg-white rounded-2xl border border-slate-200 shadow-sm px-4 py-3.5 text-left hover:shadow-md hover:border-indigo-200 transition-all flex items-center gap-3">
+                      <span className="h-10 w-10 rounded-xl bg-indigo-600 flex items-center justify-center shrink-0 text-white text-sm font-bold">{String(cls).slice(0, 3)}</span>
+                      <span className="flex-1 min-w-0">
+                        <span className="block font-bold text-slate-800">Class {cls}</span>
+                        <span className="block text-xs text-slate-400">{secCount} section{secCount !== 1 ? 's' : ''} · {pub}/{rows.length} published</span>
+                      </span>
+                      <ChevronRight size={16} className="shrink-0 text-slate-300" />
+                    </button>
+                  );
+                })}
+              </div>
+            ) : !navSec ? (
+              /* sections */
+              <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-3 gap-3">
+                {secNodes.map(({ sec, rows }) => {
+                  const pub = rows.filter((r) => r.published).length;
+                  const subjCount = new Set(rows.map((r) => String(r.examId?._id || r.examId))).size;
+                  return (
+                    <button key={sec} type="button" onClick={() => setNavSec(sec)}
+                      className="bg-white rounded-2xl border border-slate-200 shadow-sm px-4 py-3.5 text-left hover:shadow-md hover:border-violet-200 transition-all flex items-center gap-3">
+                      <span className="h-10 w-10 rounded-xl bg-violet-600 flex items-center justify-center shrink-0 text-white text-sm font-bold">{String(sec).slice(0, 3)}</span>
+                      <span className="flex-1 min-w-0">
+                        <span className="block font-bold text-slate-800">Section {sec}</span>
+                        <span className="block text-xs text-slate-400">{subjCount} subject{subjCount !== 1 ? 's' : ''} · {pub}/{rows.length} published</span>
+                      </span>
+                      <ChevronRight size={16} className="shrink-0 text-slate-300" />
+                    </button>
+                  );
+                })}
+              </div>
+            ) : !activeSubj ? (
+              /* subjects */
+              <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-3 gap-3">
+                {subjNodes.map(({ examId, exam, rows }) => {
+                  const pub = rows.filter((r) => r.published).length;
+                  return (
+                    <button key={examId} type="button" onClick={() => setNavSubj(examId)}
+                      className="bg-white rounded-2xl border border-slate-200 shadow-sm px-4 py-3.5 text-left hover:shadow-md hover:border-emerald-200 transition-all flex items-center gap-3">
+                      <span className="h-10 w-10 rounded-xl bg-emerald-600 flex items-center justify-center shrink-0">
+                        <BookOpen size={16} className="text-white" />
+                      </span>
+                      <span className="flex-1 min-w-0">
+                        <span className="block font-bold text-slate-800 truncate">{exam?.subject || exam?.title || 'Subject'}</span>
+                        <span className="block text-xs text-slate-400">{rows.length} student{rows.length !== 1 ? 's' : ''} · {pub}/{rows.length} published</span>
+                      </span>
+                      <ChevronRight size={16} className="shrink-0 text-slate-300" />
+                    </button>
+                  );
+                })}
+              </div>
+            ) : (
+              /* students */
+              (() => {
+                const exam = activeSubj.exam;
+                const rows = activeSubj.rows;
+                const examIsCompleted = String(examById.get(String(exam?._id))?.status || exam?.status || '').toLowerCase() === 'completed';
+                const publishedCount = rows.filter((r) => r.published).length;
+                return (
+                  <div className="bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden">
+                    <div className="flex flex-wrap items-center justify-between gap-2 px-4 py-3 bg-slate-50/70 border-b border-slate-100">
+                      <span className="font-bold text-slate-800 text-sm">{exam?.subject || exam?.title || 'Subject'}
+                        {exam?.marks ? <span className="ml-2 text-xs font-medium text-slate-400">Max {exam.marks}</span> : null}
+                      </span>
+                      <div className="flex items-center gap-2">
+                        <div className="relative">
+                          <Search size={12} className="absolute left-2.5 top-1/2 -translate-y-1/2 text-slate-400" />
+                          <input value={searchTerm} onChange={(e) => setSearchTerm(e.target.value)} placeholder="Search student…"
+                            className="pl-7 pr-3 py-1.5 rounded-lg border border-slate-200 bg-white text-xs w-40 focus:border-indigo-400 focus:outline-none focus:ring-2 focus:ring-indigo-100" />
                         </div>
-                      )}
-                      {/* Section tabs */}
-                      {examSections.length > 1 && (
-                        <div className="flex items-center gap-1.5 px-5 py-3 border-b border-slate-100 flex-wrap bg-slate-50/40">
-                          <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wide mr-1">Section</span>
-                          {['all', ...examSections].map(sec => (
-                            <button key={sec} onClick={() => setTab({ sec })}
-                              className={`px-3 py-1 rounded-lg text-xs font-semibold transition-colors ${tabSec === sec ? 'bg-violet-600 text-white shadow-sm' : 'bg-white text-slate-600 border border-slate-200 hover:bg-violet-50 hover:text-violet-700'}`}>
-                              {sec === 'all' ? 'All Sections' : `Section ${sec}`}
-                            </button>
-                          ))}
-                        </div>
-                      )}
-                      <div className="overflow-x-auto">
+                        <span className={`inline-flex items-center gap-1 px-2.5 py-1 rounded-lg text-xs font-semibold border ${publishedCount > 0 ? 'bg-indigo-50 text-indigo-700 border-indigo-100' : 'bg-amber-50 text-amber-700 border-amber-100'}`}>
+                          {publishedCount > 0 ? <Eye size={11} /> : <EyeOff size={11} />} {publishedCount}/{rows.length} Published
+                        </span>
+                      </div>
+                    </div>
+                    <div className="overflow-x-auto">
                       <table className="w-full text-sm">
                         <thead>
                           <tr className="bg-slate-50">
                             {['Student', 'Marks', 'Grade', 'Status', 'Remarks', 'Visibility', ''].map((h, i) => (
-                              <th key={i} className="px-4 py-3 text-left text-[11px] font-bold text-slate-400 uppercase tracking-wider whitespace-nowrap">{h}</th>
+                              <th key={i} className="px-4 py-2.5 text-left text-[11px] font-bold text-slate-400 uppercase tracking-wider whitespace-nowrap">{h}</th>
                             ))}
                           </tr>
                         </thead>
                         <tbody className="divide-y divide-slate-50">
-                          {visibleResults.map((result, i) => {
-                            const statusKey   = result.status?.toLowerCase();
-                            const statusStyle = STATUS_STYLE[statusKey] || 'bg-blue-50 text-blue-700 border border-blue-100';
+                          {rows.map((result, i) => {
+                            const statusStyle = STATUS_STYLE[result.status?.toLowerCase()] || 'bg-blue-50 text-blue-700 border border-blue-100';
                             return (
                               <tr key={result._id || i} className="hover:bg-indigo-50/20 transition-colors group">
-                                <td className="px-4 py-3">
+                                <td className="px-4 py-2.5">
                                   <p className="font-semibold text-slate-800">{result.studentId?.name || 'N/A'}</p>
-                                  <p className="text-xs text-slate-400 mt-0.5">Roll {result.studentId?.roll || '—'} · {result.studentId?.grade || '—'} {result.studentId?.section || ''}</p>
+                                  <p className="text-xs text-slate-400 mt-0.5">Roll {result.studentId?.roll || '—'}</p>
                                 </td>
-                                <td className="px-4 py-3">
+                                <td className="px-4 py-2.5">
                                   <div className="flex items-center gap-1">
                                     <Award size={12} className="text-amber-400" />
                                     <span className="font-bold text-slate-800">{result.marks ?? '—'}</span>
                                     {exam?.marks && <span className="text-slate-400 text-xs">/{exam.marks}</span>}
                                   </div>
                                 </td>
-                                <td className="px-4 py-3">
-                                  <span className="font-semibold text-slate-700">{result.grade || '—'}</span>
-                                </td>
-                                <td className="px-4 py-3">
+                                <td className="px-4 py-2.5"><span className="font-semibold text-slate-700">{result.grade || '—'}</span></td>
+                                <td className="px-4 py-2.5">
                                   <span className={`inline-flex rounded-lg px-2.5 py-1 text-[11px] font-bold capitalize ${statusStyle}`}>{result.status || '—'}</span>
                                 </td>
-                                <td className="px-4 py-3">
-                                  <span className="text-xs text-slate-500">{result.remarks || '—'}</span>
-                                </td>
-                                <td className="px-4 py-3">
+                                <td className="px-4 py-2.5"><span className="text-xs text-slate-500">{result.remarks || '—'}</span></td>
+                                <td className="px-4 py-2.5">
                                   <div className="flex items-center gap-2">
                                     <button
                                       onClick={() => handleTogglePublish(result._id, !result.published)}
@@ -1973,7 +2285,7 @@ const Result = ({ setShowAdminHeader }) => {
                                     </span>
                                   </div>
                                 </td>
-                                <td className="px-4 py-3">
+                                <td className="px-4 py-2.5">
                                   <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
                                     <button onClick={() => openEditResult(result)}
                                       className="h-7 w-7 flex items-center justify-center rounded-lg text-indigo-400 hover:bg-indigo-50 hover:text-indigo-600 transition-colors">
@@ -1990,18 +2302,17 @@ const Result = ({ setShowAdminHeader }) => {
                           })}
                         </tbody>
                       </table>
-                      </div>
                     </div>
-                  )}
-                </div>
-              );
-            })}
+                  </div>
+                );
+              })()
+            )}
           </div>
         )}
       </div>
 
       {/* ═══ ADD RESULT MODAL ═══ */}
-      <Modal show={showAddResult} onClose={closeAddResultModal} title="Add Result" subtitle="Record and upload students' exam results" icon={Plus} iconColor="bg-indigo-600" maxWidth="sm:max-w-4xl">
+      <Modal show={showAddResult} onClose={closeAddResultModal} title="Add Result" subtitle="Record and upload students' exam results" icon={Plus} iconColor="bg-indigo-600" maxWidth="sm:max-w-4xl" fullPage>
         <div className="space-y-4">
           {/* <div className="inline-flex rounded-full border border-slate-200 p-1 bg-slate-50">
             <button
@@ -2074,6 +2385,19 @@ const Result = ({ setShowAdminHeader }) => {
           </div>
         </form>
       </Modal>
+
+      <PublishResultModal
+        group={publishModalGroup}
+        summary={publishModalGroup ? getCompletedExamGroupSummary(publishModalGroup) : null}
+        canSchedule={Boolean(publishModalGroup && !publishModalGroup.pseudo)}
+        saving={scheduleSaving}
+        onClose={() => setPublishModalGroup(null)}
+        onPublishNow={() => runGroupPublish(publishModalGroup, true)}
+        onUnpublish={() => runGroupPublish(publishModalGroup, false)}
+        onSchedule={(at) => saveGroupSchedule(publishModalGroup, at)}
+        onCancelSchedule={() => saveGroupSchedule(publishModalGroup, null)}
+      />
+      <ProcessingOverlay open={publishJob.open} title={publishJob.title} text={publishJob.text} percent={publishJob.percent} />
     </div>
   );
 };
