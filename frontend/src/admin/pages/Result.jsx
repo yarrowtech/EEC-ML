@@ -1692,7 +1692,7 @@ const Result = ({ setShowAdminHeader }) => {
               ) : bulkEntryRows.length === 0 ? (
                 <div className="p-6 text-sm text-slate-500">No students found for this class/section.</div>
               ) : (
-                <div className="max-h-[260px] min-h-[180px] overflow-auto">
+                <div className="max-h-[calc(100dvh-330px)] min-h-[320px] overflow-auto lg:max-h-[260px] lg:min-h-[180px]">
                   <table className="w-full text-sm">
                     <thead className="bg-gray-100 sticky top-0">
                       <tr className="border-b border-slate-100">

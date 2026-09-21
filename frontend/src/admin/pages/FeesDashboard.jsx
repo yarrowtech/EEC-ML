@@ -12,6 +12,8 @@ import {
   IndianRupee,
   CreditCard,
   X,
+  Filter,
+  ChevronRight,
 } from 'lucide-react';
 
 const API_BASE = import.meta.env.VITE_API_URL;
@@ -26,7 +28,7 @@ const FONT_STACK = "'Inter Variable', Inter, system-ui, -apple-system, 'Segoe UI
 // Glass surface presets — frosted, semi-transparent, soft-bordered.
 const GLASS_CARD = 'rounded-2xl border border-white/70 bg-white/60 backdrop-blur-xl backdrop-saturate-150 shadow-[0_8px_30px_rgba(15,23,42,0.06)]';
 const GLASS_INNER = 'rounded-xl border border-white/70 bg-white/50 backdrop-blur-md';
-const GLASS_INPUT = 'text-xs border border-white/70 rounded-xl px-3 py-2 bg-white/50 backdrop-blur-md focus:ring-2 focus:ring-violet-500/30 focus:border-violet-400 focus:outline-none transition-all';
+const GLASS_INPUT = 'text-xs border border-white/70 rounded-full px-3 py-2 bg-white/50 backdrop-blur-md focus:ring-2 focus:ring-violet-500/30 focus:border-violet-400 focus:outline-none transition-all';
 
 const escapeCsv = (value) => `"${String(value ?? '').replace(/"/g, '""')}"`;
 
@@ -49,6 +51,9 @@ const FeesDashboard = ({ setShowAdminHeader, embedded = false }) => {
   const [selectedClass, setSelectedClass] = useState('');
   const [selectedSection, setSelectedSection] = useState('');
   const [selectedPayment, setSelectedPayment] = useState(null);
+  const [filtersOpen, setFiltersOpen] = useState(false);
+  const [classDetail, setClassDetail] = useState(null); // { mode: 'enrollment' | 'outstanding', label, rows }
+  const [classDetailSection, setClassDetailSection] = useState('');
   const [summary, setSummary] = useState(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
@@ -94,6 +99,7 @@ const FeesDashboard = ({ setShowAdminHeader, embedded = false }) => {
   };
   const enrollmentData = summary?.enrollment || [];
   const outstandingFeesData = summary?.outstandingSegments || [];
+  const classStudents = summary?.classStudents || {};
   const recentPayments = summary?.recentPayments || [];
   const dateRangeLabel =
     DATE_RANGE_OPTIONS.find((option) => option.value === dateRange)?.label || 'Last 30 Days';
@@ -205,6 +211,54 @@ const FeesDashboard = ({ setShowAdminHeader, embedded = false }) => {
 
   const closePaymentDetails = () => {
     setSelectedPayment(null);
+  };
+
+  const openEnrollmentDetail = (label) => {
+    setClassDetailSection('');
+    setClassDetail({ mode: 'enrollment', label, rows: classStudents[label] || [] });
+  };
+
+  const openOutstandingDetail = (label) => {
+    const rows = (classStudents[label] || []).filter((row) => row.balanceAmount > 0);
+    setClassDetailSection('');
+    setClassDetail({ mode: 'outstanding', label, rows });
+  };
+
+  const closeClassDetail = () => setClassDetail(null);
+
+  const classDetailSectionOptions = useMemo(() => {
+    if (!classDetail) return [];
+    return Array.from(new Set(classDetail.rows.map((row) => row.section).filter(Boolean))).sort();
+  }, [classDetail]);
+
+  const classDetailFilteredRows = useMemo(() => {
+    if (!classDetail) return [];
+    if (!classDetailSection) return classDetail.rows;
+    return classDetail.rows.filter((row) => row.section === classDetailSection);
+  }, [classDetail, classDetailSection]);
+
+  const downloadClassDetail = () => {
+    if (!classDetail) return;
+    const isOutstanding = classDetail.mode === 'outstanding';
+    const header = ['Student', 'Roll', 'User ID', 'Section', isOutstanding ? 'Due Amount' : 'Status'];
+    const rows = classDetailFilteredRows.map((row) => [
+      row.name || '',
+      row.roll || '',
+      row.username || '',
+      row.section || '',
+      isOutstanding ? row.balanceAmount : (row.status === 'paid' ? 'Paid' : row.status === 'partial' ? 'Partial' : 'Due'),
+    ]);
+    const csvContent = [header, ...rows].map((r) => r.map(escapeCsv).join(',')).join('\n');
+    const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    const safeLabel = String(classDetail.label || 'class').replace(/[^a-z0-9]+/gi, '-').toLowerCase();
+    a.download = `${isOutstanding ? 'outstanding' : 'enrollment'}-${safeLabel}-${new Date().toISOString().slice(0, 10)}.csv`;
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+    URL.revokeObjectURL(url);
   };
 
   const collectionTrend = useMemo(() => {
@@ -489,8 +543,32 @@ const FeesDashboard = ({ setShowAdminHeader, embedded = false }) => {
                   </div>
                 </div>
 
-                <div className="mt-4 grid gap-3 lg:grid-cols-[minmax(0,1.5fr)_repeat(3,minmax(0,1fr))]">
-                  <div className="relative">
+                <div className="mt-4 flex items-center gap-2 lg:hidden">
+                  <div className="relative flex-1">
+                    <Search className="w-3.5 h-3.5 text-[#8e9aaf] absolute left-2.5 top-1/2 -translate-y-1/2 pointer-events-none" />
+                    <input
+                      type="text"
+                      value={searchTerm}
+                      onChange={(e) => setSearchTerm(e.target.value)}
+                      placeholder="Search student, username, transaction ID..."
+                      className={`${GLASS_INPUT} w-full pl-8`}
+                    />
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => setFiltersOpen((v) => !v)}
+                    aria-label={filtersOpen ? 'Close filters' : 'Open filters'}
+                    className={`shrink-0 h-9 w-9 flex items-center justify-center rounded-xl border transition-colors ${
+                      filtersOpen || selectedSession || selectedClass || selectedSection
+                        ? 'border-violet-300 bg-violet-50 text-violet-600'
+                        : 'border-white/70 bg-white/50 text-[#64748b] hover:bg-white/80'
+                    }`}
+                  >
+                    {filtersOpen ? <X className="w-4 h-4" /> : <Filter className="w-4 h-4" />}
+                  </button>
+                </div>
+                <div className={`mt-3 gap-3 lg:mt-4 lg:grid lg:grid-cols-[minmax(0,1.5fr)_repeat(3,minmax(0,1fr))] ${filtersOpen ? 'grid' : 'hidden'}`}>
+                  <div className="relative hidden lg:block">
                     <Search className="w-3.5 h-3.5 text-[#8e9aaf] absolute left-2.5 top-1/2 -translate-y-1/2 pointer-events-none" />
                     <input
                       type="text"
@@ -608,7 +686,12 @@ const FeesDashboard = ({ setShowAdminHeader, embedded = false }) => {
                 {enrollmentData.length ? (
                   <div className="space-y-3">
                     {enrollmentData.map((program) => (
-                      <div key={program.label} className="flex items-center justify-between">
+                      <button
+                        type="button"
+                        key={program.label}
+                        onClick={() => openEnrollmentDetail(program.label)}
+                        className="w-full flex items-center justify-between gap-2 text-left rounded-lg -mx-1.5 px-1.5 py-1 transition-colors hover:bg-white/60"
+                      >
                         <div className="min-w-0">
                           <p className="text-xs font-semibold text-slate-700 truncate">{program.label}</p>
                           <p className="text-[11px] text-[#8e9aaf]">{program.students} students</p>
@@ -618,8 +701,9 @@ const FeesDashboard = ({ setShowAdminHeader, embedded = false }) => {
                             <div className="h-full bg-violet-400 rounded-full" style={{ width: `${program.percentage}%` }} />
                           </div>
                           <span className="text-xs font-bold text-slate-600 w-8 text-right">{program.percentage}%</span>
+                          <ChevronRight className="w-3.5 h-3.5 text-[#8e9aaf]" />
                         </div>
-                      </div>
+                      </button>
                     ))}
                   </div>
                 ) : (
@@ -645,10 +729,17 @@ const FeesDashboard = ({ setShowAdminHeader, embedded = false }) => {
                 {outstandingFeesData.length ? (
                   <div className="space-y-4">
                     {outstandingFeesData.map((segment) => (
-                      <div key={segment.label}>
+                      <button
+                        type="button"
+                        key={segment.label}
+                        onClick={() => openOutstandingDetail(segment.label)}
+                        className="w-full text-left rounded-lg -mx-1.5 px-1.5 py-1 transition-colors hover:bg-white/60"
+                      >
                         <div className="flex items-center justify-between mb-1.5">
                           <p className="text-xs font-semibold text-slate-700">{segment.label}</p>
-                          <span className="text-xs font-bold text-amber-600">{segment.percentage}%</span>
+                          <span className="flex items-center gap-1 text-xs font-bold text-amber-600">
+                            {segment.percentage}% <ChevronRight className="w-3.5 h-3.5 text-[#8e9aaf]" />
+                          </span>
                         </div>
                         <div className="w-full bg-white/60 rounded-full h-1.5">
                           <div
@@ -659,7 +750,7 @@ const FeesDashboard = ({ setShowAdminHeader, embedded = false }) => {
                         {segment.amount !== undefined && (
                           <p className="text-[11px] text-[#8e9aaf] mt-0.5">{formatCurrency(segment.amount)}</p>
                         )}
-                      </div>
+                      </button>
                     ))}
                   </div>
                 ) : (
@@ -763,6 +854,108 @@ const FeesDashboard = ({ setShowAdminHeader, embedded = false }) => {
                   </div>
                 </div>
               </div>
+            </div>
+          </div>
+        </div>
+      ) : null}
+
+      {classDetail ? (
+        <div
+          className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/50 backdrop-blur-sm px-3 py-3 sm:px-4 sm:py-4"
+          onClick={closeClassDetail}
+        >
+          <div
+            className="flex max-h-[calc(100vh-1.5rem)] w-full max-w-xl flex-col overflow-hidden rounded-2xl border border-white/70 bg-white/80 backdrop-blur-2xl backdrop-saturate-150 shadow-2xl sm:max-h-[calc(100vh-2rem)] sm:rounded-3xl animate-in fade-in slide-in-from-bottom-4 duration-300"
+            style={{ fontFamily: FONT_STACK }}
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="flex items-start justify-between gap-4 border-b border-white/60 px-6 py-4">
+              <div>
+                <p className="text-xs font-semibold uppercase tracking-[0.18em] text-violet-500">
+                  {classDetail.mode === 'outstanding' ? 'Outstanding Dues' : 'Class Enrollment'}
+                </p>
+                <h3 className="mt-1 text-xl font-bold text-[#0f172a]">{classDetail.label}</h3>
+                <p className="text-sm text-[#64748b]">
+                  {classDetailFilteredRows.length} student{classDetailFilteredRows.length !== 1 ? 's' : ''}
+                  {classDetail.mode === 'outstanding' ? ' with pending dues' : ''}
+                </p>
+              </div>
+              <button
+                type="button"
+                onClick={closeClassDetail}
+                className="inline-flex h-9 w-9 items-center justify-center rounded-full border border-white/70 bg-white/50 text-slate-500 hover:bg-white/80 hover:text-slate-700 transition-all duration-200 ease-out"
+                aria-label="Close class details"
+              >
+                <X size={18} />
+              </button>
+            </div>
+
+            {classDetail.rows.length > 0 && (
+              <div className="flex flex-wrap items-center gap-2 border-b border-white/60 px-4 py-3 sm:px-6">
+                {classDetailSectionOptions.length > 1 && (
+                  <select
+                    value={classDetailSection}
+                    onChange={(e) => setClassDetailSection(e.target.value)}
+                    className={GLASS_INPUT}
+                  >
+                    <option value="">All Sections</option>
+                    {classDetailSectionOptions.map((section) => (
+                      <option key={section} value={section}>Section {section}</option>
+                    ))}
+                  </select>
+                )}
+                <button
+                  type="button"
+                  onClick={downloadClassDetail}
+                  className="ml-auto inline-flex items-center gap-1.5 px-3 py-1.5 bg-violet-600 text-white text-xs font-semibold rounded-xl hover:bg-violet-700 transition-all duration-200 ease-out hover:-translate-y-0.5"
+                >
+                  <Download size={13} /> Download
+                </button>
+              </div>
+            )}
+
+            <div className="flex-1 overflow-y-auto px-4 py-4 sm:px-6 sm:py-5">
+              {classDetailFilteredRows.length ? (
+                <div className="overflow-x-auto">
+                  <table className="min-w-full text-sm">
+                    <thead className="sticky top-0 z-10 bg-white/95 backdrop-blur-md">
+                      <tr>
+                        {['Student', 'Roll', 'User ID', classDetail.mode === 'outstanding' ? 'Due Amount' : 'Status'].map((h) => (
+                          <th key={h} className="px-3 py-2.5 text-left text-xs font-semibold text-[#8e9aaf] uppercase tracking-wide border-b border-white/60">{h}</th>
+                        ))}
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-white/60">
+                      {classDetailFilteredRows.map((row) => (
+                        <tr key={row.studentId}>
+                          <td className="px-3 py-3">
+                            <p className="font-semibold text-slate-800 text-sm">{row.name}</p>
+                            {row.section && <p className="text-[11px] text-[#8e9aaf]">Section {row.section}</p>}
+                          </td>
+                          <td className="px-3 py-3 text-[#64748b] text-xs">{row.roll || '—'}</td>
+                          <td className="px-3 py-3 text-[#64748b] text-xs">{row.username || '—'}</td>
+                          <td className="px-3 py-3">
+                            {classDetail.mode === 'outstanding' ? (
+                              <span className="font-bold text-amber-600 text-sm">{formatCurrency(row.balanceAmount)}</span>
+                            ) : (
+                              <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-semibold ${getStatusColor(row.status === 'paid' ? 'Paid' : row.status === 'partial' ? 'Partial' : 'Due')}`}>
+                                {row.status === 'paid' ? 'Paid' : row.status === 'partial' ? 'Partial' : 'Due'}
+                              </span>
+                            )}
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              ) : (
+                <div className="flex flex-col items-center justify-center py-10 gap-2 text-center">
+                  <CheckCircle size={28} className="text-emerald-300" />
+                  <p className="text-sm text-[#8e9aaf]">
+                    {classDetail.mode === 'outstanding' ? 'No pending dues for this class.' : 'No students found.'}
+                  </p>
+                </div>
+              )}
             </div>
           </div>
         </div>

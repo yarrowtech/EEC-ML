@@ -84,7 +84,7 @@ const FeesCollection = ({ setShowAdminHeader }) => {
   const [activeView, setActiveView] = useState('overview');
 
   useEffect(() => {
-    setShowAdminHeader?.(false);
+    setShowAdminHeader?.(true);
   }, [setShowAdminHeader]);
 
   const loadFilters = async () => {
