@@ -567,7 +567,7 @@ const FeesDashboard = ({ setShowAdminHeader, embedded = false }) => {
                     {filtersOpen ? <X className="w-4 h-4" /> : <Filter className="w-4 h-4" />}
                   </button>
                 </div>
-                <div className={`mt-3 gap-3 lg:mt-4 lg:grid lg:grid-cols-[minmax(0,1.5fr)_repeat(3,minmax(0,1fr))] ${filtersOpen ? 'grid' : 'hidden'}`}>
+                <div className={`mt-3 gap-3 lg:mt-4 lg:grid lg:grid-cols-[minmax(0,1.5fr)_repeat(3,minmax(0,1fr))] ${filtersOpen ? 'flex flex-wrap items-center' : 'hidden'}`}>
                   <div className="relative hidden lg:block">
                     <Search className="w-3.5 h-3.5 text-[#8e9aaf] absolute left-2.5 top-1/2 -translate-y-1/2 pointer-events-none" />
                     <input
