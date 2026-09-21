@@ -12,7 +12,6 @@ import {
   Clock,
   Download,
   Filter,
-  GraduationCap,
   Heart,
   Layers,
   Meh,
@@ -26,7 +25,6 @@ import {
   Target,
   ThumbsDown,
   ThumbsUp,
-  User,
   Users,
   X,
 } from 'lucide-react';
@@ -115,13 +113,13 @@ const computeCategoryAverages = (items) => {
   return result;
 };
 
-const buildGroups = (docs, keyFn, nameFn, subFn) => {
+const buildGroups = (docs, keyFn, nameFn, subFn, photoFn) => {
   const map = new Map();
   docs.forEach((doc) => {
     const key = keyFn(doc);
     if (!key) return;
     if (!map.has(key)) {
-      map.set(key, { key, name: nameFn(doc), subCounts: new Map(), items: [], count: 0, sumRating: 0, distribution: { 1: 0, 2: 0, 3: 0, 4: 0, 5: 0 } });
+      map.set(key, { key, name: nameFn(doc), photo: '', subCounts: new Map(), items: [], count: 0, sumRating: 0, distribution: { 1: 0, 2: 0, 3: 0, 4: 0, 5: 0 } });
     }
     const group = map.get(key);
     group.items.push(doc);
@@ -131,6 +129,10 @@ const buildGroups = (docs, keyFn, nameFn, subFn) => {
     group.distribution[roundRating(rating)] += 1;
     const sub = subFn(doc);
     if (sub) group.subCounts.set(sub, (group.subCounts.get(sub) || 0) + 1);
+    if (!group.photo && photoFn) {
+      const photo = photoFn(doc);
+      if (photo) group.photo = photo;
+    }
   });
 
   return Array.from(map.values()).map((group) => {
@@ -148,6 +150,7 @@ const buildGroups = (docs, keyFn, nameFn, subFn) => {
     return {
       key: group.key,
       name: group.name,
+      photo: group.photo,
       subLabel: topSub,
       count: group.count,
       avgRating: group.count ? group.sumRating / group.count : 0,
@@ -189,9 +192,18 @@ const Toggle = ({ checked, onChange, disabled }) => (
   </button>
 );
 
-const Avatar = ({ name, size = 'md' }) => {
+const Avatar = ({ name, photo, size = 'md' }) => {
   const { bg, text } = paletteFor(name);
   const sizeClass = size === 'sm' ? 'w-8 h-8 text-xs' : size === 'lg' ? 'w-12 h-12 text-base' : 'w-10 h-10 text-sm';
+  if (photo) {
+    return (
+      <img
+        src={photo}
+        alt={name}
+        className={`shrink-0 rounded-full object-cover ${sizeClass}`}
+      />
+    );
+  }
   return (
     <div className={`shrink-0 rounded-full ${bg} ${text} ${sizeClass} flex items-center justify-center font-bold`}>
       {initialsOf(name)}
@@ -215,15 +227,15 @@ const StatTile = ({ icon: Icon, iconBg, iconColor, label, value, sub, delay = 0 
     initial={{ opacity: 0, y: 12 }}
     animate={{ opacity: 1, y: 0 }}
     transition={{ duration: 0.3, delay }}
-    className="flex items-center gap-3 rounded-2xl border border-slate-100 bg-white p-4 shadow-sm"
+    className="flex flex-col items-center text-center gap-1.5 rounded-2xl border border-slate-100 bg-white p-2.5 shadow-sm sm:flex-row sm:items-center sm:text-left sm:gap-3 sm:p-4"
   >
-    <div className={`w-11 h-11 rounded-full ${iconBg} flex items-center justify-center shrink-0`}>
-      <Icon className={`w-5 h-5 ${iconColor}`} />
+    <div className={`w-8 h-8 sm:w-11 sm:h-11 rounded-full ${iconBg} flex items-center justify-center shrink-0`}>
+      <Icon className={`w-4 h-4 sm:w-5 sm:h-5 ${iconColor}`} />
     </div>
     <div className="min-w-0">
-      <p className="text-xs font-medium text-slate-500">{label}</p>
-      <p className="text-xl font-bold text-slate-900 leading-tight">{value}</p>
-      {sub && <div className="mt-0.5">{sub}</div>}
+      <p className="text-[10px] sm:text-xs font-medium text-slate-500 truncate">{label}</p>
+      <p className="text-sm sm:text-xl font-bold text-slate-900 leading-tight">{value}</p>
+      {sub && <div className="mt-0.5 hidden sm:block">{sub}</div>}
     </div>
   </motion.div>
 );
@@ -236,21 +248,6 @@ const MiniStat = ({ icon: Icon, iconBg, iconColor, label, value }) => (
     <p className="text-base font-bold text-slate-900">{value}</p>
     <p className="text-[11px] text-slate-500 leading-tight">{label}</p>
   </div>
-);
-
-const TabButton = ({ active, icon: Icon, label, onClick }) => (
-  <button
-    type="button"
-    onClick={onClick}
-    className={`inline-flex items-center gap-2 px-4 py-2.5 rounded-full text-sm font-semibold transition-colors ${
-      active
-        ? 'bg-gradient-to-r from-indigo-600 to-violet-600 text-white shadow-md shadow-indigo-200'
-        : 'bg-white text-slate-600 border border-slate-200 hover:bg-slate-50'
-    }`}
-  >
-    <Icon className="w-4 h-4" />
-    {label}
-  </button>
 );
 
 const Modal = ({ title, onClose, children, wide }) => (
@@ -322,10 +319,13 @@ const TeacherFeedbackOverview = ({ setShowAdminHeader }) => {
   const [feedback, setFeedback] = useState([]);
   const [filterOptions, setFilterOptions] = useState({ classes: [], sections: [], subjects: [] });
 
-  const [activeTab, setActiveTab] = useState('teacher'); // 'teacher' | 'student'
   const [searchText, setSearchText] = useState('');
   const [sortBy, setSortBy] = useState('rating'); // 'rating' | 'count' | 'name'
   const [selectedKey, setSelectedKey] = useState(null);
+  // Below lg, list and detail are two separate app-style screens — this
+  // tracks which one is showing. On lg+ both panels render side by side
+  // regardless of this flag.
+  const [mobileDetailOpen, setMobileDetailOpen] = useState(false);
   const [page, setPage] = useState(1);
   const [showAllRecent, setShowAllRecent] = useState(false);
   const [analysisOpen, setAnalysisOpen] = useState(false);
@@ -537,44 +537,34 @@ const TeacherFeedbackOverview = ({ setShowAdminHeader }) => {
       feedback,
       (d) => (d.teacherId ? String(d.teacherId) : d.teacherName),
       (d) => d.teacherName || 'Teacher',
-      (d) => d.subjectName
+      (d) => d.subjectName,
+      (d) => d.teacherPhoto
     ),
     [feedback]
   );
-
-  const studentGroups = useMemo(
-    () => buildGroups(
-      feedback,
-      (d) => (d.isAnonymous ? 'anonymous' : (d.studentName || 'Unknown Student')),
-      (d) => (d.isAnonymous ? 'Anonymous Students' : (d.studentName || 'Unknown Student')),
-      (d) => [d.className, d.sectionName].filter(Boolean).join(' • ')
-    ),
-    [feedback]
-  );
-
-  const activeGroups = activeTab === 'teacher' ? teacherGroups : studentGroups;
 
   const visibleGroups = useMemo(() => {
-    const filtered = activeGroups.filter((g) => g.name.toLowerCase().includes(searchText.trim().toLowerCase()));
+    const filtered = teacherGroups.filter((g) => g.name.toLowerCase().includes(searchText.trim().toLowerCase()));
     const sorted = filtered.slice().sort((a, b) => {
       if (sortBy === 'name') return a.name.localeCompare(b.name);
       if (sortBy === 'count') return b.count - a.count;
       return b.avgRating - a.avgRating;
     });
     return sorted;
-  }, [activeGroups, searchText, sortBy]);
+  }, [teacherGroups, searchText, sortBy]);
 
+  // No teacher is selected by default — the detail panel only opens once
+  // the admin clicks a row. If the selected teacher drops out of the
+  // (filtered) list, fall back to nothing selected rather than re-picking
+  // the first one.
   useEffect(() => {
     setPage(1);
     setShowAllRecent(false);
-    if (!visibleGroups.some((g) => g.key === selectedKey)) {
-      setSelectedKey(visibleGroups[0]?.key || null);
+    if (selectedKey && !visibleGroups.some((g) => g.key === selectedKey)) {
+      setSelectedKey(null);
+      setMobileDetailOpen(false);
     }
   }, [visibleGroups, selectedKey]);
-
-  useEffect(() => {
-    setSelectedKey(null);
-  }, [activeTab]);
 
   const selectedGroup = visibleGroups.find((g) => g.key === selectedKey) || null;
 
@@ -664,75 +654,51 @@ const TeacherFeedbackOverview = ({ setShowAdminHeader }) => {
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-slate-50 via-indigo-50/30 to-purple-50/20 p-4 sm:p-6 space-y-5">
-      {/* Header */}
+      {/* Header — title/subtitle left, feedback-window status + the "Add
+          Feedback Window" trigger take the spot a session/active-year picker
+          would normally sit, top right. */}
       <motion.div
         initial={{ opacity: 0, y: -12 }}
         animate={{ opacity: 1, y: 0 }}
         transition={{ duration: 0.35 }}
-        className="relative overflow-hidden rounded-2xl bg-gradient-to-br from-indigo-50 via-violet-50 to-white border border-indigo-100 p-6 sm:p-7"
+        className="flex flex-col items-center text-center gap-3 lg:flex-row lg:items-center lg:text-left lg:justify-between"
       >
-        <div className="absolute -top-16 -right-16 w-64 h-64 bg-indigo-200/30 rounded-full blur-3xl" />
-        <div className="absolute -bottom-20 left-1/3 w-56 h-56 bg-violet-200/30 rounded-full blur-3xl" />
-        <div className="relative flex items-center justify-between gap-6 flex-wrap">
-          <div className="max-w-xl">
-            <h1 className="text-2xl sm:text-3xl font-extrabold text-slate-900">Teacher Feedback</h1>
-            <p className="text-sm text-slate-500 mt-1.5">
-              View and analyze feedback for each teacher. Check detailed insights, student comments and ratings.
-            </p>
-          </div>
-          <div className="flex items-center gap-3 shrink-0">
-            <div className="relative">
-              <div className="w-16 h-16 rounded-full bg-gradient-to-br from-indigo-500 to-violet-600 flex items-center justify-center shadow-lg shadow-indigo-200">
-                <GraduationCap className="w-8 h-8 text-white" />
-              </div>
-              <div className="absolute -top-2 -right-3 bg-white rounded-full shadow-md px-1.5 py-1 flex items-center gap-0.5">
-                {[1, 2, 3, 4].map((i) => (
-                  <Star key={i} className="w-2.5 h-2.5 fill-amber-400 text-amber-400" />
-                ))}
-              </div>
-            </div>
-            <div>
-              <p className="text-sm font-bold text-slate-800 leading-snug">Great Teachers<br />Build Brighter Futures</p>
-              <div className="h-1 w-16 rounded-full bg-gradient-to-r from-indigo-500 to-violet-500 mt-1.5" />
-            </div>
-          </div>
+        <div>
+          <h1 className="text-2xl sm:text-3xl font-extrabold text-slate-900">Teacher Feedback</h1>
+          <p className="text-sm text-slate-500 mt-1">
+            Collect and analyze feedback from students to improve teaching quality
+          </p>
         </div>
-      </motion.div>
-
-      {/* Feedback window: status + action, kept as its own section */}
-      <div className="flex items-center justify-between gap-3 flex-wrap rounded-2xl border border-white/60 bg-white/80 backdrop-blur-xl p-4 shadow-sm">
-        <div className="flex items-center gap-3 min-w-0">
-          <div className="w-9 h-9 rounded-full bg-gradient-to-br from-sky-500 to-blue-600 flex items-center justify-center shadow-sm shrink-0">
-            <Clock className="w-4 h-4 text-white" />
-          </div>
-          <div className="min-w-0">
-            <p className="text-sm font-bold text-slate-800">Student Feedback Window</p>
-            <p className="text-xs text-slate-400 truncate">
-              {sessions.find((s) => s._id === selectedSessionId)?.name || 'No session selected'}
-              {windowSettings.startDate && windowSettings.endDate
-                ? ` · ${formatDateChip(windowSettings.startDate)} - ${formatDateChip(windowSettings.endDate)}`
-                : ' · No dates set'}
-            </p>
-          </div>
-        </div>
-        <div className="flex items-center gap-2.5 shrink-0">
+        <div className="flex items-center justify-center gap-2.5 shrink-0 flex-wrap">
           <span
-            className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-semibold ${
+            className={`hidden sm:inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-semibold ${
               isWindowCurrentlyActive ? 'bg-emerald-50 text-emerald-700 border border-emerald-200' : 'bg-slate-100 text-slate-500 border border-slate-200'
             }`}
           >
             <span className={`w-1.5 h-1.5 rounded-full ${isWindowCurrentlyActive ? 'bg-emerald-500 animate-pulse' : 'bg-slate-400'}`} />
             Feedback Window {isWindowCurrentlyActive ? 'Active' : 'Inactive'}
           </span>
+          
           <button
             onClick={() => setWindowPanelOpen(true)}
-            className="inline-flex items-center gap-2 px-4 py-2.5 rounded-full text-sm font-semibold text-slate-600 bg-white border border-slate-200 hover:bg-slate-50 transition-colors"
+            className="inline-flex items-center gap-2 px-4 py-2.5 rounded-full text-sm font-semibold text-white bg-gradient-to-r from-indigo-600 to-violet-600 hover:from-indigo-700 hover:to-violet-700 shadow-md shadow-indigo-200 transition-colors"
           >
             <Plus className="w-4 h-4" />
             Add Feedback Window
           </button>
+          <button
+            onClick={() => {
+              fetchFeedback();
+              fetchWindowSettings(selectedSessionId);
+            }}
+            disabled={loading}
+            className="inline-flex items-center gap-2 px-4 py-2.5 rounded-full text-sm font-semibold text-slate-600 bg-white border border-slate-200 hover:bg-slate-50 disabled:opacity-60 transition-colors"
+          >
+            <RefreshCw className={`w-4 h-4 ${loading ? 'animate-spin' : ''}`} />
+            Refresh
+          </button>
         </div>
-      </div>
+      </motion.div>
 
       {/* Feedback window settings (session-wise) */}
       <AnimatePresence>
@@ -835,64 +801,31 @@ const TeacherFeedbackOverview = ({ setShowAdminHeader }) => {
           <Filter className="w-4 h-4 text-indigo-500" />
           <p className="text-sm font-bold text-slate-800">Filter</p>
         </div>
-        <div className="flex items-center gap-3 flex-wrap">
-          <select
-            value={selectedSessionId}
-            onChange={(e) => setSelectedSessionId(e.target.value)}
-            className={selectClass}
-            disabled={sessions.length === 0}
-          >
-            {sessions.length === 0 && <option value="">No sessions found</option>}
-            {sessions.map((session) => (
-              <option key={session._id} value={session._id}>
-                {session.name}{session.isActive ? ' (active)' : ''}
-              </option>
-            ))}
-          </select>
-          <select
-            value={query.className}
-            onChange={(e) => setQuery((prev) => ({ ...prev, className: e.target.value }))}
-            className={selectClass}
-          >
-            <option value="all">All Classes</option>
-            {filterOptions.classes.map((name) => <option key={name} value={name}>{name}</option>)}
-          </select>
-          <select
-            value={query.subjectName}
-            onChange={(e) => setQuery((prev) => ({ ...prev, subjectName: e.target.value }))}
-            className={selectClass}
-          >
-            <option value="all">All Subjects</option>
-            {filterOptions.subjects.map((name) => <option key={name} value={name}>{name}</option>)}
-          </select>
-          <select
-            value={query.sectionName}
-            onChange={(e) => setQuery((prev) => ({ ...prev, sectionName: e.target.value }))}
-            className={selectClass}
-          >
-            <option value="all">All Sections</option>
-            {filterOptions.sections.map((name) => <option key={name} value={name}>{name}</option>)}
-          </select>
-          <div className="relative flex-1 min-w-[220px] max-w-xs">
-            <Search className="w-4 h-4 text-slate-400 absolute left-3 top-1/2 -translate-y-1/2" />
-            <input
-              value={searchText}
-              onChange={(e) => setSearchText(e.target.value)}
-              placeholder={`Search ${activeTab === 'teacher' ? 'teacher' : 'student'} by name...`}
-              className={`w-full pl-9 pr-3 ${selectClass}`}
-            />
-          </div>
-          <div className="relative" ref={dateRangeRef}>
+        <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:flex-wrap">
+          {/* Search + date range: on mobile/tablet these form their own row,
+              search taking ~90% and the date button ~10%; on lg+ they simply
+              join the same row as the rest of the filters, search first. */}
+          <div className="flex items-center gap-2 lg:contents">
+            <div className="relative grow-[9] shrink basis-0 lg:grow-0 lg:shrink-0 lg:flex-1 lg:min-w-[220px] lg:max-w-xs lg:order-1">
+              <Search className="w-4 h-4 text-slate-400 absolute left-3 top-1/2 -translate-y-1/2" />
+              <input
+                value={searchText}
+                onChange={(e) => setSearchText(e.target.value)}
+                placeholder="Search teacher by name..."
+                className={`w-full pl-9 pr-3 ${selectClass}`}
+              />
+            </div>
+            <div className="relative grow shrink basis-0 lg:grow-0 lg:shrink-0 lg:order-2" ref={dateRangeRef}>
             <button
               onClick={() => {
                 setDraftRange({ from: query.from, to: query.to });
                 setDateRangeOpen((v) => !v);
               }}
-              className={`${selectClass} inline-flex items-center gap-2`}
+              className={`${selectClass} w-full lg:w-auto inline-flex items-center justify-center gap-2 px-2 lg:px-3`}
             >
-              <Calendar className="w-4 h-4 text-slate-400" />
-              {formatDateRangeChip(query.from, query.to)}
-              <ChevronDown className="w-3.5 h-3.5 text-slate-400" />
+              <Calendar className="w-4 h-4 text-slate-400 shrink-0" />
+              <span className="hidden lg:inline">{formatDateRangeChip(query.from, query.to)}</span>
+              <ChevronDown className="w-3.5 h-3.5 text-slate-400 hidden lg:inline" />
             </button>
             <AnimatePresence>
               {dateRangeOpen && (
@@ -932,46 +865,66 @@ const TeacherFeedbackOverview = ({ setShowAdminHeader }) => {
                 </motion.div>
               )}
             </AnimatePresence>
+            </div>
+          </div>
+
+          {/* Remaining filters: centered wrap on mobile/tablet, inline on lg+ */}
+          <div className="flex items-center justify-center lg:justify-start gap-3 flex-wrap lg:contents">
+            <select
+              value={query.className}
+              onChange={(e) => setQuery((prev) => ({ ...prev, className: e.target.value }))}
+              className={`${selectClass} lg:order-3`}
+            >
+              <option value="all">All Classes</option>
+              {filterOptions.classes.map((name) => <option key={name} value={name}>{name}</option>)}
+            </select>
+            <select
+              value={query.subjectName}
+              onChange={(e) => setQuery((prev) => ({ ...prev, subjectName: e.target.value }))}
+              className={`${selectClass} lg:order-4`}
+            >
+              <option value="all">All Subjects</option>
+              {filterOptions.subjects.map((name) => <option key={name} value={name}>{name}</option>)}
+            </select>
+            <select
+              value={query.sectionName}
+              onChange={(e) => setQuery((prev) => ({ ...prev, sectionName: e.target.value }))}
+              className={`${selectClass} lg:order-5`}
+            >
+              <option value="all">All Sections</option>
+              {filterOptions.sections.map((name) => <option key={name} value={name}>{name}</option>)}
+            </select>
+            <button
+              type="button"
+              onClick={() => {
+                setQuery({ className: 'all', sectionName: 'all', subjectName: 'all', from: '', to: '' });
+                setSearchText('');
+                setDraftRange({ from: '', to: '' });
+              }}
+              className={`${selectClass} lg:order-6 font-semibold text-slate-500 hover:text-slate-700`}
+            >
+              Reset
+            </button>
+            <button
+              type="button"
+              onClick={exportExcel}
+              className={`${selectClass} lg:order-7 inline-flex items-center gap-2 font-semibold text-slate-600`}
+            >
+              <Download className="w-4 h-4" />
+              Export
+            </button>
           </div>
         </div>
       </div>
 
-      {/* Tabs + Export */}
-      <div className="flex items-center justify-between flex-wrap gap-3">
-        <div className="flex items-center gap-2">
-          <TabButton active={activeTab === 'teacher'} icon={Users} label="Teacher Wise" onClick={() => setActiveTab('teacher')} />
-          <TabButton active={activeTab === 'student'} icon={User} label="Student Wise" onClick={() => setActiveTab('student')} />
-        </div>
-        <div className="flex items-center gap-2">
-          <button
-            onClick={() => {
-              fetchFeedback();
-              fetchWindowSettings(selectedSessionId);
-            }}
-            disabled={loading}
-            className="inline-flex items-center gap-2 px-4 py-2.5 rounded-full text-sm font-semibold text-slate-600 bg-white border border-slate-200 hover:bg-slate-50 disabled:opacity-60 transition-colors"
-          >
-            <RefreshCw className={`w-4 h-4 ${loading ? 'animate-spin' : ''}`} />
-            Refresh
-          </button>
-          <button
-            onClick={exportExcel}
-            className="inline-flex items-center gap-2 px-4 py-2.5 rounded-full text-sm font-semibold text-slate-600 bg-white border border-slate-200 hover:bg-slate-50 transition-colors"
-          >
-            <Download className="w-4 h-4" />
-            Export
-          </button>
-        </div>
-      </div>
-
       {/* Stat tiles */}
-      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+      <div className="grid grid-cols-4 gap-2 sm:gap-4">
         <StatTile
           icon={Users}
           iconBg="bg-blue-50"
           iconColor="text-blue-600"
-          label={activeTab === 'teacher' ? 'Total Teachers' : 'Total Students'}
-          value={activeGroups.length}
+          label="Total Teachers"
+          value={teacherGroups.length}
           delay={0.02}
         />
         <StatTile
@@ -1010,13 +963,15 @@ const TeacherFeedbackOverview = ({ setShowAdminHeader }) => {
         </div>
       )}
 
-      {/* List + detail */}
+      {/* List + detail — below lg these behave as two separate app-style
+          screens (tap a row to push into detail, Back to pop to the list);
+          at lg+ both panels sit side by side as a split view. */}
       <div className="grid grid-cols-1 lg:grid-cols-[380px_1fr] gap-4">
         {/* Left: list */}
-        <div className="rounded-2xl border border-white/60 bg-white/80 backdrop-blur-xl shadow-sm flex flex-col">
+        <div className={`rounded-2xl border border-white/60 bg-white/80 backdrop-blur-xl shadow-sm flex-col lg:flex ${mobileDetailOpen ? 'hidden' : 'flex'}`}>
           <div className="flex items-center justify-between gap-2 p-4 border-b border-slate-100">
             <p className="text-sm font-bold text-slate-800">
-              {activeTab === 'teacher' ? 'Teachers' : 'Students'} ({visibleGroups.length})
+              Teachers ({visibleGroups.length})
             </p>
             <div className="flex items-center gap-1.5 text-xs text-slate-500">
               <span className="hidden sm:inline">Sort by:</span>
@@ -1047,12 +1002,15 @@ const TeacherFeedbackOverview = ({ setShowAdminHeader }) => {
               {paginatedGroups.map((group) => (
                 <button
                   key={group.key}
-                  onClick={() => setSelectedKey(group.key)}
-                  className={`w-full flex items-center gap-3 p-4 text-left transition-colors border-b last:border-b-0 border-b-slate-100 ${
+                  onClick={() => {
+                    setSelectedKey(group.key);
+                    setMobileDetailOpen(true);
+                  }}
+                  className={`w-full flex items-center gap-3 py-2.5 px-4 text-left transition-colors border-b last:border-b-0 border-b-slate-100 ${
                     group.key === selectedKey ? 'bg-indigo-50/70 border-l-4 border-l-indigo-600' : 'border-l-4 border-l-transparent hover:bg-slate-50'
                   }`}
                 >
-                  <Avatar name={group.name} />
+                  <Avatar name={group.name} photo={group.photo} size="sm" />
                   <div className="flex-1 min-w-0">
                     <p className="text-sm font-semibold text-slate-800 truncate">{group.name}</p>
                     <p className="text-xs text-slate-500 truncate">{group.subLabel || '-'}</p>
@@ -1078,7 +1036,7 @@ const TeacherFeedbackOverview = ({ setShowAdminHeader }) => {
               <p className="text-xs text-slate-500">
                 Showing <span className="font-semibold text-slate-700">{rangeStart}</span>–
                 <span className="font-semibold text-slate-700">{rangeEnd}</span> of{' '}
-                <span className="font-semibold text-slate-700">{visibleGroups.length}</span> {activeTab === 'teacher' ? 'teachers' : 'students'}
+                <span className="font-semibold text-slate-700">{visibleGroups.length}</span> teachers
               </p>
               <div className="flex items-center gap-1.5">
                 <button
@@ -1120,19 +1078,33 @@ const TeacherFeedbackOverview = ({ setShowAdminHeader }) => {
         </div>
 
         {/* Right: detail panel */}
-        <div className="rounded-2xl border border-white/60 bg-white/80 backdrop-blur-xl shadow-sm p-5">
+        <motion.div
+          key={mobileDetailOpen ? selectedGroup?.key || 'detail' : 'detail-static'}
+          initial={mobileDetailOpen ? { opacity: 0, x: 24 } : false}
+          animate={{ opacity: 1, x: 0 }}
+          transition={{ duration: 0.25, ease: 'easeOut' }}
+          className={`rounded-2xl border border-white/60 bg-white/80 backdrop-blur-xl shadow-sm p-5 lg:block ${mobileDetailOpen ? 'block' : 'hidden'}`}
+        >
+          <button
+            type="button"
+            onClick={() => setMobileDetailOpen(false)}
+            className="mb-4 inline-flex items-center gap-1.5 text-sm font-semibold text-indigo-600 lg:hidden"
+          >
+            <ChevronLeft className="w-4 h-4" />
+            Back to Teachers
+          </button>
           {!selectedGroup ? (
             <div className="h-full min-h-[320px] flex flex-col items-center justify-center gap-3 text-slate-400">
               <MessageSquare className="w-10 h-10" />
               <p className="text-sm font-medium">
-                Select a {activeTab === 'teacher' ? 'teacher' : 'student'} to see detailed feedback.
+                Select a teacher to see detailed feedback.
               </p>
             </div>
           ) : (
             <div className="space-y-5">
               <div className="flex items-start justify-between gap-3 flex-wrap">
                 <div className="flex items-center gap-3">
-                  <Avatar name={selectedGroup.name} size="lg" />
+                  <Avatar name={selectedGroup.name} photo={selectedGroup.photo} size="lg" />
                   <div>
                     <p className="text-lg font-bold text-slate-900">{selectedGroup.name}</p>
                     <p className="text-sm text-slate-500">{selectedGroup.subLabel || '-'}</p>
@@ -1187,7 +1159,7 @@ const TeacherFeedbackOverview = ({ setShowAdminHeader }) => {
                 </div>
                 <div className="space-y-2.5">
                   {recentItems.map((item) => (
-                    <FeedbackItem key={item.id} item={item} showTeacher={activeTab === 'student'} />
+                    <FeedbackItem key={item.id} item={item} showTeacher={false} />
                   ))}
                 </div>
               </div>
@@ -1210,7 +1182,7 @@ const TeacherFeedbackOverview = ({ setShowAdminHeader }) => {
               </div>
             </div>
           )}
-        </div>
+        </motion.div>
       </div>
 
       {/* Detailed analysis modal */}
@@ -1283,7 +1255,7 @@ const TeacherFeedbackOverview = ({ setShowAdminHeader }) => {
           <Modal title={`All Feedback · ${selectedGroup.name} (${selectedGroup.count})`} onClose={() => setAllFeedbackOpen(false)} wide>
             <div className="space-y-2.5">
               {selectedGroup.items.map((item) => (
-                <FeedbackItem key={item.id} item={item} showTeacher={activeTab === 'student'} />
+                <FeedbackItem key={item.id} item={item} showTeacher={false} />
               ))}
             </div>
           </Modal>

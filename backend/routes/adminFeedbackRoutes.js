@@ -2,6 +2,7 @@ const express = require('express');
 const mongoose = require('mongoose');
 const adminAuth = require('../middleware/adminAuth');
 const TeacherFeedback = require('../models/TeacherFeedback');
+const TeacherUser = require('../models/TeacherUser');
 const School = require('../models/School');
 const AcademicYear = require('../models/AcademicYear');
 const { notifyTeacherFeedbackWindowStarted } = require('../utils/teacherFeedbackNotify');
@@ -201,6 +202,13 @@ router.get('/teacher-feedback', adminAuth, async (req, res) => {
 
     const docs = await TeacherFeedback.find(filter).sort({ createdAt: -1 }).lean();
 
+    const teacherIds = Array.from(new Set(docs.map((doc) => String(doc.teacherId || '')).filter(Boolean)));
+    const teacherPhotoById = new Map();
+    if (teacherIds.length) {
+      const teacherDocs = await TeacherUser.find({ _id: { $in: teacherIds } }).select('profilePic').lean();
+      teacherDocs.forEach((t) => teacherPhotoById.set(String(t._id), t.profilePic || ''));
+    }
+
     const ratingKeys = ['teaching_quality', 'communication', 'engagement', 'preparation', 'availability', 'fairness'];
     const totalFeedback = docs.length;
     const ratingDistribution = { 1: 0, 2: 0, 3: 0, 4: 0, 5: 0 };
@@ -240,6 +248,7 @@ router.get('/teacher-feedback', adminAuth, async (req, res) => {
       id: doc._id,
       teacherId: doc.teacherId,
       teacherName: doc.teacherName || 'Teacher',
+      teacherPhoto: teacherPhotoById.get(String(doc.teacherId || '')) || '',
       className: doc.className || '',
       sectionName: doc.sectionName || '',
       subjectName: doc.subjectName || '',
