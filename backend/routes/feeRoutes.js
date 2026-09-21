@@ -13,7 +13,7 @@ const Payment = require('../models/Payment');
 const PaymentAudit = require('../models/PaymentAudit');
 const StudentUser = require('../models/StudentUser');
 const ParentUser = require('../models/ParentUser');
-const { EXITED_STUDENT_STATUSES } = require('../utils/studentStatus');
+const { EXITED_STUDENT_STATUSES, ACTIVE_STUDENT_FILTER } = require('../utils/studentStatus');
 const ClassModel = require('../models/Class');
 const Section = require('../models/Section');
 const AcademicYear = require('../models/AcademicYear');
@@ -1618,6 +1618,7 @@ router.get('/admin/summary', adminAuth, async (req, res) => {
         monthlyTrend: [],
         enrollment: [],
         outstandingSegments: [],
+        classStudents: {},
         recentPayments: [],
       };
       feeSummaryCache.set(cacheKey, { data: emptySummary, expires: Date.now() + FEE_SUMMARY_TTL_MS });
@@ -1680,6 +1681,7 @@ router.get('/admin/summary', adminAuth, async (req, res) => {
     const trendMap = new Map(trendBuckets.map((b) => [b.key, b]));
 
     const classBuckets = new Map();
+    const classStudentBuckets = new Map(); // className -> Map(studentId -> { total, paid, balance })
     invoices.forEach((inv) => {
       const gross = Number(inv.totalAmount || 0);
       const discount = Number(inv.discountAmount || 0);
@@ -1718,6 +1720,18 @@ router.get('/admin/summary', adminAuth, async (req, res) => {
       const bucket = classBuckets.get(className);
       bucket.students.add(String(inv.studentId));
       bucket.outstanding += balance;
+
+      // Per-student rollup within each class, so the dashboard can show who's
+      // paid/due when an admin drills into a class card — a student can have
+      // more than one invoice in the same class, so these are summed.
+      if (!classStudentBuckets.has(className)) classStudentBuckets.set(className, new Map());
+      const studentBucket = classStudentBuckets.get(className);
+      const studentKey = String(inv.studentId);
+      if (!studentBucket.has(studentKey)) studentBucket.set(studentKey, { total: 0, paid: 0, balance: 0 });
+      const studentRow = studentBucket.get(studentKey);
+      studentRow.total += payable;
+      studentRow.paid += paid;
+      studentRow.balance += balance;
     });
     totals.totalStudents = studentsWithInvoice.size;
 
@@ -1740,6 +1754,28 @@ router.get('/admin/summary', adminAuth, async (req, res) => {
       ...row,
       percentage: Math.round((row.amount / totalOutstanding) * 100),
     }));
+
+    const classStudents = {};
+    classStudentBuckets.forEach((studentBucket, label) => {
+      classStudents[label] = Array.from(studentBucket.entries())
+        .map(([studentId, agg]) => {
+          const student = studentMap.get(studentId);
+          const balanceAmount = Math.round(agg.balance);
+          const paidAmount = Math.round(agg.paid);
+          return {
+            studentId,
+            name: student?.name || 'Student',
+            roll: student?.roll || '',
+            username: student?.username || student?.studentCode || student?.admissionNumber || '',
+            section: student?.section || '',
+            totalAmount: Math.round(agg.total),
+            paidAmount,
+            balanceAmount,
+            status: balanceAmount <= 0 ? 'paid' : paidAmount > 0 ? 'partial' : 'due',
+          };
+        })
+        .sort((a, b) => b.balanceAmount - a.balanceAmount || a.name.localeCompare(b.name));
+    });
 
     const invoiceMap = new Map(invoices.map((inv) => [String(inv._id), inv]));
 
@@ -1829,6 +1865,7 @@ router.get('/admin/summary', adminAuth, async (req, res) => {
       })),
       enrollment: enrollmentNormalized,
       outstandingSegments: outstandingNormalized,
+      classStudents,
       recentPayments,
     };
     feeSummaryCache.set(cacheKey, { data: summary, expires: Date.now() + FEE_SUMMARY_TTL_MS });
@@ -1856,7 +1893,7 @@ router.get('/admin/invoices', adminAuth, async (req, res) => {
       studentId,
     } = req.query || {};
 
-    const studentFilter = { schoolId };
+    const studentFilter = { schoolId, ...ACTIVE_STUDENT_FILTER };
     if (req.campusId) {
       studentFilter.campusId = req.campusId;
     }
@@ -1897,11 +1934,15 @@ router.get('/admin/invoices', adminAuth, async (req, res) => {
       }
     }
 
+    // Only currently-enrolled students' invoices show up here — a student
+    // marked Leaving/Left/Expelled or archived is excluded even when looked
+    // up directly by studentId.
     let studentIds = null;
     if (studentId && mongoose.isValidObjectId(studentId)) {
       const student = await StudentUser.findOne({
         _id: studentId,
         schoolId,
+        ...ACTIVE_STUDENT_FILTER,
         ...(req.campusId ? { campusId: req.campusId } : {}),
       })
         .select('name grade section roll admissionNumber')
@@ -1916,7 +1957,7 @@ router.get('/admin/invoices', adminAuth, async (req, res) => {
         return res.json([]);
       }
       studentIds = [student._id];
-    } else if (req.campusId || className || section || search) {
+    } else {
       const students = await StudentUser.find(studentFilter)
         .select('name grade section roll admissionNumber')
         .lean();
