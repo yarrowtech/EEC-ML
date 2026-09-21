@@ -18,6 +18,7 @@ const StudentProgress = require('../models/StudentProgress');
 const Assignment = require('../models/Assignment');
 const TeacherUser = require('../models/TeacherUser');
 const TeacherFeedback = require('../models/TeacherFeedback');
+const { normalizeClassName } = require('../utils/teacherAllocationScope');
 const School = require('../models/School');
 const SupportRequest = require('../models/SupportRequest');
 const StudentObservation = require('../models/StudentObservation');
@@ -2170,15 +2171,19 @@ router.get('/schedule', authStudent, async (req, res) => {
         .lean(),
     ]);
 
-    // Find class candidates by grade/class name (handle duplicate class names across years).
+    // Find class candidates by grade/class name (handle duplicate class names
+    // across years). Matched via normalizeClassName rather than a raw regex on
+    // resolvedGrade — schools store this inconsistently ("Class 8" vs "8" vs
+    // "class 8"), and an exact-anchored regex silently finds nothing the moment
+    // Class.name and StudentUser.grade disagree on the "Class " prefix, which
+    // shows up as an empty routine for every student in that class (see the
+    // same root cause already fixed for attendance/achievements in
+    // utils/teacherAllocationScope.js).
     const classFilter = { schoolId: student.schoolId };
     if (student.campusId) classFilter.campusId = student.campusId;
-    const classCandidates = await Class.find({
-      ...classFilter,
-      name: { $regex: `^${escapeRegex(resolvedGrade)}$`, $options: 'i' },
-    })
-      .sort({ createdAt: -1 })
-      .lean();
+    const normalizedResolvedGrade = normalizeClassName(resolvedGrade);
+    const classCandidates = (await Class.find(classFilter).sort({ createdAt: -1 }).lean())
+      .filter((doc) => normalizeClassName(doc.name) === normalizedResolvedGrade);
 
     let classDoc = null;
     if (Array.isArray(classCandidates) && classCandidates.length > 0) {
