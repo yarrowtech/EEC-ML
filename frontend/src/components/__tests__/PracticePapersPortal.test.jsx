@@ -66,24 +66,12 @@ describe('PracticePapersPortal', () => {
     const user = userEvent.setup();
     render(<MemoryRouter><PracticePapersPortal /></MemoryRouter>);
 
-    expect(await screen.findByText('Please Select a Subject to see what you can practice.')).toBeInTheDocument();
-
-    await screen.findByRole('option', { name: 'Mathematics' });
-    await user.selectOptions(screen.getByRole('combobox', { name: 'Select Subject' }), 'subject-1');
-
-    expect(await screen.findByText('Pick a chapter above to see what you can practice.')).toBeInTheDocument();
-    expect(screen.queryByRole('combobox', { name: 'Select Topic' })).not.toBeInTheDocument();
-
-    await screen.findByRole('option', { name: 'Numbers' });
-    await user.selectOptions(screen.getByRole('combobox', { name: 'Select Chapter' }), 'chapter-1');
-
-    // There's no separate topic step — the chapter's one assigned topic is
-    // used automatically, so MCQ, Fill in the Blanks and Topic Tryout are
-    // all available as soon as subject + chapter are picked.
-    expect(await screen.findAllByText('1 question available')).toHaveLength(3);
-    expect(screen.getByRole('button', { name: 'Start MCQ' })).toBeInTheDocument();
-    expect(screen.getByRole('button', { name: 'Start Blanks' })).toBeInTheDocument();
-    expect(screen.getByRole('button', { name: 'Start Tryout' })).toBeInTheDocument();
+    expect(await screen.findByText('Quick Activities')).toBeInTheDocument();
+    expect(await screen.findAllByText('Mathematics')).toHaveLength(3);
+    expect(screen.getByText('Assigned Tryouts')).toBeInTheDocument();
+    expect(screen.getByText('Living Things')).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Practice papers' })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Homework' })).toBeInTheDocument();
   });
 
   test('opens a teacher MCQ inside the practice-papers page', async () => {

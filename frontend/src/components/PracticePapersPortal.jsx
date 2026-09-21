@@ -71,6 +71,18 @@ const PracticePapersPortal = () => {
   const token = localStorage.getItem('token');
 
   // State
+  const [papers, setPapers] = useState([]);
+  const [homework, setHomework] = useState([]);
+  const [homeworkLoading, setHomeworkLoading] = useState(true);
+  const [loading, setLoading] = useState(true);
+  const [searchQuery, setSearchQuery] = useState('');
+  const [difficultyFilter, setDifficultyFilter] = useState('all');
+  const [activityFilter, setActivityFilter] = useState('all');
+  const [subjects, setSubjects] = useState([]);
+  const [subjectFilter, setSubjectFilter] = useState('all');
+  const [selectedPaper, setSelectedPaper] = useState(null);
+  const [takingTest, setTakingTest] = useState(false);
+  const [openingPaperId, setOpeningPaperId] = useState('');
   const [quickPractice, setQuickPractice] = useState(null);
   const [selectedTryout, setSelectedTryout] = useState(null);
   const [activeFormatView, setActiveFormatView] = useState(null); // null | 'reading' | 'writing'
@@ -120,12 +132,9 @@ const PracticePapersPortal = () => {
         const writingData = await writingResponse.json().catch(() => ({}));
         if (!metaResponse.ok) throw new Error(metaData?.error || 'Unable to load teacher activities');
 
-        setReadingMaterials(readingResponse.ok && Array.isArray(readingData?.data) ? readingData.data : []);
-        setWritingPrompts(writingResponse.ok && Array.isArray(writingData?.data) ? writingData.data : []);
-
-        const metaSubjects = Array.isArray(metaData?.subjects) ? metaData.subjects : [];
-        setSubjects(metaSubjects);
-        const questionRequests = metaSubjects.flatMap((subject) => ['mcq', 'blank'].map(async (type) => {
+        const subjects = Array.isArray(metaData?.subjects) ? metaData.subjects : [];
+        setSubjects(subjects);
+        const questionRequests = subjects.flatMap((subject) => ['mcq', 'blank'].map(async (type) => {
           const params = new URLSearchParams({ subjectId: String(subject.id), type });
           const response = await fetch(`${API_BASE}/api/practice/student/questions?${params}`, {
             headers: authHeaders,
@@ -171,132 +180,75 @@ const PracticePapersPortal = () => {
     return () => controller.abort();
   }, [API_BASE, authHeaders]);
 
-  // Reset dependent selectors whenever an ancestor changes.
-  useEffect(() => {
-    setChapterFilter('all');
-  }, [subjectFilter]);
-  // Availability of each format shifts with context — drop any selection
-  // that's no longer valid instead of silently launching the wrong thing.
-  useEffect(() => {
-    setSelectedFormats([]);
-  }, [subjectFilter, chapterFilter]);
-
+  // Name of the selected subject, used to match items that only carry a
+  // subject name (homework, tryouts) rather than a subjectId (papers, quick activities).
   const selectedSubjectName = useMemo(
     () => subjects.find((s) => String(s.id) === subjectFilter)?.name || '',
     [subjects, subjectFilter]
   );
 
-  const selectedSubjectMapEntry = useMemo(() => {
-    if (subjectFilter === 'all') return null;
-    return mapSubjects.find((s) => (
-      (s.subjectId && String(s.subjectId) === subjectFilter)
-      || (selectedSubjectName && String(s.title || '').toLowerCase() === selectedSubjectName.toLowerCase())
-    )) || null;
-  }, [mapSubjects, subjectFilter, selectedSubjectName]);
+  // Filter class work by difficulty + subject + search; homework by subject + search only
+  const filteredPapers = useMemo(() => {
+    if (activityFilter !== 'all' && activityFilter !== 'paper') return [];
+    const query = searchQuery.trim().toLowerCase();
+    return papers.filter(p => {
+      if (difficultyFilter !== 'all' && p.difficulty !== difficultyFilter) return false;
+      if (subjectFilter !== 'all' && String(p.subjectId || '') !== subjectFilter) return false;
+      return !query || [p.title, p.subjectName, p.chapterTitle, p.topicTitle, p.paperType]
+        .some((value) => String(value || '').toLowerCase().includes(query));
+    });
+  }, [activityFilter, papers, difficultyFilter, subjectFilter, searchQuery]);
 
-  // Every chapter from the student's published lesson plans is selectable —
-  // not just ones with a Topic Tryout, since a chapter can still have MCQ,
-  // Fill-in-the-Blank, Reading, or Writing content without a tryout.
-  const chapters = useMemo(
-    () => selectedSubjectMapEntry?.chapters || [],
-    [selectedSubjectMapEntry]
-  );
-  const selectedChapterEntry = useMemo(
-    () => chapters.find((c) => c.id === chapterFilter) || null,
-    [chapters, chapterFilter]
-  );
-  // A chapter usually maps to one topic in practice, but now that chapters
-  // aren't filtered down to tryout-only topics, prefer whichever topic
-  // actually has a tryout (if any) over just the first one in the list.
-  const selectedTopicEntry = useMemo(() => {
-    const topics = selectedChapterEntry?.topics || [];
-    return topics.find((t) => Array.isArray(t.tryoutSections) && t.tryoutSections.length > 0) || topics[0] || null;
-  }, [selectedChapterEntry]);
-  const selectedChapterTitle = selectedChapterEntry?.title || '';
-  const selectedTopicTitle = selectedTopicEntry?.title || '';
+  const filteredHomework = useMemo(() => {
+    if (activityFilter !== 'all' && activityFilter !== 'homework') return [];
+    const q = searchQuery.trim().toLowerCase();
+    return homework.filter((hw) => {
+      if (subjectFilter !== 'all' && selectedSubjectName
+        && String(hw.subject || '').toLowerCase() !== selectedSubjectName.toLowerCase()) return false;
+      if (!q) return true;
+      return [hw.title, hw.subject, hw.chapterTitle, hw.topicTitle, hw.topic]
+        .some((v) => String(v || '').toLowerCase().includes(q));
+    });
+  }, [activityFilter, homework, subjectFilter, selectedSubjectName, searchQuery]);
 
-  // Real content lookups behind each format card — no card claims to work
-  // unless there's an actual published set/topic behind it.
-  const mcqActivity = useMemo(
-    () => practiceActivities.find((a) => a.type === 'mcq' && String(a.id) === subjectFilter) || null,
-    [practiceActivities, subjectFilter]
-  );
-  const blankActivity = useMemo(
-    () => practiceActivities.find((a) => a.type === 'blank' && String(a.id) === subjectFilter) || null,
-    [practiceActivities, subjectFilter]
-  );
-  const tryoutActivity = useMemo(() => {
-    if (!selectedSubjectName || !selectedTopicTitle) return null;
-    const key = `${selectedSubjectName.toLowerCase()}::${selectedTopicTitle.toLowerCase()}`;
-    return tryoutActivities.find((t) => t.id === key) || null;
-  }, [tryoutActivities, selectedSubjectName, selectedTopicTitle]);
-  // Reading/Writing cards are only "available" if a teacher actually
-  // published a matching material/prompt — not assumed. Teachers tag these
-  // by chapter in practice (subject is usually left blank), so match on
-  // whichever field is actually populated.
-  const hasReadingMaterial = useMemo(() => readingMaterials.some((m) => (
-    (selectedChapterTitle && String(m.chapter || '').toLowerCase() === selectedChapterTitle.toLowerCase())
-    || (m.subject && String(m.subject).toLowerCase() === selectedSubjectName.toLowerCase())
-  )), [readingMaterials, selectedChapterTitle, selectedSubjectName]);
-  const hasWritingPrompt = useMemo(() => writingPrompts.some((p) => (
-    (selectedChapterTitle && String(p.chapter || '').toLowerCase() === selectedChapterTitle.toLowerCase())
-    || (p.subject && String(p.subject).toLowerCase() === selectedSubjectName.toLowerCase())
-  )), [writingPrompts, selectedChapterTitle, selectedSubjectName]);
+  const filteredPracticeActivities = useMemo(() => {
+    const query = searchQuery.trim().toLowerCase();
+    return practiceActivities.filter((activity) => {
+      if (activityFilter !== 'all' && activityFilter !== activity.type) return false;
+      if (subjectFilter !== 'all' && String(activity.id || '') !== subjectFilter) return false;
+      return !query || String(activity.name || '').toLowerCase().includes(query);
+    });
+  }, [activityFilter, practiceActivities, subjectFilter, searchQuery]);
 
-  const formatAvailability = {
-    mcq: Boolean(mcqActivity),
-    blank: Boolean(blankActivity),
-    tryout: Boolean(tryoutActivity),
-    reading: hasReadingMaterial,
-    writing: hasWritingPrompt,
-  };
-  const formatCounts = {
-    mcq: mcqActivity?.count || 0,
-    blank: blankActivity?.count || 0,
-    tryout: tryoutActivity?.count || 0,
-  };
+  const filteredTryoutActivities = useMemo(() => {
+    if (activityFilter !== 'all' && activityFilter !== 'tryout') return [];
+    const query = searchQuery.trim().toLowerCase();
+    return tryoutActivities.filter((activity) => {
+      if (subjectFilter !== 'all' && selectedSubjectName
+        && activity.subjectName?.toLowerCase() !== selectedSubjectName.toLowerCase()) return false;
+      return !query || `${activity.subjectName} ${activity.topicName}`.toLowerCase().includes(query);
+    });
+  }, [activityFilter, searchQuery, tryoutActivities, subjectFilter, selectedSubjectName]);
 
-  const launchFormat = (key) => {
-    if (key === 'mcq' && mcqActivity) setQuickPractice(mcqActivity);
-    else if (key === 'blank' && blankActivity) setQuickPractice(blankActivity);
-    else if (key === 'tryout' && tryoutActivity) setSelectedTryout({ subjectName: selectedSubjectName, topicName: selectedTopicTitle });
-    else if (key === 'reading') setActiveFormatView('reading');
-    else if (key === 'writing') setActiveFormatView('writing');
-  };
-
-  const startSingleFormat = (key) => {
-    setQueue(null);
-    setQueuePos(0);
-    launchFormat(key);
-  };
-
-  const toggleFormatSelection = (key) => {
-    if (!formatAvailability[key]) return;
-    setSelectedFormats((prev) => (prev.includes(key) ? prev.filter((k) => k !== key) : [...prev, key]));
-  };
-
-  const launchQueue = () => {
-    const ordered = QUEUE_ORDER.filter((k) => selectedFormats.includes(k));
-    if (!ordered.length) return;
-    setQueue(ordered);
-    setQueuePos(0);
-    launchFormat(ordered[0]);
-  };
-
-  const resetSelection = () => setSelectedFormats([]);
-
-  // Shared "close this format's runner" handler — advances to the next
-  // queued format if one is waiting, otherwise returns to the picker.
-  const handleRunnerBack = () => {
-    setQuickPractice(null);
-    setSelectedTryout(null);
-    if (queue && queuePos < queue.length - 1) {
-      const nextPos = queuePos + 1;
-      setQueuePos(nextPos);
-      launchFormat(queue[nextPos]);
-    } else {
-      setQueue(null);
-      setQueuePos(0);
+  const openPaper = async (paper) => {
+    if (!paper?._id || openingPaperId) return;
+    setOpeningPaperId(String(paper._id));
+    try {
+      const response = await fetch(`${API_BASE}/api/practice-papers/student/papers/${paper._id}`, {
+        headers: authHeaders,
+      });
+      const data = await response.json().catch(() => ({}));
+      if (!response.ok) throw new Error(data?.message || 'Unable to open practice paper');
+      setSelectedPaper(data.paper);
+      saveLearningActivity({
+        path: '/student/practice-papers',
+        label: 'Class Work',
+        detail: paper.title,
+      });
+    } catch (err) {
+      toast.error(err.message || 'Unable to open practice paper');
+    } finally {
+      setOpeningPaperId('');
     }
   };
 
@@ -375,20 +327,60 @@ const PracticePapersPortal = () => {
               <ChevronDown className="pointer-events-none absolute right-2.5 top-1/2 -translate-y-1/2 size-4 text-slate-400" />
             </div>
           </div>
-          {/* Breadcrumb */}
-          <div className="mt-3 flex flex-wrap items-center gap-1.5 text-xs font-medium text-slate-500">
-            <span className="text-slate-400">Showing:</span>
-            <span className="rounded-full bg-indigo-50 px-2 py-0.5 text-indigo-700 font-semibold">
-              {subjectFilter === 'all' ? 'All subjects' : selectedSubjectName}
-            </span>
-            {chapterFilter !== 'all' && selectedChapterTitle && (<>
-              <ChevronRight className="size-3 text-slate-300" />
-              <span className="rounded-full bg-violet-50 px-2 py-0.5 text-violet-700 font-semibold">{selectedChapterTitle}</span>
-            </>)}
-            {selectedTopicTitle && selectedTopicTitle !== selectedChapterTitle && (<>
-              <ChevronRight className="size-3 text-slate-300" />
-              <span className="rounded-full bg-purple-50 px-2 py-0.5 text-purple-700 font-semibold">{selectedTopicTitle}</span>
-            </>)}
+        </section>
+
+        {/* Filters */}
+        <div className="mb-6 rounded-2xl border border-white/80 bg-white/70 p-4 shadow-sm backdrop-blur-xl sm:p-5">
+          <div className="grid grid-cols-1 gap-4 sm:grid-cols-3">
+            {/* Search */}
+            <div className="relative">
+              <Search className="absolute left-3 top-3 w-5 h-5 text-gray-400" />
+              <input
+                type="text"
+                placeholder="Search by title, subject, chapter or topic..."
+                value={searchQuery}
+                onChange={(e) => setSearchQuery(e.target.value)}
+                className="w-full pl-10 pr-4 py-2 border rounded-lg text-sm focus:ring-2 focus:ring-blue-500"
+              />
+            </div>
+
+            {/* Subject Filter */}
+            <select
+              value={subjectFilter}
+              onChange={(e) => setSubjectFilter(e.target.value)}
+              className="px-4 py-2 border rounded-lg text-sm focus:ring-2 focus:ring-blue-500"
+            >
+              <option value="all">All Subjects</option>
+              {subjects.map((subject) => (
+                <option key={subject.id} value={String(subject.id)}>{subject.name}</option>
+              ))}
+            </select>
+
+            {/* Difficulty Filter (class work only) */}
+            <select
+              value={difficultyFilter}
+              onChange={(e) => setDifficultyFilter(e.target.value)}
+              className="px-4 py-2 border rounded-lg text-sm focus:ring-2 focus:ring-blue-500"
+            >
+              <option value="all">All Levels</option>
+              <option value="easy">Easy</option>
+              <option value="medium">Medium</option>
+              <option value="hard">Hard</option>
+            </select>
+          </div>
+          <div className="mt-4 flex gap-2 overflow-x-auto pb-1">
+            {[
+              { key: 'all', label: 'All activities' },
+              { key: 'paper', label: 'Practice papers' },
+              { key: 'mcq', label: 'MCQ' },
+              { key: 'blank', label: 'Fill blanks' },
+              { key: 'tryout', label: 'Tryouts' },
+              { key: 'homework', label: 'Homework' },
+            ].map((filter) => (
+              <button key={filter.key} type="button" onClick={() => setActivityFilter(filter.key)} className={`shrink-0 rounded-full border px-4 py-2 text-xs font-semibold transition ${activityFilter === filter.key ? 'border-indigo-500 bg-indigo-500 text-white shadow-md shadow-indigo-100' : 'border-slate-200 bg-white text-slate-500 hover:border-indigo-200 hover:text-indigo-700'}`}>
+                {filter.label}
+              </button>
+            ))}
           </div>
         </div>
 
