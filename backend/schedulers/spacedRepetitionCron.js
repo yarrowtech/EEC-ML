@@ -175,6 +175,10 @@ async function run30DayReport() {
 }
 
 function startSchedulers() {
+  // Every minute — publish exam results whose scheduled time has arrived
+  cron.schedule('* * * * *', async () => {
+    await require('../services/examResultPublishService').runDueScheduledResultPublishes();
+  }, { noOverlap: true });
   cron.schedule('*/15 * * * *', async () => {
     await require('../services/assessmentSyncService').reconcileAssessments();
     await require('../services/interventionFollowUpService').measureFollowUps();

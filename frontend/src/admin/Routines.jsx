@@ -1278,7 +1278,7 @@ const Routines = ({ setShowAdminHeader }) => {
     setTimeout(() => setToast(t => ({ ...t, show: false })), 3000);
   }, []);
 
-  useEffect(() => { setShowAdminHeader?.(false); }, [setShowAdminHeader]);
+  useEffect(() => { setShowAdminHeader?.(true); }, [setShowAdminHeader]);
 
   const loadInitialData = async () => {
     setLoading(true); setError(null);
@@ -1655,7 +1655,7 @@ const Routines = ({ setShowAdminHeader }) => {
         {/* Row 2: view tabs + filters + school timing */}
         <div className="max-w-[1560px] mx-auto px-3 sm:px-6 py-2 flex flex-col sm:flex-row items-stretch sm:items-center gap-3 sm:gap-4 sm:flex-wrap border-t border-slate-100">
           {/* View tabs */}
-          <div className="flex gap-1 p-1 rounded-xl bg-slate-100 w-full sm:w-auto shrink-0">
+          <div className="flex gap-1 p-1 rounded-full bg-slate-100 w-full sm:w-auto shrink-0">
             {[
               { key: 'dayGrid',     icon: <LayoutGrid size={13} />, label: 'Day Grid' },
               { key: 'classView',   icon: <BookOpen   size={13} />, label: 'By Class' },
@@ -1663,7 +1663,7 @@ const Routines = ({ setShowAdminHeader }) => {
             ].map(tab => (
               <Motion.button key={tab.key} onClick={() => setCurrentView(tab.key)}
                 whileTap={{ scale: 0.97 }}
-                className="flex flex-1 sm:flex-none items-center justify-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold transition-all"
+                className="flex flex-1 sm:flex-none items-center justify-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-semibold transition-all"
                 style={{
                   background: currentView === tab.key ? '#fff' : 'transparent',
                   color: currentView === tab.key ? '#4f46e5' : '#64748b',

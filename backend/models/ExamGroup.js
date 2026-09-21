@@ -18,6 +18,9 @@ const examGroupSchema = new mongoose.Schema({
   endDate:   { type: String, default: '' },
   startTime: { type: String, default: '' },
   publishedAt: { type: Date, default: null },
+  // When set, the scheduler publishes every subject result under this exam
+  // once this time arrives (then clears it).
+  resultPublishAt: { type: Date, default: null },
   routineNoticeId: { type: mongoose.Schema.Types.ObjectId, ref: 'Notification', default: null },
 }, { timestamps: true });
 

@@ -852,13 +852,13 @@ router.get('/groups', adminAuth, async (req, res) => {
 
     const [groups, exams] = await Promise.all([
       ExamGroup.find(filter)
-        .populate('classId', 'name')
+        .populate({ path: 'classId', select: 'name academicYearId', populate: { path: 'academicYearId', select: 'name isActive' } })
         .populate('sectionId', 'name')
         .sort({ createdAt: -1 })
         .lean(),
       Exam.find({ ...filter, groupId: { $exists: true, $ne: null } })
         .populate('subjectId', 'name code')
-        .populate('classId', 'name')
+        .populate({ path: 'classId', select: 'name academicYearId', populate: { path: 'academicYearId', select: 'name isActive' } })
         .populate('sectionId', 'name')
         .populate({
           path: 'roomId',
@@ -1139,6 +1139,37 @@ router.post('/groups', adminAuth, async (req, res) => {
 });
 
 // PUT /groups/:groupId — update group
+// PUT /groups/:groupId/result-schedule — schedule (or clear) automatic
+// publishing of every subject result under a main exam.
+router.put('/groups/:groupId/result-schedule', adminAuth, async (req, res) => {
+  try {
+    const { groupId } = req.params;
+    if (!mongoose.isValidObjectId(groupId)) return res.status(400).json({ error: 'Invalid group ID' });
+    const schoolId = resolveSchoolId(req, res);
+    if (!schoolId) return;
+    const campusId = resolveCampusId(req);
+
+    let resultPublishAt = null;
+    if (req.body?.scheduledAt) {
+      resultPublishAt = new Date(req.body.scheduledAt);
+      if (Number.isNaN(resultPublishAt.getTime())) return res.status(400).json({ error: 'Invalid schedule date/time' });
+      if (resultPublishAt.getTime() <= Date.now()) return res.status(400).json({ error: 'Schedule time must be in the future' });
+    }
+
+    const group = await ExamGroup.findOneAndUpdate(
+      { _id: groupId, schoolId, ...(campusId ? { campusId } : {}) },
+      { $set: { resultPublishAt } },
+      { new: true }
+    ).lean();
+    if (!group) return res.status(404).json({ error: 'Exam group not found' });
+
+    clearExamGroupsCache();
+    res.json({ success: true, resultPublishAt: group.resultPublishAt });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
 router.put('/groups/:groupId', adminAuth, async (req, res) => {
   try {
     const { groupId } = req.params;

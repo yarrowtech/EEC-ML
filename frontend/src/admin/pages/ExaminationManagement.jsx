@@ -8,6 +8,7 @@ import {
   ListChecks, Loader2, MapPin, MoreVertical, Plus, RefreshCw, Rocket, RotateCcw, Search, Settings, Trash2,
   User, Users, X, CheckCircle2, Zap,
   DownloadIcon,
+  Edit,
 } from 'lucide-react';
 import Swal from 'sweetalert2';
 import toast from 'react-hot-toast';
@@ -566,6 +567,8 @@ const ExaminationManagement = ({ setShowAdminHeader }) => {
   const [classPillFilter, setClassPillFilter] = useState('all'); // classId or 'all'
   const [sortOrder, setSortOrder] = useState('latest'); // 'latest' | 'oldest'
   const [selectedBatchKey, setSelectedBatchKey] = useState('');
+  // Below lg the exam detail is a slide-over drawer; this tracks whether it's open.
+  const [detailOpen, setDetailOpen] = useState(false);
   const [activeDetailTab, setActiveDetailTab] = useState('overview'); // overview|routine|classes|settings|results
 
   /* ── group modal ── */
@@ -982,9 +985,24 @@ const ExaminationManagement = ({ setShowAdminHeader }) => {
     [examBatches, selectedBatchKey]
   );
 
+  // Lock the main page scroll while the detail drawer is open (below lg only).
   useEffect(() => {
-    if (!visibleBatches.some((b) => b.key === selectedBatchKey)) {
-      setSelectedBatchKey(visibleBatches[0]?.key || '');
+    if (!detailOpen || window.matchMedia('(min-width: 1024px)').matches) return undefined;
+    const prevBody = document.body.style.overflow;
+    const prevHtml = document.documentElement.style.overflow;
+    document.body.style.overflow = 'hidden';
+    document.documentElement.style.overflow = 'hidden';
+    return () => {
+      document.body.style.overflow = prevBody;
+      document.documentElement.style.overflow = prevHtml;
+    };
+  }, [detailOpen]);
+
+  // Nothing is selected by default — details only open after clicking an exam.
+  useEffect(() => {
+    if (selectedBatchKey && !visibleBatches.some((b) => b.key === selectedBatchKey)) {
+      setSelectedBatchKey('');
+      setDetailOpen(false);
     }
   }, [visibleBatches, selectedBatchKey]);
 
@@ -5007,7 +5025,7 @@ const ExaminationManagement = ({ setShowAdminHeader }) => {
                       const avatarCls = EXAM_AVATAR_PALETTE[(gi + bi) % EXAM_AVATAR_PALETTE.length];
                       return (
                         <button key={batch.key}
-                          onClick={() => { setSelectedBatchKey(batch.key); setActiveDetailTab('overview'); }}
+                          onClick={() => { setSelectedBatchKey(batch.key); setActiveDetailTab('overview'); setDetailOpen(true); }}
                           className={`w-full text-left px-4 py-3 border-b border-b-slate-100 flex items-start gap-3 transition-colors ${isSelected ? 'bg-indigo-50/70 border-l-4 border-l-indigo-600' : 'border-l-4 border-l-transparent hover:bg-slate-50'
                             }`}
                         >
@@ -5040,7 +5058,17 @@ const ExaminationManagement = ({ setShowAdminHeader }) => {
           </div>
 
           {/* ══════════ RIGHT: exam detail ══════════ */}
-          <div className="rounded-2xl border border-slate-200 bg-white shadow-sm overflow-hidden">
+          {detailOpen && (
+            <div className="fixed inset-0 z-40 bg-slate-900/40 lg:hidden" onClick={() => setDetailOpen(false)} />
+          )}
+          <div className={`bg-white shadow-sm fixed inset-y-0 right-0 z-50 w-full sm:w-[88%] md:w-[70%] overflow-y-auto transition-transform duration-300 lg:static lg:z-auto lg:w-auto lg:overflow-hidden lg:translate-x-0 lg:rounded-2xl lg:border lg:border-slate-200 ${detailOpen ? 'translate-x-0' : 'translate-x-full'}`}>
+            <div className="sticky top-0 z-10 flex items-center justify-between gap-2 border-b border-slate-100 bg-white px-4 py-2.5 lg:hidden">
+              <p className="text-sm font-bold text-slate-700">Exam Details</p>
+              <button onClick={() => setDetailOpen(false)} aria-label="Close details"
+                className="h-8 w-8 flex items-center justify-center rounded-lg text-slate-500 hover:bg-slate-100">
+                <X size={16} />
+              </button>
+            </div>
             {!selectedBatch ? (
               <div className="flex flex-col items-center justify-center py-24 gap-2 text-slate-400">
                 <BookOpen size={30} className="text-slate-300" />
@@ -5064,12 +5092,12 @@ const ExaminationManagement = ({ setShowAdminHeader }) => {
                   </div>
                   <div className="flex items-center gap-2 shrink-0">
                     <button onClick={() => openEditBatch(selectedBatch)}
-                      className="flex items-center gap-1.5 px-3.5 py-2 rounded-xl border border-slate-200 text-sm font-semibold text-slate-600 hover:bg-slate-50 transition-colors">
-                      <Edit2 size={13} /> Edit
+                      className="flex items-center gap-1.5 px-3.5 py-2 rounded-full border border-slate-200 text-sm font-semibold text-slate-600 hover:bg-slate-50 transition-colors">
+                      <Edit size={13} />
                     </button>
                     <button onClick={() => handleDuplicateBatch(selectedBatch)}
-                      className="flex items-center gap-1.5 px-3.5 py-2 rounded-xl border border-slate-200 text-sm font-semibold text-slate-600 hover:bg-slate-50 transition-colors">
-                      <Copy size={13} /> Duplicate
+                      className="flex items-center gap-1.5 px-3.5 py-2 rounded-full border border-slate-200 text-sm font-semibold text-slate-600 hover:bg-slate-50 transition-colors">
+                      <Copy size={13} />
                     </button>
                     <div className="relative" ref={moreMenuRef}>
                       <button onClick={() => setMoreMenuOpen((v) => !v)} aria-label="More options"
@@ -5102,14 +5130,16 @@ const ExaminationManagement = ({ setShowAdminHeader }) => {
                 </div>
 
                 {/* tabs */}
-                <div className="flex items-center gap-1 px-5 border-b border-slate-100 overflow-x-auto no-scrollbar">
-                  {DETAIL_TABS.map((t) => (
-                    <button key={t.id} onClick={() => setActiveDetailTab(t.id)}
-                      className={`shrink-0 px-3 py-3 text-sm font-semibold border-b-2 -mb-px transition-colors ${activeDetailTab === t.id ? 'border-indigo-600 text-indigo-600' : 'border-transparent text-slate-500 hover:text-slate-700'
-                        }`}>
-                      {t.label}
-                    </button>
-                  ))}
+                <div className="border-b border-slate-100">
+                  <ScrollablePillRow className="gap-1 px-5">
+                    {DETAIL_TABS.map((t) => (
+                      <button key={t.id} onClick={() => setActiveDetailTab(t.id)}
+                        className={`shrink-0 px-3 py-3 text-sm font-semibold border-b-2 -mb-px transition-colors ${activeDetailTab === t.id ? 'border-indigo-600 text-indigo-600' : 'border-transparent text-slate-500 hover:text-slate-700'
+                          }`}>
+                        {t.label}
+                      </button>
+                    ))}
+                  </ScrollablePillRow>
                 </div>
 
                 <div className="p-5">
