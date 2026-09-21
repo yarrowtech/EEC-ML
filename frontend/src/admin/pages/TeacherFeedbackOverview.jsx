@@ -333,6 +333,7 @@ const TeacherFeedbackOverview = ({ setShowAdminHeader }) => {
 
   const [query, setQuery] = useState({ className: 'all', sectionName: 'all', subjectName: 'all', from: '', to: '' });
   const [dateRangeOpen, setDateRangeOpen] = useState(false);
+  const [filtersOpen, setFiltersOpen] = useState(false);
   const [draftRange, setDraftRange] = useState({ from: '', to: '' });
   const dateRangeRef = useRef(null);
 
@@ -653,7 +654,7 @@ const TeacherFeedbackOverview = ({ setShowAdminHeader }) => {
   );
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-slate-50 via-indigo-50/30 to-purple-50/20 p-4 sm:p-6 space-y-5">
+    <div className="min-h-screen bg-gradient-to-br from-slate-50 via-indigo-50/30 to-purple-50/20 p-4 sm:p-6 space-y-5 md:min-h-0 md:h-[calc(100dvh-150px)] md:overflow-hidden md:flex md:flex-col md:space-y-0 md:gap-4 lg:block lg:h-auto lg:min-h-screen lg:overflow-visible lg:space-y-5">
       {/* Header — title/subtitle left, feedback-window status + the "Add
           Feedback Window" trigger take the spot a session/active-year picker
           would normally sit, top right. */}
@@ -796,11 +797,11 @@ const TeacherFeedbackOverview = ({ setShowAdminHeader }) => {
       </AnimatePresence>
 
       {/* Filter (its own section, shown before the Teacher Wise / Student Wise tabs) */}
-      <div className="rounded-2xl border border-white/60 bg-white/80 backdrop-blur-xl p-4 shadow-sm space-y-3">
-        <div className="flex items-center gap-2">
+      <div className="p-4 space-y-3">
+        {/* <div className="flex items-center gap-2">
           <Filter className="w-4 h-4 text-indigo-500" />
           <p className="text-sm font-bold text-slate-800">Filter</p>
-        </div>
+        </div> */}
         <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:flex-wrap">
           {/* Search + date range: on mobile/tablet these form their own row,
               search taking ~90% and the date button ~10%; on lg+ they simply
@@ -815,17 +816,40 @@ const TeacherFeedbackOverview = ({ setShowAdminHeader }) => {
                 className={`w-full pl-9 pr-3 ${selectClass}`}
               />
             </div>
-            <div className="relative grow shrink basis-0 lg:grow-0 lg:shrink-0 lg:order-2" ref={dateRangeRef}>
+            <button
+              type="button"
+              onClick={() => {
+                setFiltersOpen((v) => !v);
+                setDateRangeOpen(false);
+              }}
+              aria-label={filtersOpen ? 'Close filters' : 'Open filters'}
+              className={`${selectClass} shrink-0 inline-flex items-center justify-center px-3 lg:hidden ${filtersOpen ? 'border-rose-300 text-rose-600 bg-rose-50' : ''}`}
+            >
+              {filtersOpen ? <X className="w-4 h-4" /> : <Filter className="w-4 h-4" />}
+            </button>
+            <button
+              type="button"
+              onClick={exportExcel}
+              aria-label="Export"
+              className={`${selectClass} shrink-0 inline-flex items-center justify-center px-3 lg:hidden`}
+            >
+              <Download className="w-4 h-4" />
+            </button>
+          </div>
+
+          {/* Remaining filters: centered wrap on mobile/tablet, inline on lg+ */}
+          <div className={`items-center justify-center lg:justify-start gap-3 flex-wrap lg:contents ${filtersOpen ? 'flex' : 'hidden'}`}>
+            <div className="relative lg:order-2" ref={dateRangeRef}>
             <button
               onClick={() => {
                 setDraftRange({ from: query.from, to: query.to });
                 setDateRangeOpen((v) => !v);
               }}
-              className={`${selectClass} w-full lg:w-auto inline-flex items-center justify-center gap-2 px-2 lg:px-3`}
+              className={`${selectClass} inline-flex items-center justify-center gap-2 px-3`}
             >
               <Calendar className="w-4 h-4 text-slate-400 shrink-0" />
-              <span className="hidden lg:inline">{formatDateRangeChip(query.from, query.to)}</span>
-              <ChevronDown className="w-3.5 h-3.5 text-slate-400 hidden lg:inline" />
+              <span>{formatDateRangeChip(query.from, query.to)}</span>
+              <ChevronDown className="w-3.5 h-3.5 text-slate-400" />
             </button>
             <AnimatePresence>
               {dateRangeOpen && (
@@ -866,10 +890,6 @@ const TeacherFeedbackOverview = ({ setShowAdminHeader }) => {
               )}
             </AnimatePresence>
             </div>
-          </div>
-
-          {/* Remaining filters: centered wrap on mobile/tablet, inline on lg+ */}
-          <div className="flex items-center justify-center lg:justify-start gap-3 flex-wrap lg:contents">
             <select
               value={query.className}
               onChange={(e) => setQuery((prev) => ({ ...prev, className: e.target.value }))}
@@ -908,7 +928,7 @@ const TeacherFeedbackOverview = ({ setShowAdminHeader }) => {
             <button
               type="button"
               onClick={exportExcel}
-              className={`${selectClass} lg:order-7 inline-flex items-center gap-2 font-semibold text-slate-600`}
+              className={`${selectClass} lg:order-7 hidden lg:inline-flex items-center gap-2 font-semibold text-slate-600`}
             >
               <Download className="w-4 h-4" />
               Export
@@ -918,7 +938,7 @@ const TeacherFeedbackOverview = ({ setShowAdminHeader }) => {
       </div>
 
       {/* Stat tiles */}
-      <div className="grid grid-cols-4 gap-2 sm:gap-4">
+      <div className="grid grid-cols-4 gap-2 sm:gap-4 md:hidden lg:grid">
         <StatTile
           icon={Users}
           iconBg="bg-blue-50"
@@ -966,9 +986,9 @@ const TeacherFeedbackOverview = ({ setShowAdminHeader }) => {
       {/* List + detail — below lg these behave as two separate app-style
           screens (tap a row to push into detail, Back to pop to the list);
           at lg+ both panels sit side by side as a split view. */}
-      <div className="grid grid-cols-1 lg:grid-cols-[380px_1fr] gap-4">
+      <div className="grid grid-cols-1 lg:grid-cols-[380px_1fr] gap-4 md:flex-1 md:min-h-0 md:grid-rows-[minmax(0,1fr)] lg:flex-none lg:grid-rows-none">
         {/* Left: list */}
-        <div className={`rounded-2xl border border-white/60 bg-white/80 backdrop-blur-xl shadow-sm flex-col lg:flex ${mobileDetailOpen ? 'hidden' : 'flex'}`}>
+        <div className={`rounded-2xl border border-white/60 bg-white/80 backdrop-blur-xl shadow-sm flex-col md:min-h-0 md:overflow-hidden lg:overflow-visible lg:flex ${mobileDetailOpen ? 'hidden' : 'flex'}`}>
           <div className="flex items-center justify-between gap-2 p-4 border-b border-slate-100">
             <p className="text-sm font-bold text-slate-800">
               Teachers ({visibleGroups.length})
@@ -998,7 +1018,7 @@ const TeacherFeedbackOverview = ({ setShowAdminHeader }) => {
               <p className="text-sm font-medium text-slate-500">No results found.</p>
             </div>
           ) : (
-            <div>
+            <div className="md:flex-1 md:min-h-0 md:overflow-y-auto lg:overflow-visible">
               {paginatedGroups.map((group) => (
                 <button
                   key={group.key}
@@ -1083,25 +1103,28 @@ const TeacherFeedbackOverview = ({ setShowAdminHeader }) => {
           initial={mobileDetailOpen ? { opacity: 0, x: 24 } : false}
           animate={{ opacity: 1, x: 0 }}
           transition={{ duration: 0.25, ease: 'easeOut' }}
-          className={`rounded-2xl border border-white/60 bg-white/80 backdrop-blur-xl shadow-sm p-5 lg:block ${mobileDetailOpen ? 'block' : 'hidden'}`}
+          className={`rounded-2xl border border-white/60 bg-white/80 backdrop-blur-xl shadow-sm flex-col overflow-hidden max-h-[calc(100dvh-170px)] md:max-h-none md:min-h-0 lg:max-h-[calc(100dvh-170px)] lg:flex ${mobileDetailOpen ? 'flex' : 'hidden'}`}
         >
-          <button
-            type="button"
-            onClick={() => setMobileDetailOpen(false)}
-            className="mb-4 inline-flex items-center gap-1.5 text-sm font-semibold text-indigo-600 lg:hidden"
-          >
-            <ChevronLeft className="w-4 h-4" />
-            Back to Teachers
-          </button>
+          <div className="shrink-0 px-5 pt-4 lg:hidden bg-gray-800/5">
+            <button
+              type="button"
+              onClick={() => setMobileDetailOpen(false)}
+              className="mb-3 inline-flex items-center gap-1.5 text-sm font-semibold text-indigo-600"
+            >
+              <ChevronLeft className="w-4 h-4" />
+              Back to Teachers
+            </button>
+          </div>
           {!selectedGroup ? (
-            <div className="h-full min-h-[320px] flex flex-col items-center justify-center gap-3 text-slate-400">
+            <div className="flex-1 min-h-[320px] flex flex-col items-center justify-center gap-3 text-slate-400 p-5">
               <MessageSquare className="w-10 h-10" />
               <p className="text-sm font-medium">
                 Select a teacher to see detailed feedback.
               </p>
             </div>
           ) : (
-            <div className="space-y-5">
+            <>
+            <div className="flex-1 min-h-0 overflow-y-auto p-5 space-y-5">
               <div className="flex items-start justify-between gap-3 flex-wrap">
                 <div className="flex items-center gap-3">
                   <Avatar name={selectedGroup.name} photo={selectedGroup.photo} size="lg" />
@@ -1164,23 +1187,25 @@ const TeacherFeedbackOverview = ({ setShowAdminHeader }) => {
                 </div>
               </div>
 
-              <div className="flex items-center gap-3 flex-wrap pt-1">
+            </div>
+
+            <div className="shrink-0 border-t border-slate-100 bg-gray-800/5 px-5 py-3 flex items-center gap-3 flex-wrap">
                 <button
                   onClick={() => setAnalysisOpen(true)}
                   className="flex-1 min-w-[180px] inline-flex items-center justify-center gap-2 rounded-full border border-indigo-200 text-indigo-600 text-sm font-semibold px-4 py-2.5 hover:bg-indigo-50 transition-colors"
                 >
                   <BarChart3 className="w-4 h-4" />
-                  View Detailed Analysis
+                  View Detailed
                 </button>
                 <button
                   onClick={() => setAllFeedbackOpen(true)}
                   className="flex-1 min-w-[180px] inline-flex items-center justify-center gap-2 rounded-full bg-gradient-to-r from-indigo-600 to-violet-600 text-white text-sm font-semibold px-4 py-2.5 hover:from-indigo-700 hover:to-violet-700 shadow-md shadow-indigo-200 transition-colors"
                 >
                   <MessageCircle className="w-4 h-4" />
-                  View All Feedback
+                  View All
                 </button>
-              </div>
             </div>
+            </>
           )}
         </motion.div>
       </div>
