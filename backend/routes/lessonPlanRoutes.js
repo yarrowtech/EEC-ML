@@ -36,6 +36,15 @@ const SUPPORTED_VECTOR_EXTENSIONS = new Set(['pdf', 'docx', 'pptx']);
 const normalizeString = (value) => String(value || '').trim();
 const normalizeLower = (value) => String(value || '').trim().toLowerCase();
 const escapeRegex = (value) => String(value || '').replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+// StudentUser.grade is usually a bare number ("5") while Class.name / the
+// className copied onto LessonPlan/TeachingMaterial/PracticePaper docs is
+// often "Class 5" — an anchored `^5$` regex against student.grade then
+// matches nothing. Tolerate an optional "Class " prefix on the stored side
+// the same way this was already fixed for practicePaperRoutes.js.
+const classNameRegex = (value) => ({
+  $regex: `^(?:class\\s+)?${escapeRegex(normalizeLower(value).replace(/^class\s+/, ''))}$`,
+  $options: 'i',
+});
 const normalizeStringList = (value) =>
   Array.isArray(value) ? value.map((item) => normalizeString(item)).filter(Boolean) : [];
 
@@ -1584,7 +1593,7 @@ router.get('/student/status', authStudent, async (req, res) => {
 
     const planFilter = {
       schoolId,
-      className: { $regex: `^${escapeRegex(className)}$`, $options: 'i' },
+      className: classNameRegex(className),
       sectionName: { $regex: `^${escapeRegex(sectionName)}$`, $options: 'i' },
     };
     if (campusId) planFilter.campusId = campusId;
@@ -2153,7 +2162,7 @@ router.get('/student/smart-learning-map', authStudent, async (req, res) => {
       const className = normalizeLower(student.grade);
       const sectionName = normalizeLower(student.section);
       if (!className || !sectionName) return res.json({ subjects: [] });
-      planFilter.className = { $regex: '^' + escapeRegex(className) + '$', $options: 'i' };
+      planFilter.className = classNameRegex(className);
       planFilter.sectionName = { $regex: '^' + escapeRegex(sectionName) + '$', $options: 'i' };
     }
 
@@ -2683,7 +2692,7 @@ router.get('/student/smart-learning-overview', authStudent, async (req, res) => 
     if (sectionId) studentScope.sectionId = sectionId;
     const legacyScope = (!classId || !sectionId) && student.grade && student.section
       ? {
-          className: { $regex: `^${escapeRegex(normalizeLower(student.grade))}$`, $options: 'i' },
+          className: classNameRegex(student.grade),
           sectionName: { $regex: `^${escapeRegex(normalizeLower(student.section))}$`, $options: 'i' },
         }
       : null;

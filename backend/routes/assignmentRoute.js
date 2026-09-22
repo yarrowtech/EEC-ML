@@ -16,6 +16,7 @@ const Section = require('../models/Section');
 const AcademicYear = require('../models/AcademicYear');
 const LessonPlan = require('../models/LessonPlan');
 const { logStudentPortalEvent, logStudentPortalError } = require('../utils/studentPortalLogger');
+const { normalizeClassName } = require('../utils/teacherAllocationScope');
 
 const escapeRegex = (value = '') => value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 const buildCampusFilter = (campusId) => (
@@ -115,7 +116,7 @@ const normalizeName = (value = '') => String(value || '').trim().toLowerCase();
 const assignmentMatchesStudentPlacement = ({ assignment, student, classDoc, sectionDoc }) => {
     if (assignment.classId) {
         if (!classDoc?._id || String(assignment.classId) !== String(classDoc._id)) return false;
-    } else if (assignment.class && normalizeName(assignment.class) !== normalizeName(student.grade)) {
+    } else if (assignment.class && normalizeClassName(assignment.class) !== normalizeClassName(student.grade)) {
         return false;
     }
 
@@ -138,13 +139,18 @@ const resolveStudentPlacement = async ({ studentId, schoolId, campusId }) => {
     const gradeValue = String(student.grade || '').trim();
     const sectionValue = String(student.section || '').trim();
 
+    // Matched via normalizeClassName, not a raw exact regex on gradeValue: schools
+    // store this inconsistently ("Class 5" on Class.name vs "5" on
+    // StudentUser.grade), and an anchored regex finds nothing the moment they
+    // disagree on the "Class " prefix. When this resolves to null, every
+    // classId-based assignment for this student is also silently rejected below
+    // (assignmentMatchesStudentPlacement requires classDoc to confirm a classId
+    // match), not just the class/section-name fallback path.
     let classDoc = null;
     if (gradeValue) {
-        classDoc = await Class.findOne({
-            schoolId,
-            name: { $regex: `^${escapeRegex(gradeValue)}$`, $options: 'i' },
-            ...campusScope,
-        });
+        const normalizedGrade = normalizeClassName(gradeValue);
+        const classCandidates = await Class.find({ schoolId, ...campusScope });
+        classDoc = classCandidates.find((doc) => normalizeClassName(doc.name) === normalizedGrade) || null;
     }
 
     let sectionDoc = null;

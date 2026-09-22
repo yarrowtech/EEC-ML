@@ -382,9 +382,18 @@ router.post('/:id/publish', authTeacher, async (req, res, next) => {
 
 // ===== STUDENT ROUTES =====
 
+const escapeRegex = (value) => String(value).replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+
 // StudentUser stores the class name in `grade` and the section name in
 // `section`; some records may also carry classId/sectionId. Papers are
 // matched on whichever identifiers the student actually has.
+//
+// The text match is case-insensitive and tolerates a "Class " prefix on
+// either side (matching PracticePaper.className exactly against a bare
+// grade like "5" finds nothing if the paper was tagged "Class 5" — the same
+// StudentUser.grade vs Class.name inconsistency already fixed for the
+// student schedule/routine endpoint; most StudentUser records here have no
+// classId/sectionId at all, so this text fallback is the only path).
 const buildStudentPaperAccess = (student) => {
   const conditions = [];
   if (student.classId && student.sectionId) {
@@ -393,7 +402,11 @@ const buildStudentPaperAccess = (student) => {
   const className = String(student.className || student.grade || '').trim();
   const sectionName = String(student.sectionName || student.section || '').trim();
   if (className) {
-    conditions.push(sectionName ? { className, sectionName } : { className });
+    const classCondition = {
+      className: { $regex: `^(?:class\\s+)?${escapeRegex(className.replace(/^class\s+/i, ''))}$`, $options: 'i' },
+    };
+    if (sectionName) classCondition.sectionName = { $regex: `^${escapeRegex(sectionName)}$`, $options: 'i' };
+    conditions.push(classCondition);
   }
   return conditions.length ? { $or: conditions } : null;
 };

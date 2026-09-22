@@ -12,6 +12,7 @@ const { logStudentPortalEvent, logStudentPortalError } = require('../utils/stude
 const { getJson, setJson } = require('../utils/redisClient');
 const { getStudentSubjectsCacheKey } = require('../utils/studentSubjectsCache');
 const { uploadBufferToCloudinary } = require('../utils/cloudinaryUpload');
+const { normalizeClassName, normalizeText } = require('../utils/teacherAllocationScope');
 
 // Setup multer for file uploads (in memory)
 const storage = multer.memoryStorage();
@@ -167,9 +168,21 @@ router.get('/allocated-subjects', auth, async (req, res) => {
       return res.status(404).json({ error: 'Student not found' });
     }
 
-    // Find class and section by name
-    const classDoc = await Class.findOne({ schoolId, name: student.grade });
-    const sectionDoc = await Section.findOne({ schoolId, name: student.section });
+    // Find class and section by name. Matched via normalizeClassName/normalizeText
+    // rather than a raw exact-equality find(): this was the strictest version of
+    // the same StudentUser.grade vs Class.name inconsistency already fixed for
+    // the schedule, practice-paper, and assignment endpoints ("Class 5" vs "5")
+    // — a plain `{ name: student.grade }` match doesn't even have a regex or
+    // case-insensitivity to save it, so it silently returned zero subjects for
+    // every student at any school with this naming mismatch.
+    const [classCandidates, sectionCandidates] = await Promise.all([
+      Class.find({ schoolId }).lean(),
+      Section.find({ schoolId }).lean(),
+    ]);
+    const normalizedGrade = normalizeClassName(student.grade);
+    const normalizedSection = normalizeText(student.section);
+    const classDoc = classCandidates.find((c) => normalizeClassName(c.name) === normalizedGrade) || null;
+    const sectionDoc = sectionCandidates.find((s) => normalizeText(s.name) === normalizedSection) || null;
 
     if (!classDoc || !sectionDoc) {
       logStudentPortalEvent(req, {
