@@ -177,7 +177,15 @@ const runBulkImportJob = async (jobId, { students, schoolId, campusId, admin, is
   if (!job) return;
 
   try {
-    const classDocs = await ClassModel.find({ schoolId }).select('name').lean();
+    // Scoped by campus like every other lookup in this job (admission/parent
+    // sequences, roll allocator) — Class docs carry campusId, so without this
+    // filter a multi-campus school's classLookup would accept a class name
+    // that only exists on a sibling campus, silently passing validation for
+    // rows that should have been rejected as "Class X is not created for this
+    // school".
+    const classDocFilter = { schoolId };
+    if (campusId) classDocFilter.campusId = campusId;
+    const classDocs = await ClassModel.find(classDocFilter).select('name').lean();
     const classLookup = new Set(
       classDocs
         .map((item) => normalizeLookupKey(item?.name))

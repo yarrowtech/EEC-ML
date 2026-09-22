@@ -1,20 +1,12 @@
-const { normalizeFlashcards } = require('../utils/assignmentFlashcards');
 const express = require('express');
 const mongoose = require('mongoose');
 const { logger } = require('../utils/logger');
 const router = express.Router();
-const { createResponseCache } = require('../utils/responseCache');
-// Parent homework view: 30s per-parent response cache. Any assignment write
-// here (create/update/publish/submit/grade/delete) clears it immediately.
-const parentHomeworkCache = createResponseCache({ ttlMs: 30 * 1000 });
-router.use(parentHomeworkCache.invalidateOnWrite);
 const crypto = require('crypto');
 const Assignment = require('../models/Assignment');
 const adminAuth = require('../middleware/adminAuth');
 const authStudent = require('../middleware/authStudent');
 const authTeacher = require('../middleware/authTeacher');
-const authParent = require('../middleware/authParent');
-const ParentUser = require('../models/ParentUser');
 const StudentProgress = require('../models/StudentProgress');
 const StudentUser = require('../models/StudentUser');
 const NotificationService = require('../utils/notificationService');
@@ -25,9 +17,6 @@ const AcademicYear = require('../models/AcademicYear');
 const LessonPlan = require('../models/LessonPlan');
 const { logStudentPortalEvent, logStudentPortalError } = require('../utils/studentPortalLogger');
 const { normalizeClassName } = require('../utils/teacherAllocationScope');
-const { normalizeQuizSections, sanitizeQuizForStudent, gradeQuiz, formatAnswerSheet } = require('../utils/quizAssignment');
-const isQuizType = (type) => String(type || '').trim().toLowerCase() === 'quiz';
-const normalizeTimeLimit = (v) => { const n = Number(v); return Number.isFinite(n) && n > 0 ? Math.min(Math.round(n), 600) : null; };
 
 const escapeRegex = (value = '') => value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 const buildCampusFilter = (campusId) => (
@@ -381,7 +370,6 @@ router.post("/teacher/create", authTeacher, async (req, res) => {
         const {
             title,
             description,
-            flashcards,
             subject,
             classId,
             sectionId,
@@ -400,17 +388,13 @@ router.post("/teacher/create", authTeacher, async (req, res) => {
             chapterId,
             chapterTitle,
             topicTitle,
-            subTopicTitle,
-            quizSections,
-            timeLimit
+            subTopicTitle
         } = req.body || {};
         const schoolId = req.schoolId || req.teacher?.schoolId || null;
         if (!schoolId) return res.status(400).json({ error: 'schoolId is required' });
 
         const teacherId = req.teacher?.id || req.user?.id;
         if (!teacherId) return res.status(400).json({ error: 'teacherId is required' });
-
-        const quiz = isQuizType(type) ? normalizeQuizSections(quizSections) : null;
 
         const activeYear = await getActiveAcademicYear(schoolId);
         if (!activeYear?._id) {
@@ -451,7 +435,6 @@ router.post("/teacher/create", authTeacher, async (req, res) => {
             teacherId,
             title,
             description: description || '',
-            flashcards: normalizeFlashcards(flashcards),
             subject,
             topic: topic || '',
             type: type || 'Assignment',
@@ -462,9 +445,7 @@ router.post("/teacher/create", authTeacher, async (req, res) => {
             sectionId,
             academicYearId: activeYear._id,
             sessionName: activeYear.name || '',
-            marks: quiz ? quiz.totalMarks : (marks || 100),
-            quizSections: quiz ? quiz.sections : [],
-            timeLimit: normalizeTimeLimit(timeLimit),
+            marks: marks || 100,
             attachments: attachments || [],
             submissionFormat: normalizeSubmissionFormat(submissionFormat),
             isEssay: Boolean(isEssay),
@@ -606,32 +587,18 @@ router.put("/teacher/update/:id", authTeacher, async (req, res) => {
         const wasActive = assignment.status === 'active';
 
         const {
-            title, description, flashcards, subject, topic, marks, dueDate, status, attachments,
+            title, description, subject, topic, marks, dueDate, status, attachments,
             submissionFormat, classId, sectionId, type, difficulty, isEssay, rubric,
-            sourceLessonPlanId, chapterId, chapterTitle, topicTitle, subTopicTitle,
-            quizSections, timeLimit
+            sourceLessonPlanId, chapterId, chapterTitle, topicTitle, subTopicTitle
         } = req.body;
 
         if (title) assignment.title = title;
         if (description !== undefined) assignment.description = description;
-        if (flashcards !== undefined) assignment.flashcards = normalizeFlashcards(flashcards);
         if (subject) assignment.subject = subject;
         if (topic !== undefined) assignment.topic = topic || '';
         if (type !== undefined) assignment.type = type || 'Assignment';
         if (difficulty !== undefined) assignment.difficulty = normalizeDifficulty(difficulty);
         if (marks !== undefined) assignment.marks = marks;
-        if (timeLimit !== undefined) assignment.timeLimit = normalizeTimeLimit(timeLimit);
-        if (isQuizType(assignment.type)) {
-            if (quizSections !== undefined) {
-                const quiz = normalizeQuizSections(quizSections);
-                assignment.quizSections = quiz.sections;
-                assignment.marks = quiz.totalMarks;
-            } else if (!assignment.quizSections?.length) {
-                return res.status(400).json({ error: 'Add at least one quiz section' });
-            }
-        } else if (type !== undefined) {
-            assignment.quizSections = [];
-        }
         if (dueDate) assignment.dueDate = dueDate;
         if (status) {
             assignment.status = status;
@@ -1098,8 +1065,7 @@ router.post("/teacher/grade-bulk", authTeacher, async (req, res) => {
 // ========== STUDENT ROUTES ==========
 
 // Students get assignments for their class/section
-// Shared by the student portal and (for a linked child) the parent portal.
-const studentAssignmentsHandler = async (req, res) => {
+router.get("/student/assignments", authStudent, async (req, res) => {
   // #swagger.tags = ['Assignments']
     try {
         const schoolId = req.schoolId || req.user?.schoolId || null;
@@ -1189,14 +1155,8 @@ const studentAssignmentsHandler = async (req, res) => {
             const visibleStatus = submission?.status === 'graded' && !published
                 ? (submittedLate ? 'late' : 'submitted')
                 : (submission?.status || 'not_submitted');
-            const raw = assignment.toObject();
-            const isQuiz = Array.isArray(raw.quizSections) && raw.quizSections.length > 0;
             return {
-                ...raw,
-                quizSections: isQuiz ? sanitizeQuizForStudent(raw.quizSections) : [],
-                isQuiz,
-                quizQuestionCount: isQuiz ? raw.quizSections.reduce((n, sec) => n + (sec.questions?.length || 0), 0) : 0,
-                quizResult: isQuiz && published ? submission?.quizResult || null : undefined,
+                ...assignment.toObject(),
                 submissionStatus: visibleStatus,
                 submittedAt: submission?.submittedAt,
                 submissionText: submission?.submissionText || '',
@@ -1230,34 +1190,13 @@ const studentAssignmentsHandler = async (req, res) => {
         logger.error('Student assignments error:', err);
         res.status(500).json({ error: err.message });
     }
-};
-router.get("/student/assignments", authStudent, studentAssignmentsHandler);
-
-// Parent portal: a linked child's homework (read-only), same shape as the student view.
-router.get("/parent/assignments", authParent, parentHomeworkCache.cache, async (req, res) => {
-    try {
-        const studentId = String(req.query?.studentId || '').trim();
-        if (!mongoose.isValidObjectId(studentId)) return res.status(400).json({ error: 'studentId is required' });
-        const parent = await ParentUser.findById(req.user?.id).select('childrenIds').lean();
-        const linked = (parent?.childrenIds || []).some((id) => String(id) === studentId);
-        if (!linked) return res.status(403).json({ error: 'This student is not linked to your account' });
-        const child = await StudentUser.findById(studentId).select('schoolId campusId').lean();
-        if (!child) return res.status(404).json({ error: 'Student not found' });
-        req.schoolId = child.schoolId || req.schoolId;
-        req.campusId = child.campusId || req.campusId || null;
-        req.student = { id: studentId };
-        return studentAssignmentsHandler(req, res);
-    } catch (err) {
-        return res.status(500).json({ error: err.message || 'Unable to load homework' });
-    }
 });
 
 // Student submits assignment
 router.post("/submit", authStudent, async (req, res) => {
   // #swagger.tags = ['Assignments']
     try {
-        const { assignmentId, attachmentUrl, quizAnswers, integrityEvents } = req.body || {};
-        let { submissionText } = req.body || {};
+        const { assignmentId, submissionText, attachmentUrl } = req.body || {};
         const schoolId = req.schoolId || req.user?.schoolId || null;
         if (!schoolId) return res.status(400).json({ error: 'schoolId is required' });
         if (!assignmentId) return res.status(400).json({ error: 'assignmentId is required' });
@@ -1285,17 +1224,9 @@ router.post("/submit", authStudent, async (req, res) => {
             return res.status(403).json({ error: 'This assignment is not assigned to your class and section.' });
         }
 
-        const isQuiz = Array.isArray(assignment.quizSections) && assignment.quizSections.length > 0;
-        let quizResult = null;
-        if (isQuiz) {
-            quizResult = gradeQuiz(assignment.quizSections, quizAnswers);
-            submissionText = formatAnswerSheet(quizResult);
-        }
         const requiredFormat = assignment.submissionFormat || 'text';
-        if (isQuiz) {
-            // blank quiz answers simply score zero
-        } else if (requiredFormat === 'text' && !submissionText?.trim() && !attachmentUrl) {
-            return res.status(400).json({ error: 'This assignment requires a written response or file upload.' });
+        if (requiredFormat === 'text' && !submissionText?.trim()) {
+            return res.status(400).json({ error: 'This assignment requires a written response.' });
         }
         if (requiredFormat === 'pdf' && !attachmentUrl) {
             return res.status(400).json({ error: 'This assignment requires a PDF upload.' });
@@ -1318,7 +1249,7 @@ router.post("/submit", authStudent, async (req, res) => {
         }
 
         // Compute submission hash for plagiarism detection
-        const submissionHash = !isQuiz && submissionText?.trim()
+        const submissionHash = submissionText?.trim()
             ? crypto.createHash('sha256').update(submissionText.trim()).digest('hex')
             : '';
 
@@ -1344,22 +1275,6 @@ router.post("/submit", authStudent, async (req, res) => {
             aiGradingStatus: assignment.isEssay && assignment.rubric && submissionText?.trim()
                 ? 'pending'
                 : 'skipped',
-            ...(isQuiz ? {
-                quizAnswers: quizResult.answers,
-                quizResult: { autoScore: quizResult.autoScore, objectiveMarks: quizResult.objectiveMarks, pendingMarks: quizResult.pendingMarks, breakdown: quizResult.breakdown },
-                integrityEvents: {
-                    tabSwitches: Math.max(0, Number(integrityEvents?.tabSwitches) || 0),
-                    fullscreenExits: Math.max(0, Number(integrityEvents?.fullscreenExits) || 0),
-                    copyAttempts: Math.max(0, Number(integrityEvents?.copyAttempts) || 0),
-                    autoSubmitted: Boolean(integrityEvents?.autoSubmitted),
-                },
-                // Proposed score for the teacher; short answers still need review.
-                aiScore: quizResult.autoScore,
-                aiGradingFeedback: quizResult.pendingMarks
-                    ? `Auto-graded ${quizResult.autoScore}/${quizResult.objectiveMarks} on objective questions. ${quizResult.pendingMarks} marks of short answers need your review.`
-                    : `Auto-graded ${quizResult.autoScore}/${quizResult.objectiveMarks}.`,
-                aiGradingStatus: 'done',
-            } : {}),
         };
 
         progress.submissions.push({
@@ -1542,9 +1457,6 @@ router.get("/teacher/submissions", authTeacher, async (req, res) => {
                     rubric: assignment.rubric || '',
                     isEssay: assignment.isEssay === true,
                     submissionFormat: assignment.submissionFormat || 'text',
-                    isQuiz: Array.isArray(assignment.quizSections) && assignment.quizSections.length > 0,
-                    quizResult: sub.quizResult || null,
-                    integrityEvents: sub.integrityEvents || null,
                     dueDate: assignment.dueDate
                 });
             });
