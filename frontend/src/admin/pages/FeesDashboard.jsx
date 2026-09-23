@@ -21,6 +21,7 @@ import {
   Copy,
   Check,
 } from 'lucide-react';
+import { readCache, writeCache } from '../../utils/swrCache';
 
 const API_BASE = import.meta.env.VITE_API_URL;
 const DATE_RANGE_OPTIONS = [
@@ -86,15 +87,16 @@ const FeesDashboard = ({ setShowAdminHeader, embedded = false }) => {
   const [filtersOpen, setFiltersOpen] = useState(false);
   const [classDetail, setClassDetail] = useState(null); // { mode: 'enrollment' | 'outstanding', label, rows }
   const [classDetailSection, setClassDetailSection] = useState('');
-  const [summary, setSummary] = useState(null);
-  const [loading, setLoading] = useState(true);
+  // Paint the last summary instantly from the client cache, then revalidate.
+  const [summary, setSummary] = useState(() => readCache('fees:summary'));
+  const [loading, setLoading] = useState(() => !readCache('fees:summary'));
   const [error, setError] = useState('');
 
   useEffect(() => {
     const controller = new AbortController();
     const loadSummary = async () => {
       setError('');
-      setLoading(true);
+      if (!readCache('fees:summary')) setLoading(true);
       try {
         const res = await fetch(`${API_BASE}/api/fees/admin/summary`, {
           headers: {
@@ -107,11 +109,12 @@ const FeesDashboard = ({ setShowAdminHeader, embedded = false }) => {
         if (!res.ok) {
           throw new Error(data?.error || data?.message || 'Failed to load fees dashboard data');
         }
+        writeCache('fees:summary', data);
         setSummary(data);
       } catch (err) {
         if (controller.signal.aborted) return;
         console.error(err);
-        setError(err.message || 'Failed to load dashboard data');
+        if (!readCache('fees:summary')) setError(err.message || 'Failed to load dashboard data');
       } finally {
         if (!controller.signal.aborted) {
           setLoading(false);

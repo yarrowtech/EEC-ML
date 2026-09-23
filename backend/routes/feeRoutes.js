@@ -55,9 +55,18 @@ const router = express.Router();
 // costs in staleness for a dashboard summary tile.
 const FEE_SUMMARY_TTL_MS = 5 * 60 * 1000;
 const feeSummaryCache = new Map(); // key -> { data, expires }
+// Filter options (classes/sections/years) + fee structures change rarely; a
+// short TTL makes Fees Collection's parallel boot requests near-instant.
+const FEE_META_TTL_MS = 2 * 60 * 1000;
+const feeMetaCache = new Map(); // key -> { data, expires }
+const readFeeMeta = (key) => {
+  const hit = feeMetaCache.get(key);
+  return hit && hit.expires > Date.now() ? hit.data : null;
+};
+const writeFeeMeta = (key, data) => feeMetaCache.set(key, { data, expires: Date.now() + FEE_META_TTL_MS });
 const feeSummaryCacheKey = (req) => {
-  const { academicYearId = '', classId = '', section = '' } = req.query || {};
-  return `${req.schoolId || 'x'}:${req.campusId || 'x'}:${academicYearId}:${classId}:${section}`;
+  const { academicYearId = '', classId = '', section = '', activeYear = '' } = req.query || {};
+  return `${req.schoolId || 'x'}:${req.campusId || 'x'}:${academicYearId}:${classId}:${section}:${activeYear ? 'active' : ''}`;
 };
 
 const formatReceiptDateTime = (value) => {
@@ -486,6 +495,7 @@ const applyLateFeesForFilter = async ({ schoolId, filter = {} }) => {
 
 // Fee Structures
 router.post('/structures', adminAuth, async (req, res) => {
+  res.on('finish', () => { if (res.statusCode < 400) feeMetaCache.clear(); });
   // #swagger.tags = ['Fees']
   try {
     const schoolId = resolveSchoolId(req, res);
@@ -573,7 +583,11 @@ router.get('/structures', adminAuth, async (req, res) => {
     if (req.query.className) {
       filter.className = String(req.query.className).trim();
     }
+    const structuresKey = `structures:${schoolId}:${req.campusId || 'x'}:${req.query.classId || ''}:${req.query.className || ''}`;
+    const cachedStructures = readFeeMeta(structuresKey);
+    if (cachedStructures) return res.json(cachedStructures);
     const items = await FeeStructure.find(filter).sort({ createdAt: -1 }).lean();
+    writeFeeMeta(structuresKey, items);
     res.json(items);
   } catch (err) {
     res.status(500).json({ error: err.message });
@@ -660,6 +674,7 @@ router.get('/admin/structures/analytics', adminAuth, async (req, res) => {
 });
 
 router.put('/structures/:id', adminAuth, async (req, res) => {
+  res.on('finish', () => { if (res.statusCode < 400) feeMetaCache.clear(); });
   // #swagger.tags = ['Fees']
   try {
     const schoolId = resolveSchoolId(req, res);
@@ -777,6 +792,7 @@ router.put('/structures/:id', adminAuth, async (req, res) => {
 });
 
 router.delete('/structures/:id', adminAuth, async (req, res) => {
+  res.on('finish', () => { if (res.statusCode < 400) feeMetaCache.clear(); });
   // #swagger.tags = ['Fees']
   try {
     const schoolId = resolveSchoolId(req, res);
@@ -1669,13 +1685,16 @@ router.get('/admin/filters', adminAuth, async (req, res) => {
     if (!schoolId) return;
     if (!requireCampusId(req, res)) return;
     const campusId = req.campusId || null;
+    const metaKey = `filters:${schoolId}:${campusId || 'x'}`;
+    const cachedFilters = readFeeMeta(metaKey);
+    if (cachedFilters) return res.json(cachedFilters);
     const [classDocs, sectionDocs, yearDocs] = await Promise.all([
       ClassModel.find(buildCampusFilter(schoolId, campusId)).sort({ order: 1, name: 1 }).lean(),
       Section.find(buildCampusFilter(schoolId, campusId)).sort({ name: 1 }).lean(),
       AcademicYear.find({ schoolId }).sort({ createdAt: -1 }).lean(),
     ]);
 
-    res.json({
+    const filtersPayload = {
       classes: classDocs.map((cls) => ({
         id: cls._id,
         name: cls.name,
@@ -1694,7 +1713,9 @@ router.get('/admin/filters', adminAuth, async (req, res) => {
         startDate: year.startDate || null,
         endDate: year.endDate || null,
       })),
-    });
+    };
+    writeFeeMeta(metaKey, filtersPayload);
+    res.json(filtersPayload);
   } catch (err) {
     res.status(500).json({ error: err.message || 'Unable to load filters' });
   }
@@ -1744,6 +1765,7 @@ router.get('/admin/summary', adminAuth, async (req, res) => {
     const studentMap = new Map(students.map((s) => [String(s._id), s]));
 
     const invoiceFilter = { schoolId };
+    let scopedAcademicYearName = '';
     if (req.campusId && studentIds.length === 0) {
       const emptySummary = {
         totals: {
@@ -1763,11 +1785,16 @@ router.get('/admin/summary', adminAuth, async (req, res) => {
       feeSummaryCache.set(cacheKey, { data: emptySummary, expires: Date.now() + FEE_SUMMARY_TTL_MS });
       return res.json(emptySummary);
     }
-    if (studentIds.length > 0) {
-      invoiceFilter.studentId = { $in: studentIds };
-    }
+    // Always scope to current (non-left) students — with no matching students
+    // this matches nothing rather than falling back to every invoice.
+    invoiceFilter.studentId = { $in: studentIds };
     if (academicYearId && mongoose.isValidObjectId(academicYearId)) {
       invoiceFilter.academicYearId = academicYearId;
+    } else if (req.query.activeYear) {
+      // ?activeYear=1 → only the school's current active academic year.
+      const activeYearDoc = await AcademicYear.findOne({ schoolId, isActive: true }).select('_id name').lean();
+      scopedAcademicYearName = activeYearDoc?.name || '';
+      invoiceFilter.academicYearId = activeYearDoc?._id || null;
     }
     // Unlike the invoices list/detail routes, this is a high-frequency, cached
     // dashboard read — recomputing late fees for every overdue invoice here
@@ -1815,6 +1842,7 @@ router.get('/admin/summary', adminAuth, async (req, res) => {
         month: d.toLocaleString('en-US', { month: 'short' }),
         collected: 0,
         due: 0,
+        overdue: 0,
       });
     }
     const trendMap = new Map(trendBuckets.map((b) => [b.key, b]));
@@ -1837,19 +1865,6 @@ router.get('/admin/summary', adminAuth, async (req, res) => {
         totals.overdueAmount += balance;
       }
 
-      // Distribute the invoice's payable amount into the month(s) it falls due.
-      const dueInstallments = Array.isArray(inv.installmentsSnapshot)
-        ? inv.installmentsSnapshot.filter((it) => it && it.dueDate)
-        : [];
-      if (dueInstallments.length) {
-        dueInstallments.forEach((it) => {
-          const b = trendMap.get(monthKeyOf(it.dueDate));
-          if (b) b.due += Math.max(0, Number(it.amount || 0));
-        });
-      } else {
-        const b = trendMap.get(monthKeyOf(inv.dueDate || inv.createdAt));
-        if (b) b.due += payable;
-      }
 
       const student = studentMap.get(String(inv.studentId));
       const className = inv.className || student?.grade || 'Unassigned';
@@ -1988,7 +2003,49 @@ router.get('/admin/summary', adminAuth, async (req, res) => {
       if (b) b.collected += Number(row.total || 0);
     });
 
+    // Month-end snapshot per bucket: Outstanding = what had been invoiced by
+    // then minus what had been paid by then; Overdue = the part of that whose
+    // invoice due date had already passed. Same rules as the Outstanding /
+    // Overdue totals, so the current month's bars equal those totals.
+    const paidByInvoiceMonth = invoiceIds.length
+      ? await FeePayment.aggregate([
+          { $match: { invoiceId: { $in: invoiceIds } } },
+          {
+            $group: {
+              _id: { invoiceId: '$invoiceId', y: { $year: '$paidOn' }, m: { $month: '$paidOn' } },
+              total: { $sum: '$amount' },
+            },
+          },
+        ])
+      : [];
+    const paymentsTimeline = new Map(); // invoiceId -> [{ key, amount }]
+    paidByInvoiceMonth.forEach((row) => {
+      const id = String(row._id.invoiceId);
+      if (!paymentsTimeline.has(id)) paymentsTimeline.set(id, []);
+      paymentsTimeline.get(id).push({
+        key: `${row._id.y}-${String(row._id.m).padStart(2, '0')}`,
+        amount: Number(row.total || 0),
+      });
+    });
+    trendBuckets.forEach((bucket) => {
+      const [y, m] = bucket.key.split('-').map(Number);
+      const monthEnd = new Date(y, m, 0, 23, 59, 59, 999);
+      const asOf = monthEnd < today ? monthEnd : today;
+      invoices.forEach((inv) => {
+        const created = new Date(inv.createdAt || inv.dueDate || 0);
+        if (Number.isNaN(created.getTime()) || created > asOf) return;
+        const payable = Math.max(0, Number(inv.totalAmount || 0) - Number(inv.discountAmount || 0));
+        const paidByThen = (paymentsTimeline.get(String(inv._id)) || [])
+          .filter((p) => p.key <= bucket.key)
+          .reduce((sum, p) => sum + p.amount, 0);
+        const outstanding = Math.max(0, payable - Math.min(paidByThen, payable));
+        bucket.due += outstanding;
+        if (outstanding > 0 && inv.dueDate && new Date(inv.dueDate) < asOf) bucket.overdue += outstanding;
+      });
+    });
+
     const summary = {
+      academicYearName: scopedAcademicYearName,
       totals: {
         totalOutstanding: Math.round(totals.totalOutstanding),
         totalCollected: Math.round(totals.totalCollected),
@@ -1997,10 +2054,12 @@ router.get('/admin/summary', adminAuth, async (req, res) => {
         overdueInvoices,
         overdueAmount: Math.round(totals.overdueAmount),
       },
-      monthlyTrend: trendBuckets.map(({ month, collected, due }) => ({
+      monthlyTrend: trendBuckets.map(({ month, collected, due, overdue }) => ({
         month,
         collected: Math.round(collected),
-        due: Math.round(due),
+        due: Math.round(due), // month-end outstanding
+        outstanding: Math.round(due),
+        overdue: Math.round(overdue),
       })),
       enrollment: enrollmentNormalized,
       outstandingSegments: outstandingNormalized,
@@ -2014,12 +2073,29 @@ router.get('/admin/summary', adminAuth, async (req, res) => {
   }
 });
 
+// Keyed on the full query so every filter/search combination caches separately.
+// Lives in invoicesListCache so every existing write-path .clear() (payments,
+// discounts, bulk assign, Razorpay capture) invalidates it immediately.
+const ADMIN_INVOICES_TTL_MS = 30 * 1000;
+const adminInvoicesCacheKey = (req) => {
+  const q = req.query || {};
+  const parts = Object.keys(q).sort().map((k) => `${k}=${q[k]}`).join('&');
+  return `admin:${req.schoolId || 'x'}:${req.campusId || 'x'}:${parts}`;
+};
+
 router.get('/admin/invoices', adminAuth, async (req, res) => {
   // #swagger.tags = ['Fees']
   try {
     const schoolId = resolveSchoolId(req, res);
     if (!schoolId) return;
     if (!requireCampusId(req, res)) return;
+
+    const adminCacheKey = adminInvoicesCacheKey(req);
+    const cachedAdmin = invoicesListCache.get(adminCacheKey);
+    if (cachedAdmin && cachedAdmin.expires > Date.now()) {
+      res.set('X-Cache', 'HIT');
+      return res.json(cachedAdmin.data);
+    }
 
     const {
       academicYearId,
@@ -2161,6 +2237,8 @@ router.get('/admin/invoices', adminAuth, async (req, res) => {
       };
     });
 
+    invoicesListCache.set(adminCacheKey, { data: payload, expires: Date.now() + ADMIN_INVOICES_TTL_MS });
+    res.set("X-Cache", "MISS");
     res.json(payload);
   } catch (err) {
     res.status(500).json({ error: err.message || 'Unable to load invoices' });
