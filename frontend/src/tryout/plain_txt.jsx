@@ -2,8 +2,9 @@ import React, { useState, useRef } from "react";
 
 const MAX_WORDS = 10000;
 
-const TextEditor = () => {
+const TextEditor = ({ isTeacherMode = false }) => {
   const [text, setText] = useState("");
+  const [modelAnswer, setModelAnswer] = useState("");
   const [copied, setCopied] = useState(false);
   const textareaRef = useRef(null);
 
@@ -33,7 +34,7 @@ const TextEditor = () => {
     if (textareaRef.current) {
       textareaRef.current.select();
       navigator.clipboard.writeText(textareaRef.current.value);
-      setText(""); // Clear the text
+      setText("");
     }
   };
 
@@ -50,6 +51,21 @@ const TextEditor = () => {
   return (
     <div className="max-w-2xl mx-auto p-6">
       <h2 className="text-xl font-semibold mb-4 text-black">Text Editor</h2>
+
+      {isTeacherMode && (
+        <div className="mb-4 p-3 bg-amber-50 border border-amber-300 rounded-lg">
+          <label className="block text-amber-800 text-sm font-medium mb-1">
+            👩‍🏫 Teacher Mode — Model Answer / Rubric (not shown to students)
+          </label>
+          <textarea
+            value={modelAnswer}
+            onChange={(e) => setModelAnswer(e.target.value)}
+            rows={4}
+            className="w-full border border-amber-300 rounded p-2 text-sm text-black"
+            placeholder="Enter model answer or grading rubric..."
+          />
+        </div>
+      )}
 
       <div className="flex gap-2 mb-3">
         <button
@@ -82,12 +98,16 @@ const TextEditor = () => {
       />
 
       <div className="mt-3 text-sm text-gray-700">
-        <div>Word Count: {getWordCount(text)} / {MAX_WORDS}</div>
+        <div>
+          Word Count: {getWordCount(text)} / {MAX_WORDS}
+        </div>
         <div>Character Count: {text.length}</div>
       </div>
 
       {copied && (
-        <div className="mt-2 text-green-600 text-sm">Copied to clipboard!</div>
+        <div className="mt-2 text-green-600 text-sm">
+          Copied to clipboard!
+        </div>
       )}
     </div>
   );

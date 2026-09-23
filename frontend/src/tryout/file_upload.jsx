@@ -1,8 +1,9 @@
 import React, { useState } from "react";
 
-function FileUpload() {
+function FileUpload({ isTeacherMode = false }) {
   const [file, setFile] = useState(null);
   const [preview, setPreview] = useState(null);
+  const [rubric, setRubric] = useState("");
 
   const handleChange = (e) => {
     const selected = e.target.files[0];
@@ -34,8 +35,22 @@ function FileUpload() {
         Upload a File
       </h2>
 
+      {isTeacherMode && (
+        <div className="mb-4 p-3 bg-amber-50 border border-amber-300 rounded-lg">
+          <label className="block text-amber-800 text-sm font-medium mb-1">
+            👩‍🏫 Teacher Mode — Grading Notes / Rubric (not shown to students)
+          </label>
+          <textarea
+            value={rubric}
+            onChange={(e) => setRubric(e.target.value)}
+            rows={3}
+            className="w-full border border-amber-300 rounded p-2 text-sm text-black"
+            placeholder="e.g., Accept only PDF. Check for 3 sections..."
+          />
+        </div>
+      )}
+
       <form onSubmit={handleSubmit} className="space-y-6">
-        {/* Custom File Input */}
         <div className="border-2 border-dashed border-purple-400 rounded-lg p-6 text-center hover:bg-purple-50 transition cursor-pointer">
           <label htmlFor="fileInput" className="block cursor-pointer">
             <svg
@@ -45,7 +60,12 @@ function FileUpload() {
               viewBox="0 0 24 24"
               stroke="currentColor"
             >
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M7 16V4a2 2 0 012-2h6a2 2 0 012 2v12m-5 4h.01M12 20v-4" />
+              <path
+                strokeLinecap="round"
+                strokeLinejoin="round"
+                strokeWidth={2}
+                d="M7 16V4a2 2 0 012-2h6a2 2 0 012 2v12m-5 4h.01M12 20v-4"
+              />
             </svg>
             <span className="text-sm text-black">
               Click to browse or drag & drop a file
@@ -59,7 +79,6 @@ function FileUpload() {
           />
         </div>
 
-        {/* File Info */}
         {file && (
           <div className="flex items-center justify-between bg-gray-100 p-3 rounded-md text-sm text-black">
             <span className="font-medium">{file.name}</span>
@@ -69,7 +88,6 @@ function FileUpload() {
           </div>
         )}
 
-        {/* Image Preview */}
         {preview && (
           <div className="mt-4">
             <p className="text-sm text-black mb-1">Preview:</p>
@@ -80,12 +98,13 @@ function FileUpload() {
             />
           </div>
         )}
+
         <div>
-            <h3 className="text-sm text-black text-center mt-2">
-                JPG, GIF, PNG, and PDF files are supported.
-            </h3>
+          <h3 className="text-sm text-black text-center mt-2">
+            JPG, GIF, PNG, and PDF files are supported.
+          </h3>
         </div>
-        {/* Upload Button */}
+
         <div className="text-center">
           <button
             type="submit"

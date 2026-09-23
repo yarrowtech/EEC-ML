@@ -1,11 +1,12 @@
 import React, { useState, useRef, useEffect } from "react";
 
-function ImageHighlighter() {
+function ImageHighlighter({ isTeacherMode = false }) {
   const [image, setImage] = useState(null);
-  const [drawColor, setDrawColor] = useState("#22c55e"); // Green
-  const [history, setHistory] = useState([]); // store strokes
+  const [drawColor, setDrawColor] = useState("#22c55e");
+  const [history, setHistory] = useState([]);
   const [redoStack, setRedoStack] = useState([]);
   const [paths, setPaths] = useState([]);
+  const [referenceImage, setReferenceImage] = useState(null); // teacher's answer image
 
   const canvasRef = useRef(null);
   const imgRef = useRef(null);
@@ -14,8 +15,6 @@ function ImageHighlighter() {
 
   const updateCanvasSize = () => {
     const img = imgRef.current;
-    console.log(img);
-    clearInterval;
     const canvas = canvasRef.current;
     if (img && canvas) {
       canvas.width = img.width;
@@ -36,6 +35,14 @@ function ImageHighlighter() {
     if (!file || !file.type.startsWith("image")) return;
     const reader = new FileReader();
     reader.onloadend = () => setImage(reader.result);
+    reader.readAsDataURL(file);
+  };
+
+  const handleReferenceUpload = (e) => {
+    const file = e.target.files[0];
+    if (!file || !file.type.startsWith("image")) return;
+    const reader = new FileReader();
+    reader.onloadend = () => setReferenceImage(reader.result);
     reader.readAsDataURL(file);
   };
 
@@ -67,7 +74,7 @@ function ImageHighlighter() {
     setPaths((prev) => {
       const updated = [...prev, currentPath.current];
       setHistory(updated);
-      setRedoStack([]); // clear redo stack
+      setRedoStack([]);
       return updated;
     });
   };
@@ -143,11 +150,65 @@ function ImageHighlighter() {
     };
   };
 
+  const saveReference = () => {
+    const canvas = document.createElement("canvas");
+    const width = canvasRef.current.width;
+    const height = canvasRef.current.height;
+    canvas.width = width;
+    canvas.height = height;
+    const ctx = canvas.getContext("2d");
+
+    const img = new Image();
+    img.src = image;
+    img.onload = () => {
+      ctx.drawImage(img, 0, 0, width, height);
+      ctx.drawImage(canvasRef.current, 0, 0);
+      setReferenceImage(canvas.toDataURL());
+    };
+  };
+
   return (
     <div className="max-w-lg mx-auto mt-5 bg-white p-8 rounded-xl shadow-md border border-purple-300">
       <h2 className="text-3xl font-bold text-black text-center mb-6">
         Student Image Highlighter
       </h2>
+
+      {isTeacherMode && (
+        <div className="mb-4 p-3 bg-amber-50 border border-amber-300 rounded-lg">
+          <p className="text-amber-800 text-sm font-medium">
+            👩‍🏫 Teacher Mode — Draw the reference/expected answer on the image,
+            then save it. Students won't see this unless you publish it.
+          </p>
+          <button
+            onClick={saveReference}
+            className="mt-2 px-4 py-1 bg-green-600 text-white rounded hover:bg-green-700 text-sm"
+            disabled={!image}
+          >
+            Save as Reference Answer
+          </button>
+          <label className="block mt-2 text-xs text-amber-700">
+            Or upload a pre-made reference image:
+            <input
+              type="file"
+              accept="image/*"
+              onChange={handleReferenceUpload}
+              className="block mt-1 text-xs"
+            />
+          </label>
+          {referenceImage && (
+            <div className="mt-2">
+              <p className="text-xs text-green-700 font-medium">
+                Reference saved:
+              </p>
+              <img
+                src={referenceImage}
+                alt="Reference"
+                className="w-32 mt-1 border rounded"
+              />
+            </div>
+          )}
+        </div>
+      )}
 
       <div className="flex flex-col items-center gap-4">
         <input
@@ -158,7 +219,9 @@ function ImageHighlighter() {
         />
 
         <div className="text-center">
-          <p className="text-black text-lg font-semibold">Draw on the image:</p>
+          <p className="text-black text-lg font-semibold">
+            Draw on the image:
+          </p>
           <p>
             <span className="text-black font-medium">Green</span> = Healthy,
             <span className="text-black font-medium ml-2">Red</span> =
@@ -191,7 +254,6 @@ function ImageHighlighter() {
           </div>
         )}
 
-        {/* Image and Drawing Canvas */}
         {image && (
           <div className="relative border-2 border-purple-400 rounded-xl shadow-xl overflow-hidden">
             <img
@@ -214,7 +276,6 @@ function ImageHighlighter() {
           </div>
         )}
 
-        {/* Controls */}
         {image && (
           <div className="flex flex-wrap gap-3 mt-4">
             <button

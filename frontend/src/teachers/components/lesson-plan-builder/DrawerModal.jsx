@@ -19,7 +19,9 @@ import {
   FlaskConical,
   Lightbulb,
   ListChecks,
+  Maximize2,
   Mic,
+  Minimize2,
   PenLine,
   Play,
   Plus,
@@ -140,6 +142,56 @@ const DrawerModal = ({
   const [contentGenerating, setContentGenerating] = useState(false);
   const [contentStreaming, setContentStreaming] = useState(false);
   const contentStreamTimersRef = React.useRef([]);
+
+  // Fullscreen state
+  const [isFullscreen, setIsFullscreen] = useState(false);
+  const containerRef = React.useRef(null);
+
+  const toggleFullscreen = React.useCallback(async () => {
+    const el = containerRef.current;
+    if (!el) return;
+
+    try {
+      if (!document.fullscreenElement) {
+        await el.requestFullscreen?.();
+        setIsFullscreen(true);
+      } else {
+        await document.exitFullscreen?.();
+        setIsFullscreen(false);
+      }
+    } catch {
+      // Fallback: CSS-only fullscreen if the Fullscreen API is blocked
+      setIsFullscreen((v) => !v);
+    }
+  }, []);
+
+  // Keep React state in sync if the user exits fullscreen via ESC
+  React.useEffect(() => {
+    const onFsChange = () => {
+      setIsFullscreen(Boolean(document.fullscreenElement));
+    };
+    document.addEventListener('fullscreenchange', onFsChange);
+    return () => document.removeEventListener('fullscreenchange', onFsChange);
+  }, []);
+
+  // Close fullscreen when the drawer closes
+  React.useEffect(() => {
+    if (!open && document.fullscreenElement) {
+      document.exitFullscreen?.().catch(() => {});
+    }
+  }, [open]);
+
+  // ESC closes drawer's CSS-only fullscreen fallback
+  React.useEffect(() => {
+    if (!isFullscreen) return;
+    const onKey = (e) => {
+      if (e.key === 'Escape' && !document.fullscreenElement) {
+        setIsFullscreen(false);
+      }
+    };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, [isFullscreen]);
 
   React.useEffect(() => () => {
     contentStreamTimersRef.current.forEach(clearTimeout);
@@ -1329,11 +1381,17 @@ const DrawerModal = ({
       {open && (
         <motion.section
           key={chapter.id}
+          ref={containerRef}
           initial={{ opacity: 0, y: 16 }}
           animate={{ opacity: 1, y: 0 }}
           exit={{ opacity: 0, y: -16 }}
           transition={{ duration: 0.18 }}
-          className="flex min-w-0 w-full flex-col self-start overflow-hidden rounded-[22px] border border-[#e9edf2] bg-white shadow-[0_25px_50px_-24px_rgba(15,23,42,0.28)] sm:rounded-[28px] lg:h-full lg:min-h-0 dark:border-slate-700 dark:bg-slate-900"
+          className={[
+            'flex min-w-0 w-full flex-col self-start overflow-hidden rounded-[22px] border border-[#e9edf2] bg-white shadow-[0_25px_50px_-24px_rgba(15,23,42,0.28)] sm:rounded-[28px] lg:h-full lg:min-h-0 dark:border-slate-700 dark:bg-slate-900',
+            isFullscreen
+              ? 'fixed inset-0 z-[100] h-screen w-screen rounded-none sm:rounded-none border-0'
+              : '',
+          ].join(' ')}
         >
           {/* Header */}
           <div className="flex flex-wrap items-center justify-between gap-2 rounded-t-[22px] border-b border-[#ebf0f6] bg-[#fafcff] px-3 py-3 sm:rounded-t-[28px] sm:px-5 sm:py-4 dark:border-slate-800 dark:bg-slate-800/60">
@@ -1354,6 +1412,17 @@ const DrawerModal = ({
               </Button>
               <Button variant="outline" size="sm" onClick={exportPdf} className="gap-1 rounded-full border-[#dce2ea] text-xs">
                 <FileText className="size-3.5" /> Export PDF
+              </Button>
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={toggleFullscreen}
+                className="gap-1 rounded-full border-[#dce2ea] text-xs"
+                aria-label={isFullscreen ? 'Exit fullscreen' : 'Enter fullscreen'}
+                title={isFullscreen ? 'Exit fullscreen' : 'View lesson plan in fullscreen'}
+              >
+                {isFullscreen ? <Minimize2 className="size-3.5" /> : <Maximize2 className="size-3.5" />}
+                <span className="hidden sm:inline">{isFullscreen ? 'Exit' : 'Fullscreen'}</span>
               </Button>
               <Button variant="ghost" size="icon-sm" onClick={onClose} aria-label="Close chapter" className="rounded-full text-slate-500 hover:bg-slate-100 hover:text-slate-800 dark:text-slate-400 dark:hover:text-white">
                 <X className="size-4" />
