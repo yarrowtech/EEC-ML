@@ -43,7 +43,7 @@ import { fetchCachedJson } from '../utils/studentApiCache';
 import { PaperclipHorizontalIcon } from '@phosphor-icons/react';
 import { slugifyForUrl, deslugifyFromUrl } from '../utils/urlSlug';
 import WorksheetSubmitModal from './WorksheetSubmitModal';
-import AILearningTryoutSection from './AILearningTryoutSection';
+import AILearningTryoutSection, { typeMeta, normalizeQuestionType } from './AILearningTryoutSection';
 
 const API_BASE = (import.meta.env.VITE_API_URL || 'http://localhost:5000').replace(/\/$/, '');
 const DASHBOARD_ENDPOINT = `${API_BASE}/api/student/auth/dashboard`;
@@ -118,6 +118,13 @@ const detectMaterialKind = (material) => {
   if (/\.(doc|docx)(\?|#|$)/i.test(url) || hint.includes('notes') || hint.includes('document') || hint.includes('handout')) return 'notes';
   return 'article';
 };
+
+// iOS Safari (the majority of mobile student devices) never implements the
+// Fullscreen API for arbitrary elements — document.fullscreenEnabled is
+// false there — so the fullscreen button is hidden rather than shown as a
+// dead control that just surfaces an error on tap.
+const FULLSCREEN_SUPPORTED = typeof document !== 'undefined'
+  && Boolean(document.fullscreenEnabled || document.webkitFullscreenEnabled);
 
 const MaterialQuickActions = ({ material, onRead }) => {
   if (!material?.url && !material?.content) return null;
@@ -668,7 +675,30 @@ const AILearningCoursesReference = () => {
     ...(chapterRecap ? [{ id: 'recap', title: 'Quick Recap', text: chapterRecap }] : []),
     ...(chapterDidYouKnow ? [{ id: 'did-you-know', title: 'Did You Know?', text: chapterDidYouKnow }] : []),
   ]).filter((section) => String(section.text || '').trim()), [readingContent, introductionText, chapterExplanation, chapterRecap, chapterDidYouKnow]);
-  const [isPracticeMode, setIsPracticeMode] = useState(() => searchParams.get('mode') === 'practice');
+  const [isPracticeMode, setIsPracticeMode] = useState(false);
+  // Populated by the embedded AILearningTryoutSection once it loads the
+  // assigned questions, so the "Choose Your Format" list above it can group
+  // them by type without re-fetching/re-deriving the same data itself.
+  const [assignedTryoutQuestions, setAssignedTryoutQuestions] = useState([]);
+  const tryoutRef = useRef(null);
+  const practiceFormats = useMemo(() => {
+    const groups = new Map();
+    assignedTryoutQuestions.forEach((question) => {
+      const type = normalizeQuestionType(question?.type);
+      if (!groups.has(type)) groups.set(type, { type, ...typeMeta(type), count: 0 });
+      groups.get(type).count += 1;
+    });
+    return Array.from(groups.values());
+  }, [assignedTryoutQuestions]);
+  // The route doesn't remount when only the query string changes (e.g.
+  // navigating from the overview page straight into ?mode=practice), so a
+  // plain lazy-init read of the query param would miss that navigation —
+  // this effect re-syncs on mount and on every subsequent URL change,
+  // without overriding in-page toggles (Launch Practice / Return to theory)
+  // that don't touch the URL.
+  useEffect(() => {
+    setIsPracticeMode(new URLSearchParams(location.search).get('mode') === 'practice');
+  }, [location.search]);
   const [activeFlowStepId, setActiveFlowStepId] = useState(null);
   const [activeDetailSection, setActiveDetailSection] = useState('introduction');
   const [readerFontScale, setReaderFontScale] = useState(1);
@@ -918,7 +948,7 @@ const AILearningCoursesReference = () => {
         <div
           ref={(node) => { detailsViewRef.current = node; detailsScrollRef.current = node; }}
           onScroll={handleDetailsScroll}
-          className="w-full min-h-screen overflow-x-hidden overflow-y-auto bg-[#f8f9ff] p-3 sm:p-5"
+          className={`w-full overflow-x-hidden overflow-y-auto bg-[#f8f9ff] p-3 sm:p-5 ${isFullscreen ? 'h-screen' : 'min-h-screen'}`}
           style={QUEST_FONT}
         >
           {/* Nav row */}
@@ -948,13 +978,15 @@ const AILearningCoursesReference = () => {
                 A+
               </button>
             </div>
-            <button
-              type="button"
-              onClick={toggleDetailsFullscreen}
-              className="rounded-full bg-[#eff4ff] p-2.5 text-[#464555] transition-colors hover:bg-[#e6eeff]"
-            >
-              {isFullscreen ? <Minimize2 size={16} /> : <Maximize2 size={16} />}
-            </button>
+            {FULLSCREEN_SUPPORTED && (
+              <button
+                type="button"
+                onClick={toggleDetailsFullscreen}
+                className="rounded-full bg-[#eff4ff] p-2.5 text-[#464555] transition-colors hover:bg-[#e6eeff]"
+              >
+                {isFullscreen ? <Minimize2 size={16} /> : <Maximize2 size={16} />}
+              </button>
+            )}
             {!isPracticeMode && (
               <button
                 type="button"
@@ -1090,6 +1122,38 @@ const AILearningCoursesReference = () => {
             {/* ── Practice panel (full-span) ── */}
             {isPracticeMode && (
               <div className="col-span-full flex flex-col gap-6">
+              {/* Choose Your Format — every assigned question type, grouped */}
+              {practiceFormats.length > 0 && (
+                <div className="rounded-[2rem] bg-white p-5 shadow-sm sm:p-8">
+                  <h3 className="mb-4 text-lg font-bold text-[#0d1c2e]">Choose Your Format</h3>
+                  <div className="flex flex-col gap-3">
+                    {practiceFormats.map(({ type, label, icon: Icon, count }) => (
+                      <div
+                        key={type}
+                        className="flex flex-col items-start justify-between gap-3 rounded-2xl bg-[#eff4ff] p-4 sm:flex-row sm:items-center"
+                      >
+                        <div className="flex items-start gap-3">
+                          <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl bg-white text-[#493ee5] shadow-sm">
+                            <Icon size={20} />
+                          </div>
+                          <div>
+                            <p className="text-sm font-bold text-[#0d1c2e]">{label}</p>
+                            <p className="text-xs font-semibold text-[#464555]">{count} question{count !== 1 ? 's' : ''}</p>
+                          </div>
+                        </div>
+                        <button
+                          type="button"
+                          onClick={() => tryoutRef.current?.scrollToType(type)}
+                          className="inline-flex shrink-0 items-center gap-1 self-stretch justify-center rounded-full bg-white px-4 py-2 text-sm font-bold text-[#493ee5] shadow-sm transition-colors hover:bg-[#e6eeff] sm:self-auto"
+                        >
+                          Start {label} <ArrowRight size={14} />
+                        </button>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
+
               <div className="rounded-[2rem] bg-white p-5 shadow-sm sm:p-8">
                 {/* Panel header */}
                 <div className="mb-6 flex flex-wrap items-center justify-between gap-3 border-b border-[#d5e3fc] pb-4">
@@ -1186,23 +1250,17 @@ const AILearningCoursesReference = () => {
                 )}
 
                 {/* Panel footer */}
-                <div className="flex flex-wrap items-center justify-between gap-3 border-t border-[#d5e3fc] pt-4">
-                  <button
-                    type="button"
-                    onClick={() => setIsPracticeMode(false)}
-                    className="inline-flex items-center gap-2 text-sm font-semibold text-[#464555] hover:text-[#0d1c2e]"
-                  >
-                    <ArrowLeft size={14} /> Return to theory
-                  </button>
-                </div>
+                
               </div>
 
               {/* Interactive tryout — embedded directly, no separate page */}
               <div className="overflow-hidden rounded-[2rem] bg-white shadow-sm">
                 <AILearningTryoutSection
+                  ref={tryoutRef}
                   assignedSubjectName={subjectSlug}
                   assignedTopicName={topicSlug}
                   onBack={() => setIsPracticeMode(false)}
+                  onQuestionsLoaded={setAssignedTryoutQuestions}
                 />
               </div>
               </div>
@@ -1325,7 +1383,7 @@ const AILearningCoursesReference = () => {
   const spotlightDone = spotlightStep ? completedSteps.includes(spotlightStep.id) : false;
 
   return (
-    <div ref={moduleRef} className="min-h-screen w-full bg-[#f8f9ff]" style={QUEST_FONT}>
+    <div ref={moduleRef} className={`w-full overflow-y-auto overflow-x-hidden bg-[#f8f9ff] ${isFullscreen ? 'h-screen' : 'min-h-screen'}`} style={QUEST_FONT}>
       <div className="mx-auto w-full max-w-[1180px] px-4 py-6 sm:px-6 sm:py-8">
         {/* Breadcrumb & Topic Eyebrow Bar */}
         <div className="mb-6 flex flex-wrap items-center justify-between gap-3">
@@ -1348,9 +1406,11 @@ const AILearningCoursesReference = () => {
             </div>
           </div>
           <div className="flex items-center gap-2">
-            <button type="button" onClick={toggleFullscreen} className="rounded-full bg-[#eff4ff] p-2.5 text-[#464555] transition-colors hover:bg-[#e6eeff]">
-              {isFullscreen ? <Minimize2 size={18} /> : <Maximize2 size={18} />}
-            </button>
+            {FULLSCREEN_SUPPORTED && (
+              <button type="button" onClick={toggleFullscreen} className="rounded-full bg-[#eff4ff] p-2.5 text-[#464555] transition-colors hover:bg-[#e6eeff]">
+                {isFullscreen ? <Minimize2 size={18} /> : <Maximize2 size={18} />}
+              </button>
+            )}
             <button type="button" onClick={handleDownloadPdf} disabled={downloadingPdf} className="inline-flex items-center gap-1.5 rounded-full bg-[#eff4ff] px-4 py-2 text-sm font-bold text-[#493ee5] transition-colors hover:bg-[#e6eeff] disabled:opacity-60">
               <Download size={18} /> {downloadingPdf ? 'Preparing…' : 'Offline Pack (PDF)'}
             </button>

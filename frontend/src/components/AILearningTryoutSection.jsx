@@ -1,5 +1,5 @@
 /* eslint-disable react/prop-types */
-import React, { useEffect, useMemo, useRef, useState } from 'react';
+import React, { forwardRef, useEffect, useImperativeHandle, useMemo, useRef, useState } from 'react';
 import {
   ArrowLeft, ArrowRight, CheckCircle2, Upload, MessageCircle, X,
   Bold, Italic, RotateCcw, ChevronUp, ChevronDown,
@@ -22,10 +22,10 @@ const GHOST_BTN = 'inline-flex items-center gap-2 rounded-xl border border-slate
 
 const normalize = (value) => String(value || '').trim().toLowerCase();
 const asArray = (value) => (Array.isArray(value) ? value : []);
-const normalizeQuestionType = (value) => normalize(value).replace(/-/g, '_');
+export const normalizeQuestionType = (value) => normalize(value).replace(/-/g, '_');
 const optionLabels = ['A', 'B', 'C', 'D', 'E'];
 
-const TYPE_META = {
+export const TYPE_META = {
   mcq: { label: 'Multiple Choice', short: 'MCQ', icon: ListChecks },
   choice_matrix: { label: 'Choice Matrix', short: 'Matrix', icon: LayoutGrid },
   cloze_drag_drop: { label: 'Cloze Drag & Drop', short: 'Cloze Drag', icon: Type },
@@ -38,7 +38,7 @@ const TYPE_META = {
   file_upload: { label: 'File Upload', short: 'Upload', icon: FileUp },
   image_highlighter: { label: 'Image Highlighter', short: 'Highlighter', icon: Highlighter },
 };
-const typeMeta = (type) => TYPE_META[normalizeQuestionType(type)] || { label: 'Tryout', short: 'Tryout', icon: ListChecks };
+export const typeMeta = (type) => TYPE_META[normalizeQuestionType(type)] || { label: 'Tryout', short: 'Tryout', icon: ListChecks };
 const typeLabel = (type) => typeMeta(type).label;
 
 const renderTextWithInputs = (text, renderInput) => {
@@ -661,7 +661,7 @@ const TryoutQuestion = ({ question, index, onAnswer }) => {
   );
 };
 
-const AILearningTryoutSection = ({ assignedSubjectName = '', assignedTopicName = '', onBack }) => {
+const AILearningTryoutSection = forwardRef(({ assignedSubjectName = '', assignedTopicName = '', onBack, onQuestionsLoaded }, ref) => {
   const navigate = useNavigate();
   const location = useLocation();
   const subjectMatch = location.pathname.match(/\/subject\/([^/]+)/);
@@ -847,6 +847,20 @@ const AILearningTryoutSection = ({ assignedSubjectName = '', assignedTopicName =
     questionRefs.current[idx]?.scrollIntoView({ behavior: 'smooth', block: 'center' });
   };
 
+  // Let a parent "choose your format" list (built from the same assigned
+  // questions) know what's here, and give it a way to jump straight to the
+  // first question of a given type without re-deriving this data itself.
+  useEffect(() => {
+    onQuestionsLoaded?.(assignedTryouts);
+  }, [assignedTryouts, onQuestionsLoaded]);
+
+  useImperativeHandle(ref, () => ({
+    scrollToType: (type) => {
+      const idx = assignedTryouts.findIndex((q) => normalizeQuestionType(q.type) === normalizeQuestionType(type));
+      if (idx >= 0) scrollToQuestion(idx);
+    },
+  }), [assignedTryouts]);
+
   const returnToPreviousView = () => {
     if (onBack) {
       onBack();
@@ -921,10 +935,6 @@ const AILearningTryoutSection = ({ assignedSubjectName = '', assignedTopicName =
                 </p>
               </div>
             )}
-
-            <button type="button" onClick={returnToPreviousView} className={`mt-6 ${GHOST_BTN}`}>
-              <ArrowLeft size={16} /> {onBack ? 'Back to Activities' : 'Back to Topic'}
-            </button>
           </div>
         </div>
       </div>
@@ -941,26 +951,7 @@ const AILearningTryoutSection = ({ assignedSubjectName = '', assignedTopicName =
     <div className="w-full min-h-screen bg-[#f8fafc] p-4 pb-28 text-slate-900 sm:p-6 sm:pb-28 md:p-8 md:pb-28">
       <style>{'[data-placeholder]:empty:before{content:attr(data-placeholder)}'}</style>
       <div className="mx-auto w-full max-w-[950px]">
-        <div className="mb-4 flex flex-wrap items-center gap-2.5">
-          <button type="button" onClick={returnToPreviousView} className={GHOST_BTN}>
-            <ArrowLeft size={16} />
-            {onBack ? 'Back to Activities' : 'Back to Topic'}
-          </button>
-          {chapterTitle && (
-            <span className="hidden items-center gap-1.5 text-sm text-slate-400 sm:flex">
-              <span className="text-slate-300">/</span> {chapterTitle}
-            </span>
-          )}
-          {lastSavedAt && (
-            <span className="inline-flex items-center gap-1.5 rounded-full border border-slate-200 bg-white px-3 py-1 text-xs font-semibold text-slate-500 shadow-sm">
-              <span className="h-1.5 w-1.5 rounded-full bg-emerald-500" />
-              Saved {formatAgo(lastSavedAt)}
-            </span>
-          )}
-          <button type="button" onClick={() => navigate('/student/assignments-academic-alcove')} className={`ml-auto ${GHOST_BTN}`}>
-            <MessageCircle size={16} className="text-indigo-500" /> Need Help?
-          </button>
-        </div>
+        
 
         {totalQuestions > 1 && (
           <div className="mb-4 flex items-center gap-2 overflow-x-auto pb-1">
@@ -986,46 +977,7 @@ const AILearningTryoutSection = ({ assignedSubjectName = '', assignedTopicName =
           </div>
         )}
 
-        <section className={`mb-5 ${CARD} p-5 sm:p-8`}>
-          <div className="flex flex-col gap-6 sm:flex-row sm:items-center sm:justify-between">
-            <div>
-              <div className="mb-2 flex flex-wrap items-center gap-2">
-                <span className="rounded-full bg-indigo-100 px-3 py-1 text-[11px] font-bold uppercase tracking-wider text-indigo-700">Assigned Tryout</span>
-                {formatCount > 1 && (
-                  <span className="rounded-full bg-sky-100 px-3 py-1 text-[11px] font-bold text-sky-700">{formatCount} Interactive Formats</span>
-                )}
-              </div>
-              <h1 className="text-2xl font-bold tracking-tight text-slate-900 sm:text-4xl">{topicSlug} Quiz</h1>
-              <p className="mt-2 max-w-xl text-sm text-slate-500 sm:text-base">
-                Complete the questions below. Your teacher will receive your responses{chapterTitle ? ` for ${chapterTitle}` : ''}.
-              </p>
-            </div>
-
-            {totalQuestions > 0 && (
-              <div className="flex w-full shrink-0 items-center gap-4 rounded-xl border border-slate-100 bg-slate-50 p-4 sm:w-auto">
-                <div className="relative flex h-16 w-16 shrink-0 items-center justify-center">
-                  <svg className="h-16 w-16 -rotate-90" viewBox="0 0 36 36">
-                    <path className="text-slate-200" d="M18 2.0845 a 15.9155 15.9155 0 0 1 0 31.831 a 15.9155 15.9155 0 0 1 0 -31.831" fill="none" stroke="currentColor" strokeWidth="3.5" />
-                    <path
-                      className="text-indigo-600 transition-all duration-500"
-                      d="M18 2.0845 a 15.9155 15.9155 0 0 1 0 31.831 a 15.9155 15.9155 0 0 1 0 -31.831"
-                      fill="none"
-                      stroke="currentColor"
-                      strokeWidth="3.5"
-                      strokeLinecap="round"
-                      strokeDasharray={`${progressPct}, 100`}
-                    />
-                  </svg>
-                  <span className="absolute text-sm font-bold text-indigo-600">{progressPct}%</span>
-                </div>
-                <div>
-                  <p className="text-sm font-bold text-slate-800">{answeredCount}/{totalQuestions} Questions</p>
-                  <p className="text-xs text-slate-400">{momentumLabel}</p>
-                </div>
-              </div>
-            )}
-          </div>
-        </section>
+        
 
         {error && <div className="mb-4 rounded-xl border border-red-200 bg-red-50 p-4 text-sm font-semibold text-red-700">{error}</div>}
         {isLoading && <div className={`${CARD} p-6 text-sm font-semibold text-slate-500`}>Loading assigned tryout...</div>}
@@ -1098,6 +1050,8 @@ const AILearningTryoutSection = ({ assignedSubjectName = '', assignedTopicName =
       )}
     </div>
   );
-};
+});
+
+AILearningTryoutSection.displayName = 'AILearningTryoutSection';
 
 export default AILearningTryoutSection;
