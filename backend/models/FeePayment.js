@@ -1,4 +1,5 @@
 const mongoose = require('mongoose');
+require('./FeeReceiptCounter');
 
 const feePaymentSchema = new mongoose.Schema(
   {
@@ -14,6 +15,9 @@ const feePaymentSchema = new mongoose.Schema(
     // there's always a traceable reference on the receipt.
     referenceNumber: { type: String, trim: true, default: '' },
     bankName: { type: String, trim: true, default: '' },
+    // System-generated receipt number (RCPT-<year>-<seq>), assigned on first
+    // save for every payment method — see the pre('validate') hook below.
+    receiptNumber: { type: String, trim: true, default: undefined },
     paidOn: { type: Date, default: Date.now },
     notes: { type: String, trim: true },
     initiatedByType: { type: String, default: null, trim: true },
@@ -38,5 +42,31 @@ feePaymentSchema.index({ invoiceId: 1 });
 // filter, sorted by paidOn) without an in-memory sort of the whole collection.
 feePaymentSchema.index({ schoolId: 1, paidOn: -1 });
 feePaymentSchema.index({ schoolId: 1, studentId: 1 });
+feePaymentSchema.index(
+  { schoolId: 1, receiptNumber: 1 },
+  { unique: true, partialFilterExpression: { receiptNumber: { $type: 'string' } } }
+);
+
+const formatReceiptNumber = (year, seq) => `RCPT-${year}-${String(seq).padStart(6, '0')}`;
+
+// Atomically allocates the next receipt number for a school/year.
+feePaymentSchema.statics.allocateReceiptNumber = async function allocateReceiptNumber(schoolId, date = new Date()) {
+  const FeeReceiptCounter = mongoose.model('FeeReceiptCounter');
+  const parsed = new Date(date);
+  const year = Number.isNaN(parsed.getTime()) ? new Date().getFullYear() : parsed.getFullYear();
+  const counter = await FeeReceiptCounter.findOneAndUpdate(
+    { schoolId, year },
+    { $inc: { seq: 1 } },
+    { new: true, upsert: true, setDefaultsOnInsert: true }
+  ).lean();
+  return formatReceiptNumber(year, counter.seq);
+};
+
+// Assigns a receipt number to any payment that doesn't have one yet, however it
+// was created (manual cash/UPI/bank/card, Razorpay checkout, QR, webhook).
+feePaymentSchema.pre('validate', async function assignReceiptNumber() {
+  if (this.receiptNumber || !this.schoolId) return;
+  this.receiptNumber = await this.constructor.allocateReceiptNumber(this.schoolId, this.paidOn || new Date());
+});
 
 module.exports = mongoose.model('FeePayment', feePaymentSchema);

@@ -1959,10 +1959,11 @@ const Teachers = ({ setShowAdminHeader }) => {
               Manage your teaching staff, credentials, and principal assignments
             </p>
           </div>
-          {/* On the Principals tab these actions (Add/Drafts/Demo/Bulk Upload/
-              Download Data/Archived/Refresh) don't apply, so hide them on
-              mobile/tablet to reclaim space — kept visible at lg+ either way. */}
-          <div className={`flex-wrap gap-2 w-full sm:w-auto justify-stretch sm:justify-center ${activeTab === 'principals' ? 'hidden lg:flex' : 'flex'}`}>
+          {/* Teacher actions (Add/Drafts/Demo/Bulk Upload/Download Data/
+              Select All/Archived/Refresh) only apply to the Teachers tab —
+              the Principals tab has its own search + refresh. */}
+          {activeTab === 'teachers' && (
+          <div className="flex flex-wrap gap-2 w-full sm:w-auto justify-stretch sm:justify-center">
             <button
               onClick={startNewTeacherForm}
               className="bg-sky-500 text-white px-3 py-2 rounded-full hover:bg-sky-600 flex items-center gap-2 text-sm flex-1 sm:flex-none justify-center transition"
@@ -2064,6 +2065,7 @@ const Teachers = ({ setShowAdminHeader }) => {
               {tableRefreshing ? 'Refreshing...' : 'Refresh'}
             </button>
           </div>
+          )}
         </div>
 
         <div className="flex-1 flex flex-col min-h-0">
@@ -2099,6 +2101,17 @@ const Teachers = ({ setShowAdminHeader }) => {
                 );
               })}
             </div>
+            {activeTab === 'principals' && (
+              <button
+                onClick={fetchPrincipals}
+                disabled={loadingPrincipals}
+                className="ml-2 mt-1 mb-2 px-4 py-2.5 border border-gray-200 rounded-full bg-white hover:bg-gray-50 text-sm text-gray-600 font-medium shadow-sm transition-colors disabled:opacity-60 flex items-center gap-2 flex-shrink-0"
+                title="Refresh principals"
+              >
+                <RefreshCcw size={15} className={loadingPrincipals ? 'animate-spin' : ''} />
+                {loadingPrincipals ? 'Refreshing...' : 'Refresh'}
+              </button>
+            )}
           </div>
           {/* Filter Bar — Teachers only */}
           {activeTab === 'teachers' && (
@@ -2410,8 +2423,7 @@ const Teachers = ({ setShowAdminHeader }) => {
           {activeTab === 'principals' && (
             <div className="flex-1 min-h-0 flex flex-col">
               {/* Principals search */}
-              <div className="mb-4 flex flex-col sm:flex-row gap-3 mt-4 flex-shrink-0">
-                <div className="flex-1 relative">
+               {/* <div className="flex-1 relative">
                   <Search size={17} className="absolute left-3.5 top-1/2 -translate-y-1/2 text-gray-400 pointer-events-none" />
                   <input
                     type="text"
@@ -2421,144 +2433,124 @@ const Teachers = ({ setShowAdminHeader }) => {
                     onChange={(e) => setPrincipalSearchTerm(e.target.value)}
                   />
                 </div>
-                <button
-                  onClick={fetchPrincipals}
-                  disabled={loadingPrincipals}
-                  className="sm:w-auto px-4 py-2.5 border border-gray-200 rounded-full bg-white hover:bg-gray-50 text-sm text-gray-600 font-medium shadow-sm transition-colors disabled:opacity-60"
-                  title="Refresh principals"
-                >
-                  <RefreshCcw className={loadingPrincipals ? 'animate-spin' : ''} />
-                </button>
-              </div>
+               */}
 
-              <div className="flex-1 min-h-0 flex flex-col bg-white rounded-xl border border-gray-200 shadow-sm overflow-hidden">
-                <div className="flex-1 min-h-0 overflow-auto">
-                  <table className="w-full min-w-[640px]">
-                    <thead className="sticky top-0 z-10">
-                      <tr className="bg-gradient-to-r from-sky-50 to-pink-50/50 border-b border-gray-100">
-                        <th className="px-6 py-3.5 text-left text-xs font-semibold text-gray-500 uppercase tracking-wider">Principal</th>
-                        {/* <th className="px-6 py-3.5 text-left text-xs font-semibold text-gray-500 uppercase tracking-wider">Contact</th> */}
-                        <th className="px-6 py-3.5 text-center lg:text-left text-xs font-semibold text-gray-500 uppercase tracking-wider">Login ID</th>
-                        <th className="px-6 py-3.5 text-center lg:text-left text-xs font-semibold text-gray-500 uppercase tracking-wider">Actions</th>
-                      </tr>
-                    </thead>
-                    <tbody className="divide-y divide-gray-50">
-                      {loadingPrincipals ? (
-                        <tr>
-                          <td colSpan={4} className="py-16 text-center">
-                            <div className="flex items-center justify-center gap-2 text-gray-400">
-                              <span className="w-5 h-5 border-2 border-sky-300 border-t-sky-600 rounded-full animate-spin" />
-                              Loading principals...
+              <div className="flex-1 min-h-0 overflow-auto mt-4">
+                {(() => {
+                  const q = principalSearchTerm.toLowerCase();
+                  const visiblePrincipals = principals.filter(
+                    (p) => !q || (p.name || '').toLowerCase().includes(q) || (p.email || '').toLowerCase().includes(q)
+                  );
+                  if (loadingPrincipals) {
+                    return (
+                      <div className="py-16 flex items-center justify-center gap-2 text-gray-400">
+                        <span className="w-5 h-5 border-2 border-sky-300 border-t-sky-600 rounded-full animate-spin" />
+                        {loadingPrincipals ? 'Refreshing principals...' : 'Loading principals...'}
+                      </div>
+                    );
+                  }
+                  if (visiblePrincipals.length === 0) {
+                    return (
+                      <div className="py-16 text-center bg-white rounded-xl border border-gray-200 shadow-sm">
+                        <div className="w-14 h-14 rounded-2xl bg-sky-50 flex items-center justify-center mx-auto mb-3">
+                          <Crown size={24} className="text-sky-300" />
+                        </div>
+                        <p className="text-gray-500 font-medium text-sm">No principals found</p>
+                        <p className="text-gray-400 text-xs mt-1">Assign a teacher as principal using the Teachers tab</p>
+                      </div>
+                    );
+                  }
+                  return (
+                    <div className="flex flex-wrap justify-center gap-4">
+                      {visiblePrincipals.map((principal) => {
+                        const principalId = principal._id || principal.id;
+                        const avatarColor = getAvatarColor(principal.name);
+                        const initials = (principal.name || 'P').split(' ').map(n => n[0]).join('').slice(0, 2).toUpperCase();
+                        const loginId = principal.username || principal.employeeCode || principal.email || '—';
+                        const principalIdentity = String(principal?.email || principal?.username || '').trim().toLowerCase();
+                        const principalPhoto = resolveImageUrl(principal?.profilePic) || teacherPhotoByIdentity.get(principalIdentity) || '';
+                        const isBusy = principalCredLoadingId === principalId || principalDeleteLoadingId === principalId;
+                        return (
+                          <div
+                            key={principalId}
+                            className="w-full max-w-sm bg-white rounded-2xl border border-gray-200 shadow-sm overflow-hidden"
+                          >
+                            <div className="h-16 bg-gradient-to-r from-sky-100 to-pink-50" />
+                            <div className="px-6 pb-6 -mt-10 flex flex-col items-center text-center">
+                              <div className={`w-20 h-20 rounded-full ring-4 ring-white ${avatarColor.bg} flex items-center justify-center text-xl font-bold ${avatarColor.text} overflow-hidden shadow-sm`}>
+                                {principalPhoto ? (
+                                  <img src={principalPhoto} alt={principal.name} className="w-full h-full object-cover" />
+                                ) : initials}
+                              </div>
+                              <h3 className="mt-3 text-base font-semibold text-gray-900">{principal.name}</h3>
+                              <div className="mt-1 inline-flex items-center gap-1.5 text-xs font-medium text-sky-700 bg-sky-50 px-2.5 py-1 rounded-full">
+                                <Crown size={12} /> Principal
+                              </div>
+
+                              <div className="mt-4 w-full space-y-2 text-sm text-gray-600">
+                                {principal.email && (
+                                  <div className="flex items-center justify-center gap-2">
+                                    <Mail size={14} className="text-sky-400 flex-shrink-0" />
+                                    <span className="truncate">{principal.email}</span>
+                                  </div>
+                                )}
+                                {principal.mobile && (
+                                  <div className="flex items-center justify-center gap-2">
+                                    <Phone size={14} className="text-emerald-400 flex-shrink-0" />
+                                    <span>{principal.mobile}</span>
+                                  </div>
+                                )}
+                              </div>
+
+                              <div className="mt-4 w-full rounded-xl bg-gray-50 border border-gray-100 px-3 py-2.5">
+                                <div className="text-[11px] font-semibold text-gray-400 uppercase tracking-wider mb-1">Login ID</div>
+                                <div className="flex items-center justify-center gap-2">
+                                  <code className="text-xs font-mono text-gray-700 truncate">{loginId}</code>
+                                  <button
+                                    onClick={() => copyCredential(loginId, `pid_${principalId}`)}
+                                    className={`p-1 rounded-lg transition-all ${copiedField === `pid_${principalId}` ? 'text-emerald-600' : 'text-gray-400 hover:text-sky-600 hover:bg-sky-50'}`}
+                                    title="Copy Login ID"
+                                  >
+                                    {copiedField === `pid_${principalId}` ? <Check size={13} /> : <Copy size={13} />}
+                                  </button>
+                                </div>
+                              </div>
+
+                              <div className="mt-4 w-full grid grid-cols-2 gap-2">
+                                <button
+                                  onClick={() => handleViewPrincipalCredentials(principal)}
+                                  disabled={isBusy}
+                                  className="inline-flex items-center justify-center gap-1.5 px-3 py-2 rounded-lg bg-sky-50 text-sky-700 hover:bg-sky-100 transition-colors text-xs font-medium disabled:opacity-50"
+                                  title="Reset & View Credentials"
+                                >
+                                  {principalCredLoadingId === principalId ? (
+                                    <span className="w-3 h-3 border border-sky-400 border-t-transparent rounded-full animate-spin" />
+                                  ) : (
+                                    <KeyRound size={13} />
+                                  )}
+                                  Credentials
+                                </button>
+                                <button
+                                  onClick={() => setDeleteConfirmPrincipal(principal)}
+                                  disabled={isBusy}
+                                  className="inline-flex items-center justify-center gap-1.5 px-3 py-2 rounded-lg bg-rose-50 text-rose-700 hover:bg-rose-100 transition-colors text-xs font-medium disabled:opacity-50"
+                                  title="Delete Principal"
+                                >
+                                  {principalDeleteLoadingId === principalId ? (
+                                    <span className="w-3 h-3 border border-rose-400 border-t-transparent rounded-full animate-spin" />
+                                  ) : (
+                                    <Trash2 size={13} />
+                                  )}
+                                  Delete
+                                </button>
+                              </div>
                             </div>
-                          </td>
-                        </tr>
-                      ) : principals.filter(p => {
-                        const q = principalSearchTerm.toLowerCase();
-                        return !q || (p.name || '').toLowerCase().includes(q) || (p.email || '').toLowerCase().includes(q);
-                      }).length === 0 ? (
-                        <tr>
-                          <td colSpan={4} className="py-16 text-center">
-                            <div className="w-14 h-14 rounded-2xl bg-sky-50 flex items-center justify-center mx-auto mb-3">
-                              <Crown size={24} className="text-sky-300" />
-                            </div>
-                            <p className="text-gray-500 font-medium text-sm">No principals found</p>
-                            <p className="text-gray-400 text-xs mt-1">Assign a teacher as principal using the Teachers tab</p>
-                          </td>
-                        </tr>
-                      ) : (
-                        principals
-                          .filter(p => {
-                            const q = principalSearchTerm.toLowerCase();
-                            return !q || (p.name || '').toLowerCase().includes(q) || (p.email || '').toLowerCase().includes(q);
-                          })
-                          .map((principal) => {
-                            const avatarColor = getAvatarColor(principal.name);
-                            const initials = (principal.name || 'P').split(' ').map(n => n[0]).join('').slice(0, 2).toUpperCase();
-                            const loginId = principal.username || principal.employeeCode || principal.email || '—';
-                            const principalIdentity = String(principal?.email || principal?.username || '').trim().toLowerCase();
-                            const principalPhoto = resolveImageUrl(principal?.profilePic) || teacherPhotoByIdentity.get(principalIdentity) || '';
-                            return (
-                              <tr key={principal._id || principal.id} className="hover:bg-sky-50/30 transition-colors">
-                                <td className="px-6 py-2.5">
-                                  {/* Photo above name/ID on mobile/tablet; side-by-side from lg up. */}
-                                  <div className="flex flex-col items-center text-center gap-1.5 lg:flex-row lg:items-center lg:text-left lg:gap-3">
-                                    <div className={`w-12 h-12 lg:w-9 lg:h-9 rounded-xl ${avatarColor.bg} flex items-center justify-center text-sm font-bold ${avatarColor.text} flex-shrink-0 overflow-hidden`}>
-                                      {principalPhoto ? (
-                                        <img src={principalPhoto} alt={principal.name} className="w-full h-full object-cover" />
-                                      ) : initials}
-                                    </div>
-                                    <div>
-                                      <div className="text-sm font-semibold text-gray-900 flex flex-wrap items-center justify-center lg:justify-start gap-1.5">
-                                        {principal.name}
-                                        {/* <Crown size={12} className="text-sky-400" /> */}
-                                      </div>
-                                      <div className="text-xs text-gray-400 flex flex-wrap justify-center gap-2"> <Crown size={12} className="text-sky-400" />Principal</div>
-                                    </div>
-                                  </div>
-                                </td>
-                                {/* <td className="px-6 py-2.5">
-                                  <div className="space-y-1.5">
-                                    <div className="flex items-center text-sm text-gray-600">
-                                      <Mail size={13} className="mr-2 text-sky-400 flex-shrink-0" />
-                                      <span className="truncate max-w-[180px]">{principal.email || '—'}</span>
-                                    </div>
-                                    {principal.mobile && (
-                                      <div className="flex items-center text-sm text-gray-600">
-                                        <Phone size={13} className="mr-2 text-emerald-400 flex-shrink-0" />
-                                        <span>{principal.mobile}</span>
-                                      </div>
-                                    )}
-                                  </div>
-                                </td> */}
-                                <td className="px-6 py-2.5">
-                                  <div className="flex items-center justify-center lg:justify-start gap-2">
-                                    <code className="text-xs font-mono bg-gray-100 text-gray-700 px-2.5 py-1 rounded-lg">{loginId}</code>
-                                    <button
-                                      onClick={() => copyCredential(loginId, `pid_${principal._id || principal.id}`)}
-                                      className={`p-1 rounded-lg transition-all ${copiedField === `pid_${principal._id || principal.id}` ? 'text-emerald-600' : 'text-gray-400 hover:text-sky-600 hover:bg-sky-50'}`}
-                                      title="Copy Login ID"
-                                    >
-                                      {copiedField === `pid_${principal._id || principal.id}` ? <Check size={13} /> : <Copy size={13} />}
-                                    </button>
-                                  </div>
-                                </td>
-                                <td className="px-6 py-2.5">
-                                  <div className="flex items-center justify-center lg:justify-start gap-2 flex-wrap">
-                                    <button
-                                      onClick={() => handleViewPrincipalCredentials(principal)}
-                                      disabled={principalCredLoadingId === (principal._id || principal.id) || principalDeleteLoadingId === (principal._id || principal.id)}
-                                      className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-sky-50 text-sky-700 hover:bg-sky-100 transition-colors text-xs font-medium disabled:opacity-50"
-                                      title="Reset & View Credentials"
-                                    >
-                                      {principalCredLoadingId === (principal._id || principal.id) ? (
-                                        <span className="w-3 h-3 border border-sky-400 border-t-transparent rounded-full animate-spin" />
-                                      ) : (
-                                        <KeyRound size={13} />
-                                      )}
-                                      Credentials
-                                    </button>
-                                    <button
-                                      onClick={() => setDeleteConfirmPrincipal(principal)}
-                                      disabled={principalDeleteLoadingId === (principal._id || principal.id) || principalCredLoadingId === (principal._id || principal.id)}
-                                      className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-rose-50 text-rose-700 hover:bg-rose-100 transition-colors text-xs font-medium disabled:opacity-50"
-                                      title="Delete Principal"
-                                    >
-                                      {principalDeleteLoadingId === (principal._id || principal.id) ? (
-                                        <span className="w-3 h-3 border border-rose-400 border-t-transparent rounded-full animate-spin" />
-                                      ) : (
-                                        <Trash2 size={13} />
-                                      )}
-                                      Delete
-                                    </button>
-                                  </div>
-                                </td>
-                              </tr>
-                            );
-                          })
-                      )}
-                    </tbody>
-                  </table>
-                </div>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  );
+                })()}
               </div>
             </div>
           )}

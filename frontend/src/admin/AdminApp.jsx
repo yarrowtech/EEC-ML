@@ -24,6 +24,7 @@ const AttendanceManagement = lazy(() => import('./pages/AttendanceManagement'));
 const Result = lazy(() => import('./pages/Result'));
 const FeesCollection = lazy(() => import('./pages/FeesCollection'));
 const StudentFeeDetails = lazy(() => import('./pages/StudentFeeDetails'));
+const FeeReceipts = lazy(() => import('./pages/FeeReceipts'));
 const FeesManagement = lazy(() => import('./pages/FeesManagement'));
 const HR = lazy(() => import('./pages/HR'));
 const SchoolRegistrations = lazy(() => import('./pages/SchoolRegistrations'));
@@ -357,6 +358,7 @@ const AdminApp = () => {
           {/* Dashboard is now the default "Overview" tab inside Fees Collection */}
           <Route path="fees/dashboard" element={<Navigate to="/admin/fees/collection" replace />} />
           <Route path="fees/student-details" element={<StudentFeeDetails setShowAdminHeader={setShowAdminHeader} />} />
+          <Route path="fees/receipts" element={<FeeReceipts setShowAdminHeader={setShowAdminHeader} />} />
           <Route path="hr" element={<HR setShowAdminHeader={setShowAdminHeader} />} />
           <Route path="support" element={<Support setShowAdminHeader={setShowAdminHeader} />} />
           <Route path="notices" element={<Navigate to="/admin/notices/view" replace />} />

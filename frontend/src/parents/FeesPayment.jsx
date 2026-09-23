@@ -688,9 +688,10 @@ const FeesPayment = () => {
                         <button type="button" onClick={() => handleDownloadFeesCard(invoice)} disabled={downloadingFeesCardId === invoice._id} className="fees-secondary-action">
                           {downloadingFeesCardId === invoice._id ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <DownloadIcon className="h-3.5 w-3.5" />} Fees card
                         </button>
-                        {isPaid && latestPayment && (
-                          <button type="button" onClick={() => handleDownloadReceipt(latestPayment, invoice)} disabled={downloadingReceiptId === latestPayment._id} className="fees-secondary-action fees-receipt-action">
-                            {downloadingReceiptId === latestPayment._id ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Download className="h-3.5 w-3.5" />} Receipt
+                        {/* Every payment (incl. partial / installment payments recorded by the school) has a receipt. */}
+                        {latestPayment && (
+                          <button type="button" onClick={() => handleDownloadReceipt(latestPayment, invoice)} disabled={downloadingReceiptId === latestPayment._id} className="fees-secondary-action fees-receipt-action" title={latestPayment.receiptNumber ? `Receipt ${latestPayment.receiptNumber}` : 'Download receipt'}>
+                            {downloadingReceiptId === latestPayment._id ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Download className="h-3.5 w-3.5" />} Receipt{latestPayment.receiptNumber ? ` · ${latestPayment.receiptNumber}` : ''}
                           </button>
                         )}
                         {balance > 0 && (
