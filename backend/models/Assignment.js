@@ -47,5 +47,11 @@ const assignmentSchema = new mongoose.Schema({
   },
 });
 
+// This model had zero indexes beyond the default _id (and the tenant
+// plugin's single-field organizationId one). GET /api/lesson-plans/student/
+// smart-learning-map — the background load on every Smart Learning page —
+// filters on exactly this shape; without it, Mongo scans every assignment
+// in the organization to find matches.
+assignmentSchema.index({ schoolId: 1, status: 1, publishedForStudentPortal: 1, sourceLessonPlanId: 1 });
 
 module.exports = mongoose.model("Assignment", assignmentSchema);

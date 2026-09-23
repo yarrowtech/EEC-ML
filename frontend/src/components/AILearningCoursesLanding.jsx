@@ -16,6 +16,11 @@ import { useStudentDashboard } from './StudentDashboardContext';
 const API_BASE = (import.meta.env.VITE_API_URL || 'http://localhost:5000').replace(/\/$/, '');
 const SMART_LEARNING_MAP_ENDPOINT = `${API_BASE}/api/lesson-plans/student/smart-learning-map`;
 
+// Refined typography for the subject cards — Inter, a lighter title weight
+// (bold instead of black) and tighter tracking than the rest of this legacy
+// page, matching the Learning hub's newer glassmorphism type scale.
+const SUBJECT_CARD_FONT = { fontFamily: "'Inter', ui-sans-serif, system-ui, sans-serif" };
+
 const CARD_STYLES = [
   {
     grad: 'from-blue-400 to-indigo-600',
@@ -974,15 +979,15 @@ const AILearningCoursesLanding = () => {
                 ))}
               </div>
             ) : assignedSubjects.length === 0 ? (
-              <div className="rounded-3xl border border-slate-200 bg-white p-10 text-center">
+              <div className="rounded-3xl border border-slate-200 bg-white p-10 text-center" style={SUBJECT_CARD_FONT}>
                 <div className="mx-auto mb-4 flex size-16 items-center justify-center rounded-2xl bg-linear-to-br from-amber-100 to-orange-100">
                   <Sparkles className="text-amber-500" size={28} />
                 </div>
-                <p className="text-lg font-bold text-slate-800">No real smart-learning data found</p>
-                <p className="mt-1 text-sm text-slate-500">Ask your class teacher to publish lesson-plan topics/materials for your class.</p>
+                <p className="text-lg font-bold tracking-tight text-slate-800">No real smart-learning data found</p>
+                <p className="mt-1 text-sm leading-relaxed text-slate-500">Ask your class teacher to publish lesson-plan topics/materials for your class.</p>
               </div>
             ) : (
-              <div className="grid grid-cols-1 gap-4 sm:gap-6 md:grid-cols-2 lg:grid-cols-3">
+              <div className="grid grid-cols-1 gap-4 sm:gap-6 md:grid-cols-2 lg:grid-cols-3" style={SUBJECT_CARD_FONT}>
                 {assignedSubjects.map((subject, index) => {
                   const style = CARD_STYLES[index % CARD_STYLES.length];
                   const Icon = style.icon;
@@ -1002,24 +1007,24 @@ const AILearningCoursesLanding = () => {
                           <Icon className="size-5 text-white" />
                         </div>
 
-                        <h3 className="relative text-xl font-black leading-tight text-white drop-shadow-sm sm:text-2xl">{subject.title}</h3>
+                        <h3 className="relative text-xl font-bold tracking-tight text-white drop-shadow-sm sm:text-2xl">{subject.title}</h3>
                       </div>
                       <div className="flex flex-1 flex-col gap-4 p-4 sm:p-6">
                         <div className="flex flex-wrap gap-2">
-                          <span className={`inline-flex items-center gap-1 rounded-full px-3 py-1 text-xs font-bold ${style.chipA}`}>
+                          <span className={`inline-flex items-center gap-1 rounded-full px-3 py-1 text-[11px] font-semibold uppercase tracking-wide ${style.chipA}`}>
                             <Users size={12} /> {subject.teacherCount} Teacher{subject.teacherCount > 1 ? 's' : ''}
                           </span>
-                          <span className={`inline-flex items-center gap-1 rounded-full px-3 py-1 text-xs font-bold ${style.chipB}`}>
+                          <span className={`inline-flex items-center gap-1 rounded-full px-3 py-1 text-[11px] font-semibold uppercase tracking-wide ${style.chipB}`}>
                             <CalendarDays size={12} /> {subject.classCount} Class Slot{subject.classCount > 1 ? 's' : ''}
                           </span>
                           {subject.hasLessonPlans && (
-                            <span className="inline-flex items-center gap-1 rounded-full bg-emerald-100 px-3 py-1 text-xs font-bold text-emerald-700">
+                            <span className="inline-flex items-center gap-1 rounded-full bg-emerald-100 px-3 py-1 text-[11px] font-semibold uppercase tracking-wide text-emerald-700">
                               <Layers size={12} />
                               {(subject.chapters?.length || subject.topics.length)} {(subject.chapters?.length || 0) > 0 ? 'Chapter' : 'Topic'}{(subject.chapters?.length || subject.topics.length) > 1 ? 's' : ''}
                             </span>
                           )}
                         </div>
-                        <p className="flex-1 text-sm text-slate-600 line-clamp-2">
+                        <p className="flex-1 text-sm leading-relaxed text-slate-600 line-clamp-2">
                           {subject.hasLessonPlans
                             ? 'Assigned in your timetable. Start this subject quest now.'
                             : 'Assigned in your timetable. Lesson plans coming soon from your teacher.'}
@@ -1032,7 +1037,7 @@ const AILearningCoursesLanding = () => {
                               });
                             }
                           }}
-                          className={`flex w-full items-center justify-center gap-2 rounded-2xl py-3 font-bold transition-all duration-200 ease-out ${
+                          className={`flex w-full items-center justify-center gap-2 rounded-2xl py-3 font-semibold tracking-tight transition-all duration-200 ease-out ${
                             subject.hasLessonPlans
                               ? 'bg-amber-500 text-white shadow-md shadow-amber-300/40 hover:bg-amber-600 hover:shadow-lg hover:shadow-amber-300/50 active:scale-[0.98] cursor-pointer'
                               : 'bg-slate-100 text-slate-400 cursor-not-allowed'

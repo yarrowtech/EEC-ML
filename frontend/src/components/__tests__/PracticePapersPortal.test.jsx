@@ -16,6 +16,9 @@ const jsonResponse = (body, ok = true) => Promise.resolve({
 describe('PracticePapersPortal', () => {
   beforeEach(() => {
     localStorage.setItem('token', 'student-token');
+    // AILearningTryoutSection (rendered by the "start tryout" flow below)
+    // refuses to fetch unless userType is exactly 'Student'.
+    localStorage.setItem('userType', 'Student');
     global.fetch = jest.fn((input) => {
       const url = String(input);
       if (url.includes('/api/practice/student/meta')) {
@@ -84,22 +87,13 @@ describe('PracticePapersPortal', () => {
 
     await screen.findByRole('option', { name: 'Mathematics' });
     await user.selectOptions(screen.getByRole('combobox', { name: 'Select Subject' }), 'subject-1');
-<<<<<<< HEAD
-    await screen.findByRole('option', { name: 'Numbers' });
-    await user.selectOptions(screen.getByRole('combobox', { name: 'Select Chapter' }), 'chapter-1');
-=======
->>>>>>> 58b9a3c7 (Practice Paper section update)
     await user.click(await screen.findByRole('button', { name: 'Start MCQ' }));
 
     await waitFor(() => expect(screen.getByText('What is 2 + 2?')).toBeInTheDocument());
     expect(screen.getByRole('button', { name: 'Back to activities' })).toBeInTheDocument();
   });
 
-<<<<<<< HEAD
-  test('opens the assigned tryout for the chapter\'s topic', async () => {
-=======
   test('opens an assigned tryout once a subject and topic are selected', async () => {
->>>>>>> 58b9a3c7 (Practice Paper section update)
     const user = userEvent.setup();
     render(<MemoryRouter initialEntries={['/student/practice-papers']}><PracticePapersPortal /></MemoryRouter>);
 
@@ -107,13 +101,10 @@ describe('PracticePapersPortal', () => {
     await user.selectOptions(screen.getByRole('combobox', { name: 'Select Subject' }), 'subject-1');
     await screen.findByRole('option', { name: 'Numbers' });
     await user.selectOptions(screen.getByRole('combobox', { name: 'Select Chapter' }), 'chapter-1');
-<<<<<<< HEAD
-=======
     await user.selectOptions(await screen.findByRole('combobox', { name: 'Select Topic' }), 'topic-1');
->>>>>>> 58b9a3c7 (Practice Paper section update)
     await user.click(await screen.findByRole('button', { name: 'Start Tryout' }));
 
-    expect(await screen.findByText('Assigned Tryout')).toBeInTheDocument();
+    expect(await screen.findByText('What is life?')).toBeInTheDocument();
     expect(screen.getByRole('button', { name: /Back to Activities/i })).toBeInTheDocument();
   });
 

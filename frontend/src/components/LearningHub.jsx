@@ -14,6 +14,11 @@ import {
   formatActivityAge,
 } from '../utils/learningContinuity';
 
+// Glassmorphism panel recipe for the nav bar + continue card — frosted
+// translucent white over the page's soft radial-gradient backdrop, matching
+// Ref's Glassmorphism Learning Dashboard mockup 1:1.
+const GLASS_PANEL = 'border border-white/70 bg-white/[0.55] shadow-[0_4px_6px_-1px_rgba(0,0,0,0.02),0_2px_4px_-1px_rgba(0,0,0,0.02)] backdrop-blur-[20px] backdrop-saturate-[1.8]';
+
 // One learning surface for students. Every tool the portal used to spread
 // across two sidebar groups lives behind exactly four verbs; each tab keeps
 // its canonical URL so old deep links (and the courses portal's internal
@@ -26,6 +31,8 @@ const TABS = [
     icon: Bot,
     path: '/student/learning',
     matches: ['learning', 'smart-learning', 'smart-learning-tutor'],
+    iconBg: '#fffbeb',
+    iconColor: '#f59e0b',
   },
   {
     key: 'subjects',
@@ -34,6 +41,8 @@ const TABS = [
     icon: GraduationCap,
     path: '/student/smart-learning-courses',
     matches: ['smart-learning-courses', 'smart-learning-courses-reference'],
+    iconBg: 'rgba(139, 92, 246, 0.1)',
+    iconColor: '#8b5cf6',
   },
   {
     key: 'practice',
@@ -42,6 +51,8 @@ const TABS = [
     icon: ClipboardList,
     path: '/student/practice-papers',
     matches: ['practice-papers'],
+    iconBg: '#f1f5f9',
+    iconColor: '#475569',
   },
   {
     key: 'materials',
@@ -50,6 +61,8 @@ const TABS = [
     icon: BookOpen,
     path: '/student/study-materials',
     matches: ['study-materials'],
+    iconBg: '#f1f5f9',
+    iconColor: '#475569',
   },
   {
     key: 'paths',
@@ -58,6 +71,8 @@ const TABS = [
     icon: Route,
     path: '/student/my-paths',
     matches: ['my-paths'],
+    iconBg: 'rgba(16, 185, 129, 0.1)',
+    iconColor: '#10b981',
   },
 ];
 
@@ -113,19 +128,24 @@ const LearningHub = () => {
   );
 
   return (
-    <div className="min-h-full w-full bg-[#F4F1EA] text-[#26332E]">
+    <div
+      className="min-h-full w-full bg-[#f5f7fb] text-[#0f172a]"
+      style={{
+        backgroundImage: 'radial-gradient(at 0% 0%, rgba(139, 92, 246, 0.05) 0px, transparent 50%), radial-gradient(at 100% 100%, rgba(16, 185, 129, 0.05) 0px, transparent 50%)',
+      }}
+    >
       {!isReadingTopic && (
       <div className="mx-auto flex w-full max-w-6xl flex-col gap-6 p-4 sm:p-6 lg:p-8">
         <div className="flex flex-col gap-4">
           <div>
-            <p className="text-xs font-bold uppercase tracking-[0.14em] text-[#78827B]">One place to study</p>
-            <h1 className="font-[Nunito] text-2xl font-extrabold text-[#26332E] sm:text-3xl">Learning</h1>
+            <p className="text-xs font-semibold uppercase tracking-[0.05em] text-[#64748b]">One place to study</p>
+            <h1 className="text-2xl font-bold text-[#0f172a] sm:text-3xl">Learning</h1>
           </div>
 
           <div
             role="tablist"
             aria-label="Learning sections"
-            className="grid grid-cols-2 gap-2 rounded-2xl border border-[#E7E3D9] bg-[#FBF9F4] p-2 sm:grid-cols-5 sm:gap-3 sm:p-2.5 lg:gap-4 lg:p-3"
+            className={`flex flex-wrap items-center justify-between gap-2 overflow-x-auto rounded-3xl p-2 sm:flex-nowrap sm:gap-4 sm:p-3 ${GLASS_PANEL}`}
           >
             {TABS.map((tab) => {
               const Icon = tab.icon;
@@ -137,22 +157,21 @@ const LearningHub = () => {
                   role="tab"
                   aria-selected={active}
                   onClick={() => { if (!active) navigate(tab.path); }}
-                  className={`flex items-center gap-2.5 rounded-xl px-3 py-2.5 text-left transition-all sm:gap-3 sm:px-3.5 sm:py-3 lg:px-4 lg:py-3.5 ${
+                  className={`flex shrink-0 items-center gap-3 rounded-xl px-3 py-2.5 text-left transition-all sm:px-4 sm:py-3 ${
                     active
-                      ? 'bg-linear-to-br from-amber-400 via-yellow-400 to-orange-500 text-white shadow-md shadow-amber-200/60'
-                      : 'text-[#5c655f] hover:bg-[#EFEDE5]'
+                      ? 'border border-white/90 bg-white/80 shadow-[0_4px_12px_rgba(139,92,246,0.1)]'
+                      : 'border border-transparent hover:-translate-y-0.5 hover:bg-white/40'
                   }`}
                 >
-                  <span className={`flex size-8 shrink-0 items-center justify-center rounded-lg sm:size-9 lg:size-10 ${
-                    active ? 'bg-white/20' : 'bg-[#FEF3C7] text-[#F59E0B]'
-                  }`}>
-                    <Icon className="size-4 sm:size-4.5 lg:size-5" />
+                  <span
+                    className="flex size-10 shrink-0 items-center justify-center rounded-[10px]"
+                    style={{ backgroundColor: tab.iconBg, color: tab.iconColor }}
+                  >
+                    <Icon className="size-5" />
                   </span>
-                  <span className="min-w-0">
-                    <span className="block text-sm font-bold leading-tight lg:text-base">{tab.label}</span>
-                    <span className={`block truncate text-[11px] sm:text-xs ${active ? 'text-white/80' : 'text-[#78827B]'}`}>
-                      {tab.hint}
-                    </span>
+                  <span className={`min-w-0 flex-col ${active ? 'flex' : 'hidden sm:flex'}`}>
+                    <span className="block text-[0.95rem] font-semibold leading-tight text-[#0f172a]">{tab.label}</span>
+                    <span className="mt-0.5 block truncate text-xs text-[#64748b]">{tab.hint}</span>
                   </span>
                 </button>
               );
@@ -164,22 +183,24 @@ const LearningHub = () => {
           <button
             type="button"
             onClick={() => navigate(lastActivity.path)}
-            className="group flex w-full items-center gap-3 rounded-2xl border border-[#FDE68A] bg-[#FEF3C7] px-4 py-3 text-left transition-colors hover:border-[#F59E0B]"
+            className={`group flex w-full flex-col items-start justify-between gap-5 rounded-3xl bg-white/[0.65] px-6 py-5 text-left transition-shadow hover:shadow-[0_10px_15px_-3px_rgba(0,0,0,0.05),0_4px_6px_-2px_rgba(0,0,0,0.025)] sm:flex-row sm:items-center ${GLASS_PANEL}`}
           >
-            <span className="flex size-10 shrink-0 items-center justify-center rounded-xl bg-[#F59E0B] text-white">
-              <Play className="size-4" />
-            </span>
-            <span className="min-w-0 flex-1">
-              <span className="block text-xs font-bold uppercase tracking-[0.12em] text-[#F59E0B]">
-                Continue where you left off
+            <span className="flex min-w-0 items-center gap-5">
+              <span className="flex size-12 shrink-0 items-center justify-center rounded-full bg-[#8b5cf6] text-white shadow-[0_4px_14px_rgba(139,92,246,0.3)] transition-transform group-hover:scale-105">
+                <Play className="ml-0.5 size-4 fill-white stroke-none" />
               </span>
-              <span className="block truncate text-sm font-semibold text-[#26332E]">
-                {lastActivity.label}
-                {lastActivity.detail ? ` — ${lastActivity.detail}` : ''}
-                <span className="ml-2 font-normal text-[#78827B]">{formatActivityAge(lastActivity.at)}</span>
+              <span className="flex min-w-0 flex-col gap-1">
+                <span className="text-[0.7rem] font-bold uppercase tracking-[0.05em] text-[#8b5cf6]">
+                  Continue where you left off
+                </span>
+                <span className="flex flex-wrap items-center gap-2 truncate text-[0.95rem] font-medium text-[#0f172a]">
+                  {lastActivity.label}
+                  {lastActivity.detail ? ` — ${lastActivity.detail}` : ''}
+                  <span className="text-[0.85rem] font-normal text-[#64748b]">{formatActivityAge(lastActivity.at)}</span>
+                </span>
               </span>
             </span>
-            <span className="rounded-xl bg-[#F59E0B] px-4 py-2 text-sm font-bold text-white transition-transform group-hover:translate-x-0.5">
+            <span className="w-full shrink-0 rounded-xl bg-[#10b981] px-6 py-3 text-center text-sm font-semibold text-white shadow-[0_4px_12px_rgba(16,185,129,0.2)] transition-all group-hover:-translate-y-0.5 group-hover:bg-[#059669] group-hover:shadow-[0_6px_16px_rgba(16,185,129,0.3)] sm:w-auto">
               Continue
             </span>
           </button>

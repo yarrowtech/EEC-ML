@@ -13,6 +13,11 @@ import AILearningTryoutSection from './AILearningTryoutSection';
 // Order the launch queue is always run in, regardless of check order.
 const QUEUE_ORDER = ['mcq', 'blank', 'tryout'];
 
+// Inter, matching the type family already applied to the Learning hub and
+// Smart Learning subject cards — this page previously fell back to the
+// browser default sans-serif.
+const PORTAL_FONT = { fontFamily: "'Inter', ui-sans-serif, system-ui, sans-serif" };
+
 const FORMAT_DEFS = [
   {
     key: 'mcq', name: 'Multiple Choice (MCQ)', icon: ListChecks, tone: 'indigo', queueable: true,
@@ -61,11 +66,11 @@ const TONE_CLASSES = {
 // Wraps a self-contained full page (Reading/Writing practice) with a local
 // back button, since those pages have no onBack prop of their own.
 const FormatPageWrapper = ({ title, onBack, children }) => (
-  <div className="min-h-screen bg-gradient-to-br from-blue-50 to-indigo-100 p-4 sm:p-8">
+  <div className="min-h-screen bg-gradient-to-br from-blue-50 to-indigo-100 p-4 sm:p-8" style={PORTAL_FONT}>
     <div className="max-w-6xl mx-auto">
       <button
         onClick={onBack}
-        className="mb-6 px-4 py-2 text-sm border rounded-lg hover:bg-gray-50 flex items-center gap-2 bg-white"
+        className="mb-6 px-4 py-2 text-sm font-medium border rounded-lg hover:bg-gray-50 flex items-center gap-2 bg-white"
       >
         <ArrowLeft className="w-4 h-4" /> Back to Practice & Activities
       </button>
@@ -127,6 +132,9 @@ const PracticePapersPortal = () => {
         const readingData = await readingResponse.json().catch(() => ({}));
         const writingData = await writingResponse.json().catch(() => ({}));
         if (!metaResponse.ok) throw new Error(metaData?.error || 'Unable to load teacher activities');
+
+        setReadingMaterials(Array.isArray(readingData?.data) ? readingData.data : []);
+        setWritingPrompts(Array.isArray(writingData?.data) ? writingData.data : []);
 
         const metaSubjects = Array.isArray(metaData?.subjects) ? metaData.subjects : [];
         setSubjects(metaSubjects);
@@ -232,12 +240,31 @@ const PracticePapersPortal = () => {
     return tryoutActivities.find((t) => t.id === key) || null;
   }, [tryoutActivities, selectedSubjectName, selectedTopicTitle]);
 
+  // Reading/writing materials are tagged by chapter (subject is usually left
+  // blank by teachers) — only claim a card is available once a chapter is
+  // selected and a matching published item is actually found for it.
+  const normalizeTag = (value) => String(value || '').trim().toLowerCase();
+  const matchesSelectedChapter = (item) => {
+    if (chapterFilter === 'all' || !selectedChapterTitle) return false;
+    const chapterMatches = normalizeTag(item.chapter) === normalizeTag(selectedChapterTitle);
+    const subjectMatches = !item.subject || normalizeTag(item.subject) === normalizeTag(selectedSubjectName);
+    return chapterMatches && subjectMatches;
+  };
+  const readingActivity = useMemo(
+    () => readingMaterials.find(matchesSelectedChapter) || null,
+    [readingMaterials, chapterFilter, selectedChapterTitle, selectedSubjectName]
+  );
+  const writingActivity = useMemo(
+    () => writingPrompts.find(matchesSelectedChapter) || null,
+    [writingPrompts, chapterFilter, selectedChapterTitle, selectedSubjectName]
+  );
+
   const formatAvailability = {
     mcq: Boolean(mcqActivity),
     blank: Boolean(blankActivity),
     tryout: Boolean(tryoutActivity),
-    reading: true,
-    writing: true,
+    reading: Boolean(readingActivity),
+    writing: Boolean(writingActivity),
   };
   const formatCounts = {
     mcq: mcqActivity?.count || 0,
@@ -249,8 +276,8 @@ const PracticePapersPortal = () => {
     if (key === 'mcq' && mcqActivity) setQuickPractice(mcqActivity);
     else if (key === 'blank' && blankActivity) setQuickPractice(blankActivity);
     else if (key === 'tryout' && tryoutActivity) setSelectedTryout({ subjectName: selectedSubjectName, topicName: selectedTopicTitle });
-    else if (key === 'reading') setActiveFormatView('reading');
-    else if (key === 'writing') setActiveFormatView('writing');
+    else if (key === 'reading' && readingActivity) setActiveFormatView('reading');
+    else if (key === 'writing' && writingActivity) setActiveFormatView('writing');
   };
 
   const startSingleFormat = (key) => {
@@ -323,7 +350,7 @@ const PracticePapersPortal = () => {
 
   // Main list view
   return (
-    <div className="min-h-screen bg-gradient-to-br from-blue-50 to-indigo-100 p-4 sm:p-8 pb-28">
+    <div className="min-h-screen bg-gradient-to-br from-blue-50 to-indigo-100 p-4 sm:p-8 pb-28" style={PORTAL_FONT}>
       <div className="max-w-7xl mx-auto">
         {/* ── Subject / Chapter / Topic context bar ── */}
         <div className="mb-6 rounded-2xl border border-white/80 bg-white/80 backdrop-blur-xl p-3 sm:p-4 shadow-sm">
@@ -397,7 +424,7 @@ const PracticePapersPortal = () => {
         {/* ── Choose Your Tryout Format ── */}
         <section className="mb-8">
           <div className="mb-4 flex items-center justify-between gap-3">
-            <h2 className="text-xl font-bold text-slate-900">Choose Your Tryout Format</h2>
+            <h2 className="text-xl font-bold tracking-tight text-slate-900">Choose Your Tryout Format</h2>
             {selectedQueueableCount > 0 && (
               <button type="button" onClick={resetSelection} className="inline-flex items-center gap-1 text-xs font-semibold text-slate-400 hover:text-slate-600">
                 <RotateCcw className="size-3.5" /> Clear selection
@@ -436,16 +463,16 @@ const PracticePapersPortal = () => {
                     </div>
                     <div className="flex flex-col gap-1 min-w-0">
                       <div className="flex flex-wrap items-center gap-2">
-                        <h4 className="font-bold text-slate-900">{fmt.name}</h4>
+                        <h4 className="font-bold tracking-tight text-slate-900">{fmt.name}</h4>
                         {fmt.comingSoon ? (
-                          <span className="rounded-full bg-slate-100 px-2 py-0.5 text-[10px] font-bold uppercase text-slate-400">Coming soon</span>
+                          <span className="rounded-full bg-slate-100 px-2 py-0.5 text-[11px] font-semibold uppercase tracking-wide text-slate-400">Coming soon</span>
                         ) : fmt.queueable ? (
                           <span className="text-xs font-semibold text-slate-500">
                             {available ? `${count} question${count === 1 ? '' : 's'} available` : 'Not available for this selection'}
                           </span>
                         ) : null}
                       </div>
-                      <p className="text-sm text-slate-500">{fmt.description}</p>
+                      <p className="text-sm leading-relaxed text-slate-500">{fmt.description}</p>
                     </div>
                   </div>
                   <div className="flex items-center justify-between md:justify-end gap-4 shrink-0 border-t md:border-t-0 pt-3 md:pt-0 border-slate-100">
@@ -454,7 +481,7 @@ const PracticePapersPortal = () => {
                         type="button"
                         disabled={!available}
                         onClick={(e) => { e.stopPropagation(); startSingleFormat(fmt.key); }}
-                        className="inline-flex items-center gap-1 px-3 py-1.5 rounded-lg text-indigo-700 hover:bg-indigo-50 font-semibold text-sm transition-colors disabled:cursor-not-allowed disabled:opacity-40 disabled:hover:bg-transparent"
+                        className="inline-flex items-center gap-1 px-3 py-1.5 rounded-lg text-indigo-700 hover:bg-indigo-50 font-semibold tracking-tight text-sm transition-colors disabled:cursor-not-allowed disabled:opacity-40 disabled:hover:bg-transparent"
                       >
                         Start {fmt.shortLabel} <ChevronRight className="size-4" />
                       </button>

@@ -18,4 +18,10 @@ const classSchema = new mongoose.Schema(
   { timestamps: true }
 );
 
+// Hot path: /api/student/allocated-subjects does Class.find({ schoolId })
+// on every Smart Learning page load. Without this, the tenant plugin's
+// organizationId-only index leaves Mongo scanning every class in the
+// organization (all schools/campuses) to filter by schoolId in memory.
+classSchema.index({ schoolId: 1 });
+
 module.exports = mongoose.model('Class', classSchema);

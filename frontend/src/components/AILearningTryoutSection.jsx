@@ -786,8 +786,6 @@ const AILearningTryoutSection = forwardRef(({ assignedSubjectName = '', assigned
     return '';
   }, [subjects, subjectSlug, topicSlug]);
 
-  const formatCount = useMemo(() => new Set(assignedTryouts.map((q) => normalizeQuestionType(q.type))).size, [assignedTryouts]);
-
   // Track which question is currently in view so the stepper/pagination can
   // highlight it, same pattern as the reading page's section navigator.
   useEffect(() => {
@@ -951,7 +949,26 @@ const AILearningTryoutSection = forwardRef(({ assignedSubjectName = '', assigned
     <div className="w-full min-h-screen bg-[#f8fafc] p-4 pb-28 text-slate-900 sm:p-6 sm:pb-28 md:p-8 md:pb-28">
       <style>{'[data-placeholder]:empty:before{content:attr(data-placeholder)}'}</style>
       <div className="mx-auto w-full max-w-[950px]">
-        
+        <div className="mb-4 flex flex-wrap items-center gap-2.5">
+          <button type="button" onClick={returnToPreviousView} className={GHOST_BTN}>
+            <ArrowLeft size={16} />
+            {onBack ? 'Back to Activities' : 'Back to Topic'}
+          </button>
+          {chapterTitle && (
+            <span className="hidden items-center gap-1.5 text-sm text-slate-400 sm:flex">
+              <span className="text-slate-300">/</span> {chapterTitle}
+            </span>
+          )}
+          {lastSavedAt && (
+            <span className="inline-flex items-center gap-1.5 rounded-full border border-slate-200 bg-white px-3 py-1 text-xs font-semibold text-slate-500 shadow-sm">
+              <span className="h-1.5 w-1.5 rounded-full bg-emerald-500" />
+              Saved {formatAgo(lastSavedAt)}
+            </span>
+          )}
+          <button type="button" onClick={() => navigate('/student/assignments-academic-alcove')} className={`ml-auto ${GHOST_BTN}`}>
+            <MessageCircle size={16} className="text-indigo-500" /> Need Help?
+          </button>
+        </div>
 
         {totalQuestions > 1 && (
           <div className="mb-4 flex items-center gap-2 overflow-x-auto pb-1">
@@ -977,14 +994,24 @@ const AILearningTryoutSection = forwardRef(({ assignedSubjectName = '', assigned
           </div>
         )}
 
-        
+        {totalQuestions > 0 && (
+          <div className="mb-6">
+            <div className="mb-2 flex items-center justify-between text-xs font-semibold text-slate-500">
+              <span>{answeredCount}/{totalQuestions} answered</span>
+              <span className="text-indigo-600">{momentumLabel}</span>
+            </div>
+            <div className="h-2 w-full overflow-hidden rounded-full bg-slate-100">
+              <div className="h-full rounded-full bg-indigo-600 transition-all duration-500" style={{ width: `${progressPct}%` }} />
+            </div>
+          </div>
+        )}
 
         {error && <div className="mb-4 rounded-xl border border-red-200 bg-red-50 p-4 text-sm font-semibold text-red-700">{error}</div>}
         {isLoading && <div className={`${CARD} p-6 text-sm font-semibold text-slate-500`}>Loading assigned tryout...</div>}
         {!isLoading && !error && assignedTryouts.length === 0 && (
-          <div className={`${CARD} p-8 text-center`}>
+          <div className={`${CARD} p-15 text-center`}>
             <CheckCircle2 className="mx-auto mb-3 text-slate-300" size={34} />
-            <h2 className="text-lg font-bold text-slate-800">No tryout assigned</h2>
+            <h2 className="text-lg font-bold text-slate-800">No Practice Problems Assigned</h2>
             <p className="mt-1 text-sm text-slate-500">Your teacher has not assigned a tryout for this topic yet.</p>
           </div>
         )}
