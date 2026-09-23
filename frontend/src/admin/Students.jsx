@@ -14,6 +14,7 @@ import {
   Hash,
   BookOpen,
   Search,
+  ListFilter,
   Plus,
   Edit2,
   MoreVertical,
@@ -220,6 +221,7 @@ const Students = ({ setShowAdminHeader }) => {
   const [studentsLoadError, setStudentsLoadError] = useState(null);
   const [tableRefreshing, setTableRefreshing] = useState(false);
   const [searchTerm, setSearchTerm] = useState("");
+  const [showMobileFilters, setShowMobileFilters] = useState(false);
   const [showAddForm, setShowAddForm] = useState(false);
   const [showWellbeingModal, setShowWellbeingModal] = useState(false);
   const [selectedStudent, setSelectedStudent] = useState(null);
@@ -4222,19 +4224,38 @@ const Students = ({ setShowAdminHeader }) => {
                 the filter selects on a tablet-width screen left it cramped
                 and wrapping awkwardly. Desktop (lg+) keeps the single row. */}
             <div className="flex flex-col lg:flex-row lg:items-center gap-3">
-              {/* Search */}
-              <div className="w-full lg:flex-1 lg:min-w-[200px] relative">
-                <Search size={16} className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" />
-                <input
-                  type="text"
-                  placeholder="Search by name, roll, email, or username..."
-                  className="w-full pl-9 pr-4 py-2 bg-white border border-gray-200 rounded-full focus:outline-none focus:ring-1 focus:rounded-full focus:ring-yellow-500 text-sm"
-                  value={searchTerm}
-                  onChange={(e) => setSearchTerm(e.target.value)}
-                />
+              {/* Search (+ filter toggle below lg — the selects collapse behind it on mobile/tablet) */}
+              <div className="flex w-full items-center gap-2 lg:flex-1 lg:min-w-[200px]">
+                <div className="relative min-w-0 flex-1">
+                  <Search size={16} className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" />
+                  <input
+                    type="text"
+                    placeholder="Search by name, roll, email, or username..."
+                    className="w-full pl-9 pr-4 py-2 bg-white border border-gray-200 rounded-full focus:outline-none focus:ring-1 focus:rounded-full focus:ring-yellow-500 text-sm"
+                    value={searchTerm}
+                    onChange={(e) => setSearchTerm(e.target.value)}
+                  />
+                </div>
+                <button
+                  type="button"
+                  onClick={() => setShowMobileFilters((v) => !v)}
+                  className={`lg:hidden relative flex h-9 w-9 shrink-0 items-center justify-center rounded-full border transition-colors ${
+                    showMobileFilters
+                      ? 'border-rose-200 bg-rose-50 text-rose-600 hover:bg-rose-100'
+                      : 'border-gray-200 bg-white text-gray-600 hover:bg-gray-50'
+                  }`}
+                  aria-label={showMobileFilters ? 'Close filters' : 'Show filters'}
+                  aria-expanded={showMobileFilters}
+                  title={showMobileFilters ? 'Close filters' : 'Show filters'}
+                >
+                  {showMobileFilters ? <X size={16} /> : <ListFilter size={16} />}
+                  {!showMobileFilters && (classFilter || sectionFilter) && (
+                    <span className="absolute -right-0.5 -top-0.5 h-2.5 w-2.5 rounded-full border-2 border-white bg-yellow-500" />
+                  )}
+                </button>
               </div>
 
-              <div className="flex flex-wrap items-center justify-center lg:justify-start gap-3">
+              <div className={`${showMobileFilters ? 'flex' : 'hidden'} lg:flex flex-wrap items-center justify-center lg:justify-start gap-3`}>
                 {/* Session Filter */}
                 <select
                   value={sessionFilter}

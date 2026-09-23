@@ -23,8 +23,7 @@ import {
   CalendarDays,
   CreditCard,
   Plus,
-  Eye,
-  Activity
+  Eye
 } from 'lucide-react';
 
 export const ADMIN_MENU_ITEMS = [
@@ -38,11 +37,6 @@ export const ADMIN_MENU_ITEMS = [
     icon: BarChart3,
     label: 'Analytics',
     path: '/admin/analytics'
-  },
-  {
-    icon: Activity,
-    label: 'Activity Log',
-    path: '/admin/activity-log'
   },
   {
     icon: IndianRupee,
@@ -194,7 +188,7 @@ export const ADMIN_MENU_ITEMS = [
 // Labels resolve against ADMIN_MENU_ITEMS (top-level items and submenu children).
 export const ADMIN_MENU_SECTIONS = [
   { items: ['Dashboard'] },
-  { section: 'OVERVIEW', items: ['Analytics', 'Activity Log'] },
+  { section: 'OVERVIEW', items: ['Analytics'] },
   {
     section: 'ACADEMIC MANAGEMENT',
     items: ['Academic Setup', 'Teachers Management', 'Teacher Feedback', 'Routine Management', 'Exam Management', 'Result Management', 'Report Cards'],

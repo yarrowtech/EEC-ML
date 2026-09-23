@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useState } from 'react';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import { jsPDF } from 'jspdf';
 import {
@@ -22,6 +22,7 @@ import {
   ChevronRight,
 } from 'lucide-react';
 import FeesDashboard from './FeesDashboard';
+import { readCache, writeCache } from '../../utils/swrCache';
 
 const API_BASE = (import.meta.env.VITE_API_URL || 'http://localhost:5000').replace(/\/$/, '');
 const INVOICE_PAGE_SIZE = 10;
@@ -56,8 +57,11 @@ const loadRazorpayScript = () =>
 
 const FeesCollection = ({ setShowAdminHeader }) => {
   const navigate = useNavigate();
+  // Seed from the client cache so the first paint already has data.
+  const cachedFilterOptions = readCache('fees:filters');
+  const cachedActiveYearId = (cachedFilterOptions?.academicYears || []).find((y) => Boolean(y?.isActive))?.id;
   const [filters, setFilters] = useState({
-    academicYearId: '',
+    academicYearId: cachedActiveYearId ? String(cachedActiveYearId) : '',
     classId: '',
     section: '',
     status: '',
@@ -65,16 +69,16 @@ const FeesCollection = ({ setShowAdminHeader }) => {
     search: '',
   });
   const [filterOptions, setFilterOptions] = useState({
-    classes: [],
-    sections: [],
-    academicYears: [],
+    classes: cachedFilterOptions?.classes || [],
+    sections: cachedFilterOptions?.sections || [],
+    academicYears: cachedFilterOptions?.academicYears || [],
   });
   const [records, setRecords] = useState([]);
   const [loading, setLoading] = useState(false);
   const [fetchError, setFetchError] = useState('');
 
-  const [students, setStudents] = useState([]);
-  const [structures, setStructures] = useState([]);
+  const [students, setStudents] = useState(() => readCache('fees:students') || []);
+  const [structures, setStructures] = useState(() => readCache('fees:structures') || []);
   const [bulkForm, setBulkForm] = useState({
     academicYearId: '',
     classId: '',
@@ -103,83 +107,89 @@ const FeesCollection = ({ setShowAdminHeader }) => {
     setShowAdminHeader?.(true);
   }, [setShowAdminHeader]);
 
+  const authFetchJson = async (url, fallbackError) => {
+    const res = await fetch(url, {
+      headers: {
+        'Content-Type': 'application/json',
+        authorization: `Bearer ${localStorage.getItem('token')}`,
+      },
+    });
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok) throw new Error(data?.error || fallbackError);
+    return data;
+  };
+
+  const applyFilterOptions = (data) => {
+    setFilterOptions({
+      classes: data.classes || [],
+      sections: data.sections || [],
+      academicYears: data.academicYears || [],
+    });
+    const activeYear = (data.academicYears || []).find((year) => Boolean(year?.isActive));
+    if (activeYear?.id) {
+      setFilters((prev) => (
+        prev.academicYearId
+          ? prev
+          : { ...prev, academicYearId: String(activeYear.id), classId: '', section: '' }
+      ));
+    }
+  };
+
+  // Each loader paints cached data instantly, then revalidates in the background.
   const loadFilters = async () => {
     try {
-      const res = await fetch(`${API_BASE}/api/fees/admin/filters`, {
-        headers: {
-          'Content-Type': 'application/json',
-          authorization: `Bearer ${localStorage.getItem('token')}`,
-        },
-      });
-      const data = await res.json();
-      if (!res.ok) {
-        throw new Error(data?.error || 'Failed to load filters');
-      }
-      setFilterOptions({
-        classes: data.classes || [],
-        sections: data.sections || [],
-        academicYears: data.academicYears || [],
-      });
-      const activeYear = (data.academicYears || []).find((year) => Boolean(year?.isActive));
-      if (activeYear?.id) {
-        setFilters((prev) => (
-          prev.academicYearId
-            ? prev
-            : { ...prev, academicYearId: String(activeYear.id), classId: '', section: '' }
-        ));
-      }
+      const data = await authFetchJson(`${API_BASE}/api/fees/admin/filters`, 'Failed to load filters');
+      writeCache('fees:filters', data);
+      applyFilterOptions(data);
     } catch (err) {
       console.error(err);
     }
   };
 
+  const recordsRequestRef = useRef(0);
   const fetchRecords = async () => {
-    setLoading(true);
+    const requestId = ++recordsRequestRef.current;
+    const params = new URLSearchParams();
+    const selectedClassName = filters.classId
+      ? classOptions.find((cls) => String(cls.id) === String(filters.classId))?.name
+      : '';
+    if (filters.classId) params.append('classId', filters.classId);
+    if (filters.academicYearId) params.append('academicYearId', filters.academicYearId);
+    if (selectedClassName) params.append('className', selectedClassName);
+    if (filters.section) params.append('section', filters.section);
+    if (filters.status) params.append('status', filters.status);
+    if (filters.search) params.append('search', filters.search);
+    if (filters.overdue) params.append('overdue', 'true');
+    const cacheKey = `fees:invoices:${params.toString()}`;
+
+    const cached = readCache(cacheKey);
+    if (cached) {
+      setRecords(cached);
+      setLoading(false);
+    } else {
+      setLoading(true);
+    }
     setFetchError('');
     try {
-      const params = new URLSearchParams();
-      const selectedClassName = filters.classId
-        ? classOptions.find((cls) => String(cls.id) === String(filters.classId))?.name
-        : '';
-      if (filters.classId) params.append('classId', filters.classId);
-      if (filters.academicYearId) params.append('academicYearId', filters.academicYearId);
-      if (selectedClassName) params.append('className', selectedClassName);
-      if (filters.section) params.append('section', filters.section);
-      if (filters.status) params.append('status', filters.status);
-      if (filters.search) params.append('search', filters.search);
-      if (filters.overdue) params.append('overdue', 'true');
-
-      const res = await fetch(`${API_BASE}/api/fees/admin/invoices?${params.toString()}`, {
-        headers: {
-          'Content-Type': 'application/json',
-          authorization: `Bearer ${localStorage.getItem('token')}`,
-        },
-      });
-      const data = await res.json();
-      if (!res.ok) {
-        throw new Error(data?.error || 'Failed to load invoices');
-      }
-      setRecords(Array.isArray(data) ? data : []);
+      const data = await authFetchJson(`${API_BASE}/api/fees/admin/invoices?${params.toString()}`, 'Failed to load invoices');
+      if (requestId !== recordsRequestRef.current) return; // a newer filter won
+      const list = Array.isArray(data) ? data : [];
+      writeCache(cacheKey, list);
+      setRecords(list);
     } catch (err) {
-      setFetchError(err.message || 'Unable to load invoices');
+      if (requestId !== recordsRequestRef.current) return;
+      if (!cached) setFetchError(err.message || 'Unable to load invoices');
     } finally {
-      setLoading(false);
+      if (requestId === recordsRequestRef.current) setLoading(false);
     }
   };
 
   const fetchStudents = async () => {
     try {
-      const res = await fetch(`${API_BASE}/api/admin/users/get-students`, {
-        headers: {
-          'Content-Type': 'application/json',
-          authorization: `Bearer ${localStorage.getItem('token')}`,
-        },
-      });
-      const data = await res.json();
-      if (!res.ok) {
-        throw new Error(data?.error || 'Failed to load students');
-      }
-      setStudents(Array.isArray(data) ? data : []);
+      const data = await authFetchJson(`${API_BASE}/api/admin/users/get-students`, 'Failed to load students');
+      const list = Array.isArray(data) ? data : [];
+      writeCache('fees:students', list);
+      setStudents(list);
     } catch (err) {
       console.error(err);
     }
@@ -187,17 +197,10 @@ const FeesCollection = ({ setShowAdminHeader }) => {
 
   const fetchStructures = async () => {
     try {
-      const res = await fetch(`${API_BASE}/api/fees/structures`, {
-        headers: {
-          'Content-Type': 'application/json',
-          authorization: `Bearer ${localStorage.getItem('token')}`,
-        },
-      });
-      const data = await res.json();
-      if (!res.ok) {
-        throw new Error(data?.error || 'Failed to load structures');
-      }
-      setStructures(Array.isArray(data) ? data : []);
+      const data = await authFetchJson(`${API_BASE}/api/fees/structures`, 'Failed to load structures');
+      const list = Array.isArray(data) ? data : [];
+      writeCache('fees:structures', list);
+      setStructures(list);
     } catch (err) {
       console.error(err);
     }
@@ -205,12 +208,12 @@ const FeesCollection = ({ setShowAdminHeader }) => {
 
   useEffect(() => {
     loadFilters();
-    fetchRecords();
     fetchStudents();
     fetchStructures();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
+  // Also covers the first load (filters' initial state) — no separate mount fetch.
   useEffect(() => {
     fetchRecords();
     // eslint-disable-next-line react-hooks/exhaustive-deps
