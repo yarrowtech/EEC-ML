@@ -1,5 +1,5 @@
 import React, { useEffect, useMemo, useState } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { useNavigate, useSearchParams } from 'react-router-dom';
 import { jsPDF } from 'jspdf';
 import {
   AlertCircle,
@@ -17,10 +17,21 @@ import {
   Wallet,
   ListFilter,
   FileText,
+  Plus,
+  ChevronLeft,
+  ChevronRight,
 } from 'lucide-react';
 import FeesDashboard from './FeesDashboard';
 
 const API_BASE = (import.meta.env.VITE_API_URL || 'http://localhost:5000').replace(/\/$/, '');
+const INVOICE_PAGE_SIZE = 10;
+
+const resolvePhotoUrl = (value) => {
+  const src = String(value || '').trim();
+  if (!src) return '';
+  if (/^(https?:|data:|blob:)/i.test(src)) return src;
+  return `${API_BASE}/${src.replace(/^\/+/, '')}`;
+};
 
 const formatCurrency = (value) =>
   new Intl.NumberFormat('en-IN', {
@@ -81,7 +92,12 @@ const FeesCollection = ({ setShowAdminHeader }) => {
     notes: '',
   });
   const [onlinePaymentLoading, setOnlinePaymentLoading] = useState(false);
-  const [activeView, setActiveView] = useState('overview');
+  const [searchParams] = useSearchParams();
+  // ?view=payments opens straight on Collect & Manage (e.g. "Back to Fees" from student details).
+  const [activeView, setActiveView] = useState(searchParams.get('view') === 'payments' ? 'payments' : 'overview');
+  const [showAssignModal, setShowAssignModal] = useState(false);
+  const [showFilters, setShowFilters] = useState(false);
+  const [invoicePage, setInvoicePage] = useState(1);
 
   useEffect(() => {
     setShowAdminHeader?.(true);
@@ -199,6 +215,15 @@ const FeesCollection = ({ setShowAdminHeader }) => {
     fetchRecords();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [filters]);
+
+  // Invoice table pagination — back to page 1 whenever the result set changes.
+  useEffect(() => { setInvoicePage(1); }, [records]);
+  const invoicePageCount = Math.max(1, Math.ceil(records.length / INVOICE_PAGE_SIZE));
+  const safeInvoicePage = Math.min(invoicePage, invoicePageCount);
+  const pagedRecords = useMemo(
+    () => records.slice((safeInvoicePage - 1) * INVOICE_PAGE_SIZE, safeInvoicePage * INVOICE_PAGE_SIZE),
+    [records, safeInvoicePage]
+  );
 
   const summary = useMemo(() => {
     const totalStudents = new Set(records.map((r) => r.studentId)).size;
@@ -575,7 +600,7 @@ const FeesCollection = ({ setShowAdminHeader }) => {
   const glassCard =
     'rounded-3xl border border-white/60 bg-white/55 shadow-[0_8px_30px_rgba(15,23,42,0.06)] backdrop-blur-2xl backdrop-saturate-[1.8]';
   const selectCls =
-    'w-full rounded-xl border border-white/70 bg-white/50 px-3.5 py-2.5 text-sm text-slate-900 outline-none backdrop-blur-md transition-all duration-200 focus:border-violet-300 focus:bg-white/85 focus:ring-4 focus:ring-violet-100';
+    'w-full rounded-full border border-white/70 bg-white/50 px-3.5 py-2.5 text-sm text-slate-900 outline-none backdrop-blur-md transition-all duration-200 focus:border-violet-300 focus:bg-white/85 focus:ring-4 focus:ring-violet-100';
   const inputCls = selectCls;
   const ghostBtn =
     'inline-flex items-center gap-1.5 rounded-xl border border-white/70 bg-white/55 px-3 py-1.5 text-xs font-semibold text-slate-600 backdrop-blur-md transition-all duration-150 hover:-translate-y-0.5 hover:bg-white/80';
@@ -641,7 +666,8 @@ const FeesCollection = ({ setShowAdminHeader }) => {
         </div>
       </div>
 
-      {/* ── View tabs ── */}
+      {/* ── View tabs (+ Assign action on the Collect tab) ── */}
+      <div className="flex flex-wrap items-center justify-between gap-3">
       <div className="fc-in inline-flex items-center gap-1 rounded-full border border-white/60 bg-white/55 p-1 backdrop-blur-md">
         {[
           { key: 'overview', label: 'Overview', icon: BarChart4 },
@@ -661,6 +687,17 @@ const FeesCollection = ({ setShowAdminHeader }) => {
             {tab.label}
           </button>
         ))}
+      </div>
+      {activeView === 'payments' && (
+        <button
+          type="button"
+          onClick={() => setShowAssignModal(true)}
+          className="inline-flex items-center gap-2 rounded-full bg-emerald-500 px-4 py-2 text-xs font-semibold text-white shadow-[0_8px_20px_rgba(16,185,129,0.3)] transition-all duration-150 hover:-translate-y-0.5 hover:bg-emerald-600"
+        >
+          <Plus className="h-3.5 w-3.5" />
+          Assign
+        </button>
+      )}
       </div>
 
       {activeView === 'overview' && (
@@ -708,20 +745,38 @@ const FeesCollection = ({ setShowAdminHeader }) => {
         </div>
       )}
 
-      {/* ── Bulk assign section ── */}
-      <div className={`fc-in space-y-5 p-6 ${glassCard}`} style={{ animationDelay: '120ms' }}>
-        <div className="flex items-center gap-3">
-          <div className="flex h-9 w-9 items-center justify-center rounded-xl border border-white/60 bg-white/60 backdrop-blur-md">
-            <FileText className="h-4 w-4 text-emerald-500" />
+      {/* ── Bulk assign modal ── */}
+      {showAssignModal && (
+      <div
+        className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/50 px-3 py-3 backdrop-blur-sm sm:px-4"
+        onClick={() => setShowAssignModal(false)}
+      >
+      <div
+        className="max-h-[calc(100vh-1.5rem)] w-full max-w-4xl space-y-5 overflow-y-auto rounded-2xl bg-white p-5 shadow-2xl sm:p-6"
+        onClick={(e) => e.stopPropagation()}
+      >
+        <div className="flex items-start justify-between gap-3">
+          <div className="flex items-center gap-3">
+            <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl border border-slate-200 bg-emerald-50">
+              <FileText className="h-4 w-4 text-emerald-500" />
+            </div>
+            <div>
+              <h2 className="text-sm font-semibold text-slate-900">Assign Fee Structure to Class</h2>
+              <p className="mt-0.5 text-xs text-slate-500">Auto-generate invoices for all students in a class using the active fee structure</p>
+            </div>
           </div>
-          <div>
-            <h2 className="text-sm font-semibold text-slate-900">Assign Fee Structure to Class</h2>
-            <p className="mt-0.5 text-xs text-slate-500">Auto-generate invoices for all students in a class using the active fee structure</p>
-          </div>
+          <button
+            type="button"
+            onClick={() => setShowAssignModal(false)}
+            className="inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-full border border-slate-200 text-slate-500 hover:bg-slate-50"
+            aria-label="Close"
+          >
+            <X className="h-4 w-4" />
+          </button>
         </div>
 
         {/* Step pills */}
-        <div className="grid grid-cols-3 gap-2">
+        <div className="grid grid-cols-1 gap-2 sm:grid-cols-3">
           {['Select Session / Class / Section', 'Verify Structure', 'Click Assign'].map((step, i) => (
             <div key={step} className="flex items-center gap-2 rounded-xl border border-white/70 bg-white/45 px-3 py-2 backdrop-blur-md">
               <span className="flex h-5 w-5 shrink-0 items-center justify-center rounded-full bg-violet-100 text-[10px] font-bold text-violet-600">{i + 1}</span>
@@ -840,6 +895,8 @@ const FeesCollection = ({ setShowAdminHeader }) => {
           )}
         </div>
       </div>
+      </div>
+      )}
 
       {/* ── Filters + Invoice list ── */}
       <div className={`fc-in overflow-hidden ${glassCard}`} style={{ animationDelay: '180ms' }}>
@@ -865,7 +922,36 @@ const FeesCollection = ({ setShowAdminHeader }) => {
               Overdue only
             </label>
           </div>
-          <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-5">
+          {/* Full-width search + filter toggle */}
+          <div className="flex items-center gap-2">
+            <div className="relative min-w-0 flex-1">
+              <Search className="absolute left-3 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-slate-400" />
+              <input
+                value={filters.search}
+                onChange={(e) => setFilters((prev) => ({ ...prev, search: e.target.value }))}
+                className={`${inputCls} pl-9`}
+                placeholder="Search by name / ID"
+              />
+            </div>
+            <button
+              type="button"
+              onClick={() => setShowFilters((v) => !v)}
+              className={`relative flex h-10 w-10 shrink-0 items-center justify-center rounded-xl border transition-all duration-150 ${
+                showFilters
+                  ? 'border-rose-200 bg-rose-50 text-rose-600 hover:bg-rose-100'
+                  : 'border-slate-200 bg-white text-slate-600 hover:bg-slate-50'
+              }`}
+              title={showFilters ? 'Close filters' : 'Show filters'}
+              aria-label={showFilters ? 'Close filters' : 'Show filters'}
+            >
+              {showFilters ? <X className="h-4 w-4" /> : <ListFilter className="h-4 w-4" />}
+              {!showFilters && (filters.academicYearId || filters.classId || filters.section || filters.status) && (
+                <span className="absolute -right-0.5 -top-0.5 h-2.5 w-2.5 rounded-full border-2 border-white bg-violet-500" />
+              )}
+            </button>
+          </div>
+          {showFilters && (
+          <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-4">
             <select
               value={filters.academicYearId}
               onChange={(e) => setFilters((prev) => ({ ...prev, academicYearId: e.target.value, classId: '', section: '' }))}
@@ -890,27 +976,18 @@ const FeesCollection = ({ setShowAdminHeader }) => {
               <option value="partial">Partial</option>
               <option value="paid">Paid</option>
             </select>
-            <div className="relative">
-              <Search className="absolute left-3 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-slate-400" />
-              <input
-                value={filters.search}
-                onChange={(e) => setFilters((prev) => ({ ...prev, search: e.target.value }))}
-                className={`${inputCls} pl-9`}
-                placeholder="Name / adm. no / ID"
-              />
-            </div>
           </div>
+          )}
         </div>
 
         {/* Table */}
-        <div className="overflow-x-auto">
+        {/* Body scrolls inside its own box (sticky header) so the page doesn't grow with the list. */}
+        <div className="max-h-[60vh] overflow-auto">
           <table className="min-w-full">
-            <thead>
-              <tr className="border-b border-white/50 bg-white/30">
+            <thead className="sticky top-0 z-10">
+              <tr className="border-b border-slate-200/70 bg-slate-50/95 backdrop-blur-md">
                 <th className="px-5 py-3 text-left text-[11px] font-semibold uppercase tracking-wider text-slate-400">Student</th>
-                <th className="px-5 py-3 text-left text-[11px] font-semibold uppercase tracking-wider text-slate-400">Adm. No</th>
                 <th className="px-5 py-3 text-left text-[11px] font-semibold uppercase tracking-wider text-slate-400">Class</th>
-                <th className="px-5 py-3 text-left text-[11px] font-semibold uppercase tracking-wider text-slate-400">Sec</th>
                 <th className="px-5 py-3 text-right text-[11px] font-semibold uppercase tracking-wider text-slate-400">Total Fee</th>
                 <th className="px-5 py-3 text-right text-[11px] font-semibold uppercase tracking-wider text-slate-400">Paid</th>
                 <th className="px-5 py-3 text-right text-[11px] font-semibold uppercase tracking-wider text-slate-400">Outstanding</th>
@@ -921,7 +998,7 @@ const FeesCollection = ({ setShowAdminHeader }) => {
             <tbody className="divide-y divide-white/50">
               {loading && (
                 <tr>
-                  <td colSpan={9} className="px-5 py-16 text-center">
+                  <td colSpan={7} className="px-5 py-16 text-center">
                     <div className="flex flex-col items-center gap-3">
                       <div className="flex h-10 w-10 items-center justify-center rounded-xl border border-white/60 bg-white/60 backdrop-blur-md">
                         <Loader2 className="h-5 w-5 animate-spin text-violet-500" />
@@ -933,7 +1010,7 @@ const FeesCollection = ({ setShowAdminHeader }) => {
               )}
               {!loading && records.length === 0 && (
                 <tr>
-                  <td colSpan={9} className="px-5 py-16 text-center">
+                  <td colSpan={7} className="px-5 py-16 text-center">
                     <div className="mx-auto flex max-w-sm flex-col items-center gap-3 rounded-2xl border border-dashed border-slate-300/70 py-10">
                       <div className="flex h-14 w-14 items-center justify-center rounded-2xl border border-white/60 bg-white/50 backdrop-blur-md">
                         <FileText className="h-7 w-7 text-slate-300" />
@@ -944,22 +1021,29 @@ const FeesCollection = ({ setShowAdminHeader }) => {
                   </td>
                 </tr>
               )}
-              {!loading && records.map((record) => {
+              {!loading && pagedRecords.map((record) => {
                 const ss = statusStyle(record.status);
                 const initials = (record.studentName || 'S').split(' ').map(w => w[0]).slice(0,2).join('').toUpperCase();
+                const photo = resolvePhotoUrl(record.profilePic);
+                const classSection = [record.className, record.section].filter(Boolean).join('-') || '—';
                 return (
                   <tr key={record.invoiceId} className="transition-colors duration-150 hover:bg-white/50">
                     <td className="px-5 py-3.5">
                       <div className="flex items-center gap-2.5">
-                        <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-xl bg-violet-100 text-xs font-bold text-violet-600">
-                          {initials}
+                        <div className="flex h-8 w-8 shrink-0 items-center justify-center overflow-hidden rounded-xl bg-violet-100 text-xs font-bold text-violet-600">
+                          {photo ? (
+                            <img
+                              src={photo}
+                              alt={record.studentName || 'Student'}
+                              className="h-full w-full object-cover"
+                              onError={(e) => { e.currentTarget.style.display = 'none'; e.currentTarget.parentElement.textContent = initials; }}
+                            />
+                          ) : initials}
                         </div>
-                        <span className="text-sm font-semibold text-slate-800">{record.studentName || '—'}</span>
+                        <span className="text-sm font-semibold text-slate-800 whitespace-nowrap">{record.studentName || '—'}</span>
                       </div>
                     </td>
-                    <td className="px-5 py-3.5 text-sm text-slate-500">{record.admissionNumber || '—'}</td>
-                    <td className="px-5 py-3.5 text-sm text-slate-600">{record.className || '—'}</td>
-                    <td className="px-5 py-3.5 text-sm text-slate-600">{record.section || '—'}</td>
+                    <td className="px-5 py-3.5 text-sm font-medium text-slate-600 whitespace-nowrap">{classSection}</td>
                     <td className="px-5 py-3.5 text-right text-sm font-semibold text-slate-800">{formatCurrency(record.totalAmount)}</td>
                     <td className="px-5 py-3.5 text-right text-sm font-medium text-emerald-600">{formatCurrency(record.paidAmount)}</td>
                     <td className="px-5 py-3.5 text-right text-sm font-semibold text-rose-500">
@@ -994,6 +1078,55 @@ const FeesCollection = ({ setShowAdminHeader }) => {
             </tbody>
           </table>
         </div>
+
+        {/* Pagination */}
+        {!loading && records.length > 0 && (
+          <div className="flex flex-col items-center justify-between gap-3 border-t border-white/50 px-5 py-3 sm:flex-row">
+            <p className="text-xs text-slate-500">
+              Showing <span className="font-semibold text-slate-700">{(safeInvoicePage - 1) * INVOICE_PAGE_SIZE + 1}</span>–
+              <span className="font-semibold text-slate-700">{Math.min(safeInvoicePage * INVOICE_PAGE_SIZE, records.length)}</span> of{' '}
+              <span className="font-semibold text-slate-700">{records.length}</span> invoices
+            </p>
+            <div className="flex items-center gap-1">
+              <button
+                type="button"
+                onClick={() => setInvoicePage((p) => Math.max(1, p - 1))}
+                disabled={safeInvoicePage <= 1}
+                className="flex h-8 w-8 items-center justify-center rounded-lg border border-slate-200 bg-white text-slate-600 hover:bg-slate-50 disabled:opacity-40"
+                aria-label="Previous page"
+              >
+                <ChevronLeft className="h-4 w-4" />
+              </button>
+              {Array.from({ length: invoicePageCount }, (_, i) => i + 1)
+                .filter((n) => n === 1 || n === invoicePageCount || Math.abs(n - safeInvoicePage) <= 1)
+                .map((n, idx, arr) => (
+                  <React.Fragment key={n}>
+                    {idx > 0 && n - arr[idx - 1] > 1 && <span className="px-1 text-xs text-slate-400">…</span>}
+                    <button
+                      type="button"
+                      onClick={() => setInvoicePage(n)}
+                      className={`h-8 min-w-8 rounded-lg px-2 text-xs font-semibold transition-colors ${
+                        n === safeInvoicePage
+                          ? 'bg-violet-500 text-white shadow-sm'
+                          : 'border border-slate-200 bg-white text-slate-600 hover:bg-slate-50'
+                      }`}
+                    >
+                      {n}
+                    </button>
+                  </React.Fragment>
+                ))}
+              <button
+                type="button"
+                onClick={() => setInvoicePage((p) => Math.min(invoicePageCount, p + 1))}
+                disabled={safeInvoicePage >= invoicePageCount}
+                className="flex h-8 w-8 items-center justify-center rounded-lg border border-slate-200 bg-white text-slate-600 hover:bg-slate-50 disabled:opacity-40"
+                aria-label="Next page"
+              >
+                <ChevronRight className="h-4 w-4" />
+              </button>
+            </div>
+          </div>
+        )}
       </div>
       </>
       )}

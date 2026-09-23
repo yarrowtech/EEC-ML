@@ -59,6 +59,11 @@ export const ADMIN_MENU_ITEMS = [
         icon: Receipt,
         label: 'Fees Collection',
         path: '/admin/fees/collection'
+      },
+      {
+        icon: FileText,
+        label: 'Fee Receipts',
+        path: '/admin/fees/receipts'
       }
     ]
   },
@@ -195,7 +200,7 @@ export const ADMIN_MENU_SECTIONS = [
     items: ['Academic Setup', 'Teachers Management', 'Teacher Feedback', 'Routine Management', 'Exam Management', 'Result Management', 'Report Cards'],
   },
   { section: 'STUDENTS', items: ['Students', 'Parents', 'Promotion & Leave'] },
-  { section: 'FEES MANAGEMENT', items: ['Create Fees', 'Fees Collection'] },
+  { section: 'FEES MANAGEMENT', items: ['Create Fees', 'Fees Collection', 'Fee Receipts'] },
   { section: 'COMMUNICATION', items: ['Notices', 'Holiday List'] },
   { section: 'CAMPUS', items: ['Floor & Rooms'] },
   { section: 'HUMAN RESOURCES', items: ['HR'] },

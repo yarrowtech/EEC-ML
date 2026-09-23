@@ -117,6 +117,7 @@ const AdminHeader = ({ adminUser, onOpenMobileSidebar, onLogoutRequest, notifica
       { label: 'Results',         hint: 'Marks & results',               path: '/admin/result',         keys: ['result', 'marks'] },
       { label: 'Report Cards',    hint: 'Generate report cards',         path: '/admin/report-cards',   keys: ['report card'] },
       { label: 'Fees Collection', hint: 'Collect & track fees',          path: '/admin/fees/collection',keys: ['fees', 'payment', 'collection'] },
+      { label: 'Fee Receipts',    hint: 'All generated fee receipts',    path: '/admin/fees/receipts',  keys: ['receipt', 'receipts', 'fees', 'rcpt'] },
       { label: 'HR',              hint: 'Staff & leave management',      path: '/admin/hr',             keys: ['hr', 'leave', 'staff'] },
       { label: 'Parents',         hint: 'Parent records',                path: '/admin/parents',        keys: ['parent'] },
       { label: 'Notices',         hint: 'Notifications & notices',       path: '/admin/notices/view',    keys: ['notice', 'notification'] },

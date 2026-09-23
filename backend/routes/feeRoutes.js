@@ -73,7 +73,24 @@ const formatReceiptDateTime = (value) => {
   });
 };
 
+// Payments recorded before receipt numbers existed get one assigned the first
+// time a receipt is requested, so every receipt (admin + parent) has a number.
+const ensurePaymentReceiptNumber = async (payment) => {
+  if (!payment || payment.receiptNumber || !payment._id) return payment;
+  const receiptNumber = await FeePayment.allocateReceiptNumber(
+    payment.schoolId,
+    payment.paidOn || payment.createdAt || new Date()
+  );
+  await FeePayment.updateOne(
+    { _id: payment._id, receiptNumber: { $in: [null, ''] } },
+    { $set: { receiptNumber } }
+  );
+  payment.receiptNumber = receiptNumber;
+  return payment;
+};
+
 const buildReceiptPayload = async ({ payment, invoice, schoolId, campusId = null, parentName = '' }) => {
+  await ensurePaymentReceiptNumber(payment);
   const [student, school, academicYear] = await Promise.all([
     StudentUser.findOne({ _id: payment.studentId, schoolId })
       .select('name username grade section roll admissionNumber studentCode fatherName motherName guardianName guardianPhone guardianEmail mobile email academicYear')
@@ -115,7 +132,8 @@ const buildReceiptPayload = async ({ payment, invoice, schoolId, campusId = null
     receipt: {
       paymentId: payment._id,
       transactionId: payment.transactionId || payment.gatewayPaymentId || '',
-      receiptNo: payment.transactionId || payment.gatewayPaymentId || String(payment._id || ''),
+      receiptNo: payment.receiptNumber || payment.transactionId || payment.gatewayPaymentId || String(payment._id || ''),
+      receiptNumber: payment.receiptNumber || '',
       sid: student?.studentCode || student?.admissionNumber || '',
       childName: student?.name || '',
       username: student?.username || '',
@@ -994,7 +1012,7 @@ router.post('/payments', adminAuth, async (req, res) => {
     }
     const resolvedMethod = String(method || 'cash').trim().toLowerCase();
     const REFERENCE_LABEL_BY_METHOD = {
-      cash: 'Receipt number',
+      // cash: receipt number is now system-generated (FeePayment.receiptNumber)
       upi: 'UPI transaction ID',
       bank: 'Bank transaction / UTR number',
       card: 'Card transaction reference',
@@ -1087,6 +1105,127 @@ router.get('/payments', adminAuth, async (req, res) => {
     res.json(items);
   } catch (err) {
     res.status(500).json({ error: err.message });
+  }
+});
+
+// Fee receipts register — every recorded payment with its receipt number,
+// student and payment details. Supports search (receipt no / transaction id /
+// student name / admission no), method filter, date range and pagination.
+router.get('/admin/receipts', adminAuth, async (req, res) => {
+  // #swagger.tags = ['Fees']
+  // #swagger.summary = 'List fee receipts'
+  try {
+    const schoolId = resolveSchoolId(req, res);
+    if (!schoolId) return;
+    if (!requireCampusId(req, res)) return;
+
+    const page = Math.max(1, Number.parseInt(req.query.page, 10) || 1);
+    const limit = Math.min(100, Math.max(1, Number.parseInt(req.query.limit, 10) || 20));
+    const search = String(req.query.search || '').trim();
+    const method = String(req.query.method || '').trim().toLowerCase();
+
+    const filter = { schoolId };
+    let studentIdScope = null;
+    if (req.campusId) {
+      studentIdScope = (await fetchCampusStudentIds(schoolId, req.campusId)).map(String);
+      if (!studentIdScope.length) {
+        return res.json({ items: [], total: 0, page, limit, totals: { amount: 0, count: 0 } });
+      }
+    }
+    if (method) filter.method = method;
+    const from = req.query.from ? new Date(req.query.from) : null;
+    const to = req.query.to ? new Date(req.query.to) : null;
+    if ((from && !Number.isNaN(from.getTime())) || (to && !Number.isNaN(to.getTime()))) {
+      filter.paidOn = {};
+      if (from && !Number.isNaN(from.getTime())) filter.paidOn.$gte = from;
+      if (to && !Number.isNaN(to.getTime())) {
+        to.setHours(23, 59, 59, 999);
+        filter.paidOn.$lte = to;
+      }
+    }
+
+    if (search) {
+      const safe = search.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+      const rx = new RegExp(safe, 'i');
+      const matchedStudents = await StudentUser.find({
+        schoolId,
+        $or: [{ name: rx }, { admissionNumber: rx }, { studentCode: rx }],
+      }).select('_id').lean();
+      let matchedIds = matchedStudents.map((s) => String(s._id));
+      if (studentIdScope) matchedIds = matchedIds.filter((id) => studentIdScope.includes(id));
+      filter.$or = [
+        { receiptNumber: rx },
+        { transactionId: rx },
+        { referenceNumber: rx },
+        { gatewayPaymentId: rx },
+        ...(matchedIds.length ? [{ studentId: { $in: matchedIds.map((id) => new mongoose.Types.ObjectId(id)) } }] : []),
+      ];
+    }
+    if (studentIdScope) filter.studentId = { $in: studentIdScope.map((id) => new mongoose.Types.ObjectId(id)) };
+
+    const [total, totalsAgg, payments] = await Promise.all([
+      FeePayment.countDocuments(filter),
+      FeePayment.aggregate([
+        { $match: { ...filter, schoolId: new mongoose.Types.ObjectId(String(schoolId)) } },
+        { $group: { _id: null, amount: { $sum: '$amount' }, count: { $sum: 1 } } },
+      ]).catch(() => []),
+      FeePayment.find(filter)
+        .sort({ paidOn: -1, createdAt: -1 })
+        .skip((page - 1) * limit)
+        .limit(limit)
+        .lean(),
+    ]);
+
+    // Backfill numbers for legacy payments on the page being viewed.
+    await Promise.all(payments.map((p) => ensurePaymentReceiptNumber(p)));
+
+    const studentIds = [...new Set(payments.map((p) => String(p.studentId)))];
+    const invoiceIds = [...new Set(payments.map((p) => String(p.invoiceId)))];
+    const [students, invoices] = await Promise.all([
+      StudentUser.find({ _id: { $in: studentIds } })
+        .select('name grade section admissionNumber studentCode profilePic')
+        .lean(),
+      FeeInvoice.find({ _id: { $in: invoiceIds } }).select('className section title').lean(),
+    ]);
+    const studentMap = new Map(students.map((s) => [String(s._id), s]));
+    const invoiceMap = new Map(invoices.map((i) => [String(i._id), i]));
+
+    const items = payments.map((p) => {
+      const student = studentMap.get(String(p.studentId)) || {};
+      const invoice = invoiceMap.get(String(p.invoiceId)) || {};
+      return {
+        paymentId: p._id,
+        invoiceId: p.invoiceId,
+        receiptNumber: p.receiptNumber || '',
+        studentName: student.name || 'Student',
+        admissionNumber: student.admissionNumber || student.studentCode || '',
+        profilePic: student.profilePic || '',
+        className: invoice.className || student.grade || '',
+        section: invoice.section || student.section || '',
+        invoiceTitle: invoice.title || '',
+        amount: Number(p.amount || 0),
+        method: p.method || 'cash',
+        gateway: p.gateway || '',
+        referenceNumber: p.referenceNumber || '',
+        bankName: p.bankName || '',
+        transactionId: p.transactionId || '',
+        gatewayPaymentId: p.gatewayPaymentId || '',
+        gatewayOrderId: p.gatewayOrderId || '',
+        paidOn: p.paidOn || p.createdAt,
+        notes: p.notes || '',
+        initiatedByType: p.initiatedByType || '',
+      };
+    });
+
+    res.json({
+      items,
+      total,
+      page,
+      limit,
+      totals: { amount: Number(totalsAgg?.[0]?.amount || 0), count: Number(totalsAgg?.[0]?.count || total) },
+    });
+  } catch (err) {
+    res.status(500).json({ error: err.message || 'Unable to load receipts' });
   }
 });
 
@@ -1990,7 +2129,7 @@ router.get('/admin/invoices', adminAuth, async (req, res) => {
     const uniqueStudentIds = [...new Set(invoices.map((inv) => String(inv.studentId)))];
     const students = uniqueStudentIds.length
       ? await StudentUser.find({ _id: { $in: uniqueStudentIds } })
-          .select('name grade section roll admissionNumber')
+          .select('name grade section roll admissionNumber profilePic')
           .lean()
       : [];
     const studentMap = new Map(students.map((s) => [String(s._id), s]));
@@ -2005,6 +2144,7 @@ router.get('/admin/invoices', adminAuth, async (req, res) => {
         feeStructureId: inv.feeStructureId || null,
         studentName: student?.name || 'Student',
         admissionNumber: student?.admissionNumber || '',
+        profilePic: student?.profilePic || '',
         roll: student?.roll || '',
         classId: inv.classId || null,
         className: inv.className || student?.grade || '',
@@ -2193,8 +2333,12 @@ router.get('/admin/invoices/:id', adminAuth, async (req, res) => {
       .sort({ createdAt: -1 })
       .lean();
 
+    const academicYear = refreshedInvoice.academicYearId
+      ? await AcademicYear.findById(refreshedInvoice.academicYearId).select('name').lean()
+      : null;
+
     res.json({
-      invoice: refreshedInvoice,
+      invoice: { ...refreshedInvoice, academicYearName: academicYear?.name || '' },
       student,
       payments,
     });
