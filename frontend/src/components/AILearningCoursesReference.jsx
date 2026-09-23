@@ -728,18 +728,6 @@ const AILearningCoursesReference = () => {
     return () => observer.disconnect();
   }, [isDetailsView, detailSections]);
 
-  const detailProgress = useMemo(() => {
-    const idx = detailSections.findIndex((section) => section.id === activeDetailSection);
-    if (idx < 0) return 0;
-    return Math.round(((idx + 1) / detailSections.length) * 100);
-  }, [activeDetailSection, detailSections]);
-
-  const jumpToDetailSection = (sectionId) => {
-    const node = detailSectionRefs.current[sectionId];
-    if (!node) return;
-    node.scrollIntoView({ behavior: 'smooth', block: 'start' });
-  };
-
   const handleDetailsScroll = () => {
     const container = detailsScrollRef.current;
     if (!container || !detailSections.length) return;
@@ -933,7 +921,6 @@ const AILearningCoursesReference = () => {
   }
 
   if (isDetailsView) {
-    const sectionIdx = Math.max(1, detailSections.findIndex((s) => s.id === activeDetailSection) + 1);
     const practiceResources = [...assessmentItems, ...chapterWorksheets.downloadLinks];
     const totalWords = detailSections.reduce((sum, s) => sum + String(s?.text || '').trim().split(/\s+/).filter(Boolean).length, 0);
     const readMinutes = detailSections.length > 0 ? Math.max(1, Math.round(totalWords / 200)) : 0;
@@ -1050,32 +1037,6 @@ const AILearningCoursesReference = () => {
             {/* ── Sidebar ── */}
             {!isPracticeMode && (
               <div className="flex flex-col gap-5 lg:sticky lg:top-5">
-                {/* Progress ring widget */}
-                <div className="rounded-[2rem] bg-white p-5 shadow-sm">
-                  <p className="mb-3 text-[11px] font-bold uppercase tracking-wider text-[#464555]">Progress</p>
-                  <div className="flex items-center gap-4">
-                    <div className="relative flex h-[62px] w-[62px] shrink-0 items-center justify-center">
-                      <svg className="h-[62px] w-[62px] -rotate-90" viewBox="0 0 36 36">
-                        <path fill="none" stroke="#d5e3fc" strokeWidth="3.5" d="M18 2.0845 a 15.9155 15.9155 0 0 1 0 31.831 a 15.9155 15.9155 0 0 1 0 -31.831" />
-                        <path
-                          className="transition-all duration-500"
-                          fill="none"
-                          stroke="#493ee5"
-                          strokeWidth="3.5"
-                          strokeLinecap="round"
-                          strokeDasharray={`${detailProgress}, 100`}
-                          d="M18 2.0845 a 15.9155 15.9155 0 0 1 0 31.831 a 15.9155 15.9155 0 0 1 0 -31.831"
-                        />
-                      </svg>
-                      <span className="absolute text-sm font-bold text-[#493ee5]">{detailProgress}%</span>
-                    </div>
-                    <div className="text-sm text-[#464555]">
-                      <strong className="text-[#0d1c2e]">{detailProgress}%</strong> read
-                      <div className="text-xs text-[#464555]">{sectionIdx} of {detailSections.length} section{detailSections.length !== 1 ? 's' : ''}</div>
-                    </div>
-                  </div>
-                </div>
-
                 {/* Launch Practice button */}
                 <div className="rounded-[2rem] bg-white p-5 shadow-sm">
                   <p className="mb-3 text-xs text-[#464555]">Ready to test your understanding?</p>
@@ -1088,34 +1049,6 @@ const AILearningCoursesReference = () => {
                     <ArrowRight size={16} />
                   </button>
                 </div>
-
-                {/* Section navigator */}
-                {detailSections.length > 1 && (
-                  <div className="rounded-[2rem] bg-white p-5 shadow-sm">
-                    <p className="mb-3 text-[11px] font-bold uppercase tracking-wider text-[#464555]">Sections</p>
-                    <div className="flex flex-col gap-1">
-                      {detailSections.map((section, idx) => {
-                        const isPast = idx < sectionIdx - 1;
-                        const isCurrent = activeDetailSection === section.id;
-                        return (
-                          <button
-                            key={section.id}
-                            type="button"
-                            onClick={() => jumpToDetailSection(section.id)}
-                            className={`flex items-center gap-2 rounded-lg px-2 py-1.5 text-left text-sm transition-colors ${isCurrent ? 'font-semibold text-[#493ee5]' : 'text-[#464555] hover:text-[#493ee5]'}`}
-                          >
-                            {isPast ? (
-                              <CheckCircle2 size={13} className="shrink-0 text-[#006847]" />
-                            ) : (
-                              <span className="h-1.5 w-1.5 shrink-0 rounded-full bg-[#d5e3fc]" />
-                            )}
-                            <span className="truncate">{section.title}</span>
-                          </button>
-                        );
-                      })}
-                    </div>
-                  </div>
-                )}
               </div>
             )}
 
@@ -1125,7 +1058,12 @@ const AILearningCoursesReference = () => {
               {/* Choose Your Format — every assigned question type, grouped */}
               {practiceFormats.length > 0 && (
                 <div className="rounded-[2rem] bg-white p-5 shadow-sm sm:p-8">
-                  <h3 className="mb-4 text-lg font-bold text-[#0d1c2e]">Choose Your Format</h3>
+                  <div className="mb-6 flex flex-wrap items-center justify-between gap-3 border-b border-[#d5e3fc] pb-4">
+                    <h3 className="text-xl font-bold text-[#0d1c2e] sm:text-2xl">Choose Your Format</h3>
+                    <span className="rounded-full bg-[#eff4ff] px-3.5 py-1 text-xs font-semibold text-[#464555]">
+                      {practiceFormats.length} format{practiceFormats.length !== 1 ? 's' : ''}
+                    </span>
+                  </div>
                   <div className="flex flex-col gap-3">
                     {practiceFormats.map(({ type, label, icon: Icon, count }) => (
                       <div
@@ -1250,7 +1188,15 @@ const AILearningCoursesReference = () => {
                 )}
 
                 {/* Panel footer */}
-                
+                <div className="flex flex-wrap items-center justify-between gap-3 border-t border-[#d5e3fc] pt-4">
+                  <button
+                    type="button"
+                    onClick={() => setIsPracticeMode(false)}
+                    className="inline-flex items-center gap-2 text-sm font-semibold text-[#464555] hover:text-[#0d1c2e]"
+                  >
+                    <ArrowLeft size={14} /> Return to theory
+                  </button>
+                </div>
               </div>
 
               {/* Interactive tryout — embedded directly, no separate page */}
@@ -1375,6 +1321,11 @@ const AILearningCoursesReference = () => {
   const progressStatusLabel = overallProgress === 0 ? 'Ready to begin!' : overallProgress === 100 ? 'Topic complete!' : `${overallProgress}% complete`;
   const heroDescription = chapterIntroduction || 'Explore this topic step by step, then try the practice questions when you’re ready.';
   const classChip = profile?.grade ? `Class ${profile.grade}${profile.section ? ` • ${profile.section}` : ''} curriculum` : '';
+  // Only surface the chapter title as its own breadcrumb pill / title prefix
+  // when it actually says something different from the topic name — a raw
+  // !== comparison let near-duplicates (differing only in case/whitespace)
+  // through and showed the same title twice.
+  const showChapterTitle = Boolean(mapScope.chapterTitle) && normalizeKey(mapScope.chapterTitle) !== normalizeKey(topicSlug);
 
   // The step the student should tackle next — spotlighted the same way the
   // reference design highlights its "hero" milestone above the compact path.
@@ -1395,7 +1346,7 @@ const AILearningCoursesReference = () => {
               <span className="rounded-full bg-[#eff4ff] px-3 py-1 text-xs font-bold text-[#493ee5]">
                 {subjectSlug}{classChip ? ` • ${classChip}` : ''}
               </span>
-              {mapScope.chapterTitle && mapScope.chapterTitle !== topicSlug && (
+              {showChapterTitle && (
                 <>
                   <span className="text-[#c7c4d8]">•</span>
                   <span className="rounded-full bg-[#e2dfff] px-3 py-1 text-xs font-bold text-[#321ed2]">{mapScope.chapterTitle}</span>
@@ -1426,7 +1377,7 @@ const AILearningCoursesReference = () => {
                 <span className="text-xs font-bold uppercase tracking-wide">Learning Journey</span>
               </div>
               <h1 className="text-2xl font-bold tracking-tight text-[#0d1c2e] sm:text-4xl">
-                {mapScope.chapterTitle && mapScope.chapterTitle !== topicSlug ? `${mapScope.chapterTitle}: ${topicSlug}` : topicSlug}
+                {showChapterTitle ? `${mapScope.chapterTitle}: ${topicSlug}` : topicSlug}
               </h1>
               <p className="mt-1 text-sm leading-relaxed text-[#464555] sm:text-base">{heroDescription}</p>
             </div>
