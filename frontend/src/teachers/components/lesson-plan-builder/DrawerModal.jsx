@@ -753,14 +753,14 @@ const DrawerModal = ({
                 style={{ color: '#0f172a', caretColor: '#0f172a' }}
               />
             </Card>
-            {/* Quick Recap */}
+            {/* Did You Know? */}
             <Card>
-              <SectionTitle icon={CheckCircle2} iconColor="text-green-400">Did You Know?</SectionTitle>
+              <SectionTitle icon={Lightbulb} iconColor="text-amber-400">Did You Know?</SectionTitle>
               <Textarea
                 rows={3}
-                value={chapter.recap}
-                onChange={(e) => onUpdate({ ...chapter, recap: e.target.value })}
-                placeholder="Key points students must take away from this lesson…"
+                value={chapter.didYouKnow}
+                onChange={(e) => onUpdate({ ...chapter, didYouKnow: e.target.value })}
+                placeholder="A fun or surprising fact related to this lesson…"
                 className="resize-none"
                 style={{ color: '#0f172a', caretColor: '#0f172a' }}
               />

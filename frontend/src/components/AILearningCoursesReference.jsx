@@ -23,6 +23,7 @@ import {
   ExternalLink,
   X,
   Paperclip,
+  Upload,
   CalendarDays,
   Calendar,
   ListChecks,
@@ -41,7 +42,8 @@ import {
 import { fetchCachedJson } from '../utils/studentApiCache';
 import { PaperclipHorizontalIcon } from '@phosphor-icons/react';
 import { slugifyForUrl, deslugifyFromUrl } from '../utils/urlSlug';
-import AILearningTryoutSection, { typeMeta, normalizeQuestionType } from './AILearningTryoutSection';
+import WorksheetSubmitModal from './WorksheetSubmitModal';
+import AILearningTryoutSection from './AILearningTryoutSection';
 
 const API_BASE = (import.meta.env.VITE_API_URL || 'http://localhost:5000').replace(/\/$/, '');
 const DASHBOARD_ENDPOINT = `${API_BASE}/api/student/auth/dashboard`;
@@ -117,13 +119,6 @@ const detectMaterialKind = (material) => {
   return 'article';
 };
 
-// iOS Safari (the majority of mobile student devices) never implements the
-// Fullscreen API for arbitrary elements — document.fullscreenEnabled is
-// false there — so the fullscreen button is hidden rather than shown as a
-// dead control that just surfaces an error on tap.
-const FULLSCREEN_SUPPORTED = typeof document !== 'undefined'
-  && Boolean(document.fullscreenEnabled || document.webkitFullscreenEnabled);
-
 const MaterialQuickActions = ({ material, onRead }) => {
   if (!material?.url && !material?.content) return null;
   return (
@@ -132,7 +127,6 @@ const MaterialQuickActions = ({ material, onRead }) => {
         <button
           type="button"
           onClick={() => onRead(material)}
-          aria-label={`Read ${material.title || 'material'}`}
           title="Read"
           className="flex h-8 w-8 items-center justify-center rounded-full text-[#493ee5] transition-colors hover:bg-white"
         >
@@ -141,10 +135,10 @@ const MaterialQuickActions = ({ material, onRead }) => {
       )}
       {material.url && (
         <>
-          <a href={getInlineDocumentUrl(material.url)} target="_blank" rel="noreferrer" aria-label={`Open ${material.title || 'material'}`} title="Open" className="flex h-8 w-8 items-center justify-center rounded-full text-[#493ee5] transition-colors hover:bg-white">
+          <a href={getInlineDocumentUrl(material.url)} target="_blank" rel="noreferrer" title="Open" className="flex h-8 w-8 items-center justify-center rounded-full text-[#493ee5] transition-colors hover:bg-white">
             <ExternalLink size={14} />
           </a>
-          <a href={material.downloadUrl || material.url} download aria-label={`Download ${material.title || 'material'}`} title="Download" className="flex h-8 w-8 items-center justify-center rounded-full bg-[#493ee5] text-white transition-colors hover:bg-[#3a30c9]">
+          <a href={material.downloadUrl || material.url} download title="Download" className="flex h-8 w-8 items-center justify-center rounded-full bg-[#493ee5] text-white transition-colors hover:bg-[#3a30c9]">
             <Download size={14} />
           </a>
         </>
@@ -266,27 +260,20 @@ const AILearningCoursesReference = () => {
   const navigate = useNavigate();
   const location = useLocation();
   const searchParams = new URLSearchParams(location.search);
-  // Topic routes are lesson pages by default. The explicit details query is
-  // still supported for existing deep links, while plain topic URLs now open
-  // the same full reader so students do not need an extra click.
-  const isDetailsView = searchParams.get('view') === 'details' || !searchParams.has('view');
-  const seededSubject = location.state?.smartLearningSubject || null;
-  const hasSeededSubject = Boolean(seededSubject);
+  const isDetailsView = searchParams.get('view') === 'details';
   const [error, setError] = useState('');
-  const [loading, setLoading] = useState(!hasSeededSubject);
+  const [loading, setLoading] = useState(true);
   const [profile, setProfile] = useState(null);
   const [contexts, setContexts] = useState([]);
-  const [smartLearningSubjects, setSmartLearningSubjects] = useState(() => seededSubject ? [seededSubject] : []);
+  const [smartLearningSubjects, setSmartLearningSubjects] = useState([]);
   const [realMaterials, setRealMaterials] = useState([]);
   const [completedSteps, setCompletedSteps] = useState([]);
-  const [topicCompleted, setTopicCompleted] = useState(false);
   const [overallProgress, setOverallProgress] = useState(0);
-  const [progressLoaded, setProgressLoaded] = useState(false);
-  const [activeFlowStepId, setActiveFlowStepId] = useState(null);
-  const [savedScrollTop, setSavedScrollTop] = useState(0);
   const [isFullscreen, setIsFullscreen] = useState(false);
   const [downloadingPdf, setDownloadingPdf] = useState(false);
   const [activeMaterial, setActiveMaterial] = useState(null);
+  const [worksheetModal, setWorksheetModal] = useState(null);
+  const [submittedWorksheets, setSubmittedWorksheets] = useState(new Set());
   const moduleRef = useRef(null);
   const detailsViewRef = useRef(null);
 
@@ -296,12 +283,8 @@ const AILearningCoursesReference = () => {
   const subjectMatch = location.pathname.match(/\/subject\/([^/]+)/);
   const subjectSlug = subjectMatch?.[1] ? deslugifyFromUrl(subjectMatch[1]) : 'Subject';
 
-  // Load local progress immediately, then merge account-backed progress so the
-  // same lesson resumes consistently on another device.
+  // Load progress from localStorage
   useEffect(() => {
-    setProgressLoaded(false);
-    setActiveFlowStepId(null);
-    setSavedScrollTop(0);
     const storageKey = `learning-topic-progress-${normalizeKey(subjectSlug)}-${normalizeKey(topicSlug)}`;
     const saved = localStorage.getItem(storageKey);
     if (saved) {
@@ -309,36 +292,10 @@ const AILearningCoursesReference = () => {
         const data = JSON.parse(saved);
         setCompletedSteps(data.completedSteps || []);
         setOverallProgress(data.percentage || 0);
-        setTopicCompleted(Boolean(data.topicCompleted));
-        setActiveFlowStepId(data.activeStepId || null);
-        setSavedScrollTop(Number(data.scrollTop) || 0);
       } catch (err) {
         console.error('Failed to load progress:', err);
       }
     }
-    const token = localStorage.getItem('token');
-    if (!token || typeof fetch !== 'function') {
-      setProgressLoaded(true);
-      return undefined;
-    }
-    let alive = true;
-    fetch(`${API_BASE}/api/lesson-plans/student/smart-learning-progress?subject=${encodeURIComponent(subjectSlug)}&topic=${encodeURIComponent(topicSlug)}`, {
-      headers: { Authorization: `Bearer ${token}` },
-    })
-      .then((response) => response.ok ? response.json() : null)
-      .then((payload) => {
-        if (!alive) return;
-        const data = payload?.progress;
-        if (data) {
-          setCompletedSteps(Array.isArray(data.completedSteps) ? data.completedSteps : []);
-          setTopicCompleted(Boolean(data.topicCompleted));
-          setActiveFlowStepId(data.activeStepId || null);
-          setSavedScrollTop(Number(data.scrollTop) || 0);
-        }
-      })
-      .catch(() => {})
-      .finally(() => { if (alive) setProgressLoaded(true); });
-    return () => { alive = false; };
   }, [subjectSlug, topicSlug]);
 
   // Fetch profile, subject context, and smart learning map once on mount.
@@ -346,7 +303,7 @@ const AILearningCoursesReference = () => {
   useEffect(() => {
     const load = async () => {
       try {
-        if (!hasSeededSubject) setLoading(true);
+        setLoading(true);
         setError('');
         const token = localStorage.getItem('token');
         const userType = localStorage.getItem('userType');
@@ -371,8 +328,7 @@ const AILearningCoursesReference = () => {
 
         setProfile(dashRes?.data?.profile || null);
         setContexts(Array.isArray(contextRes?.data?.teachers) ? contextRes.data.teachers : []);
-        const refreshedSubjects = Array.isArray(mapRes?.data?.subjects) ? mapRes.data.subjects : [];
-        setSmartLearningSubjects(refreshedSubjects.length > 0 ? refreshedSubjects : (seededSubject ? [seededSubject] : []));
+        setSmartLearningSubjects(Array.isArray(mapRes?.data?.subjects) ? mapRes.data.subjects : []);
       } catch (err) {
         setError(err?.message || 'Failed to load learning data');
       } finally {
@@ -482,10 +438,7 @@ const AILearningCoursesReference = () => {
         label: selectedTopicFromMap.topic.title,
         chapterTitle: selectedTopicFromMap.chapter?.title || '',
         topics: [selectedTopicFromMap.topic],
-        chapterMeta: selectedTopicFromMap.chapter?.meta || {},
-        chapterUploads: Array.isArray(selectedTopicFromMap.chapter?.uploads)
-          ? selectedTopicFromMap.chapter.uploads
-          : [],
+        chapterUploads: [],
       };
     }
 
@@ -584,6 +537,30 @@ const AILearningCoursesReference = () => {
 
   const assessmentItems = useMemo(() => chapterAssessments, [chapterAssessments]);
 
+  const chapterWorksheets = useMemo(() => {
+    const downloadLinks = [];
+    const submittableAssignments = [];
+    const seenLinks = new Set();
+    const seenAssignments = new Set();
+
+    mapScope.topics.forEach((topic) => {
+      (topic.subtopics || []).forEach((subtopic) => {
+        (subtopic.worksheetUploads || []).forEach((upload) => {
+          if (!upload.url || seenLinks.has(upload.url)) return;
+          seenLinks.add(upload.url);
+          downloadLinks.push({ id: upload.id, title: upload.title || 'Worksheet', url: upload.url });
+        });
+        (subtopic.assignments || []).forEach((assignment) => {
+          if (seenAssignments.has(assignment.id)) return;
+          seenAssignments.add(assignment.id);
+          submittableAssignments.push({ ...assignment, _id: assignment.id });
+        });
+      });
+    });
+
+    return { downloadLinks, submittableAssignments };
+  }, [mapScope]);
+
   const chapterLearningObjectives = useMemo(() => {
     const objectives = Array.isArray(selectedChapterMeta.learningObjectives)
       ? selectedChapterMeta.learningObjectives.map((item) => String(item || '').trim()).filter(Boolean)
@@ -614,9 +591,6 @@ const AILearningCoursesReference = () => {
     const data = {
       completedSteps,
       percentage,
-      topicCompleted,
-      activeStepId: activeFlowStepId,
-      scrollTop: savedScrollTop,
       lastAccessed: new Date().toISOString(),
     };
     try {
@@ -626,25 +600,7 @@ const AILearningCoursesReference = () => {
       // tracking is best-effort and must not crash the page.
     }
     setOverallProgress(percentage);
-    if (!progressLoaded || typeof fetch !== 'function') return undefined;
-    const token = localStorage.getItem('token');
-    if (!token) return undefined;
-    const timer = window.setTimeout(() => {
-      fetch(`${API_BASE}/api/lesson-plans/student/smart-learning-progress`, {
-        method: 'PUT',
-        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
-        body: JSON.stringify({
-          subject: subjectSlug,
-          topic: topicSlug,
-          completedSteps,
-          topicCompleted,
-          activeStepId: activeFlowStepId || '',
-          scrollTop: savedScrollTop,
-        }),
-      }).catch(() => {});
-    }, 450);
-    return () => window.clearTimeout(timer);
-  }, [completedSteps, chapterInstructionalFlow.length, subjectSlug, topicSlug, topicCompleted, activeFlowStepId, savedScrollTop, progressLoaded]);
+  }, [completedSteps, chapterInstructionalFlow.length, subjectSlug, topicSlug]);
 
   const chapterIntroduction = String(selectedChapterMeta.introduction || '').trim();
   const chapterExplanation = String(selectedChapterMeta.explanation || '').trim();
@@ -680,14 +636,11 @@ const AILearningCoursesReference = () => {
     );
   };
 
-  const openPracticePaperPage = () => {
-    navigate(
-      `/student/smart-learning-courses/subject/${normalizedSubjectSlug}/topic/${normalizedTopicSlug}/assessment/practice-paper`
-    );
-  };
-
   const closeDetailsPage = () => {
-    goBackToSubjectTopics();
+    navigate(
+      `/student/smart-learning-courses/subject/${normalizedSubjectSlug}/topic/${normalizedTopicSlug}`,
+      { replace: true }
+    );
   };
   const goBackToSubjectTopics = () => {
     navigate(`/student/smart-learning-courses/subject/${normalizedSubjectSlug}`);
@@ -715,30 +668,8 @@ const AILearningCoursesReference = () => {
     ...(chapterRecap ? [{ id: 'recap', title: 'Quick Recap', text: chapterRecap }] : []),
     ...(chapterDidYouKnow ? [{ id: 'did-you-know', title: 'Did You Know?', text: chapterDidYouKnow }] : []),
   ]).filter((section) => String(section.text || '').trim()), [readingContent, introductionText, chapterExplanation, chapterRecap, chapterDidYouKnow]);
-  const [isPracticeMode, setIsPracticeMode] = useState(false);
-  // Populated by the embedded AILearningTryoutSection once it loads the
-  // assigned questions, so the "Choose Your Format" list above it can group
-  // them by type without re-fetching/re-deriving the same data itself.
-  const [assignedTryoutQuestions, setAssignedTryoutQuestions] = useState([]);
-  const tryoutRef = useRef(null);
-  const practiceFormats = useMemo(() => {
-    const groups = new Map();
-    assignedTryoutQuestions.forEach((question) => {
-      const type = normalizeQuestionType(question?.type);
-      if (!groups.has(type)) groups.set(type, { type, ...typeMeta(type), count: 0 });
-      groups.get(type).count += 1;
-    });
-    return Array.from(groups.values());
-  }, [assignedTryoutQuestions]);
-  // The route doesn't remount when only the query string changes (e.g.
-  // navigating from the overview page straight into ?mode=practice), so a
-  // plain lazy-init read of the query param would miss that navigation —
-  // this effect re-syncs on mount and on every subsequent URL change,
-  // without overriding a direct legacy practice-mode deep link.
-  // that don't touch the URL.
-  useEffect(() => {
-    setIsPracticeMode(new URLSearchParams(location.search).get('mode') === 'practice');
-  }, [location.search]);
+  const [isPracticeMode, setIsPracticeMode] = useState(() => searchParams.get('mode') === 'practice');
+  const [activeFlowStepId, setActiveFlowStepId] = useState(null);
   const [activeDetailSection, setActiveDetailSection] = useState('introduction');
   const [readerFontScale, setReaderFontScale] = useState(1);
   const detailSectionRefs = useRef({});
@@ -767,23 +698,26 @@ const AILearningCoursesReference = () => {
     return () => observer.disconnect();
   }, [isDetailsView, detailSections]);
 
+  const detailProgress = useMemo(() => {
+    const idx = detailSections.findIndex((section) => section.id === activeDetailSection);
+    if (idx < 0) return 0;
+    return Math.round(((idx + 1) / detailSections.length) * 100);
+  }, [activeDetailSection, detailSections]);
+
+  const jumpToDetailSection = (sectionId) => {
+    const node = detailSectionRefs.current[sectionId];
+    if (!node) return;
+    node.scrollIntoView({ behavior: 'smooth', block: 'start' });
+  };
+
   const handleDetailsScroll = () => {
     const container = detailsScrollRef.current;
     if (!container || !detailSections.length) return;
-    setSavedScrollTop(container.scrollTop);
     const distanceFromBottom = container.scrollHeight - container.scrollTop - container.clientHeight;
     if (distanceFromBottom <= 8) {
       setActiveDetailSection(detailSections[detailSections.length - 1].id);
     }
   };
-
-  useEffect(() => {
-    if (!isDetailsView || !progressLoaded || !detailsScrollRef.current) return undefined;
-    const frame = window.requestAnimationFrame(() => {
-      if (detailsScrollRef.current) detailsScrollRef.current.scrollTop = savedScrollTop;
-    });
-    return () => window.cancelAnimationFrame(frame);
-  }, [isDetailsView, progressLoaded, savedScrollTop]);
 
   const handleDownloadAllMaterials = () => {
     const downloadable = learningMaterials.filter((material) => material.url || material.downloadUrl);
@@ -968,18 +902,12 @@ const AILearningCoursesReference = () => {
     );
   }
 
-  const canUseFlowStep = (idx) => idx === 0 || completedSteps.includes(chapterInstructionalFlow[idx - 1]?.id);
-  const toggleFlowStep = (stepId, idx) => {
-    if (!canUseFlowStep(idx)) return;
-    setActiveFlowStepId(stepId);
-    setCompletedSteps((previous) => previous.includes(stepId)
-      ? previous.filter((id) => id !== stepId)
-      : [...previous, stepId]);
-  };
-  const markTopicComplete = () => setTopicCompleted((previous) => !previous);
-
   if (isDetailsView) {
-    const practiceResources = assessmentItems;
+    const sectionIdx = Math.max(1, detailSections.findIndex((s) => s.id === activeDetailSection) + 1);
+    const practiceResources = [...assessmentItems, ...chapterWorksheets.downloadLinks];
+    const totalWords = detailSections.reduce((sum, s) => sum + String(s?.text || '').trim().split(/\s+/).filter(Boolean).length, 0);
+    const readMinutes = detailSections.length > 0 ? Math.max(1, Math.round(totalWords / 200)) : 0;
+
     return (
       <>
         <style>{`
@@ -990,17 +918,17 @@ const AILearningCoursesReference = () => {
         <div
           ref={(node) => { detailsViewRef.current = node; detailsScrollRef.current = node; }}
           onScroll={handleDetailsScroll}
-          className={`w-full overflow-x-hidden overflow-y-auto bg-[#f8f9ff] p-3 sm:p-5 ${isFullscreen ? 'h-screen' : 'min-h-screen'}`}
+          className="w-full min-h-screen overflow-x-hidden overflow-y-auto bg-[#f8f9ff] p-3 sm:p-5"
           style={QUEST_FONT}
         >
           {/* Nav row */}
-          <div className="mx-auto mb-4 flex max-w-[1280px] flex-wrap items-center gap-2.5">
+          <div className="mx-auto mb-4 flex max-w-[1100px] flex-wrap items-center gap-2.5">
             <button
               type="button"
               onClick={closeDetailsPage}
               className="inline-flex items-center gap-2 rounded-full bg-[#eff4ff] px-4 py-2 text-sm font-semibold text-[#493ee5] transition-colors hover:bg-[#e6eeff]"
             >
-              <ArrowLeft size={14} /> Back to Chapters
+              <ArrowLeft size={14} /> Back
             </button>
             <div className="flex items-center gap-1 rounded-full bg-[#eff4ff] p-1">
               <button
@@ -1020,19 +948,26 @@ const AILearningCoursesReference = () => {
                 A+
               </button>
             </div>
-            {FULLSCREEN_SUPPORTED && (
+            <button
+              type="button"
+              onClick={toggleDetailsFullscreen}
+              className="rounded-full bg-[#eff4ff] p-2.5 text-[#464555] transition-colors hover:bg-[#e6eeff]"
+            >
+              {isFullscreen ? <Minimize2 size={16} /> : <Maximize2 size={16} />}
+            </button>
+            {!isPracticeMode && (
               <button
                 type="button"
-                onClick={toggleDetailsFullscreen}
-                className="rounded-full bg-[#eff4ff] p-2.5 text-[#464555] transition-colors hover:bg-[#e6eeff]"
+                onClick={() => setIsPracticeMode(true)}
+                className="ml-auto inline-flex items-center gap-2 rounded-full bg-gradient-to-r from-[#493ee5] to-[#635bff] px-4 py-2 text-sm font-bold text-white shadow-sm transition-all hover:-translate-y-0.5 hover:shadow-lg active:scale-95"
               >
-                {isFullscreen ? <Minimize2 size={16} /> : <Maximize2 size={16} />}
+                Next: Practice <ArrowRight size={14} />
               </button>
             )}
           </div>
 
           {/* Reader grid */}
-          <div className="mx-auto grid max-w-[1280px] grid-cols-1 items-start gap-6 lg:grid-cols-[minmax(0,1fr)_360px]">
+          <div className="mx-auto grid max-w-[1100px] grid-cols-1 items-start gap-6 lg:grid-cols-[1fr_340px]">
             {/* ── Book page ── */}
             {!isPracticeMode && (
               <div className="rounded-[2rem] bg-white p-5 shadow-sm sm:p-8">
@@ -1041,11 +976,13 @@ const AILearningCoursesReference = () => {
                   <span className="rounded-full bg-[#e2dfff] px-3.5 py-1.5 text-[11px] font-bold uppercase tracking-wider text-[#321ed2]">
                     {mapScope.chapterTitle || subjectSlug}
                   </span>
-                  <span className="flex items-center gap-2 text-xs font-semibold text-[#464555]"><span className="rdr-dot" /> Lesson</span>
+                  <span className="flex items-center gap-2 text-xs font-semibold text-[#464555]">
+                    <span className="rdr-dot" />
+                    {readMinutes > 0 ? `${readMinutes} min read` : 'Reading'}
+                  </span>
                 </div>
 
                 {/* Title */}
-                <p className="mb-2 text-xs font-bold uppercase tracking-wide text-[#493ee5]">✦ Topic Reader</p>
                 <h1 className="text-2xl font-bold tracking-tight text-[#0d1c2e] sm:text-4xl">{topicSlug}</h1>
                 <p className="mb-7 mt-2 text-sm italic text-[#464555] sm:text-base">
                   {mapScope.label && mapScope.label !== topicSlug ? mapScope.label : `${subjectSlug} · Reading`}
@@ -1081,156 +1018,78 @@ const AILearningCoursesReference = () => {
             {/* ── Sidebar ── */}
             {!isPracticeMode && (
               <div className="flex flex-col gap-5 lg:sticky lg:top-5">
-                {/* Learning objectives */}
+                {/* Progress ring widget */}
                 <div className="rounded-[2rem] bg-white p-5 shadow-sm">
-                  <h2 className="text-base font-bold text-[#0d1c2e]">What you’ll learn</h2>
-                  {chapterLearningObjectives.length === 0 ? (
-                    <p className="mt-3 text-sm italic text-[#464555]">No objectives published yet.</p>
-                  ) : (
-                    <ul className="mt-3 space-y-2">
-                      {chapterLearningObjectives.map((objective, idx) => (
-                        <li key={idx} className="flex items-start gap-2 text-sm leading-5 text-[#464555]">
-                          <span className="mt-1 h-1.5 w-1.5 shrink-0 rounded-full bg-[#493ee5]" />
-                          <span>{objective}</span>
-                        </li>
-                      ))}
-                    </ul>
-                  )}
+                  <p className="mb-3 text-[11px] font-bold uppercase tracking-wider text-[#464555]">Progress</p>
+                  <div className="flex items-center gap-4">
+                    <div className="relative flex h-[62px] w-[62px] shrink-0 items-center justify-center">
+                      <svg className="h-[62px] w-[62px] -rotate-90" viewBox="0 0 36 36">
+                        <path fill="none" stroke="#d5e3fc" strokeWidth="3.5" d="M18 2.0845 a 15.9155 15.9155 0 0 1 0 31.831 a 15.9155 15.9155 0 0 1 0 -31.831" />
+                        <path
+                          className="transition-all duration-500"
+                          fill="none"
+                          stroke="#493ee5"
+                          strokeWidth="3.5"
+                          strokeLinecap="round"
+                          strokeDasharray={`${detailProgress}, 100`}
+                          d="M18 2.0845 a 15.9155 15.9155 0 0 1 0 31.831 a 15.9155 15.9155 0 0 1 0 -31.831"
+                        />
+                      </svg>
+                      <span className="absolute text-sm font-bold text-[#493ee5]">{detailProgress}%</span>
+                    </div>
+                    <div className="text-sm text-[#464555]">
+                      <strong className="text-[#0d1c2e]">{detailProgress}%</strong> read
+                      <div className="text-xs text-[#464555]">{sectionIdx} of {detailSections.length} section{detailSections.length !== 1 ? 's' : ''}</div>
+                    </div>
+                  </div>
                 </div>
 
+                {/* Launch Practice button */}
                 <div className="rounded-[2rem] bg-white p-5 shadow-sm">
-                  <div className="flex items-start justify-between gap-3">
-                    <div>
-                      <h2 className="text-base font-bold text-[#0d1c2e]">Learning steps</h2>
-                      <p className="mt-1 text-xs text-[#464555]">Mark each step when you finish it.</p>
-                    </div>
-                    <span className="shrink-0 text-xs font-bold text-[#493ee5]">{completedSteps.length}/{chapterInstructionalFlow.length}</span>
-                  </div>
-                  <div className="mt-3 space-y-2">
-                    {chapterInstructionalFlow.length === 0 ? (
-                      <p className="text-sm italic text-[#464555]">No steps published yet.</p>
-                    ) : chapterInstructionalFlow.map((step, idx) => {
-                      const done = completedSteps.includes(step.id);
-                      const available = canUseFlowStep(idx);
-                      return (
-                        <button
-                          key={step.id}
-                          type="button"
-                          disabled={!available}
-                          onClick={() => toggleFlowStep(step.id, idx)}
-                          className={`flex w-full items-center gap-2 rounded-xl px-3 py-2 text-left text-xs font-semibold transition-colors ${done ? 'bg-emerald-50 text-emerald-700' : available ? 'bg-[#eff4ff] text-[#493ee5] hover:bg-[#e6eeff]' : 'cursor-not-allowed bg-slate-50 text-slate-400'}`}
-                        >
-                          {done ? <CheckCircle2 size={14} /> : <span className="flex h-4 w-4 items-center justify-center rounded-full border border-current text-[10px]">{idx + 1}</span>}
-                          <span className="min-w-0 flex-1 truncate">{step.title}</span>
-                          <span>{done ? 'Completed' : available ? 'Mark complete' : 'Locked'}</span>
-                        </button>
-                      );
-                    })}
-                  </div>
+                  <p className="mb-3 text-xs text-[#464555]">Ready to test your understanding?</p>
                   <button
                     type="button"
-                    onClick={markTopicComplete}
-                    className={`mt-3 flex w-full items-center justify-center gap-2 rounded-xl px-3 py-2.5 text-xs font-bold ${topicCompleted ? 'bg-emerald-100 text-emerald-700' : 'bg-[#493ee5] text-white hover:bg-[#3a30c9]'}`}
+                    onClick={() => setIsPracticeMode(true)}
+                    className="flex w-full items-center justify-between rounded-full bg-[#eff4ff] px-5 py-3 text-sm font-semibold text-[#493ee5] transition-colors hover:bg-[#e6eeff]"
                   >
-                    <CheckCircle2 size={14} /> {topicCompleted ? 'Topic completed' : 'Mark topic complete'}
+                    Launch Practice
+                    <ArrowRight size={16} />
                   </button>
                 </div>
 
-                <div className="rounded-[2rem] bg-white p-5 shadow-sm">
-                  <div className="flex items-start justify-between gap-3">
-                    <div>
-                      <h2 className="text-base font-bold text-[#0d1c2e]">Lesson materials</h2>
-                      <p className="mt-1 text-xs text-[#464555]">Open or download your teacher’s resources.</p>
-                    </div>
-                    {learningMaterials.length > 0 && (
-                      <span className="shrink-0 rounded-full bg-[#eff4ff] px-2.5 py-1 text-[10px] font-bold text-[#493ee5]">{learningMaterials.length}</span>
-                    )}
-                  </div>
-                  {learningMaterials.length === 0 ? (
-                    <p className="mt-3 text-sm italic text-[#464555]">No materials uploaded yet.</p>
-                  ) : (
-                    <div className="mt-3 space-y-2">
-                      {learningMaterials.map((material, idx) => {
-                        const kind = detectMaterialKind(material);
-                        const meta = MATERIAL_KIND_META[kind];
-                        const Icon = meta.icon;
-                        const materialUrl = material.url || material.downloadUrl;
+                {/* Section navigator */}
+                {detailSections.length > 1 && (
+                  <div className="rounded-[2rem] bg-white p-5 shadow-sm">
+                    <p className="mb-3 text-[11px] font-bold uppercase tracking-wider text-[#464555]">Sections</p>
+                    <div className="flex flex-col gap-1">
+                      {detailSections.map((section, idx) => {
+                        const isPast = idx < sectionIdx - 1;
+                        const isCurrent = activeDetailSection === section.id;
                         return (
-                          <div key={`${material.title || 'material'}-${idx}`} className="flex items-center gap-2 rounded-xl bg-[#eff4ff] p-2.5">
-                            <div className={`flex h-8 w-8 shrink-0 items-center justify-center rounded-lg ${meta.tile}`}><Icon size={15} /></div>
-                            <p className="min-w-0 flex-1 truncate text-xs font-semibold text-[#0d1c2e]">{material.title || 'Lesson material'}</p>
-                            {material.content && (
-                              <button type="button" onClick={() => setActiveMaterial(material)} className="shrink-0 rounded-lg bg-white px-2 py-1 text-[10px] font-bold text-[#493ee5] hover:bg-[#e6eeff]">Read</button>
+                          <button
+                            key={section.id}
+                            type="button"
+                            onClick={() => jumpToDetailSection(section.id)}
+                            className={`flex items-center gap-2 rounded-lg px-2 py-1.5 text-left text-sm transition-colors ${isCurrent ? 'font-semibold text-[#493ee5]' : 'text-[#464555] hover:text-[#493ee5]'}`}
+                          >
+                            {isPast ? (
+                              <CheckCircle2 size={13} className="shrink-0 text-[#006847]" />
+                            ) : (
+                              <span className="h-1.5 w-1.5 shrink-0 rounded-full bg-[#d5e3fc]" />
                             )}
-                            {materialUrl && (
-                              <a href={getInlineDocumentUrl(materialUrl)} target="_blank" rel="noreferrer" className="shrink-0 rounded-lg bg-white px-2 py-1 text-[10px] font-bold text-[#493ee5] hover:bg-[#e6eeff]">Open</a>
-                            )}
-                          </div>
+                            <span className="truncate">{section.title}</span>
+                          </button>
                         );
                       })}
                     </div>
-                  )}
-                  {learningMaterials.some((material) => material.url || material.downloadUrl) && (
-                    <button type="button" onClick={handleDownloadAllMaterials} className="mt-3 inline-flex items-center gap-1.5 text-xs font-bold text-[#493ee5] hover:underline">
-                      <Download size={13} /> Download all
-                    </button>
-                  )}
-                </div>
-
-                <div className="rounded-[2rem] bg-[#eff4ff] p-5 shadow-sm">
-                  <p className="text-sm font-bold text-[#0d1c2e]">Practice Paper</p>
-                  <p className="mt-1 text-xs leading-5 text-[#464555]">Open the paper assigned for this topic.</p>
-                  <button
-                    type="button"
-                    onClick={openPracticePaperPage}
-                    className="mt-3 inline-flex w-full items-center justify-center gap-2 rounded-full bg-[#493ee5] px-4 py-3 text-sm font-bold text-white transition-colors hover:bg-[#3a30c9]"
-                  >
-                    Open Practice Paper <ArrowRight size={15} />
-                  </button>
-                </div>
+                  </div>
+                )}
               </div>
             )}
 
             {/* ── Practice panel (full-span) ── */}
             {isPracticeMode && (
               <div className="col-span-full flex flex-col gap-6">
-              {/* Choose Your Format — every assigned question type, grouped */}
-              {practiceFormats.length > 0 && (
-                <div className="rounded-[2rem] bg-white p-5 shadow-sm sm:p-8">
-                  <div className="mb-6 flex flex-wrap items-center justify-between gap-3 border-b border-[#d5e3fc] pb-4">
-                    <h3 className="text-xl font-bold text-[#0d1c2e] sm:text-2xl">Choose Your Format</h3>
-                    <span className="rounded-full bg-[#eff4ff] px-3.5 py-1 text-xs font-semibold text-[#464555]">
-                      {practiceFormats.length} format{practiceFormats.length !== 1 ? 's' : ''}
-                    </span>
-                  </div>
-                  <div className="flex flex-col gap-3">
-                    {practiceFormats.map(({ type, label, icon: Icon, count }) => (
-                      <div
-                        key={type}
-                        className="flex flex-col items-start justify-between gap-3 rounded-2xl bg-[#eff4ff] p-4 sm:flex-row sm:items-center"
-                      >
-                        <div className="flex items-start gap-3">
-                          <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl bg-white text-[#493ee5] shadow-sm">
-                            <Icon size={20} />
-                          </div>
-                          <div>
-                            <p className="text-sm font-bold text-[#0d1c2e]">{label}</p>
-                            <p className="text-xs font-semibold text-[#464555]">{count} question{count !== 1 ? 's' : ''}</p>
-                          </div>
-                        </div>
-                        <button
-                          type="button"
-                          onClick={() => tryoutRef.current?.scrollToType(type)}
-                          className="inline-flex shrink-0 items-center gap-1 self-stretch justify-center rounded-full bg-white px-4 py-2 text-sm font-bold text-[#493ee5] shadow-sm transition-colors hover:bg-[#e6eeff] sm:self-auto"
-                        >
-                          Start {label} <ArrowRight size={14} />
-                        </button>
-                      </div>
-                    ))}
-                  </div>
-                </div>
-              )}
-
               <div className="rounded-[2rem] bg-white p-5 shadow-sm sm:p-8">
                 {/* Panel header */}
                 <div className="mb-6 flex flex-wrap items-center justify-between gap-3 border-b border-[#d5e3fc] pb-4">
@@ -1286,6 +1145,46 @@ const AILearningCoursesReference = () => {
                   )}
                 </div>
 
+                {/* Worksheet assignments in practice panel */}
+                {chapterWorksheets.submittableAssignments.length > 0 && (
+                  <div className="mb-6 flex flex-col gap-3">
+                    <p className="text-[11px] font-bold uppercase tracking-wider text-[#464555]">Worksheet Assignments</p>
+                    {chapterWorksheets.submittableAssignments.map((assignment) => {
+                      const isSubmitted = submittedWorksheets.has(assignment._id);
+                      const attachmentUrl = (assignment.attachments || [])[0]?.url || '';
+                      return (
+                        <div key={assignment._id} className="flex flex-wrap items-center justify-between gap-3 rounded-2xl bg-[#eff4ff] p-3.5">
+                          <div className="flex min-w-0 flex-1 basis-40 items-center gap-2.5">
+                            <FileText size={15} className="shrink-0 text-[#493ee5]" />
+                            <p className="truncate text-sm font-semibold text-[#0d1c2e]">{assignment.title}</p>
+                            {isSubmitted && (
+                              <span className="inline-flex shrink-0 items-center gap-1 rounded-full bg-[#eefff3] px-2.5 py-0.5 text-[10px] font-bold text-[#006847]">
+                                <CheckCircle2 size={10} /> Submitted
+                              </span>
+                            )}
+                          </div>
+                          <div className="flex gap-2">
+                            {attachmentUrl && (
+                              <a href={attachmentUrl} target="_blank" rel="noreferrer" className="inline-flex items-center gap-1 rounded-full border border-[#493ee5]/30 bg-white px-3 py-1 text-xs font-semibold text-[#493ee5] hover:bg-[#eff4ff]">
+                                <Download size={11} /> Download
+                              </a>
+                            )}
+                            {!isSubmitted ? (
+                              <button type="button" onClick={() => setWorksheetModal(assignment)} className="rounded-full bg-[#493ee5] px-3 py-1 text-xs font-bold text-white hover:bg-[#3a30c9]">
+                                Submit
+                              </button>
+                            ) : (
+                              <span className="inline-flex items-center gap-1 text-xs font-bold text-[#006847]">
+                                <CheckCircle2 size={12} /> Done
+                              </span>
+                            )}
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
+                )}
+
                 {/* Panel footer */}
                 <div className="flex flex-wrap items-center justify-between gap-3 border-t border-[#d5e3fc] pt-4">
                   <button
@@ -1301,18 +1200,76 @@ const AILearningCoursesReference = () => {
               {/* Interactive tryout — embedded directly, no separate page */}
               <div className="overflow-hidden rounded-[2rem] bg-white shadow-sm">
                 <AILearningTryoutSection
-                  ref={tryoutRef}
                   assignedSubjectName={subjectSlug}
                   assignedTopicName={topicSlug}
                   onBack={() => setIsPracticeMode(false)}
-                  onQuestionsLoaded={setAssignedTryoutQuestions}
                 />
               </div>
               </div>
             )}
           </div>
 
+          {/* Worksheets strip (theory view only) */}
+          {!isPracticeMode && (chapterWorksheets.downloadLinks.length > 0 || chapterWorksheets.submittableAssignments.length > 0) && (
+            <section className="mx-auto mt-6 max-w-[1100px] rounded-[2rem] bg-white p-5 shadow-sm">
+              <div className="mb-4 flex items-center gap-2.5">
+                <div className="flex h-8 w-8 items-center justify-center rounded-xl bg-[#eff4ff] text-[#493ee5]">
+                  <ClipboardList size={18} />
+                </div>
+                <h2 className="text-base font-bold text-[#0d1c2e]">Worksheets</h2>
+              </div>
+              <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+                {chapterWorksheets.downloadLinks.map((link) => (
+                  <div key={link.id} className="flex items-center justify-between gap-3 rounded-2xl bg-[#eff4ff] p-3">
+                    <div className="flex min-w-0 items-center gap-2">
+                      <FileText size={14} className="shrink-0 text-[#493ee5]" />
+                      <p className="truncate text-sm font-semibold text-[#0d1c2e]">{link.title}</p>
+                    </div>
+                    <a href={link.url} target="_blank" rel="noreferrer" className="inline-flex shrink-0 items-center gap-1 rounded-full bg-[#493ee5] px-3 py-1.5 text-xs font-bold text-white hover:bg-[#3a30c9]">
+                      <Download size={11} /> Download
+                    </a>
+                  </div>
+                ))}
+                {chapterWorksheets.submittableAssignments.map((assignment) => {
+                  const isSubmitted = submittedWorksheets.has(assignment._id);
+                  const attachmentUrl = (assignment.attachments || [])[0]?.url || '';
+                  return (
+                    <div key={assignment._id} className="flex flex-wrap items-center justify-between gap-3 rounded-2xl bg-[#eff4ff] p-3">
+                      <div className="flex min-w-0 flex-1 basis-40 items-center gap-2">
+                        <FileText size={14} className="shrink-0 text-[#493ee5]" />
+                        <p className="truncate text-sm font-semibold text-[#0d1c2e]">{assignment.title}</p>
+                        {isSubmitted && <span className="shrink-0 rounded-full bg-[#eefff3] px-2 py-0.5 text-[10px] font-bold text-[#006847]">Submitted</span>}
+                      </div>
+                      <div className="flex gap-2">
+                        {attachmentUrl && (
+                          <a href={attachmentUrl} target="_blank" rel="noreferrer" className="inline-flex items-center gap-1 rounded-full border border-[#493ee5]/30 bg-white px-3 py-1 text-xs font-semibold text-[#493ee5] hover:bg-[#eff4ff]">
+                            <Download size={11} /> Download
+                          </a>
+                        )}
+                        {!isSubmitted ? (
+                          <button type="button" onClick={() => setWorksheetModal(assignment)} className="rounded-full bg-[#493ee5] px-3 py-1 text-xs font-bold text-white hover:bg-[#3a30c9]">Submit</button>
+                        ) : (
+                          <span className="inline-flex items-center gap-1 text-xs font-bold text-[#006847]"><CheckCircle2 size={12} /> Done</span>
+                        )}
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            </section>
+          )}
         </div>
+
+        {worksheetModal && (
+          <WorksheetSubmitModal
+            assignment={worksheetModal}
+            onClose={() => setWorksheetModal(null)}
+            onSubmitted={() => {
+              setSubmittedWorksheets((prev) => new Set([...prev, worksheetModal._id]));
+              setWorksheetModal(null);
+            }}
+          />
+        )}
 
         {activeMaterial && (
           <div className="fixed inset-0 z-[80] flex items-center justify-center bg-[#0d1c2e]/50 p-4">
@@ -1350,17 +1307,16 @@ const AILearningCoursesReference = () => {
   const handleFlowStepClick = (stepId, idx) => {
     if (isStepLocked(idx)) return;
     setActiveFlowStepId(stepId);
+    setCompletedSteps((prev) => {
+      if (prev.includes(stepId)) return prev;
+      return [...prev, stepId];
+    });
   };
 
   const stepsDoneLabel = `${completedSteps.length}/${chapterInstructionalFlow.length || 0} (${overallProgress}%)`;
   const progressStatusLabel = overallProgress === 0 ? 'Ready to begin!' : overallProgress === 100 ? 'Topic complete!' : `${overallProgress}% complete`;
   const heroDescription = chapterIntroduction || 'Explore this topic step by step, then try the practice questions when you’re ready.';
   const classChip = profile?.grade ? `Class ${profile.grade}${profile.section ? ` • ${profile.section}` : ''} curriculum` : '';
-  // Only surface the chapter title as its own breadcrumb pill / title prefix
-  // when it actually says something different from the topic name — a raw
-  // !== comparison let near-duplicates (differing only in case/whitespace)
-  // through and showed the same title twice.
-  const showChapterTitle = Boolean(mapScope.chapterTitle) && normalizeKey(mapScope.chapterTitle) !== normalizeKey(topicSlug);
 
   // The step the student should tackle next — spotlighted the same way the
   // reference design highlights its "hero" milestone above the compact path.
@@ -1368,244 +1324,8 @@ const AILearningCoursesReference = () => {
   const spotlightStep = spotlightStepIdx >= 0 ? chapterInstructionalFlow[spotlightStepIdx] : null;
   const spotlightDone = spotlightStep ? completedSteps.includes(spotlightStep.id) : false;
 
-  // Keep the default topic route focused on the next useful action. The
-  // detailed reader and practice mode still use the richer layouts below,
-  // but the first screen should not make students scan three competing
-  // panels before they can start learning.
-  if (!isDetailsView && !isPracticeMode) {
-    const nextStepIndex = chapterInstructionalFlow.findIndex((step) => !completedSteps.includes(step.id));
-    const nextStep = nextStepIndex >= 0 ? chapterInstructionalFlow[nextStepIndex] : null;
-
-    return (
-      <div ref={moduleRef} className={`min-h-screen w-full overflow-x-hidden bg-slate-50 ${isFullscreen ? 'h-screen overflow-y-auto' : ''}`} style={QUEST_FONT}>
-        <div className="mx-auto w-full max-w-5xl px-4 py-5 sm:px-6 sm:py-8">
-          <header className="mb-5 flex flex-wrap items-center justify-between gap-3">
-            <div className="flex min-w-0 items-center gap-3">
-              <button
-                type="button"
-                onClick={goBackToSubjectTopics}
-                className="inline-flex shrink-0 items-center gap-1.5 rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm font-semibold text-slate-700 shadow-sm transition hover:border-indigo-300 hover:text-indigo-600"
-              >
-                <ArrowLeft size={16} /> Back to Chapters
-              </button>
-              <div className="min-w-0 text-sm text-slate-500">
-                <p className="truncate font-semibold text-slate-800">{subjectSlug}</p>
-                {showChapterTitle && <p className="truncate text-xs">{mapScope.chapterTitle}</p>}
-              </div>
-            </div>
-            <div className="flex items-center gap-2">
-              {FULLSCREEN_SUPPORTED && (
-                <button
-                  type="button"
-                  onClick={toggleFullscreen}
-                  aria-label={isFullscreen ? 'Exit fullscreen' : 'Enter fullscreen'}
-                  className="rounded-lg border border-slate-200 bg-white p-2.5 text-slate-600 shadow-sm transition hover:border-indigo-300 hover:text-indigo-600"
-                >
-                  {isFullscreen ? <Minimize2 size={17} /> : <Maximize2 size={17} />}
-                </button>
-              )}
-              <button
-                type="button"
-                onClick={handleDownloadPdf}
-                disabled={downloadingPdf}
-                className="inline-flex items-center gap-1.5 rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm font-semibold text-slate-700 shadow-sm transition hover:border-indigo-300 hover:text-indigo-600 disabled:opacity-60"
-              >
-                <Download size={16} /> {downloadingPdf ? 'Preparing…' : 'Download PDF'}
-              </button>
-            </div>
-          </header>
-
-          <section className="mb-5 rounded-2xl border border-slate-200 bg-white p-5 shadow-sm sm:p-7">
-            <div className="flex flex-col gap-5 sm:flex-row sm:items-start sm:justify-between">
-              <div className="min-w-0">
-                <p className="text-xs font-bold uppercase tracking-wide text-indigo-600">✦ Topic Reader</p>
-                <h1 className="mt-1 text-2xl font-bold tracking-tight text-slate-900 sm:text-3xl">{topicSlug}</h1>
-                {showChapterTitle && <p className="mt-1 text-sm font-medium text-slate-500">Chapter: {mapScope.chapterTitle}</p>}
-                <p className="mt-4 max-w-2xl text-sm leading-6 text-slate-600">{heroDescription}</p>
-              </div>
-              <div className="w-full shrink-0 rounded-xl bg-slate-50 p-4 sm:w-56">
-                <div className="flex items-center justify-between text-sm">
-                  <span className="font-semibold text-slate-600">Progress</span>
-                  <span className="font-bold text-indigo-600">{overallProgress}%</span>
-                </div>
-                <div className="mt-2 h-2 overflow-hidden rounded-full bg-slate-200">
-                  <div className="h-full rounded-full bg-indigo-600 transition-all" style={{ width: `${overallProgress}%` }} />
-                </div>
-                <p className="mt-2 text-xs text-slate-500">{completedSteps.length} of {chapterInstructionalFlow.length || 0} steps complete</p>
-              </div>
-            </div>
-
-            <div className="mt-5 flex flex-wrap items-center gap-2 border-t border-slate-100 pt-5">
-              {nextStep ? (
-                <>
-                  <button
-                    type="button"
-                    onClick={() => { setActiveFlowStepId(nextStep.id); openDetailsPage(); }}
-                    className="inline-flex items-center gap-2 rounded-lg bg-indigo-600 px-4 py-2.5 text-sm font-bold text-white transition hover:bg-indigo-700"
-                  >
-                    {completedSteps.length > 0 ? 'Continue reading' : 'Start reading'} <ArrowRight size={16} />
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => { setActiveFlowStepId(nextStep.id); openDetailsPage('practice'); }}
-                    className="inline-flex items-center gap-2 rounded-lg border border-indigo-200 bg-white px-4 py-2.5 text-sm font-bold text-indigo-700 transition hover:bg-indigo-50"
-                  >
-                    <Target size={16} /> Practice
-                  </button>
-                </>
-              ) : chapterInstructionalFlow.length > 0 ? (
-                <button
-                  type="button"
-                  onClick={() => openDetailsPage()}
-                  className="inline-flex items-center gap-2 rounded-lg border border-indigo-200 bg-white px-4 py-2.5 text-sm font-bold text-indigo-700 transition hover:bg-indigo-50"
-                >
-                  Review topic <ArrowRight size={16} />
-                </button>
-              ) : null}
-              {learningMaterials.some((material) => material.url || material.downloadUrl) && (
-                <button
-                  type="button"
-                  onClick={handleDownloadAllMaterials}
-                  className="inline-flex items-center gap-2 rounded-lg px-3 py-2.5 text-sm font-semibold text-slate-600 transition hover:bg-slate-100"
-                >
-                  <Download size={16} /> Download materials
-                </button>
-              )}
-            </div>
-          </section>
-
-          <div className="grid grid-cols-1 gap-5 lg:grid-cols-[minmax(0,1fr)_300px]">
-            <section className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm sm:p-6">
-              <div className="flex items-center justify-between gap-3 border-b border-slate-100 pb-4">
-                <div>
-                  <h2 className="text-lg font-bold text-slate-900">Learning steps</h2>
-                  <p className="mt-1 text-sm text-slate-500">Complete each step in order.</p>
-                </div>
-                <span className="shrink-0 text-xs font-semibold text-slate-500">{stepsDoneLabel}</span>
-              </div>
-
-              {chapterInstructionalFlow.length === 0 ? (
-                <p className="py-8 text-center text-sm italic text-slate-500">No learning steps have been published yet.</p>
-              ) : (
-                <div className="divide-y divide-slate-100">
-                  {chapterInstructionalFlow.map((step, idx) => {
-                    const isLocked = isStepLocked(idx);
-                    const isDone = completedSteps.includes(step.id);
-                    const previousStepTitle = idx > 0 ? chapterInstructionalFlow[idx - 1]?.title : '';
-                    return (
-                      <div key={step.id} className="flex flex-col gap-3 py-4 sm:flex-row sm:items-center sm:justify-between">
-                        <div className="flex min-w-0 items-start gap-3">
-                          <div className={`mt-0.5 flex h-7 w-7 shrink-0 items-center justify-center rounded-full text-xs font-bold ${isDone ? 'bg-emerald-100 text-emerald-700' : isLocked ? 'bg-slate-100 text-slate-400' : 'bg-indigo-100 text-indigo-700'}`}>
-                            {isDone ? <CheckCircle2 size={15} /> : isLocked ? <Lock size={14} /> : idx + 1}
-                          </div>
-                          <div className="min-w-0">
-                            <div className="flex flex-wrap items-center gap-2">
-                              <h3 className="font-semibold text-slate-900">{step.title}</h3>
-                              <span className="text-xs font-medium uppercase tracking-wide text-slate-400">{step.type}</span>
-                            </div>
-                            <p className="mt-1 text-xs text-slate-500">
-                              {isDone ? 'Completed' : isLocked ? `Unlocks after ${previousStepTitle || 'the previous step'}` : step.duration > 0 ? `${step.duration} min` : 'Ready to start'}
-                            </p>
-                          </div>
-                        </div>
-                        {!isLocked && (
-                          <button
-                            type="button"
-                            onClick={() => { setActiveFlowStepId(step.id); openDetailsPage(); }}
-                            className="inline-flex shrink-0 items-center justify-center gap-1.5 self-start rounded-lg border border-indigo-200 px-3 py-2 text-xs font-bold text-indigo-700 transition hover:bg-indigo-50 sm:self-auto"
-                          >
-                            {isDone ? 'Review' : 'Read'} <ArrowRight size={14} />
-                          </button>
-                        )}
-                      </div>
-                    );
-                  })}
-                </div>
-              )}
-            </section>
-
-            <aside className="space-y-5">
-              <section className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
-                <h2 className="text-base font-bold text-slate-900">What you’ll learn</h2>
-                {chapterLearningObjectives.length === 0 ? (
-                  <p className="mt-3 text-sm italic text-slate-500">No objectives published yet.</p>
-                ) : (
-                  <ul className="mt-3 space-y-2">
-                    {chapterLearningObjectives.map((objective, idx) => (
-                      <li key={idx} className="flex items-start gap-2 text-sm leading-5 text-slate-600">
-                        <span className="mt-1 h-1.5 w-1.5 shrink-0 rounded-full bg-indigo-500" />
-                        <span>{objective}</span>
-                      </li>
-                    ))}
-                  </ul>
-                )}
-              </section>
-
-              <section className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
-                <h2 className="text-base font-bold text-slate-900">Materials</h2>
-                {learningMaterials.length === 0 ? (
-                  <p className="mt-3 text-sm italic text-slate-500">No materials uploaded yet.</p>
-                ) : (
-                  <div className="mt-3 space-y-2">
-                    {learningMaterials.map((material, idx) => {
-                      const kind = detectMaterialKind(material);
-                      const meta = MATERIAL_KIND_META[kind];
-                      const Icon = meta.icon;
-                      return (
-                        <div key={idx} className="flex items-center gap-2 rounded-lg bg-slate-50 p-2.5">
-                          <div className={`flex h-8 w-8 shrink-0 items-center justify-center rounded-lg ${meta.tile}`}>
-                            <Icon size={15} />
-                          </div>
-                          <p className="min-w-0 flex-1 truncate text-sm font-medium text-slate-700">{material.title}</p>
-                          <MaterialQuickActions material={material} onRead={setActiveMaterial} />
-                        </div>
-                      );
-                    })}
-                  </div>
-                )}
-              </section>
-
-              <section className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
-                <h2 className="text-base font-bold text-slate-900">Assessment</h2>
-                {assessmentItems.length === 0 ? (
-                  <p className="mt-3 text-sm italic text-slate-500">No assessment uploaded yet.</p>
-                ) : (
-                  <div className="mt-3 space-y-2">
-                    {assessmentItems.map((item, idx) => (
-                      <div key={idx} className="flex items-center gap-2 rounded-lg bg-slate-50 p-2.5">
-                        <ClipboardList size={15} className="shrink-0 text-amber-600" />
-                        <span className="min-w-0 flex-1 truncate text-sm font-medium text-slate-700">{item.title}</span>
-                        <MaterialQuickActions material={item} onRead={setActiveMaterial} />
-                      </div>
-                    ))}
-                  </div>
-                )}
-              </section>
-            </aside>
-          </div>
-
-          {activeMaterial && (
-            <div className="fixed inset-0 z-[80] flex items-center justify-center bg-slate-900/50 p-4">
-              <div className="w-full max-w-2xl overflow-hidden rounded-2xl bg-white shadow-xl" style={{ maxHeight: '85vh' }}>
-                <div className="flex items-center justify-between gap-4 border-b border-slate-200 px-5 py-4">
-                  <h3 className="truncate text-base font-bold text-slate-900">{activeMaterial.title}</h3>
-                  <button type="button" onClick={() => setActiveMaterial(null)} aria-label="Close material" className="rounded-lg p-1.5 text-slate-500 hover:bg-slate-100 hover:text-slate-900">
-                    <X size={18} />
-                  </button>
-                </div>
-                <div className="overflow-y-auto p-5" style={{ maxHeight: '65vh' }}>
-                  <p className="whitespace-pre-wrap text-sm leading-7 text-slate-600">{stripHtml(activeMaterial.content)}</p>
-                </div>
-              </div>
-            </div>
-          )}
-        </div>
-      </div>
-    );
-  }
-
   return (
-    <div ref={moduleRef} className={`w-full overflow-y-auto overflow-x-hidden bg-[#f8f9ff] ${isFullscreen ? 'h-screen' : 'min-h-screen'}`} style={QUEST_FONT}>
+    <div ref={moduleRef} className="min-h-screen w-full bg-[#f8f9ff]" style={QUEST_FONT}>
       <div className="mx-auto w-full max-w-[1180px] px-4 py-6 sm:px-6 sm:py-8">
         {/* Breadcrumb & Topic Eyebrow Bar */}
         <div className="mb-6 flex flex-wrap items-center justify-between gap-3">
@@ -1617,7 +1337,7 @@ const AILearningCoursesReference = () => {
               <span className="rounded-full bg-[#eff4ff] px-3 py-1 text-xs font-bold text-[#493ee5]">
                 {subjectSlug}{classChip ? ` • ${classChip}` : ''}
               </span>
-              {showChapterTitle && (
+              {mapScope.chapterTitle && mapScope.chapterTitle !== topicSlug && (
                 <>
                   <span className="text-[#c7c4d8]">•</span>
                   <span className="rounded-full bg-[#e2dfff] px-3 py-1 text-xs font-bold text-[#321ed2]">{mapScope.chapterTitle}</span>
@@ -1628,11 +1348,9 @@ const AILearningCoursesReference = () => {
             </div>
           </div>
           <div className="flex items-center gap-2">
-            {FULLSCREEN_SUPPORTED && (
-              <button type="button" onClick={toggleFullscreen} className="rounded-full bg-[#eff4ff] p-2.5 text-[#464555] transition-colors hover:bg-[#e6eeff]">
-                {isFullscreen ? <Minimize2 size={18} /> : <Maximize2 size={18} />}
-              </button>
-            )}
+            <button type="button" onClick={toggleFullscreen} className="rounded-full bg-[#eff4ff] p-2.5 text-[#464555] transition-colors hover:bg-[#e6eeff]">
+              {isFullscreen ? <Minimize2 size={18} /> : <Maximize2 size={18} />}
+            </button>
             <button type="button" onClick={handleDownloadPdf} disabled={downloadingPdf} className="inline-flex items-center gap-1.5 rounded-full bg-[#eff4ff] px-4 py-2 text-sm font-bold text-[#493ee5] transition-colors hover:bg-[#e6eeff] disabled:opacity-60">
               <Download size={18} /> {downloadingPdf ? 'Preparing…' : 'Offline Pack (PDF)'}
             </button>
@@ -1648,7 +1366,7 @@ const AILearningCoursesReference = () => {
                 <span className="text-xs font-bold uppercase tracking-wide">Learning Journey</span>
               </div>
               <h1 className="text-2xl font-bold tracking-tight text-[#0d1c2e] sm:text-4xl">
-                {showChapterTitle ? `${mapScope.chapterTitle}: ${topicSlug}` : topicSlug}
+                {mapScope.chapterTitle && mapScope.chapterTitle !== topicSlug ? `${mapScope.chapterTitle}: ${topicSlug}` : topicSlug}
               </h1>
               <p className="mt-1 text-sm leading-relaxed text-[#464555] sm:text-base">{heroDescription}</p>
             </div>
@@ -1917,7 +1635,66 @@ const AILearningCoursesReference = () => {
           </div>
         </div>
 
+        {/* Worksheets */}
+        {(chapterWorksheets.downloadLinks.length > 0 || chapterWorksheets.submittableAssignments.length > 0) && (
+          <section className="mt-6 rounded-[2rem] bg-white p-5 shadow-sm sm:p-6">
+            <div className="mb-4 flex items-center gap-2.5">
+              <div className="flex h-8 w-8 items-center justify-center rounded-xl bg-[#eff4ff] text-[#493ee5]"><ClipboardList size={18} /></div>
+              <h2 className="text-lg font-bold text-[#0d1c2e]">Worksheets</h2>
+            </div>
+            <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+              {chapterWorksheets.downloadLinks.map((link) => (
+                <div key={link.id} className="flex items-center justify-between gap-3 rounded-2xl bg-[#eff4ff] p-3">
+                  <div className="flex min-w-0 items-center gap-2">
+                    <FileText size={16} className="shrink-0 text-[#493ee5]" />
+                    <p className="truncate text-sm font-semibold text-[#0d1c2e]">{link.title}</p>
+                  </div>
+                  <a href={link.url} target="_blank" rel="noreferrer" className="inline-flex shrink-0 items-center gap-1 rounded-full bg-[#493ee5] px-3 py-1.5 text-xs font-bold text-white hover:bg-[#3a30c9]">
+                    <Download size={12} /> Download
+                  </a>
+                </div>
+              ))}
+              {chapterWorksheets.submittableAssignments.map((assignment) => {
+                const isSubmitted = submittedWorksheets.has(assignment._id);
+                const attachmentUrl = (assignment.attachments || [])[0]?.url || '';
+                return (
+                  <div key={assignment._id} className="flex flex-col gap-2 rounded-2xl bg-[#eff4ff] p-3">
+                    <div className="flex items-center gap-2">
+                      <FileText size={16} className="shrink-0 text-[#493ee5]" />
+                      <p className="min-w-0 flex-1 truncate text-sm font-semibold text-[#0d1c2e]">{assignment.title}</p>
+                      {isSubmitted && <span className="shrink-0 rounded-full bg-[#eefff3] px-2 py-0.5 text-[10px] font-bold text-[#006847]">Submitted</span>}
+                    </div>
+                    <div className="flex gap-2">
+                      {attachmentUrl && (
+                        <a href={attachmentUrl} target="_blank" rel="noreferrer" className="inline-flex items-center gap-1 rounded-full border border-[#493ee5]/30 bg-white px-3 py-1 text-xs font-bold text-[#493ee5] hover:bg-[#eff4ff]">
+                          <Download size={11} /> Download
+                        </a>
+                      )}
+                      {!isSubmitted ? (
+                        <button type="button" onClick={() => setWorksheetModal(assignment)} className="rounded-full bg-[#493ee5] px-3 py-1 text-xs font-bold text-white hover:bg-[#3a30c9]">Submit</button>
+                      ) : (
+                        <span className="inline-flex items-center gap-1 text-xs font-bold text-[#006847]"><CheckCircle2 size={12} /> Done</span>
+                      )}
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          </section>
+        )}
       </div>
+
+      {/* ── Modals ── */}
+      {worksheetModal && (
+        <WorksheetSubmitModal
+          assignment={worksheetModal}
+          onClose={() => setWorksheetModal(null)}
+          onSubmitted={() => {
+            setSubmittedWorksheets((prev) => new Set([...prev, worksheetModal._id]));
+            setWorksheetModal(null);
+          }}
+        />
+      )}
 
       <AnimatePresence>
         {activeMaterial && (
