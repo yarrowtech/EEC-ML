@@ -362,20 +362,20 @@ router.post('/school-admins/notify-credentials', adminAuth, ensureSuperAdmin, as
 router.post("/profile", adminAuth, async (req, res) => {
   // #swagger.tags = ['Admin Auth']
   try {
-      const student = await Admin.findById(req.admin.id).select('-password');
-      if (!student) {
-        return res.status(404).json({ error: 'Student not found' });
+      const admin = await Admin.findById(req.admin.id).select('-password');
+      if (!admin) {
+        return res.status(404).json({ error: 'Admin not found' });
       }
       logBusinessEvent(req, {
         action: 'admin_profile.fetch',
         outcome: 'success',
         entity: 'admin',
-        entityId: student._id,
+        entityId: admin._id,
         statusCode: 200,
         adminId: req.admin?.id || req.admin?._id,
-        role: student.role,
+        role: admin.role,
       });
-      res.json(student);
+      res.json(admin);
     } catch (err) {
       logBusinessEvent(req, {
         action: 'admin_profile.fetch',

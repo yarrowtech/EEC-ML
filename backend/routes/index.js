@@ -109,6 +109,7 @@ module.exports = function registerRoutes(app, { generalApiLimiter, authApiLimite
 
   // ── Platform admin ───────────────────────────────────────────────────────────
   app.use('/api/super-admin', writeHeavyApiLimiter, adminActionLogger, require('./superAdminRoutes'));
+  app.use('/api/super-admin/migration', writeHeavyApiLimiter, adminActionLogger, require('./superAdminMigrationRoutes'));
   app.use('/api/support', writeHeavyApiLimiter, adminActionLogger, require('./supportRoutes'));
   app.use('/api/issues', writeHeavyApiLimiter, adminActionLogger, require('./issueRoutes'));
 

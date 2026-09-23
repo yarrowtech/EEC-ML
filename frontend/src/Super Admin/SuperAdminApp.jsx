@@ -10,6 +10,7 @@ import Credentials from './pages/Credentials';
 import Operations from './pages/Operations';
 import Usage from './pages/Usage';
 import StudyMaterials from './pages/StudyMaterials';
+import DataMigration from './pages/DataMigration';
 import IDPass from './pages/IDPass';
 import ActiveSchools from './pages/ActiveSchools';
 import RequestDetails from './pages/RequestDetails';
@@ -822,6 +823,7 @@ const SuperAdminAppInner = () => {
         } />
         <Route path="usage" element={<Usage />} />
         <Route path="study-materials" element={<StudyMaterials />} />
+        <Route path="data-migration" element={<DataMigration />} />
         <Route path="id-pass" element={<IDPass profile={profile} />} />
         <Route
           path="active-schools"

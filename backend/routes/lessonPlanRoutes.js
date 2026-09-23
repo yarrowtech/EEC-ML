@@ -966,6 +966,7 @@ const resolvePlanPayload = async ({ schoolId, campusId, payload, forcedTeacherId
     introduction,
     explanation,
     recap,
+    didYouKnow,
     materialsNeeded,
     additionalNotes,
     plannerContent,
@@ -1031,6 +1032,7 @@ const resolvePlanPayload = async ({ schoolId, campusId, payload, forcedTeacherId
       introduction: normalizeString(introduction),
       explanation: normalizeString(explanation),
       recap: normalizeString(recap),
+      didYouKnow: normalizeString(didYouKnow),
       materialsNeeded: Array.isArray(materialsNeeded)
         ? materialsNeeded.map((item) => normalizeString(item)).filter(Boolean)
         : [],
@@ -2296,6 +2298,7 @@ router.get('/student/smart-learning-map', authStudent, async (req, res) => {
         introduction: normalizeString(plan?.introduction) || '',
         explanation: normalizeString(plan?.explanation) || '',
         recap: normalizeString(plan?.recap) || '',
+        didYouKnow: normalizeString(plan?.didYouKnow) || '',
       };
     };
 
@@ -2310,6 +2313,7 @@ router.get('/student/smart-learning-map', authStudent, async (req, res) => {
       introduction: nextMeta.introduction || currentMeta.introduction || '',
       explanation: nextMeta.explanation || currentMeta.explanation || '',
       recap: nextMeta.recap || currentMeta.recap || '',
+      didYouKnow: nextMeta.didYouKnow || currentMeta.didYouKnow || '',
     });
 
     const ensureChapterTopicSubTopic = (subjectEntry, plan, chapter, topic, subTopic) => {

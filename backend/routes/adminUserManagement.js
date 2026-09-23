@@ -2549,3 +2549,11 @@ router.delete('/students/:id/all-data', adminAuth, async (req, res) => {
 });
 
 module.exports = router;
+// Exposed so the data-migration portal (backend/services/migration/teacher.js)
+// can drive the exact same teacher-creation pipeline — sequence-generated
+// employeeCode/username, password policy check — instead of reimplementing
+// it. teacherBulkUploadJobs must hold the job entry before
+// runTeacherBulkUploadJob is called (see POST /teachers/bulk-upload above for
+// the shape it expects).
+module.exports.runTeacherBulkUploadJob = runTeacherBulkUploadJob;
+module.exports.teacherBulkUploadJobs = teacherBulkUploadJobs;

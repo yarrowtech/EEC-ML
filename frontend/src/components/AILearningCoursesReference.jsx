@@ -24,17 +24,26 @@ import {
   X,
   Paperclip,
   Upload,
-  ChevronRight,
   CalendarDays,
   Calendar,
   ListChecks,
   Lightbulb,
   MessageCircle,
+  Lock,
+  Sparkles,
+  Rocket,
+  Compass,
+  Video,
+  Presentation,
+  Newspaper,
+  NotebookText,
+  Image as ImageIcon,
 } from 'lucide-react';
 import { fetchCachedJson } from '../utils/studentApiCache';
 import { PaperclipHorizontalIcon } from '@phosphor-icons/react';
 import { slugifyForUrl, deslugifyFromUrl } from '../utils/urlSlug';
 import WorksheetSubmitModal from './WorksheetSubmitModal';
+import AILearningTryoutSection from './AILearningTryoutSection';
 
 const API_BASE = (import.meta.env.VITE_API_URL || 'http://localhost:5000').replace(/\/$/, '');
 const DASHBOARD_ENDPOINT = `${API_BASE}/api/student/auth/dashboard`;
@@ -43,12 +52,14 @@ const SMART_LEARNING_MAP_ENDPOINT = `${API_BASE}/api/lesson-plans/student/smart-
 const STUDENT_MATERIALS_ENDPOINT = `${API_BASE}/api/student/materials`;
 
 
-// Shared "glass" card recipe used across the Smart Learning pages: frosted
-// backdrop blur, soft purple border, gentle shadow. GLASS_INNER is the same
-// idea at a smaller radius for nested rows/tiles.
-const GLASS_CARD = 'rounded-3xl border border-violet-500/35 bg-white/60 backdrop-blur-[20px] backdrop-saturate-[1.8] shadow-[0_8px_32px_rgba(15,23,42,0.06)]';
-const GLASS_INNER = 'rounded-xl border border-violet-500/35 bg-white/50 backdrop-blur-[20px]';
-const GLASS_HOVER = 'transition-all duration-200 hover:-translate-y-0.5 hover:shadow-[0_12px_40px_rgba(139,92,246,0.14)]';
+// "Quest" visual system — mirrors Ref/student portal lesson plan/code.html's
+// tailwind.config 1:1 across this whole page (primary #493ee5,
+// surface-container-low #eff4ff, rounded-lg = 2rem, etc). Tailwind can't
+// statically extract classes built from JS template literals, so those exact
+// hex/radius values are written as literal arbitrary-value classes
+// (bg-[#493ee5], rounded-[2rem]) directly in the JSX below rather than
+// composed from a shared object — only the font needs a real JS value.
+const QUEST_FONT = { fontFamily: "'Plus Jakarta Sans', ui-sans-serif, system-ui, sans-serif" };
 
 const normalizeKey = (value) => String(value || '').trim().toLowerCase();
 const normalizeLabel = (value) => String(value || '').trim();
@@ -86,30 +97,49 @@ const formatDateLabel = (value) => {
   return date.toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' });
 };
 
+// Classifies a material by its file extension (falling back to its label/
+// description) so the Lesson Materials list can show a real thumbnail for
+// images and a named, type-appropriate icon for everything else.
+const MATERIAL_KIND_META = {
+  image: { label: 'Image', icon: ImageIcon, tile: 'bg-[#eefff3] text-[#006847]' },
+  video: { label: 'Video', icon: Video, tile: 'bg-[#ffdbcb] text-[#9e4300]' },
+  ppt: { label: 'PPT', icon: Presentation, tile: 'bg-[#e2dfff] text-[#321ed2]' },
+  pdf: { label: 'PDF', icon: FileText, tile: 'bg-[#eff4ff] text-[#493ee5]' },
+  notes: { label: 'Notes', icon: NotebookText, tile: 'bg-[#eff4ff] text-[#493ee5]' },
+  article: { label: 'Article', icon: Newspaper, tile: 'bg-[#eff4ff] text-[#464555]' },
+};
+const detectMaterialKind = (material) => {
+  const url = String(material?.url || material?.downloadUrl || '');
+  const hint = normalizeKey(`${material?.formatLabel || ''} ${material?.description || ''}`);
+  if (/\.(jpe?g|png|gif|webp|avif|svg)(\?|#|$)/i.test(url) || hint.includes('image')) return 'image';
+  if (/\.(mp4|mov|webm|mkv|avi)(\?|#|$)/i.test(url) || hint.includes('video')) return 'video';
+  if (/\.(ppt|pptx)(\?|#|$)/i.test(url) || hint.includes('presentation') || hint.includes('slide')) return 'ppt';
+  if (/\.pdf(\?|#|$)/i.test(url) || hint.includes('pdf')) return 'pdf';
+  if (/\.(doc|docx)(\?|#|$)/i.test(url) || hint.includes('notes') || hint.includes('document') || hint.includes('handout')) return 'notes';
+  return 'article';
+};
+
 const MaterialQuickActions = ({ material, onRead }) => {
   if (!material?.url && !material?.content) return null;
   return (
-    <div className="flex shrink-0 flex-wrap items-center justify-end gap-1.5">
+    <div className="flex shrink-0 items-center gap-1">
       {material.content && (
         <button
           type="button"
           onClick={() => onRead(material)}
           title="Read"
-          className="inline-flex items-center gap-1 rounded-lg border border-violet-500/35 bg-violet-50 px-2 py-1 text-[10px] font-bold text-violet-700 hover:bg-violet-100"
+          className="flex h-8 w-8 items-center justify-center rounded-full text-[#493ee5] transition-colors hover:bg-white"
         >
-          <FileText size={12} />
-          Read
+          <FileText size={14} />
         </button>
       )}
       {material.url && (
         <>
-          <a href={getInlineDocumentUrl(material.url)} target="_blank" rel="noreferrer" title="Open" className="inline-flex items-center gap-1 rounded-lg border border-violet-500/35 bg-violet-50 px-2 py-1 text-[10px] font-bold text-violet-700 hover:bg-violet-100">
-            <ExternalLink size={12} />
-            Open
+          <a href={getInlineDocumentUrl(material.url)} target="_blank" rel="noreferrer" title="Open" className="flex h-8 w-8 items-center justify-center rounded-full text-[#493ee5] transition-colors hover:bg-white">
+            <ExternalLink size={14} />
           </a>
-          <a href={material.downloadUrl || material.url} download title="Download" className="inline-flex items-center gap-1 rounded-lg bg-violet-500 px-2 py-1 text-[10px] font-bold text-white hover:bg-violet-600">
-            <Download size={12} />
-            Download
+          <a href={material.downloadUrl || material.url} download title="Download" className="flex h-8 w-8 items-center justify-center rounded-full bg-[#493ee5] text-white transition-colors hover:bg-[#3a30c9]">
+            <Download size={14} />
           </a>
         </>
       )}
@@ -575,6 +605,7 @@ const AILearningCoursesReference = () => {
   const chapterIntroduction = String(selectedChapterMeta.introduction || '').trim();
   const chapterExplanation = String(selectedChapterMeta.explanation || '').trim();
   const chapterRecap = String(selectedChapterMeta.recap || '').trim();
+  const chapterDidYouKnow = String(selectedChapterMeta.didYouKnow || '').trim();
   const hasTopicData = Boolean(selectedChapter || selectedTopicFromMap?.topic);
 
   const chapterDateLabel = formatDateLabel(selectedChapterMeta.date || selectedChapter?.date);
@@ -598,9 +629,10 @@ const AILearningCoursesReference = () => {
     return { intro, sections };
   }, [chapterMaterials]);
 
-  const openDetailsPage = () => {
+  const openDetailsPage = (mode = '') => {
+    const modeQuery = mode ? `&mode=${mode}` : '';
     navigate(
-      `/student/smart-learning-courses/subject/${normalizedSubjectSlug}/topic/${normalizedTopicSlug}?view=details`
+      `/student/smart-learning-courses/subject/${normalizedSubjectSlug}/topic/${normalizedTopicSlug}?view=details${modeQuery}`
     );
   };
 
@@ -634,8 +666,9 @@ const AILearningCoursesReference = () => {
       text: section.text,
     })),
     ...(chapterRecap ? [{ id: 'recap', title: 'Quick Recap', text: chapterRecap }] : []),
-  ]).filter((section) => String(section.text || '').trim()), [readingContent, introductionText, chapterExplanation, chapterRecap]);
-  const [isPracticeMode, setIsPracticeMode] = useState(false);
+    ...(chapterDidYouKnow ? [{ id: 'did-you-know', title: 'Did You Know?', text: chapterDidYouKnow }] : []),
+  ]).filter((section) => String(section.text || '').trim()), [readingContent, introductionText, chapterExplanation, chapterRecap, chapterDidYouKnow]);
+  const [isPracticeMode, setIsPracticeMode] = useState(() => searchParams.get('mode') === 'practice');
   const [activeFlowStepId, setActiveFlowStepId] = useState(null);
   const [activeDetailSection, setActiveDetailSection] = useState('introduction');
   const [readerFontScale, setReaderFontScale] = useState(1);
@@ -684,10 +717,6 @@ const AILearningCoursesReference = () => {
     if (distanceFromBottom <= 8) {
       setActiveDetailSection(detailSections[detailSections.length - 1].id);
     }
-  };
-
-  const goToTryoutSection = () => {
-    navigate(`/student/smart-learning-courses/subject/${normalizedSubjectSlug}/topic/${normalizedTopicSlug}/assessment/tryout-section`);
   };
 
   const handleDownloadAllMaterials = () => {
@@ -882,33 +911,31 @@ const AILearningCoursesReference = () => {
     return (
       <>
         <style>{`
-          .rdr-scroll::-webkit-scrollbar { width: 4px; }
-          .rdr-scroll::-webkit-scrollbar-track { background: transparent; }
-          .rdr-scroll::-webkit-scrollbar-thumb { background: rgba(139,92,246,0.25); border-radius: 10px; }
           @keyframes rdr-pulse-dot { 0%,100% { opacity:0.3; transform:scale(0.8); } 50% { opacity:1; transform:scale(1.2); } }
-          .rdr-dot { animation: rdr-pulse-dot 2s ease-in-out infinite; display:inline-block; width:6px; height:6px; border-radius:50%; background:#10b981; }
+          .rdr-dot { animation: rdr-pulse-dot 2s ease-in-out infinite; display:inline-block; width:6px; height:6px; border-radius:50%; background:#006847; }
         `}</style>
 
         <div
           ref={(node) => { detailsViewRef.current = node; detailsScrollRef.current = node; }}
           onScroll={handleDetailsScroll}
-          className="w-full min-h-screen overflow-x-hidden overflow-y-auto bg-[#f1f5f9] p-3 sm:p-5"
+          className="w-full min-h-screen overflow-x-hidden overflow-y-auto bg-[#f8f9ff] p-3 sm:p-5"
+          style={QUEST_FONT}
         >
           {/* Nav row */}
           <div className="mx-auto mb-4 flex max-w-[1100px] flex-wrap items-center gap-2.5">
             <button
               type="button"
               onClick={closeDetailsPage}
-              className={`inline-flex items-center gap-2 rounded-full ${GLASS_INNER} px-4 py-2 text-sm font-semibold text-slate-700 ${GLASS_HOVER}`}
+              className="inline-flex items-center gap-2 rounded-full bg-[#eff4ff] px-4 py-2 text-sm font-semibold text-[#493ee5] transition-colors hover:bg-[#e6eeff]"
             >
               <ArrowLeft size={14} /> Back
             </button>
-            <div className={`flex items-center gap-1 rounded-full ${GLASS_INNER} p-1`}>
+            <div className="flex items-center gap-1 rounded-full bg-[#eff4ff] p-1">
               <button
                 type="button"
                 onClick={() => setReaderFontScale(1)}
                 aria-label="Normal text size"
-                className={`rounded-full px-3 py-1.5 text-xs font-bold transition-colors ${readerFontScale === 1 ? 'bg-violet-500 text-white' : 'text-slate-500 hover:bg-white/60'}`}
+                className={`rounded-full px-3 py-1.5 text-xs font-bold transition-colors ${readerFontScale === 1 ? 'bg-[#493ee5] text-white' : 'text-[#464555] hover:bg-white/60'}`}
               >
                 A
               </button>
@@ -916,7 +943,7 @@ const AILearningCoursesReference = () => {
                 type="button"
                 onClick={() => setReaderFontScale(1.15)}
                 aria-label="Larger text size"
-                className={`rounded-full px-3 py-1.5 text-sm font-bold transition-colors ${readerFontScale === 1.15 ? 'bg-violet-500 text-white' : 'text-slate-500 hover:bg-white/60'}`}
+                className={`rounded-full px-3 py-1.5 text-sm font-bold transition-colors ${readerFontScale === 1.15 ? 'bg-[#493ee5] text-white' : 'text-[#464555] hover:bg-white/60'}`}
               >
                 A+
               </button>
@@ -924,7 +951,7 @@ const AILearningCoursesReference = () => {
             <button
               type="button"
               onClick={toggleDetailsFullscreen}
-              className={`rounded-full ${GLASS_INNER} p-2.5 text-slate-500 ${GLASS_HOVER}`}
+              className="rounded-full bg-[#eff4ff] p-2.5 text-[#464555] transition-colors hover:bg-[#e6eeff]"
             >
               {isFullscreen ? <Minimize2 size={16} /> : <Maximize2 size={16} />}
             </button>
@@ -932,7 +959,7 @@ const AILearningCoursesReference = () => {
               <button
                 type="button"
                 onClick={() => setIsPracticeMode(true)}
-                className="ml-auto inline-flex items-center gap-2 rounded-full bg-violet-500 px-4 py-2 text-sm font-bold text-white shadow-sm hover:bg-violet-600"
+                className="ml-auto inline-flex items-center gap-2 rounded-full bg-gradient-to-r from-[#493ee5] to-[#635bff] px-4 py-2 text-sm font-bold text-white shadow-sm transition-all hover:-translate-y-0.5 hover:shadow-lg active:scale-95"
               >
                 Next: Practice <ArrowRight size={14} />
               </button>
@@ -943,44 +970,44 @@ const AILearningCoursesReference = () => {
           <div className="mx-auto grid max-w-[1100px] grid-cols-1 items-start gap-6 lg:grid-cols-[1fr_340px]">
             {/* ── Book page ── */}
             {!isPracticeMode && (
-              <div className={`${GLASS_CARD} p-5 sm:p-8`}>
+              <div className="rounded-[2rem] bg-white p-5 shadow-sm sm:p-8">
                 {/* Chapter meta */}
-                <div className="mb-6 flex flex-wrap items-center justify-between gap-3 border-b border-violet-500/15 pb-5">
-                  <span className="rounded-full bg-violet-500/10 px-3.5 py-1.5 text-[11px] font-bold uppercase tracking-wider text-violet-700">
+                <div className="mb-6 flex flex-wrap items-center justify-between gap-3 border-b border-[#d5e3fc] pb-5">
+                  <span className="rounded-full bg-[#e2dfff] px-3.5 py-1.5 text-[11px] font-bold uppercase tracking-wider text-[#321ed2]">
                     {mapScope.chapterTitle || subjectSlug}
                   </span>
-                  <span className="flex items-center gap-2 text-xs font-semibold text-[#8e9aaf]">
+                  <span className="flex items-center gap-2 text-xs font-semibold text-[#464555]">
                     <span className="rdr-dot" />
                     {readMinutes > 0 ? `${readMinutes} min read` : 'Reading'}
                   </span>
                 </div>
 
                 {/* Title */}
-                <h1 className="text-2xl font-bold tracking-tight text-[#0f172a] sm:text-4xl">{topicSlug}</h1>
-                <p className="mb-7 mt-2 text-sm italic text-[#8e9aaf] sm:text-base">
+                <h1 className="text-2xl font-bold tracking-tight text-[#0d1c2e] sm:text-4xl">{topicSlug}</h1>
+                <p className="mb-7 mt-2 text-sm italic text-[#464555] sm:text-base">
                   {mapScope.label && mapScope.label !== topicSlug ? mapScope.label : `${subjectSlug} · Reading`}
                 </p>
 
                 {/* Theory sections */}
-                <div className="rdr-scroll flex max-h-[min(460px,58vh)] flex-col gap-4 overflow-y-auto pr-2">
+                <div className="flex flex-col gap-4">
                   {detailSections.length > 0 ? (
                     detailSections.map((section) => (
                       <div
                         key={section.id}
                         id={section.id}
                         ref={(node) => { detailSectionRefs.current[section.id] = node; }}
-                        className={`rounded-xl border p-4 transition-colors sm:p-5 ${activeDetailSection === section.id ? 'border-violet-500/45 bg-violet-500/[0.04]' : 'border-violet-500/20 bg-white/40'}`}
+                        className={`rounded-[1.25rem] p-4 transition-colors sm:p-5 ${activeDetailSection === section.id ? 'bg-[#eff4ff]' : 'bg-[#f8f9ff]'}`}
                       >
-                        <span className="mb-2 inline-block rounded-full bg-slate-100 px-3 py-0.5 text-[11px] font-bold uppercase tracking-wide text-slate-500">
+                        <span className="mb-2 inline-block rounded-full bg-[#d5e3fc] px-3 py-0.5 text-[11px] font-bold uppercase tracking-wide text-[#0d1c2e]">
                           {section.title}
                         </span>
-                        <p className="leading-[1.85] text-slate-700" style={{ fontSize: `${15 * readerFontScale}px` }}>
+                        <p className="leading-[1.85] text-[#464555]" style={{ fontSize: `${15 * readerFontScale}px` }}>
                           {section.text}
                         </p>
                       </div>
                     ))
                   ) : (
-                    <p className="py-8 text-center text-sm italic text-[#8e9aaf]">
+                    <p className="py-8 text-center text-sm italic text-[#464555]">
                       No reading content published for this topic yet.
                     </p>
                   )}
@@ -990,40 +1017,40 @@ const AILearningCoursesReference = () => {
 
             {/* ── Sidebar ── */}
             {!isPracticeMode && (
-              <div className="flex flex-col gap-5">
+              <div className="flex flex-col gap-5 lg:sticky lg:top-5">
                 {/* Progress ring widget */}
-                <div className={`${GLASS_CARD} p-5`}>
-                  <p className="mb-3 text-[11px] font-bold uppercase tracking-wider text-[#8e9aaf]">Progress</p>
+                <div className="rounded-[2rem] bg-white p-5 shadow-sm">
+                  <p className="mb-3 text-[11px] font-bold uppercase tracking-wider text-[#464555]">Progress</p>
                   <div className="flex items-center gap-4">
                     <div className="relative flex h-[62px] w-[62px] shrink-0 items-center justify-center">
                       <svg className="h-[62px] w-[62px] -rotate-90" viewBox="0 0 36 36">
-                        <path className="text-white/70" d="M18 2.0845 a 15.9155 15.9155 0 0 1 0 31.831 a 15.9155 15.9155 0 0 1 0 -31.831" fill="none" stroke="currentColor" strokeWidth="3.5" />
+                        <path fill="none" stroke="#d5e3fc" strokeWidth="3.5" d="M18 2.0845 a 15.9155 15.9155 0 0 1 0 31.831 a 15.9155 15.9155 0 0 1 0 -31.831" />
                         <path
-                          className="text-violet-500 transition-all duration-500"
-                          d="M18 2.0845 a 15.9155 15.9155 0 0 1 0 31.831 a 15.9155 15.9155 0 0 1 0 -31.831"
+                          className="transition-all duration-500"
                           fill="none"
-                          stroke="currentColor"
+                          stroke="#493ee5"
                           strokeWidth="3.5"
                           strokeLinecap="round"
                           strokeDasharray={`${detailProgress}, 100`}
+                          d="M18 2.0845 a 15.9155 15.9155 0 0 1 0 31.831 a 15.9155 15.9155 0 0 1 0 -31.831"
                         />
                       </svg>
-                      <span className="absolute text-sm font-bold text-violet-600">{detailProgress}%</span>
+                      <span className="absolute text-sm font-bold text-[#493ee5]">{detailProgress}%</span>
                     </div>
-                    <div className="text-sm text-slate-500">
-                      <strong className="text-slate-800">{detailProgress}%</strong> read
-                      <div className="text-xs text-[#8e9aaf]">{sectionIdx} of {detailSections.length} section{detailSections.length !== 1 ? 's' : ''}</div>
+                    <div className="text-sm text-[#464555]">
+                      <strong className="text-[#0d1c2e]">{detailProgress}%</strong> read
+                      <div className="text-xs text-[#464555]">{sectionIdx} of {detailSections.length} section{detailSections.length !== 1 ? 's' : ''}</div>
                     </div>
                   </div>
                 </div>
 
                 {/* Launch Practice button */}
-                <div className={`${GLASS_CARD} p-5`}>
-                  <p className="mb-3 text-xs text-[#8e9aaf]">Ready to test your understanding?</p>
+                <div className="rounded-[2rem] bg-white p-5 shadow-sm">
+                  <p className="mb-3 text-xs text-[#464555]">Ready to test your understanding?</p>
                   <button
                     type="button"
                     onClick={() => setIsPracticeMode(true)}
-                    className="flex w-full items-center justify-between rounded-full bg-violet-500/10 px-5 py-3 text-sm font-semibold text-violet-700 transition-colors hover:bg-violet-500/15"
+                    className="flex w-full items-center justify-between rounded-full bg-[#eff4ff] px-5 py-3 text-sm font-semibold text-[#493ee5] transition-colors hover:bg-[#e6eeff]"
                   >
                     Launch Practice
                     <ArrowRight size={16} />
@@ -1032,8 +1059,8 @@ const AILearningCoursesReference = () => {
 
                 {/* Section navigator */}
                 {detailSections.length > 1 && (
-                  <div className={`${GLASS_CARD} p-5`}>
-                    <p className="mb-3 text-[11px] font-bold uppercase tracking-wider text-[#8e9aaf]">Sections</p>
+                  <div className="rounded-[2rem] bg-white p-5 shadow-sm">
+                    <p className="mb-3 text-[11px] font-bold uppercase tracking-wider text-[#464555]">Sections</p>
                     <div className="flex flex-col gap-1">
                       {detailSections.map((section, idx) => {
                         const isPast = idx < sectionIdx - 1;
@@ -1043,12 +1070,12 @@ const AILearningCoursesReference = () => {
                             key={section.id}
                             type="button"
                             onClick={() => jumpToDetailSection(section.id)}
-                            className={`flex items-center gap-2 rounded-lg px-2 py-1.5 text-left text-sm transition-colors ${isCurrent ? 'font-semibold text-violet-600' : 'text-slate-500 hover:text-violet-600'}`}
+                            className={`flex items-center gap-2 rounded-lg px-2 py-1.5 text-left text-sm transition-colors ${isCurrent ? 'font-semibold text-[#493ee5]' : 'text-[#464555] hover:text-[#493ee5]'}`}
                           >
                             {isPast ? (
-                              <CheckCircle2 size={13} className="shrink-0 text-emerald-500" />
+                              <CheckCircle2 size={13} className="shrink-0 text-[#006847]" />
                             ) : (
-                              <span className="h-1.5 w-1.5 shrink-0 rounded-full bg-slate-300" />
+                              <span className="h-1.5 w-1.5 shrink-0 rounded-full bg-[#d5e3fc]" />
                             )}
                             <span className="truncate">{section.title}</span>
                           </button>
@@ -1062,11 +1089,12 @@ const AILearningCoursesReference = () => {
 
             {/* ── Practice panel (full-span) ── */}
             {isPracticeMode && (
-              <div className={`col-span-full ${GLASS_CARD} p-5 sm:p-8`}>
+              <div className="col-span-full flex flex-col gap-6">
+              <div className="rounded-[2rem] bg-white p-5 shadow-sm sm:p-8">
                 {/* Panel header */}
-                <div className="mb-6 flex flex-wrap items-center justify-between gap-3 border-b border-violet-500/15 pb-4">
-                  <h3 className="text-xl font-bold text-[#0f172a] sm:text-2xl">Practice Paper</h3>
-                  <span className={`rounded-full ${GLASS_INNER} px-3.5 py-1 text-xs font-semibold text-slate-500`}>
+                <div className="mb-6 flex flex-wrap items-center justify-between gap-3 border-b border-[#d5e3fc] pb-4">
+                  <h3 className="text-xl font-bold text-[#0d1c2e] sm:text-2xl">Practice Paper</h3>
+                  <span className="rounded-full bg-[#eff4ff] px-3.5 py-1 text-xs font-semibold text-[#464555]">
                     {practiceResources.length} resource{practiceResources.length !== 1 ? 's' : ''}
                   </span>
                 </div>
@@ -1075,18 +1103,18 @@ const AILearningCoursesReference = () => {
                 <div className="mb-6 grid gap-3">
                   {practiceResources.length === 0 ? (
                     <div className="py-8 text-center">
-                      <p className="mb-1 text-sm italic text-[#8e9aaf]">
+                      <p className="mb-1 text-sm italic text-[#464555]">
                         No practice materials uploaded for this topic yet.
                       </p>
-                      <p className="text-xs text-[#8e9aaf]">
+                      <p className="text-xs text-[#464555]">
                         Try the interactive Tryout Section below!
                       </p>
                     </div>
                   ) : (
                     practiceResources.map((item, idx) => (
-                      <div key={item.id || idx} className={`${GLASS_INNER} p-4`}>
-                        <p className="mb-2.5 text-sm text-slate-700">
-                          <span className="mr-2 font-bold text-violet-400">
+                      <div key={item.id || idx} className="rounded-2xl bg-[#eff4ff] p-4">
+                        <p className="mb-2.5 text-sm text-[#0d1c2e]">
+                          <span className="mr-2 font-bold text-[#635bff]">
                             {String(idx + 1).padStart(2, '0')}.
                           </span>
                           {item.title}
@@ -1094,10 +1122,10 @@ const AILearningCoursesReference = () => {
                         <div className="flex flex-wrap gap-2">
                           {item.url && (
                             <>
-                              <a href={getInlineDocumentUrl(item.url)} target="_blank" rel="noreferrer" className="rounded-full border border-violet-500/35 bg-violet-50 px-3 py-1 text-xs font-semibold text-violet-700 hover:bg-violet-100">
+                              <a href={getInlineDocumentUrl(item.url)} target="_blank" rel="noreferrer" className="rounded-full border border-[#493ee5]/30 bg-white px-3 py-1 text-xs font-semibold text-[#493ee5] hover:bg-[#eff4ff]">
                                 Open
                               </a>
-                              <a href={item.url} download className="rounded-full border border-violet-500/35 bg-violet-50 px-3 py-1 text-xs font-semibold text-violet-700 hover:bg-violet-100">
+                              <a href={item.url} download className="rounded-full border border-[#493ee5]/30 bg-white px-3 py-1 text-xs font-semibold text-[#493ee5] hover:bg-[#eff4ff]">
                                 Download
                               </a>
                             </>
@@ -1106,7 +1134,7 @@ const AILearningCoursesReference = () => {
                             <button
                               type="button"
                               onClick={() => setActiveMaterial(item)}
-                              className="rounded-full border border-violet-500/35 bg-violet-50 px-3 py-1 text-xs font-semibold text-violet-700 hover:bg-violet-100"
+                              className="rounded-full border border-[#493ee5]/30 bg-white px-3 py-1 text-xs font-semibold text-[#493ee5] hover:bg-[#eff4ff]"
                             >
                               Read
                             </button>
@@ -1120,33 +1148,33 @@ const AILearningCoursesReference = () => {
                 {/* Worksheet assignments in practice panel */}
                 {chapterWorksheets.submittableAssignments.length > 0 && (
                   <div className="mb-6 flex flex-col gap-3">
-                    <p className="text-[11px] font-bold uppercase tracking-wider text-[#8e9aaf]">Worksheet Assignments</p>
+                    <p className="text-[11px] font-bold uppercase tracking-wider text-[#464555]">Worksheet Assignments</p>
                     {chapterWorksheets.submittableAssignments.map((assignment) => {
                       const isSubmitted = submittedWorksheets.has(assignment._id);
                       const attachmentUrl = (assignment.attachments || [])[0]?.url || '';
                       return (
-                        <div key={assignment._id} className={`flex flex-wrap items-center justify-between gap-3 ${GLASS_INNER} p-3.5`}>
+                        <div key={assignment._id} className="flex flex-wrap items-center justify-between gap-3 rounded-2xl bg-[#eff4ff] p-3.5">
                           <div className="flex min-w-0 flex-1 basis-40 items-center gap-2.5">
-                            <FileText size={15} className="shrink-0 text-violet-500" />
-                            <p className="truncate text-sm font-semibold text-slate-700">{assignment.title}</p>
+                            <FileText size={15} className="shrink-0 text-[#493ee5]" />
+                            <p className="truncate text-sm font-semibold text-[#0d1c2e]">{assignment.title}</p>
                             {isSubmitted && (
-                              <span className="inline-flex shrink-0 items-center gap-1 rounded-full bg-emerald-100 px-2.5 py-0.5 text-[10px] font-bold text-emerald-700">
+                              <span className="inline-flex shrink-0 items-center gap-1 rounded-full bg-[#eefff3] px-2.5 py-0.5 text-[10px] font-bold text-[#006847]">
                                 <CheckCircle2 size={10} /> Submitted
                               </span>
                             )}
                           </div>
                           <div className="flex gap-2">
                             {attachmentUrl && (
-                              <a href={attachmentUrl} target="_blank" rel="noreferrer" className="inline-flex items-center gap-1 rounded-full border border-violet-500/35 bg-violet-50 px-3 py-1 text-xs font-semibold text-violet-700 hover:bg-violet-100">
+                              <a href={attachmentUrl} target="_blank" rel="noreferrer" className="inline-flex items-center gap-1 rounded-full border border-[#493ee5]/30 bg-white px-3 py-1 text-xs font-semibold text-[#493ee5] hover:bg-[#eff4ff]">
                                 <Download size={11} /> Download
                               </a>
                             )}
                             {!isSubmitted ? (
-                              <button type="button" onClick={() => setWorksheetModal(assignment)} className="rounded-full bg-violet-500 px-3 py-1 text-xs font-bold text-white hover:bg-violet-600">
+                              <button type="button" onClick={() => setWorksheetModal(assignment)} className="rounded-full bg-[#493ee5] px-3 py-1 text-xs font-bold text-white hover:bg-[#3a30c9]">
                                 Submit
                               </button>
                             ) : (
-                              <span className="inline-flex items-center gap-1 text-xs font-bold text-emerald-600">
+                              <span className="inline-flex items-center gap-1 text-xs font-bold text-[#006847]">
                                 <CheckCircle2 size={12} /> Done
                               </span>
                             )}
@@ -1158,43 +1186,46 @@ const AILearningCoursesReference = () => {
                 )}
 
                 {/* Panel footer */}
-                <div className="flex flex-wrap items-center justify-between gap-3 border-t border-violet-500/15 pt-4">
+                <div className="flex flex-wrap items-center justify-between gap-3 border-t border-[#d5e3fc] pt-4">
                   <button
                     type="button"
                     onClick={() => setIsPracticeMode(false)}
-                    className="inline-flex items-center gap-2 text-sm font-semibold text-slate-500 hover:text-slate-700"
+                    className="inline-flex items-center gap-2 text-sm font-semibold text-[#464555] hover:text-[#0d1c2e]"
                   >
                     <ArrowLeft size={14} /> Return to theory
                   </button>
-                  <button
-                    type="button"
-                    onClick={goToTryoutSection}
-                    className="inline-flex items-center gap-2 rounded-full bg-violet-500 px-6 py-3 text-sm font-bold text-white shadow-sm hover:bg-violet-600"
-                  >
-                    Try Full Tryout <ArrowRight size={16} />
-                  </button>
                 </div>
+              </div>
+
+              {/* Interactive tryout — embedded directly, no separate page */}
+              <div className="overflow-hidden rounded-[2rem] bg-white shadow-sm">
+                <AILearningTryoutSection
+                  assignedSubjectName={subjectSlug}
+                  assignedTopicName={topicSlug}
+                  onBack={() => setIsPracticeMode(false)}
+                />
+              </div>
               </div>
             )}
           </div>
 
           {/* Worksheets strip (theory view only) */}
           {!isPracticeMode && (chapterWorksheets.downloadLinks.length > 0 || chapterWorksheets.submittableAssignments.length > 0) && (
-            <section className={`mx-auto mt-6 max-w-[1100px] ${GLASS_CARD} p-5`}>
+            <section className="mx-auto mt-6 max-w-[1100px] rounded-[2rem] bg-white p-5 shadow-sm">
               <div className="mb-4 flex items-center gap-2.5">
-                <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-violet-500/10 text-violet-600">
+                <div className="flex h-8 w-8 items-center justify-center rounded-xl bg-[#eff4ff] text-[#493ee5]">
                   <ClipboardList size={18} />
                 </div>
-                <h2 className="text-base font-bold text-[#0f172a]">Worksheets</h2>
+                <h2 className="text-base font-bold text-[#0d1c2e]">Worksheets</h2>
               </div>
               <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
                 {chapterWorksheets.downloadLinks.map((link) => (
-                  <div key={link.id} className={`flex items-center justify-between gap-3 ${GLASS_INNER} p-3`}>
+                  <div key={link.id} className="flex items-center justify-between gap-3 rounded-2xl bg-[#eff4ff] p-3">
                     <div className="flex min-w-0 items-center gap-2">
-                      <FileText size={14} className="shrink-0 text-violet-500" />
-                      <p className="truncate text-sm font-semibold text-slate-700">{link.title}</p>
+                      <FileText size={14} className="shrink-0 text-[#493ee5]" />
+                      <p className="truncate text-sm font-semibold text-[#0d1c2e]">{link.title}</p>
                     </div>
-                    <a href={link.url} target="_blank" rel="noreferrer" className="inline-flex shrink-0 items-center gap-1 rounded-full bg-violet-500 px-3 py-1.5 text-xs font-bold text-white hover:bg-violet-600">
+                    <a href={link.url} target="_blank" rel="noreferrer" className="inline-flex shrink-0 items-center gap-1 rounded-full bg-[#493ee5] px-3 py-1.5 text-xs font-bold text-white hover:bg-[#3a30c9]">
                       <Download size={11} /> Download
                     </a>
                   </div>
@@ -1203,22 +1234,22 @@ const AILearningCoursesReference = () => {
                   const isSubmitted = submittedWorksheets.has(assignment._id);
                   const attachmentUrl = (assignment.attachments || [])[0]?.url || '';
                   return (
-                    <div key={assignment._id} className={`flex flex-wrap items-center justify-between gap-3 ${GLASS_INNER} p-3`}>
+                    <div key={assignment._id} className="flex flex-wrap items-center justify-between gap-3 rounded-2xl bg-[#eff4ff] p-3">
                       <div className="flex min-w-0 flex-1 basis-40 items-center gap-2">
-                        <FileText size={14} className="shrink-0 text-violet-500" />
-                        <p className="truncate text-sm font-semibold text-slate-700">{assignment.title}</p>
-                        {isSubmitted && <span className="shrink-0 rounded-full bg-emerald-100 px-2 py-0.5 text-[10px] font-bold text-emerald-700">Submitted</span>}
+                        <FileText size={14} className="shrink-0 text-[#493ee5]" />
+                        <p className="truncate text-sm font-semibold text-[#0d1c2e]">{assignment.title}</p>
+                        {isSubmitted && <span className="shrink-0 rounded-full bg-[#eefff3] px-2 py-0.5 text-[10px] font-bold text-[#006847]">Submitted</span>}
                       </div>
                       <div className="flex gap-2">
                         {attachmentUrl && (
-                          <a href={attachmentUrl} target="_blank" rel="noreferrer" className="inline-flex items-center gap-1 rounded-full border border-violet-500/35 bg-violet-50 px-3 py-1 text-xs font-semibold text-violet-700 hover:bg-violet-100">
+                          <a href={attachmentUrl} target="_blank" rel="noreferrer" className="inline-flex items-center gap-1 rounded-full border border-[#493ee5]/30 bg-white px-3 py-1 text-xs font-semibold text-[#493ee5] hover:bg-[#eff4ff]">
                             <Download size={11} /> Download
                           </a>
                         )}
                         {!isSubmitted ? (
-                          <button type="button" onClick={() => setWorksheetModal(assignment)} className="rounded-full bg-violet-500 px-3 py-1 text-xs font-bold text-white hover:bg-violet-600">Submit</button>
+                          <button type="button" onClick={() => setWorksheetModal(assignment)} className="rounded-full bg-[#493ee5] px-3 py-1 text-xs font-bold text-white hover:bg-[#3a30c9]">Submit</button>
                         ) : (
-                          <span className="inline-flex items-center gap-1 text-xs font-bold text-emerald-600"><CheckCircle2 size={12} /> Done</span>
+                          <span className="inline-flex items-center gap-1 text-xs font-bold text-[#006847]"><CheckCircle2 size={12} /> Done</span>
                         )}
                       </div>
                     </div>
@@ -1241,19 +1272,19 @@ const AILearningCoursesReference = () => {
         )}
 
         {activeMaterial && (
-          <div className="fixed inset-0 z-[80] flex items-center justify-center bg-slate-900/50 p-4">
+          <div className="fixed inset-0 z-[80] flex items-center justify-center bg-[#0d1c2e]/50 p-4">
             <div
-              className="w-full max-w-2xl overflow-hidden rounded-3xl border border-violet-500/35 bg-white/80 shadow-[0_20px_60px_rgba(15,23,42,0.2)] backdrop-blur-[20px] backdrop-saturate-[1.8]"
+              className="w-full max-w-2xl overflow-hidden rounded-[2rem] bg-white shadow-[0_20px_60px_rgba(13,28,46,0.2)]"
               style={{ maxHeight: '85vh' }}
             >
-              <div className="flex items-center justify-between gap-4 border-b border-violet-500/15 bg-white/40 px-5 py-4">
-                <h3 className="truncate text-base font-bold text-[#0f172a]">{activeMaterial.title}</h3>
-                <button type="button" onClick={() => setActiveMaterial(null)} className="shrink-0 rounded-lg p-1.5 text-[#8e9aaf] hover:bg-white/60 hover:text-slate-700">
+              <div className="flex items-center justify-between gap-4 border-b border-[#d5e3fc] bg-[#eff4ff] px-5 py-4">
+                <h3 className="truncate text-base font-bold text-[#0d1c2e]">{activeMaterial.title}</h3>
+                <button type="button" onClick={() => setActiveMaterial(null)} className="shrink-0 rounded-lg p-1.5 text-[#464555] hover:bg-white hover:text-[#0d1c2e]">
                   <X size={18} />
                 </button>
               </div>
               <div className="overflow-y-auto p-5" style={{ maxHeight: '65vh' }}>
-                <p className="whitespace-pre-wrap text-sm leading-7 text-slate-700">{stripHtml(activeMaterial.content)}</p>
+                <p className="whitespace-pre-wrap text-sm leading-7 text-[#464555]">{stripHtml(activeMaterial.content)}</p>
               </div>
             </div>
           </div>
@@ -1262,10 +1293,19 @@ const AILearningCoursesReference = () => {
     );
   }
 
-  // Initialise activeFlowStepId to first step on first render
-  const resolvedActiveFlowStepId = activeFlowStepId ?? (chapterInstructionalFlow[0]?.id ?? null);
+  // A step is locked until the step directly before it has been completed —
+  // the first step is always open.
+  const isStepLocked = (idx) => idx > 0 && !completedSteps.includes(chapterInstructionalFlow[idx - 1]?.id);
 
-  const handleFlowStepClick = (stepId) => {
+  // Default the spotlighted step to the next incomplete one (falling back to
+  // the first step) so the journey highlights what the student should do next.
+  const resolvedActiveFlowStepId = activeFlowStepId
+    ?? (chapterInstructionalFlow.find((step) => !completedSteps.includes(step.id))?.id
+      ?? chapterInstructionalFlow[0]?.id
+      ?? null);
+
+  const handleFlowStepClick = (stepId, idx) => {
+    if (isStepLocked(idx)) return;
     setActiveFlowStepId(stepId);
     setCompletedSteps((prev) => {
       if (prev.includes(stepId)) return prev;
@@ -1278,176 +1318,314 @@ const AILearningCoursesReference = () => {
   const heroDescription = chapterIntroduction || 'Explore this topic step by step, then try the practice questions when you’re ready.';
   const classChip = profile?.grade ? `Class ${profile.grade}${profile.section ? ` • ${profile.section}` : ''} curriculum` : '';
 
+  // The step the student should tackle next — spotlighted the same way the
+  // reference design highlights its "hero" milestone above the compact path.
+  const spotlightStepIdx = chapterInstructionalFlow.findIndex((step) => step.id === resolvedActiveFlowStepId);
+  const spotlightStep = spotlightStepIdx >= 0 ? chapterInstructionalFlow[spotlightStepIdx] : null;
+  const spotlightDone = spotlightStep ? completedSteps.includes(spotlightStep.id) : false;
+
   return (
-    <div ref={moduleRef} className="min-h-screen w-full bg-[#f1f5f9]">
+    <div ref={moduleRef} className="min-h-screen w-full bg-[#f8f9ff]" style={QUEST_FONT}>
       <div className="mx-auto w-full max-w-[1180px] px-4 py-6 sm:px-6 sm:py-8">
-        {/* Top bar */}
+        {/* Breadcrumb & Topic Eyebrow Bar */}
         <div className="mb-6 flex flex-wrap items-center justify-between gap-3">
           <div className="flex flex-wrap items-center gap-2">
-            <button type="button" onClick={goBackToSubjectTopics} className={`inline-flex items-center gap-1.5 rounded-xl ${GLASS_INNER} px-3 py-2 text-sm font-bold text-violet-600 ${GLASS_HOVER}`}>
+            <button type="button" onClick={goBackToSubjectTopics} className="inline-flex items-center gap-1.5 rounded-full bg-[#eff4ff] px-3 py-2 text-sm font-bold text-[#493ee5] transition-colors hover:bg-[#e6eeff]">
               <ArrowLeft size={16} /> Back to Chapters
             </button>
-            <div className="flex flex-wrap items-center gap-1.5 text-sm text-[#8e9aaf]">
-              <ChevronRight size={14} className="text-slate-300" />
-              <span>{subjectSlug}</span>
+            <div className="flex flex-wrap items-center gap-2">
+              <span className="rounded-full bg-[#eff4ff] px-3 py-1 text-xs font-bold text-[#493ee5]">
+                {subjectSlug}{classChip ? ` • ${classChip}` : ''}
+              </span>
               {mapScope.chapterTitle && mapScope.chapterTitle !== topicSlug && (
                 <>
-                  <ChevronRight size={14} className="text-slate-300" />
-                  <span>{mapScope.chapterTitle}</span>
+                  <span className="text-[#c7c4d8]">•</span>
+                  <span className="rounded-full bg-[#e2dfff] px-3 py-1 text-xs font-bold text-[#321ed2]">{mapScope.chapterTitle}</span>
                 </>
               )}
-              <ChevronRight size={14} className="text-slate-300" />
-              <span className="font-bold text-violet-600">{topicSlug}</span>
+              <span className="text-[#c7c4d8]">•</span>
+              <span className="text-sm font-semibold text-[#464555]">{topicSlug}</span>
             </div>
           </div>
           <div className="flex items-center gap-2">
-            {learningMaterials.some((material) => material.url || material.downloadUrl) && (
-              <button type="button" onClick={handleDownloadAllMaterials} className={`inline-flex items-center gap-1.5 rounded-xl ${GLASS_INNER} px-3 py-2 text-sm font-bold text-slate-600 ${GLASS_HOVER}`}>
-                <Download size={16} className="text-violet-500" /> Download Lesson Materials
-              </button>
-            )}
-            <button type="button" onClick={handleDownloadPdf} disabled={downloadingPdf} className={`inline-flex items-center gap-1.5 rounded-xl ${GLASS_INNER} px-3 py-2 text-sm font-bold text-slate-600 ${GLASS_HOVER} disabled:opacity-60`}>
-              <Download size={16} className="text-violet-500" /> {downloadingPdf ? 'Preparing…' : 'Download PDF'}
-            </button>
-            <button type="button" onClick={toggleFullscreen} className={`rounded-xl ${GLASS_INNER} p-2.5 text-slate-500 ${GLASS_HOVER}`}>
+            <button type="button" onClick={toggleFullscreen} className="rounded-full bg-[#eff4ff] p-2.5 text-[#464555] transition-colors hover:bg-[#e6eeff]">
               {isFullscreen ? <Minimize2 size={18} /> : <Maximize2 size={18} />}
             </button>
-            <button type="button" onClick={openDetailsPage} className="inline-flex items-center gap-2 rounded-xl bg-violet-500 px-4 py-2.5 text-sm font-bold text-white shadow-sm hover:bg-violet-600">
-              Start Reading <ArrowRight size={16} />
+            <button type="button" onClick={handleDownloadPdf} disabled={downloadingPdf} className="inline-flex items-center gap-1.5 rounded-full bg-[#eff4ff] px-4 py-2 text-sm font-bold text-[#493ee5] transition-colors hover:bg-[#e6eeff] disabled:opacity-60">
+              <Download size={18} /> {downloadingPdf ? 'Preparing…' : 'Offline Pack (PDF)'}
             </button>
           </div>
         </div>
 
-        {/* Hero */}
-        <section className={`relative mb-6 overflow-hidden ${GLASS_CARD} p-5 sm:p-8`}>
-          <div className="pointer-events-none absolute -right-16 -top-16 h-64 w-64 rounded-full bg-violet-300/25 blur-3xl" />
-          <div className="pointer-events-none absolute -bottom-20 right-1/3 h-48 w-48 rounded-full bg-amber-100/50 blur-2xl" />
-          <div className="relative z-10 flex flex-col items-start gap-6 lg:flex-row lg:items-center lg:justify-between">
-            <div className="max-w-2xl">
-              <div className="mb-2 flex flex-wrap items-center gap-2">
-                <span className="rounded-full bg-violet-500/10 px-2.5 py-0.5 text-[11px] font-bold uppercase tracking-wider text-violet-700">Topic</span>
-                {mapScope.chapterTitle && <span className="rounded-full bg-amber-50 px-2.5 py-0.5 text-[11px] font-semibold text-amber-700">{mapScope.chapterTitle}</span>}
-                {classChip && (
-                  <span className="inline-flex items-center gap-1 text-[11px] font-semibold text-[#8e9aaf]">
-                    <span className="h-1.5 w-1.5 rounded-full bg-violet-400" /> {classChip}
-                  </span>
-                )}
+        {/* Chapter Title & Narrative Overview Banner */}
+        <section className="relative mb-6 overflow-hidden rounded-[2rem] bg-white p-5 shadow-sm sm:p-8">
+          <div className="relative z-10 flex flex-col items-start justify-between gap-6 lg:flex-row lg:items-center">
+            <div className="flex max-w-3xl flex-col gap-1">
+              <div className="inline-flex items-center gap-1.5 text-[#9e4300]">
+                <Compass size={20} />
+                <span className="text-xs font-bold uppercase tracking-wide">Learning Journey</span>
               </div>
-              <h1 className="text-2xl font-bold tracking-tight text-[#0f172a] sm:text-4xl">{topicSlug}</h1>
-              <p className="mt-2 text-sm text-[#64748b] sm:text-base">{heroDescription}</p>
+              <h1 className="text-2xl font-bold tracking-tight text-[#0d1c2e] sm:text-4xl">
+                {mapScope.chapterTitle && mapScope.chapterTitle !== topicSlug ? `${mapScope.chapterTitle}: ${topicSlug}` : topicSlug}
+              </h1>
+              <p className="mt-1 text-sm leading-relaxed text-[#464555] sm:text-base">{heroDescription}</p>
             </div>
 
-            <div className={`flex w-full shrink-0 items-center gap-4 ${GLASS_INNER} p-4 lg:w-auto`}>
+            {/* Mission Readiness Donut Ring */}
+            <div className="flex w-full shrink-0 items-center justify-between gap-4 self-stretch rounded-[2rem] bg-[#eff4ff] px-6 py-4 sm:justify-start lg:w-auto lg:self-auto">
               <div className="relative flex h-16 w-16 shrink-0 items-center justify-center">
                 <svg className="h-16 w-16 -rotate-90" viewBox="0 0 36 36">
-                  <path className="text-white/70" d="M18 2.0845 a 15.9155 15.9155 0 0 1 0 31.831 a 15.9155 15.9155 0 0 1 0 -31.831" fill="none" stroke="currentColor" strokeWidth="3.5" />
+                  <path fill="none" stroke="#d5e3fc" strokeWidth="3.5" d="M18 2.0845 a 15.9155 15.9155 0 0 1 0 31.831 a 15.9155 15.9155 0 0 1 0 -31.831" />
                   <path
-                    className="text-violet-500 transition-all duration-700 ease-out"
-                    d="M18 2.0845 a 15.9155 15.9155 0 0 1 0 31.831 a 15.9155 15.9155 0 0 1 0 -31.831"
                     fill="none"
-                    stroke="currentColor"
+                    stroke="#493ee5"
                     strokeWidth="3.5"
                     strokeLinecap="round"
                     strokeDasharray={`${overallProgress}, 100`}
+                    className="transition-all duration-700 ease-out"
+                    d="M18 2.0845 a 15.9155 15.9155 0 0 1 0 31.831 a 15.9155 15.9155 0 0 1 0 -31.831"
                   />
                 </svg>
-                <div className="absolute inset-0 flex items-center justify-center">
-                  <span className="text-base font-bold text-violet-600">{overallProgress}%</span>
-                </div>
+                <span className="absolute text-base font-bold text-[#493ee5]">{overallProgress}%</span>
               </div>
               <div className="flex flex-col">
-                <span className="text-[11px] font-bold uppercase tracking-wider text-[#8e9aaf]">Lesson Progress</span>
-                <span className="text-sm font-bold text-slate-800">{progressStatusLabel}</span>
-                <button type="button" onClick={openDetailsPage} className="mt-0.5 inline-flex items-center gap-1 text-left text-xs font-bold text-violet-600 hover:underline">
-                  Read Full Article <ArrowRight size={12} />
-                </button>
+                <span className="text-[11px] font-bold uppercase tracking-wider text-[#464555]">Quest Status</span>
+                <span className="text-sm font-bold text-[#0d1c2e]">{progressStatusLabel}</span>
+                <span className="text-xs font-semibold text-[#006847]">{completedSteps.length} of {chapterInstructionalFlow.length || 0} Completed</span>
               </div>
             </div>
           </div>
 
           {/* Quick stats */}
-          <div className="relative z-10 mt-6 grid grid-cols-2 gap-2.5 border-t border-violet-500/15 pt-5 sm:grid-cols-4">
+          <div className="relative z-10 mt-6 grid grid-cols-2 gap-2.5 border-t border-[#d5e3fc] pt-5 sm:grid-cols-4">
             {[
-              { icon: CalendarDays, color: 'text-violet-600', label: 'Target Date', value: chapterDateLabel || 'Not set' },
-              { icon: Calendar, color: 'text-violet-600', label: 'School Day', value: chapterDayLabel || '—' },
-              { icon: Clock, color: 'text-amber-600', label: 'Total Duration', value: chapterDurationLabel || '—' },
-              { icon: ListChecks, color: 'text-emerald-600', label: 'Completed Steps', value: stepsDoneLabel },
+              { icon: CalendarDays, label: 'Target Date', value: chapterDateLabel || 'Not set' },
+              { icon: Calendar, label: 'School Day', value: chapterDayLabel || '—' },
+              { icon: Clock, label: 'Total Duration', value: chapterDurationLabel || '—' },
+              { icon: ListChecks, label: 'Completed Steps', value: stepsDoneLabel },
             ].map((stat) => (
-              <div key={stat.label} className={`flex items-center gap-3 ${GLASS_INNER} p-2.5`}>
-                <div className={`flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-white/70 shadow-sm ${stat.color}`}>
+              <div key={stat.label} className="flex items-center gap-3 rounded-2xl bg-[#eff4ff] p-2.5">
+                <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-white text-[#493ee5] shadow-sm">
                   <stat.icon size={18} />
                 </div>
                 <div className="min-w-0">
-                  <p className="text-[11px] text-[#8e9aaf]">{stat.label}</p>
-                  <p className="truncate text-sm font-bold text-slate-800">{stat.value}</p>
+                  <p className="text-[11px] text-[#464555]">{stat.label}</p>
+                  <p className="truncate text-sm font-bold text-[#0d1c2e]">{stat.value}</p>
                 </div>
               </div>
             ))}
           </div>
         </section>
 
-        {/* Two column workspace */}
+        {/* 2-Zone Stage Layout */}
         <div className="grid grid-cols-1 gap-6 lg:grid-cols-12 lg:items-start">
-          {/* LEFT: objectives + materials + assessment */}
-          <div className="flex flex-col gap-5 lg:col-span-5">
-            <div className={`${GLASS_CARD} p-5 sm:p-6`}>
+          {/* Zone 1: Hero Story Hook + Quest Path (8 cols) */}
+          <div className="flex flex-col gap-4 lg:col-span-8">
+            {/* Hero Story Hook: the step to tackle next */}
+            {spotlightStep && (
+              <article className="overflow-hidden rounded-[2rem] bg-white shadow-md transition-shadow duration-300 hover:shadow-xl">
+                <div className="relative bg-gradient-to-br from-[#493ee5] to-[#635bff] px-5 py-6 sm:px-8 sm:py-7">
+                  <div className="pointer-events-none absolute -right-10 -top-14 h-44 w-44 rounded-full bg-white/10 blur-3xl" />
+                  <div className="pointer-events-none absolute -bottom-16 left-10 h-32 w-32 rounded-full bg-white/10 blur-2xl" />
+                  <div className="relative z-10 flex flex-wrap items-center gap-2">
+                    <span className="inline-flex items-center gap-1.5 rounded-full bg-[#9e4300] px-3 py-1 text-xs font-bold text-white shadow-md">
+                      <Rocket size={14} /> Step {spotlightStepIdx + 1}: {spotlightStep.type}
+                    </span>
+                    {spotlightStep.duration > 0 && (
+                      <span className="inline-flex items-center gap-1 rounded-full bg-white/90 px-3 py-1 text-xs font-semibold text-[#0d1c2e] backdrop-blur-md">
+                        <Clock size={12} /> {spotlightStep.duration} min
+                      </span>
+                    )}
+                  </div>
+                  <p className="relative z-10 mb-1 mt-4 flex items-center gap-1.5 text-xs font-bold uppercase tracking-widest text-[#ffdbcb]">
+                    <Sparkles size={12} /> {spotlightDone ? 'Worth revisiting' : 'Mission Briefing'}
+                  </p>
+                  <h2 className="relative z-10 text-xl font-bold leading-snug text-white drop-shadow-md sm:text-2xl">{spotlightStep.title}</h2>
+                </div>
+                <div className="flex flex-col gap-4 p-5 sm:p-6">
+                  <p className="text-sm text-[#464555]">
+                    {spotlightDone
+                      ? 'You’ve completed this step — jump back in anytime.'
+                      : 'Read through this step, then head to practice to lock it in.'}
+                  </p>
+                  <div className="flex flex-wrap items-center gap-3">
+                    <button
+                      type="button"
+                      onClick={() => { handleFlowStepClick(spotlightStep.id, spotlightStepIdx); openDetailsPage(); }}
+                      className="inline-flex items-center justify-center gap-2 rounded-full bg-gradient-to-r from-[#493ee5] to-[#635bff] px-6 py-3.5 text-sm font-bold text-white shadow-lg transition-all duration-200 hover:-translate-y-0.5 hover:shadow-xl active:scale-95"
+                    >
+                      Start Step {spotlightStepIdx + 1}: Reading <ArrowRight size={16} />
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => { handleFlowStepClick(spotlightStep.id, spotlightStepIdx); openDetailsPage('practice'); }}
+                      className="inline-flex items-center justify-center gap-1.5 rounded-full bg-[#dce9ff] px-5 py-3.5 text-sm font-bold text-[#0d1c2e] shadow-sm transition-all duration-200 hover:bg-[#e6eeff] hover:shadow active:scale-95"
+                    >
+                      <Target size={16} className="text-[#493ee5]" /> Start Practice
+                    </button>
+                    {learningMaterials.some((material) => material.url || material.downloadUrl) && (
+                      <button
+                        type="button"
+                        onClick={handleDownloadAllMaterials}
+                        className="ml-auto inline-flex items-center justify-center gap-1.5 rounded-full border border-[#c7c4d8]/40 bg-[#eff4ff] px-4 py-3 text-sm font-bold text-[#493ee5] transition-colors hover:bg-[#e6eeff]"
+                      >
+                        <Download size={16} /> Download Material
+                      </button>
+                    )}
+                  </div>
+                </div>
+              </article>
+            )}
+
+            {/* Interactive Quest Path */}
+            <section className="flex flex-col gap-4 rounded-[2rem] bg-white p-5 shadow-sm sm:p-6">
+              <h2 className="text-lg font-bold text-[#0d1c2e]">Step-by-Step Learning Journey</h2>
+
+              {chapterInstructionalFlow.length === 0 ? (
+                <p className="py-6 text-center text-sm italic text-[#464555]">No instructional flow provided yet.</p>
+              ) : (
+                <div className="relative flex flex-col gap-4 pl-6 before:absolute before:bottom-6 before:left-3 before:top-6 before:w-1 before:bg-[#d5e3fc] sm:pl-10 sm:before:left-5">
+                  {chapterInstructionalFlow.map((step, idx) => {
+                    const isLocked = isStepLocked(idx);
+                    const isActive = !isLocked && resolvedActiveFlowStepId === step.id;
+                    const isDone = completedSteps.includes(step.id);
+                    const previousStepTitle = idx > 0 ? chapterInstructionalFlow[idx - 1]?.title : '';
+                    return (
+                      <div key={step.id} className={`group relative ${isLocked ? 'opacity-90' : ''}`}>
+                        <div className={`absolute -left-6 top-3 z-10 flex h-7 w-7 items-center justify-center rounded-full text-sm font-bold transition-transform sm:-left-10 sm:h-10 sm:w-10 ${
+                          isDone || isActive
+                            ? 'bg-[#493ee5] text-white shadow-md ring-4 ring-[#e2dfff] group-hover:scale-110'
+                            : 'bg-[#e6eeff] text-[#464555] shadow-sm'
+                        }`}>
+                          {isDone ? <CheckCircle2 size={16} /> : isLocked ? <Lock size={14} /> : idx + 1}
+                        </div>
+                        <div className={`rounded-[1.25rem] p-4 transition-all ${isActive || isDone ? 'bg-[#eff4ff]' : 'bg-[#f8f9ff]'}`}>
+                          <div className="mb-1.5 flex flex-wrap items-center justify-between gap-2">
+                            <div className="flex flex-wrap items-center gap-2">
+                              <span className={`rounded-full px-2 py-0.5 text-[11px] font-bold uppercase ${isActive || isDone ? 'bg-[#493ee5] text-white' : 'bg-[#d5e3fc] text-[#0d1c2e]'}`}>{step.type}</span>
+                              {step.duration > 0 && (
+                                <span className="inline-flex items-center gap-1 text-[11px] font-semibold text-[#464555]">
+                                  <Clock size={14} /> {step.duration} min
+                                </span>
+                              )}
+                            </div>
+                            {isDone ? (
+                              <span className="inline-flex items-center gap-1 text-xs font-bold text-[#006847]"><CheckCircle2 size={14} /> Done</span>
+                            ) : isLocked ? (
+                              <span className="inline-flex items-center gap-1 text-xs font-bold text-[#777587]"><Lock size={14} /> Locked</span>
+                            ) : (
+                              <span className="inline-flex items-center gap-1 rounded-full bg-[#ffdbcb] px-2 py-0.5 text-xs font-bold text-[#341100]">
+                                <span className="h-2 w-2 animate-ping rounded-full bg-[#9e4300]" /> Ready to Read
+                              </span>
+                            )}
+                          </div>
+                          <h3 className="text-base font-bold text-[#0d1c2e]">{step.title}</h3>
+                          <div className="mt-2 flex items-center justify-between pt-1">
+                            {isLocked ? (
+                              <>
+                                <span className="text-xs font-semibold text-[#464555]">
+                                  {previousStepTitle ? `Unlocks after "${previousStepTitle}"` : 'Complete the previous step to unlock'}
+                                </span>
+                                <span className="text-xs font-semibold text-[#777587]">Step {idx + 1} of {chapterInstructionalFlow.length}</span>
+                              </>
+                            ) : (
+                              <>
+                                <span className="text-xs font-semibold text-[#493ee5]">Step {idx + 1} of {chapterInstructionalFlow.length}</span>
+                                <button
+                                  type="button"
+                                  onClick={() => handleFlowStepClick(step.id, idx)}
+                                  className={`inline-flex items-center gap-1 rounded-full px-4 py-1.5 text-sm font-bold shadow-sm transition-all active:scale-95 ${
+                                    isDone ? 'bg-[#eefff3] text-[#006847] hover:shadow' : 'bg-[#493ee5] text-white hover:shadow'
+                                  }`}
+                                >
+                                  {isDone ? 'Revisit' : 'Start Reading'} <BookOpen size={14} />
+                                </button>
+                              </>
+                            )}
+                          </div>
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              )}
+            </section>
+          </div>
+
+          {/* Zone 2: Focus Rail — objectives + materials + assessment */}
+          <div className="flex flex-col gap-5 lg:col-span-4">
+            <div className="rounded-[2rem] bg-white p-5 shadow-sm sm:p-6">
               <div className="mb-4 flex items-center gap-2.5">
-                <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-violet-500/10 text-violet-600">
+                <div className="flex h-8 w-8 items-center justify-center rounded-xl bg-[#eff4ff] text-[#493ee5]">
                   <Lightbulb size={18} />
                 </div>
-                <h2 className="text-lg font-bold text-[#0f172a]">What You Will Learn</h2>
+                <h2 className="text-lg font-bold text-[#0d1c2e]">What You Will Learn</h2>
               </div>
               {chapterLearningObjectives.length === 0 ? (
-                <p className="text-sm italic text-[#8e9aaf]">No objectives published for this topic.</p>
+                <p className="text-sm italic text-[#464555]">No objectives published for this topic.</p>
               ) : (
                 <div className="flex flex-col gap-2">
                   {chapterLearningObjectives.map((objective, idx) => (
-                    <div key={idx} className={`flex items-start gap-3 ${GLASS_INNER} p-3`}>
-                      <div className="mt-0.5 flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-violet-500 text-xs font-bold text-white">{idx + 1}</div>
-                      <p className="text-sm font-medium text-slate-700">{objective}</p>
+                    <div key={idx} className="flex items-start gap-3 rounded-2xl bg-[#eff4ff] p-3">
+                      <div className="mt-0.5 flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-[#493ee5] text-xs font-bold text-white">{idx + 1}</div>
+                      <p className="text-sm font-medium text-[#0d1c2e]">{objective}</p>
                     </div>
                   ))}
                 </div>
               )}
             </div>
 
-            <div className={`${GLASS_CARD} p-5 sm:p-6`}>
+            <div className="rounded-[2rem] bg-white p-5 shadow-sm sm:p-6">
               <div className="mb-3 flex items-center gap-2.5">
-                <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-violet-500/10 text-violet-600">
+                <div className="flex h-8 w-8 items-center justify-center rounded-xl bg-[#eff4ff] text-[#493ee5]">
                   <BookOpen size={18} />
                 </div>
-                <h2 className="text-lg font-bold text-[#0f172a]">Lesson Materials</h2>
+                <h2 className="text-lg font-bold text-[#0d1c2e]">Lesson Materials</h2>
               </div>
               {learningMaterials.length === 0 ? (
-                <p className="text-sm italic text-[#8e9aaf]">No chapter material uploaded yet.</p>
+                <p className="text-sm italic text-[#464555]">No chapter material uploaded yet.</p>
               ) : (
                 <div className="flex flex-col gap-2">
-                  {learningMaterials.map((material, idx) => (
-                    <div key={idx} className={`flex flex-wrap items-center gap-3 ${GLASS_INNER} p-3`}>
-                      <FileText size={16} className="shrink-0 text-[#8e9aaf]" />
-                      <span className="min-w-0 flex-1 basis-40 truncate text-sm font-semibold text-slate-700">{material.title}</span>
-                      <MaterialQuickActions material={material} onRead={setActiveMaterial} />
-                    </div>
-                  ))}
+                  {learningMaterials.map((material, idx) => {
+                    const kind = detectMaterialKind(material);
+                    const meta = MATERIAL_KIND_META[kind];
+                    const Icon = meta.icon;
+                    return (
+                      <div key={idx} className="flex items-center gap-3 rounded-2xl bg-[#eff4ff] p-2.5">
+                        {kind === 'image' && material.url ? (
+                          <img src={material.url} alt="" className="h-11 w-11 shrink-0 rounded-xl object-cover" />
+                        ) : (
+                          <div className={`flex h-11 w-11 shrink-0 items-center justify-center rounded-xl ${meta.tile}`}>
+                            <Icon size={18} />
+                          </div>
+                        )}
+                        <div className="min-w-0 flex-1">
+                          <p className="truncate text-sm font-semibold text-[#0d1c2e]">{material.title}</p>
+                          <p className="text-[11px] font-bold uppercase tracking-wide text-[#464555]">{meta.label}</p>
+                        </div>
+                        <MaterialQuickActions material={material} onRead={setActiveMaterial} />
+                      </div>
+                    );
+                  })}
                 </div>
               )}
             </div>
 
-            <div className={`${GLASS_CARD} p-5 sm:p-6`}>
+            <div className="rounded-[2rem] bg-white p-5 shadow-sm sm:p-6">
               <div className="mb-3 flex items-center gap-2.5">
-                <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-amber-50 text-amber-600">
+                <div className="flex h-8 w-8 items-center justify-center rounded-xl bg-[#ffdbcb] text-[#9e4300]">
                   <ClipboardList size={18} />
                 </div>
-                <h2 className="text-lg font-bold text-[#0f172a]">Assessment</h2>
+                <h2 className="text-lg font-bold text-[#0d1c2e]">Assessment</h2>
               </div>
               {assessmentItems.length === 0 ? (
-                <p className="text-sm italic text-[#8e9aaf]">No assessment uploaded yet. Teacher assessment files will appear here.</p>
+                <p className="text-sm italic text-[#464555]">No assessment uploaded yet. Teacher assessment files will appear here.</p>
               ) : (
                 <div className="flex flex-col gap-2">
                   {assessmentItems.map((item, idx) => (
-                    <div key={idx} className={`flex flex-wrap items-center gap-3 ${GLASS_INNER} p-3`}>
-                      <span className="shrink-0 rounded-full bg-amber-50 px-2 py-0.5 text-[10px] font-bold uppercase text-amber-700">{normalizeLabel(item.formatLabel || 'Assessment')}</span>
-                      <span className="min-w-0 flex-1 basis-40 truncate text-sm font-semibold text-slate-700">{item.title}</span>
+                    <div key={idx} className="flex flex-wrap items-center gap-3 rounded-2xl bg-[#eff4ff] p-3">
+                      <span className="shrink-0 rounded-full bg-[#ffdbcb] px-2 py-0.5 text-[10px] font-bold uppercase text-[#793100]">{normalizeLabel(item.formatLabel || 'Assessment')}</span>
+                      <span className="min-w-0 flex-1 basis-40 truncate text-sm font-semibold text-[#0d1c2e]">{item.title}</span>
                       <MaterialQuickActions material={item} onRead={setActiveMaterial} />
                     </div>
                   ))}
@@ -1455,87 +1633,23 @@ const AILearningCoursesReference = () => {
               )}
             </div>
           </div>
-
-          {/* RIGHT: step-by-step roadmap */}
-          <div className="flex flex-col gap-4 lg:col-span-7">
-            <div className="flex items-center justify-between px-1">
-              <div>
-                <h2 className="text-lg font-bold text-[#0f172a]">Step-by-Step Learning Journey</h2>
-                <p className="text-sm text-[#64748b]">Work through each step in order to finish this topic.</p>
-              </div>
-              <span className={`rounded-full ${GLASS_INNER} px-3 py-1 text-xs font-bold text-slate-500`}>Guided Flow</span>
-            </div>
-
-            {chapterInstructionalFlow.length === 0 ? (
-              <div className={`${GLASS_CARD} p-6 text-center`}>
-                <p className="text-sm italic text-[#8e9aaf]">No instructional flow provided yet.</p>
-              </div>
-            ) : (
-              <div className="relative flex flex-col gap-4 pl-4 before:absolute before:bottom-6 before:left-[19px] before:top-6 before:w-0.5 before:bg-violet-500/20 sm:pl-5 sm:before:left-[23px]">
-                {chapterInstructionalFlow.map((step, idx) => {
-                  const isActive = resolvedActiveFlowStepId === step.id;
-                  const isDone = completedSteps.includes(step.id);
-                  return (
-                    <div key={step.id} className="relative flex items-start gap-3 sm:gap-4">
-                      <div className={`relative z-10 flex h-8 w-8 shrink-0 items-center justify-center rounded-full text-sm font-bold shadow ring-4 ring-[#f1f5f9] sm:h-9 sm:w-9 ${
-                        isDone ? 'bg-emerald-500 text-white' : isActive ? 'bg-violet-500 text-white' : 'bg-white/70 text-slate-500'
-                      }`}>
-                        {isDone ? <CheckCircle2 size={16} /> : idx + 1}
-                      </div>
-                      <div className={`flex-1 ${GLASS_CARD} ${GLASS_HOVER} p-4 sm:p-5 ${isActive ? 'ring-2 ring-violet-300' : ''}`}>
-                        <div className="mb-2 flex flex-wrap items-center justify-between gap-2">
-                          <div className="flex items-center gap-2">
-                            <span className={`rounded-full px-2.5 py-0.5 text-[11px] font-bold uppercase ${isActive ? 'bg-violet-500/10 text-violet-700' : 'bg-slate-100 text-slate-500'}`}>{step.type}</span>
-                            {step.duration > 0 && (
-                              <span className="inline-flex items-center gap-1 rounded-full bg-slate-100 px-2 py-0.5 text-[11px] font-semibold text-slate-500">
-                                <Clock size={12} /> {step.duration} min
-                              </span>
-                            )}
-                          </div>
-                          {isDone ? (
-                            <span className="inline-flex items-center gap-1 text-xs font-bold text-emerald-600"><CheckCircle2 size={14} /> Done</span>
-                          ) : isActive ? (
-                            <span className="inline-flex items-center gap-1.5 text-xs font-bold text-violet-600">
-                              <span className="h-2 w-2 animate-pulse rounded-full bg-violet-500" /> In Progress
-                            </span>
-                          ) : null}
-                        </div>
-                        <h3 className="text-base font-bold text-[#0f172a] sm:text-lg">{step.title}</h3>
-                        <div className="mt-3 flex items-center justify-end border-t border-violet-500/15 pt-3">
-                          <button
-                            type="button"
-                            onClick={() => handleFlowStepClick(step.id)}
-                            className={`inline-flex items-center gap-1.5 rounded-xl px-4 py-2 text-sm font-bold shadow-sm transition-colors ${
-                              isDone ? 'bg-emerald-50 text-emerald-700 hover:bg-emerald-100' : 'bg-violet-500 text-white hover:bg-violet-600'
-                            }`}
-                          >
-                            {isDone ? 'Revisit Step' : 'Explore Step'} <ArrowRight size={14} />
-                          </button>
-                        </div>
-                      </div>
-                    </div>
-                  );
-                })}
-              </div>
-            )}
-          </div>
         </div>
 
         {/* Worksheets */}
         {(chapterWorksheets.downloadLinks.length > 0 || chapterWorksheets.submittableAssignments.length > 0) && (
-          <section className={`mt-6 ${GLASS_CARD} p-5 sm:p-6`}>
+          <section className="mt-6 rounded-[2rem] bg-white p-5 shadow-sm sm:p-6">
             <div className="mb-4 flex items-center gap-2.5">
-              <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-violet-500/10 text-violet-600"><ClipboardList size={18} /></div>
-              <h2 className="text-lg font-bold text-[#0f172a]">Worksheets</h2>
+              <div className="flex h-8 w-8 items-center justify-center rounded-xl bg-[#eff4ff] text-[#493ee5]"><ClipboardList size={18} /></div>
+              <h2 className="text-lg font-bold text-[#0d1c2e]">Worksheets</h2>
             </div>
             <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
               {chapterWorksheets.downloadLinks.map((link) => (
-                <div key={link.id} className={`flex items-center justify-between gap-3 ${GLASS_INNER} p-3`}>
+                <div key={link.id} className="flex items-center justify-between gap-3 rounded-2xl bg-[#eff4ff] p-3">
                   <div className="flex min-w-0 items-center gap-2">
-                    <FileText size={16} className="shrink-0 text-violet-500" />
-                    <p className="truncate text-sm font-semibold text-slate-700">{link.title}</p>
+                    <FileText size={16} className="shrink-0 text-[#493ee5]" />
+                    <p className="truncate text-sm font-semibold text-[#0d1c2e]">{link.title}</p>
                   </div>
-                  <a href={link.url} target="_blank" rel="noreferrer" className="inline-flex shrink-0 items-center gap-1 rounded-full bg-violet-500 px-3 py-1.5 text-xs font-bold text-white hover:bg-violet-600">
+                  <a href={link.url} target="_blank" rel="noreferrer" className="inline-flex shrink-0 items-center gap-1 rounded-full bg-[#493ee5] px-3 py-1.5 text-xs font-bold text-white hover:bg-[#3a30c9]">
                     <Download size={12} /> Download
                   </a>
                 </div>
@@ -1544,22 +1658,22 @@ const AILearningCoursesReference = () => {
                 const isSubmitted = submittedWorksheets.has(assignment._id);
                 const attachmentUrl = (assignment.attachments || [])[0]?.url || '';
                 return (
-                  <div key={assignment._id} className={`flex flex-col gap-2 ${GLASS_INNER} p-3`}>
+                  <div key={assignment._id} className="flex flex-col gap-2 rounded-2xl bg-[#eff4ff] p-3">
                     <div className="flex items-center gap-2">
-                      <FileText size={16} className="shrink-0 text-violet-500" />
-                      <p className="min-w-0 flex-1 truncate text-sm font-semibold text-slate-700">{assignment.title}</p>
-                      {isSubmitted && <span className="shrink-0 rounded-full bg-emerald-100 px-2 py-0.5 text-[10px] font-bold text-emerald-700">Submitted</span>}
+                      <FileText size={16} className="shrink-0 text-[#493ee5]" />
+                      <p className="min-w-0 flex-1 truncate text-sm font-semibold text-[#0d1c2e]">{assignment.title}</p>
+                      {isSubmitted && <span className="shrink-0 rounded-full bg-[#eefff3] px-2 py-0.5 text-[10px] font-bold text-[#006847]">Submitted</span>}
                     </div>
                     <div className="flex gap-2">
                       {attachmentUrl && (
-                        <a href={attachmentUrl} target="_blank" rel="noreferrer" className="inline-flex items-center gap-1 rounded-full border border-violet-500/35 bg-violet-50 px-3 py-1 text-xs font-bold text-violet-700 hover:bg-violet-100">
+                        <a href={attachmentUrl} target="_blank" rel="noreferrer" className="inline-flex items-center gap-1 rounded-full border border-[#493ee5]/30 bg-white px-3 py-1 text-xs font-bold text-[#493ee5] hover:bg-[#eff4ff]">
                           <Download size={11} /> Download
                         </a>
                       )}
                       {!isSubmitted ? (
-                        <button type="button" onClick={() => setWorksheetModal(assignment)} className="rounded-full bg-violet-500 px-3 py-1 text-xs font-bold text-white hover:bg-violet-600">Submit</button>
+                        <button type="button" onClick={() => setWorksheetModal(assignment)} className="rounded-full bg-[#493ee5] px-3 py-1 text-xs font-bold text-white hover:bg-[#3a30c9]">Submit</button>
                       ) : (
-                        <span className="inline-flex items-center gap-1 text-xs font-bold text-emerald-600"><CheckCircle2 size={12} /> Done</span>
+                        <span className="inline-flex items-center gap-1 text-xs font-bold text-[#006847]"><CheckCircle2 size={12} /> Done</span>
                       )}
                     </div>
                   </div>
@@ -1568,26 +1682,6 @@ const AILearningCoursesReference = () => {
             </div>
           </section>
         )}
-
-        {/* Explanation + Recap */}
-        {(chapterExplanation || chapterRecap) && (
-          <section className={`mt-6 grid grid-cols-1 gap-5 ${chapterExplanation && chapterRecap ? 'lg:grid-cols-2' : ''}`}>
-            {chapterExplanation && (
-              <div className={`${GLASS_CARD} p-5 sm:p-6`}>
-                <p className="mb-3 text-[11px] font-bold uppercase tracking-wider text-[#8e9aaf]">Step-by-Step Explanation</p>
-                <p className="whitespace-pre-wrap text-sm leading-7 text-slate-700">{chapterExplanation}</p>
-              </div>
-            )}
-            {chapterRecap && (
-              <div className={`${GLASS_CARD} p-5 sm:p-6`}>
-                <p className="mb-3 text-[11px] font-bold uppercase tracking-wider text-[#8e9aaf]">Quick Recap</p>
-                <p className="whitespace-pre-wrap text-sm leading-7 text-slate-700">{chapterRecap}</p>
-              </div>
-            )}
-          </section>
-        )}
-
-        {/* Need help footer */}
       </div>
 
       {/* ── Modals ── */}

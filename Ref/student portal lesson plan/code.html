@@ -1,0 +1,205 @@
+<!DOCTYPE html><html lang="en" style=""><head><meta charset="utf-8"><meta content="width=device-width, initial-scale=1.0" name="viewport"><meta content="web_standard" name="shell-type"><title>Quest Math</title><link href="https://fonts.googleapis.com" rel="preconnect"><link crossorigin="" href="https://fonts.gstatic.com" rel="preconnect"><link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:ital,wght@0,400;0,500;0,600;0,700;0,800;1,400;1,600;1,700&amp;display=swap" rel="stylesheet"><link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:opsz,wght,FILL,GRAD@24,400,0,0" rel="stylesheet">
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet"><style>@layer base{html,body{margin:0;padding:0;}body{overscroll-behavior:none;}main>:first-child{margin-top:0!important;}main>:last-child{margin-bottom:0!important;}}::-webkit-scrollbar{display:none;}</style><script src="https://cdn.tailwindcss.com"></script><script id="tailwind-config">tailwind.config = { darkMode: "class", theme: { extend: { "colors": { "on-secondary-fixed-variant": "#793100", "on-secondary-fixed": "#341100", "on-tertiary-fixed": "#002113", "surface-container-high": "#dce9ff", "on-primary-container": "#fefaff", "tertiary": "#006847", "secondary-fixed": "#ffdbcb", "on-primary-fixed": "#0f0069", "error-container": "#ffdad6", "on-tertiary-fixed-variant": "#005236", "surface-bright": "#f8f9ff", "primary-container": "#635bff", "secondary": "#9e4300", "secondary-fixed-dim": "#ffb691", "outline-variant": "#c7c4d8", "surface-dim": "#ccdbf3", "secondary-container": "#fe8947", "surface-container-lowest": "#ffffff", "on-error-container": "#93000a", "on-surface-variant": "#464555", "tertiary-fixed": "#6ffbbe", "surface-container-low": "#eff4ff", "on-background": "#0d1c2e", "surface-container": "#e6eeff", "inverse-surface": "#233144", "primary-fixed": "#e2dfff", "surface-variant": "#d5e3fc", "on-secondary-container": "#6a2a00", "surface-container-highest": "#d5e3fc", "surface-tint": "#4c42e9", "primary": "#493ee5", "on-secondary": "#ffffff", "error": "#ba1a1a", "primary-fixed-dim": "#c3c0ff", "on-primary-fixed-variant": "#321ed2", "background": "#f8f9ff", "on-surface": "#0d1c2e", "inverse-primary": "#c3c0ff", "on-tertiary-container": "#eefff3", "on-primary": "#ffffff", "tertiary-container": "#00845a", "outline": "#777587", "inverse-on-surface": "#eaf1ff", "tertiary-fixed-dim": "#4edea3", "on-error": "#ffffff", "on-tertiary": "#ffffff", "surface": "#f8f9ff" }, "borderRadius": { "DEFAULT": "1rem", "lg": "2rem", "xl": "3rem", "full": "9999px" }, "spacing": { "space-sm": "0.5rem", "space-lg": "1.5rem", "gutter": "1.5rem", "space-md": "1rem", "space-xl": "2.25rem", "space-xs": "0.25rem", "margin": "2rem" }, "fontFamily": { "display-hero": [ "Plus Jakarta Sans" ], "body-sm": [ "Plus Jakarta Sans" ], "label-sm": [ "Plus Jakarta Sans" ], "display-hero-mobile": [ "Plus Jakarta Sans" ], "body-md": [ "Plus Jakarta Sans" ], "headline-lg": [ "Plus Jakarta Sans" ], "label-md": [ "Plus Jakarta Sans" ], "body-lg": [ "Plus Jakarta Sans" ], "headline-lg-mobile": [ "Plus Jakarta Sans" ], "label-lg": [ "Plus Jakarta Sans" ], "headline-sm": [ "Plus Jakarta Sans" ], "headline-md": [ "Plus Jakarta Sans" ] }, "fontSize": { "display-hero": [ "40px", { "lineHeight": "48px", "letterSpacing": "-0.02em", "fontWeight": "800" } ], "body-sm": [ "13px", { "lineHeight": "19px", "fontWeight": "400" } ], "label-sm": [ "11px", { "lineHeight": "14px", "letterSpacing": "0.03em", "fontWeight": "600" } ], "display-hero-mobile": [ "28px", { "lineHeight": "36px", "letterSpacing": "-0.01em", "fontWeight": "800" } ], "body-md": [ "15px", { "lineHeight": "23px", "fontWeight": "400" } ], "headline-lg": [ "30px", { "lineHeight": "38px", "letterSpacing": "-0.015em", "fontWeight": "700" } ], "label-md": [ "12px", { "lineHeight": "16px", "letterSpacing": "0.02em", "fontWeight": "700" } ], "body-lg": [ "17px", { "lineHeight": "26px", "fontWeight": "500" } ], "headline-lg-mobile": [ "24px", { "lineHeight": "32px", "letterSpacing": "-0.01em", "fontWeight": "700" } ], "label-lg": [ "14px", { "lineHeight": "20px", "letterSpacing": "0.01em", "fontWeight": "700" } ], "headline-sm": [ "18px", { "lineHeight": "26px", "fontWeight": "700" } ], "headline-md": [ "22px", { "lineHeight": "30px", "fontWeight": "700" } ] } } } };</script></head><body class="bg-background font-body-md text-body-md text-on-surface min-h-screen relative overflow-x-hidden selection:bg-primary-fixed selection:text-on-primary-fixed"><header class="fixed top-0 left-0 right-0 z-50 bg-surface-bright/90 backdrop-blur-xl shadow-[0_1px_12px_rgba(99,91,255,0.06)]"></header><main class="w-full pt-20 bg-background relative min-h-[calc(100vh-5rem)]"><div class="w-full px-gutter max-w-7xl mx-auto py-space-lg"><div class="flex flex-col w-full">
+<!-- Subtle Ambient Glow Orbs -->
+<div class="relative w-full overflow-hidden">
+<div class="absolute -top-16 left-1/4 w-96 h-96 bg-primary/10 rounded-full blur-3xl pointer-events-none -z-10"></div>
+<div class="absolute top-48 right-10 w-80 h-80 bg-secondary-container/15 rounded-full blur-3xl pointer-events-none -z-10"></div>
+<div class="absolute bottom-20 left-10 w-80 h-80 bg-tertiary-fixed/30 rounded-full blur-3xl pointer-events-none -z-10"></div>
+<!-- Main Container -->
+<div class="max-w-6xl mx-auto flex flex-col gap-space-lg">
+<!-- Breadcrumb & Topic Eyebrow Bar -->
+<section class="flex flex-wrap items-center justify-between gap-space-sm">
+<div class="flex items-center gap-space-xs flex-wrap">
+<span class="px-space-sm py-1 bg-surface-container-low text-primary font-label-md text-label-md rounded-full">
+            Mathematics • Class 5
+          </span>
+<span class="text-outline-variant font-label-sm text-label-sm">•</span>
+<span class="px-space-sm py-1 bg-primary-fixed text-on-primary-fixed-variant font-label-md text-label-md rounded-full">
+            Chapter 004
+          </span>
+<span class="text-outline-variant font-label-sm text-label-sm">•</span>
+<span class="text-on-surface-variant font-label-md text-label-md">
+            Cosmic Fleet Syllabus
+          </span>
+</div>
+<div class="flex items-center gap-space-xs">
+
+<a class="inline-flex items-center gap-space-xs px-space-md py-1.5 bg-surface-container-low hover:bg-surface-container text-primary font-label-md text-label-md rounded-full transition-colors" href="#">
+<span class="material-symbols-outlined text-[18px]">download</span>
+<span class="">Offline Pack (PDF)</span>
+</a>
+</div>
+</section>
+<!-- Chapter Title & Inviting Narrative Overview Banner -->
+<section class="bg-surface-container-lowest rounded-lg p-space-lg sm:p-space-xl shadow-sm relative overflow-hidden">
+<div class="flex flex-col lg:flex-row items-start lg:items-center justify-between gap-space-lg relative z-10">
+<div class="max-w-3xl flex flex-col gap-space-xs">
+<div class="inline-flex items-center gap-space-xs text-secondary">
+<span class="material-symbols-outlined text-[20px]">explore</span>
+<span class="font-label-lg text-label-lg tracking-wide uppercase">Cosmic Math Journey</span>
+</div>
+<h1 class="font-headline-lg text-headline-lg text-on-surface tracking-tight">
+              Mathematic Chapter 004: Balancing Sums &amp; Fuel Tanks
+            </h1>
+<p class="font-body-lg text-body-lg text-on-surface-variant leading-relaxed mt-1">
+              Discover how fuel tanks, number patterns, and clever swaps can turn math into an adventure! You'll master addition and subtraction facts, explore how numbers connect, and solve puzzles by balancing sums—perfect for curious minds ready to travel through math!
+            </p>
+</div>
+<!-- Mission Readiness Donut Ring -->
+<div class="flex-shrink-0 flex items-center gap-space-md bg-surface-container-low px-space-lg py-space-md rounded-lg self-stretch lg:self-auto justify-between sm:justify-start">
+<div class="relative w-16 h-16 flex items-center justify-center">
+<svg class="w-16 h-16 transform -rotate-90" viewBox="0 0 48 48">
+<circle class="text-surface-container-highest fill-none" cx="24" cy="24" r="19" stroke="currentColor" stroke-width="4"></circle>
+<circle class="text-primary fill-none transition-all duration-700" cx="24" cy="24" r="19" stroke="currentColor" stroke-dasharray="119.38" stroke-dashoffset="119.38" stroke-linecap="round" stroke-width="4"></circle>
+</svg>
+<span class="absolute font-headline-sm text-headline-sm text-primary">0%</span>
+</div>
+<div class="flex flex-col">
+<span class="font-label-sm text-label-sm text-on-surface-variant uppercase">Quest Status</span>
+<span class="font-headline-sm text-headline-sm text-on-surface">Ready to begin!</span>
+<span class="font-body-sm text-body-sm text-tertiary font-semibold">0 of 4 Completed</span>
+</div>
+</div>
+</div>
+<!-- Unified Interactive Mission Bar -->
+
+</section>
+<!-- 2-Zone Stage Layout -->
+<div class="grid grid-cols-1 lg:grid-cols-12 gap-space-lg items-start">
+<!-- Zone 1: Main Interactive Stage & Quest Path (Desktop: 8 cols) -->
+<main class="lg:col-span-8 flex flex-col gap-space-lg">
+<!-- Hero Story Hook Card with 3D Space Station Illustration -->
+<article class="bg-surface-container-lowest rounded-lg p-space-md sm:p-space-lg shadow-md hover:shadow-xl transition-all duration-300">
+<!-- 3D Space Adventure Illustration -->
+<div class="relative overflow-hidden rounded-lg mb-space-md">
+<img alt="Fuel Station Adventure" class="w-full h-64 sm:h-72 object-cover rounded-lg transform hover:scale-[1.01] transition-transform duration-500" src="https://lh3.googleusercontent.com/aida-public/AB6AXuBqCB5jNzB6ZFX0Qo26KSuUu72Pi2NWUNMqS_Ks38AebnlJBLkATBpj6T8YdzNIxMuU5pI821qPj-s_KlH4buIH7Xdpqaf5EfS94-haZYt-oom_IFbs_QIR_-4o4aHNbt7uWDZl6tXtwG1kvv5VjcMI1kL5N-Ao2Flk7jOnhMj2KImZGwKSPi3ZXjkKhXshqLbXASZbzC85zOCvUkElzWdIS_70iPNBjpxZaj9eikROm589uoaoGLBN">
+<div class="absolute inset-0 bg-gradient-to-t from-on-background/70 via-transparent to-transparent"></div>
+<div class="absolute top-space-md left-space-md flex items-center gap-space-xs">
+<span class="px-space-md py-1 bg-secondary text-on-secondary font-label-md text-label-md rounded-full shadow-md flex items-center gap-1">
+<span class="material-symbols-outlined text-[16px]">rocket_launch</span>
+<span class="">Step 1: The Hook</span>
+</span>
+<span class="px-space-sm py-1 bg-surface-container-lowest/90 backdrop-blur-md text-on-surface font-label-sm text-label-sm rounded-full">
+                  10 Mins
+                </span>
+</div>
+<div class="absolute bottom-space-md left-space-md right-space-md text-on-primary">
+<span class="text-secondary-fixed font-label-sm text-label-sm tracking-widest uppercase block mb-1">Mission Briefing</span>
+<p class="font-headline-sm text-headline-sm leading-snug drop-shadow-md">
+                  Cosmic Fuel Cells are out of sync on docking bay 4!
+                </p>
+</div>
+</div>
+<!-- Content & Actions -->
+<div class="flex flex-col gap-space-md">
+<div class="flex flex-col gap-space-xs">
+<h2 class="font-headline-md text-headline-md text-on-surface">
+                  Imagine you're on a cosmic journey where you need to balance your fuel and numbers to reach your destination!
+                </h2>
+<p class="font-body-md text-body-md text-on-surface-variant">
+                  Two giant fuel tanks power your starship's hyperdrive. One currently holds 55 units, and the other holds 25 units. By swapping energy cells with values of 15, 25, and 40, can you make both tanks equal without dumping precious fuel?
+                </p>
+</div>
+<!-- Action Bar -->
+<div class="flex flex-wrap items-center justify-between gap-space-md pt-space-xs"><div class="flex flex-wrap items-center gap-space-sm"><button class="inline-flex items-center justify-center gap-space-sm px-space-xl py-3.5 bg-gradient-to-r from-primary to-primary-container text-on-primary font-label-lg text-label-lg rounded-full shadow-lg hover:shadow-xl hover:-translate-y-0.5 active:scale-95 transition-all duration-200" id="launch-step-btn" type="button"><span class="">Start Step 1: Reading</span><span class="material-symbols-outlined text-[20px]">arrow_forward</span></button><button class="inline-flex items-center justify-center gap-space-xs px-space-lg py-3.5 bg-surface-container-high hover:bg-surface-container text-on-surface font-label-lg text-label-lg rounded-full shadow-sm hover:shadow active:scale-95 transition-all duration-200" type="button"><span class="material-symbols-outlined text-[20px] text-primary">science</span><span class="">Start Practice</span></button></div><button class="inline-flex items-center justify-center gap-space-xs px-space-md py-3 bg-surface-container-low hover:bg-surface-container text-primary font-label-md text-label-md rounded-full border border-outline-variant/40 transition-colors" type="button"><span class="material-symbols-outlined text-[18px]">download</span><span class="">Download Material</span></button></div>
+</div>
+</article>
+<!-- Interactive 4-Step Quest Path -->
+<section class="bg-surface-container-lowest rounded-lg p-space-md sm:p-space-lg shadow-sm flex flex-col gap-space-md">
+<div class="flex items-center justify-between">
+<div class="flex items-center gap-space-xs">
+
+<h2 class="font-headline-md text-headline-md text-on-surface">
+                  Step-by-Step Learning Journey
+                </h2>
+</div>
+
+</div>
+<!-- Path Spine -->
+<div class="relative pl-6 sm:pl-10 flex flex-col gap-space-md before:content-[''] before:absolute before:left-3 sm:before:left-5 before:top-6 before:bottom-6 before:w-1 before:bg-surface-container-highest">
+<!-- Milestone 1: READY / Active -->
+<div class="relative group">
+<!-- Node Marker -->
+<div class="absolute -left-6 sm:-left-10 top-3 w-7 sm:w-10 h-7 sm:h-10 rounded-full bg-primary text-on-primary font-headline-sm text-headline-sm flex items-center justify-center ring-4 ring-primary-fixed shadow-md z-10 transition-transform group-hover:scale-110">
+                  1
+                </div>
+<!-- Milestone Card -->
+<div class="bg-surface-container-low rounded-lg p-space-md transition-all"><div class="flex flex-wrap items-center justify-between gap-space-xs mb-1.5"><div class="flex items-center gap-space-xs flex-wrap"><span class="px-space-xs py-0.5 bg-primary text-on-primary font-label-sm text-label-sm rounded-full">READING</span><span class="inline-flex items-center gap-1 text-on-surface-variant font-label-sm text-label-sm"><span class="material-symbols-outlined text-[14px]">timer</span> 10 min</span></div><span class="inline-flex items-center gap-1 px-space-xs py-0.5 bg-secondary-fixed text-on-secondary-fixed font-label-sm text-label-sm rounded-full"><span class="w-2 h-2 rounded-full bg-secondary animate-ping"></span><span class="">Ready to Read</span></span></div><h3 class="font-headline-sm text-headline-sm text-on-surface">Interactive Story &amp; Concept Reading: Balancing Cosmic Fuel Cells</h3><p class="font-body-md text-body-md text-on-surface-variant mt-1">Read through the mission briefing comic and discover why equalizing sums preserves total fuel volume before jumping into calculations.</p><div class="mt-space-sm flex items-center justify-between pt-space-xs"><span class="text-primary font-label-md text-label-md">Reward: +30 Fuel Crystals</span><button class="inline-flex items-center gap-1 px-space-md py-1.5 bg-primary text-on-primary font-label-md text-label-md rounded-full shadow-sm hover:shadow active:scale-95 transition-all" type="button"><span class="">Start Reading</span><span class="material-symbols-outlined text-[16px]">menu_book</span></button></div></div>
+</div>
+<!-- Milestone 2: I Do (Locked) -->
+<div class="relative opacity-90 group">
+<div class="absolute -left-6 sm:-left-10 top-3 w-7 sm:w-10 h-7 sm:h-10 rounded-full bg-surface-container text-on-surface-variant font-headline-sm text-headline-sm flex items-center justify-center shadow-xs z-10">
+                  2
+                </div>
+<div class="bg-surface-bright rounded-lg p-space-md transition-all"><div class="flex items-center justify-between gap-space-xs mb-1"><div class="flex items-center gap-space-xs"><span class="px-space-xs py-0.5 bg-surface-container-highest text-on-surface font-label-sm text-label-sm rounded-full">GUIDED PRACTICE</span><span class="text-on-surface-variant font-label-sm text-label-sm">15 min</span></div><span class="inline-flex items-center gap-1 font-label-sm text-label-sm text-outline"><span class="material-symbols-outlined text-[14px]">lock</span><span class="">Locked</span></span></div><h3 class="font-headline-sm text-headline-sm text-on-surface">Practice Lab: Step-by-Step Scale Simulator</h3><p class="font-body-md text-body-md text-on-surface-variant mt-1">Work through 4 guided interactive practice problems with Astro-Bot Sparky showing you how to spot differences and make quick swaps.</p><div class="mt-space-sm flex items-center justify-between text-on-surface-variant font-label-sm text-label-sm pt-space-xs"><span class="">Unlocks after Reading</span><span class="text-outline">Step 2 of 4</span></div></div>
+</div>
+<!-- Milestone 3: We Do (Locked) -->
+<div class="relative opacity-90 group">
+<div class="absolute -left-6 sm:-left-10 top-3 w-7 sm:w-10 h-7 sm:h-10 rounded-full bg-surface-container text-on-surface-variant font-headline-sm text-headline-sm flex items-center justify-center shadow-xs z-10">
+                  3
+                </div>
+<div class="bg-surface-bright rounded-lg p-space-md transition-all"><div class="flex items-center justify-between gap-space-xs mb-1"><div class="flex items-center gap-space-xs"><span class="px-space-xs py-0.5 bg-surface-container-highest text-on-surface font-label-sm text-label-sm rounded-full">INDEPENDENT PRACTICE</span><span class="text-on-surface-variant font-label-sm text-label-sm">15 min</span></div><span class="inline-flex items-center gap-1 font-label-sm text-label-sm text-outline"><span class="material-symbols-outlined text-[14px]">lock</span><span class="">Locked</span></span></div><h3 class="font-headline-sm text-headline-sm text-on-surface">Practice Drills: Rapid Sum Balancer</h3><p class="font-body-md text-body-md text-on-surface-variant mt-1">Solve 6 practice fuel puzzle scenarios on your own with instant hints and streak boosts.</p><div class="mt-space-sm flex items-center justify-between text-on-surface-variant font-label-sm text-label-sm pt-space-xs"><span class="">Collaborative Arena Ready</span><span class="text-outline">Step 3 of 4</span></div></div>
+</div>
+<!-- Milestone 4: You Do (Locked) -->
+<div class="relative opacity-90 group">
+<div class="absolute -left-6 sm:-left-10 top-3 w-7 sm:w-10 h-7 sm:h-10 rounded-full bg-surface-container text-on-surface-variant font-headline-sm text-headline-sm flex items-center justify-center shadow-xs z-10">
+                  4
+                </div>
+<div class="bg-surface-bright rounded-lg p-space-md transition-all"><div class="flex items-center justify-between gap-space-xs mb-1"><div class="flex items-center gap-space-xs"><span class="px-space-xs py-0.5 bg-surface-container-highest text-on-surface font-label-sm text-label-sm rounded-full">GRADED ASSIGNMENT</span><span class="text-on-surface-variant font-label-sm text-label-sm">10 min</span></div><span class="inline-flex items-center gap-1 font-label-sm text-label-sm text-outline"><span class="material-symbols-outlined text-[14px]">lock</span><span class="">Locked</span></span></div><h3 class="font-headline-sm text-headline-sm text-on-surface">Chapter 004 Assignment: Master Navigator Quiz</h3><p class="font-body-md text-body-md text-on-surface-variant mt-1">Submit your final chapter assignment with 5 balance challenges to earn your Cadet Vault gold star emblem.</p><div class="mt-space-sm flex items-center justify-between text-on-surface-variant font-label-sm text-label-sm pt-space-xs"><span class="text-outline">Step 4 of 4</span></div></div>
+</div>
+</div>
+</section>
+</main>
+<!-- Zone 2: Focus Rail & Superpower Hub (Desktop: 4 cols) -->
+<aside class="lg:col-span-4 flex flex-col gap-space-lg">
+<!-- Kid-friendly Translation: Superpowers You Will Unlock -->
+
+<!-- Cadet Tools Mini-Widget: Interactive Sandbox Preview -->
+
+<!-- Cadet Companion Capsule -->
+
+</aside>
+</div>
+</div>
+</div>
+<!-- Micro-interactions Script -->
+<script>
+    function testSwap(val) {
+      const leftEl = document.getElementById('left-tank-val');
+      const rightEl = document.getElementById('right-tank-val');
+      const feedback = document.getElementById('sandbox-feedback');
+      
+      let left = 55;
+      let right = 25;
+      
+      // Calculate balanced target (55+25 = 80 / 2 = 40 each)
+      // Swapping 15 from left to right brings left to 40 and right to 40!
+      if (val === 15) {
+        leftEl.textContent = '40';
+        rightEl.textContent = '40';
+        feedback.className = 'font-label-sm text-label-sm text-tertiary font-bold text-center mt-1';
+        feedback.textContent = '🎉 Perfect balance! Both tanks hold 40 units!';
+      } else {
+        const newLeft = left - val;
+        const newRight = right + val;
+        leftEl.textContent = newLeft;
+        rightEl.textContent = newRight;
+        feedback.className = 'font-label-sm text-label-sm text-secondary font-semibold text-center mt-1';
+        feedback.textContent = 'Not quite balanced yet! Try another swap tile.';
+      }
+    }
+
+    document.getElementById('launch-step-btn')?.addEventListener('click', function() {
+      this.classList.add('scale-95');
+      setTimeout(() => {
+        this.classList.remove('scale-95');
+      }, 150);
+    });
+  </script>
+</div></div></main><footer class="w-full bg-surface-container-low py-space-lg"></footer>
+
+
+
+
+
+</body></html>

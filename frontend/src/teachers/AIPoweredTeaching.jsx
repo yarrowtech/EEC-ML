@@ -54,6 +54,7 @@ const enrichChapter = (chapter) => ({
   introductionText: chapter.introductionText || chapter.description || '',
   explanation: chapter.explanation || '',
   recap: chapter.recap || '',
+  didYouKnow: chapter.didYouKnow || '',
   teacherNotes: chapter.teacherNotes || '',
   evaluation: chapter.evaluation || { participation: '', remarks: '', behaviour: '', progress: '', tag: '' },
   contentUploads: { ...defaultContentUploads, ...(chapter.contentUploads || {}) },
@@ -986,6 +987,7 @@ const AIPoweredTeaching = () => {
       // Step-by-step explanation and quick recap from Content tab
       explanation: stripHtml(chapter.explanation) || '',
       recap: stripHtml(chapter.recap) || '',
+      didYouKnow: stripHtml(chapter.didYouKnow) || '',
       materialsNeeded: Object.entries(chapter.contentUploads || {})
         .filter(([bucket]) => MATERIAL_BUCKETS.has(bucket))
         .flatMap(([bucket, files]) => (files || []).map((file) => serializeResourceRef(file, bucket)).filter(Boolean)),

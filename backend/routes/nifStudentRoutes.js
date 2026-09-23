@@ -1057,3 +1057,12 @@ router.patch('/students/:id/unarchive', adminAuth, async (req, res) => {
 });
 
 module.exports = router;
+// Exposed so the data-migration portal (backend/services/migration/student.js)
+// can drive the exact same import pipeline — password hashing, roll
+// allocation, parent auto-creation, fee auto-assignment — instead of
+// reimplementing it. bulkImportJobs must hold the job entry before
+// runBulkImportJob is called (see the /students/bulk handler above for the
+// shape it expects).
+module.exports.runBulkImportJob = runBulkImportJob;
+module.exports.bulkImportJobs = bulkImportJobs;
+module.exports.pruneBulkImportJob = pruneBulkImportJob;
