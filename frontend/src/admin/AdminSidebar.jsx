@@ -88,10 +88,10 @@ const AdminSidebar = ({
         `}
       >
         {/* ── Brand header ── */}
-        <div className="bg-indigo-50 flex items-center gap-3 px-4 py-3 border-b border-gray-100 relative">
+        <div className="flex items-center gap-3 px-4 py-3 border-b border-gray-100 relative">
           {/* Logo */}
           <div className={`
-            shrink-0 rounded-full overflow-hidden flex items-center justify-center
+            shrink-0 rounded-xl overflow-hidden flex items-center justify-center
             transition-all duration-300
             ${collapsed ? 'w-9 h-9' : 'w-10 h-10'}
             ${showSkeleton ? 'animate-pulse bg-gray-200' : ''}
@@ -216,7 +216,6 @@ const AdminSidebar = ({
                           </span>
                         )}
                       </span>
-                      
                       {!collapsed && (
                         <>
                           <span className="flex-1 text-left text-sm font-semibold">{item.label}</span>
@@ -284,9 +283,6 @@ const AdminSidebar = ({
                 ) : (
                   <NavLink
                     to={item.path}
-                    // Exact-match when another menu entry lives under this path
-                    // (e.g. /admin/settings vs /admin/settings/payment-gateway).
-                    end={menuItems.some((m) => [m, ...(m.submenu || [])].some((x) => x.path !== item.path && String(x.path || '').startsWith(`${item.path}/`)))}
                     onClick={() => { onMenuItemClick(item.label); onMobileClose?.(); }}
                   >
                     {({ isActive }) => (

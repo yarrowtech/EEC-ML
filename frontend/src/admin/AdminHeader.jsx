@@ -620,7 +620,8 @@ const AdminHeader = ({ adminUser, onOpenMobileSidebar, onLogoutRequest, notifica
                     )}
                   </div>
                   <div className="flex flex-col leading-tight min-w-0 text-left">
-                    <span className="text-sm font-semibold text-slate-900 truncate max-w-[160px]">{primaryName}</span>
+                    {/* <span className="text-sm font-semibold text-slate-900 truncate max-w-[160px]">{primaryName}</span> */}
+                    <span className="text-sm font-semibold text-slate-900 whitespace-nowrap">{primaryName}</span>
                     <span className="text-[10px] font-medium text-slate-500 tracking-wide">{profileRole}</span>
                   </div>
                   <ChevronDown size={14} className="text-slate-400" />
