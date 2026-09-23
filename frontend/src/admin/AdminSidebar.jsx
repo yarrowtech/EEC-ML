@@ -45,13 +45,13 @@ const AdminSidebar = ({
   }, [profileLoading]);
 
   const brandLogoSrc = adminUser?.schoolLogo || adminUser?.avatar || '';
-  const schoolName   = adminUser?.schoolName || adminUser?.name || 'School Admin';
-  const campusLabel  = adminUser?.campusName
+  const schoolName = adminUser?.schoolName || adminUser?.name || 'School Admin';
+  const campusLabel = adminUser?.campusName
     ? `${adminUser.campusName}${adminUser.campusType ? ` · ${adminUser.campusType}` : ''}`
     : adminUser?.campusType || '';
   const footerInitial = (adminUser?.name || 'A').charAt(0).toUpperCase();
-  const footerName    = adminUser?.name || 'Admin User';
-  const footerRole    = adminUser?.role || 'Administrator';
+  const footerName = adminUser?.name || 'Admin User';
+  const footerRole = adminUser?.role || 'Administrator';
   const showSkeleton = profileLoading && !skeletonTimedOut;
   const currentPath = location.pathname.replace(/\/$/, '') || '/';
 
@@ -92,7 +92,6 @@ const AdminSidebar = ({
           {/* Logo */}
           <div className={`
             shrink-0 rounded-xl overflow-hidden flex items-center justify-center
-            bg-linear-to-br from-yellow-500 to-amber-700 shadow-md shadow-indigo-200
             transition-all duration-300
             ${collapsed ? 'w-9 h-9' : 'w-10 h-10'}
             ${showSkeleton ? 'animate-pulse bg-gray-200' : ''}
@@ -116,7 +115,14 @@ const AdminSidebar = ({
                 </>
               ) : (
                 <>
-                  <p className="text-sm font-bold text-gray-900 truncate leading-tight">{schoolName}</p>
+                  {/* <p className="text-sm font-bold text-gray-900 truncate leading-tight">{schoolName}</p> */}
+                  <p className="text-sm font-bold text-gray-900 truncate leading-tight">
+                    {schoolName
+                      ?.trim()
+                      .split(/\s+/)
+                      .map(word => word.charAt(0).toUpperCase())
+                      .join('.')}
+                  </p>
                   {campusLabel && (
                     <p className="text-[11px] text-indigo-500 font-medium truncate mt-0.5">{campusLabel}</p>
                   )}
@@ -333,9 +339,9 @@ const AdminSidebar = ({
         </nav>
 
         {/* ── Footer ── */}
-        <div className="border-t border-gray-100 p-3 space-y-1">
+        <div className="bg-gray-200/30 border-t border-gray-100 p-3 space-y-1">
           {/* User row — skeleton while loading */}
-          <div className={`flex items-center gap-2.5 px-2 py-2 rounded-xl ${collapsed ? 'justify-center' : ''}`}>
+          {/* <div className={`flex items-center gap-2.5 px-2 py-2 rounded-xl ${collapsed ? 'justify-center' : ''}`}>
             <div className={`w-8 h-8 rounded-xl shrink-0 overflow-hidden flex items-center justify-center
               ${showSkeleton ? 'bg-gray-200 animate-pulse' : 'bg-indigo-100'}`}>
               {!showSkeleton && (brandLogoSrc ? (
@@ -359,7 +365,7 @@ const AdminSidebar = ({
                 )}
               </div>
             )}
-          </div>
+          </div> */}
 
           {/* Logout */}
           <button
@@ -368,7 +374,7 @@ const AdminSidebar = ({
             aria-label="Logout"
             className={`
               w-full flex items-center gap-2.5 px-3 py-2 rounded-xl
-              text-gray-400 hover:text-red-600 hover:bg-red-50
+              text-red-400 hover:text-red-600 hover:bg-red-50
               transition-all duration-150 text-sm font-semibold
               ${collapsed ? 'justify-center' : ''}
             `}
