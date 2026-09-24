@@ -315,7 +315,6 @@ const Result = ({ setShowAdminHeader }) => {
   const [loadingStudents, setLoadingStudents] = useState(false);
 
   const [searchTerm, setSearchTerm]     = useState('');
-  const [selectedSession] = useState('');
   const [selectedClass]   = useState('');
   const [selectedSection] = useState('');
   const filterSubject = 'all';
@@ -332,6 +331,11 @@ const Result = ({ setShowAdminHeader }) => {
   const [bulkExamId, setBulkExamId]         = useState('');
   const [selectedGroupId, setSelectedGroupId] = useState('');
   const [examSessionFilter, setExamSessionFilter] = useState('');
+  // Default the page to the school's active session (and follow it if it
+  // changes); admins can still pick another session or "All Sessions".
+  useEffect(() => {
+    if (activeAcademicYearName) setExamSessionFilter(normalizeSession(activeAcademicYearName));
+  }, [activeAcademicYearName]);
   const [examNameFilter, setExamNameFilter] = useState('');
   const [examSearchTerm, setExamSearchTerm] = useState('');
   const [examFiltersOpen, setExamFiltersOpen] = useState(false);
@@ -1012,7 +1016,7 @@ const Result = ({ setShowAdminHeader }) => {
     const resultClass = normalizeClass(r?.studentId?.grade || r?.studentId?.class || '');
     const selectedClassNormalized = normalizeClass(selectedClass);
     return (!q || name.includes(q) || subj.includes(q)) &&
-      (!selectedSession || resultSession === selectedSession) &&
+      (!examSessionFilter || resultSession === examSessionFilter) &&
       (!selectedClass || resultClass === selectedClassNormalized) &&
       (!selectedSection || normSec(r?.studentId?.section || '') === normSec(selectedSection)) &&
       (filterSubject === 'all' || r.examId?.subject === filterSubject);
@@ -1071,7 +1075,7 @@ const Result = ({ setShowAdminHeader }) => {
     return list;
   })();
 
-  const examSessionOptions = [...new Set(allResultGroups.map((g) => g.session).filter(Boolean))].sort();
+  const examSessionOptions = [...new Set([...allResultGroups.map((g) => g.session), normalizeSession(activeAcademicYearName)].filter(Boolean))].sort();
   const examNameOptions = [...new Set(allResultGroups.map((g) => g.title).filter(Boolean))].sort();
   const resultGroups = allResultGroups.filter((g) =>
     (!examSessionFilter || g.session === examSessionFilter) &&
@@ -2039,7 +2043,7 @@ const Result = ({ setShowAdminHeader }) => {
                 <select value={examSessionFilter} onChange={(e) => setExamSessionFilter(e.target.value)}
                   className="rounded-xl border border-slate-200 bg-slate-50 px-3 py-2.5 text-sm text-slate-700 focus:border-indigo-400 focus:outline-none min-w-[140px]">
                   <option value="">All Sessions</option>
-                  {examSessionOptions.map((s) => <option key={s} value={s}>{s}</option>)}
+                  {examSessionOptions.map((s) => <option key={s} value={s}>{s}{s === normalizeSession(activeAcademicYearName) ? ' (active)' : ''}</option>)}
                 </select>
                 <select value={examNameFilter} onChange={(e) => setExamNameFilter(e.target.value)}
                   className="rounded-xl border border-slate-200 bg-slate-50 px-3 py-2.5 text-sm text-slate-700 focus:border-indigo-400 focus:outline-none min-w-[160px]">

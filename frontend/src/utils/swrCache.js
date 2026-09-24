@@ -62,3 +62,18 @@ export const invalidateCache = (keyPrefix = '') => {
     /* storage unavailable */
   }
 };
+
+// Session-scoped admin data (dashboard stats/fees, Fees Collection lists) is
+// only valid for one active academic year. Call this after the active session
+// changes so every page refetches instead of painting the previous session.
+const SESSION_SCOPED_PREFIXES = [PREFIX, 'admin_dashboard_cache'];
+export const clearSessionScopedCaches = () => {
+  memory.clear();
+  try {
+    Object.keys(sessionStorage).forEach((k) => {
+      if (SESSION_SCOPED_PREFIXES.some((p) => k.startsWith(p))) sessionStorage.removeItem(k);
+    });
+  } catch {
+    /* storage unavailable */
+  }
+};

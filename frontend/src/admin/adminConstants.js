@@ -23,7 +23,8 @@ import {
   CalendarDays,
   CreditCard,
   Plus,
-  Eye
+  Eye,
+  UserX
 } from 'lucide-react';
 
 export const ADMIN_MENU_ITEMS = [
@@ -91,8 +92,13 @@ export const ADMIN_MENU_ITEMS = [
   },
   {
     icon: ArrowUpCircle,
-    label: 'Promotion & Leave',
+    label: 'Student Promotion',
     path: '/admin/promotion'
+  },
+  {
+    icon: UserX,
+    label: 'Leave & Left Students',
+    path: '/admin/left-students'
   },
   {
     icon: ClipboardList,
@@ -193,7 +199,7 @@ export const ADMIN_MENU_SECTIONS = [
     section: 'ACADEMIC MANAGEMENT',
     items: ['Academic Setup', 'Teachers Management', 'Teacher Feedback', 'Routine Management', 'Exam Management', 'Result Management', 'Report Cards'],
   },
-  { section: 'STUDENTS', items: ['Students', 'Parents', 'Promotion & Leave'] },
+  { section: 'STUDENTS', items: ['Students', 'Parents', 'Student Promotion', 'Leave & Left Students'] },
   { section: 'FEES MANAGEMENT', items: ['Create Fees', 'Fees Collection', 'Fee Receipts'] },
   { section: 'COMMUNICATION', items: ['Notices', 'Holiday List'] },
   { section: 'CAMPUS', items: ['Floor & Rooms'] },
