@@ -102,6 +102,12 @@ const registerSocketEvents = (io, socket, ensureChatAccess) => {
   };
 
   socket.join(`user:${userId}`);
+  if (user.schoolId) {
+    socket.join(`school:${user.schoolId}`);
+  }
+  if (user.campusId) {
+    socket.join(`campus:${user.campusId}`);
+  }
   const presenceOnline = markUserOnline(userId);
   if (presenceOnline.changed) {
     notifyPresenceChange(io, { user, targetUserId: userId, online: true, lastSeen: presenceOnline.lastSeen });
@@ -321,7 +327,10 @@ const configureSocketServer = (httpServer, corsOrigin, tenantResolver, redisClie
     if (!token) return next(new Error('Authentication required'));
     try {
       const decoded = jwt.verify(token, process.env.JWT_SECRET);
-      if (!decoded.campusId) return next(new Error('campusId required'));
+      const normalizedType = String(decoded.userType || decoded.type || decoded.role || '').toLowerCase();
+      if (!decoded.campusId && !['admin', 'super_admin', 'super admin'].includes(normalizedType)) {
+        return next(new Error('campusId required'));
+      }
       const rawHost = socket.handshake.headers.host || '';
       const { normalizeHostname } = tenantResolver;
       const hostname = normalizeHostname(rawHost.replace(/:\d+$/, ''));

@@ -1,4 +1,4 @@
-import { useState, useEffect, useMemo, useCallback, useRef } from 'react';
+import { Fragment, useState, useEffect, useMemo, useCallback } from 'react';
 import jsPDF from 'jspdf';
 import {
   BarChart,
@@ -25,7 +25,6 @@ import {
   Activity,
   FileText,
   CheckCircle,
-  Clock,
   AlertCircle,
   Loader2,
   BookOpen,
@@ -33,12 +32,10 @@ import {
   Shield,
   Zap,
   AlertTriangle,
-  Eye,
   Server,
   Brain,
   Sparkles,
   RefreshCw,
-  Scale,
 } from 'lucide-react';
 
 const renderInlineMarkdown = (content) => String(content || '')
@@ -101,7 +98,7 @@ const AiInsightPanel = ({ label, loading, content, error, onGenerate, accentColo
 
   return (
     <div className="mt-4 border border-indigo-100 rounded-xl overflow-hidden bg-gradient-to-br from-indigo-50/60 to-purple-50/40">
-      <div className="flex items-center justify-between px-4 py-3 border-b border-indigo-100/60">
+      {/* <div className="flex items-center justify-between px-4 py-3 border-b border-indigo-100/60">
         <div className="flex items-center gap-2">
           <Sparkles className="w-3.5 h-3.5 text-indigo-500" />
           <span className="text-xs font-semibold text-indigo-700">AI Insights</span>
@@ -115,8 +112,8 @@ const AiInsightPanel = ({ label, loading, content, error, onGenerate, accentColo
           {loading ? <Loader2 className="w-3 h-3 animate-spin" /> : <Sparkles className="w-3 h-3" />}
           {loading ? 'Generating…' : content ? 'Regenerate' : `Generate ${label}`}
         </button>
-      </div>
-      <div className="px-4 py-3">
+      </div> */}
+      {/* <div className="px-4 py-3">
         {loading && (
           <div className="flex items-center gap-3 py-4 text-indigo-500 text-xs">
             <Loader2 className="w-4 h-4 animate-spin flex-shrink-0" />
@@ -133,7 +130,7 @@ const AiInsightPanel = ({ label, loading, content, error, onGenerate, accentColo
         {!loading && !error && !content && (
           <p className="text-xs text-indigo-400 py-2">Click &ldquo;Generate&rdquo; to get AI-powered insights from Ollama.</p>
         )}
-      </div>
+      </div> */}
     </div>
   );
 };
@@ -225,30 +222,13 @@ const buildFeeChartData = (invoices) => {
   }));
 };
 
-const formatRelativeTime = (dateString) => {
-  if (!dateString) return 'Recently';
-  const diff = Date.now() - new Date(dateString).getTime();
-  const minutes = Math.floor(diff / (1000 * 60));
-  if (minutes < 1) return 'Just now';
-  if (minutes < 60) return `${minutes}m ago`;
-  const hours = Math.floor(minutes / 60);
-  if (hours < 24) return `${hours}h ago`;
-  const days = Math.floor(hours / 24);
-  if (days < 7) return `${days}d ago`;
-  const weeks = Math.floor(days / 7);
-  if (weeks < 4) return `${weeks}w ago`;
-  const months = Math.floor(days / 30);
-  if (months < 12) return `${months}mo ago`;
-  const years = Math.floor(days / 365);
-  return `${years}y ago`;
-};
 
 const Analytics = ({ setShowAdminHeader }) => {
-  const [selectedSession, setSelectedSession] = useState(ALL_SESSIONS);
-  const [selectedClass, setSelectedClass] = useState(ALL_CLASSES);
-  const [selectedSection, setSelectedSection] = useState(ALL_SECTIONS);
+  // Nothing is shown until Session → Class → Section are all picked.
+  const [selectedSession, setSelectedSession] = useState('');
+  const [selectedClass, setSelectedClass] = useState('');
+  const [selectedSection, setSelectedSection] = useState('');
   const [sessionOptions, setSessionOptions] = useState([]);
-  const [activeAcademicYearName, setActiveAcademicYearName] = useState('');
   const [classCatalog, setClassCatalog] = useState([]);
   const [sectionCatalog, setSectionCatalog] = useState([]);
   const [progressAnalytics, setProgressAnalytics] = useState(null);
@@ -260,9 +240,6 @@ const Analytics = ({ setShowAdminHeader }) => {
   const [feeInvoices, setFeeInvoices] = useState([]);
   const [feesLoading, setFeesLoading] = useState(false);
   const [feesError, setFeesError] = useState('');
-  const [auditLogs, setAuditLogs] = useState([]);
-  const [activityLoading, setActivityLoading] = useState(false);
-  const [activityError, setActivityError] = useState('');
   const [masteryMatrix, setMasteryMatrix] = useState(null);
   const [matrixLoading, setMatrixLoading] = useState(false);
   const [teacherEffectiveness, setTeacherEffectiveness] = useState([]);
@@ -275,14 +252,10 @@ const Analytics = ({ setShowAdminHeader }) => {
   const [dropoutLoading, setDropoutLoading] = useState(false);
   const [cohortTrend, setCohortTrend] = useState(null);
   const [cohortLoading, setCohortLoading] = useState(false);
-  const [contentUsage, setContentUsage] = useState({ data: [], summary: null });
-  const [contentLoading, setContentLoading] = useState(false);
   const [systemHealth, setSystemHealth] = useState(null);
   const [healthLoading, setHealthLoading] = useState(false);
   const [examIntegrity, setExamIntegrity] = useState({ data: [], summary: null });
   const [integrityLoading, setIntegrityLoading] = useState(false);
-  const [equityData, setEquityData] = useState(null);
-  const [equityLoading, setEquityLoading] = useState(false);
   // AI Insights state — one per report type
   const [aiInsights, setAiInsights] = useState({ overview: '', dropout: '', teacher: '', integrity: '' });
   const [aiInsightsLoading, setAiInsightsLoading] = useState({ overview: false, dropout: false, teacher: false, integrity: false });
@@ -301,40 +274,29 @@ const Analytics = ({ setShowAdminHeader }) => {
     const controller = new AbortController();
     const loadFilterOptions = async () => {
       try {
-        const [activeYearRes, classesRes, sectionsRes] = await Promise.all([
-          fetch(buildApiUrl('/api/academic/active-year'), {
-            headers: getAuthHeaders(),
-            signal: controller.signal,
-          }),
-          fetch(buildApiUrl('/api/academic/classes'), {
-            headers: getAuthHeaders(),
-            signal: controller.signal,
-          }),
-          fetch(buildApiUrl('/api/academic/sections'), {
-            headers: getAuthHeaders(),
-            signal: controller.signal,
-          }),
+        const [yearsRes, classesRes, sectionsRes] = await Promise.all([
+          fetch(buildApiUrl('/api/academic/years'), { headers: getAuthHeaders(), signal: controller.signal }),
+          fetch(buildApiUrl('/api/academic/classes'), { headers: getAuthHeaders(), signal: controller.signal }),
+          fetch(buildApiUrl('/api/academic/sections'), { headers: getAuthHeaders(), signal: controller.signal }),
         ]);
 
-        const [activeYear, classes, sections] = await Promise.all([
-          activeYearRes.json().catch(() => null),
+        const [years, classes, sections] = await Promise.all([
+          yearsRes.json().catch(() => []),
           classesRes.json().catch(() => []),
           sectionsRes.json().catch(() => []),
         ]);
 
         if (!controller.signal.aborted) {
-          const normalizedActiveYear = activeYear && activeYear._id ? activeYear : null;
-          const normalizedClasses = Array.isArray(classes) ? classes : [];
-          const normalizedSections = Array.isArray(sections) ? sections : [];
-          setSessionOptions(normalizedActiveYear ? [normalizedActiveYear] : []);
-          setActiveAcademicYearName(normalizedActiveYear?.name || '');
-          setClassCatalog(normalizedClasses);
-          setSectionCatalog(normalizedSections);
+          // Every session, active one first.
+          const yearList = (Array.isArray(years) ? years : []).filter((y) => y?._id && y?.name);
+          yearList.sort((a, b) => Number(Boolean(b.isActive)) - Number(Boolean(a.isActive)));
+          setSessionOptions(yearList);
+          setClassCatalog(Array.isArray(classes) ? classes : []);
+          setSectionCatalog(Array.isArray(sections) ? sections : []);
         }
       } catch {
         if (!controller.signal.aborted) {
           setSessionOptions([]);
-          setActiveAcademicYearName('');
           setClassCatalog([]);
           setSectionCatalog([]);
         }
@@ -344,59 +306,65 @@ const Analytics = ({ setShowAdminHeader }) => {
     return () => controller.abort();
   }, []);
 
-  // Default the session picker to the active year exactly once, when it
-  // first loads — re-running this on every selectedSession change (as it
-  // used to) meant picking "All Sessions" got silently reverted a moment
-  // later, which is why the Session filter never actually seemed to work.
-  const didInitSessionRef = useRef(false);
-  useEffect(() => {
-    if (!sessionOptions.length || didInitSessionRef.current) return;
-    const activeSession = sessionOptions[0];
-    if (activeSession?.name) {
-      setSelectedSession(activeSession.name);
-      didInitSessionRef.current = true;
-    }
-  }, [sessionOptions]);
-
-  // "All Sessions" means unscoped — show classes/sections/data across every
-  // academic year. Picking the specific session name scopes everything
-  // (Class options -> Section options -> analytics data) to that year.
-  const activeAcademicYearId = (selectedSession !== ALL_SESSIONS && sessionOptions[0]?._id)
-    ? String(sessionOptions[0]._id)
-    : '';
+  // Cascading filters: Session → Class → Section. No defaults — the dashboard
+  // stays empty until all three are chosen, then shows only that section.
+  const selectedSessionDoc = useMemo(
+    () => sessionOptions.find((s) => s?.name === selectedSession) || null,
+    [sessionOptions, selectedSession]
+  );
+  const activeAcademicYearId = selectedSessionDoc?._id ? String(selectedSessionDoc._id) : '';
   const activeClassCatalog = useMemo(
-    () => classCatalog.filter((item) => !activeAcademicYearId || String(item?.academicYearId || '') === activeAcademicYearId),
+    () => (activeAcademicYearId
+      ? classCatalog.filter((item) => String(item?.academicYearId || '') === activeAcademicYearId)
+      : []),
     [classCatalog, activeAcademicYearId]
   );
   const availableClassOptions = useMemo(
-    () => [ALL_CLASSES, ...activeClassCatalog.map((item) => item?.name).filter(Boolean)],
+    () => activeClassCatalog.map((item) => item?.name).filter(Boolean),
     [activeClassCatalog]
   );
 
-  // Scoped to the one class the admin picked (which is itself already
-  // session-scoped via activeClassCatalog) — not every class in the
-  // session, which was letting sections from other classes leak in.
+  // Sections of the one class the admin picked (already session-scoped).
   const selectedClassDoc = useMemo(
     () => activeClassCatalog.find((item) => item?.name === selectedClass) || null,
     [activeClassCatalog, selectedClass]
   );
   const availableSectionOptions = useMemo(() => {
-    if (selectedClass === ALL_CLASSES || !selectedClassDoc) return [ALL_SECTIONS];
+    if (!selectedClassDoc) return [];
     const classId = String(selectedClassDoc._id || '');
-    const scopedNames = sectionCatalog
+    return sectionCatalog
       .filter((item) => String(item?.classId || '') === classId)
       .map((item) => item?.name)
       .filter(Boolean);
-    return [ALL_SECTIONS, ...scopedNames];
-  }, [selectedClass, selectedClassDoc, sectionCatalog]);
+  }, [selectedClassDoc, sectionCatalog]);
+
+  const handleSessionChange = (value) => {
+    setSelectedSession(value);
+    setSelectedClass('');
+    setSelectedSection('');
+  };
+  const handleClassChange = (value) => {
+    setSelectedClass(value);
+    setSelectedSection('');
+  };
+
+  // True only once Session, Class and Section are all picked — every data
+  // loader below waits for this, so nothing unscoped is fetched or shown.
+  const filtersComplete = Boolean(activeAcademicYearId && selectedClassDoc && selectedSection);
+
+  // Query string that scopes the admin-analytics panels to the chosen
+  // session / class / section (the backend resolves the matching students).
+  const scopeQuery = useMemo(() => {
+    const p = new URLSearchParams();
+    if (selectedClass) p.set('grade', selectedClass);
+    if (selectedSection) p.set('section', selectedSection);
+    if (activeAcademicYearId) p.set('academicYearId', activeAcademicYearId);
+    const s = p.toString();
+    return s ? `?${s}` : '';
+  }, [selectedClass, selectedSection, activeAcademicYearId]);
 
   useEffect(() => {
-    if (selectedSection !== ALL_SECTIONS && !availableSectionOptions.includes(selectedSection)) {
-      setSelectedSection(ALL_SECTIONS);
-    }
-  }, [availableSectionOptions, selectedSection]);
-
-  useEffect(() => {
+    if (!filtersComplete) return undefined; // wait for Session → Class → Section
     const controller = new AbortController();
     const loadAnalytics = async () => {
       setAnalyticsLoading(true);
@@ -431,9 +399,10 @@ const Analytics = ({ setShowAdminHeader }) => {
     };
     loadAnalytics();
     return () => controller.abort();
-  }, [selectedClass, selectedSection, activeAcademicYearId]);
+  }, [filtersComplete, selectedClass, selectedSection, activeAcademicYearId]);
 
   useEffect(() => {
+    if (!filtersComplete) return undefined; // wait for Session → Class → Section
     const controller = new AbortController();
     const loadReports = async () => {
       setReportsLoading(true);
@@ -468,9 +437,10 @@ const Analytics = ({ setShowAdminHeader }) => {
     };
     loadReports();
     return () => controller.abort();
-  }, [selectedClass, selectedSection, activeAcademicYearId]);
+  }, [filtersComplete, selectedClass, selectedSection, activeAcademicYearId]);
 
   useEffect(() => {
+    if (!filtersComplete) return undefined; // wait for Session → Class → Section
     const controller = new AbortController();
     const loadInvoices = async () => {
       setFeesLoading(true);
@@ -497,56 +467,28 @@ const Analytics = ({ setShowAdminHeader }) => {
     };
     loadInvoices();
     return () => controller.abort();
-  }, []);
+  }, [filtersComplete]);
 
-  useEffect(() => {
-    const controller = new AbortController();
-    const loadActivity = async () => {
-      setActivityLoading(true);
-      setActivityError('');
-      try {
-        const res = await fetch(buildApiUrl('/api/audit-logs'), {
-          headers: getAuthHeaders(),
-          signal: controller.signal,
-        });
-        const data = await res.json().catch(() => []);
-        if (!res.ok) {
-          throw new Error(data?.error || 'Unable to load recent activity');
-        }
-        setAuditLogs(Array.isArray(data) ? data : []);
-      } catch (error) {
-        if (!controller.signal.aborted) {
-          setActivityError(error.message || 'Unable to load recent activity');
-        }
-      } finally {
-        if (!controller.signal.aborted) {
-          setActivityLoading(false);
-        }
-      }
-    };
-    loadActivity();
-    return () => controller.abort();
-  }, []);
 
   const fetchMasteryMatrix = useCallback(async () => {
     setMatrixLoading(true);
     try {
-      const res = await fetch(buildApiUrl('/api/admin-analytics/mastery-matrix'), { headers: getAuthHeaders() });
+      const res = await fetch(buildApiUrl(`/api/admin-analytics/mastery-matrix${scopeQuery}`), { headers: getAuthHeaders() });
       const data = await res.json().catch(() => ({}));
       if (res.ok) setMasteryMatrix(data.data || null);
     } catch { /* silent */ }
     finally { setMatrixLoading(false); }
-  }, []);
+  }, [scopeQuery]);
 
   const fetchTeacherEffectiveness = useCallback(async () => {
     setTeacherEffLoading(true);
     try {
-      const res = await fetch(buildApiUrl('/api/admin-analytics/teacher-effectiveness'), { headers: getAuthHeaders() });
+      const res = await fetch(buildApiUrl(`/api/admin-analytics/teacher-effectiveness${scopeQuery}`), { headers: getAuthHeaders() });
       const data = await res.json().catch(() => ({}));
       if (res.ok) setTeacherEffectiveness(data.data || []);
     } catch { /* silent */ }
     finally { setTeacherEffLoading(false); }
-  }, []);
+  }, [scopeQuery]);
 
   const indexOfLastTeacherEff = teacherEffCurrentPage * teacherEffItemsPerPage;
   const indexOfFirstTeacherEff = indexOfLastTeacherEff - teacherEffItemsPerPage;
@@ -555,42 +497,33 @@ const Analytics = ({ setShowAdminHeader }) => {
   const fetchAiPath = useCallback(async () => {
     setAiPathLoading(true);
     try {
-      const res = await fetch(buildApiUrl('/api/admin-analytics/ai-path-effectiveness'), { headers: getAuthHeaders() });
+      const res = await fetch(buildApiUrl(`/api/admin-analytics/ai-path-effectiveness${scopeQuery}`), { headers: getAuthHeaders() });
       const data = await res.json().catch(() => ({}));
       if (res.ok) setAiPathData(data.data || []);
     } catch { /* silent */ }
     finally { setAiPathLoading(false); }
-  }, []);
+  }, [scopeQuery]);
 
   const fetchDropoutRisk = useCallback(async () => {
     setDropoutLoading(true);
     try {
-      const res = await fetch(buildApiUrl('/api/admin-analytics/dropout-risk'), { headers: getAuthHeaders() });
+      const res = await fetch(buildApiUrl(`/api/admin-analytics/dropout-risk${scopeQuery}`), { headers: getAuthHeaders() });
       const data = await res.json().catch(() => ({}));
       if (res.ok) setDropoutRisk(data.data || []);
     } catch { /* silent */ }
     finally { setDropoutLoading(false); }
-  }, []);
+  }, [scopeQuery]);
 
   const fetchCohortTrend = useCallback(async () => {
     setCohortLoading(true);
     try {
-      const res = await fetch(buildApiUrl('/api/admin-analytics/cohort-trend'), { headers: getAuthHeaders() });
+      const res = await fetch(buildApiUrl(`/api/admin-analytics/cohort-trend${scopeQuery}`), { headers: getAuthHeaders() });
       const data = await res.json().catch(() => ({}));
       if (res.ok) setCohortTrend(data.data || null);
     } catch { /* silent */ }
     finally { setCohortLoading(false); }
-  }, []);
+  }, [scopeQuery]);
 
-  const fetchContentUsage = useCallback(async () => {
-    setContentLoading(true);
-    try {
-      const res = await fetch(buildApiUrl('/api/admin-analytics/content-usage'), { headers: getAuthHeaders() });
-      const data = await res.json().catch(() => ({}));
-      if (res.ok) setContentUsage({ data: data.data || [], summary: data.summary || null });
-    } catch { /* silent */ }
-    finally { setContentLoading(false); }
-  }, []);
 
   const fetchSystemHealth = useCallback(async () => {
     setHealthLoading(true);
@@ -605,45 +538,28 @@ const Analytics = ({ setShowAdminHeader }) => {
   const fetchExamIntegrity = useCallback(async () => {
     setIntegrityLoading(true);
     try {
-      const res = await fetch(buildApiUrl('/api/admin-analytics/exam-integrity'), { headers: getAuthHeaders() });
+      const res = await fetch(buildApiUrl(`/api/admin-analytics/exam-integrity${scopeQuery}`), { headers: getAuthHeaders() });
       const data = await res.json().catch(() => ({}));
       if (res.ok) setExamIntegrity({ data: data.data || [], summary: data.summary || null });
     } catch { /* silent */ }
     finally { setIntegrityLoading(false); }
-  }, []);
+  }, [scopeQuery]);
 
-  // Equity / bias monitoring — checks whether the AI answer evaluator's avg
-  // score and needs-review rate are consistent across gender cohorts. See
-  // backend/services/equityMonitoringService.js for the deliberate scope
-  // decision (gender only; caste/religion/category excluded).
-  const fetchEquityMonitoring = useCallback(async () => {
-    setEquityLoading(true);
-    try {
-      const res = await fetch(buildApiUrl('/api/admin-analytics/equity-monitoring'), { headers: getAuthHeaders() });
-      const data = await res.json().catch(() => ({}));
-      if (res.ok) setEquityData(data.data || null);
-    } catch { /* silent */ }
-    finally { setEquityLoading(false); }
-  }, []);
 
   useEffect(() => {
+    if (!filtersComplete) return undefined; // wait for Session → Class → Section
     fetchMasteryMatrix();
     fetchTeacherEffectiveness();
     fetchAiPath();
     fetchDropoutRisk();
     fetchCohortTrend();
-    fetchContentUsage();
     fetchSystemHealth();
     fetchExamIntegrity();
-    fetchEquityMonitoring();
-  }, [fetchMasteryMatrix, fetchTeacherEffectiveness, fetchAiPath, fetchDropoutRisk, fetchCohortTrend, fetchContentUsage, fetchSystemHealth, fetchExamIntegrity, fetchEquityMonitoring]);
+  }, [filtersComplete, fetchMasteryMatrix, fetchTeacherEffectiveness, fetchAiPath, fetchDropoutRisk, fetchCohortTrend, fetchSystemHealth, fetchExamIntegrity]);
 
-  const attendanceRate = useMemo(() => {
-    if (!reportsSummary?.attendance) return 0;
-    const { present = 0, totalMarked = 0 } = reportsSummary.attendance;
-    if (!totalMarked) return 0;
-    return Math.round((present / totalMarked) * 100);
-  }, [reportsSummary]);
+  // Attendance card = today's attendance for the selected class/section.
+  const todayAttendance = progressAnalytics?.todayAttendance || null;
+  const attendanceRate = todayAttendance?.rate ?? 0;
 
   const subjectPerformance = useMemo(() => {
     if (!progressAnalytics?.subjectPerformance) return [];
@@ -676,18 +592,15 @@ const Analytics = ({ setShowAdminHeader }) => {
   }, [progressAnalytics]);
 
   const attendanceData = useMemo(() => {
-    if (!reportsSummary?.attendance) return [];
-    const { present = 0, absent = 0, totalMarked = 0 } = reportsSummary.attendance;
-    const others = Math.max(totalMarked - present - absent, 0);
-    const slices = [
+    if (!todayAttendance) return [];
+    const { present = 0, late = 0, absent = 0, notMarked = 0 } = todayAttendance;
+    return [
       { name: 'Present', value: present, color: '#10b981' },
+      { name: 'Late', value: late, color: '#f59e0b' },
       { name: 'Absent', value: absent, color: '#ef4444' },
-    ];
-    if (others > 0) {
-      slices.push({ name: 'Other', value: others, color: '#f59e0b' });
-    }
-    return slices.filter((slice) => slice.value > 0);
-  }, [reportsSummary]);
+      { name: 'Not marked', value: notMarked, color: '#cbd5e1' },
+    ].filter((slice) => slice.value > 0);
+  }, [todayAttendance]);
 
   const improvementStats = useMemo(() => {
     if (!progressAnalytics?.improvementTrends) return [];
@@ -720,7 +633,30 @@ const Analytics = ({ setShowAdminHeader }) => {
     });
   }, [feeInvoices, selectedClass, selectedSection, activeAcademicYearId]);
 
-  const feesChartData = useMemo(() => buildFeeChartData(filteredInvoices), [filteredInvoices]);
+  // Paid = money received in each month, Pending = outstanding at month-end
+  // (same source as the main dashboard), for the selected class/section/session.
+  // Falls back to the invoice-based chart only if the summary isn't available.
+  const [feeTrend, setFeeTrend] = useState(null);
+  useEffect(() => {
+    if (!filtersComplete || !selectedClassDoc?._id) return undefined;
+    const controller = new AbortController();
+    const params = new URLSearchParams({ classId: String(selectedClassDoc._id), section: selectedSection });
+    if (activeAcademicYearId) params.set('academicYearId', activeAcademicYearId);
+    fetch(buildApiUrl(`/api/fees/admin/summary?${params}`), { headers: getAuthHeaders(), signal: controller.signal })
+      .then((res) => (res.ok ? res.json() : null))
+      .then((data) => {
+        if (!controller.signal.aborted) setFeeTrend(Array.isArray(data?.monthlyTrend) ? data.monthlyTrend : null);
+      })
+      .catch(() => { if (!controller.signal.aborted) setFeeTrend(null); });
+    return () => controller.abort();
+  }, [filtersComplete, selectedClassDoc, selectedSection, activeAcademicYearId]);
+
+  const feesChartData = useMemo(
+    () => (feeTrend
+      ? feeTrend.map((m) => ({ month: m.month, paid: Math.round(m.collected || 0), pending: Math.round(m.outstanding ?? m.due ?? 0) }))
+      : buildFeeChartData(filteredInvoices)),
+    [feeTrend, filteredInvoices]
+  );
 
   const filteredFeeTotals = useMemo(
     () =>
@@ -746,18 +682,6 @@ const Analytics = ({ setShowAdminHeader }) => {
   const scopedAttendanceRate = Number(attendanceRate ?? progressAnalytics?.attendanceRate ?? 0);
   const scopedAverageScore = Number(progressAnalytics?.averageScore ?? 0);
 
-  const recentActivity = useMemo(() => {
-    if (!auditLogs.length) return [];
-    const palette = ['blue', 'green', 'purple', 'orange'];
-    return auditLogs.slice(0, 6).map((log, index) => ({
-      id: log._id || index,
-      teacher: log.meta?.actorName || log.actorType || 'Admin',
-      action: log.action || 'Update',
-      subject: log.entity || log.meta?.entityName || 'Record',
-      time: formatRelativeTime(log.createdAt),
-      color: palette[index % palette.length],
-    }));
-  }, [auditLogs]);
 
   const keyMetrics = useMemo(() => {
     const totalStudents = scopedStudentCount;
@@ -895,16 +819,6 @@ const Analytics = ({ setShowAdminHeader }) => {
         `dropout-risk-${date}.csv`
       );
     }
-    if (contentUsage.data.length) {
-      exportToCSV(
-        contentUsage.data.map((row) => {
-          const copy = { ...row };
-          delete copy.id;
-          return copy;
-        }),
-        `content-usage-${date}.csv`
-      );
-    }
     if (examIntegrity.data.length) {
       exportToCSV(
         examIntegrity.data.map((row) => {
@@ -950,7 +864,6 @@ const Analytics = ({ setShowAdminHeader }) => {
           passRate: p.passRate,
           studentCount: p.studentCount,
         })),
-        content_summary: contentUsage.summary || undefined,
         integrity_summary: examIntegrity.summary || undefined,
         ai_path_data: aiPathData.map((r) => ({
           subject: r.subject,
@@ -1099,7 +1012,7 @@ const Analytics = ({ setShowAdminHeader }) => {
     pdf.setFont(undefined, 'normal');
     pdf.text(`Generated: ${generatedAt}`, margin, 21);
     pdf.text(
-      `Session: ${selectedSession === ALL_SESSIONS ? ALL_SESSIONS : (activeAcademicYearName || selectedSession)} | Class: ${selectedClass} | Section: ${selectedSection}`,
+      `Session: ${selectedSession === ALL_SESSIONS ? ALL_SESSIONS : selectedSession} | Class: ${selectedClass} | Section: ${selectedSection}`,
       margin,
       27
     );
@@ -1183,11 +1096,6 @@ const Analytics = ({ setShowAdminHeader }) => {
       improvementStats.map((item) => [item.label, formatNumber(item.count), `${item.value}%`])
     );
 
-    addSectionTitle('Recent Admin Activity');
-    addDataTable(
-      ['Actor', 'Action', 'Entity', 'Time'],
-      recentActivity.map((item) => [item.teacher, item.action, item.subject, item.time])
-    );
 
     ensureSpace(10);
     pdf.setDrawColor(...colors.border);
@@ -1203,7 +1111,7 @@ const Analytics = ({ setShowAdminHeader }) => {
     pdf.save(`admin-analytics-report-${generatedDate}.pdf`);
   };
 
-  const activeErrors = [analyticsError, reportsError, feesError, activityError].filter(Boolean);
+  const activeErrors = [analyticsError, reportsError, feesError].filter(Boolean);
   const initialLoading =
     (analyticsLoading || reportsLoading) &&
     !progressAnalytics &&
@@ -1279,31 +1187,29 @@ const Analytics = ({ setShowAdminHeader }) => {
                   <label className="block text-xs font-medium text-gray-500 mb-1.5">Academic Session</label>
                   <select
                     value={selectedSession}
-                    onChange={(e) => setSelectedSession(e.target.value)}
+                    onChange={(e) => handleSessionChange(e.target.value)}
                     disabled={!sessionOptions.length}
                     className="w-full px-3 py-2.5 text-sm border border-gray-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500 bg-gray-50 hover:bg-white transition-colors disabled:opacity-60 disabled:cursor-not-allowed"
                   >
-                    {sessionOptions.length ? (
-                      <>
-                        <option value={ALL_SESSIONS}>{ALL_SESSIONS}</option>
-                        {sessionOptions.map((session) => (
-                          <option key={session?._id || session?.name} value={session?.name || ALL_SESSIONS}>
-                            {session?.name || ALL_SESSIONS}
-                          </option>
-                        ))}
-                      </>
-                    ) : (
-                      <option value="">No active session found</option>
-                    )}
+                    <option value="">{sessionOptions.length ? 'Select session' : 'No sessions found'}</option>
+                    {sessionOptions.map((session) => (
+                      <option key={session._id} value={session.name}>
+                        {session.name}{session.isActive ? ' (active)' : ''}
+                      </option>
+                    ))}
                   </select>
                 </div>
                 <div>
                   <label className="block text-xs font-medium text-gray-500 mb-1.5">Class</label>
                   <select
                     value={selectedClass}
-                    onChange={(e) => setSelectedClass(e.target.value)}
-                    className="w-full px-3 py-2.5 text-sm border border-gray-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500 bg-gray-50 hover:bg-white transition-colors"
+                    onChange={(e) => handleClassChange(e.target.value)}
+                    disabled={!selectedSession}
+                    className="w-full px-3 py-2.5 text-sm border border-gray-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500 bg-gray-50 hover:bg-white transition-colors disabled:opacity-60 disabled:cursor-not-allowed"
                   >
+                    <option value="">
+                      {!selectedSession ? 'Select session first' : availableClassOptions.length ? 'Select class' : 'No classes in this session'}
+                    </option>
                     {availableClassOptions.map((className) => (
                       <option key={className} value={className}>{className}</option>
                     ))}
@@ -1314,24 +1220,23 @@ const Analytics = ({ setShowAdminHeader }) => {
                   <select
                     value={selectedSection}
                     onChange={(e) => setSelectedSection(e.target.value)}
-                    className="w-full px-3 py-2.5 text-sm border border-gray-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500 bg-gray-50 hover:bg-white transition-colors"
+                    disabled={!selectedClass}
+                    className="w-full px-3 py-2.5 text-sm border border-gray-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500 bg-gray-50 hover:bg-white transition-colors disabled:opacity-60 disabled:cursor-not-allowed"
                   >
+                    <option value="">
+                      {!selectedClass ? 'Select class first' : availableSectionOptions.length ? 'Select section' : 'No sections in this class'}
+                    </option>
                     {availableSectionOptions.map((section) => (
-                      <option key={section} value={section}>
-                        {section === ALL_SECTIONS ? section : `Section ${section}`}
-                      </option>
+                      <option key={section} value={section}>Section {section}</option>
                     ))}
                   </select>
                 </div>
                 <div className="flex items-end">
                   <button
                     type="button"
-                    onClick={() => {
-                      if (activeAcademicYearName) setSelectedSession(activeAcademicYearName);
-                      setSelectedClass(ALL_CLASSES);
-                      setSelectedSection(ALL_SECTIONS);
-                    }}
-                    className="w-full px-3 py-2.5 text-sm font-medium border border-gray-200 rounded-xl bg-gray-50 hover:bg-gray-100 text-gray-700 transition-colors"
+                    onClick={() => handleSessionChange('')}
+                    disabled={!selectedSession}
+                    className="w-full px-3 py-2.5 text-sm font-medium border border-gray-200 rounded-xl bg-gray-50 hover:bg-gray-100 text-gray-700 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
                   >
                     Clear Filters
                   </button>
@@ -1339,6 +1244,33 @@ const Analytics = ({ setShowAdminHeader }) => {
               </div>
             </div>
 
+            {!filtersComplete ? (
+              <div className="bg-white rounded-2xl border border-dashed border-gray-200 shadow-sm px-6 py-14 text-center">
+                <div className="mx-auto mb-4 flex h-14 w-14 items-center justify-center rounded-2xl bg-blue-50">
+                  <Activity className="h-7 w-7 text-blue-500" />
+                </div>
+                <p className="text-base font-semibold text-gray-800">Select filters to view analytics</p>
+                <p className="mt-1 text-sm text-gray-500">
+                  Choose an <b>Academic Session</b>, then a <b>Class</b>, then a <b>Section</b> — the dashboard shows data for that section only.
+                </p>
+                <div className="mt-5 flex flex-wrap items-center justify-center gap-2 text-xs font-semibold">
+                  {[
+                    ['1', 'Session', Boolean(selectedSession)],
+                    ['2', 'Class', Boolean(selectedClass)],
+                    ['3', 'Section', Boolean(selectedSection)],
+                  ].map(([num, label, done], i) => (
+                    <Fragment key={label}>
+                      {i > 0 && <span className="text-gray-300">→</span>}
+                      <span className={`inline-flex items-center gap-1.5 rounded-full px-3 py-1 ${done ? 'bg-emerald-50 text-emerald-700' : 'bg-gray-100 text-gray-500'}`}>
+                        <span className={`flex h-4 w-4 items-center justify-center rounded-full text-[10px] ${done ? 'bg-emerald-500 text-white' : 'bg-gray-300 text-white'}`}>{done ? '✓' : num}</span>
+                        {label}
+                      </span>
+                    </Fragment>
+                  ))}
+                </div>
+              </div>
+            ) : (
+            <>
             {/* Key Metrics */}
             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
               {keyMetrics.map((metric, idx) => {
@@ -1373,7 +1305,7 @@ const Analytics = ({ setShowAdminHeader }) => {
             </div>
 
             {/* AI Overview Insights */}
-            <div className="bg-white rounded-2xl border border-indigo-100 shadow-sm p-6">
+            {/* <div className="bg-white rounded-2xl border border-indigo-100 shadow-sm p-6">
               <div className="flex items-center gap-3 mb-1">
                 <div className="p-2 bg-gradient-to-br from-indigo-500 to-purple-600 rounded-xl">
                   <Sparkles className="w-4 h-4 text-white" />
@@ -1391,7 +1323,7 @@ const Analytics = ({ setShowAdminHeader }) => {
                 onGenerate={() => generateInsights('overview')}
                 accentColor="indigo"
               />
-            </div>
+            </div> */}
 
             {/* Charts Row 1 */}
             <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
@@ -1447,11 +1379,11 @@ const Analytics = ({ setShowAdminHeader }) => {
                     </div>
                     <div>
                       <h2 className="text-base font-semibold text-gray-900">Fees Collection</h2>
-                      <p className="text-xs text-gray-400 mt-0.5">Paid vs pending — last 6 months</p>
+                      <p className="text-xs text-gray-400 mt-0.5">Paid in the month vs pending at month-end — last 6 months</p>
                     </div>
                   </div>
                   <span className="text-xs text-gray-400 bg-gray-50 px-2.5 py-1 rounded-lg border border-gray-100 flex-shrink-0">
-                    {selectedSession === ALL_SESSIONS ? ALL_SESSIONS : (activeAcademicYearName || selectedSession || 'No active session')}
+                    {selectedSession || "—"}
                   </span>
                 </div>
                 {feesLoading && !feesChartData.length ? (
@@ -1491,14 +1423,14 @@ const Analytics = ({ setShowAdminHeader }) => {
                 <div className="flex items-start justify-between mb-5">
                   <div>
                     <h2 className="text-base font-semibold text-gray-900">Attendance</h2>
-                    <p className="text-xs text-gray-400 mt-0.5">Based on reported sessions</p>
+                    <p className="text-xs text-gray-400 mt-0.5">Today{todayAttendance?.date ? ` · ${new Date(todayAttendance.date).toLocaleDateString("en-GB")}` : ""} · selected class &amp; section</p>
                   </div>
                   <div className="bg-emerald-50 px-3 py-1.5 rounded-xl border border-emerald-100 text-center">
-                    <p className="text-base font-bold text-emerald-600 leading-none">{attendanceRate || 0}%</p>
+                    <p className="text-base font-bold text-emerald-600 leading-none">{todayAttendance?.rate == null ? "—" : `${attendanceRate}%`}</p>
                     <p className="text-xs text-emerald-400 mt-0.5">Present</p>
                   </div>
                 </div>
-                {reportsLoading && !attendanceData.length ? (
+                {analyticsLoading && !attendanceData.length ? (
                   <div className="flex items-center justify-center py-10 text-gray-400 text-sm">Loading...</div>
                 ) : attendanceData.length ? (
                   <div className="flex flex-col sm:flex-row gap-4 items-center">
@@ -1534,14 +1466,14 @@ const Analytics = ({ setShowAdminHeader }) => {
                 ) : (
                   <div className="flex flex-col items-center justify-center py-10 text-gray-300">
                     <CheckCircle className="w-10 h-10 mb-2" />
-                    <p className="text-sm text-gray-400">No attendance data recorded.</p>
+                    <p className="text-sm text-gray-400">No attendance marked today for this section.</p>
                   </div>
                 )}
               </div>
 
               <div className="bg-white rounded-2xl border border-gray-100 shadow-sm p-6">
                 <h2 className="text-base font-semibold text-gray-900 mb-0.5">Subject Progress</h2>
-                <p className="text-xs text-gray-400 mb-5">Average mastery across subjects</p>
+                <p className="text-xs text-gray-400 mb-5">Average exam score per subject (selected section)</p>
                 <div className="space-y-4">
                   {subjectPerformance.slice(0, 6).map((course, idx) => (
                     <div key={idx}>
@@ -1601,7 +1533,7 @@ const Analytics = ({ setShowAdminHeader }) => {
             </div>
 
             {/* Bottom Row */}
-            <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+            {/* <div className="grid grid-cols-1 gap-4">
               <div className="bg-white rounded-2xl border border-gray-100 shadow-sm p-6">
                 <div className="flex items-start gap-3 mb-5">
                   <div className="p-2 bg-purple-50 rounded-xl mt-0.5">
@@ -1609,7 +1541,12 @@ const Analytics = ({ setShowAdminHeader }) => {
                   </div>
                   <div>
                     <h2 className="text-base font-semibold text-gray-900">Improvement Trends</h2>
-                    <p className="text-xs text-gray-400 mt-0.5">Student momentum over the last term</p>
+                    <p className="text-xs text-gray-400 mt-0.5">
+                      Later exams vs earlier exams (±5 points)
+                      {progressAnalytics?.trendMeta
+                        ? ` · ${progressAnalytics.trendMeta.studentsWithTrend} students${progressAnalytics.trendMeta.insufficientData ? `, ${progressAnalytics.trendMeta.insufficientData} need 2+ exams` : ""}`
+                        : ""}
+                    </p>
                   </div>
                 </div>
                 <div className="grid grid-cols-3 gap-3">
@@ -1628,47 +1565,10 @@ const Analytics = ({ setShowAdminHeader }) => {
                 </div>
               </div>
 
-              <div className="bg-white rounded-2xl border border-gray-100 shadow-sm p-6">
-                <div className="flex items-start gap-3 mb-5">
-                  <div className="p-2 bg-orange-50 rounded-xl mt-0.5">
-                    <Clock className="w-4 h-4 text-orange-500" />
-                  </div>
-                  <div>
-                    <h2 className="text-base font-semibold text-gray-900">Recent Activity</h2>
-                    <p className="text-xs text-gray-400 mt-0.5">Latest admin actions</p>
-                  </div>
-                </div>
-                {activityLoading && !recentActivity.length ? (
-                  <div className="flex items-center justify-center py-8 text-gray-400 text-sm">Loading activity...</div>
-                ) : recentActivity.length ? (
-                  <div className="space-y-1.5">
-                    {recentActivity.map((activity) => {
-                      const colors = getColorClasses(activity.color);
-                      return (
-                        <div key={activity.id} className="flex items-center gap-3 p-3 rounded-xl hover:bg-gray-50 transition-colors group">
-                          <div className={`w-9 h-9 rounded-xl ${colors.bg} flex items-center justify-center flex-shrink-0`}>
-                            <Activity className={`w-4 h-4 ${colors.icon}`} />
-                          </div>
-                          <div className="flex-1 min-w-0">
-                            <p className="text-sm font-semibold text-gray-900 truncate">{activity.teacher}</p>
-                            <p className="text-xs text-gray-500 truncate">{activity.action}{activity.subject ? `: ${activity.subject}` : ''}</p>
-                          </div>
-                          <span className="text-xs text-gray-400 flex-shrink-0 bg-gray-50 group-hover:bg-white px-2 py-1 rounded-lg border border-gray-100">{activity.time}</span>
-                        </div>
-                      );
-                    })}
-                  </div>
-                ) : (
-                  <div className="flex flex-col items-center justify-center py-8 text-gray-300">
-                    <Clock className="w-10 h-10 mb-2" />
-                    <p className="text-sm text-gray-400">No recent activity logged.</p>
-                  </div>
-                )}
-              </div>
-            </div>
+            </div> */}
 
             {/* ── School-wide Mastery Matrix ─────────────────────────────── */}
-            <div className="bg-white rounded-2xl border border-gray-100 shadow-sm overflow-hidden">
+            {/* <div className="bg-white rounded-2xl border border-gray-100 shadow-sm overflow-hidden">
               <div className="px-6 py-5 border-b border-gray-100 flex items-center justify-between">
                 <div className="flex items-center gap-3">
                   <div className="p-2 bg-indigo-50 rounded-xl">
@@ -1735,7 +1635,7 @@ const Analytics = ({ setShowAdminHeader }) => {
                   </div>
                 )}
               </div>
-            </div>
+            </div> */}
 
             {/* ── Teacher Effectiveness ──────────────────────────────────── */}
             <div className="bg-white rounded-2xl border border-gray-100 shadow-sm overflow-hidden">
@@ -1831,7 +1731,7 @@ const Analytics = ({ setShowAdminHeader }) => {
               </div>
             </div>
             {/* ── System Health Monitoring ───────────────────────────────── */}
-            <div className="bg-white rounded-2xl border border-gray-100 shadow-sm overflow-hidden">
+            {/* <div className="bg-white rounded-2xl border border-gray-100 shadow-sm overflow-hidden">
               <div className="px-6 py-5 border-b border-gray-100 flex items-center justify-between">
                 <div className="flex items-center gap-3">
                   <div className="p-2 bg-cyan-50 rounded-xl">
@@ -1860,7 +1760,6 @@ const Analytics = ({ setShowAdminHeader }) => {
                   </div>
                 ) : (
                   <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                    {/* Database */}
                     <div className={`rounded-xl border p-4 ${systemHealth.database.healthy ? 'bg-emerald-50 border-emerald-100' : 'bg-red-50 border-red-100'}`}>
                       <div className="flex items-center justify-between mb-2">
                         <span className="text-sm font-semibold text-gray-800">Database</span>
@@ -1870,7 +1769,6 @@ const Analytics = ({ setShowAdminHeader }) => {
                       </div>
                       <p className="text-xs text-gray-500">MongoDB connection state</p>
                     </div>
-                    {/* AI Service */}
                     <div className={`rounded-xl border p-4 ${systemHealth.aiService.status === 'ok' || systemHealth.aiService.status === 'healthy' ? 'bg-emerald-50 border-emerald-100' : 'bg-red-50 border-red-100'}`}>
                       <div className="flex items-center justify-between mb-2">
                         <span className="text-sm font-semibold text-gray-800">AI Service</span>
@@ -1895,7 +1793,7 @@ const Analytics = ({ setShowAdminHeader }) => {
                   </div>
                 )}
               </div>
-            </div>
+            </div> */}
 
             {/* ── AI Path Effectiveness Audit ────────────────────────────── */}
             <div className="bg-white rounded-2xl border border-gray-100 shadow-sm overflow-hidden">
@@ -2121,79 +2019,8 @@ const Analytics = ({ setShowAdminHeader }) => {
                 )}
               </div>
             </div>
-
-            {/* ── Content Usage Analytics ────────────────────────────────── */}
-            <div className="bg-white rounded-2xl border border-gray-100 shadow-sm overflow-hidden">
-              <div className="px-6 py-5 border-b border-gray-100 flex items-center justify-between">
-                <div className="flex items-center gap-3">
-                  <div className="p-2 bg-teal-50 rounded-xl">
-                    <Eye className="w-4 h-4 text-teal-600" />
-                  </div>
-                  <div>
-                    <h2 className="text-base font-semibold text-gray-900">Content Usage Analytics</h2>
-                    <p className="text-xs text-gray-400 mt-0.5">Top teaching materials by views, downloads, and completions</p>
-                  </div>
-                </div>
-                <button onClick={fetchContentUsage} disabled={contentLoading} className="flex items-center gap-1.5 text-xs font-medium text-teal-600 bg-teal-50 border border-teal-100 rounded-lg px-3 py-1.5 hover:bg-teal-100 transition disabled:opacity-50">
-                  {contentLoading ? <Loader2 className="w-3 h-3 animate-spin" /> : null} Refresh
-                </button>
-              </div>
-              <div className="p-6">
-                {contentLoading ? (
-                  <div className="flex items-center justify-center py-10 text-gray-400 text-sm"><Loader2 className="w-5 h-5 animate-spin mr-2" /> Loading…</div>
-                ) : !contentUsage.data.length ? (
-                  <div className="flex flex-col items-center justify-center py-10 text-gray-300">
-                    <BookOpen className="w-10 h-10 mb-2" />
-                    <p className="text-sm text-gray-400">No teaching materials uploaded yet.</p>
-                  </div>
-                ) : (
-                  <>
-                    {contentUsage.summary && (
-                      <div className="grid grid-cols-2 md:grid-cols-4 gap-3 mb-5">
-                        {[
-                          { label: 'Materials', value: contentUsage.summary.totalMaterials },
-                          { label: 'Total Views', value: formatNumber(contentUsage.summary.totalViews) },
-                          { label: 'Downloads', value: formatNumber(contentUsage.summary.totalDownloads) },
-                          { label: 'Completions', value: formatNumber(contentUsage.summary.totalCompletions) },
-                        ].map((stat) => (
-                          <div key={stat.label} className="bg-teal-50 border border-teal-100 rounded-xl p-3 text-center">
-                            <p className="text-lg font-bold text-teal-700">{stat.value}</p>
-                            <p className="text-xs text-teal-500">{stat.label}</p>
-                          </div>
-                        ))}
-                      </div>
-                    )}
-                    <div className="overflow-x-auto">
-                      <table className="text-xs w-full">
-                        <thead>
-                          <tr className="border-b border-gray-100">
-                            {['Title', 'Subject', 'Grade', 'Views', 'Viewers', 'Downloads', 'Completions'].map((h) => (
-                              <th key={h} className="text-left text-gray-400 font-semibold uppercase tracking-wide px-3 py-2 text-[10px]">{h}</th>
-                            ))}
-                          </tr>
-                        </thead>
-                        <tbody>
-                          {contentUsage.data.map((m, i) => (
-                            <tr key={String(m.id)} className={`border-b border-gray-50 hover:bg-gray-50 ${i % 2 === 0 ? '' : 'bg-gray-50/40'}`}>
-                              <td className="px-3 py-2.5 font-medium text-gray-800 max-w-[180px] truncate">{m.title}</td>
-                              <td className="px-3 py-2.5 text-gray-500">{m.subject}</td>
-                              <td className="px-3 py-2.5 text-gray-500">{m.grade}</td>
-                              <td className="px-3 py-2.5 text-teal-600 font-bold">{formatNumber(m.totalViews)}</td>
-                              <td className="px-3 py-2.5 text-gray-600">{m.uniqueViewers}</td>
-                              <td className="px-3 py-2.5 text-blue-600 font-bold">{formatNumber(m.downloads)}</td>
-                              <td className="px-3 py-2.5 text-emerald-600 font-bold">{m.completions}</td>
-                            </tr>
-                          ))}
-                        </tbody>
-                      </table>
-                    </div>
-                  </>
-                )}
-              </div>
-            </div>
-
             {/* ── Exam Integrity Reports ─────────────────────────────────── */}
-            <div className="bg-white rounded-2xl border border-gray-100 shadow-sm overflow-hidden">
+            {/* <div className="bg-white rounded-2xl border border-gray-100 shadow-sm overflow-hidden">
               <div className="px-6 py-5 border-b border-gray-100 flex items-center justify-between">
                 <div className="flex items-center gap-3">
                   <div className="p-2 bg-orange-50 rounded-xl">
@@ -2279,84 +2106,9 @@ const Analytics = ({ setShowAdminHeader }) => {
                   />
                 )}
               </div>
-            </div>
-
-            {/* ── Equity / Bias Monitoring ───────────────────────────────── */}
-            <div className="bg-white rounded-2xl border border-gray-100 shadow-sm overflow-hidden">
-              <div className="px-6 py-5 border-b border-gray-100 flex items-center justify-between">
-                <div className="flex items-center gap-3">
-                  <div className="p-2 bg-fuchsia-50 rounded-xl">
-                    <Scale className="w-4 h-4 text-fuchsia-600" />
-                  </div>
-                  <div>
-                    <h2 className="text-base font-semibold text-gray-900">Equity / Bias Monitoring</h2>
-                    <p className="text-xs text-gray-400 mt-0.5">
-                      Whether the AI answer evaluator behaves consistently across gender cohorts — a prompt to look closer, never a verdict
-                    </p>
-                  </div>
-                </div>
-                <button onClick={fetchEquityMonitoring} disabled={equityLoading} className="flex items-center gap-1.5 text-xs font-medium text-fuchsia-600 bg-fuchsia-50 border border-fuchsia-100 rounded-lg px-3 py-1.5 hover:bg-fuchsia-100 transition disabled:opacity-50">
-                  {equityLoading ? <Loader2 className="w-3 h-3 animate-spin" /> : null} Refresh
-                </button>
-              </div>
-              <div className="p-6">
-                {equityLoading ? (
-                  <div className="flex items-center justify-center py-10 text-gray-400 text-sm"><Loader2 className="w-5 h-5 animate-spin mr-2" /> Loading…</div>
-                ) : !equityData || equityData.dataStatus !== 'available' ? (
-                  <div className="flex flex-col items-center justify-center py-10 text-gray-300">
-                    <Scale className="w-10 h-10 mb-2" />
-                    <p className="text-sm text-gray-400">
-                      Not enough graded AI evaluations yet to compare cohorts (minimum {equityData?.minCohortSample ?? 10} per gender).
-                    </p>
-                  </div>
-                ) : (
-                  <>
-                    {equityData.flags.length > 0 ? (
-                      <div className="mb-5 space-y-2">
-                        {equityData.flags.map((flag, i) => (
-                          <div key={i} className="flex items-start gap-2 rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-xs text-amber-800">
-                            <AlertTriangle className="w-4 h-4 shrink-0 mt-0.5" />
-                            <span>
-                              {flag.signal === 'avg_score_gap'
-                                ? `Average AI-evaluated score for "${flag.higher}" students is ${Math.round(flag.gap * 100)} points higher than "${flag.lower}" students — worth a closer look.`
-                                : `AI evaluator flags "${flag.higher}" students for human review ${Math.round(flag.gap * 100)} points more often than "${flag.lower}" students — worth a closer look.`}
-                            </span>
-                          </div>
-                        ))}
-                      </div>
-                    ) : (
-                      <div className="mb-5 flex items-center gap-2 rounded-xl border border-emerald-200 bg-emerald-50 px-4 py-3 text-xs text-emerald-700">
-                        <CheckCircle className="w-4 h-4 shrink-0" /> No significant gender gap detected in AI evaluator outcomes.
-                      </div>
-                    )}
-                    <div className="overflow-x-auto">
-                      <table className="text-xs w-full">
-                        <thead>
-                          <tr className="border-b border-gray-100">
-                            {['Gender', 'Sample', 'Avg Score', 'Needs-Review Rate'].map((h) => (
-                              <th key={h} className="text-left text-gray-400 font-semibold uppercase tracking-wide px-3 py-2 text-[10px]">{h}</th>
-                            ))}
-                          </tr>
-                        </thead>
-                        <tbody>
-                          {equityData.cohorts.map((c, i) => (
-                            <tr key={c.gender} className={`border-b border-gray-50 ${i % 2 === 0 ? '' : 'bg-gray-50/40'}`}>
-                              <td className="px-3 py-2.5 font-semibold text-gray-800 capitalize">{c.gender}</td>
-                              <td className="px-3 py-2.5 text-gray-500">{c.sampleSize}{!c.meetsMinSample && <span className="ml-1 text-[10px] text-gray-400">(below min)</span>}</td>
-                              <td className="px-3 py-2.5 text-fuchsia-600 font-bold">{c.avgScore != null ? `${Math.round(c.avgScore * 100)}%` : '—'}</td>
-                              <td className="px-3 py-2.5 text-gray-600">{c.needsReviewRate != null ? `${Math.round(c.needsReviewRate * 100)}%` : '—'}</td>
-                            </tr>
-                          ))}
-                        </tbody>
-                      </table>
-                    </div>
-                    <p className="mt-3 text-[10px] text-gray-400">
-                      Scoped to gender only — caste, religion, and category are deliberately excluded from automated bias monitoring pending dedicated ethical review.
-                    </p>
-                  </>
-                )}
-              </div>
-            </div>
+            </div> */}
+            </>
+            )}
           </>
         )}
       </div>

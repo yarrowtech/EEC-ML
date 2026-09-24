@@ -390,52 +390,6 @@ const buildExamRoutineRow = (exam = {}) => ({
   groupId: exam?.groupId ? String(exam.groupId) : '',
 });
 
-const createExamTeacherNotifications = async ({
-  schoolId,
-  campusId,
-  exam = {},
-  createdBy = null,
-  createdByName = '',
-  createdByType = 'admin',
-  notificationTitle = '',
-}) => {
-  const targetUserIds = await resolveExamTeacherRecipients({ schoolId, campusId, exam });
-  if (!targetUserIds.length) return [];
-
-  const className = getExamClassName(exam);
-  const sectionName = getExamSectionName(exam);
-  const title = notificationTitle || `Exam Scheduled: ${String(exam?.title || exam?.subject || 'Exam').trim()}`;
-  const message = buildExamTeacherNotificationMessage({ exam, className, sectionName });
-  const baseFields = {
-    schoolId,
-    campusId: campusId || null,
-    title,
-    message,
-    audience: 'Teacher',
-    createdBy,
-    createdByType,
-    createdByName,
-    type: 'exam',
-    typeLabel: 'exam_schedule_teacher',
-    priority: 'high',
-    category: 'academic',
-    classId: exam?.classId || undefined,
-    sectionId: exam?.sectionId || undefined,
-    className: normalizeText(className),
-    sectionName: normalizeText(sectionName),
-    subjectId: exam?.subjectId || undefined,
-    subjectName: String(exam?.subject || exam?.subjectId?.name || '').trim(),
-    relatedEntity: exam?._id ? { entityType: 'exam', entityId: exam._id } : undefined,
-  };
-
-  const notifications = targetUserIds.map((teacherId) => ({
-    ...baseFields,
-    targetUserIds: [teacherId],
-  }));
-
-  return Notification.insertMany(notifications, { ordered: false });
-};
-
 const slugifyDutyKey = (value) => String(value || '').trim().toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '');
 
 // One notice per teacher covering every subject they're invigilating in this
@@ -585,7 +539,7 @@ const upsertTeacherRoutinePublishedNotice = async ({
   const groupTitle = group?.title || 'Exam';
   const className = group?.classId?.name || group?.grade || '';
   const sectionName = group?.sectionId?.name || group?.section || '';
-  const classLabel = [className && `Class ${className}`, sectionName && `Section ${sectionName}`].filter(Boolean).join(', ');
+  const classLabel = [className && (/^class\b/i.test(String(className).trim()) ? String(className).trim() : `Class ${className}`), sectionName && `Section ${sectionName}`].filter(Boolean).join(', ');
 
   const rowKey = (row) => [row.date, row.subject, row.time, row.duration, row.building, row.floor, row.room].join('|');
   const dedupeRows = (list) => {
@@ -671,7 +625,7 @@ const upsertTeacherExamScheduledNotice = async ({ schoolId, campusId, group, cre
   const groupTitle = group?.title || 'Exam';
   const className = group?.classId?.name || group?.grade || '';
   const sectionName = group?.sectionId?.name || group?.section || '';
-  const classLabel = [className && `Class ${className}`, sectionName && `Section ${sectionName}`].filter(Boolean).join(', ');
+  const classLabel = [className && (/^class\b/i.test(String(className).trim()) ? String(className).trim() : `Class ${className}`), sectionName && `Section ${sectionName}`].filter(Boolean).join(', ');
   const dateRange = group?.startDate
     ? ` starting from ${group.startDate}${group.endDate && group.endDate !== group.startDate ? ` to ${group.endDate}` : ''}`
     : '';
@@ -1599,13 +1553,22 @@ router.post("/add", adminAuth, async (req, res) => {
 
         if (!exam.groupId) {
           try {
-              await createExamTeacherNotifications({
+              // One class/section notice per exam title (students, parents,
+              // teachers of that class) listing its subjects — updated as more
+              // subjects are added, instead of a notice per subject per teacher.
+              const siblingSubjects = await Exam.find({
+                schoolId,
+                classId: exam.classId,
+                sectionId: exam.sectionId,
+                title: exam.title,
+                groupId: null,
+              }).distinct('subject');
+              await NotificationService.notifyClassExamScheduled({
                 schoolId,
                 campusId: campusId || null,
-                exam,
+                exam: { ...exam.toObject(), classId: classDoc, sectionId: sectionDoc },
+                subjects: siblingSubjects.filter(Boolean),
                 createdBy: req.admin?.id || null,
-                createdByName: req.admin?.name || req.admin?.username || '',
-                createdByType: 'admin',
               });
           } catch (notifErr) {
               console.error('Failed to create exam notification:', notifErr);
@@ -2571,6 +2534,14 @@ router.put("/results/bulk-publish", adminAuth, async (req, res) => {
           updateData
         );
 
+        // One "Results Published" notice per class/section/exam (students,
+        // parents, teachers) — fire and forget, never fails the publish.
+        if (published && scopedIds.length) {
+          NotificationService.notifyResultsPublishedForResults({
+            schoolId, campusId: campusId || null, resultIds: scopedIds, createdBy: req.admin?.id || null,
+          }).catch((err) => console.error('Failed to send results-published notices:', err.message));
+        }
+
         res.status(200).json({
             success: true,
             message: `${updateResult.modifiedCount} result(s) ${published ? 'published' : 'unpublished'} successfully${published && skippedCount ? ` (${skippedCount} skipped: exam not completed)` : ''}`,
@@ -2812,38 +2783,18 @@ router.post("/results/publish", adminAuth, async (req, res) => {
         const sectionText = section ? ` Section ${section}` : '';
 
         try {
-            // Create notification for students
-            await NotificationService.notifyResultPublished({
+            // One notice per class/section/exam for this class's published
+            // results (students, parents and teachers of that class) — the old
+            // code sent three school-wide notices with no class attached.
+            const publishedIds = await ExamResult.distinct('_id', {
                 schoolId,
-                campusId: campusId || null,
-                grade,
-                section,
-                createdBy: req.admin?.id || null
+                studentId: { $in: studentIds },
+                published: true,
             });
-
-            // Create notifications for teachers
-            await Notification.create({
+            await NotificationService.notifyResultsPublishedForResults({
                 schoolId,
                 campusId: campusId || null,
-                title: `Results Published - ${grade}${sectionText}`,
-                message: `The examination results for ${grade}${sectionText} have been published.`,
-                audience: 'Teacher',
-                type: 'result',
-                priority: 'high',
-                category: 'academic',
-                createdBy: req.admin?.id || null,
-            });
-
-            // Create notifications for parents
-            await Notification.create({
-                schoolId,
-                campusId: campusId || null,
-                title: `Results Published - ${grade}${sectionText}`,
-                message: `The examination results for ${grade}${sectionText} have been published. Please check your child's results.`,
-                audience: 'Parent',
-                type: 'result',
-                priority: 'high',
-                category: 'academic',
+                resultIds: publishedIds,
                 createdBy: req.admin?.id || null,
             });
         } catch (notifErr) {
@@ -2897,6 +2848,12 @@ router.put("/results/:id/publish", adminAuth, async (req, res) => {
         if (published) await require('../services/assessmentSyncService').syncStudentAssessments({
           schoolId, studentId: result.studentId,
         });
+
+        if (published) {
+          NotificationService.notifyResultsPublishedForResults({
+            schoolId, campusId: campusId || null, resultIds: [result._id], createdBy: req.admin?.id || null,
+          }).catch((err) => console.error('Failed to send results-published notice:', err.message));
+        }
 
         res.status(200).json({
             success: true,

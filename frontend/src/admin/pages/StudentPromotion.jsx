@@ -238,6 +238,9 @@ const StudentPromotion = ({ setShowAdminHeader, section = "promotion", onShowLef
   const [promotionMode, setPromotionMode] = useState("bulk");
   const [minPromotionPercentage, setMinPromotionPercentage] = useState(50);
   const [promotionSearch, setPromotionSearch] = useState("");
+  const [previewPage, setPreviewPage] = useState(1);
+  // Back to page 1 whenever the preview list or its search changes.
+  useEffect(() => { setPreviewPage(1); }, [previewStudents, promotionSearch]);
   const [notes, setNotes] = useState("");
 
   const [promotionHistory, setPromotionHistory] = useState([]);
@@ -875,6 +878,13 @@ const StudentPromotion = ({ setShowAdminHeader, section = "promotion", onShowLef
       (s.studentCode || "").toLowerCase().includes(q)
     );
   });
+  // Promotion preview pagination (select-all still covers every student).
+  const previewPageCount = Math.max(1, Math.ceil(filteredPreview.length / LEAVE_TABLE_PAGE_SIZE));
+  const safePreviewPage = Math.min(previewPage, previewPageCount);
+  const paginatedPreview = filteredPreview.slice(
+    (safePreviewPage - 1) * LEAVE_TABLE_PAGE_SIZE,
+    safePreviewPage * LEAVE_TABLE_PAGE_SIZE
+  );
 
   const fromYearClasses = fromAcademicYearId
     ? classes.filter((c) => String(c.academicYearId || "") === String(fromAcademicYearId))
@@ -1332,7 +1342,7 @@ const StudentPromotion = ({ setShowAdminHeader, section = "promotion", onShowLef
                         </tr>
                       </thead>
                       <tbody className="divide-y divide-gray-100">
-                        {filteredPreview.map((s, i) => {
+                        {paginatedPreview.map((s, i) => {
                           const isSelected = selectedStudentIds.includes(s._id);
                           return (
                             <tr
@@ -1358,7 +1368,7 @@ const StudentPromotion = ({ setShowAdminHeader, section = "promotion", onShowLef
                                   className="rounded border-gray-300 accent-indigo-600 cursor-pointer disabled:cursor-not-allowed"
                                 />
                               </td>
-                              <td className="px-4 py-3 text-gray-400">{i + 1}</td>
+                              <td className="px-4 py-3 text-gray-400">{(safePreviewPage - 1) * LEAVE_TABLE_PAGE_SIZE + i + 1}</td>
                               <td className="px-4 py-3">
                                 <div className="flex items-center gap-2.5">
                                   <div className="h-7 w-7 shrink-0 rounded-full bg-gradient-to-br from-indigo-400 to-violet-500 flex items-center justify-center text-white text-[11px] font-bold shadow-sm">
@@ -1404,6 +1414,12 @@ const StudentPromotion = ({ setShowAdminHeader, section = "promotion", onShowLef
                       </tbody>
                     </table>
                   </div>
+                  <PaginationBar
+                    page={safePreviewPage}
+                    totalItems={filteredPreview.length}
+                    pageSize={LEAVE_TABLE_PAGE_SIZE}
+                    onPageChange={setPreviewPage}
+                  />
                 </Motion.div>
               )}
             </AnimatePresence>

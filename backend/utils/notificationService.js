@@ -141,7 +141,7 @@ class NotificationService {
     const className = group.classId?.name || group.grade || '';
     const sectionName = group.sectionId?.name || group.section || '';
     const scopeLabel = [
-      className && `Class ${className}`,
+      className && (/^class\b/i.test(String(className).trim()) ? String(className).trim() : `Class ${className}`),
       sectionName && `Section ${sectionName}`,
     ].filter(Boolean).join(', ');
     const dateRange = group.startDate
@@ -186,7 +186,7 @@ class NotificationService {
     const className = group.classId?.name || group.grade || '';
     const sectionName = group.sectionId?.name || group.section || '';
     const scopeLabel = [
-      className && `Class ${className}`,
+      className && (/^class\b/i.test(String(className).trim()) ? String(className).trim() : `Class ${className}`),
       sectionName && `Section ${sectionName}`,
     ].filter(Boolean).join(', ');
     const subjectCount = examRoutine.length;
@@ -247,6 +247,133 @@ class NotificationService {
         entityId: invoice._id
       }
     });
+  }
+
+  /**
+   * One class/section-wide notice (students, parents and staff of that
+   * class via audience 'All' + classId/sectionId). `dedupeKey` makes it an
+   * upsert: the same event for the same class/section updates the existing
+   * notice (e.g. adding subjects, re-publishing) instead of creating another.
+   */
+  static async upsertClassNotice({ dedupeKey, fields }) {
+    // Create via Notification.create so the model's post-save hook fires the
+    // web push + realtime event for a new notice; an existing one is updated
+    // quietly (no second push for the same event).
+    const existing = await Notification.findOne({ dedupeKey }).select('_id').lean();
+    if (existing) {
+      return Notification.findByIdAndUpdate(existing._id, { $set: fields }, { new: true });
+    }
+    try {
+      return await Notification.create({ ...fields, dedupeKey });
+    } catch (err) {
+      if (err?.code === 11000) { // created concurrently — update that one instead
+        return Notification.findOneAndUpdate({ dedupeKey }, { $set: fields }, { new: true });
+      }
+      throw err;
+    }
+  }
+
+  /**
+   * "Exam scheduled" notice for an exam created outside an exam group —
+   * one per class/section/exam title, listing its subjects, instead of one
+   * per subject per teacher.
+   */
+  static async notifyClassExamScheduled({ schoolId, campusId = null, exam, subjects = [], createdBy = null }) {
+    const className = exam.classId?.name || exam.grade || '';
+    const sectionName = exam.sectionId?.name || exam.section || '';
+    const title = String(exam.title || 'Exam').trim();
+    const scope = [className && (/^class\b/i.test(String(className).trim()) ? String(className).trim() : `Class ${className}`), sectionName && `Section ${sectionName}`].filter(Boolean).join(', ');
+    const subjectText = subjects.length ? ` Subjects: ${subjects.join(', ')}.` : '';
+    return this.upsertClassNotice({
+      dedupeKey: `exam-scheduled:${schoolId}:${campusId || 'x'}:${exam.classId?._id || exam.classId}:${exam.sectionId?._id || exam.sectionId}:${title.toLowerCase()}`,
+      fields: {
+        schoolId,
+        campusId,
+        title: `Exam Scheduled: ${title}`,
+        message: `${title}${scope ? ` for ${scope}` : ''} has been scheduled.${subjectText}`,
+        audience: 'All',
+        type: 'exam',
+        typeLabel: 'exam_scheduled_class',
+        priority: 'medium',
+        category: 'academic',
+        classId: exam.classId?._id || exam.classId || null,
+        sectionId: exam.sectionId?._id || exam.sectionId || null,
+        className,
+        sectionName,
+        createdBy,
+        relatedEntity: { entityType: 'exam', entityId: exam._id },
+      },
+    });
+  }
+
+  /**
+   * "Results published" notice — one per class/section per exam title, seen by
+   * that class's students, their parents and its teachers.
+   */
+  static async notifyClassResultsPublished({
+    schoolId, campusId = null, classId, sectionId, className = '', sectionName = '', examTitle = '', groupId = null, createdBy = null,
+  }) {
+    const scope = [className && (/^class\b/i.test(String(className).trim()) ? String(className).trim() : `Class ${className}`), sectionName && `Section ${sectionName}`].filter(Boolean).join(', ');
+    const label = examTitle ? `${examTitle} results` : 'Examination results';
+    return this.upsertClassNotice({
+      dedupeKey: `results-published:${schoolId}:${campusId || 'x'}:${classId}:${sectionId}:${String(examTitle || groupId || '').toLowerCase()}`,
+      fields: {
+        schoolId,
+        campusId,
+        title: `Results Published${examTitle ? `: ${examTitle}` : ''}${scope ? ` - ${scope}` : ''}`,
+        message: `${label}${scope ? ` for ${scope}` : ''} have been published. Students and parents can now view the results.`,
+        audience: 'All',
+        type: 'result',
+        typeLabel: 'result_published_class',
+        priority: 'high',
+        category: 'academic',
+        classId: classId || null,
+        sectionId: sectionId || null,
+        className,
+        sectionName,
+        createdBy,
+        relatedEntity: groupId ? { entityType: 'result', entityId: groupId } : undefined,
+      },
+    });
+  }
+
+  /**
+   * Notify every class/section covered by a set of just-published results —
+   * one notice per (class, section, exam title). Used by bulk publish, single
+   * publish, class publish and the scheduled auto-publish.
+   */
+  static async notifyResultsPublishedForResults({ schoolId, campusId = null, resultIds = [], createdBy = null }) {
+    if (!resultIds.length) return [];
+    const ExamResult = require('../models/ExamResult');
+    const Exam = require('../models/Exam');
+    const ExamGroup = require('../models/ExamGroup');
+    const examIds = await ExamResult.distinct('examId', { _id: { $in: resultIds } });
+    const exams = await Exam.find({ _id: { $in: examIds } })
+      .select('title classId sectionId grade section groupId campusId')
+      .populate('classId', 'name')
+      .populate('sectionId', 'name')
+      .lean();
+    const groupIds = [...new Set(exams.map((e) => String(e.groupId || '')).filter(Boolean))];
+    const groups = groupIds.length ? await ExamGroup.find({ _id: { $in: groupIds } }).select('title').lean() : [];
+    const groupTitle = new Map(groups.map((g) => [String(g._id), g.title]));
+
+    const seen = new Map();
+    exams.forEach((e) => {
+      const classId = e.classId?._id || e.classId;
+      const sectionId = e.sectionId?._id || e.sectionId;
+      const examTitle = groupTitle.get(String(e.groupId || '')) || e.title || '';
+      const key = `${classId}:${sectionId}:${examTitle.toLowerCase()}`;
+      if (!seen.has(key)) {
+        seen.set(key, {
+          classId, sectionId, examTitle,
+          className: e.classId?.name || e.grade || '',
+          sectionName: e.sectionId?.name || e.section || '',
+          groupId: e.groupId || null,
+          campusId: campusId || e.campusId || null,
+        });
+      }
+    });
+    return Promise.all([...seen.values()].map((s) => this.notifyClassResultsPublished({ schoolId, createdBy, ...s })));
   }
 
   /**

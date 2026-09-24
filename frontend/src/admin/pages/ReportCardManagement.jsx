@@ -1,6 +1,6 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import {
-  Award, BookOpen, CheckCircle, ChevronDown, ChevronUp,
+  Award, BookOpen, CheckCircle, ChevronDown, ChevronLeft, ChevronRight, ChevronUp,
   Download, FileImage, FileSpreadsheet, Loader2, RefreshCw,
   Save, Settings, Upload, XCircle,
 } from 'lucide-react';
@@ -8,6 +8,44 @@ import toast from 'react-hot-toast';
 import { downloadBulkReportCardsPdf, downloadSingleReportCardPdf } from '../../utils/reportCardPdf';
 
 const API_BASE = (import.meta.env.VITE_API_URL || 'http://localhost:5000').replace(/\/$/, '');
+
+const REPORT_CARDS_PER_PAGE = 5;
+
+// Compact pagination bar for the report-card preview list.
+// eslint-disable-next-line react/prop-types
+const CardPagination = ({ page, pageCount, total, onChange }) => {
+  const start = (page - 1) * REPORT_CARDS_PER_PAGE + 1;
+  const end = Math.min(page * REPORT_CARDS_PER_PAGE, total);
+  const pages = Array.from({ length: pageCount }, (_, i) => i + 1)
+    .filter((n) => n === 1 || n === pageCount || Math.abs(n - page) <= 1);
+  return (
+    <div className="flex flex-col items-center justify-between gap-2 rounded-xl border border-slate-200 bg-white px-4 py-2.5 shadow-sm sm:flex-row">
+      <p className="text-xs text-slate-500">
+        Showing <b className="text-slate-700">{start}</b>–<b className="text-slate-700">{end}</b> of <b className="text-slate-700">{total}</b> report cards
+      </p>
+      <div className="flex items-center gap-1">
+        <button type="button" onClick={() => onChange(page - 1)} disabled={page <= 1} aria-label="Previous page"
+          className="flex h-8 w-8 items-center justify-center rounded-lg border border-slate-200 text-slate-600 hover:bg-slate-50 disabled:opacity-40">
+          <ChevronLeft size={15} />
+        </button>
+        {pages.map((n, i) => (
+          <React.Fragment key={n}>
+            {i > 0 && n - pages[i - 1] > 1 && <span className="px-1 text-xs text-slate-400">…</span>}
+            <button type="button" onClick={() => onChange(n)}
+              className={`h-8 min-w-8 rounded-lg px-2 text-xs font-semibold ${n === page ? 'bg-indigo-600 text-white' : 'border border-slate-200 text-slate-600 hover:bg-slate-50'}`}>
+              {n}
+            </button>
+          </React.Fragment>
+        ))}
+        <button type="button" onClick={() => onChange(page + 1)} disabled={page >= pageCount} aria-label="Next page"
+          className="flex h-8 w-8 items-center justify-center rounded-lg border border-slate-200 text-slate-600 hover:bg-slate-50 disabled:opacity-40">
+          <ChevronRight size={15} />
+        </button>
+      </div>
+    </div>
+  );
+};
+
 
 const inp = 'w-full rounded-xl border border-slate-200 bg-slate-50 px-3 py-2.5 text-sm text-slate-800 focus:border-indigo-400 focus:bg-white focus:outline-none focus:ring-2 focus:ring-indigo-100 transition placeholder:text-slate-400';
 const normalizeText = (value) => String(value || '').trim().toLowerCase();
@@ -170,6 +208,20 @@ const ReportCardManagement = ({ setShowAdminHeader }) => {
   const [generating, setGenerating]       = useState(false);
   const [downloadingId, setDownloadingId] = useState(null);
   const [reportCards, setReportCards]     = useState([]);
+  // Report cards are large previews — show a few per page. "Download All" still covers every card.
+  const [cardPage, setCardPage] = useState(1);
+  const cardsTopRef = useRef(null);
+  useEffect(() => { setCardPage(1); }, [reportCards]);
+  const cardPageCount = Math.max(1, Math.ceil(reportCards.length / REPORT_CARDS_PER_PAGE));
+  const safeCardPage = Math.min(cardPage, cardPageCount);
+  const pagedReportCards = reportCards.slice(
+    (safeCardPage - 1) * REPORT_CARDS_PER_PAGE,
+    safeCardPage * REPORT_CARDS_PER_PAGE
+  );
+  const goToCardPage = (p) => {
+    setCardPage(p);
+    cardsTopRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+  };
   const [generatedTemplate, setGeneratedTemplate] = useState(null);
   const [signatories, setSignatories] = useState({ classTeacherName: '', principalName: '', loading: false });
   const logoInputRef = useRef(null);
@@ -647,7 +699,7 @@ const ReportCardManagement = ({ setShowAdminHeader }) => {
 
         {/* ── report cards ── */}
         {reportCards.length > 0 && (
-          <div className="space-y-4">
+          <div ref={cardsTopRef} className="scroll-mt-4 space-y-4">
             <div className="flex items-center justify-between">
               <h2 className="font-bold text-slate-800">{reportCards.length} Report Card{reportCards.length !== 1 ? 's' : ''}</h2>
               <button onClick={handleDownloadAll} disabled={generating}
@@ -655,7 +707,10 @@ const ReportCardManagement = ({ setShowAdminHeader }) => {
                 <Download size={13} /> Download All PDF
               </button>
             </div>
-            {reportCards.map((card) => (
+            {cardPageCount > 1 && (
+              <CardPagination page={safeCardPage} pageCount={cardPageCount} total={reportCards.length} onChange={goToCardPage} />
+            )}
+            {pagedReportCards.map((card) => (
               <ReportCardPreview
                 key={String(card.studentId)}
                 card={card}
@@ -664,6 +719,9 @@ const ReportCardManagement = ({ setShowAdminHeader }) => {
                 downloading={downloadingId === String(card.studentId)}
               />
             ))}
+            {cardPageCount > 1 && (
+              <CardPagination page={safeCardPage} pageCount={cardPageCount} total={reportCards.length} onChange={goToCardPage} />
+            )}
           </div>
         )}
 

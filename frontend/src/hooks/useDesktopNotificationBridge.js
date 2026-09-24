@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { subscriptionMatchesKey } from '../utils/webPush';
 
 const PROMPT_COOLDOWN_MS = 24 * 60 * 60 * 1000;
 
@@ -109,11 +110,17 @@ export const useDesktopNotificationBridge = ({
       }
       webPushEnabledRef.current = true;
 
+      const serverKey = urlBase64ToUint8Array(String(keyData.publicKey));
       let subscription = await registration.pushManager.getSubscription();
+      // Replace a subscription made with an old server key — it can't receive pushes.
+      if (subscription && !subscriptionMatchesKey(subscription, serverKey)) {
+        await subscription.unsubscribe().catch(() => {});
+        subscription = null;
+      }
       if (!subscription) {
         subscription = await registration.pushManager.subscribe({
           userVisibleOnly: true,
-          applicationServerKey: urlBase64ToUint8Array(String(keyData.publicKey)),
+          applicationServerKey: serverKey,
         });
       }
       if (subscription?.endpoint) {

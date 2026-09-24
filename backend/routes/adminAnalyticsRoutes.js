@@ -40,14 +40,88 @@ const scopedStudentIds = async (req, extra = {}) => (
   StudentUser.distinct('_id', scopedFilter(req, extra))
 );
 
+// ── Class / section / session scope from the Analytics page filters ─────────
+// ?grade=&section=&academicYearId= → the matching students plus the Class and
+// Section docs (for teacher allocations). With no grade given, returns null so
+// endpoints keep their school-wide behaviour for other callers.
+const AcademicYear = require('../models/AcademicYear');
+const ClassModel = require('../models/Class');
+const Section = require('../models/Section');
+const TeacherAllocation = require('../models/TeacherAllocation');
+const Subject = require('../models/Subject');
+
+const gradeVariants = (value = '') => {
+  const raw = String(value || '').trim();
+  const bare = raw.replace(/^(class|grade|std\.?)\s*/i, '').trim();
+  return [...new Set([raw, bare, bare && `Class ${bare}`, bare && `Grade ${bare}`].filter(Boolean))];
+};
+
+const resolveClassScope = async (req) => {
+  const grade = String(req.query.grade || '').trim();
+  if (!grade) return null;
+  const section = String(req.query.section || '').trim();
+  const academicYearId = mongoose.isValidObjectId(req.query.academicYearId) ? req.query.academicYearId : null;
+  const year = academicYearId
+    ? await AcademicYear.findOne({ _id: academicYearId, schoolId: req.schoolId }).select('name').lean()
+    : null;
+
+  const studentFilter = scopedFilter(req, {
+    status: 'Active',
+    isArchived: { $ne: true },
+    grade: { $in: gradeVariants(grade).map((g) => new RegExp(`^${escapeRegex(g)}$`, 'i')) },
+    ...(section ? { section: new RegExp(`^${escapeRegex(section)}$`, 'i') } : {}),
+    ...(year?.name ? { academicYear: new RegExp(`^\\s*${escapeRegex(year.name.trim())}\\s*$`, 'i') } : {}),
+  });
+  const studentIds = await StudentUser.distinct('_id', studentFilter);
+
+  const classDoc = await ClassModel.findOne({
+    schoolId: req.schoolId,
+    name: { $in: gradeVariants(grade) },
+    ...(academicYearId ? { academicYearId } : {}),
+  }).select('_id name').lean();
+  const sectionDoc = classDoc && section
+    ? await Section.findOne({ schoolId: req.schoolId, classId: classDoc._id, name: section }).select('_id name').lean()
+    : null;
+
+  return { grade, section, studentIds, studentFilter, classDoc, sectionDoc };
+};
+
+// Teachers allocated to the scoped class/section, with their subject names.
+const loadClassAllocations = async (req, scope) => {
+  if (!scope?.classDoc) return [];
+  const allocations = await TeacherAllocation.find({
+    schoolId: req.schoolId,
+    classId: scope.classDoc._id,
+    ...(scope.sectionDoc ? { sectionId: scope.sectionDoc._id } : {}),
+  }).select('teacherId subjectId isClassTeacher').lean();
+  const [teachers, subjects] = await Promise.all([
+    TeacherUser.find({ _id: { $in: allocations.map((a) => a.teacherId) } }).select('name').lean(),
+    Subject.find({ _id: { $in: allocations.map((a) => a.subjectId).filter(Boolean) } }).select('name').lean(),
+  ]);
+  const teacherName = new Map(teachers.map((t) => [String(t._id), t.name]));
+  const subjectName = new Map(subjects.map((s) => [String(s._id), s.name]));
+  return allocations
+    .map((a) => ({
+      teacherId: a.teacherId,
+      teacherName: teacherName.get(String(a.teacherId)) || 'Teacher',
+      subject: a.subjectId ? subjectName.get(String(a.subjectId)) || '' : '',
+      isClassTeacher: Boolean(a.isClassTeacher),
+    }))
+    .filter((a) => a.subject || a.isClassTeacher);
+};
+
+// Case-insensitive subject match ("Computer" vs "computer").
+const subjKey = (value) => String(value || '').trim().toLowerCase();
+
 // GET /api/admin-analytics/mastery-matrix
 router.get('/mastery-matrix', adminAuth, async (req, res) => {
   try {
     const schoolObjId = toObjId(req.schoolId);
     if (!schoolObjId) return res.status(400).json({ error: 'Invalid schoolId' });
 
+    const scope = await resolveClassScope(req);
     const rows = await MasteryScore.aggregate([
-      { $match: { schoolId: schoolObjId } },
+      { $match: { schoolId: schoolObjId, ...(scope ? { studentId: { $in: scope.studentIds } } : {}) } },
       {
         $lookup: {
           from: 'studentusers',
@@ -76,12 +150,24 @@ router.get('/mastery-matrix', adminAuth, async (req, res) => {
       { $sort: { grade: 1, subject: 1 } },
     ]);
 
-    const subjects = [...new Set(rows.map((r) => r.subject))].sort();
+    // For a selected class, list every subject taught there (not only the
+    // ones that happen to have AI-tutor activity), so empty ones show as "—".
+    const classSubjects = scope
+      ? (await loadClassAllocations(req, scope)).map((a) => a.subject).filter(Boolean)
+      : [];
+    // One column per subject regardless of casing ("computer" ≡ "Computer");
+    // the allocated (official) subject name wins as the display label.
+    const displayName = new Map();
+    [...classSubjects, ...rows.map((r) => r.subject)].forEach((s) => {
+      if (s && !displayName.has(subjKey(s))) displayName.set(subjKey(s), s);
+    });
+    const subjects = [...displayName.values()].sort();
     const grades = [...new Set(rows.map((r) => r.grade))].sort();
+    if (scope && !grades.length) grades.push(scope.grade);
     const matrix = {};
     for (const r of rows) {
       if (!matrix[r.grade]) matrix[r.grade] = {};
-      matrix[r.grade][r.subject] = r.avgScore;
+      matrix[r.grade][displayName.get(subjKey(r.subject)) || r.subject] = r.avgScore;
     }
 
     return res.json({ success: true, data: { subjects, grades, matrix } });
@@ -96,12 +182,17 @@ router.get('/teacher-effectiveness', adminAuth, async (req, res) => {
     const schoolObjId = toObjId(req.schoolId);
     if (!schoolObjId) return res.status(400).json({ error: 'Invalid schoolId' });
 
+    const scope = await resolveClassScope(req);
     const [teachers, subjectMastery] = await Promise.all([
-      TeacherUser.find(scopedFilter(req))
-        .select('name subject email phone')
-        .lean(),
-      scopedStudentIds(req).then((studentIds) => MasteryScore.aggregate([
-        { $match: { schoolId: schoolObjId, ...(req.campusId ? { studentId: { $in: studentIds } } : {}) } },
+      // With a class selected: the teachers allocated to that class/section,
+      // one row per (teacher, subject). Otherwise every teacher.
+      scope
+        ? loadClassAllocations(req, scope).then((rows) => rows
+          .filter((a) => a.subject)
+          .map((a) => ({ _id: a.teacherId, name: a.teacherName, subject: a.subject })))
+        : TeacherUser.find(scopedFilter(req)).select('name subject email phone').lean(),
+      (scope ? Promise.resolve(scope.studentIds) : scopedStudentIds(req)).then((studentIds) => MasteryScore.aggregate([
+        { $match: { schoolId: schoolObjId, ...((scope || req.campusId) ? { studentId: { $in: studentIds } } : {}) } },
         {
           $group: {
             _id: '$subject',
@@ -123,11 +214,11 @@ router.get('/teacher-effectiveness', adminAuth, async (req, res) => {
 
     const masteryBySubject = {};
     for (const s of subjectMastery) {
-      masteryBySubject[s.subject] = s;
+      masteryBySubject[subjKey(s.subject)] = s;
     }
 
     const result = teachers.map((t) => {
-      const subjectStats = masteryBySubject[t.subject] || {};
+      const subjectStats = masteryBySubject[subjKey(t.subject)] || {};
       return {
         teacherId: t._id,
         name: t.name,
@@ -160,12 +251,14 @@ router.get('/ai-path-effectiveness', adminAuth, async (req, res) => {
     const schoolObjId = toObjId(req.schoolId);
     if (!schoolObjId) return res.status(400).json({ error: 'Invalid schoolId' });
 
-    const studentIds = req.campusId ? await scopedStudentIds(req) : null;
+    const scope = await resolveClassScope(req);
+    const studentIds = scope ? scope.studentIds : (req.campusId ? await scopedStudentIds(req) : null);
     const rows = await MasteryScore.aggregate([
       { $match: { schoolId: schoolObjId, ...(studentIds ? { studentId: { $in: studentIds } } : {}) } },
       {
         $group: {
-          _id: '$subject',
+          _id: { $toLower: { $trim: { input: { $ifNull: ['$subject', ''] } } } },
+          name: { $first: '$subject' },
           avgScore: { $avg: '$score' },
           strongTopics: {
             $sum: { $cond: [{ $gte: ['$score', 75] }, 1, 0] },
@@ -180,7 +273,7 @@ router.get('/ai-path-effectiveness', adminAuth, async (req, res) => {
       },
       {
         $project: {
-          subject: '$_id',
+          subject: '$name',
           avgScore: { $round: ['$avgScore', 1] },
           strongTopics: 1,
           weakTopics: 1,
@@ -191,6 +284,27 @@ router.get('/ai-path-effectiveness', adminAuth, async (req, res) => {
       },
       { $sort: { avgScore: -1 } },
     ]);
+
+    // With a class selected, show every subject taught there — subjects with no
+    // AI-tutor activity yet appear with zeros instead of being hidden.
+    if (scope) {
+      const allocated = (await loadClassAllocations(req, scope)).map((a) => a.subject).filter(Boolean);
+      const bySubject = new Map(rows.map((r) => [subjKey(r.subject), r]));
+      const merged = [];
+      const seen = new Set();
+      allocated.forEach((name) => {
+        const key = subjKey(name);
+        if (seen.has(key)) return;
+        seen.add(key);
+        const hit = bySubject.get(key);
+        merged.push(hit ? { ...hit, subject: name } : {
+          subject: name, avgScore: null, strongTopics: 0, weakTopics: 0, totalTopics: 0, studentCount: 0, totalAttempts: 0,
+        });
+      });
+      rows.forEach((r) => { if (!seen.has(subjKey(r.subject))) merged.push(r); });
+      merged.sort((a, b) => (b.avgScore ?? -1) - (a.avgScore ?? -1));
+      return res.json({ success: true, data: merged });
+    }
 
     return res.json({ success: true, data: rows });
   } catch (err) {
@@ -205,12 +319,20 @@ router.get('/dropout-risk', adminAuth, async (req, res) => {
     const schoolObjId = toObjId(req.schoolId);
     if (!schoolObjId) return res.status(400).json({ error: 'Invalid schoolId' });
 
-    const students = await StudentUser.find(scopedFilter(req, { status: 'Active' }))
+    const scope = await resolveClassScope(req);
+    const students = await StudentUser.find(scope ? scope.studentFilter : scopedFilter(req, { status: 'Active' }))
       .select('name grade section attendance')
       .lean();
 
     const failedResults = await ExamResult.aggregate([
-      { $match: { schoolId: schoolObjId, ...(req.campusId ? { campusId: req.campusId } : {}), status: 'fail' } },
+      {
+        $match: {
+          schoolId: schoolObjId,
+          ...(req.campusId ? { campusId: req.campusId } : {}),
+          ...(scope ? { studentId: { $in: scope.studentIds } } : {}),
+          status: 'fail',
+        },
+      },
       {
         $group: {
           _id: '$studentId',
@@ -223,9 +345,20 @@ router.get('/dropout-risk', adminAuth, async (req, res) => {
 
     const atRisk = [];
     for (const student of students) {
-      const total = student.attendance?.length || 0;
-      const present = student.attendance?.filter((a) => a.status === 'present').length || 0;
-      const attendanceRate = total > 0 ? Math.round((present / total) * 100) : null;
+      // Count distinct days (period-wise records can log several per day) and
+      // only judge attendance once there's a meaningful sample — a single
+      // absent period used to show up as "0% attendance".
+      const byDay = new Map();
+      (student.attendance || []).forEach((a) => {
+        const day = a?.date ? new Date(a.date).toISOString().slice(0, 10) : null;
+        if (!day) return;
+        const present = ['present', 'late'].includes(String(a.status || '').toLowerCase());
+        byDay.set(day, (byDay.get(day) || false) || present);
+      });
+      const total = byDay.size;
+      const present = [...byDay.values()].filter(Boolean).length;
+      const MIN_DAYS = 5;
+      const attendanceRate = total >= MIN_DAYS ? Math.round((present / total) * 100) : null;
       const failCount = failMap.get(String(student._id)) || 0;
 
       const lowAttendance = attendanceRate !== null && attendanceRate < 75;
@@ -243,10 +376,11 @@ router.get('/dropout-risk', adminAuth, async (req, res) => {
           grade: student.grade || '—',
           section: student.section || '—',
           attendanceRate: attendanceRate ?? '—',
+          attendanceDays: total,
           failedExams: failCount,
           riskLevel,
           reasons: [
-            ...(lowAttendance ? [`Attendance ${attendanceRate}%`] : []),
+            ...(lowAttendance ? [`Attendance ${attendanceRate}% over ${total} days`] : []),
             ...(academicRisk ? [`${failCount} failed exams`] : []),
           ],
         });
@@ -274,13 +408,29 @@ router.get('/cohort-trend', adminAuth, async (req, res) => {
     const sixMonthsAgo = new Date();
     sixMonthsAgo.setMonth(sixMonthsAgo.getMonth() - 6);
 
+    const scope = await resolveClassScope(req);
     const rows = await ExamResult.aggregate([
       {
         $match: {
           schoolId: schoolObjId,
           ...(req.campusId ? { campusId: req.campusId } : {}),
+          ...(scope ? { studentId: { $in: scope.studentIds } } : {}),
           createdAt: { $gte: sixMonthsAgo },
           status: { $ne: 'absent' },
+        },
+      },
+      // Normalise to % of each exam's maximum marks (raw marks differ per exam).
+      { $lookup: { from: 'exams', localField: 'examId', foreignField: '_id', as: 'exam' } },
+      { $unwind: { path: '$exam', preserveNullAndEmptyArrays: true } },
+      {
+        $addFields: {
+          marks: {
+            $cond: [
+              { $gt: [{ $ifNull: ['$exam.marks', 0] }, 0] },
+              { $multiply: [{ $divide: ['$marks', '$exam.marks'] }, 100] },
+              '$marks',
+            ],
+          },
         },
       },
       {
@@ -449,9 +599,11 @@ router.get('/exam-integrity', adminAuth, async (req, res) => {
     const schoolObjId = toObjId(req.schoolId);
     if (!schoolObjId) return res.status(400).json({ error: 'Invalid schoolId' });
 
+    const scope = await resolveClassScope(req);
     const attempts = await ExamAttempt.find({
       schoolId: schoolObjId,
       ...(req.campusId ? { campusId: req.campusId } : {}),
+      ...(scope ? { studentId: { $in: scope.studentIds } } : {}),
       status: { $in: ['submitted', 'timed_out'] },
       submittedAt: { $exists: true },
     })

@@ -1760,9 +1760,8 @@ router.get('/admin/summary', adminAuth, async (req, res) => {
     if (section) {
       studentFilter.section = String(section).trim();
     }
-    if (academicYearId && mongoose.isValidObjectId(academicYearId)) {
-      studentFilter.academicYear = academicYearId;
-    }
+    // Session scoping is applied to the invoices (academicYearId) below, not to
+    // the student record: a student's academicYear holds a name, not an id.
     const students = await StudentUser.find(studentFilter)
       .select('name grade section roll admissionNumber username academicYear studentCode')
       .lean();

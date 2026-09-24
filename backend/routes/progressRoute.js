@@ -3,6 +3,8 @@ const mongoose = require('mongoose');
 const router = express.Router();
 const StudentProgress = require('../models/StudentProgress');
 const StudentUser = require('../models/StudentUser');
+const ExamResult = require('../models/ExamResult');
+const Exam = require('../models/Exam');
 const Assignment = require('../models/Assignment');
 const AcademicYear = require('../models/AcademicYear');
 const adminAuth = require('../middleware/adminAuth');
@@ -373,6 +375,101 @@ router.get('/analytics', teacherAuth, async (req, res) => {
         delete perf.totalScore; // Remove temporary field
       });
     }
+
+    // Exam results are the real source of marks (StudentProgress is sparse and
+    // often stale). When the selected students have results, derive the
+    // average score, per-subject performance and grade distribution from them.
+    const examResults = studentIds.length
+      ? await ExamResult.find({ schoolId, studentId: { $in: studentIds }, status: { $ne: 'absent' } })
+        .select('examId studentId marks createdAt')
+        .lean()
+      : [];
+    if (examResults.length) {
+      const exams = await Exam.find({ _id: { $in: [...new Set(examResults.map((r) => String(r.examId)))] } })
+        .select('subject marks date')
+        .lean();
+      const examMap = new Map(exams.map((e) => [String(e._id), e]));
+      const bySubject = new Map(); // subject -> { total, count, students:Set }
+      const byStudent = new Map(); // studentId -> { total, count }
+      let total = 0;
+      let count = 0;
+      examResults.forEach((r) => {
+        const exam = examMap.get(String(r.examId));
+        const max = Number(exam?.marks || 0);
+        if (!exam || max <= 0) return;
+        if (subject && String(exam.subject || '').toLowerCase() !== String(subject).toLowerCase()) return;
+        const pct = Math.max(0, Math.min(100, (Number(r.marks || 0) / max) * 100));
+        const subj = String(exam.subject || 'General').trim() || 'General';
+        if (!bySubject.has(subj)) bySubject.set(subj, { total: 0, count: 0, students: new Set() });
+        const s = bySubject.get(subj);
+        s.total += pct; s.count += 1; s.students.add(String(r.studentId));
+        const key = String(r.studentId);
+        if (!byStudent.has(key)) byStudent.set(key, { total: 0, count: 0, points: [] });
+        const st = byStudent.get(key);
+        st.total += pct; st.count += 1;
+        const when = new Date(exam.date || r.createdAt || 0).getTime() || 0;
+        st.points.push({ when, pct });
+        total += pct; count += 1;
+      });
+      if (count) {
+        analytics.averageScore = Math.round(total / count);
+        analytics.subjectPerformance = {};
+        bySubject.forEach((v, subj) => {
+          analytics.subjectPerformance[subj] = {
+            averageScore: Math.round(v.total / v.count),
+            studentCount: v.students.size,
+          };
+        });
+        const gradeOf = (p) => (p >= 90 ? 'A+' : p >= 80 ? 'A' : p >= 70 ? 'B+' : p >= 60 ? 'B' : p >= 50 ? 'C+' : p >= 40 ? 'C' : p >= 33 ? 'D' : 'F');
+        analytics.gradeDistribution = { 'A+': 0, 'A': 0, 'B+': 0, 'B': 0, 'C+': 0, 'C': 0, 'D': 0, 'F': 0 };
+        byStudent.forEach((v) => { analytics.gradeDistribution[gradeOf(v.total / v.count)] += 1; });
+
+        // Improvement trend per student: average of their later exams vs their
+        // earlier exams (split in half by date). >5 points up = improving,
+        // >5 down = declining, otherwise stable. Students with a single exam
+        // can't show a trend, so they're left out (and counted separately).
+        const TREND_THRESHOLD = 5;
+        const trends = { improving: 0, stable: 0, declining: 0 };
+        let insufficient = 0;
+        byStudent.forEach((v) => {
+          if (v.points.length < 2) { insufficient += 1; return; }
+          const sorted = [...v.points].sort((a, b) => a.when - b.when);
+          const half = Math.floor(sorted.length / 2);
+          const avg = (list) => list.reduce((sum, p) => sum + p.pct, 0) / list.length;
+          const delta = avg(sorted.slice(sorted.length - half)) - avg(sorted.slice(0, half));
+          if (delta > TREND_THRESHOLD) trends.improving += 1;
+          else if (delta < -TREND_THRESHOLD) trends.declining += 1;
+          else trends.stable += 1;
+        });
+        analytics.improvementTrends = trends;
+        analytics.trendMeta = {
+          basis: 'exam_results',
+          threshold: TREND_THRESHOLD,
+          studentsWithTrend: trends.improving + trends.stable + trends.declining,
+          insufficientData: insufficient + Math.max(0, studentIds.length - byStudent.size),
+        };
+        analytics.source = 'exam_results';
+      }
+    }
+
+    // Today's attendance for the selected students (embedded attendance log).
+    const todayKey = new Date().toISOString().slice(0, 10);
+    const attendanceDocs = studentIds.length
+      ? await StudentUser.find({ _id: { $in: studentIds } }).select('attendance').lean()
+      : [];
+    const today = { date: todayKey, present: 0, absent: 0, late: 0, notMarked: 0, total: studentIds.length };
+    attendanceDocs.forEach((doc) => {
+      const entry = (doc.attendance || []).find((a) => a?.date && new Date(a.date).toISOString().slice(0, 10) === todayKey);
+      const status = String(entry?.status || '').toLowerCase();
+      if (!entry) today.notMarked += 1;
+      else if (status === 'present') today.present += 1;
+      else if (status === 'late') today.late += 1;
+      else today.absent += 1;
+    });
+    today.notMarked += Math.max(0, studentIds.length - attendanceDocs.length);
+    const marked = today.present + today.absent + today.late;
+    today.rate = marked ? Math.round(((today.present + today.late) / marked) * 100) : null;
+    analytics.todayAttendance = today;
 
     res.status(200).json(analytics);
   } catch (error) {
