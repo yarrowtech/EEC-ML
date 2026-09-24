@@ -20,10 +20,7 @@ class NotificationService {
     submissionId = null,
     createdBy = null,
     relatedEntity = null,
-    expiresAt = null,
-    kind = 'notification',
-    eventType = '',
-    targetRole = ''
+    expiresAt = null
   }) {
     try {
       const notification = await Notification.create({
@@ -45,10 +42,7 @@ class NotificationService {
           entityType: relatedEntity.entityType,
           entityId: relatedEntity.entityId
         } : undefined,
-        expiresAt,
-        kind,
-        eventType,
-        targetRole
+        expiresAt
       });
 
       return notification;
@@ -62,34 +56,23 @@ class NotificationService {
    * Create assignment notification
    */
   static async notifyAssignmentCreated({ schoolId, campusId, assignment, createdBy }) {
-    // Only that class/section's students — never the whole school — and only
-    // once per assignment however many times it is saved or re-activated.
-    const { EVENTS, notify } = require('../services/communicationService');
-    let classId = assignment?.classId || null;
-    if (!classId && assignment?.class) {
-      const ClassModel = require('../models/Class');
-      const cls = await ClassModel.findOne({ schoolId, name: assignment.class }).select('_id').lean();
-      classId = cls?._id || null;
-    }
-    if (!classId) return { created: 0, skipped: 0 };
-    let sectionId = assignment?.sectionId || null;
-    if (!sectionId && assignment?.section) {
-      const Section = require('../models/Section');
-      const sec = await Section.findOne({ schoolId, classId, name: assignment.section }).select('_id').lean();
-      sectionId = sec?._id || null;
-    }
-    const due = assignment.dueDate ? ` Due: ${new Date(assignment.dueDate).toLocaleDateString('en-GB', { day: 'numeric', month: 'short' })}.` : '';
-    return notify({
-      schoolId, campusId, createdBy,
-      eventType: EVENTS.ASSIGNMENT_CREATED,
-      entityType: 'assignment', entityId: assignment._id,
-      category: 'academic', priority: 'medium',
-      target: { classSections: [{ classId, sectionId }], includeParents: false },
-      data: { id: String(assignment._id) },
-      student: () => ({
-        title: `New Assignment: ${assignment.title}`,
-        message: `A new ${assignment.subject || ''} assignment "${assignment.title}" has been posted for your class.${due}`.replace(/s+/g, ' '),
-      }),
+    const dueDate = assignment.dueDate ? new Date(assignment.dueDate).toLocaleDateString() : 'TBA';
+
+    return await this.createNotification({
+      schoolId,
+      campusId,
+      title: `New Assignment: ${assignment.title}`,
+      message: `A new ${assignment.subject} assignment has been posted for ${assignment.class}. Due date: ${dueDate}`,
+      audience: 'Student',
+      type: 'assignment',
+      typeLabel: 'assignment_created',
+      priority: 'medium',
+      category: 'academic',
+      createdBy,
+      relatedEntity: {
+        entityType: 'assignment',
+        entityId: assignment._id
+      }
     });
   }
 
@@ -176,9 +159,6 @@ class NotificationService {
       // examRoute.js) — this typeLabel lets the /user notifications query
       // skip it for teachers so they don't see it once per class/section.
       typeLabel: 'exam_scheduled_class',
-      kind: 'notice',
-      eventType: 'EXAM_CREATED',
-      targetRole: 'all',
       type: 'exam',
       priority: 'medium',
       category: 'academic',
@@ -225,9 +205,6 @@ class NotificationService {
       // in examRoute.js) — this typeLabel lets the /user notifications query
       // skip this per-class copy for teachers so they don't see it twice.
       typeLabel: 'exam_routine_published_class',
-      kind: 'notice',
-      eventType: 'EXAM_ROUTINE_PUBLISHED',
-      targetRole: 'all',
       type: 'exam',
       priority: 'high',
       category: 'academic',
@@ -302,9 +279,6 @@ class NotificationService {
    * per subject per teacher.
    */
   static async notifyClassExamScheduled({ schoolId, campusId = null, exam, subjects = [], createdBy = null }) {
-    require('../services/examCommunication')
-      .notifyExamCreated({ schoolId, campusId, entity: exam, entityType: 'exam', subjects, createdBy })
-      .catch((err) => console.error('Failed to send exam-created notifications:', err.message));
     const className = exam.classId?.name || exam.grade || '';
     const sectionName = exam.sectionId?.name || exam.section || '';
     const title = String(exam.title || 'Exam').trim();
@@ -320,11 +294,8 @@ class NotificationService {
         audience: 'All',
         type: 'exam',
         typeLabel: 'exam_scheduled_class',
-        kind: 'notice',
-        eventType: 'EXAM_CREATED',
-        targetRole: 'all',
         priority: 'medium',
-        category: 'exam',
+        category: 'academic',
         classId: exam.classId?._id || exam.classId || null,
         sectionId: exam.sectionId?._id || exam.sectionId || null,
         className,
@@ -342,9 +313,6 @@ class NotificationService {
   static async notifyClassResultsPublished({
     schoolId, campusId = null, classId, sectionId, className = '', sectionName = '', examTitle = '', groupId = null, createdBy = null,
   }) {
-    require('../services/examCommunication')
-      .notifyResultsPublished({ schoolId, campusId, classId, sectionId, examTitle, entityId: groupId, createdBy })
-      .catch((err) => console.error('Failed to send result notifications:', err.message));
     const scope = [className && (/^class\b/i.test(String(className).trim()) ? String(className).trim() : `Class ${className}`), sectionName && `Section ${sectionName}`].filter(Boolean).join(', ');
     const label = examTitle ? `${examTitle} results` : 'Examination results';
     return this.upsertClassNotice({
@@ -357,11 +325,8 @@ class NotificationService {
         audience: 'All',
         type: 'result',
         typeLabel: 'result_published_class',
-        kind: 'notice',
-        eventType: 'RESULT_PUBLISHED',
-        targetRole: 'all',
         priority: 'high',
-        category: 'exam',
+        category: 'academic',
         classId: classId || null,
         sectionId: sectionId || null,
         className,

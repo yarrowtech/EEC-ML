@@ -25,26 +25,6 @@ const adminAuth = require('../middleware/adminAuth');
 const teacherAuth = require('../middleware/authTeacher');
 const NotificationService = require('../utils/notificationService');
 const { sendPushForNotification } = require('../utils/webPushService');
-const examCommunication = require('../services/examCommunication');
-const { scheduleExamNoticeRefresh } = require('../services/examNoticeService');
-
-// A subject exam inside a group changed → rebuild that exam's notices.
-const refreshNoticesForGroupId = async ({ schoolId, campusId, groupId }) => {
-  if (!groupId || !mongoose.isValidObjectId(groupId)) return;
-  const g = await ExamGroup.findById(groupId).select('title startDate status publishedAt').lean();
-  if (!g) return;
-  refreshExamNotices({
-    schoolId, campusId, title: g.title, sampleDate: g.startDate,
-    routine: g.status === 'Published' || Boolean(g.publishedAt),
-  });
-};
-
-// One consolidated formal notice per exam (not per class/section): rebuild the
-// "scheduled" notice, and the "routine" notice when anything is published.
-const refreshExamNotices = ({ schoolId, campusId, title, sampleDate, createdBy, routine = false }) => {
-  scheduleExamNoticeRefresh({ kind: 'scheduled', schoolId, campusId, title, sampleDate, createdBy });
-  if (routine) scheduleExamNoticeRefresh({ kind: 'routine', schoolId, campusId, title, sampleDate, createdBy });
-};
 const examSchedulingEngine = require('../services/examSchedulingEngine');
 const authStudent = require('../middleware/authStudent');
 const authParent = require('../middleware/authParent');
@@ -208,19 +188,6 @@ const canTeacherManageExam = (scopeKeys, examDoc) => {
   );
 };
 
-// Marks entry is stricter than exam management: a teacher may enter marks only
-// for the exact subject they are allocated to — class-wide ('*') scope does not
-// cover other teachers' subjects. Legacy exams without subjectId fall back.
-const canTeacherEnterMarks = (scopeKeys, examDoc) => {
-  if (!examDoc) return false;
-  const subjectId = toIdString(examDoc.subjectId);
-  if (!subjectId) return canTeacherManageExam(scopeKeys, examDoc);
-  const classId = toIdString(examDoc.classId);
-  const sectionId = toIdString(examDoc.sectionId);
-  if (!classId || !sectionId) return false;
-  return scopeKeys.has(buildScopeKey(classId, sectionId, subjectId));
-};
-
 const isExamCompleted = (examDoc) =>
   String(examDoc?.status || '').trim().toLowerCase() === 'completed';
 
@@ -338,6 +305,67 @@ const buildExamTeacherNotificationMessage = ({ exam = {}, className = '', sectio
   return `${parts.join(', ')}.`;
 };
 
+const resolveExamTeacherRecipients = async ({ schoolId, campusId, exam = {} }) => {
+  const classId = toIdString(exam?.classId);
+  const sectionId = toIdString(exam?.sectionId);
+  const subjectId = toIdString(exam?.subjectId);
+  if (!schoolId || !classId || !sectionId) return [];
+
+  const teacherIds = new Set();
+  const campusFilter = resolveCampusScopedFilter(campusId);
+
+  const allocationFilter = {
+    schoolId,
+    classId,
+    sectionId,
+    ...campusFilter,
+    $or: subjectId ? [{ subjectId }, { isClassTeacher: true }] : [{ isClassTeacher: true }],
+  };
+  const allocations = await TeacherAllocation.find(allocationFilter).select('teacherId').lean();
+  allocations.forEach((allocation) => {
+    const teacherId = toIdString(allocation?.teacherId);
+    if (teacherId) teacherIds.add(teacherId);
+  });
+
+  const timetableFilter = {
+    schoolId,
+    classId,
+    sectionId,
+    ...campusFilter,
+    'entries.teacherId': { $exists: true },
+  };
+  const timetables = await Timetable.find(timetableFilter)
+    .select('entries.teacherId entries.subjectId')
+    .lean();
+  timetables.forEach((timetable) => {
+    (timetable?.entries || []).forEach((entry) => {
+      const teacherId = toIdString(entry?.teacherId);
+      if (!teacherId) return;
+      if (subjectId && toIdString(entry?.subjectId) !== subjectId) return;
+      teacherIds.add(teacherId);
+    });
+  });
+
+  const instructorNames = parseInstructorNames(exam?.instructor);
+  if (instructorNames.length) {
+    const teachers = await TeacherUser.find({
+      schoolId,
+      ...(campusId ? { $or: [{ campusId }, { campusId: null }, { campusId: { $exists: false } }] } : {}),
+    })
+      .select('_id name username employeeCode email')
+      .lean();
+    teachers.forEach((teacher) => {
+      const teacherId = toIdString(teacher?._id);
+      if (!teacherId) return;
+      const identities = buildTeacherIdentitySet(teacher);
+      const matched = instructorNames.some((instructorName) => identities.has(instructorName));
+      if (matched) teacherIds.add(teacherId);
+    });
+  }
+
+  return [...teacherIds];
+};
+
 const WEEKDAY_NAMES = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
 const getWeekdayLabel = (value) => {
   if (!value) return '';
@@ -360,18 +388,6 @@ const buildExamRoutineRow = (exam = {}) => ({
   floor: exam?.roomId?.floorId?.name || '',
   room: exam?.roomId?.roomNumber || '',
   groupId: exam?.groupId ? String(exam.groupId) : '',
-});
-const isGroupRoutinePublished = (group = {}) =>
-  group.status === 'Published' || Boolean(group.publishedAt);
-
-const buildAdmitCardGroupPayload = (group, subjects = []) => ({
-  ...group,
-  subjects,
-  routinePublished: isGroupRoutinePublished(group),
-  admitCardGenerated: isGroupRoutinePublished(group) && subjects.length > 0,
-  academicYearId: group.classId?.academicYearId?._id || null,
-  academicYearName: group.classId?.academicYearId?.name || '',
-  academicYearIsActive: Boolean(group.classId?.academicYearId?.isActive),
 });
 
 const slugifyDutyKey = (value) => String(value || '').trim().toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '');
@@ -398,22 +414,9 @@ const createConsolidatedTeacherExamNotifications = async ({
   createdByName = '',
   createdByType = 'admin',
 }) => {
-  // Duty goes ONLY to the invigilators named on each exam (Exam.instructor),
-  // not every subject/class teacher of that class. Teachers are loaded once.
-  const teachers = await TeacherUser.find({
-    schoolId,
-    ...(campusId ? { $or: [{ campusId }, { campusId: null }, { campusId: { $exists: false } }] } : {}),
-  }).select('_id name username employeeCode email').lean();
-  const teacherIdentities = teachers.map((t) => ({ id: String(t._id), identities: buildTeacherIdentitySet(t) }));
-  const invigilatorsOf = (exam) => {
-    const names = parseInstructorNames(exam?.instructor);
-    if (!names.length) return [];
-    return teacherIdentities.filter((t) => names.some((n) => t.identities.has(n))).map((t) => t.id);
-  };
-
   const rowsByTeacher = new Map(); // teacherId -> routine rows[]
   for (const exam of exams) {
-    const teacherIds = invigilatorsOf(exam);
+    const teacherIds = await resolveExamTeacherRecipients({ schoolId, campusId, exam });
     if (!teacherIds.length) continue;
     const row = buildExamRoutineRow(exam);
     teacherIds.forEach((teacherId) => {
@@ -461,15 +464,7 @@ const createConsolidatedTeacherExamNotifications = async ({
       category: 'academic',
       targetUserIds: [teacherId],
       dedupeKey,
-      kind: 'notification',
-      eventType: 'EXAM_DUTY_ASSIGNED',
-      targetRole: 'teacher',
     };
-
-    // Snapshot this teacher's current duty so we only alert on a real change.
-    const before = await Notification.findOne({ dedupeKey }).select('examRoutine').lean();
-    const snapshot = (list = []) => list.map(rowKey).sort().join('\n');
-    const beforeKey = snapshot(before?.examRoutine);
 
     // "Create/Publish All" fires one call per class/section group CONCURRENTLY
     // (Promise.all in the admin wizard), and every one of those groups maps to
@@ -491,7 +486,7 @@ const createConsolidatedTeacherExamNotifications = async ({
     // always bumps updatedAt — GET /user sorts by that, so this still
     // resurfaces at the top, not just flips unread.
     const updateOps = {
-      $set: { relatedEntity: groupId ? { entityType: 'examDuty', entityId: groupId } : undefined },
+      $set: { relatedEntity: groupId ? { entityType: 'exam', entityId: groupId } : undefined, readBy: [] },
       $setOnInsert: setOnInsert,
     };
     // Republishing the same group must replace its rows, not duplicate them.
@@ -511,26 +506,186 @@ const createConsolidatedTeacherExamNotifications = async ({
     }
 
     const finalCount = updated.examRoutine?.length || 0;
-    const changed = snapshot(updated.examRoutine) !== beforeKey;
-    // An identical republish is silent: no resurfacing, no push.
-    if (!changed) { results.push(updated); continue; }
-    const isChange = Boolean(before);
-    const patch = {
-      message: isChange
-        ? `Your invigilation duty for ${groupTitle} has changed. You now have ${finalCount} exam${finalCount !== 1 ? 's' : ''} assigned.`
-        : messageFor(finalCount),
-      title: isChange ? `Exam Duty Changed: ${groupTitle}` : title,
-      eventType: isChange ? 'EXAM_DUTY_CHANGED' : 'EXAM_DUTY_ASSIGNED',
-      kind: 'notification',
-      targetRole: 'teacher',
-      readBy: [],
-    };
-    updated = await Notification.findOneAndUpdate({ dedupeKey }, { $set: patch }, { new: true }) || updated;
-    // findOneAndUpdate never fires the model's post('save') hooks, so push by hand.
+    const message = messageFor(finalCount);
+    if (updated.message !== message) {
+      updated = await Notification.findOneAndUpdate({ dedupeKey }, { $set: { message } }, { new: true }) || updated;
+    }
+    // findOneAndUpdate never fires the Notification model's post('save')/
+    // post('insertMany') hooks (those are document/insertMany-only), so the
+    // web-push send that would normally follow a new notice has to be fired
+    // by hand here — otherwise duty notices reach the notifications page but
+    // never trigger an actual push alert.
     sendPushForNotification(updated).catch(() => {});
     results.push(updated);
   }
   return results;
+};
+
+// One shared "Exam Routine Published" notice for every teacher at the
+// school, covering every class/section the exam was published for — instead
+// of the per-class notice everyone else gets, which would otherwise fire once
+// per class/section under the same exam title ("Publish All Routines").
+// dedupeKey scopes identity to (school, campus, exam title); each group's
+// publish call merges its rows/class label in, replacing what it contributed
+// last time so a republish doesn't duplicate.
+const upsertTeacherRoutinePublishedNotice = async ({
+  schoolId,
+  campusId,
+  group,
+  examRoutine = [],
+  createdBy = null,
+}) => {
+  const groupId = group?._id;
+  const groupTitle = group?.title || 'Exam';
+  const className = group?.classId?.name || group?.grade || '';
+  const sectionName = group?.sectionId?.name || group?.section || '';
+  const classLabel = [className && (/^class\b/i.test(String(className).trim()) ? String(className).trim() : `Class ${className}`), sectionName && `Section ${sectionName}`].filter(Boolean).join(', ');
+
+  const rowKey = (row) => [row.date, row.subject, row.time, row.duration, row.building, row.floor, row.room].join('|');
+  const dedupeRows = (list) => {
+    const seen = new Set();
+    const out = [];
+    list.forEach((row) => {
+      const key = rowKey(row);
+      if (seen.has(key)) return;
+      seen.add(key);
+      out.push(row);
+    });
+    return out;
+  };
+
+  const rows = dedupeRows((examRoutine || []).map((row) => ({ ...row, groupId: groupId ? String(groupId) : '' })));
+  const dedupeKey = `exam-routine-published-teacher:${schoolId}:${campusId || 'none'}:${slugifyDutyKey(groupTitle)}`;
+
+  const title = `Exam Routine Published: ${groupTitle}`;
+  const messageFor = (classes, rowCount) =>
+    `The exam routine for ${groupTitle} has been published for ${classes.length} class${classes.length !== 1 ? 'es' : ''}`
+    + `${classes.length ? ` (${classes.join('; ')})` : ''}. ${rowCount} subject exam${rowCount !== 1 ? 's' : ''} total. See the full schedule below.`;
+  const setOnInsert = {
+    schoolId,
+    campusId: campusId || null,
+    title,
+    audience: 'Teacher',
+    createdBy,
+    createdByType: 'admin',
+    type: 'exam',
+    typeLabel: 'exam_routine_published_teacher',
+    priority: 'high',
+    category: 'academic',
+    dedupeKey,
+  };
+
+  // Atomic $pull + $addToSet instead of read-merge-write — see the matching
+  // comment in createConsolidatedTeacherExamNotifications for why: "Publish
+  // All Routines" fires these concurrently, one per class/section group, and
+  // a non-atomic merge silently drops rows/classes under that concurrency.
+  const addToSet = {};
+  if (rows.length) addToSet.examRoutine = { $each: rows };
+  if (classLabel) addToSet.classesCovered = classLabel;
+  // Re-surface (unread + resorted via updatedAt) on every merge — see the
+  // matching comment in createConsolidatedTeacherExamNotifications.
+  const updateOps = {
+    $set: { readBy: [] },
+    $setOnInsert: setOnInsert,
+    ...(Object.keys(addToSet).length ? { $addToSet: addToSet } : {}),
+  };
+
+  if (groupId) {
+    await Notification.updateOne({ dedupeKey }, { $pull: { examRoutine: { groupId: String(groupId) } } });
+  }
+
+  let updated;
+  try {
+    updated = await Notification.findOneAndUpdate({ dedupeKey }, updateOps, { upsert: true, new: true, setDefaultsOnInsert: true });
+  } catch (err) {
+    if (err?.code !== 11000) throw err;
+    updated = await Notification.findOneAndUpdate({ dedupeKey }, updateOps, { new: true });
+  }
+
+  const classes = updated.classesCovered || [];
+  const rowCount = updated.examRoutine?.length || 0;
+  const message = messageFor(classes, rowCount);
+  if (updated.message !== message) {
+    updated = await Notification.findOneAndUpdate({ dedupeKey }, { $set: { message } }, { new: true }) || updated;
+  }
+  // findOneAndUpdate skips the model's post('save') push hook — send it
+  // explicitly (see the matching comment in createConsolidatedTeacherExamNotifications).
+  sendPushForNotification(updated).catch(() => {});
+  return updated;
+};
+
+// One shared "Exam Scheduled" heads-up notice for every teacher at the
+// school, covering every class/section the exam wizard created — instead of
+// the per-class notice everyone else gets (fired once per class/section
+// group, "Publish/Create All" creates several groups at once for the same
+// exam title). Mirrors upsertTeacherRoutinePublishedNotice's dedupeKey/merge
+// approach; there is no per-subject data yet at this stage, just the class
+// list, so classesCovered is all this one tracks.
+const upsertTeacherExamScheduledNotice = async ({ schoolId, campusId, group, createdBy = null }) => {
+  const groupTitle = group?.title || 'Exam';
+  const className = group?.classId?.name || group?.grade || '';
+  const sectionName = group?.sectionId?.name || group?.section || '';
+  const classLabel = [className && (/^class\b/i.test(String(className).trim()) ? String(className).trim() : `Class ${className}`), sectionName && `Section ${sectionName}`].filter(Boolean).join(', ');
+  const dateRange = group?.startDate
+    ? ` starting from ${group.startDate}${group.endDate && group.endDate !== group.startDate ? ` to ${group.endDate}` : ''}`
+    : '';
+
+  const dedupeKey = `exam-scheduled-teacher:${schoolId}:${campusId || 'none'}:${slugifyDutyKey(groupTitle)}`;
+  const title = `Exam Scheduled: ${groupTitle}`;
+  const messageFor = (classes) =>
+    `${groupTitle} has been scheduled for ${classes.length} class${classes.length !== 1 ? 'es' : ''}`
+    + `${classes.length ? ` (${classes.join('; ')})` : ''}${dateRange}.`;
+
+  const setOnInsert = {
+    schoolId,
+    campusId: campusId || null,
+    title,
+    audience: 'Teacher',
+    createdBy,
+    createdByType: 'admin',
+    type: 'exam',
+    typeLabel: 'exam_scheduled_teacher',
+    priority: 'medium',
+    category: 'academic',
+    dedupeKey,
+  };
+
+  // Atomic $addToSet instead of read-merge-write — "Create All" in the admin
+  // wizard fires one of these CONCURRENTLY per class/section (Promise.all),
+  // all hitting this same dedupeKey. A read-latest → merge-in-JS → $set write
+  // is not atomic: concurrent calls can each read the same "before" state and
+  // overwrite each other, so most classes silently never make it into
+  // classesCovered. $addToSet is a single atomic operator the database
+  // serializes correctly under any concurrency.
+  //
+  // Separately: the SAME dedupeKey (one per exam TITLE) is reused every time
+  // that title comes up again, so without resetting readBy here, a teacher
+  // who already read an earlier exam under this title would never see it
+  // flip back to unread when a later batch of classes gets merged in —
+  // indistinguishable from "not notified at all". GET /user sorts by
+  // updatedAt (Mongoose bumps that automatically on every update), so it
+  // also re-surfaces at the top without needing to touch createdAt.
+  const updateOps = {
+    $set: { readBy: [] },
+    $setOnInsert: setOnInsert,
+    ...(classLabel ? { $addToSet: { classesCovered: classLabel } } : {}),
+  };
+
+  let updated;
+  try {
+    updated = await Notification.findOneAndUpdate({ dedupeKey }, updateOps, { upsert: true, new: true, setDefaultsOnInsert: true });
+  } catch (err) {
+    if (err?.code !== 11000) throw err;
+    updated = await Notification.findOneAndUpdate({ dedupeKey }, updateOps, { new: true });
+  }
+
+  const classes = updated.classesCovered || [];
+  const message = messageFor(classes);
+  if (updated.message !== message) {
+    updated = await Notification.findOneAndUpdate({ dedupeKey }, { $set: { message } }, { new: true }) || updated;
+  }
+  sendPushForNotification(updated).catch(() => {});
+  return updated;
 };
 
 const isTeacherAssignedInvigilator = (examDoc = {}, teacherIdentitySet = new Set()) => {
@@ -631,10 +786,6 @@ const resolveResultScore = ({ marks, status, examMaxMarks, requireMarks = true }
 
 
 const router = express.Router();
-const { createResponseCache } = require('../utils/responseCache');
-// Parent exam schedule: 60s per-parent cache; any exam write here clears it.
-const parentScheduleCache = createResponseCache({ ttlMs: 60 * 1000 });
-router.use(parentScheduleCache.invalidateOnWrite);
 
 /* ══════════════════════════════════════════════════════════
    EXAM GROUPS  (parent level)
@@ -763,81 +914,8 @@ router.get('/groups/student-schedule', authStudent, async (req, res) => {
   }
 });
 
-// GET /groups/student-admit-cards - published exam routines for the logged-in student's admit cards
-router.get('/groups/student-admit-cards', authStudent, parentScheduleCache.cache, async (req, res) => {
-  try {
-    const schoolId = req.schoolId || req.user?.schoolId || null;
-    if (!schoolId) return res.status(400).json({ error: 'schoolId is required' });
-    const campusId = req.campusId || null;
-    const studentId = req.user?.id || null;
-    if (!studentId || !mongoose.isValidObjectId(studentId)) {
-      return res.status(400).json({ error: 'Valid studentId is required' });
-    }
-
-    const student = await StudentUser.findOne({ _id: studentId, schoolId, ...(campusId ? { campusId } : {}) })
-      .select('name grade section roll admissionNumber enrollmentNo studentCode profilePic dob fatherName motherName academicYear')
-      .lean();
-    if (!student) return res.status(404).json({ error: 'Student not found' });
-
-    const filter = { schoolId, ...(campusId ? { campusId } : {}) };
-    const [groups, exams, school, principal] = await Promise.all([
-      ExamGroup.find(filter)
-        .populate({ path: 'classId', select: 'name academicYearId', populate: { path: 'academicYearId', select: 'name isActive' } })
-        .populate('sectionId', 'name classId')
-        .sort({ startDate: 1, createdAt: -1 })
-        .lean(),
-      Exam.find({ ...filter, groupId: { $exists: true, $ne: null } })
-        .populate('subjectId', 'name code')
-        .populate('classId', 'name')
-        .populate('sectionId', 'name classId')
-        .populate({ path: 'roomId', select: 'roomNumber floorId', populate: { path: 'floorId', select: 'name floorCode buildingId', populate: { path: 'buildingId', select: 'name code' } } })
-        .sort({ date: 1, createdAt: 1 })
-        .lean(),
-      School.findById(schoolId).select('name code address logo board boardOther contactPhone contactEmail').lean(),
-      Principal.findOne(campusId ? { schoolId, $or: [{ campusId }, { campusId: null }, { campusId: { $exists: false } }] } : { schoolId })
-        .sort({ updatedAt: -1, createdAt: -1 })
-        .select('name')
-        .lean(),
-    ]);
-
-    const studentGroups = groups.filter((group) => studentMatchesExamScope(student, group) && isGroupRoutinePublished(group));
-    const allowedGroupIds = new Set(studentGroups.map((group) => String(group._id)));
-    const examsByGroup = new Map();
-    exams.forEach((exam) => {
-      const gid = String(exam.groupId || '');
-      if (!gid || !allowedGroupIds.has(gid)) return;
-      if (!examsByGroup.has(gid)) examsByGroup.set(gid, []);
-      examsByGroup.get(gid).push(exam);
-    });
-
-    const groupsPayload = studentGroups
-      .map((group) => buildAdmitCardGroupPayload(group, examsByGroup.get(String(group._id)) || []))
-      .filter((group) => group.admitCardGenerated);
-
-    return res.status(200).json({
-      student: {
-        studentId: student._id,
-        studentName: student.name || 'Student',
-        grade: student.grade || '',
-        section: student.section || '',
-        roll: student.roll || '',
-        admissionNumber: student.admissionNumber || student.enrollmentNo || student.studentCode || '',
-        profilePic: resolveStudentPhoto(student.profilePic),
-        dob: student.dob || null,
-        fatherName: student.fatherName || '',
-        motherName: student.motherName || '',
-        academicYear: student.academicYear || '',
-      },
-      groups: groupsPayload,
-      school: { name: school?.name || '', address: school?.address || '', logo: school?.logo?.secure_url || school?.logo?.url || null, board: school?.board === 'Other' ? (school?.boardOther || '') : (school?.board || ''), phone: school?.contactPhone || '', email: school?.contactEmail || '' },
-      principalName: String(principal?.name || '').trim(),
-    });
-  } catch (err) {
-    return res.status(500).json({ error: err.message || 'Failed to fetch admit cards' });
-  }
-});
 // GET /groups/parent-schedule — exam schedule for every child linked to the logged-in parent
-router.get('/groups/parent-schedule', authParent, parentScheduleCache.cache, async (req, res) => {
+router.get('/groups/parent-schedule', authParent, async (req, res) => {
   try {
     const parent = await ParentUser.findById(req.user.id)
       .select('schoolId campusId childrenIds children')
@@ -899,7 +977,7 @@ router.get('/groups/parent-schedule', authParent, parentScheduleCache.cache, asy
         })
         .sort({ date: 1, createdAt: 1 })
         .lean(),
-      School.findById(schoolId).select('name code address logo board boardOther contactPhone contactEmail').lean(),
+      School.findById(schoolId).select('name code address logo').lean(),
       Principal.findOne(principalFilter).sort({ updatedAt: -1, createdAt: -1 }).select('name').lean(),
     ]);
 
@@ -911,53 +989,21 @@ router.get('/groups/parent-schedule', authParent, parentScheduleCache.cache, asy
       examsByGroup.get(gid).push(exam);
     });
 
-    // Official class routine PDFs (the same system-generated document the
-    // student downloads from the Notice Board) — one per published group.
-    const routineNotices = await Notification.find({
-      schoolId,
-      typeLabel: 'exam_notice_routine_class',
-      'relatedEntity.entityId': { $in: groups.map((g) => g._id) },
-    }).select('relatedEntity attachments document.noticeNo').lean();
-    const routinePdfByGroup = new Map();
-    routineNotices.forEach((n) => {
-      const atts = (n.attachments || []).filter((a) => a?.url);
-      // Parent copy ("Dear Parent/Guardian") first, else the shared/student one.
-      const pick = atts.find((a) => a.role === 'parent') || atts.find((a) => !a.role) || atts[0];
-      if (pick) routinePdfByGroup.set(String(n.relatedEntity.entityId), { ...pick, noticeNo: n.document?.noticeNo || '' });
-    });
-
-    const todayIso = new Date().toISOString().slice(0, 10);
     const childrenSchedules = students.map((student) => {
       const studentGroups = groups.filter((group) => studentMatchesExamScope(student, group));
-      const payload = studentGroups.map((group) => {
-        const subjects = examsByGroup.get(String(group._id)) || [];
-        const lastDate = subjects.map((e) => String(e.date || '').slice(0, 10)).filter(Boolean).sort().pop()
-          || String(group.endDate || '').slice(0, 10);
-        const routinePublished = group.status === 'Published' || Boolean(group.publishedAt);
-        // Completed = admin marked it, or the last paper's date has passed.
-        const completed = group.status === 'Completed' || Boolean(lastDate && lastDate < todayIso);
-        return {
+      const payload = studentGroups.map((group) => ({
         ...group,
-        routinePublished,
-        completed,
-        examState: completed ? 'completed' : (routinePublished ? 'published' : 'scheduled'),
-        routinePdf: routinePdfByGroup.get(String(group._id)) || null,
-        subjects,
+        subjects: examsByGroup.get(String(group._id)) || [],
         academicYearId: group.classId?.academicYearId?._id || null,
         academicYearName: group.classId?.academicYearId?.name || '',
         academicYearIsActive: Boolean(group.classId?.academicYearId?.isActive),
-        };
-      });
+      }));
       return {
         studentId: student._id,
         studentName: student.name || 'Student',
         grade: student.grade || '',
         section: student.section || '',
         profilePic: resolveStudentPhoto(student.profilePic),
-        dob: student.dob || null,
-        fatherName: student.fatherName || '',
-        motherName: student.motherName || '',
-        academicYear: student.academicYear || '',
         groups: payload,
       };
     });
@@ -976,90 +1022,6 @@ router.get('/groups/parent-schedule', authParent, parentScheduleCache.cache, asy
   }
 });
 
-// GET /groups/parent-admit-cards - published admit cards for every linked child
-router.get('/groups/parent-admit-cards', authParent, parentScheduleCache.cache, async (req, res) => {
-  try {
-    const parent = await ParentUser.findById(req.user.id).select('schoolId campusId childrenIds children').lean();
-    if (!parent) return res.status(404).json({ error: 'Parent not found' });
-
-    const schoolId = parent.schoolId || req.schoolId || null;
-    if (!schoolId) return res.status(400).json({ error: 'schoolId is required' });
-    const campusId = parent.campusId || req.campusId || null;
-    const studentFilter = { schoolId, ...(campusId ? { campusId } : {}) };
-    let students = [];
-
-    if (Array.isArray(parent.childrenIds) && parent.childrenIds.length > 0) {
-      students = await StudentUser.find({ ...studentFilter, _id: { $in: parent.childrenIds } })
-        .select('name grade section roll admissionNumber enrollmentNo studentCode profilePic dob fatherName motherName academicYear')
-        .lean();
-    }
-    if (students.length === 0 && Array.isArray(parent.children) && parent.children.length > 0) {
-      const validNames = parent.children.map((name) => String(name || '').trim()).filter(Boolean);
-      if (validNames.length > 0) {
-        students = await StudentUser.find({ ...studentFilter, name: { $in: validNames } })
-          .select('name grade section roll admissionNumber enrollmentNo studentCode profilePic dob fatherName motherName academicYear')
-          .lean();
-      }
-    }
-    if (students.length === 0) return res.status(200).json({ children: [] });
-
-    const filter = { schoolId, ...(campusId ? { campusId } : {}) };
-    const [groups, exams, school, principal] = await Promise.all([
-      ExamGroup.find(filter)
-        .populate({ path: 'classId', select: 'name academicYearId', populate: { path: 'academicYearId', select: 'name isActive' } })
-        .populate('sectionId', 'name classId')
-        .sort({ startDate: 1, createdAt: -1 })
-        .lean(),
-      Exam.find({ ...filter, groupId: { $exists: true, $ne: null } })
-        .populate('subjectId', 'name code')
-        .populate('classId', 'name')
-        .populate('sectionId', 'name classId')
-        .populate({ path: 'roomId', select: 'roomNumber floorId', populate: { path: 'floorId', select: 'name floorCode buildingId', populate: { path: 'buildingId', select: 'name code' } } })
-        .sort({ date: 1, createdAt: 1 })
-        .lean(),
-      School.findById(schoolId).select('name code address logo board boardOther contactPhone contactEmail').lean(),
-      Principal.findOne(campusId ? { schoolId, $or: [{ campusId }, { campusId: null }, { campusId: { $exists: false } }] } : { schoolId })
-        .sort({ updatedAt: -1, createdAt: -1 })
-        .select('name')
-        .lean(),
-    ]);
-
-    const publishedGroups = groups.filter(isGroupRoutinePublished);
-    const examsByGroup = new Map();
-    exams.forEach((exam) => {
-      const gid = String(exam.groupId || '');
-      if (!gid) return;
-      if (!examsByGroup.has(gid)) examsByGroup.set(gid, []);
-      examsByGroup.get(gid).push(exam);
-    });
-
-    const children = students.map((student) => ({
-      studentId: student._id,
-      studentName: student.name || 'Student',
-      grade: student.grade || '',
-      section: student.section || '',
-      roll: student.roll || '',
-      admissionNumber: student.admissionNumber || student.enrollmentNo || student.studentCode || '',
-      profilePic: resolveStudentPhoto(student.profilePic),
-        dob: student.dob || null,
-        fatherName: student.fatherName || '',
-        motherName: student.motherName || '',
-        academicYear: student.academicYear || '',
-      groups: publishedGroups
-        .filter((group) => studentMatchesExamScope(student, group))
-        .map((group) => buildAdmitCardGroupPayload(group, examsByGroup.get(String(group._id)) || []))
-        .filter((group) => group.admitCardGenerated),
-    }));
-
-    return res.status(200).json({
-      children,
-      school: { name: school?.name || '', address: school?.address || '', logo: school?.logo?.secure_url || school?.logo?.url || null, board: school?.board === 'Other' ? (school?.boardOther || '') : (school?.board || ''), phone: school?.contactPhone || '', email: school?.contactEmail || '' },
-      principalName: String(principal?.name || '').trim(),
-    });
-  } catch (err) {
-    return res.status(500).json({ error: err.message || 'Failed to fetch admit cards' });
-  }
-});
 // POST /groups — create group
 router.post('/groups', adminAuth, async (req, res) => {
   try {
@@ -1109,17 +1071,20 @@ router.post('/groups', adminAuth, async (req, res) => {
 
     clearExamGroupsCache();
 
-    // ONE "Exam Scheduled" notice for the whole exam (all classes/sections
-    // created under this title), rebuilt after "Create All" settles.
-    refreshExamNotices({
-      schoolId, campusId: campusId || null, title: populated.title, sampleDate: populated.startDate, createdBy: req.admin?.id || null,
-    });
+    // Heads-up notice the moment the exam is scheduled for this class — fire
+    // and forget, a failed notice must never fail exam creation itself. Its
+    // id is saved onto routineNoticeId so that publishing the routine later
+    // UPGRADES this same notice in place (title/message/table/attachment)
+    // instead of leaving it stranded and creating a second, separate notice.
+    NotificationService.notifyExamGroupCreated({
+      schoolId, campusId: campusId || null, group: populated, createdBy: req.admin?.id || null,
+    })
+      .then((notice) => notice?._id && ExamGroup.findByIdAndUpdate(group._id, { routineNoticeId: notice._id }))
+      .catch((err) => console.error('Failed to send exam-created notice:', err.message));
 
-    // Targeted, role-worded alerts: class students + their linked parents.
-    // Teachers are told only about their own duty, when the routine publishes.
-    examCommunication.notifyExamCreated({
-      schoolId, campusId: campusId || null, entity: populated, createdBy: req.admin?.id || null,
-    }).catch((err) => console.error('Failed to send exam-created notifications:', err.message));
+    upsertTeacherExamScheduledNotice({
+      schoolId, campusId: campusId || null, group: populated, createdBy: req.admin?.id || null,
+    }).catch((err) => console.error('Failed to send teacher exam-scheduled notice:', err.message));
 
     res.status(201).json({ message: 'Exam group created', group: { ...populated, subjects: [] } });
   } catch (err) {
@@ -1197,9 +1162,6 @@ router.put('/groups/:groupId', adminAuth, async (req, res) => {
       updates.section   = sectionDoc?.name || '';
     }
 
-    const beforeUpdate = await ExamGroup.findOne({ _id: groupId, schoolId, ...(campusId ? { campusId } : {}) })
-      .select('title startDate').lean();
-
     // Publishing requires at least one subject exam — validate before mutating
     // anything so a failed publish never leaves the group half-updated.
     let examsForRoutine = [];
@@ -1246,7 +1208,7 @@ router.put('/groups/:groupId', adminAuth, async (req, res) => {
       // (Promise.all would reject the request even after the group's own
       // status update had already been committed above). Promise.allSettled
       // + per-job try/catch means each stands or falls on its own.
-      const [teacherResult, studentResult] = await Promise.allSettled([
+      const [teacherResult, studentResult, teacherRoutineResult] = await Promise.allSettled([
         createConsolidatedTeacherExamNotifications({
           schoolId,
           campusId: campusId || null,
@@ -1257,13 +1219,20 @@ router.put('/groups/:groupId', adminAuth, async (req, res) => {
           createdByName: adminName,
           createdByType: 'admin',
         }),
-        // Student/parent alerts: PUBLISHED first time, UPDATED only when the
-        // routine data actually changed, nothing on an identical republish.
-        examCommunication.notifyRoutinePublished({
+        NotificationService.notifyExamRoutinePublished({
           schoolId,
           campusId: campusId || null,
           group,
-          routineRows,
+          examRoutine: routineRows,
+          attachment: attachment || null,
+          createdBy: req.admin?.id || null,
+          existingNoticeId: group.routineNoticeId || null,
+        }),
+        upsertTeacherRoutinePublishedNotice({
+          schoolId,
+          campusId: campusId || null,
+          group,
+          examRoutine: routineRows,
           createdBy: req.admin?.id || null,
         }),
       ]);
@@ -1272,25 +1241,16 @@ router.put('/groups/:groupId', adminAuth, async (req, res) => {
         console.error('Failed to send teacher exam-duty notices:', teacherResult.reason?.message);
       }
       if (studentResult.status === 'rejected') {
-        console.error('Failed to send student/parent routine notifications:', studentResult.reason?.message);
+        console.error('Failed to publish student/parent exam-routine notice:', studentResult.reason?.message);
+      }
+      if (teacherRoutineResult.status === 'rejected') {
+        console.error('Failed to publish teacher exam-routine notice:', teacherRoutineResult.reason?.message);
       }
 
-      await ExamGroup.findByIdAndUpdate(groupId, { publishedAt });
+      const studentNotice = studentResult.status === 'fulfilled' ? studentResult.value : null;
+      await ExamGroup.findByIdAndUpdate(groupId, { publishedAt, routineNoticeId: studentNotice?._id || group.routineNoticeId || null });
       group.publishedAt = publishedAt;
-    }
-
-    // Keep the single exam notice(s) in sync: dates/title/classes changed, or
-    // the routine was (re)published → rebuild; a renamed exam also rebuilds
-    // the notice of its old title (which may now be empty and get removed).
-    const isPublished = group.status === 'Published' || Boolean(group.publishedAt);
-    refreshExamNotices({
-      schoolId, campusId: campusId || null, title: group.title, sampleDate: group.startDate,
-      createdBy: req.admin?.id || null, routine: isPublished,
-    });
-    if (beforeUpdate?.title && beforeUpdate.title.trim().toLowerCase() !== String(group.title).trim().toLowerCase()) {
-      refreshExamNotices({
-        schoolId, campusId: campusId || null, title: beforeUpdate.title, sampleDate: beforeUpdate.startDate, routine: true,
-      });
+      group.routineNoticeId = studentNotice?._id || group.routineNoticeId || null;
     }
 
     clearExamGroupsCache();
@@ -1314,8 +1274,6 @@ router.delete('/groups/:groupId', adminAuth, async (req, res) => {
 
     await Exam.deleteMany({ groupId, schoolId });
     clearExamGroupsCache();
-    // Rebuild (or remove, if this was the last class) the exam's notices.
-    refreshExamNotices({ schoolId, campusId: campusId || null, title: group.title, sampleDate: group.startDate, routine: true });
     res.json({ message: 'Exam group and all its subject exams deleted' });
   } catch (err) {
     res.status(500).json({ error: err.message });
@@ -1619,9 +1577,6 @@ router.post("/add", adminAuth, async (req, res) => {
         }
 
         clearExamGroupsCache();
-        if (exam.groupId) {
-          refreshNoticesForGroupId({ schoolId, campusId: campusId || null, groupId: exam.groupId }).catch(() => {});
-        }
         res.status(201).json({message: "Exam added successfully", exam});
     } catch(err) {
         res.status(400).json({error: err.message});
@@ -1741,9 +1696,6 @@ router.put("/:id", adminAuth, async (req, res) => {
     }
 
     clearExamGroupsCache();
-    if (exam.groupId) {
-      refreshNoticesForGroupId({ schoolId: exam.schoolId, campusId: exam.campusId || null, groupId: exam.groupId }).catch(() => {});
-    }
     res.status(200).json({ message: 'Exam updated successfully', exam });
   } catch (err) {
     res.status(400).json({ error: err.message });
@@ -1775,9 +1727,6 @@ router.delete("/:id", adminAuth, async (req, res) => {
     ]);
 
     clearExamGroupsCache();
-    if (exam.groupId) {
-      refreshNoticesForGroupId({ schoolId, campusId: campusId || null, groupId: exam.groupId }).catch(() => {});
-    }
     res.status(200).json({ message: 'Exam and linked results deleted successfully' });
   } catch (err) {
     res.status(500).json({ error: err.message });
@@ -1830,7 +1779,7 @@ router.post("/results", adminOrTeacherAuth, async (req, res) => {
                 campusId,
                 teacherId: req.user?.id || null,
             });
-            if (!canTeacherEnterMarks(scopeKeys, exam)) {
+            if (!canTeacherManageExam(scopeKeys, exam)) {
                 return res.status(403).json({ error: 'You are not allocated for this exam' });
             }
             if (!isExamCompleted(exam)) {
@@ -1895,12 +1844,7 @@ router.post("/results", adminOrTeacherAuth, async (req, res) => {
             const context = `Student: ${student.name} | Subject: ${exam.subject || 'General'} | Score: ${pct}% (${scoreResult.score}/${exam?.marks || 100}) | Exam: ${exam.title || exam.subject || 'Exam'}`;
             const aiRes = await fetch(`${AI_URL}/generate/teacher`, {
               method: 'POST',
-              headers: {
-                'Content-Type': 'application/json',
-                ...(process.env.AI_SERVICE_INTERNAL_KEY
-                  ? { 'X-Internal-Key': process.env.AI_SERVICE_INTERNAL_KEY }
-                  : {}),
-              },
+              headers: { 'Content-Type': 'application/json' },
               body: JSON.stringify({ mode: 'exam_feedback', subject: exam.subject || 'General', topic: exam.title || 'Exam', context }),
             });
             if (aiRes.ok) {
@@ -2132,7 +2076,7 @@ router.get("/results/exam-options", adminOrTeacherAuth, async (req, res) => {
         campusId,
         teacherId: req.user?.id || null,
       });
-      exams = exams.filter((exam) => canTeacherEnterMarks(scopeKeys, exam) && isExamCompleted(exam));
+      exams = exams.filter((exam) => canTeacherManageExam(scopeKeys, exam) && isExamCompleted(exam));
     }
 
     res.status(200).json(exams);
@@ -2167,7 +2111,7 @@ router.get("/results/exam-students", adminOrTeacherAuth, async (req, res) => {
         campusId,
         teacherId: req.user?.id || null,
       });
-      if (!canTeacherEnterMarks(scopeKeys, exam)) {
+      if (!canTeacherManageExam(scopeKeys, exam)) {
         return res.status(403).json({ error: 'You are not allocated for this exam' });
       }
       if (!isExamCompleted(exam)) {
@@ -2402,7 +2346,7 @@ router.post("/results/bulk-upload", adminOrTeacherAuth, upload.single('file'), a
                         errorCount++;
                         continue;
                     }
-                    if (isTeacherUser && !canTeacherEnterMarks(teacherScopeKeys, exam)) {
+                    if (isTeacherUser && !canTeacherManageExam(teacherScopeKeys, exam)) {
                         errors.push(`Sheet "${sheetName}", Row ${i + 2}: You are not allocated for this exam`);
                         errorCount++;
                         continue;
@@ -2653,7 +2597,7 @@ router.put("/results/:id", adminOrTeacherAuth, async (req, res) => {
         campusId,
         teacherId: req.user?.id || null,
       });
-      if (!canTeacherEnterMarks(scopeKeys, exam)) {
+      if (!canTeacherManageExam(scopeKeys, exam)) {
         return res.status(403).json({ error: 'You are not allocated for this exam' });
       }
       if (!isExamCompleted(exam)) {
@@ -2780,7 +2724,7 @@ router.delete("/results/:id", adminOrTeacherAuth, async (req, res) => {
         campusId,
         teacherId: req.user?.id || null,
       });
-      if (!canTeacherEnterMarks(scopeKeys, existing.examId)) {
+      if (!canTeacherManageExam(scopeKeys, existing.examId)) {
         return res.status(403).json({ error: 'You are not allocated for this exam' });
       }
     }
@@ -2970,8 +2914,6 @@ router.get('/teacher/routine', teacherAuth, async (req, res) => {
 
     const teacherIdentitySet = buildTeacherIdentitySet(teacher);
     let exams = await Exam.find({ schoolId, ...(campusId ? { campusId } : {}) })
-      // Group title + publish state for the teacher's 'My Exam Duty' page.
-      .populate('groupId', 'title status publishedAt')
       .populate('classId', 'name')
       .populate('sectionId', 'name classId')
       .populate('subjectId', 'name code classId')
@@ -3356,7 +3298,6 @@ Format your response strictly as JSON:
   }
 });
 
-
 // POST /groups/generate-routine — constraint-based room + invigilator
 // auto-scheduler (services/examSchedulingEngine.js). Distinct from the
 // legacy frontend "Auto Schedule" wizard step: this runs server-side against
@@ -3389,5 +3330,3 @@ router.post('/groups/generate-routine', adminAuth, async (req, res) => {
 });
 
 module.exports = router;
-
-

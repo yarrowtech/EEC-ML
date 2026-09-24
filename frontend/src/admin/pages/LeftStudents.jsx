@@ -463,7 +463,7 @@ const LeftStudents = ({ setShowAdminHeader }) => {
                 <th className="px-4 py-3">Student</th>
                 <th className="px-4 py-3">Class</th>
                 <th className="px-4 py-3">Session</th>
-                <th className="px-4 py-3">Reason</th>
+                {/* <th className="px-4 py-3">Reason</th> */}
                 <th className="px-4 py-3">TC No.</th>
                 <th className="px-4 py-3">TC Date</th>
                 <th className="px-4 py-3 text-right">Actions</th>
@@ -507,7 +507,7 @@ const LeftStudents = ({ setShowAdminHeader }) => {
                     </td>
                     <td className="whitespace-nowrap px-4 py-3 text-gray-600">{[s.grade, s.section].filter(Boolean).join('-') || '—'}</td>
                     <td className="whitespace-nowrap px-4 py-3 text-gray-600">{s.academicYear || '—'}</td>
-                    <td className="max-w-[180px] truncate px-4 py-3 text-gray-600" title={s.reasonForLeaving}>{s.reasonForLeaving || '—'}</td>
+                    {/* <td className="max-w-[180px] truncate px-4 py-3 text-gray-600" title={s.reasonForLeaving}>{s.reasonForLeaving || '—'}</td> */}
                     <td className="px-4 py-3 text-gray-600">{s.transferCertificateNo || '—'}</td>
                     <td className="whitespace-nowrap px-4 py-3 text-gray-600">{formatDMY(s.transferCertificateDate)}</td>
                     <td className="px-4 py-3 text-right">

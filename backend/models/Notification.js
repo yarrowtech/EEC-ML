@@ -1,5 +1,6 @@
 const mongoose = require('mongoose');
 const { sendPushForNotification } = require('../utils/webPushService');
+const socketRegistry = require('../utils/socketRegistry');
 
 const notificationSchema = new mongoose.Schema(
   {
@@ -114,6 +115,25 @@ const notificationSchema = new mongoose.Schema(
   { timestamps: true }
 );
 
+
+const emitNotificationCreated = (doc) => {
+  try {
+    const notification = doc?.toObject ? doc.toObject() : doc;
+    const schoolId = notification?.schoolId ? String(notification.schoolId) : '';
+    if (!schoolId) return;
+    const io = socketRegistry.get();
+    if (!io) return;
+    io.to(`school:${schoolId}`).emit('new_notification', {
+      notificationId: String(notification._id || ''),
+      schoolId,
+      audience: notification.audience || 'All',
+      type: notification.type || 'general',
+      typeLabel: notification.typeLabel || '',
+    });
+  } catch (_err) {
+    // Notification persistence must not fail because a realtime hint could not be sent.
+  }
+};
 // Add compound indexes for efficient queries
 notificationSchema.index({ schoolId: 1, audience: 1, createdAt: -1 });
 notificationSchema.index({ schoolId: 1, campusId: 1, audience: 1 });
@@ -127,6 +147,7 @@ notificationSchema.pre('save', function (next) {
 notificationSchema.post('save', function (doc) {
   if (!this?.$locals?.wasNew) return;
   setImmediate(() => {
+    emitNotificationCreated(doc);
     sendPushForNotification(doc).catch(() => {});
   });
 });
@@ -135,6 +156,7 @@ notificationSchema.post('insertMany', function (docs = []) {
   if (!Array.isArray(docs) || docs.length === 0) return;
   docs.forEach((doc) => {
     setImmediate(() => {
+      emitNotificationCreated(doc);
       sendPushForNotification(doc).catch(() => {});
     });
   });

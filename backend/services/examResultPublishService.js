@@ -17,10 +17,17 @@ const publishGroupResults = async (group) => {
   if (!completedIds.length) return { published: 0, ready: false };
 
   const now = new Date();
-  const result = await ExamResult.updateMany(
-    { examId: { $in: completedIds }, schoolId: group.schoolId, published: { $ne: true } },
-    { published: true, publishedAt: now }
-  );
+  const toPublish = { examId: { $in: completedIds }, schoolId: group.schoolId, published: { $ne: true } };
+  const resultIds = await ExamResult.distinct('_id', toPublish);
+  const result = await ExamResult.updateMany(toPublish, { published: true, publishedAt: now });
+
+  // Scheduled publish used to be silent — send the class/section "Results
+  // Published" notice (students, parents, teachers) like a manual publish.
+  if (resultIds.length) {
+    require('../utils/notificationService')
+      .notifyResultsPublishedForResults({ schoolId: group.schoolId, resultIds })
+      .catch((err) => console.error('[result-publish cron] notice failed:', err.message));
+  }
 
   await ExamGroup.updateOne(
     { _id: group._id, resultPublishAt: group.resultPublishAt },
