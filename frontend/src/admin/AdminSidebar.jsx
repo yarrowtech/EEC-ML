@@ -216,6 +216,7 @@ const AdminSidebar = ({
                           </span>
                         )}
                       </span>
+                      
                       {!collapsed && (
                         <>
                           <span className="flex-1 text-left text-sm font-semibold">{item.label}</span>

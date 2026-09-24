@@ -4,6 +4,8 @@ const jwt = require('jsonwebtoken');
 const Admin = require('../models/Admin');
 const TeacherUser = require('../models/TeacherUser');
 const StudentUser = require('../models/StudentUser');
+const { isLoginBlockedStudentStatus, STUDENT_BLOCKED_MESSAGE } = require('../utils/studentStatus');
+const { isParentLoginBlocked, PARENT_BLOCKED_MESSAGE } = require('../utils/parentArchiveSync');
 const ParentUser = require('../models/ParentUser');
 const Principal = require('../models/Principal');
 const StaffUser = require('../models/StaffUser');
@@ -132,8 +134,8 @@ const tryTeacher = async ({ user, password, rememberMe }) => {
 const tryStudent = async ({ user, password, rememberMe }) => {
   if (!user) return null;
   if (!(await bcrypt.compare(password, user.password))) return null;
-  if (user.isArchived) {
-    return { errorStatus: 403, error: 'You have been blocked by your organization.', userType: 'Student' };
+  if (user.isArchived || isLoginBlockedStudentStatus(user.status)) {
+    return { errorStatus: 403, error: STUDENT_BLOCKED_MESSAGE, code: 'ACCOUNT_BLOCKED', userType: 'Student' };
   }
   if (!user.campusId) return { errorStatus: 400, error: 'campusId is required for this account', userType: 'Student' };
   if (!user.lastLoginAt) {
@@ -170,6 +172,9 @@ const tryStudent = async ({ user, password, rememberMe }) => {
 const tryParent = async ({ user, password, rememberMe }) => {
   if (!user) return null;
   if (!(await bcrypt.compare(password, user.password))) return null;
+  if (await isParentLoginBlocked(user.childrenIds)) {
+    return { errorStatus: 403, error: PARENT_BLOCKED_MESSAGE, code: 'ACCOUNT_BLOCKED', userType: 'Parent' };
+  }
   if (!user.campusId) return { errorStatus: 400, error: 'campusId is required for this account', userType: 'Parent' };
   if (!user.lastLoginAt) {
     return {
@@ -268,10 +273,10 @@ router.post('/login', rateLimit({
         .select('_id username email password organizationId schoolId campusId campusName campusType lastLoginAt')
         .lean(),
       StudentUser.findOne({ $or: [{ username }, { studentCode: username }], ...platformScope })
-        .select('_id username studentCode password organizationId schoolId campusId lastLoginAt isArchived')
+        .select('_id username studentCode password organizationId schoolId campusId lastLoginAt isArchived status')
         .lean(),
       ParentUser.findOne({ username, ...platformScope })
-        .select('_id username password organizationId schoolId campusId lastLoginAt')
+        .select('_id username password organizationId schoolId campusId lastLoginAt childrenIds')
         .lean(),
       StaffUser.findOne({ username, ...platformScope })
         .select('_id username password organizationId schoolId campusId')
@@ -300,7 +305,7 @@ router.post('/login', rateLimit({
           statusCode: result.errorStatus,
           source: 'unified_auth',
         });
-        return res.status(result.errorStatus).json({ error: result.error });
+        return res.status(result.errorStatus).json({ error: result.error, ...(result.code ? { code: result.code } : {}) });
       }
       logAuthEvent(req, {
         action: result.requiresPasswordReset ? 'login.first_login_required' : 'login',

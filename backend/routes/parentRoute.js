@@ -1,6 +1,7 @@
 const express = require('express');
 const router = express.Router();
 const ParentUser = require('../models/ParentUser');
+const { isParentLoginBlocked, PARENT_BLOCKED_MESSAGE } = require('../utils/parentArchiveSync');
 const StudentUser = require('../models/StudentUser');
 const ClassModel = require('../models/Class');
 const AcademicYear = require('../models/AcademicYear');
@@ -419,6 +420,20 @@ router.post('/login', rateLimit({ windowMs: 60 * 1000, max: 20, keyGenerator: ra
         statusCode: 401,
       });
       return res.status(401).json({ error: 'Invalid credentials' });
+    }
+    // Every linked child has left the school → the parent ID is blocked.
+    if (await isParentLoginBlocked(user.childrenIds)) {
+      logAuthEvent(req, {
+        action: 'login',
+        outcome: 'failure',
+        userType: 'parent',
+        identifier: username,
+        userId: user._id,
+        schoolId: user.schoolId,
+        reason: 'All linked students have left',
+        statusCode: 403,
+      });
+      return res.status(403).json({ error: PARENT_BLOCKED_MESSAGE, code: 'ACCOUNT_BLOCKED' });
     }
     if (!user.campusId) {
       logAuthEvent(req, {

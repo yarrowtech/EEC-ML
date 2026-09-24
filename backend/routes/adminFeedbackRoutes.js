@@ -182,10 +182,27 @@ router.get('/teacher-feedback', adminAuth, async (req, res) => {
     if (normalizeText(className)) filter.className = normalizeText(className);
     if (normalizeText(sectionName)) filter.sectionName = normalizeText(sectionName);
     if (normalizeText(subjectName)) filter.subjectName = normalizeText(subjectName);
-    if (dateFrom || dateTo) {
+    // Session scope: feedback has no session field, so a session is its date
+    // window. ?sessionId=… picks one; otherwise the school's active session.
+    // The optional from/to range is intersected with that window.
+    let sessionDoc = null;
+    if (req.query.sessionId && mongoose.isValidObjectId(req.query.sessionId)) {
+      sessionDoc = await AcademicYear.findOne({ _id: req.query.sessionId, ...(schoolId ? { schoolId } : {}) })
+        .select('name startDate endDate isActive').lean();
+    } else if (schoolId) {
+      sessionDoc = await AcademicYear.findOne({ schoolId, isActive: true })
+        .select('name startDate endDate isActive').lean();
+    }
+    const validDate = (v) => (v && !Number.isNaN(new Date(v).getTime()) ? new Date(v) : null);
+    const sessionStart = validDate(sessionDoc?.startDate);
+    const sessionEnd = validDate(sessionDoc?.endDate);
+    if (sessionEnd) sessionEnd.setHours(23, 59, 59, 999);
+    const effectiveFrom = [dateFrom, sessionStart].filter(Boolean).sort((a, b) => b - a)[0] || null;
+    const effectiveTo = [dateTo, sessionEnd].filter(Boolean).sort((a, b) => a - b)[0] || null;
+    if (effectiveFrom || effectiveTo) {
       filter.createdAt = {};
-      if (dateFrom) filter.createdAt.$gte = dateFrom;
-      if (dateTo) filter.createdAt.$lte = dateTo;
+      if (effectiveFrom) filter.createdAt.$gte = effectiveFrom;
+      if (effectiveTo) filter.createdAt.$lte = effectiveTo;
     }
 
     const searchText = normalizeText(search);
@@ -273,6 +290,7 @@ router.get('/teacher-feedback', adminAuth, async (req, res) => {
     const teachers = Array.from(teacherMap.values()).sort((a, b) => a.teacherName.localeCompare(b.teacherName));
 
     return res.json({
+      session: sessionDoc ? { id: sessionDoc._id, name: sessionDoc.name, isActive: Boolean(sessionDoc.isActive) } : null,
       stats: {
         totalFeedback,
         averageRating: totalFeedback ? overallSum / totalFeedback : 0,

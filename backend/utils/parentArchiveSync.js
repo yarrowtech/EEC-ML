@@ -41,3 +41,23 @@ const syncParentArchiveStatusForStudents = async (studentIds = []) => {
 };
 
 module.exports = { syncParentArchiveStatusForStudents };
+
+// ── Parent sign-in block ─────────────────────────────────────────────────────
+// A parent can't sign in once every linked child has actually left the school
+// (Left / Expelled / archived). "Leaving" is still in progress, so it doesn't
+// block. A parent with no linked children is never blocked by this rule.
+const PARENT_BLOCKED_MESSAGE = 'Your ID is blocked by your organization.';
+
+const isParentLoginBlocked = async (childrenIds = []) => {
+  const ids = (Array.isArray(childrenIds) ? childrenIds : []).filter(Boolean);
+  if (!ids.length) return false;
+  const stillEnrolled = await StudentUser.countDocuments({
+    _id: { $in: ids },
+    isArchived: { $ne: true },
+    status: { $nin: ['Left', 'Expelled', 'left', 'expelled'] },
+  });
+  return stillEnrolled === 0;
+};
+
+module.exports.isParentLoginBlocked = isParentLoginBlocked;
+module.exports.PARENT_BLOCKED_MESSAGE = PARENT_BLOCKED_MESSAGE;

@@ -339,6 +339,7 @@ const TeacherFeedbackOverview = ({ setShowAdminHeader }) => {
 
   const [sessions, setSessions] = useState([]);
   const [selectedSessionId, setSelectedSessionId] = useState('');
+  const [sessionInfo, setSessionInfo] = useState(null); // session the list is scoped to
   const [windowSettings, setWindowSettings] = useState({ enabled: false, startDate: '', endDate: '' });
   const [settingsLoading, setSettingsLoading] = useState(false);
   const [savingSettings, setSavingSettings] = useState(false);
@@ -369,6 +370,7 @@ const TeacherFeedbackOverview = ({ setShowAdminHeader }) => {
       if (query.subjectName !== 'all') params.append('subjectName', query.subjectName);
       if (query.from) params.append('from', query.from);
       if (query.to) params.append('to', query.to);
+      if (selectedSessionId) params.append('sessionId', selectedSessionId);
 
       const res = await fetch(`${API_BASE}/api/admin/feedback/teacher-feedback?${params.toString()}`, {
         headers: { Authorization: `Bearer ${token}` },
@@ -376,6 +378,7 @@ const TeacherFeedbackOverview = ({ setShowAdminHeader }) => {
       const data = await res.json().catch(() => ({}));
       if (!res.ok) throw new Error(data.error || 'Failed to load teacher feedback');
 
+      setSessionInfo(data?.session || null);
       setStats(data?.stats || null);
       setFeedback(Array.isArray(data?.feedback) ? data.feedback : []);
       setFilterOptions({
@@ -390,7 +393,7 @@ const TeacherFeedbackOverview = ({ setShowAdminHeader }) => {
     } finally {
       setLoading(false);
     }
-  }, [query]);
+  }, [query, selectedSessionId]);
 
   useEffect(() => {
     fetchFeedback();
@@ -668,6 +671,9 @@ const TeacherFeedbackOverview = ({ setShowAdminHeader }) => {
           <h1 className="text-2xl sm:text-3xl font-extrabold text-slate-900">Teacher Feedback</h1>
           <p className="text-sm text-slate-500 mt-1">
             Collect and analyze feedback from students to improve teaching quality
+          </p>
+          <p className="mt-1.5 inline-flex items-center gap-1.5 rounded-full border border-blue-200 bg-blue-50 px-2.5 py-0.5 text-xs font-semibold text-blue-700">
+            Session: {sessionInfo?.name || "—"}{sessionInfo?.isActive ? " (active)" : ""}
           </p>
         </div>
         <div className="flex items-center justify-center gap-2.5 shrink-0 flex-wrap">

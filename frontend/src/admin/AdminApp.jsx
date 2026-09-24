@@ -34,6 +34,7 @@ const NoticeDetail = lazy(() => import('./pages/NoticeDetail'));
 const AdminSettings = lazy(() => import('./pages/AdminSettings'));
 const PaymentGatewaySettings = lazy(() => import('./pages/PaymentGatewaySettings'));
 const StudentPromotion = lazy(() => import('./pages/StudentPromotion'));
+const LeftStudents = lazy(() => import('./pages/LeftStudents'));
 const ReportCardManagement = lazy(() => import('./pages/ReportCardManagement'));
 const HolidayList = lazy(() => import('./pages/HolidayList'));
 const TeacherFeedbackOverview = lazy(() => import('./pages/TeacherFeedbackOverview'));
@@ -369,6 +370,7 @@ const AdminApp = () => {
           <Route path="settings" element={<AdminSettings setShowAdminHeader={setShowAdminHeader} onSettingsUpdated={handleSettingsUpdated} />} />
           <Route path="settings/payment-gateway" element={<PaymentGatewaySettings setShowAdminHeader={setShowAdminHeader} />} />
           <Route path="promotion" element={<StudentPromotion setShowAdminHeader={setShowAdminHeader} />} />
+          <Route path="left-students" element={<LeftStudents setShowAdminHeader={setShowAdminHeader} />} />
 
           {/* 404 catch-all — redirect unknown /admin/* paths to dashboard */}
           <Route path="*" element={<Navigate to="/admin/dashboard" replace />} />

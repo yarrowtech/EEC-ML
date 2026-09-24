@@ -46,13 +46,33 @@ const AuthSessionManager = () => {
 
     // A data-layer 401/403 (e.g. from fetchCachedJson) dispatches this event
     // after clearing the session — finish the job by redirecting to login.
-    const onForcedLogout = () => {
+    const onForcedLogout = (event) => {
       setShowWarning(false);
-      navigate('/', { replace: true, state: { authNotice: AUTH_NOTICE.EXPIRED } });
+      const notice = event?.detail?.notice || AUTH_NOTICE.EXPIRED;
+      navigate('/', { replace: true, state: { authNotice: notice } });
     };
     window.addEventListener(AUTH_LOGOUT_EVENT, onForcedLogout);
 
+    // A student marked Left/Expelled while signed in: any API call now returns
+    // 403 { code: 'ACCOUNT_BLOCKED' } — sign them out with the "blocked" notice.
+    const originalFetch = window.fetch;
+    let blockedHandled = false;
+    window.fetch = async (...args) => {
+      const res = await originalFetch(...args);
+      if (res.status === 403 && !blockedHandled && localStorage.getItem('token')) {
+        const body = await res.clone().json().catch(() => null);
+        if (body?.code === 'ACCOUNT_BLOCKED') {
+          blockedHandled = true;
+          try { sessionStorage.setItem('auth_blocked_message', body.error || ''); } catch { /* storage blocked */ }
+          setShowWarning(false);
+          logoutAndRedirect({ navigate, notice: AUTH_NOTICE.BLOCKED, clearAllLocalStorage: true });
+        }
+      }
+      return res;
+    };
+
     return () => {
+      window.fetch = originalFetch;
       window.clearInterval(intervalId);
       document.removeEventListener('visibilitychange', onVisibilityChange);
       window.removeEventListener(AUTH_LOGOUT_EVENT, onForcedLogout);

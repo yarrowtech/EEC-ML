@@ -629,31 +629,6 @@ router.get("/get-parents", adminAuth, async (req, res) => {
     }
 
     const filter = buildScopedFilter(req);
-    const schoolId = filter.schoolId || req.schoolId;
-    const activeYear = schoolId
-      ? await AcademicYear.findOne({ schoolId, isActive: true }).select('name').lean()
-      : null;
-    const activeYearName = String(activeYear?.name || '').trim().toLowerCase();
-    // Class 11/12 stream sections (and any class already tied to an academic
-    // year) are the authoritative signal for "is this student in the active
-    // year" — the student's own academicYear string field can go stale after
-    // a manual grade edit or a promotion that didn't touch it.
-    let activeYearClassNames = null;
-    let otherYearClassNames = null;
-    if (activeYear) {
-      const allClasses = await ClassModel.find({ schoolId }).select('name academicYearId').lean();
-      activeYearClassNames = new Set();
-      otherYearClassNames = new Set();
-      allClasses.forEach((c) => {
-        const name = String(c.name || '').trim().toLowerCase();
-        if (!name) return;
-        if (String(c.academicYearId || '') === String(activeYear._id)) {
-          activeYearClassNames.add(name);
-        } else {
-          otherYearClassNames.add(name);
-        }
-      });
-    }
     const parents = await ParentUser.find(filter)
       .select('-password')
       .populate({
@@ -670,19 +645,12 @@ router.get("/get-parents", adminAuth, async (req, res) => {
     const withResolvedAddress = parents
       .map((parent) => {
       const populatedChildren = Array.isArray(parent.childrenIds) ? parent.childrenIds : [];
-      const activeChildren = populatedChildren.filter((child) => {
-        if (!child || child.isArchived === true || isExitedStudentStatus(child.status)) return false;
-        if (!activeYearName) return true;
-        const childGrade = String(child.grade || '').trim().toLowerCase();
-        if (childGrade && activeYearClassNames.has(childGrade)) return true;
-        if (childGrade && otherYearClassNames.has(childGrade)) {
-          // Grade maps to a known class from a different year — genuinely stale.
-          return false;
-        }
-        // Grade doesn't match any known class (legacy/free-text value) —
-        // fall back to the student's own academicYear string.
-        return String(child.academicYear || '').trim().toLowerCase() === activeYearName;
-      });
+      // A parent stays visible as long as at least one linked child is still
+      // on the roll (not left/expelled/archived) — regardless of which session
+      // that child's record says, so a stale grade/session never hides them.
+      const activeChildren = populatedChildren.filter(
+        (child) => child && child.isArchived !== true && !isExitedStudentStatus(child.status)
+      );
       if (populatedChildren.length > 0 && activeChildren.length === 0) {
         return null;
       }
@@ -1986,12 +1954,19 @@ router.delete('/principals/:id', adminAuth, async (req, res) => {
 router.get("/dashboard-stats", adminAuth, async (req, res) => {
   // #swagger.tags = ['Admin Users']
   try {
-    const cacheKey = directoryCacheKey(req);
+    const filter = buildScopedFilter(req);
+    const statsSchoolId = filter.schoolId || req.schoolId;
+    // Counts follow the school's *active* session. Its id is part of the cache
+    // key, so switching the active session in Academic Setup shows the new
+    // session's numbers immediately instead of a cached old-session total.
+    const activeYear = statsSchoolId
+      ? await AcademicYear.findOne({ schoolId: statsSchoolId, isActive: true }).select('_id name').lean()
+      : null;
+    const cacheKey = `${directoryCacheKey(req)}:${activeYear?._id || 'noyear'}`;
     const cached = dashboardStatsCache.get(cacheKey);
     if (cached && cached.expires > Date.now()) {
       return res.status(200).json(cached.data);
     }
-    const filter = buildScopedFilter(req);
 
     // Get recent registrations (last 30 days)
     const thirtyDaysAgo = new Date();
@@ -1999,11 +1974,15 @@ router.get("/dashboard-stats", adminAuth, async (req, res) => {
 
     // Only count active students — same rule as /admin/users/get-students —
     // so a student who has left/been expelled/been archived doesn't inflate
-    // the dashboard total.
+    // the dashboard total — and only those in the active session.
+    const activeYearName = String(activeYear?.name || '').trim();
     const activeStudentFilter = {
       ...filter,
       isArchived: { $ne: true },
       status: { $nin: EXITED_STUDENT_STATUSES },
+      ...(activeYearName
+        ? { academicYear: new RegExp(`^\\s*${activeYearName.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}\\s*$`, 'i') }
+        : {}),
     };
 
     // Parents whose linked children have ALL exited/been archived are excluded
@@ -2011,7 +1990,7 @@ router.get("/dashboard-stats", adminAuth, async (req, res) => {
     // lists (a parent with zero children is still counted).
     const parentDocsPromise = ParentUser.find(filter)
       .select('childrenIds createdAt')
-      .populate({ path: 'childrenIds', select: 'status isArchived' })
+      .populate({ path: 'childrenIds', select: 'status isArchived academicYear' })
       .lean();
 
     // Fetch counts from all user types

@@ -2,6 +2,7 @@ const express = require('express');
 const router = express.Router();
 const mongoose = require('mongoose');
 const StudentUser = require('../models/StudentUser');
+const { isLoginBlockedStudentStatus, STUDENT_BLOCKED_MESSAGE } = require('../utils/studentStatus');
 const ParentUser = require('../models/ParentUser');
 const { autoAssignFeeStructure } = require('../services/feeService');
 const Class = require('../models/Class');
@@ -879,7 +880,9 @@ router.post('/login', rateLimit({ windowMs: 60 * 1000, max: 20, keyGenerator: ra
       });
       return res.status(401).json({ error: 'Invalid credentials' });
     }
-    if (user.isArchived) {
+    // Archived, Left and Expelled students are blocked from signing in.
+    const leftSchool = isLoginBlockedStudentStatus(user.status);
+    if (user.isArchived || leftSchool) {
       logAuthEvent(req, {
         action: 'login',
         outcome: 'failure',
@@ -888,10 +891,10 @@ router.post('/login', rateLimit({ windowMs: 60 * 1000, max: 20, keyGenerator: ra
         userId: user._id,
         schoolId: user.schoolId,
         campusId: user.campusId,
-        reason: 'Account archived',
+        reason: leftSchool ? `Student status ${user.status}` : 'Account archived',
         statusCode: 403,
       });
-      return res.status(403).json({ error: 'You have been blocked by your organization.' });
+      return res.status(403).json({ error: STUDENT_BLOCKED_MESSAGE, code: 'ACCOUNT_BLOCKED' });
     }
     if (!user.campusId) {
       logAuthEvent(req, {

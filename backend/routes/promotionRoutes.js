@@ -29,6 +29,30 @@ const resolveSchoolId = (req, res) => {
 
 const resolveCampusId = (req) => req.campusId || null;
 
+// ── Short-lived cache for the Leave & Left Students reads ───────────────────
+// (/leaving-students and /certificates). Any write on this router clears it
+// once the response is sent (see router.use below); ?fresh=1 skips it.
+const LEAVE_CACHE_TTL_MS = 30 * 1000;
+const leaveReadCache = new Map(); // key -> { data, expires }
+const leaveCacheKey = (req, scope) => {
+  const q = req.query || {};
+  const parts = Object.keys(q).filter((k) => k !== 'fresh').sort().map((k) => `${k}=${q[k]}`).join('&');
+  return `${scope}:${req.schoolId || req.admin?.schoolId || 'x'}:${req.campusId || 'x'}:${parts}`;
+};
+const readLeaveCache = (req, scope) => {
+  if (req.query?.fresh === '1') return null;
+  const hit = leaveReadCache.get(leaveCacheKey(req, scope));
+  return hit && hit.expires > Date.now() ? hit.data : null;
+};
+const writeLeaveCache = (req, scope, data) =>
+  leaveReadCache.set(leaveCacheKey(req, scope), { data, expires: Date.now() + LEAVE_CACHE_TTL_MS });
+const clearLeaveCache = () => leaveReadCache.clear();
+
+router.use((req, res, next) => {
+  if (req.method !== 'GET') res.on('finish', clearLeaveCache);
+  next();
+});
+
 const escapeRegex = (value = '') => String(value).replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 
 const buildAcademicYearMatcher = (value) => {
@@ -312,6 +336,68 @@ const computeResultSummaryByStudent = async ({ schoolId, campusId, studentIds })
 
   return byStudent;
 };
+
+// ── School Leaving Certificate numbers ──────────────────────────────────────
+// Auto-allocated when a student is marked Left: SLC/<year>/<0001>, one running
+// sequence per school per calendar year (atomic $inc, so concurrent marks
+// never collide).
+const LeavingCertificateCounter = require('../models/LeavingCertificateCounter');
+
+const allocateCertificateNumber = async (schoolId, date = new Date()) => {
+  const year = new Date(date).getFullYear() || new Date().getFullYear();
+  const counter = await LeavingCertificateCounter.findOneAndUpdate(
+    { schoolId, year },
+    { $inc: { seq: 1 } },
+    { new: true, upsert: true, setDefaultsOnInsert: true }
+  ).lean();
+  return `SLC/${year}/${String(counter.seq).padStart(4, '0')}`;
+};
+
+// Stamps leftAt and gives every listed student without a certificate number
+// its own auto-generated one. Returns { studentId: certificateNo } for the
+// students that got a new number.
+const finalizeLeftStudents = async (schoolId, studentIds) => {
+  const now = new Date();
+  await StudentUser.updateMany(
+    { _id: { $in: studentIds }, schoolId, leftAt: { $exists: false } },
+    { $set: { leftAt: now } }
+  );
+  const needNumber = await StudentUser.find({
+    _id: { $in: studentIds },
+    schoolId,
+    $or: [{ transferCertificateNo: { $exists: false } }, { transferCertificateNo: null }, { transferCertificateNo: '' }],
+  }).select('_id').lean();
+  const assigned = {};
+  for (const s of needNumber) {
+    // Sequential on purpose: keeps numbers in the order students were processed.
+    // eslint-disable-next-line no-await-in-loop
+    const number = await allocateCertificateNumber(schoolId, now);
+    // eslint-disable-next-line no-await-in-loop
+    await StudentUser.updateOne(
+      { _id: s._id, $or: [{ transferCertificateNo: { $exists: false } }, { transferCertificateNo: null }, { transferCertificateNo: '' }] },
+      { $set: { transferCertificateNo: number, transferCertificateDate: now.toISOString().slice(0, 10) } }
+    );
+    assigned[String(s._id)] = number;
+  }
+  return assigned;
+};
+
+// Shared by single and bulk restore: back to Active, leaving data cleared.
+const restoreStudentToActive = (schoolId, id) =>
+  StudentUser.findOneAndUpdate(
+    { _id: id, schoolId },
+    {
+      $set: {
+        status: 'Active',
+        reasonForLeaving: '',
+        transferCertificateNo: '',
+        transferCertificateDate: '',
+        remarks: '',
+      },
+      $unset: { leftAt: '', leavingCertificateIssuedAt: '', leavingCertificateIssuedBy: '' },
+    },
+    { new: true }
+  ).select('name grade section status');
 
 const writeAuditLog = async ({
   schoolId,
@@ -753,18 +839,25 @@ router.get('/leaving-students', adminAuth, async (req, res) => {
     };
     if (campusId) filter.campusId = campusId;
 
-    const { classFilter, sectionFilter } = req.query;
+    const { classFilter, sectionFilter, status } = req.query;
+    // ?status=Leaving (Promotion & Leave page) or ?status=Left (Left Students page).
+    if (status === 'Leaving' || status === 'Left') filter.status = status;
     if (classFilter) filter.grade = classFilter;
     if (sectionFilter) filter.section = sectionFilter;
 
+    const cachedList = readLeaveCache(req, 'leaving');
+    if (cachedList) return res.json(cachedList);
+
     const students = await StudentUser.find(filter)
       .select(
-        '_id name grade section roll academicYear studentCode status email mobile fatherName guardianPhone reasonForLeaving transferCertificateNo transferCertificateDate remarks updatedAt'
+        '_id name grade section roll academicYear studentCode admissionNumber admissionDate profilePic status email mobile fatherName motherName guardianName guardianPhone reasonForLeaving transferCertificateNo transferCertificateDate remarks updatedAt leftAt leavingCertificateIssuedAt'
       )
       .sort({ updatedAt: -1 })
       .lean();
 
-    res.json({ students, count: students.length });
+    const payload = { students, count: students.length };
+    writeLeaveCache(req, 'leaving', payload);
+    res.json(payload);
   } catch (err) {
     res.status(500).json({ error: err.message || 'Failed to load leaving students' });
   }
@@ -795,6 +888,7 @@ router.post('/mark-leaving', adminAuth, async (req, res) => {
       transferCertificateNo,
       transferCertificateDate,
       remarks,
+      markAs,
     } = req.body;
 
     if (!studentIds || !Array.isArray(studentIds) || studentIds.length === 0) {
@@ -809,9 +903,16 @@ router.post('/mark-leaving', adminAuth, async (req, res) => {
       return res.status(400).json({ error: 'No valid student IDs provided' });
     }
 
-    const updateFields = { status: 'Leaving' };
+    // markAs: "Left" finalizes in one step (bulk "Mark as Left"); default keeps
+    // the two-step Leaving → Left flow.
+    const targetStatus = markAs === 'Left' ? 'Left' : 'Leaving';
+    const updateFields = { status: targetStatus };
     if (reasonForLeaving) updateFields.reasonForLeaving = reasonForLeaving;
-    if (transferCertificateNo) updateFields.transferCertificateNo = transferCertificateNo;
+    // A typed TC number only makes sense for a single student — in bulk every
+    // student gets their own auto-generated certificate number instead.
+    if (transferCertificateNo && !(targetStatus === 'Left' && validIds.length > 1)) {
+      updateFields.transferCertificateNo = transferCertificateNo;
+    }
     // Use explicit TC date if provided, fall back to leaving date
     if (transferCertificateDate) {
       updateFields.transferCertificateDate = transferCertificateDate;
@@ -838,10 +939,17 @@ router.post('/mark-leaving', adminAuth, async (req, res) => {
       { $set: updateFields }
     );
 
+    // Marked Left → stamp leftAt + auto-generate each certificate number.
+    const certificateNumbers = targetStatus === 'Left'
+      ? await finalizeLeftStudents(schoolId, validIds)
+      : {};
+
     res.json({
       success: true,
       updated: result.modifiedCount,
-      message: `${result.modifiedCount} student(s) marked as leaving`,
+      status: targetStatus,
+      certificateNumbers,
+      message: `${result.modifiedCount} student(s) marked as ${targetStatus === 'Left' ? 'Left' : 'leaving'}`,
     });
 
     await syncParentArchiveStatusForStudents(validIds);
@@ -849,7 +957,7 @@ router.post('/mark-leaving', adminAuth, async (req, res) => {
     await writeAuditLog({
       schoolId,
       actorId: req.admin?._id || req.admin?.id,
-      action: 'student.mark_leaving',
+      action: targetStatus === 'Left' ? 'student.mark_left' : 'student.mark_leaving',
       entity: 'StudentUser',
       meta: {
         studentIds: validIds,
@@ -904,9 +1012,12 @@ router.put('/mark-left/:id', adminAuth, async (req, res) => {
       { new: true }
     ).select('_id name grade section status');
 
+    const certificateNumbers = await finalizeLeftStudents(schoolId, [updated._id]);
+
     res.json({
       success: true,
       student: updated,
+      certificateNo: certificateNumbers[String(updated._id)] || null,
       message: `${updated.name} marked as Left`,
     });
 
@@ -943,19 +1054,7 @@ router.put('/restore-student/:id', adminAuth, async (req, res) => {
       return res.status(400).json({ error: 'Invalid student ID' });
     }
 
-    const student = await StudentUser.findOneAndUpdate(
-      { _id: id, schoolId },
-      {
-        $set: {
-          status: 'Active',
-          reasonForLeaving: '',
-          transferCertificateNo: '',
-          transferCertificateDate: '',
-          remarks: '',
-        },
-      },
-      { new: true }
-    ).select('name grade section status');
+    const student = await restoreStudentToActive(schoolId, id);
 
     if (!student) {
       return res.status(404).json({ error: 'Student not found' });
@@ -978,6 +1077,234 @@ router.put('/restore-student/:id', adminAuth, async (req, res) => {
     });
   } catch (err) {
     res.status(500).json({ error: err.message || 'Failed to restore student' });
+  }
+});
+
+
+// ─────────────────────────────────────────────────────────────
+// Bulk restore (server-side job with progress)
+// POST /api/promotion/bulk-restore   { studentIds }  → { jobId, total }
+// GET  /api/promotion/bulk-restore/:jobId            → { total, done, failed, percent, status }
+// The client polls the GET for real progress while the job runs.
+// ─────────────────────────────────────────────────────────────
+const bulkRestoreJobs = new Map(); // jobId -> job
+const BULK_JOB_TTL_MS = 10 * 60 * 1000;
+
+router.post('/bulk-restore', adminAuth, async (req, res) => {
+  try {
+    const schoolId = resolveSchoolId(req, res);
+    if (!schoolId) return;
+    const ids = (Array.isArray(req.body?.studentIds) ? req.body.studentIds : [])
+      .filter((id) => mongoose.isValidObjectId(id));
+    if (!ids.length) return res.status(400).json({ error: 'studentIds array is required' });
+
+    const jobId = new mongoose.Types.ObjectId().toString();
+    const job = {
+      schoolId: String(schoolId), total: ids.length, done: 0, failed: 0,
+      status: 'running', startedAt: Date.now(), finishedAt: null,
+    };
+    bulkRestoreJobs.set(jobId, job);
+    res.status(202).json({ jobId, total: ids.length });
+
+    // Runs after the response, still inside this request's tenant context.
+    const restoredIds = [];
+    for (const id of ids) {
+      try {
+        // eslint-disable-next-line no-await-in-loop
+        const student = await restoreStudentToActive(schoolId, id);
+        if (student) restoredIds.push(student._id);
+        else job.failed += 1;
+      } catch {
+        job.failed += 1;
+      }
+      job.done += 1;
+    }
+    if (restoredIds.length) await syncParentArchiveStatusForStudents(restoredIds).catch(() => {});
+    job.status = 'completed';
+    clearLeaveCache(); // job outlives its request, so clear again once done
+    job.finishedAt = Date.now();
+    await writeAuditLog({
+      schoolId,
+      actorId: req.admin?._id || req.admin?.id,
+      action: 'student.bulk_restore_active',
+      entity: 'StudentUser',
+      meta: { studentIds: ids, restored: restoredIds.length, failed: job.failed },
+    });
+    const timer = setTimeout(() => bulkRestoreJobs.delete(jobId), BULK_JOB_TTL_MS);
+    if (timer.unref) timer.unref();
+  } catch (err) {
+    if (!res.headersSent) res.status(500).json({ error: err.message || 'Failed to start bulk restore' });
+  }
+});
+
+router.get('/bulk-restore/:jobId', adminAuth, (req, res) => {
+  const schoolId = resolveSchoolId(req, res);
+  if (!schoolId) return;
+  const job = bulkRestoreJobs.get(req.params.jobId);
+  if (!job || job.schoolId !== String(schoolId)) return res.status(404).json({ error: 'Job not found' });
+  const percent = job.total ? Math.round((job.done / job.total) * 100) : 100;
+  res.json({
+    total: job.total,
+    done: job.done,
+    failed: job.failed,
+    restored: job.done - job.failed,
+    percent,
+    status: job.status,
+  });
+});
+
+// ─────────────────────────────────────────────────────────────
+// School Leaving Certificates
+// GET  /api/promotion/certificates?q=           search Left students (name / id / roll / cert no)
+// PUT  /api/promotion/certificates/:id/issue    record the issue date (idempotent)
+// GET  /api/promotion/certificates/:id          full data for the A4 certificate PDF
+// ─────────────────────────────────────────────────────────────
+const School = require('../models/School');
+const Principal = require('../models/Principal');
+const Section = require('../models/Section');
+const TeacherAllocation = require('../models/TeacherAllocation');
+const TeacherUser = require('../models/TeacherUser');
+
+const CERT_STUDENT_FIELDS = [
+  '_id name grade section roll dob academicYear studentCode admissionNumber admissionDate profilePic status',
+  'fatherName motherName guardianName nationality category reasonForLeaving remarks',
+  'transferCertificateNo transferCertificateDate leftAt leavingCertificateIssuedAt campusId',
+].join(' ');
+
+router.get('/certificates', adminAuth, async (req, res) => {
+  try {
+    const schoolId = resolveSchoolId(req, res);
+    if (!schoolId) return;
+    const campusId = resolveCampusId(req);
+    const q = String(req.query.q || '').trim();
+    const filter = { schoolId, status: 'Left', ...(campusId ? { campusId } : {}) };
+    if (q) {
+      const rx = new RegExp(escapeRegex(q), 'i');
+      const roll = Number(q);
+      filter.$or = [
+        { name: rx },
+        { studentCode: rx },
+        { admissionNumber: rx },
+        { username: rx },
+        { transferCertificateNo: rx },
+        ...(Number.isFinite(roll) ? [{ roll }] : []),
+      ];
+    }
+    const cachedCerts = readLeaveCache(req, 'certs');
+    if (cachedCerts) return res.json(cachedCerts);
+    const students = await StudentUser.find(filter)
+      .select(CERT_STUDENT_FIELDS)
+      .sort({ leftAt: -1, updatedAt: -1 })
+      .limit(q ? 50 : 100)
+      .lean();
+    writeLeaveCache(req, 'certs', { students });
+    res.json({ students });
+  } catch (err) {
+    res.status(500).json({ error: err.message || 'Failed to search certificates' });
+  }
+});
+
+router.put('/certificates/:id/issue', adminAuth, async (req, res) => {
+  try {
+    const schoolId = resolveSchoolId(req, res);
+    if (!schoolId) return;
+    const { id } = req.params;
+    if (!mongoose.isValidObjectId(id)) return res.status(400).json({ error: 'Invalid student ID' });
+
+    const student = await StudentUser.findOne({ _id: id, schoolId, status: 'Left' })
+      .select('_id name transferCertificateNo leavingCertificateIssuedAt')
+      .lean();
+    if (!student) return res.status(404).json({ error: 'Left student not found' });
+    // Older Left records may predate auto-numbering — give them a number now.
+    if (!student.transferCertificateNo) await finalizeLeftStudents(schoolId, [student._id]);
+
+    const alreadyIssued = Boolean(student.leavingCertificateIssuedAt);
+    const updated = alreadyIssued
+      ? await StudentUser.findById(id).select(CERT_STUDENT_FIELDS).lean()
+      : await StudentUser.findOneAndUpdate(
+        { _id: id, schoolId },
+        {
+          $set: {
+            leavingCertificateIssuedAt: new Date(),
+            leavingCertificateIssuedBy: req.admin?._id || req.admin?.id || null,
+          },
+        },
+        { new: true }
+      ).select(CERT_STUDENT_FIELDS).lean();
+
+    res.json({ success: true, student: updated, message: `Certificate issued to ${updated.name}` });
+
+    if (!alreadyIssued) {
+      await writeAuditLog({
+        schoolId,
+        actorId: req.admin?._id || req.admin?.id,
+        action: 'student.leaving_certificate_issued',
+        entity: 'StudentUser',
+        entityId: updated._id,
+        meta: { studentName: updated.name, certificateNo: updated.transferCertificateNo },
+      });
+    }
+  } catch (err) {
+    if (!res.headersSent) res.status(500).json({ error: err.message || 'Failed to issue certificate' });
+  }
+});
+
+router.get('/certificates/:id', adminAuth, async (req, res) => {
+  try {
+    const schoolId = resolveSchoolId(req, res);
+    if (!schoolId) return;
+    const { id } = req.params;
+    if (!mongoose.isValidObjectId(id)) return res.status(400).json({ error: 'Invalid student ID' });
+
+    const student = await StudentUser.findOne({ _id: id, schoolId, status: 'Left' })
+      .select(CERT_STUDENT_FIELDS)
+      .lean();
+    if (!student) return res.status(404).json({ error: 'Left student not found' });
+
+    const [school, principal] = await Promise.all([
+      School.findById(schoolId)
+        .select('name address contactPhone contactEmail officialEmail websiteURL logo board boardOther campuses')
+        .lean(),
+      Principal.findOne({ schoolId }).select('name').lean(),
+    ]);
+
+    // Class teacher of the student's last class/section, if one is allocated.
+    let classTeacherName = '';
+    try {
+      const cls = await ClassModel.findOne({ schoolId, name: student.grade }).select('_id').lean();
+      const sec = cls
+        ? await Section.findOne({ schoolId, classId: cls._id, name: student.section }).select('_id').lean()
+        : null;
+      const alloc = sec
+        ? await TeacherAllocation.findOne({ schoolId, classId: cls._id, sectionId: sec._id, isClassTeacher: true })
+          .select('teacherId')
+          .lean()
+        : null;
+      if (alloc?.teacherId) {
+        const teacher = await TeacherUser.findById(alloc.teacherId).select('name').lean();
+        classTeacherName = teacher?.name || '';
+      }
+    } catch {
+      /* class teacher is optional on the certificate */
+    }
+
+    const campus = (school?.campuses || []).find((c) => String(c._id) === String(student.campusId));
+    res.json({
+      student,
+      school: {
+        name: school?.name || '',
+        address: campus?.address || school?.address || '',
+        phone: campus?.contactPhone || school?.contactPhone || '',
+        email: school?.officialEmail || school?.contactEmail || '',
+        website: school?.websiteURL || '',
+        logoUrl: school?.logo?.secure_url || '',
+        board: school?.board === 'Other' ? (school?.boardOther || 'Other') : (school?.board || ''),
+      },
+      principalName: principal?.name || '',
+      classTeacherName,
+    });
+  } catch (err) {
+    res.status(500).json({ error: err.message || 'Failed to load certificate' });
   }
 });
 

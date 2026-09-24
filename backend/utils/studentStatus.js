@@ -3,6 +3,13 @@ const EXITED_STUDENT_STATUSES = ['Leaving', 'Left', 'Expelled', 'leaving', 'left
 const isExitedStudentStatus = (status) =>
   EXITED_STUDENT_STATUSES.includes(String(status || '').trim());
 
+// Students who have actually left (Left/Expelled) can no longer sign in —
+// "Leaving" is still in progress, so those accounts keep working.
+const LOGIN_BLOCKED_STUDENT_STATUSES = ['left', 'expelled'];
+const isLoginBlockedStudentStatus = (status) =>
+  LOGIN_BLOCKED_STUDENT_STATUSES.includes(String(status || '').trim().toLowerCase());
+const STUDENT_BLOCKED_MESSAGE = 'Your account is blocked by your organization.';
+
 // Mongo filter fragment that scopes a StudentUser query to currently-enrolled
 // students only (excludes archived and exited/Leaving-Left-Expelled records).
 const ACTIVE_STUDENT_FILTER = {
@@ -24,6 +31,8 @@ const ACTIVE_ADMIN_FILTER = { status: { $ne: 'inactive' } };
 module.exports = {
   EXITED_STUDENT_STATUSES,
   isExitedStudentStatus,
+  isLoginBlockedStudentStatus,
+  STUDENT_BLOCKED_MESSAGE,
   ACTIVE_STUDENT_FILTER,
   ACTIVE_PARENT_FILTER,
   ACTIVE_TEACHER_FILTER,

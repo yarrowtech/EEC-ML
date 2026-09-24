@@ -228,6 +228,11 @@ const studentUserSchema = new mongoose.Schema({
   previousPercentage: String,
   transferCertificateNo: String,
   transferCertificateDate: String,
+  // School Leaving Certificate: set when the student is marked Left
+  // (leftAt) and when an admin issues the certificate (issuedAt/By).
+  leftAt: Date,
+  leavingCertificateIssuedAt: Date,
+  leavingCertificateIssuedBy: { type: mongoose.Schema.Types.ObjectId, default: null },
   reasonForLeaving: String,
   applicationId: String,
   applicationDate: String,

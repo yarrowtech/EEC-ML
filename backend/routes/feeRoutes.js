@@ -1728,7 +1728,12 @@ router.get('/admin/summary', adminAuth, async (req, res) => {
     if (!schoolId) return;
     if (!requireCampusId(req, res)) return;
 
-    const cacheKey = feeSummaryCacheKey(req);
+    // With ?activeYear=1 the cache key carries the resolved active year id, so
+    // switching the active session never serves the previous session's summary.
+    const activeYearForKey = req.query.activeYear
+      ? await AcademicYear.findOne({ schoolId, isActive: true }).select('_id').lean()
+      : null;
+    const cacheKey = `${feeSummaryCacheKey(req)}:${activeYearForKey?._id || ''}`;
     const cached = feeSummaryCache.get(cacheKey);
     if (cached && cached.expires > Date.now()) {
       return res.json(cached.data);

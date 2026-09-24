@@ -13,6 +13,7 @@ const resetBrowserBranding = () => {
 export const AUTH_NOTICE = Object.freeze({
   EXPIRED: 'expired',
   LOGGED_OUT: 'logged_out',
+  BLOCKED: 'blocked', // student account blocked (left / expelled / archived)
 });
 
 const resolveApiBaseUrl = () => {
@@ -140,7 +141,7 @@ export const logoutAndRedirect = ({
   }
   clearAuthData({ clearAllLocalStorage });
   if (typeof window !== 'undefined') {
-    window.dispatchEvent(new Event(AUTH_LOGOUT_EVENT));
+    window.dispatchEvent(new CustomEvent(AUTH_LOGOUT_EVENT, { detail: { notice } }));
   }
   setAuthNotice(notice);
   if (typeof navigate === 'function') {

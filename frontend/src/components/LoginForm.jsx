@@ -74,6 +74,17 @@ const LoginForm = () => {
     const notice = noticeFromState || storedNotice; // This can be simplified
     if (!notice) return;
 
+    if (notice === AUTH_NOTICE.BLOCKED) {
+      // Server wording differs per role (student "account", parent "ID").
+      let message = 'Your account is blocked by your organization.';
+      try {
+        message = sessionStorage.getItem('auth_blocked_message') || message;
+        sessionStorage.removeItem('auth_blocked_message');
+      } catch { /* storage blocked */ }
+      toast.error(message);
+      setLoginError(message);
+      return;
+    }
     if (notice === AUTH_NOTICE.EXPIRED) {
       toast.error('Session time expired. Login again.');
       return;

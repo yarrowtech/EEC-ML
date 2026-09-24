@@ -9,6 +9,7 @@ import {
 } from "lucide-react";
 import Swal from "sweetalert2";
 import toast from "react-hot-toast";
+import { clearSessionScopedCaches } from "../../utils/swrCache";
 
 const API_BASE = import.meta.env.VITE_API_URL;
 const ACADEMIC_SETUP_CACHE_PREFIX = "academic_setup_cache_v1";
@@ -926,6 +927,7 @@ const AcademicSetup = ({ setShowAdminHeader }) => {
       });
       await requireOk(res, "Request failed");
       await res.json().catch(() => ({}));
+      if (endpoint === "/api/academic/years") clearSessionScopedCaches();
       await onSuccess();
       toast.success(successMessage);
     } catch (err) {
@@ -1209,6 +1211,7 @@ const AcademicSetup = ({ setShowAdminHeader }) => {
         throw new Error(data.error || "Update failed");
       }
       await res.json();
+      if (endpoint === "/api/academic/years") clearSessionScopedCaches();
       await onSuccess();
       toast.success("Updated successfully!");
     } catch (err) {
@@ -1337,6 +1340,7 @@ const AcademicSetup = ({ setShowAdminHeader }) => {
               throw new Error(errData.error || "Delete failed");
             }
             const result = await cascadeRes.json();
+            if (endpoint === "/api/academic/years") clearSessionScopedCaches();
             await onSuccess();
             Swal.fire({
               title: "Deleted!",

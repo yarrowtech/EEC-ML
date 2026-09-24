@@ -119,6 +119,8 @@ const AdminHeader = ({ adminUser, onOpenMobileSidebar, onLogoutRequest, notifica
       { label: 'Fee Receipts',    hint: 'All generated fee receipts',    path: '/admin/fees/receipts',  keys: ['receipt', 'receipts', 'fees', 'rcpt'] },
       { label: 'HR',              hint: 'Staff & leave management',      path: '/admin/hr',             keys: ['hr', 'leave', 'staff'] },
       { label: 'Parents',         hint: 'Parent records',                path: '/admin/parents',        keys: ['parent'] },
+      { label: 'Leave & Left Students', hint: 'Mark leaving, TC, left students', path: '/admin/left-students', keys: ['leave', 'left', 'leaving', 'tc', 'transfer certificate', 'alumni'] },
+      { label: 'Student Promotion', hint: 'Promote students to next class', path: '/admin/promotion', keys: ['promotion', 'promote'] },
       { label: 'Notices',         hint: 'Notifications & notices',       path: '/admin/notices/view',    keys: ['notice', 'notification'] },
       { label: 'Holidays',        hint: 'Holiday calendar',              path: '/admin/holidays',       keys: ['holiday'] },
       { label: 'Settings',        hint: 'Account & app settings',        path: '/admin/settings',       keys: ['setting', 'profile'] },
@@ -520,15 +522,14 @@ const AdminHeader = ({ adminUser, onOpenMobileSidebar, onLogoutRequest, notifica
                   onFocus={() => { setShowSuggestions(true); setIsSearchFocused(true); }}
                   onBlur={() => { closeSuggestionsIfFocusOutside(desktopSearchRef); setIsSearchFocused(false); }}
                   onKeyDown={handleSearchInputKeyDown}
-                  aria-expanded={showSuggestions}
-                  aria-haspopup="listbox"
+     Leaving Students             aria-haspopup="listbox"
                   aria-controls={DESKTOP_SEARCH_LISTBOX_ID}
                   aria-activedescendant={
                     showSuggestions && activeSuggestionIndex >= 0
                       ? `desktop-search-option-${activeSuggestionIndex}`
                       : undefined
                   }
-                  className="admin-search-input w-full border-none outline-none text-sm font-medium text-slate-900 placeholder:text-slate-400 placeholder:font-normal py-2 bg-white"
+                  className="admin-search-input w-full border-none outline-none text-sm font-medium text-slate-900 placeholder:text-slate-400 placeholder:font-normal py-2 bg-white rounded-full"
                 />
                 {searchQuery ? (
                   <button

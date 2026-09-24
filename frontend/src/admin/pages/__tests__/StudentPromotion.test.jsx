@@ -1,3 +1,4 @@
+import { MemoryRouter } from 'react-router-dom';
 import { render, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import StudentPromotion from '../StudentPromotion';
@@ -105,7 +106,7 @@ describe('StudentPromotion', () => {
   test('loads metadata and pre-selects the active academic year', async () => {
     setupFetchMock();
     const setHeader = jest.fn();
-    render(<StudentPromotion setShowAdminHeader={setHeader} />);
+    render(<MemoryRouter><StudentPromotion setShowAdminHeader={setHeader} /></MemoryRouter>);
 
     await screen.findByRole('option', { name: /Class 5 \(2 students\)/i });
     expect(setHeader).toHaveBeenCalledWith(true);
@@ -121,7 +122,7 @@ describe('StudentPromotion', () => {
     });
     const user = userEvent.setup();
     const setHeader = jest.fn();
-    render(<StudentPromotion setShowAdminHeader={setHeader} />);
+    render(<MemoryRouter><StudentPromotion setShowAdminHeader={setHeader} /></MemoryRouter>);
 
     await screen.findAllByRole('option', { name: /Class 5/ });
     const comboboxes = screen.getAllByRole('combobox');
@@ -147,7 +148,7 @@ describe('StudentPromotion', () => {
     });
     const user = userEvent.setup();
     const setHeader = jest.fn();
-    render(<StudentPromotion setShowAdminHeader={setHeader} />);
+    render(<MemoryRouter><StudentPromotion setShowAdminHeader={setHeader} /></MemoryRouter>);
 
     await screen.findAllByRole('option', { name: /Class 5/ });
     const comboboxes = screen.getAllByRole('combobox');
