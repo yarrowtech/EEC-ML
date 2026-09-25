@@ -63,14 +63,12 @@ const AdminHeader = ({ adminUser, onOpenMobileSidebar, onLogoutRequest, notifica
     return () => clearInterval(t);
   }, []);
 
-  const handleToggleNotifications = useCallback(async () => {
-    const nextOpen = !showNotifications;
-    if (nextOpen && unreadCount > 0) {
-      await markAllRead();
-    }
-    setShowNotifications(nextOpen);
+  // Opening the bell doesn't mark anything read — unread items stay highlighted
+  // until opened or "Mark all as read" is used.
+  const handleToggleNotifications = useCallback(() => {
+    setShowNotifications((open) => !open);
     setShowProfileMenu(false);
-  }, [markAllRead, showNotifications, unreadCount]);
+  }, []);
 
   const {
     showPermissionModal,

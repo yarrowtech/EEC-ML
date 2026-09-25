@@ -1,5 +1,6 @@
 const lean = (value) => ({ select: () => ({ lean: () => Promise.resolve(value) }), lean: () => Promise.resolve(value) });
 
+jest.mock('../utils/withSchoolTenant', () => ({ withSchoolTenant: (_id, fn) => fn() }));
 jest.mock('../models/Notification', () => ({
   find: jest.fn(),
   findOne: jest.fn(),

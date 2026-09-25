@@ -11,7 +11,29 @@ const formatLongDate = (value) => {
 
 export const isFormalNotice = (notice) => notice?.document?.template === 'formal_notice';
 
-const FormalNotice = ({ document: doc, className = '' }) => {
+// The notice as a given role reads it: document.variants[role] swaps in
+// "Dear Student," / "Dear Parent/Guardian," and only that role's section.
+export const documentForRole = (doc, role) => {
+  const variant = role && doc?.variants?.[role];
+  if (!variant) return doc;
+  const rest = { ...doc };
+  delete rest.variants;
+  return { ...rest, ...variant };
+};
+
+// Attachments for a role: role-specific copies (e.g. the Parent PDF) are only
+// shown to that role; untagged attachments are shown to everyone.
+export const attachmentsForRole = (attachments = [], role) => (
+  role ? attachments.filter((a) => !a?.role || a.role === role) : attachments
+);
+
+// "**text**" → bold (exam name, session, dates).
+const RichText = ({ text }) => String(text || '').split('**').map((part, i) => (
+  i % 2 ? <strong key={i} className="font-semibold text-slate-900">{part}</strong> : <React.Fragment key={i}>{part}</React.Fragment>
+));
+
+const FormalNotice = ({ document: rawDoc, viewerRole = '', className = '' }) => {
+  const doc = documentForRole(rawDoc, viewerRole);
   if (!doc) return null;
   const school = doc.school || {};
   const contact = [school.email && `Email: ${school.email}`, school.phone && `Phone: ${school.phone}`].filter(Boolean).join(' | ');
@@ -41,7 +63,7 @@ const FormalNotice = ({ document: doc, className = '' }) => {
         </div>
 
         <p className="font-semibold">{doc.salutation}</p>
-        {(doc.paragraphs || []).map((p) => <p key={p}>{p}</p>)}
+        {(doc.paragraphs || []).map((p) => <p key={p}><RichText text={p} /></p>)}
 
         {Array.isArray(doc.details) && doc.details.length > 0 && (
           <div className="rounded-lg border border-slate-200 bg-slate-50 p-4">
@@ -60,6 +82,72 @@ const FormalNotice = ({ document: doc, className = '' }) => {
               ))}
             </dl>
           </div>
+        )}
+
+        {doc.tablesFirst ? (
+          <>
+        {Array.isArray(doc.tables) && doc.tables.map((table) => (
+          <div key={table.title || 'table'} className="space-y-1.5">
+            {table.title && <p className="text-sm font-semibold text-slate-800">{table.title}</p>}
+            <div className="overflow-x-auto rounded-lg border border-slate-200">
+              <table className="w-full min-w-[480px] text-left text-xs">
+                <thead className="bg-slate-100 text-slate-700">
+                  <tr>{(table.columns || []).map((c) => <th key={c} className="px-3 py-2 font-semibold">{c}</th>)}</tr>
+                </thead>
+                <tbody>
+                  {(table.rows || []).map((row, i) => (
+                    <tr key={i} className={i % 2 ? 'bg-slate-50/70' : 'bg-white'}>
+                      {row.map((cell, j) => (
+                        <td key={j} className="border-t border-slate-100 px-3 py-2 text-slate-700">{cell}</td>
+                      ))}
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          </div>
+        ))}
+        {Array.isArray(doc.instructions) && doc.instructions.length > 0 && (
+          <div>
+            <p className="mb-2 text-center text-xs font-bold tracking-wider text-slate-700">{doc.instructionsTitle || 'IMPORTANT INSTRUCTIONS'}</p>
+            <ol className="list-decimal space-y-1.5 pl-5">
+              {doc.instructions.map((line) => <li key={line}>{line}</li>)}
+            </ol>
+          </div>
+        )}
+          </>
+        ) : (
+          <>
+        {Array.isArray(doc.instructions) && doc.instructions.length > 0 && (
+          <div>
+            <p className="mb-2 text-center text-xs font-bold tracking-wider text-slate-700">{doc.instructionsTitle || 'IMPORTANT INSTRUCTIONS'}</p>
+            <ol className="list-decimal space-y-1.5 pl-5">
+              {doc.instructions.map((line) => <li key={line}>{line}</li>)}
+            </ol>
+          </div>
+        )}
+        {Array.isArray(doc.tables) && doc.tables.map((table) => (
+          <div key={table.title || 'table'} className="space-y-1.5">
+            {table.title && <p className="text-sm font-semibold text-slate-800">{table.title}</p>}
+            <div className="overflow-x-auto rounded-lg border border-slate-200">
+              <table className="w-full min-w-[480px] text-left text-xs">
+                <thead className="bg-slate-100 text-slate-700">
+                  <tr>{(table.columns || []).map((c) => <th key={c} className="px-3 py-2 font-semibold">{c}</th>)}</tr>
+                </thead>
+                <tbody>
+                  {(table.rows || []).map((row, i) => (
+                    <tr key={i} className={i % 2 ? 'bg-slate-50/70' : 'bg-white'}>
+                      {row.map((cell, j) => (
+                        <td key={j} className="border-t border-slate-100 px-3 py-2 text-slate-700">{cell}</td>
+                      ))}
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          </div>
+        ))}
+          </>
         )}
 
         {(doc.sections || []).map((s) => (

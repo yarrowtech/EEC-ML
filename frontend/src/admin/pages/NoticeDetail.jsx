@@ -1,5 +1,6 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
+import FormalNotice, { isFormalNotice } from '../../components/FormalNotice';
 import {
   ArrowLeft, Pin, Calendar, Clock, User, Hash, Tag, Flag, Users, RefreshCw,
   Paperclip, Download, Share2, MessageCircle, Mail, Phone, Copy, Info,
@@ -236,7 +237,9 @@ const NoticeDetail = ({ setShowAdminHeader }) => {
                 {Array.isArray(notice.examRoutine) && notice.examRoutine.length > 0 && (
                   <p className="text-base font-bold text-slate-900">{notice.title}</p>
                 )}
-                <p className="text-sm text-slate-600 leading-relaxed whitespace-pre-line">{notice.message}</p>
+                {isFormalNotice(notice)
+                  ? <FormalNotice document={notice.document} />
+                  : <p className="text-sm text-slate-600 leading-relaxed whitespace-pre-line">{notice.message}</p>}
                 <ExamRoutineTable rows={notice.examRoutine} />
               </div>
 

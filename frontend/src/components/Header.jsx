@@ -104,13 +104,13 @@ const Header = ({ sidebarOpen, setSidebarOpen, onOpenProfile }) => {
   // Toggle one dropdown, close the other
   const toggleNotifications = useCallback(async () => {
     const nextOpen = !showNotifications;
-    if (nextOpen) {
-      markModuleVisited('notifications');
-      if (unreadCount > 0) await markAllAsRead();
-    }
+    // Opening the bell must NOT mark everything read — unread items stay
+    // highlighted (and counted) until the student opens them or taps
+    // "Mark all as read".
+    if (nextOpen) markModuleVisited('notifications');
     setShowNotifications(nextOpen);
     setProfileOpen(false);
-  }, [markAllAsRead, markModuleVisited, showNotifications, unreadCount]);
+  }, [markModuleVisited, showNotifications]);
 
   const studentData = profile || {
     name: 'Student',

@@ -49,11 +49,11 @@ const notifyExamCreated = async ({ schoolId, campusId = null, entity, entityType
     data: { title, start: entity?.startDate || '', end: entity?.endDate || '', subjects },
     student: (s) => ({
       title: 'New Examination Scheduled',
-      message: `${title} has been scheduled for your class (${classLabel(s.grade, s.section)})${dates}.${subjectText}`,
+      message: `${title} has been scheduled for your class (${classLabel(s.grade, s.section)})${dates}.${subjectText} The routine will be published soon.`,
     }),
     parent: (s) => ({
       title: 'Upcoming Examination',
-      message: `${title} has been scheduled for ${s.name} (${classLabel(s.grade, s.section)})${dates}.${subjectText}`,
+      message: `${title} has been scheduled for ${s.name} (${classLabel(s.grade, s.section)})${dates}.${subjectText} The routine will be published soon.`,
     }),
   });
 };

@@ -42,6 +42,7 @@ import {
 import { Button } from '../components/ui/button';
 import { useTenant } from '../context/TenantContext';
 
+import TeacherExamDutyList from './TeacherExamDutyList';
 import HealthUpdatesAdvanced from './HealthUpdatesAdvanced';
 import ParentMeetings from './ParentMeetings';
 import AssignmentPortal from './AssignmentPortal';
@@ -88,6 +89,7 @@ const portalNavigation = [
   { icon: CalendarDays, label: 'Calendar', path: `${PORTAL_BASE}/calendar` },
   { icon: Clock, label: 'Timetable', path: `${PORTAL_BASE}/timetable` },
   { icon: Bell, label: 'Notifications', path: `${PORTAL_BASE}/notifications` },
+  { icon: ClipboardCheck, label: 'Exam Duty', path: `${PORTAL_BASE}/exam-duty` },
   { icon: Library, label: 'Academic Alcove', path: `${PORTAL_BASE}/resource-library` },
   { icon: Brain, label: 'Lesson Plan', path: `${PORTAL_BASE}/lesson-plan` },
   //{ icon: Brain, label: 'AI Tools', path: `${PORTAL_BASE}/ai-tools` },
@@ -1744,14 +1746,12 @@ const TeacherPortalShell = () => {
     }
   }, [fetchNotifs, navigate]);
 
-  const handleToggleNotifications = useCallback(async () => {
-    const nextOpen = !showNotifications;
-    if (nextOpen && unreadCount > 0) {
-      await markAllRead();
-    }
-    setShowNotifications(nextOpen);
+  // Opening the bell doesn't mark anything read — unread items stay highlighted
+  // until opened or "Mark all as read" is used.
+  const handleToggleNotifications = useCallback(() => {
+    setShowNotifications((open) => !open);
     setProfileOpen(false);
-  }, [markAllRead, showNotifications, unreadCount]);
+  }, []);
 
   useEffect(() => {
     markTeacherModuleVisited(teacherNotificationModuleKeyForPath(location.pathname));
@@ -2334,6 +2334,7 @@ const TeacherPortalShell = () => {
                 path="notifications"
                 element={<TeacherNotifications />}
               />
+              <Route path="exam-duty" element={<TeacherExamDutyList />} />
               <Route path="exam-duty/:notificationId" element={<TeacherExamDuty />} />
               <Route path="resource-library" element={<TeacherAlcove />} />
               <Route path="lesson-plan" element={<AIPoweredTeaching />} />

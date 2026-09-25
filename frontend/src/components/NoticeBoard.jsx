@@ -12,7 +12,7 @@ import { fetchCachedJson } from '../utils/studentApiCache';
 import { useStudentDashboard } from './StudentDashboardContext';
 import { generateExamSchedulePdf } from '../utils/examRoutinePdf';
 import ExamRoutineTable from './ExamRoutineTable';
-import FormalNotice, { isFormalNotice } from './FormalNotice';
+import FormalNotice, { isFormalNotice, attachmentsForRole } from './FormalNotice';
 import {
   CATEGORY_ORDER, CATEGORY_META, PRIORITY_META, DEPT_FALLBACK,
   getDisplayCategory, isNewNotice, isPinnedNotice, formatNoticeDate,
@@ -115,7 +115,8 @@ const NoticeDetailsView = ({
   const creator = getCreator(notice);
   const displayDate = resolveDate(notice);
   const subjectLabel = notice.subjectName || notice.subject || '';
-  const attachments = Array.isArray(notice.attachments) ? notice.attachments : [];
+  // Only the student copy of role-specific attachments (e.g. the Student PDF).
+  const attachments = attachmentsForRole(Array.isArray(notice.attachments) ? notice.attachments : [], 'student');
   const showExamRoutine = isExamNotice(notice);
   // An exam notice fired the moment the exam is scheduled (before any subject
   // is added) never has a routine table or PDF yet — only the one posted when
@@ -246,7 +247,18 @@ const NoticeDetailsView = ({
 
               {isFormalNotice(notice) ? (
                 <>
-                  <FormalNotice document={notice.document} />
+                  <FormalNotice document={notice.document} viewerRole="student" />
+                  {String(notice.typeLabel || '').startsWith('exam_notice') && onViewExams && (
+                    <div className="flex justify-center">
+                      <button
+                        type="button"
+                        onClick={onViewExams}
+                        className="inline-flex items-center gap-1.5 rounded-full bg-linear-to-r from-indigo-500 to-purple-600 px-4 py-2 text-sm font-semibold text-white shadow-sm hover:opacity-90"
+                      >
+                        View My Exams <ArrowRight className="h-4 w-4" />
+                      </button>
+                    </div>
+                  )}
                   {notice.typeLabel === 'feedback_window' && onGiveFeedback && (
                     <div className="flex justify-center">
                       <button

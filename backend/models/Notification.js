@@ -64,6 +64,8 @@ const notificationSchema = new mongoose.Schema(
         url: { type: String, default: '' },
         size: { type: Number, default: 0 },
         type: { type: String, default: '' },
+        // 'student' | 'parent' — role-specific copy (e.g. Dear Student PDF); '' = everyone.
+        role: { type: String, default: '' },
       },
     ],
 
@@ -102,6 +104,10 @@ const notificationSchema = new mongoose.Schema(
     // header, notice number, salutation, body, details table, signature) —
     // rendered by the FormalNotice component; `message` stays the plain-text copy.
     document: { type: mongoose.Schema.Types.Mixed, default: undefined },
+    // Recipient-specific copies of a notice the admin already sees in one
+    // consolidated form (e.g. per-class exam routine notices) — kept out of
+    // the admin Notices console.
+    adminHidden: { type: Boolean, default: false },
     targetUserIds: [{ type: mongoose.Schema.Types.ObjectId, index: true }],
 
     // Read tracking

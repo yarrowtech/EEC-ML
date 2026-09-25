@@ -1,10 +1,11 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { UserCircle2, BookOpenText, CalendarClock, Download, Info, ChevronDown } from 'lucide-react';
+import { UserCircle2, BookOpenText, CalendarClock, Download, Info, ChevronDown, CheckCircle2 } from 'lucide-react';
 import { motion as Motion, AnimatePresence } from 'framer-motion';
 import toast from 'react-hot-toast';
 import { parentApiJson } from './parentApi';
 import { generateExamSchedulePdf } from '../utils/examRoutinePdf';
+import { downloadAttachment } from '../utils/noticeDisplay';
 import ExamRoutineTable from '../components/ExamRoutineTable';
 import ChildSwitcher, { useSharedChildSelection } from './ChildSwitcher';
 import Loading from './Loading';
@@ -161,10 +162,13 @@ const ExamRoutine = () => {
     setOpenGroupId(sessionGroups[0]?._id ? String(sessionGroups[0]._id) : '');
   }, [sessionGroups.map((g) => g._id).join(',')]); // eslint-disable-line react-hooks/exhaustive-deps
 
+  // Prefer the school's official routine PDF (same document the student gets
+  // from the Notice Board); fall back to generating one locally.
   const handleDownload = async (group) => {
     setIsExporting(true);
     try {
-      await generateExamSchedulePdf(group, pdfHeader);
+      if (group.routinePdf?.url) await downloadAttachment(group.routinePdf);
+      else await generateExamSchedulePdf(group, pdfHeader);
     } catch (err) {
       toast.error('Failed to generate routine PDF');
     } finally {
@@ -251,7 +255,17 @@ const ExamRoutine = () => {
       {!error && sessionGroups.map((group) => {
         const groupId = String(group._id);
         const isOpen = openGroupId === groupId;
-        const isPublished = group.status === 'Published';
+        // scheduled → routine not out yet · published → routine + download ·
+        // completed → routine kept as a record + "exam completed".
+        const state = group.examState || (group.status === 'Completed' ? 'completed' : (group.status === 'Published' ? 'published' : 'scheduled'));
+        const isPublished = state === 'published' || (state === 'completed' && (group.routinePublished || (group.subjects || []).length > 0));
+        const isCompleted = state === 'completed';
+        const headerTone = isCompleted ? 'bg-slate-600' : (isPublished ? 'bg-emerald-600' : 'bg-amber-500');
+        const STATE_BADGE = {
+          scheduled: 'Routine will be published soon',
+          published: 'Routine Published',
+          completed: 'Exam Completed',
+        };
         return (
           <div key={groupId} className="overflow-hidden rounded-2xl border border-emerald-100 shadow-sm">
             <div
@@ -260,15 +274,20 @@ const ExamRoutine = () => {
               onClick={() => setOpenGroupId(isOpen ? '' : groupId)}
               onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); setOpenGroupId(isOpen ? '' : groupId); } }}
               aria-expanded={isOpen}
-              className={`flex w-full flex-wrap items-center justify-between gap-2 px-4 py-3 text-left text-white cursor-pointer select-none ${isPublished ? 'bg-emerald-600' : 'bg-slate-500'}`}
+              className={`flex w-full flex-wrap items-center justify-between gap-2 px-4 py-3 text-left text-white cursor-pointer select-none ${headerTone}`}
             >
               <div>
-                <h3 className="text-base font-bold">{group.title || 'Exam'}</h3>
-                <p className={`text-xs ${isPublished ? 'text-emerald-50/90' : 'text-slate-100/90'}`}>
+                <div className="flex flex-wrap items-center gap-2">
+                  <h3 className="text-base font-bold">{group.title || 'Exam'}</h3>
+                  <span className="inline-flex items-center gap-1 rounded-full bg-white/20 px-2 py-0.5 text-[10px] font-bold uppercase tracking-wide">
+                    {isCompleted && <CheckCircle2 size={11} />}
+                    {STATE_BADGE[state]}
+                  </span>
+                </div>
+                <p className="text-xs text-white/85">
                   Session: {group.academicYearName || '—'}
                   {'  |  '}Class {group.classId?.name || '—'}
                   {'  |  '}Section {group.sectionId?.name || '—'}
-                  {!isPublished && '  |  Scheduled — subject-wise routine not published yet'}
                 </p>
               </div>
               <div className="flex items-center gap-2">
@@ -298,9 +317,16 @@ const ExamRoutine = () => {
                   transition={{ duration: 0.2, ease: 'easeInOut' }}
                   style={{ overflow: 'hidden' }}
                 >
+                  {isCompleted && (
+                    <div className="flex items-start gap-2 border-b border-slate-100 bg-slate-50 px-4 py-3 text-sm text-slate-600">
+                      <CheckCircle2 className="mt-0.5 h-4 w-4 shrink-0 text-emerald-600" />
+                      <p><span className="font-semibold text-slate-800">This examination has been completed.</span>{' '}
+                        {isPublished ? 'The routine below is kept for your reference.' : ''} Results will be shared once they are published.</p>
+                    </div>
+                  )}
                   {isPublished ? (
                     <ExamRoutineTable rows={toRoutineRows(group)} />
-                  ) : (
+                  ) : isCompleted ? null : (
                     <div className="flex items-start gap-2 bg-slate-50 px-4 py-3.5 text-sm text-slate-500">
                       <Info className="mt-0.5 h-4 w-4 shrink-0 text-slate-400" />
                       <p>This exam has been scheduled, but the school hasn&apos;t published the subject-wise routine yet. Check back once it&apos;s published.</p>
