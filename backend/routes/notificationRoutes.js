@@ -16,10 +16,8 @@ const PushSubscription = require('../models/PushSubscription');
 const { initializeWebPush } = require('../utils/webPushService');
 const { EVENTS, publishNotice } = require('../services/communicationService');
 const { logStudentPortalEvent, logStudentPortalError } = require('../utils/studentPortalLogger');
-const { userNotificationsCache } = require('../utils/responseCache');
 
 const router = express.Router();
-router.use(userNotificationsCache.invalidateOnWrite);
 
 // Per-class exam notices teachers must not see (they get one consolidated
 // notice per exam title instead — see upsertTeacherExamScheduledNotice /
@@ -462,7 +460,6 @@ router.get('/', adminAuth, async (req, res) => {
       typeLabel: { $nin: HIDDEN_FROM_NOTICEBOARD_TYPE_LABELS },
       // The Notices console lists official NOTICES only — event alerts live in the bell.
       kind: 'notice',
-      adminHidden: { $ne: true },
       ...(campusId
         ? { $or: [{ campusId }, { campusId: null }, { campusId: { $exists: false } }] }
         : {}),
@@ -511,30 +508,6 @@ router.patch('/:id', adminAuth, async (req, res) => {
 });
 
 // Admin delete a notification
-// POST /api/notifications/bulk-delete { ids: [...] }
-// Deletes several notices at once (school/campus scoped). Super-admin notices
-// are skipped for school admins, same rule as the single delete.
-router.post('/bulk-delete', adminAuth, async (req, res) => {
-  // #swagger.tags = ['Notifications']
-  try {
-    const schoolId = resolveSchoolId(req, res);
-    if (!schoolId) return;
-    const campusId = req.campusId || null;
-    const ids = [...new Set((Array.isArray(req.body?.ids) ? req.body.ids : []).map(String))]
-      .filter((id) => mongoose.isValidObjectId(id));
-    if (!ids.length) return res.status(400).json({ error: 'Select at least one notice' });
-    if (ids.length > 500) return res.status(400).json({ error: 'You can delete up to 500 notices at a time' });
-
-    const scope = { _id: { $in: ids }, schoolId, ...(campusId ? { campusId } : {}) };
-    const protectedFilter = req.isSuperAdmin ? {} : { createdByType: { $ne: 'super_admin' } };
-    const result = await Notification.deleteMany({ ...scope, ...protectedFilter });
-    const deleted = result.deletedCount || 0;
-    res.json({ ok: true, deleted, skipped: ids.length - deleted });
-  } catch (err) {
-    res.status(500).json({ error: err.message });
-  }
-});
-
 router.delete('/:id', adminAuth, async (req, res) => {
   // #swagger.tags = ['Notifications']
   try {
@@ -609,7 +582,7 @@ router.delete('/teacher/:id', authTeacher, async (req, res) => {
 });
 
 // Any user fetch their notifications
-router.get('/user', authAnyUser, userNotificationsCache.cache, async (req, res) => {
+router.get('/user', authAnyUser, async (req, res) => {
   // #swagger.tags = ['Notifications']
   try {
     logStudentPortalEvent(req, {

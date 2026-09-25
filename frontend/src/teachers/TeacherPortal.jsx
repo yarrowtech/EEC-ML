@@ -196,6 +196,7 @@ const resolveTeacherNotificationPath = (notification) => {
   if (blob.includes('assignment_submission') || blob.includes('new submission') || blob.includes('submitted')) return '/teacher/evaluation';
   if (blob.includes('assignment')) return '/teacher/assignments';
   const typeLabel = String(notification?.typeLabel || '').toLowerCase();
+  if (typeLabel.startsWith('feedback_')) return '/teacher/feedback';
   if (
     typeLabel === 'exam_schedule_teacher'
     || typeLabel === 'exam_routine_published_teacher'
@@ -398,23 +399,25 @@ const notificationToneClasses = {
 // Cache the last-fetched list per browser tab so the page can paint instantly
 // on revisit instead of showing a blank "Loading…" state while the network
 // round trip is still in flight — the fetch below still runs and replaces it.
-const TEACHER_NOTIFICATIONS_CACHE_KEY = 'teacher_notifications_cache_v1';
-const readCachedNotifications = () => {
+const TEACHER_NOTIFICATIONS_CACHE_KEY = 'teacher_notifications_cache_v2';
+const readCachedNotifications = (view = 'notification') => {
   try {
-    const raw = sessionStorage.getItem(TEACHER_NOTIFICATIONS_CACHE_KEY);
+    const raw = sessionStorage.getItem(`${TEACHER_NOTIFICATIONS_CACHE_KEY}:${view}`);
     const parsed = raw ? JSON.parse(raw) : null;
     return Array.isArray(parsed) ? parsed : null;
   } catch { return null; }
 };
-const writeCachedNotifications = (list) => {
-  try { sessionStorage.setItem(TEACHER_NOTIFICATIONS_CACHE_KEY, JSON.stringify(list)); } catch { /* ignore */ }
+const writeCachedNotifications = (list, view = 'notification') => {
+  try { sessionStorage.setItem(`${TEACHER_NOTIFICATIONS_CACHE_KEY}:${view}`, JSON.stringify(list)); } catch { /* ignore */ }
 };
 
 const NOTIFICATIONS_PAGE_SIZE = 10;
 
 const TeacherNotifications = () => {
   const navigate = useNavigate();
-  const cached = useMemo(() => readCachedNotifications(), []);
+  // 'notification' = event alerts (duty, results…); 'notice' = official school notices.
+  const [view, setView] = useState('notification');
+  const cached = useMemo(() => readCachedNotifications(view), [view]);
   const [notifications, setNotifications] = useState(cached || []);
   const [filter, setFilter] = useState('all');
   const [page, setPage] = useState(1);
@@ -432,7 +435,7 @@ const TeacherNotifications = () => {
         setNotifications([]);
         return;
       }
-      const response = await apiFetch(`${API_BASE}/api/notifications/user`, {
+      const response = await apiFetch(`${API_BASE}/api/notifications/user?kind=${view}`, {
         cache: 'no-store',
         headers: { 'Content-Type': 'application/json', authorization: `Bearer ${token}` },
       }, navigate);
@@ -441,22 +444,24 @@ const TeacherNotifications = () => {
       if (!response.ok) throw new Error(data?.error || 'Unable to load notifications');
       const list = Array.isArray(data) ? data : [];
       setNotifications(list);
-      writeCachedNotifications(list);
+      writeCachedNotifications(list, view);
     } catch (err) {
       setError(err.message || 'Unable to load notifications');
     } finally {
       setLoading(false);
       setRefreshing(false);
     }
-  }, [navigate]);
+  }, [navigate, view]);
 
   useEffect(() => {
+    setNotifications(cached || []);
+    setLoading(!cached);
     loadNotifications({ silent: Boolean(cached) });
     const poll = setInterval(() => loadNotifications({ silent: true }), 30_000);
     return () => clearInterval(poll);
   }, [loadNotifications]);
 
-  useEffect(() => { setPage(1); }, [filter]);
+  useEffect(() => { setPage(1); }, [filter, view]);
 
   const markRead = useCallback(async (id) => {
     if (!id) return;
@@ -480,7 +485,7 @@ const TeacherNotifications = () => {
     const token = localStorage.getItem('token');
     setNotifications((previous) => previous.map((item) => ({ ...item, isRead: true })));
     try {
-      const response = await apiFetch(`${API_BASE}/api/notifications/user/read-all`, {
+      const response = await apiFetch(`${API_BASE}/api/notifications/user/read-all?kind=${view}`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json', authorization: `Bearer ${token}` },
       }, navigate);
@@ -511,8 +516,10 @@ const TeacherNotifications = () => {
           <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
             <div>
               <p className="text-xs font-semibold uppercase tracking-[0.18em] text-indigo-600">Teacher Portal</p>
-              <h1 className="mt-2 text-2xl font-semibold text-slate-950">Notifications</h1>
-              <p className="mt-2 max-w-2xl text-sm text-slate-500">Keep track of announcements, class updates, meetings and action items in one place.</p>
+              <h1 className="mt-2 text-2xl font-semibold text-slate-950">{view === 'notice' ? 'Notices' : 'Notifications'}</h1>
+              <p className="mt-2 max-w-2xl text-sm text-slate-500">{view === 'notice'
+                ? 'Official school notices — announcements, exam schedules, holidays and circulars.'
+                : 'Alerts that need your attention — exam duty, class updates and action items.'}</p>
             </div>
             <button type="button" onClick={() => loadNotifications({ silent: true })} disabled={refreshing} className="inline-flex items-center justify-center gap-2 rounded-xl border border-slate-200 px-3 py-2 text-xs font-semibold text-slate-700 transition hover:border-indigo-200 hover:bg-indigo-50 disabled:cursor-not-allowed disabled:opacity-60">
               <RefreshCw size={15} className={refreshing ? 'animate-spin' : ''} />
@@ -527,12 +534,21 @@ const TeacherNotifications = () => {
         </section>
 
         <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+          <div className="flex flex-wrap items-center gap-2">
+          <div className="inline-flex w-fit rounded-xl border border-indigo-200 bg-indigo-50 p-1">
+            {[['notification', 'Notifications'], ['notice', 'Notices']].map(([value, label]) => (
+              <button key={value} type="button" onClick={() => setView(value)} className={`rounded-lg px-3 py-1.5 text-xs font-semibold transition ${view === value ? 'bg-indigo-600 text-white' : 'text-indigo-700 hover:text-indigo-900'}`}>
+                {label}
+              </button>
+            ))}
+          </div>
           <div className="inline-flex w-fit rounded-xl border border-slate-200 bg-white p-1">
             {['all', 'unread', 'read'].map((value) => (
               <button key={value} type="button" onClick={() => setFilter(value)} className={`rounded-lg px-3 py-1.5 text-xs font-semibold capitalize transition ${filter === value ? 'bg-slate-950 text-white' : 'text-slate-500 hover:text-slate-900'}`}>
                 {value} {value === 'unread' ? `(${unreadCount})` : ''}
               </button>
             ))}
+          </div>
           </div>
           {unreadCount > 0 && <button type="button" onClick={markAllRead} className="inline-flex items-center gap-2 text-xs font-semibold text-indigo-700 hover:text-indigo-900"><CheckCheck size={15} /> Mark all as read</button>}
         </div>
@@ -1577,7 +1593,7 @@ const TeacherPortalShell = () => {
     setNotifLoading(true);
     setNotifError('');
     try {
-      const res = await apiFetch(`${API_BASE}/api/notifications/user`, {
+      const res = await apiFetch(`${API_BASE}/api/notifications/user?kind=notification`, {
         cache: 'no-store',
         headers: {
           'Content-Type': 'application/json',
@@ -1695,7 +1711,7 @@ const TeacherPortalShell = () => {
       });
     }
     try {
-      const res = await apiFetch(`${API_BASE}/api/notifications/user/read-all`, {
+      const res = await apiFetch(`${API_BASE}/api/notifications/user/read-all?kind=notification`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json', authorization: `Bearer ${token}` },
       }, navigate);

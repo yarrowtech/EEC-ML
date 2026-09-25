@@ -17,8 +17,9 @@ import {
   Sun,
   Video,
   Clock,
+  User,
   ChevronLeft,
-  Menu,
+  MoreHorizontal,
   ChevronRight,
   ChevronDown,
   CheckCheck,
@@ -28,23 +29,12 @@ import {
   CalendarClock,
   Megaphone,
   MessageSquareHeart,
-  FileBadge,
-  NotebookPen,
-  CalendarDays,
-  UserCircle,
-  FolderOpen,
-  Search,
 } from 'lucide-react';
 import { useDesktopNotificationBridge } from '../hooks/useDesktopNotificationBridge';
 import DesktopNotificationPermissionModal from '../components/DesktopNotificationPermissionModal';
-import { useChatMessageNotifier } from './useChatMessageNotifier';
 import { AUTH_NOTICE, apiFetch, logoutAndRedirect } from '../utils/authSession';
 import { useDialog } from './useDialog';
 import './parentPortalDesign.css';
-import TenantContext from '../context/TenantContext';
-import { parentApiJson } from './parentApi';
-import NavChildSwitcher from './NavChildSwitcher';
-import { subscribeSocketEvent } from '../hooks/useCommunityWallUnread';
 
 const ParentDashboard = lazy(() => import('./ParentDashboard'));
 const ChildGrowthAnalytics = lazy(() => import('./ChildGrowthAnalytics'));
@@ -54,7 +44,6 @@ const AchievementsView = lazy(() => import('./AchievementsView'));
 const HealthReport = lazy(() => import('./HealthReport'));
 const ClassRoutine = lazy(() => import('./ClassRoutine'));
 const ExamRoutine = lazy(() => import('./ExamRoutine'));
-const AdmitCardsView = lazy(() => import('../components/AdmitCardsView'));
 const HolidayList = lazy(() => import('./HolidayList'));
 const FeesPayment = lazy(() => import('./FeesPayment'));
 const ParentChat = lazy(() => import('./ParentChat'));
@@ -64,10 +53,6 @@ const ParentObservationNonAcademic = lazy(() => import('./ParentObservationNonAc
 const ExcuseLetters = lazy(() => import('./ExcuseLetters'));
 const ParentNotices = lazy(() => import('./ParentNotices'));
 const ParentTeacherFeedback = lazy(() => import('./ParentTeacherFeedback'));
-const ParentHomework = lazy(() => import('./ParentHomework'));
-const SchoolCalendar = lazy(() => import('./SchoolCalendar'));
-const ChildProfile = lazy(() => import('./ChildProfile'));
-const ParentDocuments = lazy(() => import('./ParentDocuments'));
 
 const PortalRouteFallback = () => (
   <div className="flex min-h-[50vh] items-center justify-center" role="status" aria-live="polite">
@@ -78,229 +63,66 @@ const PortalRouteFallback = () => (
   </div>
 );
 
-// Navigation follows the parent's recommended access map: overview first,
-// then the child's learning, exams, money, school info, communication and
-// the child's own records. Everything is view-only except requests/messages.
+// Navigation is grouped so a parent scans by intent, not through a flat list.
 const NAV_GROUPS = [
-  // ─────────────────────────────────────────────
-  // 1. OVERVIEW
-  // ─────────────────────────────────────────────
   {
-    heading: 'Overview',
     items: [
-      {
-        icon: Home,
-        label: 'Dashboard',
-        description: 'Overview & insights',
-        path: '/parents',
-      },
+      { icon: Home, label: 'Dashboard', description: 'Overview & insights', path: '/parents' },
     ],
   },
-
-  // ─────────────────────────────────────────────
-  // 2. ACADEMICS
-  // ─────────────────────────────────────────────
   {
-    heading: 'Academics',
+    heading: 'Progress',
     items: [
-      {
-        icon: Calendar,
-        label: 'Attendance',
-        description: 'Daily record & attendance',
-        path: '/parents/attendance',
-      },
-      {
-        icon: NotebookPen,
-        label: 'Homework',
-        description: 'Assignments & due dates',
-        path: '/parents/homework',
-      },
-      {
-        icon: Clock,
-        label: 'Class Routine',
-        description: 'Weekly timetable',
-        path: '/parents/routine',
-      },
-      {
-        icon: BarChart2,
-        label: 'Growth Analytics',
-        description: 'Academic progress & insights',
-        path: '/parents/analytics',
-      },
+      { icon: BarChart2, label: 'Growth Analytics', description: 'Academic & wellbeing', path: '/parents/analytics' },
+      { icon: BookOpen, label: 'Report Card', description: 'Marks & assessments', path: '/parents/academic' },
+      { icon: Calendar, label: 'Attendance', description: 'Punctuality tracker', path: '/parents/attendance' },
+      { icon: Award, label: 'Achievements', description: 'Celebrate wins', path: '/parents/achievements' },
+      { icon: Activity, label: 'Health Record', description: 'Wellness & medical', path: '/parents/health' },
     ],
   },
-
-  // ─────────────────────────────────────────────
-  // 3. EXAMS & RESULTS
-  // ─────────────────────────────────────────────
   {
-    heading: 'Exams & Results',
+    heading: 'Schedule',
     items: [
-      {
-        icon: CalendarClock,
-        label: 'Exam Schedule',
-        description: 'Exam dates & routine',
-        path: '/parents/exam-routine',
-      },
-      {
-        icon: FileBadge,
-        label: 'Admit Cards',
-        description: 'Download exam admit cards',
-        path: '/parents/admit-cards',
-      },
-      {
-        icon: BookOpen,
-        label: 'Results & Report Card',
-        description: 'Marks, grades & report cards',
-        path: '/parents/academic',
-      },
-      {
-        icon: Award,
-        label: 'Achievements',
-        description: 'Awards, badges & milestones',
-        path: '/parents/achievements',
-      },
+      { icon: Clock, label: 'Class Routine', description: 'Weekly timetable', path: '/parents/routine' },
+      { icon: CalendarClock, label: 'Exam Routine', description: 'Exam schedule & downloads', path: '/parents/exam-routine' },
+      { icon: Sun, label: 'Holidays', description: 'School holiday list', path: '/parents/holidays' },
+      { icon: Megaphone, label: 'Notices', description: 'School announcements', path: '/parents/notices' },
     ],
   },
-
-  // ─────────────────────────────────────────────
-  // 4. FEES & PAYMENTS
-  // ─────────────────────────────────────────────
   {
-    heading: 'Fees & Payments',
+    heading: 'Money',
     items: [
-      {
-        icon: CreditCard,
-        label: 'Fees & Payments',
-        description: 'Dues, receipts & online payment',
-        path: '/parents/fees',
-      },
+      { icon: CreditCard, label: 'Fees', description: 'Bills & payments', path: '/parents/fees' },
     ],
   },
-
-  // ─────────────────────────────────────────────
-  // 5. SCHOOL COMMUNICATION
-  // ─────────────────────────────────────────────
   {
-    heading: 'Annocements',
+    heading: 'Talk to school',
     items: [
-      {
-        icon: Megaphone,
-        label: 'Notices',
-        description: 'Announcements & circulars',
-        path: '/parents/notices',
-      },
-      {
-        icon: CalendarDays,
-        label: 'School Calendar',
-        description: 'School events & important dates',
-        path: '/parents/calendar',
-      },
-      {
-        icon: Sun,
-        label: 'Holidays',
-        description: 'School holiday list',
-        path: '/parents/holidays',
-      },
-      {
-        icon: MessageCircle,
-        label: 'Messages',
-        description: 'Talk to teachers & school',
-        path: '/parents/chat',
-      },
-    ],
-  },
-
-  // ─────────────────────────────────────────────
-  // 6. PARENT–SCHOOL CONNECT
-  // ─────────────────────────────────────────────
-  {
-    heading: 'Communication',
-    items: [
-      {
-        icon: Video,
-        label: 'Meetings / PTM',
-        description: 'Parent-teacher meetings',
-        path: '/parents/ptm',
-      },
-      {
-        icon: MessageSquareHeart,
-        label: 'Teacher Feedback',
-        description: 'Teacher feedback & responses',
-        path: '/parents/teacher-feedback',
-      },
-      {
-        icon: FileEdit,
-        label: 'Observations',
-        description: 'Share observations from home',
-        path: '/parents/parent-observation',
-      },
-    ],
-  },
-
-  // ─────────────────────────────────────────────
-  // 7. REQUESTS & SUPPORT
-  // ─────────────────────────────────────────────
-  {
-    heading: 'Requests & Support',
-    items: [
-      {
-        icon: FileText,
-        label: 'Leave Letters',
-        description: 'Submit absence requests',
-        path: '/parents/excuse-letters',
-      },
-      {
-        icon: AlertOctagon,
-        label: 'Support & Complaints',
-        description: 'Raise requests & track replies',
-        path: '/parents/complaints',
-      },
-    ],
-  },
-
-  // ─────────────────────────────────────────────
-  // 8. CHILD INFORMATION
-  // ─────────────────────────────────────────────
-  {
-    heading: 'Child Information',
-    items: [
-      {
-        icon: UserCircle,
-        label: 'Child Profile',
-        description: 'School record & contacts',
-        path: '/parents/profile',
-      },
-      {
-        icon: FolderOpen,
-        label: 'Documents',
-        description: 'Reports, receipts & documents',
-        path: '/parents/documents',
-      },
-      {
-        icon: Activity,
-        label: 'Health Record',
-        description: 'Health & wellness information',
-        path: '/parents/health',
-      },
+      { icon: MessageCircle, label: 'Chat', description: 'Message staff', path: '/parents/chat' },
+      { icon: Video, label: 'Meetings', description: 'Parent-teacher meetings', path: '/parents/ptm' },
+      { icon: AlertOctagon, label: 'Complaints', description: 'Raise an issue', path: '/parents/complaints' },
+      { icon: FileEdit, label: 'Observations', description: 'Share home feedback', path: '/parents/parent-observation' },
+      { icon: MessageSquareHeart, label: 'Teacher Feedback', description: "Your child's feedback status", path: '/parents/teacher-feedback' },
+      { icon: FileText, label: 'Excuse Letters', description: 'Leave requests', path: '/parents/excuse-letters' },
     ],
   },
 ];
+
 // Mobile bottom-bar destinations. Everything else is one tap away via "More".
 const BOTTOM_NAV = [
   { icon: Home, label: 'Dashboard', path: '/parents' },
-  { icon: Calendar, label: 'Attendance', path: '/parents/attendance' },
-  { icon: NotebookPen, label: 'Homework', path: '/parents/homework' },
+  { icon: BarChart2, label: 'Analytics', path: '/parents/analytics' },
+  { icon: Clock, label: 'Routine', path: '/parents/routine' },
   { icon: CreditCard, label: 'Fees', path: '/parents/fees' },
 ];
 
 const ParentPortal = () => {
   const prefersReducedMotion = useReducedMotion();
   const [sidebarOpen, setSidebarOpen] = useState(() => (
-    typeof window === 'undefined' ? true : window.innerWidth >= 1280
+    typeof window === 'undefined' ? true : window.innerWidth >= 1024
   ));
   const [isDesktop, setIsDesktop] = useState(() => (
-    typeof window === 'undefined' ? true : window.matchMedia('(min-width: 1280px)').matches
+    typeof window === 'undefined' ? true : window.matchMedia('(min-width: 1024px)').matches
   ));
   const [parentProfile, setParentProfile] = useState(null);
   const [profileOpen, setProfileOpen] = useState(false);
@@ -310,16 +132,7 @@ const ParentPortal = () => {
   const [notifError, setNotifError] = useState('');
   const [showLogoutConfirm, setShowLogoutConfirm] = useState(false);
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
-  const [mobileSearchOpen, setMobileSearchOpen] = useState(false);
-  const [openGroups, setOpenGroups] = useState(() => (
-    Object.fromEntries(
-      NAV_GROUPS
-        .filter((group) => group.heading && group.heading !== 'Overview')
-        .map((group) => [group.heading, false])
-    )
-  ));
   const navigate = useNavigate();
-  const chatUnread = useChatMessageNotifier({ navigate });
   const location = useLocation();
   const profileRef = useRef(null);
   const notificationsRef = useRef(null);
@@ -327,42 +140,6 @@ const ParentPortal = () => {
   const notifSheetRef = useDialog(showNotifications && !isDesktop, () => setShowNotifications(false));
   const mobileMenuRef = useDialog(mobileMenuOpen, () => setMobileMenuOpen(false));
   const API_BASE = (import.meta.env.VITE_API_URL || 'http://localhost:5000').replace(/\/$/, '');
-  // School branding for the sidebar: tenant (subdomain) first, else the
-  // school block the parent exam-schedule API already returns.
-  const tenant = React.useContext(TenantContext); // optional: null outside a TenantProvider
-  const [fetchedSchool, setFetchedSchool] = useState(null);
-  const tenantIsDefault = !tenant?.logo && (!tenant?.name || tenant.name === 'Electronic Educare');
-  useEffect(() => {
-    if (!tenantIsDefault || !parentProfile || !localStorage.getItem('token')) return undefined;
-    let cancelled = false;
-    parentApiJson('/api/exam/groups/parent-schedule')
-      .then((data) => { if (!cancelled && data?.school) setFetchedSchool({ name: data.school.name || '', logo: data.school.logo || '' }); })
-      .catch(() => {});
-    return () => { cancelled = true; };
-  }, [tenantIsDefault, parentProfile]);
-  const schoolBrand = tenantIsDefault ? (fetchedSchool || { name: '', logo: '' }) : { name: tenant.name, logo: tenant.logo };
-  const schoolInitials = String(schoolBrand.name || '').trim().split(/\s+/).filter(Boolean)
-    .map((w) => w.replace(/[^A-Za-z0-9]/g, '').charAt(0).toUpperCase()).filter(Boolean).join('.');
-  const headerSearchRef = useRef(null);
-  const [headerSearch, setHeaderSearch] = useState('');
-  const [showSearchResults, setShowSearchResults] = useState(false);
-  const [headerNow, setHeaderNow] = useState(() => new Date());
-  useEffect(() => {
-    const t = setInterval(() => setHeaderNow(new Date()), 30000);
-    return () => clearInterval(t);
-  }, []);
-  useEffect(() => {
-    const close = (e) => { if (headerSearchRef.current && !headerSearchRef.current.contains(e.target)) setShowSearchResults(false); };
-    document.addEventListener('mousedown', close);
-    return () => document.removeEventListener('mousedown', close);
-  }, []);
-  const searchMatches = useMemo(() => {
-    const q = headerSearch.trim().toLowerCase();
-    if (!q) return [];
-    return NAV_GROUPS.flatMap((g) => g.items)
-      .filter((item) => `${item.label} ${item.description}`.toLowerCase().includes(q))
-      .slice(0, 8);
-  }, [headerSearch]);
 
   useEffect(() => {
     const loadParentProfile = async () => {
@@ -399,7 +176,7 @@ const ParentPortal = () => {
   useEffect(() => {
     const handleClickOutside = (event) => {
       if (typeof window === 'undefined') return;
-      if (window.innerWidth >= 1280) return;
+      if (window.innerWidth >= 1024) return;
       if (!sidebarOpen) return;
       if (event.target.closest('.parent-sidebar')) return;
       setSidebarOpen(false);
@@ -410,7 +187,7 @@ const ParentPortal = () => {
   }, [sidebarOpen]);
 
   useEffect(() => {
-    const desktopQuery = window.matchMedia('(min-width: 1280px)');
+    const desktopQuery = window.matchMedia('(min-width: 1024px)');
     const handleBreakpointChange = (event) => {
       setSidebarOpen(event.matches);
       setIsDesktop(event.matches);
@@ -451,28 +228,6 @@ const ParentPortal = () => {
     if (target === '/parents') return currentPath === target;
     return currentPath === target || currentPath.startsWith(`${target}/`);
   };
-  const toggleGroup = (heading) => {
-    setOpenGroups((prev) => ({
-      ...prev,
-      [heading]: !prev[heading],
-    }));
-  };
-
-  useEffect(() => {
-    const activeGroup = NAV_GROUPS.find(
-      (group) =>
-        group.heading &&
-        group.heading !== 'Overview' &&
-        group.items.some((item) => isNavActive(item.path))
-    );
-
-    if (activeGroup) {
-      setOpenGroups((prev) => ({
-        ...prev,
-        [activeGroup.heading]: true,
-      }));
-    }
-  }, [currentPath]);
   const goTo = (path) => {
     navigate(path);
     setMobileMenuOpen(false);
@@ -480,7 +235,7 @@ const ParentPortal = () => {
     setProfileOpen(false);
   };
   const handleMenuClick = () => {
-    if (typeof window !== 'undefined' && window.innerWidth < 1280) {
+    if (typeof window !== 'undefined' && window.innerWidth < 1024) {
       setSidebarOpen(false);
     }
   };
@@ -494,12 +249,6 @@ const ParentPortal = () => {
     ? `${nameParts[0][0]}${nameParts[nameParts.length - 1][0]}`
     : (nameParts[0]?.[0] || 'P')
   ).toUpperCase();
-  const parentAvatar = parentProfile?.profileImage
-    || parentProfile?.profilePhoto
-    || parentProfile?.photo
-    || parentProfile?.avatar
-    || parentProfile?.image
-    || '';
   const unreadCount = useMemo(
     () => notifications.filter((item) => !item?.isRead).length,
     [notifications]
@@ -547,9 +296,7 @@ const ParentPortal = () => {
       if (document.visibilityState === 'visible') fetchNotifs();
     };
     document.addEventListener('visibilitychange', onVisible);
-    const unsubscribeSocket = subscribeSocketEvent('new_notification', () => fetchNotifs());
     return () => {
-      unsubscribeSocket();
       clearInterval(poll);
       document.removeEventListener('visibilitychange', onVisible);
     };
@@ -596,7 +343,8 @@ const ParentPortal = () => {
     const nextOpen = !showNotifications;
     setShowNotifications(nextOpen);
     setProfileOpen(false);
-  }, [showNotifications]);
+    if (nextOpen && !sidebarOpen) setSidebarOpen(true);
+  }, [showNotifications, sidebarOpen]);
 
   const timeAgo = useCallback((value) => {
     if (!value) return '';
@@ -617,9 +365,6 @@ const ParentPortal = () => {
     const message = String(notification?.message || '').toLowerCase();
     const type = String(notification?.type || notification?.typeLabel || '').toLowerCase();
     const blob = `${title} ${message} ${type}`;
-    // Meeting alerts carry free-text topics (e.g. "Academic progress"), so match them first.
-    if (String(notification?.typeLabel || '').toLowerCase() === 'parent_teacher_meeting') return '/parents/ptm';
-    if (String(notification?.typeLabel || '').toLowerCase().startsWith('excuse_letter')) return '/parents/excuse-letters';
     if (String(notification?.typeLabel || '').toLowerCase().startsWith('feedback_')
       || String(notification?.eventType || '').startsWith('FEEDBACK_WINDOW')) return '/parents/teacher-feedback';
     if (blob.includes('analytics') || blob.includes('growth')) return '/parents/analytics';
@@ -657,21 +402,9 @@ const ParentPortal = () => {
   }, [notifications, resolveNotifPath]);
 
   const badgeFor = useCallback(
-    (path) => {
-      const key = normalizePath(path);
-      const chat = key === '/parents/chat' ? chatUnread : 0;
-      return (sectionBadges[key] || 0) + chat;
-    },
-    [sectionBadges, chatUnread],
+    (path) => sectionBadges[normalizePath(path)] || 0,
+    [sectionBadges],
   );
-
-  // Unread items for pages only reachable from the drawer (not the footer bar).
-  const moreBadgeCount = useMemo(() => {
-    const footerPaths = new Set(BOTTOM_NAV.map(({ path }) => normalizePath(path)));
-    return NAV_GROUPS.flatMap((group) => group.items)
-      .filter((item) => !footerPaths.has(normalizePath(item.path)))
-      .reduce((sum, item) => sum + badgeFor(item.path), 0);
-  }, [badgeFor]);
 
   // Visiting a section clears its badge by marking those notifications read.
   useEffect(() => {
@@ -712,7 +445,7 @@ const ParentPortal = () => {
 
   return (
     <>
-    <div className="min-h-dvh bg-gray-100 flex relative">
+    <div className="min-h-screen bg-gray-100 flex relative">
       {showLogoutConfirm && (
         <div className="fixed inset-0 z-[200] flex items-center justify-center bg-black/40 backdrop-blur-sm p-4">
           <button
@@ -756,552 +489,307 @@ const ParentPortal = () => {
           </div>
         </div>
       )}
-      {/* Desktop sidebar only — same layout as the school admin sidebar, in the
-          parent portal's violet. Below lg (mobile + tablet) it is hidden and the
-          app bar + bottom footer menu + "More" sheet take over. */}
-      <aside
-        className={`parent-sidebar fixed inset-y-0 left-0 z-50 hidden h-dvh xl:flex shrink-0 flex-col border-r border-gray-100 bg-white shadow-2xl transition-all duration-300 ease-in-out xl:sticky xl:top-0 xl:z-30 xl:shadow-lg
-          ${sidebarOpen
-            ? 'translate-x-0 w-72 xl:w-64'
-            : '-translate-x-full xl:translate-x-0 xl:w-[72px]'}`}
+      {/* Desktop sidebar only — on mobile the app bar + bottom nav take over. */}
+      <div
+        className={`parent-sidebar hidden lg:flex fixed lg:relative h-[100dvh] min-h-0 shrink-0 bg-white shadow-2xl transition-all duration-500 ease-in-out z-30 flex-col border-r border-gray-200 overflow-hidden
+          ${sidebarOpen ? 'w-[min(20rem,calc(100vw-1rem))] lg:w-80' : 'w-20'}
+          ${sidebarOpen ? 'translate-x-0' : '-translate-x-full lg:translate-x-0'}
+        `}
+        style={{
+          transitionProperty: 'width, transform, box-shadow',
+          transitionDuration: '0.4s',
+          transitionTimingFunction: 'cubic-bezier(0.4, 0, 0.2, 1)'
+        }}
         aria-label="Sidebar navigation"
       >
-        {/* ── Brand header ── */}
-        <div className="relative flex items-center gap-3 border-b border-gray-100 px-4 py-3 bg-indigo-50">
-          <div className={`flex shrink-0 items-center justify-center overflow-hidden rounded-full transition-all duration-300 ${sidebarOpen ? 'h-10 w-10' : 'h-9 w-9'} ${schoolBrand.logo ? '' : 'bg-linear-to-br from-violet-600 to-violet-500 text-white shadow-sm'}`}>
-            {schoolBrand.logo ? (
-              <img src={schoolBrand.logo} alt={schoolBrand.name || 'School logo'} className="h-full w-full object-cover" />
-            ) : (
-              <Users size={sidebarOpen ? 20 : 18} />
-            )}
-          </div>
-          {sidebarOpen && (
-            <div className="min-w-0 flex-1">
-              <p className="truncate text-sm font-bold leading-tight text-gray-900">Parent Portal</p>
-              <p className="mt-0.5 truncate text-[11px] font-semibold tracking-wide text-violet-500" title={schoolBrand.name || undefined}>
-                {schoolInitials || 'Your school'}
-              </p>
+        <div className="relative overflow-hidden">
+          <div className={`transition-all duration-400 ease-in-out ${sidebarOpen ? 'opacity-100 translate-x-0' : 'opacity-0 -translate-x-4 pointer-events-none absolute inset-0'}`}>
+            <div className="absolute inset-0 bg-gradient-to-br from-violet-700 via-violet-600 to-violet-500 opacity-95" />
+            <div className="relative px-4 py-5">
+              <div className="flex items-center gap-4">
+                <div className="flex min-w-0 flex-1 items-center gap-4">
+                  <div className="relative shrink-0">
+                    <div className="w-12 h-12 bg-white/20 backdrop-blur-sm rounded-2xl flex items-center justify-center shadow-lg border border-white/30">
+                      <Users className="w-6 h-6 text-white" />
+                    </div>
+                    <div className="absolute -top-1 -right-1 w-3 h-3 bg-green-400 rounded-full border-2 border-white animate-pulse" />
+                  </div>
+                  <div className="min-w-0 flex-1 text-white">
+                    <div className="font-semibold text-lg leading-tight">
+                      {parentProfile?.name ? `${parentProfile.name}` : 'Parent Portal'}
+                    </div>
+                    <div className="text-white/80 text-xs">
+                      {childrenCount ? `${childrenCount} ${wardLabel}` : 'Your children'}
+                    </div>
+                  </div>
+                </div>
+                <div className="ml-auto flex shrink-0 gap-2">
+                  <button
+                    onClick={() => setSidebarOpen(false)}
+                    className="hidden lg:flex p-2 rounded-xl bg-white/20 backdrop-blur-sm text-white hover:bg-white/30 transition-colors border border-white/30"
+                    aria-label="Collapse sidebar"
+                  >
+                    <ChevronLeft size={20} />
+                  </button>
+                  <button
+                    onClick={() => setSidebarOpen(false)}
+                    className="lg:hidden p-2 rounded-xl bg-white/20 backdrop-blur-sm text-white hover:bg-white/30 transition-colors border border-white/30"
+                    aria-label="Close sidebar"
+                  >
+                    <X size={20} />
+                  </button>
+                </div>
+              </div>
             </div>
-          )}
-          <button
-            type="button"
-            onClick={() => setSidebarOpen((open) => !open)}
-            className={`flex shrink-0 items-center justify-center transition-all duration-200 ${
-              sidebarOpen
-                ? 'h-7 w-7 rounded-lg text-gray-400 hover:bg-violet-50 hover:text-violet-600'
-                : 'absolute -right-2.5 top-1/2 h-5 w-5 -translate-y-1/2 rounded-full bg-violet-600 text-white shadow-md hover:bg-violet-700'
-            }`}
-            aria-label={sidebarOpen ? 'Collapse sidebar' : 'Expand sidebar'}
-          >
-            {sidebarOpen ? <ChevronLeft size={15} /> : <ChevronRight size={14} />}
-          </button>
+          </div>
+
+          <div className={`transition-all duration-400 ease-in-out ${!sidebarOpen ? 'opacity-100 translate-x-0' : 'opacity-0 translate-x-4 pointer-events-none absolute inset-0'}`}>
+            <div className="p-3 border-b border-gray-200 bg-white">
+              <div className="flex flex-col items-center space-y-3">
+                <div className="w-10 h-10 bg-gradient-to-br from-violet-600 to-violet-500 rounded-xl flex items-center justify-center shadow-md">
+                  <Users className="w-5 h-5 text-white" />
+                </div>
+                <div className="hidden lg:flex">
+                  <button
+                    onClick={() => setSidebarOpen(true)}
+                    className="p-2 rounded-lg text-violet-600 hover:bg-violet-50 transition-colors"
+                    aria-label="Expand sidebar"
+                  >
+                    <ChevronRight size={18} />
+                  </button>
+                </div>
+              </div>
+            </div>
+          </div>
         </div>
 
-        {/* ── Navigation ── */}
-        <nav className="modern-scrollbar min-h-0 flex-1 space-y-1 overflow-y-auto overflow-x-hidden overscroll-contain px-2 py-3">
-          {NAV_GROUPS.map((group, groupIndex) => {
-            const isDashboard = group.heading === 'Overview';
-            const isOpen = Boolean(openGroups[group.heading]);
-            const groupHasActiveItem = group.items.some((item) => isNavActive(item.path));
+        <nav className={`min-h-0 flex-1 overflow-y-auto overscroll-contain modern-scrollbar ${sidebarOpen ? 'px-4 py-5 space-y-4' : 'px-1 py-4 space-y-3'}`}>
+          {NAV_GROUPS.map((group, groupIndex) => (
+            <div key={group.heading || 'primary'} className={sidebarOpen ? 'space-y-1' : 'space-y-1'}>
+              {group.heading && sidebarOpen && (
+                <p className="px-4 pt-1 pb-1 text-[11px] font-semibold uppercase tracking-wider text-gray-400">
+                  {group.heading}
+                </p>
+              )}
+              {group.heading && !sidebarOpen && groupIndex > 0 && (
+                <div className="mx-2 my-1 border-t border-gray-200" aria-hidden="true" />
+              )}
+              {group.items.map((item) => {
+                const Icon = item.icon;
+                const targetPath = normalizePath(item.path);
+                const badgeCount = badgeFor(item.path);
+                const isRootLink = targetPath === '/parents';
+                const isActive = isRootLink
+                  ? currentPath === targetPath
+                  : currentPath === targetPath || currentPath.startsWith(`${targetPath}/`);
 
-            if (isDashboard) {
-              const item = group.items[0];
-              const Icon = item.icon;
-              const badgeCount = badgeFor(item.path);
-              const isActive = isNavActive(item.path);
-
-              return (
-                <Link
-                  key={item.path}
-                  to={item.path}
-                  onClick={handleMenuClick}
-                  aria-current={isActive ? 'page' : undefined}
-                  title={!sidebarOpen ? item.label : undefined}
-                  className={`group relative flex items-center gap-3 rounded-full px-3 py-2.5 transition-all duration-200 ${sidebarOpen ? '' : 'justify-center'} ${isActive ? 'bg-violet-50 text-violet-700 shadow-sm' : 'text-gray-600 hover:bg-gray-50 hover:text-gray-900'}`}
-                >
-                  <span className="relative z-10 shrink-0">
-                    <span className={`flex rounded-full p-1.5 transition-colors ${isActive ? 'bg-violet-500 text-white' : 'bg-gray-100 text-gray-400 group-hover:bg-violet-50 group-hover:text-violet-500'}`}>
-                      <Icon size={17} />
+                return (
+                  <Link
+                    key={item.path}
+                    to={item.path}
+                    onClick={handleMenuClick}
+                    aria-current={isActive ? 'page' : undefined}
+                    title={!sidebarOpen ? item.label : undefined}
+                    className={`
+                      group flex items-center rounded-xl transition-colors duration-200 ${
+                        sidebarOpen ? 'px-4 py-2.5' : 'px-2 py-2.5 justify-center'
+                      }
+                      ${
+                        isActive
+                          ? 'bg-violet-50 text-violet-700 border-l-[3px] border-violet-600'
+                          : 'text-gray-600 hover:bg-gray-100 hover:text-gray-900 border-l-[3px] border-transparent'
+                      }
+                    `}
+                  >
+                    <span className="relative flex-shrink-0">
+                      <Icon
+                        className={`transition-colors duration-200 ${isActive ? 'text-violet-600' : 'text-gray-400 group-hover:text-gray-600'}`}
+                        size={sidebarOpen ? 19 : 18}
+                      />
+                      {!sidebarOpen && badgeCount > 0 && (
+                        <span className="absolute -right-2 -top-2 flex h-4 min-w-[1rem] items-center justify-center rounded-full bg-violet-600 px-1 text-[10px] font-bold text-white">
+                          {badgeCount > 9 ? '9+' : badgeCount}
+                        </span>
+                      )}
                     </span>
-                    {!sidebarOpen && badgeCount > 0 && (
-                      <span className="absolute -right-1.5 -top-1.5 flex h-3.5 min-w-3.5 items-center justify-center rounded-full bg-red-500 px-1 text-[9px] font-bold text-white">
+                    {sidebarOpen && (
+                      <div className="ml-3 flex-1 min-w-0">
+                        <div className="font-medium text-sm">{item.label}</div>
+                        <div className="text-xs text-gray-400 truncate">{item.description}</div>
+                      </div>
+                    )}
+                    {sidebarOpen && badgeCount > 0 && (
+                      <span className="ml-2 flex h-5 min-w-[1.25rem] items-center justify-center rounded-full bg-violet-600 px-1.5 text-[11px] font-bold text-white">
                         {badgeCount > 9 ? '9+' : badgeCount}
                       </span>
                     )}
-                  </span>
-                  {sidebarOpen && (
-                    <span className={`relative z-10 flex-1 truncate text-sm ${isActive ? 'font-bold' : 'font-semibold'}`}>
-                      {item.label}
-                    </span>
-                  )}
-                  {sidebarOpen && badgeCount > 0 && (
-                    <span className="relative z-10 flex h-5 min-w-5 items-center justify-center rounded-full bg-red-500 px-1.5 text-[10px] font-bold text-white">
-                      {badgeCount > 9 ? '9+' : badgeCount}
-                    </span>
-                  )}
-                </Link>
-              );
-            }
-
-            const GroupIcon = group.items[0]?.icon || FolderOpen;
-            const groupBadge = group.items.reduce((sum, item) => sum + badgeFor(item.path), 0);
-            const showGroupBadge = groupBadge > 0 && (!sidebarOpen || !isOpen);
-
-            return (
-              <div key={group.heading} className="space-y-1">
-                {groupIndex > 1 && !sidebarOpen && (
-                  <div className="mx-3 my-1 border-t border-gray-100" aria-hidden="true" />
-                )}
-
-                <button
-                  type="button"
-                  onClick={() => {
-                    if (!sidebarOpen) {
-                      setSidebarOpen(true);
-                      setOpenGroups((prev) => ({ ...prev, [group.heading]: true }));
-                    } else {
-                      toggleGroup(group.heading);
-                    }
-                  }}
-                  title={!sidebarOpen ? group.heading : undefined}
-                  aria-expanded={sidebarOpen ? isOpen : undefined}
-                  className={`group relative flex w-full items-center gap-3 rounded-full px-3 py-2.5 text-left transition-all duration-200 ${sidebarOpen ? '' : 'justify-center'} ${groupHasActiveItem ? 'bg-violet-50/70 text-violet-700' : 'text-gray-600 hover:bg-gray-50 hover:text-gray-900'}`}
-                >
-                  <span className={`relative flex shrink-0 rounded-full p-1.5 transition-colors ${groupHasActiveItem ? 'bg-violet-500 text-white' : 'bg-gray-100 text-gray-400 group-hover:bg-violet-50 group-hover:text-violet-500'}`}>
-                    <GroupIcon size={17} />
-                    {showGroupBadge && !sidebarOpen && (
-                      <span className="absolute -right-1.5 -top-1.5 flex h-3.5 min-w-3.5 items-center justify-center rounded-full bg-red-500 px-1 text-[9px] font-bold text-white">
-                        {groupBadge > 9 ? '9+' : groupBadge}
-                      </span>
-                    )}
-                  </span>
-
-                  {sidebarOpen && (
-                    <>
-                      <span className={`flex-1 truncate text-sm ${groupHasActiveItem ? 'font-bold' : 'font-semibold'}`}>
-                        {group.heading}
-                      </span>
-                      {showGroupBadge && (
-                        <span className="flex h-5 min-w-5 items-center justify-center rounded-full bg-red-500 px-1.5 text-[10px] font-bold text-white">
-                          {groupBadge > 9 ? '9+' : groupBadge}
-                        </span>
-                      )}
-                      <ChevronDown size={15} className={`shrink-0 text-gray-400 transition-transform duration-200 ${isOpen ? 'rotate-180 text-violet-500' : ''}`} />
-                    </>
-                  )}
-                </button>
-
-                {sidebarOpen && isOpen && (
-                  <motion.div
-                    initial={{ height: 0, opacity: 0 }}
-                    animate={{ height: 'auto', opacity: 1 }}
-                    transition={{ duration: prefersReducedMotion ? 0 : 0.18 }}
-                    className="ml-4 overflow-hidden border-l border-violet-100 pl-2"
-                  >
-                    <div className="space-y-0.5 py-1">
-                      {group.items.map((item) => {
-                        const Icon = item.icon;
-                        const badgeCount = badgeFor(item.path);
-                        const isActive = isNavActive(item.path);
-
-                        return (
-                          <Link
-                            key={item.path}
-                            to={item.path}
-                            onClick={handleMenuClick}
-                            aria-current={isActive ? 'page' : undefined}
-                            className={`group relative flex items-center gap-2.5 rounded-full px-3 py-2 transition-all duration-150 ${isActive ? 'bg-violet-100 text-violet-700' : 'text-gray-500 hover:bg-gray-50 hover:text-gray-800'}`}
-                          >
-                            <span className={`flex shrink-0 rounded-full p-1 ${isActive ? 'bg-violet-500 text-white' : 'bg-gray-100 text-gray-400 group-hover:text-violet-500'}`}>
-                              <Icon size={14} />
-                            </span>
-                            <span className={`min-w-0 flex-1 truncate text-sm ${isActive ? 'font-bold' : 'font-medium'}`}>
-                              {item.label}
-                            </span>
-                            {badgeCount > 0 && (
-                              <span className="flex h-5 min-w-5 items-center justify-center rounded-full bg-red-500 px-1.5 text-[10px] font-bold text-white">
-                                {badgeCount > 9 ? '9+' : badgeCount}
-                              </span>
-                            )}
-                          </Link>
-                        );
-                      })}
-                    </div>
-                  </motion.div>
-                )}
-              </div>
-            );
-          })}
+                  </Link>
+                );
+              })}
+            </div>
+          ))}
         </nav>
 
-        {/* ── Footer: account + logout ── */}
-        <div className="shrink-0 border-t border-gray-100 p-3 bg-gray-50">
-          <div className={`flex items-center gap-3 ${sidebarOpen ? '' : 'flex-col'}`}>
-            <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-linear-to-br from-violet-600 to-violet-400 text-xs font-bold text-white">
-              {initials}
-            </div>
-            {sidebarOpen && (
-              <div className="min-w-0 flex-1">
-                <p className="truncate text-sm font-semibold text-gray-900">{parentName}</p>
-                <p className="truncate text-[11px] text-gray-500">Parent</p>
-              </div>
-            )}
-            <button
-              type="button"
-              onClick={handleLogout}
-              title="Logout"
-              className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg text-red-500 transition-colors hover:bg-red-50 hover:text-red-600"
-            >
-              <LogOut size={17} />
-              <span className="sr-only">Logout</span>
-            </button>
-          </div>
-        </div>
-      </aside>
-
-      <div className="flex-1 min-w-0 flex flex-col h-dvh bg-slate-50">
-        {/* Desktop header — same layout as the school admin header (module
-            search, clock, notifications, profile), in the parent violet. */}
-        <div className="sticky top-0 z-30 hidden shrink-0 xl:block">
-          <div className="flex items-center gap-3 border-b border-white/70 bg-violet-50 px-5 py-2 shadow-[0_16px_44px_-12px_rgba(15,23,42,0.10),0_4px_12px_rgba(15,23,42,0.04)] backdrop-blur-xl">
-            {/* Module search */}
-            <div className="relative max-w-md flex-1" ref={headerSearchRef}>
-              <form
-                className="flex w-full items-center gap-2 rounded-full border border-gray-300/70 bg-white py-0.5 pl-4 pr-1.5 transition focus-within:border-violet-300 focus-within:shadow-[0_4px_16px_rgba(15,23,42,0.05)]"
-                onSubmit={(e) => {
-                  e.preventDefault();
-                  if (searchMatches[0]) { goTo(searchMatches[0].path); setHeaderSearch(''); }
-                }}
-              >
-                <Search className="h-4 w-4 shrink-0 text-slate-400" />
-                <input
-                  type="text"
-                  value={headerSearch}
-                  onChange={(e) => { setHeaderSearch(e.target.value); setShowSearchResults(true); }}
-                  onFocus={() => setShowSearchResults(true)}
-                  placeholder="Search modules…"
-                  aria-label="Search modules"
-                  className="admin-search-input w-full border-none bg-transparent py-2 text-sm font-medium text-slate-900 outline-none placeholder:font-normal placeholder:text-slate-400"
-                />
-                {headerSearch && (
-                  <button type="button" onClick={() => setHeaderSearch('')} className="shrink-0 pr-1 text-slate-400 hover:text-slate-600" aria-label="Clear search">
-                    <X size={14} />
+        <div className={`${sidebarOpen ? 'p-3' : 'p-2'} shrink-0 border-t border-gray-200 bg-white`}>
+          {sidebarOpen && showNotifications && (
+            <section ref={notificationsRef} aria-label="Notifications panel" className="mb-3 overflow-hidden rounded-2xl border border-violet-100 bg-white shadow-lg">
+              <div className="flex items-center justify-between border-b border-gray-100 px-3 py-2.5">
+                <div className="flex items-center gap-2">
+                  <Bell size={15} className="text-violet-600" />
+                  <span className="text-sm font-bold text-gray-900">Notifications</span>
+                  {unreadCount > 0 && <span className="rounded-full bg-violet-100 px-1.5 py-0.5 text-[10px] font-bold text-violet-700">{unreadCount}</span>}
+                </div>
+                {unreadCount > 0 && (
+                  <button type="button" onClick={markAllRead} className="inline-flex items-center gap-1 text-[11px] font-semibold text-violet-600 hover:text-violet-800">
+                    <CheckCheck size={12} /> Mark all read
                   </button>
                 )}
-              </form>
-              {showSearchResults && headerSearch.trim() && (
-                <div className="absolute left-0 right-0 top-full z-50 mt-1 overflow-hidden rounded-2xl border border-white/60 bg-white/95 shadow-xl backdrop-blur-xl">
-                  {searchMatches.length === 0 ? (
-                    <p className="px-4 py-3 text-sm text-slate-400">No results</p>
-                  ) : (
-                    <ul className="divide-y divide-slate-50">
-                      {searchMatches.map((item) => (
-                        <li key={item.path}>
-                          <button
-                            type="button"
-                            onMouseDown={(e) => e.preventDefault()}
-                            onClick={() => { goTo(item.path); setHeaderSearch(''); setShowSearchResults(false); }}
-                            className="flex w-full items-center gap-3 px-4 py-2.5 text-left transition hover:bg-violet-50/70"
-                          >
-                            <item.icon size={15} className="shrink-0 text-violet-400" />
-                            <span>
-                              <span className="block text-sm font-medium text-slate-800">{item.label}</span>
-                              <span className="block text-[11px] text-slate-400">{item.description}</span>
-                            </span>
-                          </button>
-                        </li>
-                      ))}
-                    </ul>
-                  )}
-                </div>
-              )}
-            </div>
-
-            <div className="ml-auto flex items-center gap-2">
-              {/* Live clock */}
-              <div className="hidden items-center gap-2 rounded-full border border-white/30 bg-white/40 px-3.5 py-1.5 text-sm font-medium text-slate-900 xl:flex">
-                <Clock size={14} className="shrink-0 text-slate-400" />
-                <span className="whitespace-nowrap tabular-nums">{headerNow.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</span>
-                <span className="text-slate-400">{headerNow.toLocaleDateString('en-IN', { day: 'numeric', month: 'short' })}</span>
               </div>
-
-              {/* Child switcher (only with 2+ children) */}
-              <NavChildSwitcher />
-
-              {/* Notifications */}
-              <div className="relative">
-                <button
-                  data-notification-control
-                  type="button"
-                  onClick={handleToggleNotifications}
-                  aria-expanded={showNotifications}
-                  aria-label="Open notifications"
-                  className="relative flex h-10 w-10 items-center justify-center rounded-full border border-white/30 bg-white/40 text-slate-600 transition hover:border-white/60 hover:bg-white/80"
-                >
-                  <Bell size={18} />
-                  {unreadCount > 0 && (
-                    <span className="absolute -right-0.5 -top-0.5 flex h-4.5 min-w-4.5 items-center justify-center rounded-full border-2 border-white bg-red-500 px-1 text-[10px] font-bold text-white">
-                      {unreadCount > 9 ? '9+' : unreadCount}
-                    </span>
-                  )}
-                </button>
-                {isDesktop && showNotifications && (
-                  <section ref={notificationsRef} aria-label="Notifications panel" className="absolute right-0 top-full z-50 mt-2 w-96 overflow-hidden rounded-2xl border border-violet-100 bg-white shadow-2xl">
-                    <div className="flex items-center justify-between border-b border-gray-100 px-4 py-3">
-                      <div className="flex items-center gap-2">
-                        <Bell size={15} className="text-violet-600" />
-                        <span className="text-sm font-bold text-gray-900">Notifications</span>
-                        {unreadCount > 0 && <span className="rounded-full bg-violet-100 px-1.5 py-0.5 text-[10px] font-bold text-violet-700">{unreadCount}</span>}
-                      </div>
-                      {unreadCount > 0 && (
-                        <button type="button" onClick={markAllRead} className="inline-flex items-center gap-1 text-[11px] font-semibold text-violet-600 hover:text-violet-800">
-                          <CheckCheck size={12} /> Mark all read
-                        </button>
-                      )}
-                    </div>
-                    <div className="max-h-[60dvh] divide-y divide-gray-100 overflow-y-auto overscroll-contain" aria-live="polite">
-                      {notifLoading && <p className="px-4 py-5 text-center text-xs text-gray-500">Loading notifications…</p>}
-                      {!notifLoading && notifError && <p role="alert" className="px-4 py-4 text-xs text-red-600">{notifError}</p>}
-                      {!notifLoading && !notifError && notifications.length === 0 && <p className="px-4 py-5 text-center text-xs text-gray-500">No notifications yet</p>}
-                      {!notifLoading && !notifError && notifications.map((notification) => {
-                        const id = String(notification?._id || notification?.id || '');
-                        const isRead = Boolean(notification?.isRead);
-                        return (
-                          <button
-                            key={id || notification?.title}
-                            type="button"
-                            onClick={async () => {
-                              await markRead(id);
-                              setShowNotifications(false);
-                              navigate(resolveNotifPath(notification));
-                            }}
-                            className={`w-full px-4 py-3 text-left transition hover:bg-violet-50 ${isRead ? 'bg-white' : 'bg-violet-50/60'}`}
-                          >
-                            <span className="flex items-start gap-2">
-                              <span className={`mt-1.5 h-1.5 w-1.5 shrink-0 rounded-full ${isRead ? 'bg-gray-200' : 'bg-violet-500'}`} />
-                              <span className="min-w-0">
-                                <span className="block truncate text-sm font-semibold text-gray-800">{notification?.title || 'Notification'}</span>
-                                {notification?.message && <span className="mt-0.5 block line-clamp-2 text-xs text-gray-500">{formatNotificationMessage(notification.message)}</span>}
-                                <span className="mt-1 block text-[10px] text-gray-400">{timeAgo(notification?.createdAt)}</span>
-                              </span>
-                            </span>
-                          </button>
-                        );
-                      })}
-                    </div>
-                  </section>
-                )}
-              </div>
-
-              {/* Profile pill */}
-              <div className="relative">
-                <button
-                  data-profile-control
-                  type="button"
-                  onClick={() => { setProfileOpen((open) => !open); setShowNotifications(false); }}
-                  aria-expanded={profileOpen}
-                  aria-label="Profile"
-                  className="flex items-center gap-2.5 rounded-full border border-white/30 bg-white/40 py-1 pl-1.5 pr-3 transition hover:border-white/50 hover:bg-white/70 active:scale-[0.98]"
-                >
-                  <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-linear-to-br from-violet-600 to-violet-400 text-xs font-semibold text-white shadow-sm ring-2 ring-white/70">
-                    {initials}
-                  </span>
-                  <span className="flex min-w-0 flex-col text-left leading-tight">
-                    <span className="whitespace-nowrap text-sm font-semibold text-slate-900">{parentName}</span>
-                    <span className="text-[10px] font-medium tracking-wide text-slate-500">
-                      {childrenCount ? `Parent · ${childrenCount} ${wardLabel}` : 'Parent'}
-                    </span>
-                  </span>
-                  <ChevronDown size={14} className={`text-slate-400 transition-transform ${profileOpen ? 'rotate-180' : ''}`} />
-                </button>
-                {profileOpen && (
-                  <section ref={profileRef} aria-label="Profile panel" className="absolute right-0 top-full z-50 mt-2 w-60 overflow-hidden rounded-2xl border border-violet-100 bg-white p-2 shadow-2xl">
-                    <div className="flex items-center gap-3 border-b border-gray-100 px-2 pb-3 pt-1">
-                      <span className="flex h-10 w-10 items-center justify-center rounded-xl bg-linear-to-br from-violet-600 to-violet-400 text-sm font-bold text-white">{initials}</span>
-                      <span className="min-w-0">
-                        <span className="block truncate text-sm font-bold text-gray-900">{parentName}</span>
-                        <span className="block text-[11px] text-gray-500">{childrenCount ? `${childrenCount} ${wardLabel}` : 'Parent account'}</span>
+              <div className="max-h-[30dvh] min-h-0 divide-y divide-gray-100 overflow-y-auto overscroll-contain" aria-live="polite">
+                {notifLoading && <p className="px-3 py-5 text-center text-xs text-gray-500">Loading notifications…</p>}
+                {!notifLoading && notifError && <p role="alert" className="px-3 py-4 text-xs text-red-600">{notifError}</p>}
+                {!notifLoading && !notifError && notifications.length === 0 && <p className="px-3 py-5 text-center text-xs text-gray-500">No notifications yet</p>}
+                {!notifLoading && !notifError && notifications.map((notification) => {
+                  const id = String(notification?._id || notification?.id || '');
+                  const isRead = Boolean(notification?.isRead);
+                  return (
+                    <button
+                      key={id || notification?.title}
+                      type="button"
+                      onClick={async () => {
+                        await markRead(id);
+                        setShowNotifications(false);
+                        navigate(resolveNotifPath(notification));
+                        if (window.innerWidth < 1024) setSidebarOpen(false);
+                      }}
+                      className={`w-full px-3 py-2.5 text-left transition hover:bg-violet-50 ${isRead ? 'bg-white' : 'bg-violet-50/60'}`}
+                    >
+                      <span className="flex items-start gap-2">
+                        <span className={`mt-1.5 h-1.5 w-1.5 shrink-0 rounded-full ${isRead ? 'bg-gray-200' : 'bg-violet-500'}`} />
+                        <span className="min-w-0">
+                          <span className="block truncate text-xs font-semibold text-gray-800">{notification?.title || 'Notification'}</span>
+                          {notification?.message && <span className="mt-0.5 block line-clamp-2 text-[11px] text-gray-500">{formatNotificationMessage(notification.message)}</span>}
+                          <span className="mt-1 block text-[10px] text-gray-400">{timeAgo(notification?.createdAt)}</span>
+                        </span>
                       </span>
-                    </div>
-                    <button type="button" onClick={() => goTo('/parents/profile')} className="mt-1 flex w-full items-center gap-2 rounded-xl px-3 py-2 text-sm font-medium text-gray-700 transition hover:bg-violet-50">
-                      <UserCircle size={16} className="text-violet-600" /> Child Profile
                     </button>
-                    <button type="button" onClick={() => goTo('/parents/documents')} className="flex w-full items-center gap-2 rounded-xl px-3 py-2 text-sm font-medium text-gray-700 transition hover:bg-violet-50">
-                      <FolderOpen size={16} className="text-violet-600" /> Documents
-                    </button>
-                    <button type="button" onClick={() => { setProfileOpen(false); handleLogout(); }} className="flex w-full items-center gap-2 rounded-xl px-3 py-2 text-sm font-medium text-red-600 transition hover:bg-red-50">
-                      <LogOut size={16} /> Sign out
-                    </button>
-                  </section>
-                )}
+                  );
+                })}
               </div>
-            </div>
-          </div>
-        </div>
+            </section>
+          )}
 
-        {/* Mobile / tablet app bar */}
-        <header className="xl:hidden sticky top-0 z-40 shrink-0 border-b border-slate-200/80 bg-white/95 px-3 py-2.5 text-slate-900 shadow-[0_6px_24px_rgba(15,23,42,0.06)] backdrop-blur-xl">
-          <div className="flex min-h-11 items-center gap-2">
-            {!mobileSearchOpen && (
-            <button
+          {sidebarOpen && profileOpen && (
+            <section ref={profileRef} aria-label="Profile panel" className="mb-3 rounded-2xl border border-violet-100 bg-violet-50/70 p-3 shadow-sm">
+              <div className="flex items-center gap-3">
+                <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-gradient-to-br from-violet-600 to-violet-400 text-sm font-bold text-white">{initials}</div>
+                <div className="min-w-0">
+                  <p className="truncate text-sm font-bold text-gray-900">{parentName}</p>
+                  <p className="text-[11px] text-gray-500">{childrenCount ? `${childrenCount} ${wardLabel}` : 'Parent account'}</p>
+                </div>
+              </div>
+              <button type="button" onClick={() => { setProfileOpen(false); navigate('/parents'); }} className="mt-3 flex w-full items-center gap-2 rounded-xl bg-white px-3 py-2 text-xs font-semibold text-gray-700 transition hover:bg-violet-100">
+                <User size={15} className="text-violet-600" /> Open dashboard
+              </button>
+            </section>
+          )}
+
+          <div className={`grid gap-2 ${sidebarOpen ? 'grid-cols-2' : 'grid-cols-1'}`}>
+            <motion.button
+              data-notification-control
               type="button"
-              aria-label={mobileMenuOpen ? 'Close menu' : 'Open menu'}
-              aria-expanded={mobileMenuOpen}
+              onClick={handleToggleNotifications}
+              whileTap={prefersReducedMotion ? undefined : { scale: 0.96 }}
+              aria-expanded={showNotifications}
+              aria-label="Notifications"
+              className={`relative flex items-center rounded-xl border transition ${sidebarOpen ? 'justify-start gap-2 px-3 py-2.5' : 'justify-center p-2.5'} ${showNotifications ? 'border-violet-200 bg-violet-50 text-violet-700' : 'border-gray-200 text-gray-600 hover:bg-gray-50'}`}
+            >
+              <Bell size={18} />
+              {sidebarOpen && <span className="text-xs font-semibold">Notifications</span>}
+              {unreadCount > 0 && <span className="absolute right-1.5 top-1.5 flex h-4 min-w-4 items-center justify-center rounded-full bg-violet-600 px-1 text-[9px] font-bold text-white">{unreadCount > 9 ? '9+' : unreadCount}</span>}
+            </motion.button>
+            <motion.button
+              data-profile-control
+              type="button"
               onClick={() => {
-                setMobileMenuOpen((open) => !open);
+                if (!sidebarOpen) setSidebarOpen(true);
+                setProfileOpen((open) => !open);
                 setShowNotifications(false);
               }}
-              className="relative flex h-10 w-10 shrink-0 items-center justify-center rounded-xl text-slate-600 transition hover:bg-violet-50 hover:text-violet-600 active:scale-95"
+              whileTap={prefersReducedMotion ? undefined : { scale: 0.96 }}
+              aria-expanded={profileOpen}
+              aria-label="Profile"
+              className={`flex items-center rounded-xl border transition ${sidebarOpen ? 'justify-start gap-2 px-3 py-2.5' : 'justify-center p-2.5'} ${profileOpen ? 'border-violet-200 bg-violet-50 text-violet-700' : 'border-gray-200 text-gray-600 hover:bg-gray-50'}`}
             >
-              <Menu className="h-5 w-5" />
-              {moreBadgeCount > 0 && (
-                <span className="absolute right-1 top-1 flex h-4 min-w-4 items-center justify-center rounded-full bg-red-500 px-1 text-[9px] font-bold text-white ring-2 ring-white">
-                  {moreBadgeCount > 9 ? '9+' : moreBadgeCount}
-                </span>
-              )}
-            </button>
-            )}
+              <User size={18} />
+              {sidebarOpen && <span className="min-w-0 flex-1 truncate text-left text-xs font-semibold">Profile</span>}
+              {sidebarOpen && <ChevronDown size={13} className={`transition-transform ${profileOpen ? 'rotate-180' : ''}`} />}
+            </motion.button>
+          </div>
 
-            {!mobileSearchOpen ? (
-              <div className="flex w-full items-center justify-center gap-2.5">
-                <div className="flex h-9 w-9 shrink-0 items-center justify-end overflow-hidden rounded-full">
-                  {schoolBrand.logo ? (
-                    <img
-                      src={schoolBrand.logo}
-                      alt={schoolBrand.name || 'School logo'}
-                      className="h-full w-full object-cover"
-                    />
-                  ) : (
-                    <Users className="h-4.5 w-4.5 text-violet-600" />
-                  )}
-                </div>
-                <div className="w-full flex flex-col gap-0.5 justify-center items-center">
-                  <p className="truncate text-[15px] font-bold leading-tight text-slate-900">Parent Portal</p>
-                  <p className="truncate text-[10px] font-semibold tracking-wide text-violet-500">
-                    {schoolInitials || schoolBrand.name || 'Your school'}
-                  </p>
-                </div>
-              </div>
-            ) : (
-              <div className="relative min-w-0 flex-1" ref={headerSearchRef}>
-                <form
-                  className="flex h-10 w-full items-center gap-2 rounded-full border border-violet-200 bg-violet-50/70 px-3 shadow-sm focus-within:border-violet-400 focus-within:bg-white"
-                  onSubmit={(e) => {
-                    e.preventDefault();
-                    if (searchMatches[0]) {
-                      goTo(searchMatches[0].path);
-                      setHeaderSearch('');
-                      setShowSearchResults(false);
-                      setMobileSearchOpen(false);
-                    }
-                  }}
-                >
-                  <Search className="h-4 w-4 shrink-0 text-violet-500" />
-                  <input
-                    autoFocus
-                    type="text"
-                    value={headerSearch}
-                    onChange={(e) => {
-                      setHeaderSearch(e.target.value);
-                      setShowSearchResults(true);
-                    }}
-                    onFocus={() => setShowSearchResults(true)}
-                    placeholder="Search modules…"
-                    aria-label="Search modules"
-                    className="w-full min-w-0 border-none bg-transparent text-sm font-medium text-slate-900 outline-none placeholder:font-normal placeholder:text-slate-400"
-                  />
-                </form>
-
-                {showSearchResults && headerSearch.trim() && (
-                  <div className="absolute left-0 right-0 top-[calc(100%+6px)] z-[80] max-h-72 overflow-y-auto rounded-2xl border border-violet-100 bg-white shadow-2xl">
-                    {searchMatches.length === 0 ? (
-                      <p className="px-4 py-3 text-sm text-slate-400">No results</p>
-                    ) : (
-                      <ul className="divide-y divide-slate-50">
-                        {searchMatches.map((item) => (
-                          <li key={item.path}>
-                            <button
-                              type="button"
-                              onMouseDown={(e) => e.preventDefault()}
-                              onClick={() => {
-                                goTo(item.path);
-                                setHeaderSearch('');
-                                setShowSearchResults(false);
-                                setMobileSearchOpen(false);
-                              }}
-                              className="flex w-full items-center gap-3 px-4 py-3 text-left transition hover:bg-violet-50/70"
-                            >
-                              <item.icon size={16} className="shrink-0 text-violet-500" />
-                              <span className="min-w-0">
-                                <span className="block truncate text-sm font-semibold text-slate-800">{item.label}</span>
-                                <span className="block truncate text-[11px] text-slate-400">{item.description}</span>
-                              </span>
-                            </button>
-                          </li>
-                        ))}
-                      </ul>
-                    )}
-                  </div>
-                )}
+          <button
+            type="button"
+            onClick={handleLogout}
+            className={`group relative mt-2 w-full flex items-center rounded-xl transition-all duration-300 ease-out transform ${
+              sidebarOpen ? 'px-3 py-2.5' : 'px-0 py-2 justify-center'
+            } text-red-600 hover:bg-gradient-to-r hover:from-red-50 hover:to-pink-50 hover:text-red-700 hover:shadow-md hover:scale-105 active:scale-95`}
+          >
+            <div className={`flex items-center justify-center rounded-lg transition-all duration-300 ${
+              sidebarOpen ? 'w-10 h-10 bg-red-100 group-hover:bg-red-200' : 'w-10 h-10 bg-red-100'
+            }`}>
+              <LogOut size={20} />
+            </div>
+            {sidebarOpen && (
+              <div className="ml-3 text-left">
+                <div className="font-medium text-sm">Logout</div>
+                <div className="text-xs text-red-500">Sign out securely</div>
               </div>
             )}
+          </button>
+        </div>
+      </div>
 
-            <div className="flex shrink-0 items-center gap-1">
-              {mobileSearchOpen ? (
-                <button
-                  type="button"
-                  aria-label="Close search"
-                  onClick={() => {
-                    setMobileSearchOpen(false);
-                    setHeaderSearch('');
-                    setShowSearchResults(false);
-                  }}
-                  className="flex h-10 w-10 items-center justify-center rounded-xl text-slate-500 transition hover:bg-slate-100 hover:text-slate-800 active:scale-95"
-                >
-                  <X className="h-5 w-5" />
-                </button>
-              ) : (
-                <button
-                  type="button"
-                  aria-label="Search"
-                  onClick={() => {
-                    setMobileSearchOpen(true);
-                    setShowNotifications(false);
-                    setMobileMenuOpen(false);
-                  }}
-                  className="flex h-10 w-10 items-center justify-center rounded-xl text-slate-500 transition hover:bg-violet-50 hover:text-violet-600 active:scale-95"
-                >
-                  <Search className="h-5 w-5" />
-                </button>
-              )}
-
-              {!mobileSearchOpen && (
+      <div className="flex-1 min-w-0 flex flex-col h-screen bg-slate-50">
+        {/* Mobile app bar */}
+        <header className="lg:hidden sticky top-0 z-40 shrink-0 bg-violet-600 px-4 py-4 text-white shadow-md">
+          <div className="flex items-center justify-between gap-3">
+            <div className="flex min-w-0 items-center gap-3">
+              <div className="relative shrink-0">
+                <div className="flex h-10 w-10 items-center justify-center rounded-full border border-white/40 bg-white/20 text-sm font-semibold shadow-inner">
+                  {initials}
+                </div>
+                <span className="absolute right-0 top-0 h-3 w-3 rounded-full border-2 border-violet-600 bg-emerald-400" aria-hidden="true" />
+              </div>
+              <div className="min-w-0">
+                <p className="truncate text-base font-bold leading-tight tracking-tight">{parentName}</p>
+                <p className="text-xs font-medium text-violet-200">
+                  {childrenCount ? `${childrenCount} ${childrenCount === 1 ? 'child' : 'children'} enrolled` : 'Parent account'}
+                </p>
+              </div>
+            </div>
+            <div className="flex shrink-0 items-center gap-2">
               <button
                 type="button"
                 aria-label="Notifications"
-                aria-expanded={showNotifications}
-                onClick={() => {
-                  setShowNotifications((v) => !v);
-                  setMobileMenuOpen(false);
-                  setMobileSearchOpen(false);
-                  setHeaderSearch('');
-                  setShowSearchResults(false);
-                }}
-                className="relative flex h-10 w-10 items-center justify-center rounded-xl text-slate-500 transition hover:bg-violet-50 hover:text-violet-600 active:scale-95"
+                onClick={() => { setShowNotifications((v) => !v); setMobileMenuOpen(false); }}
+                className="relative rounded-full bg-white/10 p-2 transition hover:bg-white/20 active:scale-95"
               >
                 <Bell className="h-5 w-5" />
-                {unreadCount > 0 && (
-                  <span className="absolute right-1.5 top-1.5 flex h-4 min-w-4 items-center justify-center rounded-full bg-red-500 px-1 text-[9px] font-bold text-white ring-2 ring-white">
-                    {unreadCount > 9 ? '9+' : unreadCount}
-                  </span>
-                )}
+                {unreadCount > 0 && <span className="absolute right-1.5 top-1.5 h-2 w-2 rounded-full bg-pink-400" />}
               </button>
-              )}
+              <button
+                type="button"
+                aria-label="Account and menu"
+                onClick={() => { setMobileMenuOpen(true); setShowNotifications(false); }}
+                className="rounded-full bg-white/10 p-2 transition hover:bg-white/20 active:scale-95"
+              >
+                <ChevronRight className="h-5 w-5" />
+              </button>
             </div>
           </div>
         </header>
 
-        <main id="parent-main-content" className="parent-route-canvas min-h-0 flex-1 overflow-y-auto p-0">
+        <main id="parent-main-content" className="parent-route-canvas flex-1 overflow-y-auto bg-gradient-to-br from-slate-50 via-white to-violet-50/30 p-0 sm:p-3">
           <div className="h-full min-h-full sm:bg-white/40 sm:backdrop-blur-sm">
           <Suspense fallback={<PortalRouteFallback />}>
           <Routes>
@@ -1321,7 +809,6 @@ const ParentPortal = () => {
             <Route path="teacher-feedback" element={<ParentTeacherFeedback />} />
             <Route path="routine" element={<ClassRoutine />} />
             <Route path="exam-routine" element={<ExamRoutine />} />
-            <Route path="admit-cards" element={<AdmitCardsView mode="parent" />} />
             <Route path="academic" element={<AcademicReport />} />
             <Route path="fees" element={<FeesPayment />} />
             <Route path="health" element={<HealthReport />} />
@@ -1333,10 +820,6 @@ const ParentPortal = () => {
             {/* "Results" merged into the Report Card screen — keep the old path working. */}
             <Route path="results" element={<Navigate to="/parents/academic" replace />} />
             <Route path="achievements" element={<AchievementsView />} />
-            <Route path="homework" element={<ParentHomework />} />
-            <Route path="calendar" element={<SchoolCalendar />} />
-            <Route path="profile" element={<ChildProfile />} />
-            <Route path="documents" element={<ParentDocuments />} />
             <Route path="*" element={<Navigate to="/parents" replace />} />
           </Routes>
           </Suspense>
@@ -1344,7 +827,7 @@ const ParentPortal = () => {
         </main>
 
         {/* Mobile bottom navigation */}
-        <nav aria-label="Primary" className="xl:hidden shrink-0 border-t border-slate-200/80 bg-white/95 px-2 pt-1.5 pb-[max(0.375rem,env(safe-area-inset-bottom))] shadow-[0_-4px_20px_rgba(0,0,0,0.04)] backdrop-blur-md">
+        <nav aria-label="Primary" className="lg:hidden shrink-0 border-t border-slate-200/80 bg-white/95 px-2 py-1.5 shadow-[0_-4px_20px_rgba(0,0,0,0.04)] backdrop-blur-md">
           <div className="mx-auto flex max-w-md items-center justify-around">
             {BOTTOM_NAV.map(({ icon: Icon, label, path }) => {
               const active = isNavActive(path);
@@ -1357,7 +840,7 @@ const ParentPortal = () => {
                   onClick={() => goTo(path)}
                   className={`flex flex-col items-center rounded-xl px-3 py-1 transition active:scale-95 ${active ? 'font-semibold text-violet-600' : 'font-medium text-slate-400'}`}
                 >
-                  <span className={`relative mb-0.5 flex h-8 w-8 items-center justify-center rounded-full ${active ? 'bg-violet-600 text-white' : ''}`}>
+                  <span className={`relative mb-0.5 flex h-8 w-8 items-center justify-center rounded-full ${active ? 'bg-violet-100' : ''}`}>
                     <Icon className="h-5 w-5" />
                     {badgeCount > 0 && (
                       <span className="absolute -right-1 -top-1 flex h-4 min-w-[1rem] items-center justify-center rounded-full bg-violet-600 px-1 text-[10px] font-bold text-white">
@@ -1371,28 +854,22 @@ const ParentPortal = () => {
             })}
             <button
               type="button"
-              aria-label="Profile"
-              aria-current={isNavActive('/parents/profile') ? 'page' : undefined}
-              onClick={() => goTo('/parents/profile')}
-              className={`flex flex-col items-center rounded-xl px-3 py-1 transition active:scale-95 ${isNavActive('/parents/profile') ? 'font-semibold text-violet-600' : 'font-medium text-slate-400'}`}
+              aria-label="More"
+              aria-expanded={mobileMenuOpen}
+              onClick={() => { setMobileMenuOpen(true); setShowNotifications(false); }}
+              className={`flex flex-col items-center rounded-xl px-3 py-1 transition active:scale-95 ${mobileMenuOpen ? 'font-semibold text-violet-600' : 'font-medium text-slate-400'}`}
             >
-              <span className={`relative mb-0.5 flex h-8 w-8 items-center justify-center overflow-hidden rounded-full ${isNavActive('/parents/profile') ? 'bg-violet-100 ring-2 ring-violet-200' : 'bg-slate-100'}`}>
-                {parentAvatar ? (
-                  <img src={parentAvatar} alt="" className="h-full w-full object-cover" />
-                ) : (
-                  <span className={`text-[11px] font-bold ${isNavActive('/parents/profile') ? 'text-violet-600' : 'text-slate-500'}`}>
-                    {initials}
-                  </span>
-                )}
+              <span className={`mb-0.5 flex h-8 w-8 items-center justify-center rounded-full ${mobileMenuOpen ? 'bg-violet-100' : ''}`}>
+                <MoreHorizontal className="h-5 w-5" />
               </span>
-              <span className="text-[10px]">Profile</span>
+              <span className="text-[10px]">More</span>
             </button>
           </div>
         </nav>
 
-        {/* Mobile / tablet drawer — slides in from the left: full navigation + account + logout */}
+        {/* Mobile menu sheet — full navigation + account + logout */}
         {mobileMenuOpen && (
-          <div className="xl:hidden fixed inset-0 z-[120]">
+          <div className="lg:hidden fixed inset-0 z-[120]">
             <motion.button
               type="button"
               aria-label="Close menu"
@@ -1408,12 +885,13 @@ const ParentPortal = () => {
               aria-modal="true"
               aria-label="Menu"
               tabIndex={-1}
-              className="absolute inset-y-0 left-0 flex h-dvh w-[85vw] max-w-xs flex-col rounded-r-3xl bg-white pb-[env(safe-area-inset-bottom)] shadow-2xl outline-none"
-              initial={{ x: prefersReducedMotion ? 0 : '-100%' }}
-              animate={{ x: 0 }}
-              exit={{ x: '-100%' }}
+              className="absolute inset-x-0 bottom-0 flex max-h-[88dvh] flex-col rounded-t-3xl bg-white pb-[env(safe-area-inset-bottom)] shadow-2xl outline-none"
+              initial={{ y: prefersReducedMotion ? 0 : '100%' }}
+              animate={{ y: 0 }}
+              exit={{ y: '100%' }}
               transition={{ type: 'spring', stiffness: 380, damping: 34 }}
             >
+              <div className="mx-auto mt-2 h-1 w-9 shrink-0 rounded-full bg-slate-200" aria-hidden="true" />
               <div className="flex items-center justify-between gap-3 border-b border-slate-100 px-5 py-4">
                 <div className="flex min-w-0 items-center gap-3">
                   <div className="flex h-11 w-11 items-center justify-center rounded-full bg-gradient-to-br from-violet-600 to-violet-400 text-sm font-bold text-white">{initials}</div>
@@ -1427,53 +905,36 @@ const ParentPortal = () => {
                 </button>
               </div>
               <nav className="min-h-0 flex-1 overflow-y-auto px-3 py-3">
-                {NAV_GROUPS.map((group) => {
-                  const isDashboard = group.heading === 'Overview';
-                  const isOpen = Boolean(openGroups[group.heading]);
-                  const groupHasActiveItem = group.items.some((item) => isNavActive(item.path));
-
-                  if (isDashboard) {
-                    const item = group.items[0];
-                    const Icon = item.icon;
-                    const active = isNavActive(item.path);
-                    return (
-                      <button key={item.path} type="button" onClick={() => goTo(item.path)} aria-current={active ? 'page' : undefined} className={`mb-1 flex w-full items-center gap-3 rounded-xl px-3 py-3 text-left transition ${active ? 'bg-violet-50 text-violet-700' : 'text-slate-600 hover:bg-slate-50'}`}>
-                        <Icon className={`h-5 w-5 shrink-0 ${active ? 'text-violet-600' : 'text-slate-400'}`} />
-                        <span className="text-sm font-semibold">{item.label}</span>
-                      </button>
-                    );
-                  }
-
-                  const GroupIcon = group.items[0]?.icon || FolderOpen;
-                  return (
-                    <div key={group.heading} className="mb-1">
-                      <button type="button" onClick={() => toggleGroup(group.heading)} aria-expanded={isOpen} className={`flex w-full items-center gap-3 rounded-xl px-3 py-3 text-left transition ${groupHasActiveItem ? 'bg-violet-50 text-violet-700' : 'text-slate-600 hover:bg-slate-50'}`}>
-                        <span className={`flex h-9 w-9 shrink-0 items-center justify-center rounded-lg ${groupHasActiveItem ? 'bg-violet-500 text-white' : 'bg-slate-100 text-slate-400'}`}>
-                          <GroupIcon size={17} />
-                        </span>
-                        <span className="flex-1 text-sm font-semibold">{group.heading}</span>
-                        <ChevronDown size={17} className={`transition-transform ${isOpen ? 'rotate-180 text-violet-600' : 'text-slate-400'}`} />
-                      </button>
-
-                      {isOpen && (
-                        <div className="ml-5 mt-1 space-y-1 border-l border-violet-100 pl-3">
-                          {group.items.map((item) => {
-                            const Icon = item.icon;
-                            const active = isNavActive(item.path);
-                            const badgeCount = badgeFor(item.path);
-                            return (
-                              <button key={item.path} type="button" onClick={() => goTo(item.path)} aria-current={active ? 'page' : undefined} className={`flex w-full items-center gap-3 rounded-lg px-3 py-2.5 text-left transition ${active ? 'bg-violet-100 text-violet-700' : 'text-slate-600 hover:bg-slate-50'}`}>
-                                <Icon className={`h-4 w-4 shrink-0 ${active ? 'text-violet-600' : 'text-slate-400'}`} />
-                                <span className={`min-w-0 flex-1 truncate text-sm ${active ? 'font-bold' : 'font-medium'}`}>{item.label}</span>
-                                {badgeCount > 0 && <span className="flex h-5 min-w-5 items-center justify-center rounded-full bg-violet-600 px-1.5 text-[10px] font-bold text-white">{badgeCount > 9 ? '9+' : badgeCount}</span>}
-                              </button>
-                            );
-                          })}
-                        </div>
-                      )}
-                    </div>
-                  );
-                })}
+                {NAV_GROUPS.map((group) => (
+                  <div key={group.heading || 'primary'} className="mb-1">
+                    {group.heading && <p className="px-3 pb-1 pt-2 text-[11px] font-semibold uppercase tracking-wider text-slate-400">{group.heading}</p>}
+                    {group.items.map((item) => {
+                      const Icon = item.icon;
+                      const active = isNavActive(item.path);
+                      const badgeCount = badgeFor(item.path);
+                      return (
+                        <button
+                          key={item.path}
+                          type="button"
+                          onClick={() => goTo(item.path)}
+                          aria-current={active ? 'page' : undefined}
+                          className={`flex w-full items-center gap-3 rounded-xl px-3 py-2.5 text-left transition ${active ? 'bg-violet-50 text-violet-700' : 'text-slate-600 active:bg-slate-100'}`}
+                        >
+                          <Icon className={`h-5 w-5 shrink-0 ${active ? 'text-violet-600' : 'text-slate-400'}`} />
+                          <span className="min-w-0 flex-1">
+                            <span className="block text-sm font-medium">{item.label}</span>
+                            <span className="block truncate text-xs text-slate-400">{item.description}</span>
+                          </span>
+                          {badgeCount > 0 && (
+                            <span className="flex h-5 min-w-[1.25rem] items-center justify-center rounded-full bg-violet-600 px-1.5 text-[11px] font-bold text-white">
+                              {badgeCount > 9 ? '9+' : badgeCount}
+                            </span>
+                          )}
+                        </button>
+                      );
+                    })}
+                  </div>
+                ))}
               </nav>
               <div className="border-t border-slate-100 px-5 py-3">
                 <button
@@ -1490,7 +951,7 @@ const ParentPortal = () => {
 
         {/* Mobile notifications sheet */}
         {showNotifications && !isDesktop && (
-          <div className="xl:hidden fixed inset-0 z-[130]">
+          <div className="lg:hidden fixed inset-0 z-[130]">
             <motion.button
               type="button"
               aria-label="Close notifications"
@@ -1574,6 +1035,3 @@ const ParentPortal = () => {
 };
 
 export default ParentPortal;
-
-
-
