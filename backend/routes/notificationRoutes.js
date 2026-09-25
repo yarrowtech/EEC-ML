@@ -508,6 +508,30 @@ router.patch('/:id', adminAuth, async (req, res) => {
 });
 
 // Admin delete a notification
+// POST /api/notifications/bulk-delete { ids: [...] }
+// Deletes several notices at once (school/campus scoped). Super-admin notices
+// are skipped for school admins, same rule as the single delete.
+router.post('/bulk-delete', adminAuth, async (req, res) => {
+  // #swagger.tags = ['Notifications']
+  try {
+    const schoolId = resolveSchoolId(req, res);
+    if (!schoolId) return;
+    const campusId = req.campusId || null;
+    const ids = [...new Set((Array.isArray(req.body?.ids) ? req.body.ids : []).map(String))]
+      .filter((id) => mongoose.isValidObjectId(id));
+    if (!ids.length) return res.status(400).json({ error: 'Select at least one notice' });
+    if (ids.length > 500) return res.status(400).json({ error: 'You can delete up to 500 notices at a time' });
+
+    const scope = { _id: { $in: ids }, schoolId, ...(campusId ? { campusId } : {}) };
+    const protectedFilter = req.isSuperAdmin ? {} : { createdByType: { $ne: 'super_admin' } };
+    const result = await Notification.deleteMany({ ...scope, ...protectedFilter });
+    const deleted = result.deletedCount || 0;
+    res.json({ ok: true, deleted, skipped: ids.length - deleted });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
 router.delete('/:id', adminAuth, async (req, res) => {
   // #swagger.tags = ['Notifications']
   try {
