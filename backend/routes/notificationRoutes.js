@@ -460,6 +460,7 @@ router.get('/', adminAuth, async (req, res) => {
       typeLabel: { $nin: HIDDEN_FROM_NOTICEBOARD_TYPE_LABELS },
       // The Notices console lists official NOTICES only — event alerts live in the bell.
       kind: 'notice',
+      adminHidden: { $ne: true },
       ...(campusId
         ? { $or: [{ campusId }, { campusId: null }, { campusId: { $exists: false } }] }
         : {}),

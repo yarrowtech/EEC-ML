@@ -20,6 +20,7 @@ const { ACTIVE_STUDENT_FILTER } = require('./studentStatus');
 const { renderFormalNoticePdf } = require('./formalNoticePdf');
 const { uploadBufferToCloudinary } = require('./cloudinaryUpload');
 const { EVENTS, broadcast, notify } = require('../services/communicationService');
+const { withSchoolTenant } = require('./withSchoolTenant');
 
 const DAY_MS = 24 * 60 * 60 * 1000;
 const CLOSING_SOON_DAYS_BEFORE = 3;
@@ -492,6 +493,9 @@ const autoCloseExpiredWindows = async () => {
 
   let closed = 0;
   for (const school of schools) {
+    // eslint-disable-next-line no-await-in-loop
+    closed += await withSchoolTenant(school._id, async () => {
+    let closedHere = 0;
     const expired = (school.teacherFeedbackWindows || []).filter((w) => w.enabled && w.endDate && new Date(w.endDate) < now);
     for (const window of expired) {
       // eslint-disable-next-line no-await-in-loop
@@ -501,7 +505,7 @@ const autoCloseExpiredWindows = async () => {
         { arrayFilters: [{ 'w.sessionId': window.sessionId, 'w.enabled': true }] },
       );
       if (!res.modifiedCount) continue; // another run already closed it
-      closed += 1;
+      closedHere += 1;
       // eslint-disable-next-line no-await-in-loop
       await Notification.updateMany(
         { dedupeKey: { $in: NOTICE_ROLES.map((role) => noticeKey(school._id, window.sessionId, role)) } },
@@ -517,6 +521,8 @@ const autoCloseExpiredWindows = async () => {
         data: { auto: true, end: dateKey(window.endDate) },
       });
     }
+    return closedHere;
+    });
   }
   return closed;
 };
@@ -550,8 +556,9 @@ const dispatchTeacherFeedbackReminders = async () => {
       const args = {
         schoolId: school._id, sessionId: window.sessionId, stage, startDate: window.startDate, endDate: window.endDate, daysLeft,
       };
+      // Cron has no request tenant — run in the school's so records are scoped/visible.
       // eslint-disable-next-line no-await-in-loop
-      const [a, b] = await Promise.all([sendPendingReminders(args), sendTeacherReminder(args)]);
+      const [a, b] = await withSchoolTenant(school._id, () => Promise.all([sendPendingReminders(args), sendTeacherReminder(args)]));
       created += a.created + b.created;
     }
   }

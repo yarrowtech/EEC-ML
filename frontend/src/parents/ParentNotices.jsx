@@ -5,7 +5,7 @@ import PageHeader from './PageHeader';
 import Loading from './Loading';
 import { EmptyState, ErrorState } from './StateBlock';
 import { parentApiFetch } from './parentApi';
-import FormalNotice, { isFormalNotice } from '../components/FormalNotice';
+import FormalNotice, { isFormalNotice, attachmentsForRole } from '../components/FormalNotice';
 import { downloadAttachment } from '../utils/noticeDisplay';
 
 // Official school notices only (kind 'notice'). Event alerts — fee receipts,
@@ -156,7 +156,7 @@ const ParentNotices = () => {
                 {isFormalNotice(n) ? (
                   <>
                     <p className="mt-1 text-sm leading-6 text-slate-600">
-                      {n.document.paragraphs?.[0]}
+                      {String(n.document.paragraphs?.[0] || '').split('**').join('')}
                       {' '}<span className="text-xs text-slate-400">({n.document.noticeNo})</span>
                     </p>
                     <div className="mt-3 flex flex-wrap gap-2">
@@ -177,7 +177,7 @@ const ParentNotices = () => {
                         </button>
                       )}
                     </div>
-                    {openFormalId === n._id && <FormalNotice document={n.document} className="mt-4" />}
+                    {openFormalId === n._id && <FormalNotice document={n.document} viewerRole="parent" className="mt-4" />}
                   </>
                 ) : (
                   <p className="mt-1 whitespace-pre-line text-sm leading-6 text-slate-600">{n?.message}</p>
@@ -185,9 +185,9 @@ const ParentNotices = () => {
                 {(scope || n?.createdByName) && (
                   <p className="mt-2 text-xs text-slate-400">{[n?.createdByName && `From ${n.createdByName}`, scope].filter(Boolean).join(' · ')}</p>
                 )}
-                {Array.isArray(n?.attachments) && n.attachments.some((a) => a?.url) && (
+                {attachmentsForRole(n?.attachments || [], 'parent').some((a) => a?.url) && (
                   <div className="mt-3 flex flex-wrap gap-2">
-                    {n.attachments.filter((a) => a?.url).map((a) => (
+                    {attachmentsForRole(n.attachments, 'parent').filter((a) => a?.url).map((a) => (
                       // Blob download so raw Cloudinary files keep their real name (.pdf).
                       <button key={a.url} type="button" onClick={() => downloadAttachment(a)} className="inline-flex items-center gap-1.5 rounded-lg border border-slate-200 px-2.5 py-1 text-xs font-medium text-indigo-700 hover:bg-indigo-50">
                         <Paperclip size={13} /> {a.name || 'Attachment'}
