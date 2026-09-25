@@ -4,7 +4,7 @@ import {
   ChevronDown, ChevronRight, ChevronLeft, Trophy, Bell,
   MessageCircle, MessageSquare, Brain, X, BarChart3,
   Heart, Star, Target, Zap, AlertOctagon, Video, Activity,
-  GraduationCap, CalendarClock, ClipboardCheck, NotebookPen, FileBadge,
+  GraduationCap, CalendarClock, ClipboardCheck, NotebookPen,
 } from 'lucide-react';
 
 import { useNavigate } from 'react-router-dom';
@@ -12,7 +12,6 @@ import { useStudentDashboard } from './StudentDashboardContext';
 import { AUTH_NOTICE, logoutAndRedirect } from '../utils/authSession';
 import { getStudentModuleNotificationCount } from '../utils/moduleNotificationUtils';
 import ConfirmDialog from './ConfirmDialog';
-import useCommunityWallUnread from '../hooks/useCommunityWallUnread';
 
 const API_URL = (import.meta.env.VITE_API_URL || 'http://localhost:5000').replace(/\/$/, '');
 
@@ -35,12 +34,11 @@ const MENU_ITEMS = [
     children: [
       { id: 'learning', name: 'Learning Hub', icon: Brain },
       { id: 'assignments', name: 'Assignments', icon: FileText },
-      { id: 'long-answer', name: 'Long Answer', icon: ClipboardCheck },
       { id: 'assignments-journal', name: 'Journal', icon: NotebookPen },
-      { id: 'assignments-academic-alcove', name: 'Community Wall', icon: Target },
+      { id: 'assignments-academic-alcove', name: 'Class Wall', icon: Target },
       { id: 'results', name: 'Results', icon: BarChart3 },
       { id: 'mastery', name: 'Mastery Progress', icon: Zap },
-      //{ id: 'error-analysis', name: 'Error Analysis', icon: ClipboardCheck },
+      { id: 'error-analysis', name: 'Error Analysis', icon: ClipboardCheck },
     ],
   },
   {
@@ -49,7 +47,6 @@ const MENU_ITEMS = [
       { id: 'routine', name: 'Timetable', icon: Calendar },
       { id: 'attendance', name: 'Attendance', icon: Users },
       { id: 'exams', name: 'Exams', icon: FileText },
-      { id: 'admit-cards', name: 'Admit Cards', icon: FileBadge },
       { id: 'lesson-plan-status', name: 'Syllabus', icon: BookOpen },
       { id: 'holidays', name: 'Holidays', icon: CalendarClock },
       { id: 'noticeboard', name: 'Notice Board', icon: Bell },
@@ -137,16 +134,13 @@ const Sidebar = ({ activeView, isOpen, setIsOpen }) => {
   const schoolName = studentData.schoolName || 'Student Portal';
   const hasSchoolLogo = typeof studentData.schoolLogo === 'string' && studentData.schoolLogo.trim() !== '';
   const schoolInitial = (schoolName.trim()[0] || 'S').toUpperCase();
-  const communityUnread = useCommunityWallUnread({ wallPath: '/student/assignments-academic-alcove' });
-  const getModuleCount = (moduleId) => getStudentModuleNotificationCount(notifications, moduleId, unreadChatCount, moduleSeenState, chatSeenCount)
-    + (moduleId === 'assignments-academic-alcove' ? communityUnread.count : 0);
+  const getModuleCount = (moduleId) => getStudentModuleNotificationCount(notifications, moduleId, unreadChatCount, moduleSeenState, chatSeenCount);
   const groupCounts = useMemo(() => Object.fromEntries(
     MENU_ITEMS.map((item) => [
       item.id,
       (item.children || []).reduce((total, child) => total + getModuleCount(child.id), 0),
     ])
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  ), [notifications, unreadChatCount, moduleSeenState, chatSeenCount, communityUnread.count]);
+  ), [notifications, unreadChatCount, moduleSeenState, chatSeenCount]);
 
   useEffect(() => {
     markModuleVisited(activeView);
@@ -497,4 +491,3 @@ const Sidebar = ({ activeView, isOpen, setIsOpen }) => {
 };
 
 export default Sidebar;
-
