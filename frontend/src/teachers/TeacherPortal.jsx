@@ -537,20 +537,20 @@ const TeacherNotifications = () => {
 
         <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
           <div className="flex flex-wrap items-center gap-2">
-          <div className="inline-flex w-fit rounded-xl border border-indigo-200 bg-indigo-50 p-1">
-            {[['notification', 'Notifications'], ['notice', 'Notices']].map(([value, label]) => (
-              <button key={value} type="button" onClick={() => setView(value)} className={`rounded-lg px-3 py-1.5 text-xs font-semibold transition ${view === value ? 'bg-indigo-600 text-white' : 'text-indigo-700 hover:text-indigo-900'}`}>
-                {label}
-              </button>
-            ))}
-          </div>
-          <div className="inline-flex w-fit rounded-xl border border-slate-200 bg-white p-1">
-            {['all', 'unread', 'read'].map((value) => (
-              <button key={value} type="button" onClick={() => setFilter(value)} className={`rounded-lg px-3 py-1.5 text-xs font-semibold capitalize transition ${filter === value ? 'bg-slate-950 text-white' : 'text-slate-500 hover:text-slate-900'}`}>
-                {value} {value === 'unread' ? `(${unreadCount})` : ''}
-              </button>
-            ))}
-          </div>
+            <div className="inline-flex w-fit rounded-xl border border-indigo-200 bg-indigo-50 p-1">
+              {[['notification', 'Notifications'], ['notice', 'Notices']].map(([value, label]) => (
+                <button key={value} type="button" onClick={() => setView(value)} className={`rounded-lg px-3 py-1.5 text-xs font-semibold transition ${view === value ? 'bg-indigo-600 text-white' : 'text-indigo-700 hover:text-indigo-900'}`}>
+                  {label}
+                </button>
+              ))}
+            </div>
+            <div className="inline-flex w-fit rounded-xl border border-slate-200 bg-white p-1">
+              {['all', 'unread', 'read'].map((value) => (
+                <button key={value} type="button" onClick={() => setFilter(value)} className={`rounded-lg px-3 py-1.5 text-xs font-semibold capitalize transition ${filter === value ? 'bg-slate-950 text-white' : 'text-slate-500 hover:text-slate-900'}`}>
+                  {value} {value === 'unread' ? `(${unreadCount})` : ''}
+                </button>
+              ))}
+            </div>
           </div>
           {unreadCount > 0 && <button type="button" onClick={markAllRead} className="inline-flex items-center gap-2 text-xs font-semibold text-indigo-700 hover:text-indigo-900"><CheckCheck size={15} /> Mark all as read</button>}
         </div>
@@ -566,63 +566,63 @@ const TeacherNotifications = () => {
           </div>
         ) : (
           <>
-          <div className="space-y-3">
-            {pagedNotifications.map((notification) => {
-              const id = String(notification?._id || notification?.id || notification?.title || 'notification');
-              const meta = notificationTypeMeta(notification);
-              const Icon = meta.icon;
-              const isRead = Boolean(notification?.isRead);
-              // The "Exam Scheduled" heads-up has no detail page of its own
-              // (just a class-list summary) — offering "Open related page"
-              // for it only ever lands on a generic screen, so skip it.
-              const hasRelatedPage = String(notification?.typeLabel || '') !== 'exam_scheduled_teacher';
-              return (
-                <article key={id} className={`rounded-2xl border bg-white p-4 shadow-sm transition hover:shadow-md sm:p-5 ${isRead ? 'border-slate-200' : 'border-indigo-200 ring-1 ring-indigo-50'}`}>
-                  <div className="flex items-start gap-3">
-                    <div className={`flex h-10 w-10 shrink-0 items-center justify-center rounded-xl ${notificationToneClasses[meta.tone]}`}><Icon size={19} /></div>
-                    <div className="min-w-0 flex-1">
-                      <div className="flex flex-wrap items-center gap-2">
-                        <span className={`rounded-full px-2 py-0.5 text-[10px] font-bold uppercase tracking-wide ${notificationToneClasses[meta.tone]}`}>{meta.label}</span>
-                        {!isRead && <span className="rounded-full bg-indigo-100 px-2 py-0.5 text-[10px] font-bold text-indigo-700">Unread</span>}
-                        {notification?.priority && notification.priority !== 'medium' && <span className="text-[10px] font-semibold capitalize text-slate-400">{notification.priority} priority</span>}
-                      </div>
-                      <h2 className="mt-2 text-base font-semibold text-slate-950">{notification?.title || 'Notification'}</h2>
-                      <p className="mt-1 text-sm leading-6 text-slate-600">{notification?.message || 'There is an update waiting for you.'}</p>
-                      <div className="mt-3 flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-slate-400">
-                        <span>{notificationTimeLabel(notification?.createdAt)}</span>
-                        {notification?.createdByName && <span>From {notification.createdByName}</span>}
-                        {(notification?.className || notification?.sectionName) && <span>{[notification.className, notification.sectionName].filter(Boolean).join(' · ')}</span>}
+            <div className="space-y-3">
+              {pagedNotifications.map((notification) => {
+                const id = String(notification?._id || notification?.id || notification?.title || 'notification');
+                const meta = notificationTypeMeta(notification);
+                const Icon = meta.icon;
+                const isRead = Boolean(notification?.isRead);
+                // The "Exam Scheduled" heads-up has no detail page of its own
+                // (just a class-list summary) — offering "Open related page"
+                // for it only ever lands on a generic screen, so skip it.
+                const hasRelatedPage = String(notification?.typeLabel || '') !== 'exam_scheduled_teacher';
+                return (
+                  <article key={id} className={`rounded-2xl border bg-white p-4 shadow-sm transition hover:shadow-md sm:p-5 ${isRead ? 'border-slate-200' : 'border-indigo-200 ring-1 ring-indigo-50'}`}>
+                    <div className="flex items-start gap-3">
+                      <div className={`flex h-10 w-10 shrink-0 items-center justify-center rounded-xl ${notificationToneClasses[meta.tone]}`}><Icon size={19} /></div>
+                      <div className="min-w-0 flex-1">
+                        <div className="flex flex-wrap items-center gap-2">
+                          <span className={`rounded-full px-2 py-0.5 text-[10px] font-bold uppercase tracking-wide ${notificationToneClasses[meta.tone]}`}>{meta.label}</span>
+                          {!isRead && <span className="rounded-full bg-indigo-100 px-2 py-0.5 text-[10px] font-bold text-indigo-700">Unread</span>}
+                          {notification?.priority && notification.priority !== 'medium' && <span className="text-[10px] font-semibold capitalize text-slate-400">{notification.priority} priority</span>}
+                        </div>
+                        <h2 className="mt-2 text-base font-semibold text-slate-950">{notification?.title || 'Notification'}</h2>
+                        <p className="mt-1 text-sm leading-6 text-slate-600">{notification?.message || 'There is an update waiting for you.'}</p>
+                        <div className="mt-3 flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-slate-400">
+                          <span>{notificationTimeLabel(notification?.createdAt)}</span>
+                          {notification?.createdByName && <span>From {notification.createdByName}</span>}
+                          {(notification?.className || notification?.sectionName) && <span>{[notification.className, notification.sectionName].filter(Boolean).join(' · ')}</span>}
+                        </div>
                       </div>
                     </div>
-                  </div>
-                  {(!isRead || hasRelatedPage) && (
-                    <div className="mt-4 flex flex-wrap justify-end gap-2 border-t border-slate-100 pt-3">
-                      {!isRead && <button type="button" onClick={() => markRead(id)} className="rounded-lg border border-slate-200 px-3 py-1.5 text-xs font-semibold text-slate-600 hover:bg-slate-50">Mark as read</button>}
-                      {hasRelatedPage && (
-                        <button type="button" onClick={async () => { await markRead(id); navigate(resolveTeacherNotificationPath(notification)); }} className="rounded-lg bg-slate-950 px-3 py-1.5 text-xs font-semibold text-white hover:bg-slate-800">Open related page</button>
-                      )}
-                    </div>
-                  )}
-                </article>
-              );
-            })}
-          </div>
-
-          {totalPages > 1 && (
-            <div className="flex items-center justify-between gap-3 rounded-2xl border border-slate-200 bg-white px-4 py-3">
-              <p className="text-xs text-slate-500">Page {currentPage} of {totalPages} · {filteredNotifications.length} notification{filteredNotifications.length !== 1 ? 's' : ''}</p>
-              <div className="flex items-center gap-2">
-                <button type="button" onClick={() => setPage((p) => Math.max(1, p - 1))} disabled={currentPage <= 1}
-                  className="rounded-lg border border-slate-200 px-3 py-1.5 text-xs font-semibold text-slate-600 hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-40">
-                  Previous
-                </button>
-                <button type="button" onClick={() => setPage((p) => Math.min(totalPages, p + 1))} disabled={currentPage >= totalPages}
-                  className="rounded-lg border border-slate-200 px-3 py-1.5 text-xs font-semibold text-slate-600 hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-40">
-                  Next
-                </button>
-              </div>
+                    {(!isRead || hasRelatedPage) && (
+                      <div className="mt-4 flex flex-wrap justify-end gap-2 border-t border-slate-100 pt-3">
+                        {!isRead && <button type="button" onClick={() => markRead(id)} className="rounded-lg border border-slate-200 px-3 py-1.5 text-xs font-semibold text-slate-600 hover:bg-slate-50">Mark as read</button>}
+                        {hasRelatedPage && (
+                          <button type="button" onClick={async () => { await markRead(id); navigate(resolveTeacherNotificationPath(notification)); }} className="rounded-lg bg-slate-950 px-3 py-1.5 text-xs font-semibold text-white hover:bg-slate-800">Open related page</button>
+                        )}
+                      </div>
+                    )}
+                  </article>
+                );
+              })}
             </div>
-          )}
+
+            {totalPages > 1 && (
+              <div className="flex items-center justify-between gap-3 rounded-2xl border border-slate-200 bg-white px-4 py-3">
+                <p className="text-xs text-slate-500">Page {currentPage} of {totalPages} · {filteredNotifications.length} notification{filteredNotifications.length !== 1 ? 's' : ''}</p>
+                <div className="flex items-center gap-2">
+                  <button type="button" onClick={() => setPage((p) => Math.max(1, p - 1))} disabled={currentPage <= 1}
+                    className="rounded-lg border border-slate-200 px-3 py-1.5 text-xs font-semibold text-slate-600 hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-40">
+                    Previous
+                  </button>
+                  <button type="button" onClick={() => setPage((p) => Math.min(totalPages, p + 1))} disabled={currentPage >= totalPages}
+                    className="rounded-lg border border-slate-200 px-3 py-1.5 text-xs font-semibold text-slate-600 hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-40">
+                    Next
+                  </button>
+                </div>
+              </div>
+            )}
           </>
         )}
       </div>
@@ -749,37 +749,37 @@ const PlaceholderModule = ({ icon = FileText, title, description, actions = [], 
   const ModuleIcon = icon;
 
   return (
-  <div className="rounded-2xl border border-slate-200 bg-white p-5">
-    <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
-      <div className="flex items-start gap-3">
-        <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-slate-100 text-slate-700">
-          <ModuleIcon size={20} />
+    <div className="rounded-2xl border border-slate-200 bg-white p-5">
+      <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
+        <div className="flex items-start gap-3">
+          <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-slate-100 text-slate-700">
+            <ModuleIcon size={20} />
+          </div>
+          <div>
+            <h2 className="text-base font-semibold text-slate-950">{title}</h2>
+            <p className="mt-1 max-w-2xl text-sm text-slate-500">{description}</p>
+          </div>
         </div>
-        <div>
-          <h2 className="text-base font-semibold text-slate-950">{title}</h2>
-          <p className="mt-1 max-w-2xl text-sm text-slate-500">{description}</p>
-        </div>
+        {actions.length > 0 && (
+          <div className="flex flex-wrap gap-2">
+            {actions.map((action) => (
+              <NavLink
+                key={action.to}
+                to={action.to}
+                className="inline-flex items-center gap-2 rounded-lg border border-slate-200 px-3 py-2 text-xs font-semibold text-slate-700 hover:border-indigo-300 hover:bg-indigo-50 hover:text-indigo-700"
+              >
+                {action.label}
+                {getTeacherModuleNotificationCount(notifications, teacherNotificationModuleKeyForLabel(action.label), seenState) > 0 && (
+                  <span className="flex min-h-5 min-w-5 items-center justify-center rounded-full bg-red-500 px-1.5 text-[10px] font-bold leading-none text-white">
+                    {getTeacherModuleNotificationCount(notifications, teacherNotificationModuleKeyForLabel(action.label), seenState) > 99 ? '99+' : getTeacherModuleNotificationCount(notifications, teacherNotificationModuleKeyForLabel(action.label), seenState)}
+                  </span>
+                )}
+              </NavLink>
+            ))}
+          </div>
+        )}
       </div>
-      {actions.length > 0 && (
-        <div className="flex flex-wrap gap-2">
-          {actions.map((action) => (
-            <NavLink
-              key={action.to}
-              to={action.to}
-              className="inline-flex items-center gap-2 rounded-lg border border-slate-200 px-3 py-2 text-xs font-semibold text-slate-700 hover:border-indigo-300 hover:bg-indigo-50 hover:text-indigo-700"
-            >
-              {action.label}
-              {getTeacherModuleNotificationCount(notifications, teacherNotificationModuleKeyForLabel(action.label), seenState) > 0 && (
-                <span className="flex min-h-5 min-w-5 items-center justify-center rounded-full bg-red-500 px-1.5 text-[10px] font-bold leading-none text-white">
-                  {getTeacherModuleNotificationCount(notifications, teacherNotificationModuleKeyForLabel(action.label), seenState) > 99 ? '99+' : getTeacherModuleNotificationCount(notifications, teacherNotificationModuleKeyForLabel(action.label), seenState)}
-                </span>
-              )}
-            </NavLink>
-          ))}
-        </div>
-      )}
     </div>
-  </div>
   );
 };
 
@@ -965,7 +965,7 @@ const ClassesHub = () => {
         style={{ ...GLASS_CARD, padding: '3.5rem 4rem 4rem' }}
       >
         {/* Title */}
-          <h1
+        <h1
           className="mb-8 self-center rounded-[60px] px-6 py-1.5 text-center text-[1.6rem] font-semibold tracking-[-0.02em] text-[#5363F5]"
           style={{ background: 'rgba(255,255,255,0.20)', border: '1px solid #D7DCFF', backdropFilter: 'blur(4px)' }}
         >
@@ -1052,8 +1052,8 @@ const CW_TABS = [
     ownPaths: (rel) => rel.startsWith('overview/'),
     firstPath: 'overview/analytics',
     subTabs: [
-      { label: 'Overall Class Analytics',  path: 'overview/analytics' },
-      { label: 'Overall Attendance',       path: 'overview/attendance' },
+      { label: 'Overall Class Analytics', path: 'overview/analytics' },
+      { label: 'Overall Attendance', path: 'overview/attendance' },
     ],
   },
   {
@@ -1071,11 +1071,11 @@ const CW_TABS = [
     firstPath: 'students/health-records',
     subTabs: [
       { label: 'Student Health Records', path: 'students/health-records', notificationKey: 'health' },
-      { label: 'Attendance',             path: 'students/attendance', notificationKey: 'attendance' },
-      { label: 'Assignments',            path: 'assignments/manage', notificationKey: 'assignments' },
-      { label: 'Evaluate Submissions',   path: 'assignments/evaluate', notificationKey: 'assignments-evaluate' },
-      { label: 'Achievements',           path: 'students/achievements', notificationKey: 'achievements' },
-      { label: 'Exam',                   path: 'assessments/exam', notificationKey: 'assessments' },
+      { label: 'Attendance', path: 'students/attendance', notificationKey: 'attendance' },
+      { label: 'Assignments', path: 'assignments/manage', notificationKey: 'assignments' },
+      { label: 'Evaluate Submissions', path: 'assignments/evaluate', notificationKey: 'assignments-evaluate' },
+      { label: 'Achievements', path: 'students/achievements', notificationKey: 'achievements' },
+      { label: 'Exam', path: 'assessments/exam', notificationKey: 'assessments' },
     ],
   },
   {
@@ -1149,11 +1149,11 @@ const ClassWorkspace = ({ notifications = [], seenState = {} }) => {
         const remembered = readRememberedClass();
         const rememberedAllocation = remembered?.slug
           ? activeAllocations.find((a) => {
-              const cn = String(a?.classId?.name || a?.className || '').trim();
-              const sn = String(a?.sectionId?.name || a?.sectionName || '').trim();
-              const itSlug = `${cn}-${sn}`.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '');
-              return itSlug === remembered.slug;
-            })
+            const cn = String(a?.classId?.name || a?.className || '').trim();
+            const sn = String(a?.sectionId?.name || a?.sectionName || '').trim();
+            const itSlug = `${cn}-${sn}`.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '');
+            return itSlug === remembered.slug;
+          })
           : null;
         const primary = rememberedAllocation
           || activeAllocations.find((a) => a?.isClassTeacher)
@@ -1471,7 +1471,7 @@ const TeacherPortalShell = () => {
 
   const isItemActive = useCallback((path) =>
     location.pathname === path || location.pathname.startsWith(`${path}/`),
-  [location.pathname]);
+    [location.pathname]);
 
   const handleLogout = () => {
     setShowLogoutConfirm(true);
@@ -1790,255 +1790,260 @@ const TeacherPortalShell = () => {
 
   return (
     <>
-    <div className="flex h-screen h-dvh max-h-screen max-h-dvh min-h-0 overflow-hidden bg-[#fafafa]">
-      {showLogoutConfirm && (
-        <div className="fixed inset-0 z-[200] flex items-center justify-center bg-black/40 backdrop-blur-sm p-4">
-          <div className="w-full max-w-sm rounded-2xl bg-white shadow-2xl overflow-hidden">
-            <div className="h-1 bg-linear-to-r from-red-400 to-rose-400" />
-            <div className="p-6">
-              <div className="w-12 h-12 rounded-2xl bg-red-50 flex items-center justify-center mx-auto mb-4">
-                <LogOut className="w-6 h-6 text-red-500" />
-              </div>
-              <h3 className="text-base font-bold text-gray-900 text-center">Confirm Logout</h3>
-              <p className="text-sm text-gray-500 text-center mt-1">
-                Are you sure you want to log out? Any unsaved changes will be lost.
-              </p>
-              <div className="mt-5 flex gap-3">
-                <button
-                  onClick={() => setShowLogoutConfirm(false)}
-                  className="flex-1 py-2.5 rounded-xl border border-gray-200 text-sm font-semibold text-gray-600 hover:bg-gray-50 transition-colors"
-                >
-                  Cancel
-                </button>
-                <button
-                  onClick={confirmLogout}
-                  className="flex-1 py-2.5 rounded-xl bg-red-500 hover:bg-red-600 text-white text-sm font-bold transition-colors"
-                >
-                  Logout
-                </button>
+      <div className="flex h-screen h-dvh max-h-screen max-h-dvh min-h-0 overflow-hidden bg-[#fafafa]">
+        {showLogoutConfirm && (
+          <div className="fixed inset-0 z-[200] flex items-center justify-center bg-black/40 backdrop-blur-sm p-4">
+            <div className="w-full max-w-sm rounded-2xl bg-white shadow-2xl overflow-hidden">
+              <div className="h-1 bg-linear-to-r from-red-400 to-rose-400" />
+              <div className="p-6">
+                <div className="w-12 h-12 rounded-2xl bg-red-50 flex items-center justify-center mx-auto mb-4">
+                  <LogOut className="w-6 h-6 text-red-500" />
+                </div>
+                <h3 className="text-base font-bold text-gray-900 text-center">Confirm Logout</h3>
+                <p className="text-sm text-gray-500 text-center mt-1">
+                  Are you sure you want to log out? Any unsaved changes will be lost.
+                </p>
+                <div className="mt-5 flex gap-3">
+                  <button
+                    onClick={() => setShowLogoutConfirm(false)}
+                    className="flex-1 py-2.5 rounded-xl border border-gray-200 text-sm font-semibold text-gray-600 hover:bg-gray-50 transition-colors"
+                  >
+                    Cancel
+                  </button>
+                  <button
+                    onClick={confirmLogout}
+                    className="flex-1 py-2.5 rounded-xl bg-red-500 hover:bg-red-600 text-white text-sm font-bold transition-colors"
+                  >
+                    Logout
+                  </button>
+                </div>
               </div>
             </div>
           </div>
-        </div>
-      )}
-      {sidebarOpen && (
-        <div
-          className="fixed inset-0 bg-black/40 z-30 lg:hidden"
-          onClick={() => setSidebarOpen(false)}
-        />
-      )}
+        )}
+        {sidebarOpen && (
+          <div
+            className="fixed inset-0 bg-black/40 z-30 lg:hidden"
+            onClick={() => setSidebarOpen(false)}
+          />
+        )}
 
-      <aside
-        data-testid="teacher-sidebar"
-        aria-label="Teacher portal navigation"
-        className={`fixed left-0 top-0 z-50 flex h-screen h-dvh max-h-screen max-h-dvh min-h-0 flex-col overflow-hidden border border-[#f0f2f5] bg-white shadow-[0_4px_24px_rgba(0,0,0,0.04),0_1px_4px_rgba(0,0,0,0.02)] lg:z-40 lg:sticky lg:left-3 lg:top-3 lg:my-3 lg:ml-3 lg:h-[calc(100dvh-1.5rem)] lg:max-h-[calc(100dvh-1.5rem)] lg:rounded-[1.5rem] ${sidebarCollapsed ? 'lg:w-[76px]' : 'lg:w-[280px]'
-          } w-80 ${sidebarOpen ? 'translate-x-0' : '-translate-x-full lg:translate-x-0'
-          }`}
-        style={{
-          fontFamily: "'Poppins', -apple-system, BlinkMacSystemFont, sans-serif",
-          transitionProperty: 'width, transform, box-shadow',
-          transitionDuration: '0.3s',
-          transitionTimingFunction: 'cubic-bezier(0.4, 0, 0.2, 1)',
-        }}
-      >
-        {/* ── Sidebar Header ── */}
-        <div className="shrink-0 border-b border-[#f0f2f5]">
-          {sidebarCollapsed ? (
-            <div className="flex min-h-[92px] flex-col items-center justify-center gap-3 px-2 py-4">
-              <div
-                data-testid="teacher-sidebar-logo"
-                aria-label={`${schoolName} logo`}
-                className="flex size-12 items-center justify-center overflow-hidden rounded-xl border border-slate-700 bg-slate-950 p-1.5 shadow-[0_6px_16px_rgba(15,23,42,0.2)]"
-              >
-                <img src={schoolLogo || '/logo_new.png'} alt="" className="h-full w-full object-contain" />
-              </div>
-              <button
-                type="button"
-                className="hidden rounded-lg p-1.5 text-[#8e9aaf] transition-colors hover:bg-[#f5f3ff] hover:text-[#5b21b6] lg:inline-flex"
-                onClick={() => setSidebarCollapsed(false)}
-                aria-label="Expand sidebar"
-              >
-                <ChevronRight size={16} />
-              </button>
-            </div>
-          ) : (
-            <Motion.div
-              key="expanded-brand"
-              initial={{ opacity: 0, x: -8 }}
-              animate={{ opacity: 1, x: 0 }}
-              transition={{ duration: 0.2 }}
-              className="flex items-center justify-between px-6 pb-6 pt-7"
-            >
-              <div className="flex min-w-0 items-center gap-3">
+        <aside
+          data-testid="teacher-sidebar"
+          aria-label="Teacher portal navigation"
+          className={`fixed left-0 top-0 z-50 flex h-screen h-dvh max-h-screen max-h-dvh min-h-0 flex-col overflow-hidden border border-[#f0f2f5] bg-white shadow-[0_4px_24px_rgba(0,0,0,0.04),0_1px_4px_rgba(0,0,0,0.02)] lg:z-40 lg:sticky lg:left-3 lg:top-3 lg:my-3 lg:ml-3 lg:h-[calc(100dvh-1.5rem)] lg:max-h-[calc(100dvh-1.5rem)] lg:rounded-[1.5rem] ${sidebarCollapsed ? 'lg:w-[76px]' : 'lg:w-[280px]'
+            } w-80 ${sidebarOpen ? 'translate-x-0' : '-translate-x-full lg:translate-x-0'
+            }`}
+          style={{
+            fontFamily: "'Poppins', -apple-system, BlinkMacSystemFont, sans-serif",
+            transitionProperty: 'width, transform, box-shadow',
+            transitionDuration: '0.3s',
+            transitionTimingFunction: 'cubic-bezier(0.4, 0, 0.2, 1)',
+          }}
+        >
+          {/* ── Sidebar Header ── */}
+          <div className="shrink-0 border-b border-[#f0f2f5]">
+            {sidebarCollapsed ? (
+              <div className="flex min-h-[92px] flex-col items-center justify-center gap-3 px-2 py-4">
                 <div
+                  data-testid="teacher-sidebar-logo"
                   aria-label={`${schoolName} logo`}
-                  className="flex size-10 shrink-0 items-center justify-center overflow-hidden rounded-xl border border-slate-700 bg-slate-950 p-1.5 shadow-[0_6px_16px_rgba(15,23,42,0.2)]"
+                  className="flex size-12 items-center justify-center overflow-hidden rounded-full border border-slate-700 bg-slate-950 p-1.5 shadow-[0_6px_16px_rgba(15,23,42,0.2)]"
                 >
                   <img src={schoolLogo || '/logo_new.png'} alt="" className="h-full w-full object-contain" />
                 </div>
-                <div className="min-w-0">
-                  <div className="truncate text-[1.1rem] font-bold leading-tight tracking-[-0.02em] text-[#0b0e1a]">{schoolName}</div>
-                  <div className="mt-1 truncate text-xs font-normal tracking-[0.03em] text-[#6f7a8c]">Teacher Portal</div>
-                </div>
-              </div>
-              <div className="flex items-center gap-1">
                 <button
                   type="button"
                   className="hidden rounded-lg p-1.5 text-[#8e9aaf] transition-colors hover:bg-[#f5f3ff] hover:text-[#5b21b6] lg:inline-flex"
-                  onClick={() => setSidebarCollapsed(true)}
-                  aria-label="Collapse sidebar"
+                  onClick={() => setSidebarCollapsed(false)}
+                  aria-label="Expand sidebar"
                 >
-                  <ChevronRight size={16} className="rotate-180" />
-                </button>
-                <button
-                  type="button"
-                  onClick={() => setSidebarOpen(false)}
-                  className="rounded-lg p-1.5 text-[#8e9aaf] transition-colors hover:bg-[#f5f3ff] hover:text-[#5b21b6] lg:hidden"
-                  aria-label="Close sidebar"
-                >
-                  <X size={17} />
+                  <ChevronRight size={16} />
                 </button>
               </div>
-            </Motion.div>
-          )}
-        </div>
-
-        {/* ── Navigation ── */}
-        <nav className={`min-h-0 flex-1 overflow-y-auto overflow-x-hidden overscroll-contain ${!sidebarCollapsed ? 'px-2.5 py-5' : 'px-1.5 py-3'}`}>
-          <div className="space-y-0.5">
-            {portalNavigation.map((item) => {
-              const active = isItemActive(item.path);
-              const Icon = item.icon;
-              const notificationCount = getTeacherModuleNotificationCount(
-                notifications,
-                item.label === 'Notifications' ? 'notifications' : teacherNotificationModuleKeyForPath(item.path),
-                moduleSeenState,
-              );
-              return (
-                <Button
-                  key={item.path}
-                  asChild
-                  variant="ghost"
-                  className={`group relative !h-auto !w-full !justify-start !rounded-[0.6rem] !border-l-[3px] !px-3 !py-2.5 !text-[0.82rem] !font-medium ${sidebarCollapsed ? '!justify-center !px-2' : 'space-x-2.5'} ${
-                    active
-                      ? '!border-l-[#8b5cf6] !bg-[#f5f3ff] !font-semibold !text-[#5b21b6] hover:!bg-[#ede9fe]'
-                      : '!border-l-transparent !bg-transparent !text-[#4a5668] hover:!bg-[#fffbeb] hover:!text-[#0b0e1a]'
-                  }`}
-                >
-                  <MotionNavLink
-                    to={item.path}
-                    title={sidebarCollapsed ? item.label : undefined}
-                    aria-label={item.label}
-                    whileHover={{ x: sidebarCollapsed ? 0 : 4, scale: 1.01 }}
-                    whileTap={{ scale: 0.98 }}
-                    transition={{ type: 'spring', stiffness: 500, damping: 20 }}
-                    className="relative flex w-full items-center"
-                  >
-                    <span className="flex size-5 shrink-0 items-center justify-center">
-                      <Icon size={16} strokeWidth={1.9} className="shrink-0" />
-                    </span>
-                    {!sidebarCollapsed && <span className="truncate">{item.label}</span>}
-                    {notificationCount > 0 && (
-                      <span
-                        data-testid={`teacher-module-notification-${teacherNotificationModuleKeyForPath(item.path)}`}
-                        title={`${notificationCount} unread item${notificationCount === 1 ? '' : 's'} in ${item.label}`}
-                        className={`${sidebarCollapsed ? 'absolute -right-1 -top-1' : 'ml-auto'} flex min-h-5 min-w-5 items-center justify-center rounded-full border-2 border-white bg-red-500 px-1.5 text-[10px] font-bold leading-none text-white shadow-sm`}
-                      >
-                        {notificationCount > 99 ? '99+' : notificationCount}
-                      </span>
-                    )}
-                  </MotionNavLink>
-                </Button>
-              );
-            })}
-          </div>        
-        </nav>
-
-        {/* ── Bottom: Logout ── */}
-        <div className={`mt-auto shrink-0 border-t border-[#f0f2f5] bg-white ${sidebarCollapsed ? 'p-2.5' : 'px-3 py-3.5'}`}>
-          <div>
-            {sidebarCollapsed ? (
-              <button
-                type="button"
-                onClick={handleLogout}
-                aria-label="Logout"
-                data-testid="collapsed-sidebar-logout"
-                className="group relative flex h-11 w-full items-center justify-center overflow-visible rounded-[0.6rem] text-[#536179] transition-all duration-200 hover:bg-[#f5f3ff] hover:text-[#6d28d9] active:scale-95"
+            ) : (
+              <Motion.div
+                key="expanded-brand"
+                initial={{ opacity: 0, x: -8 }}
+                animate={{ opacity: 1, x: 0 }}
+                transition={{ duration: 0.2 }}
+                className="flex items-center justify-between px-6 pb-6 pt-7"
               >
-                <span aria-hidden="true" className="absolute inset-1 scale-75 rounded-lg bg-gradient-to-br from-violet-100 via-purple-50 to-amber-50 opacity-0 transition-all duration-200 group-hover:scale-100 group-hover:opacity-100" />
-                <span className="relative flex size-8 items-center justify-center">
-                  <LogOut size={18} strokeWidth={1.9} className="block shrink-0 text-current" />
-                </span>
-                <div className="pointer-events-none absolute left-full z-50 ml-3 translate-x-2 opacity-0 transition-all group-hover:translate-x-0 group-hover:opacity-100">
-                  <div className="min-w-max rounded-xl border border-gray-700 bg-gray-900 px-4 py-3 text-left text-white shadow-2xl">
-                    <div className="text-sm font-semibold">Logout</div>
-                    <div className="mt-1 text-xs text-gray-300">Sign out securely</div>
-                    <div className="absolute left-0 top-1/2 -translate-x-1 -translate-y-1/2">
-                      <div className="size-2 rotate-45 border-l border-t border-gray-700 bg-gray-900" />
+                <div className="flex min-w-0 items-center gap-3">
+                  <div
+                    aria-label={`${schoolName} logo`}
+                    className="flex size-10 shrink-0 items-center justify-center overflow-hidden rounded-full"
+                  >
+                    <img src={schoolLogo || '/logo_new.png'} alt="" className="h-full w-full object-contain" />
+                  </div>
+                  <div className="min-w-0">
+                    <div className="truncate text-[1.1rem] font-bold leading-tight tracking-[-0.02em] text-[#0b0e1a]">
+                      {schoolName
+                        ?.trim()
+                        .split(/\s+/)
+                        .map(word => word.charAt(0).toUpperCase())
+                        .join('.')}
                     </div>
+                    <div className="mt-1 truncate text-xs font-normal tracking-[0.03em] text-[#6f7a8c]">Teacher Portal</div>
                   </div>
                 </div>
-              </button>
-            ) : (
-              <Motion.button
-                type="button"
-                onClick={handleLogout}
-                initial="rest"
-                whileHover="hover"
-                whileTap={{ scale: 0.98 }}
-                variants={{
-                  rest: { color: '#4a5668', borderColor: 'rgba(255,255,255,0)' },
-                  hover: { color: '#6d28d9', borderColor: '#ddd6fe' },
-                }}
-                transition={{ duration: 0.2 }}
-                className="group relative flex h-11 w-full items-center gap-2.5 overflow-hidden rounded-[0.6rem] border px-3 text-left text-[0.84rem] font-medium"
-              >
-                <Motion.span
-                  aria-hidden="true"
-                  variants={{ rest: { scaleX: 0 }, hover: { scaleX: 1 } }}
-                  transition={{ type: 'spring', stiffness: 260, damping: 28 }}
-                  className="absolute inset-0 origin-left bg-gradient-to-r from-violet-100/90 via-purple-50 to-amber-50/80"
-                />
-                <Motion.span
-                  aria-hidden="true"
-                  variants={{ rest: { x: -45, opacity: 0 }, hover: { x: 235, opacity: [0, 0.75, 0] } }}
-                  transition={{ duration: 0.85, ease: 'easeInOut' }}
-                  className="absolute -top-3 size-14 rounded-full bg-amber-200/70 blur-xl"
-                />
-                <Motion.span
-                  variants={{ rest: { x: 0, rotate: 0 }, hover: { x: 4, rotate: -8 } }}
-                  transition={{ type: 'spring', stiffness: 500, damping: 18 }}
-                  className="relative flex shrink-0 items-center justify-center"
-                >
-                  <LogOut size={17} strokeWidth={1.8} />
-                </Motion.span>
-                <Motion.span variants={{ rest: { x: 0 }, hover: { x: 2 } }} transition={{ type: 'spring', stiffness: 420, damping: 24 }} className="relative whitespace-nowrap">Logout</Motion.span>
-                <Motion.span variants={{ rest: { x: 0, color: '#8e9aaf' }, hover: { x: -2, color: '#7c3aed' } }} transition={{ duration: 0.25 }} className="relative ml-auto whitespace-nowrap text-[0.64rem] font-normal tracking-[0.02em]">Sign out securely</Motion.span>
-              </Motion.button>
+                <div className="flex items-center gap-1">
+                  <button
+                    type="button"
+                    className="hidden rounded-lg p-1.5 text-[#8e9aaf] transition-colors hover:bg-[#f5f3ff] hover:text-[#5b21b6] lg:inline-flex"
+                    onClick={() => setSidebarCollapsed(true)}
+                    aria-label="Collapse sidebar"
+                  >
+                    <ChevronRight size={16} className="rotate-180" />
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setSidebarOpen(false)}
+                    className="rounded-lg p-1.5 text-[#8e9aaf] transition-colors hover:bg-[#f5f3ff] hover:text-[#5b21b6] lg:hidden"
+                    aria-label="Close sidebar"
+                  >
+                    <X size={17} />
+                  </button>
+                </div>
+              </Motion.div>
             )}
           </div>
-        </div>
-      </aside>
 
-      <div className="flex h-screen h-dvh max-h-screen max-h-dvh min-h-0 min-w-0 flex-1 flex-col overflow-hidden">
-        <header className="sticky top-0 z-30 hidden w-full bg-slate-100 px-0 py-0 lg:block">
-          <div className="relative flex h-[55px] items-center justify-center rounded-full bg-white">
-            <div className="min-w-0 px-16 text-center leading-none">
-              <p className="truncate text-[16px] font-semibold tracking-[-0.01em] text-[#1F2A44]">
-                {greeting}, <span className="text-[#4F46E5]">{teacherFirstName}</span>
-              </p>
-              <p className="mt-2 truncate text-[12px] font-normal leading-none text-[#64748B]">
-                {dateLabel}
-              </p>
+          {/* ── Navigation ── */}
+          <nav className={`min-h-0 flex-1 overflow-y-auto overflow-x-hidden overscroll-contain ${!sidebarCollapsed ? 'px-2.5 py-5' : 'px-1.5 py-3'}`}>
+            <div className="space-y-0.5">
+              {portalNavigation.map((item) => {
+                const active = isItemActive(item.path);
+                const Icon = item.icon;
+                const notificationCount = getTeacherModuleNotificationCount(
+                  notifications,
+                  item.label === 'Notifications' ? 'notifications' : teacherNotificationModuleKeyForPath(item.path),
+                  moduleSeenState,
+                );
+                return (
+                  <Button
+                    key={item.path}
+                    asChild
+                    variant="ghost"
+                    className={`group relative !h-auto !w-full !justify-start !rounded-[0.6rem] !border-l-[3px] !px-3 !py-2.5 !text-[0.82rem] !font-medium ${sidebarCollapsed ? '!justify-center !px-2' : 'space-x-2.5'} ${active
+                        ? '!border-l-[#8b5cf6] !bg-[#f5f3ff] !font-semibold !text-[#5b21b6] hover:!bg-[#ede9fe]'
+                        : '!border-l-transparent !bg-transparent !text-[#4a5668] hover:!bg-[#fffbeb] hover:!text-[#0b0e1a]'
+                      }`}
+                  >
+                    <MotionNavLink
+                      to={item.path}
+                      title={sidebarCollapsed ? item.label : undefined}
+                      aria-label={item.label}
+                      whileHover={{ x: sidebarCollapsed ? 0 : 4, scale: 1.01 }}
+                      whileTap={{ scale: 0.98 }}
+                      transition={{ type: 'spring', stiffness: 500, damping: 20 }}
+                      className="relative flex w-full items-center"
+                    >
+                      <span className="flex size-5 shrink-0 items-center justify-center">
+                        <Icon size={16} strokeWidth={1.9} className="shrink-0" />
+                      </span>
+                      {!sidebarCollapsed && <span className="truncate">{item.label}</span>}
+                      {notificationCount > 0 && (
+                        <span
+                          data-testid={`teacher-module-notification-${teacherNotificationModuleKeyForPath(item.path)}`}
+                          title={`${notificationCount} unread item${notificationCount === 1 ? '' : 's'} in ${item.label}`}
+                          className={`${sidebarCollapsed ? 'absolute -right-1 -top-1' : 'ml-auto'} flex min-h-5 min-w-5 items-center justify-center rounded-full border-2 border-white bg-red-500 px-1.5 text-[10px] font-bold leading-none text-white shadow-sm`}
+                        >
+                          {notificationCount > 99 ? '99+' : notificationCount}
+                        </span>
+                      )}
+                    </MotionNavLink>
+                  </Button>
+                );
+              })}
             </div>
+          </nav>
 
-            <button
-              onClick={() => setSidebarOpen(true)}
-              className="absolute left-2 rounded-xl p-2 text-slate-600 transition-all hover:bg-slate-100 active:scale-95 lg:hidden"
-              aria-label="Open sidebar"
-            >
-              <Menu size={20} />
-            </button>
+          {/* ── Bottom: Logout ── */}
+          <div className={`mt-auto shrink-0 border-t border-[#f0f2f5] bg-white ${sidebarCollapsed ? 'p-2.5' : 'px-3 py-3.5'}`}>
+            <div>
+              {sidebarCollapsed ? (
+                <button
+                  type="button"
+                  onClick={handleLogout}
+                  aria-label="Logout"
+                  data-testid="collapsed-sidebar-logout"
+                  className="group relative flex h-11 w-full items-center justify-center overflow-visible rounded-[0.6rem] text-[#536179] transition-all duration-200 hover:bg-[#f5f3ff] hover:text-[#6d28d9] active:scale-95"
+                >
+                  <span aria-hidden="true" className="absolute inset-1 scale-75 rounded-lg bg-gradient-to-br from-violet-100 via-purple-50 to-amber-50 opacity-0 transition-all duration-200 group-hover:scale-100 group-hover:opacity-100" />
+                  <span className="relative flex size-8 items-center justify-center">
+                    <LogOut size={18} strokeWidth={1.9} className="block shrink-0 text-current" />
+                  </span>
+                  <div className="pointer-events-none absolute left-full z-50 ml-3 translate-x-2 opacity-0 transition-all group-hover:translate-x-0 group-hover:opacity-100">
+                    <div className="min-w-max rounded-xl border border-gray-700 bg-gray-900 px-4 py-3 text-left text-white shadow-2xl">
+                      <div className="text-sm font-semibold">Logout</div>
+                      <div className="mt-1 text-xs text-gray-300">Sign out securely</div>
+                      <div className="absolute left-0 top-1/2 -translate-x-1 -translate-y-1/2">
+                        <div className="size-2 rotate-45 border-l border-t border-gray-700 bg-gray-900" />
+                      </div>
+                    </div>
+                  </div>
+                </button>
+              ) : (
+                <Motion.button
+                  type="button"
+                  onClick={handleLogout}
+                  initial="rest"
+                  whileHover="hover"
+                  whileTap={{ scale: 0.98 }}
+                  variants={{
+                    rest: { color: '#4a5668', borderColor: 'rgba(255,255,255,0)' },
+                    hover: { color: '#6d28d9', borderColor: '#ddd6fe' },
+                  }}
+                  transition={{ duration: 0.2 }}
+                  className="group relative flex h-11 w-full items-center gap-2.5 overflow-hidden rounded-[0.6rem] border px-3 text-left text-[0.84rem] font-medium"
+                >
+                  <Motion.span
+                    aria-hidden="true"
+                    variants={{ rest: { scaleX: 0 }, hover: { scaleX: 1 } }}
+                    transition={{ type: 'spring', stiffness: 260, damping: 28 }}
+                    className="absolute inset-0 origin-left bg-gradient-to-r from-violet-100/90 via-purple-50 to-amber-50/80"
+                  />
+                  <Motion.span
+                    aria-hidden="true"
+                    variants={{ rest: { x: -45, opacity: 0 }, hover: { x: 235, opacity: [0, 0.75, 0] } }}
+                    transition={{ duration: 0.85, ease: 'easeInOut' }}
+                    className="absolute -top-3 size-14 rounded-full bg-amber-200/70 blur-xl"
+                  />
+                  <Motion.span
+                    variants={{ rest: { x: 0, rotate: 0 }, hover: { x: 4, rotate: -8 } }}
+                    transition={{ type: 'spring', stiffness: 500, damping: 18 }}
+                    className="relative flex shrink-0 items-center justify-center"
+                  >
+                    <LogOut size={17} strokeWidth={1.8} />
+                  </Motion.span>
+                  <Motion.span variants={{ rest: { x: 0 }, hover: { x: 2 } }} transition={{ type: 'spring', stiffness: 420, damping: 24 }} className="relative whitespace-nowrap">Logout</Motion.span>
+                  <Motion.span variants={{ rest: { x: 0, color: '#8e9aaf' }, hover: { x: -2, color: '#7c3aed' } }} transition={{ duration: 0.25 }} className="relative ml-auto whitespace-nowrap text-[0.64rem] font-normal tracking-[0.02em]">Sign out securely</Motion.span>
+                </Motion.button>
+              )}
+            </div>
+          </div>
+        </aside>
+
+        <div className="flex h-screen h-dvh max-h-screen max-h-dvh min-h-0 min-w-0 flex-1 flex-col overflow-hidden">
+          <header className="sticky top-0 z-30 hidden w-full bg-slate-100 px-0 py-0 lg:block">
+            <div className="relative flex h-[55px] items-center justify-center rounded-full bg-white">
+              <div className="min-w-0 px-16 text-center leading-none">
+                <p className="truncate text-[16px] font-semibold tracking-[-0.01em] text-[#1F2A44]">
+                  {greeting}, <span className="text-[#4F46E5]">{teacherFirstName}</span>
+                </p>
+                <p className="mt-2 truncate text-[12px] font-normal leading-none text-[#64748B]">
+                  {dateLabel}
+                </p>
+              </div>
+
+              <button
+                onClick={() => setSidebarOpen(true)}
+                className="absolute left-2 rounded-xl p-2 text-slate-600 transition-all hover:bg-slate-100 active:scale-95 lg:hidden"
+                aria-label="Open sidebar"
+              >
+                <Menu size={20} />
+              </button>
 
               {/* Right: Profile */}
               <div className="absolute right-2 flex items-center gap-1.5 sm:gap-2">
@@ -2086,7 +2091,7 @@ const TeacherPortalShell = () => {
                     className={`flex items-center gap-2 rounded-xl border bg-white px-1.5 py-1 transition-colors ${profileOpen
                       ? 'border-violet-200 shadow-[0_8px_20px_-10px_rgba(109,40,217,0.22)]'
                       : 'border-slate-100 shadow-sm hover:border-slate-200 hover:bg-slate-50'
-                    }`}
+                      }`}
                     onClick={() => {
                       setShowNotifications(false);
                       toggleProfile();
@@ -2120,16 +2125,16 @@ const TeacherPortalShell = () => {
 
                   <AnimatePresence>
                     {profileOpen && (
-                    <Motion.div
-                      initial={{ opacity: 0, y: -8, scale: 0.97 }}
-                      animate={{ opacity: 1, y: 0, scale: 1 }}
-                      exit={{ opacity: 0, y: -6, scale: 0.98 }}
-                      transition={{ type: 'spring', stiffness: 420, damping: 30 }}
-                      data-testid="teacher-profile-glass-card"
-                      role="menu"
-                      className="absolute right-0 z-50 mt-2 w-[min(280px,calc(100vw-1rem))] overflow-hidden rounded-2xl border border-slate-100 bg-white p-4 shadow-[0_16px_40px_-16px_rgba(15,23,42,0.2),0_4px_12px_rgba(15,23,42,0.05)]"
-                    >
-                      <div className="flex items-center gap-3 pb-3.5">
+                      <Motion.div
+                        initial={{ opacity: 0, y: -8, scale: 0.97 }}
+                        animate={{ opacity: 1, y: 0, scale: 1 }}
+                        exit={{ opacity: 0, y: -6, scale: 0.98 }}
+                        transition={{ type: 'spring', stiffness: 420, damping: 30 }}
+                        data-testid="teacher-profile-glass-card"
+                        role="menu"
+                        className="absolute right-0 z-50 mt-2 w-[min(280px,calc(100vw-1rem))] overflow-hidden rounded-2xl border border-slate-100 bg-white p-4 shadow-[0_16px_40px_-16px_rgba(15,23,42,0.2),0_4px_12px_rgba(15,23,42,0.05)]"
+                      >
+                        <div className="flex items-center gap-3 pb-3.5">
                           {hasProfileImage ? (
                             <img
                               src={teacherProfile.profilePic}
@@ -2148,316 +2153,316 @@ const TeacherPortalShell = () => {
                             <p className="truncate text-sm font-semibold tracking-tight text-slate-900">{teacherProfile.name || 'Teacher'}</p>
                             <p className="mt-0.5 truncate text-xs text-slate-500">{teacherProfile.department || 'Educator'}</p>
                           </div>
-                      </div>
+                        </div>
 
-                      <div className="flex items-center justify-between gap-2 border-t border-slate-100 pt-3">
-                        <Motion.button
-                          type="button"
-                          role="menuitem"
-                          whileHover={{ y: -2 }}
-                          whileTap={{ scale: 0.97 }}
-                          className="rounded-full border border-slate-200 bg-white px-3.5 py-2 text-xs font-medium text-slate-600 transition-colors hover:bg-slate-50 hover:text-slate-900"
-                          onClick={() => { setProfileOpen(false); navigate('/teacher/settings'); }}
-                        >
-                          My Profile
-                        </Motion.button>
-                        <Motion.button
-                          type="button"
-                          role="menuitem"
-                          whileHover={{ y: -2, x: 1 }}
-                          whileTap={{ scale: 0.97 }}
-                          onClick={() => {
-                            setProfileOpen(false);
-                            handleLogout();
-                          }}
-                          className="flex items-center gap-1.5 rounded-full border border-slate-200 bg-white px-3.5 py-2 text-xs font-medium text-slate-400 transition-colors hover:border-red-200 hover:bg-red-50 hover:text-red-500"
-                        >
-                          <LogOut size={15} strokeWidth={1.8} />
-                          Sign out
-                        </Motion.button>
-                      </div>
-                    </Motion.div>
+                        <div className="flex items-center justify-between gap-2 border-t border-slate-100 pt-3">
+                          <Motion.button
+                            type="button"
+                            role="menuitem"
+                            whileHover={{ y: -2 }}
+                            whileTap={{ scale: 0.97 }}
+                            className="rounded-full border border-slate-200 bg-white px-3.5 py-2 text-xs font-medium text-slate-600 transition-colors hover:bg-slate-50 hover:text-slate-900"
+                            onClick={() => { setProfileOpen(false); navigate('/teacher/settings'); }}
+                          >
+                            My Profile
+                          </Motion.button>
+                          <Motion.button
+                            type="button"
+                            role="menuitem"
+                            whileHover={{ y: -2, x: 1 }}
+                            whileTap={{ scale: 0.97 }}
+                            onClick={() => {
+                              setProfileOpen(false);
+                              handleLogout();
+                            }}
+                            className="flex items-center gap-1.5 rounded-full border border-slate-200 bg-white px-3.5 py-2 text-xs font-medium text-slate-400 transition-colors hover:border-red-200 hover:bg-red-50 hover:text-red-500"
+                          >
+                            <LogOut size={15} strokeWidth={1.8} />
+                            Sign out
+                          </Motion.button>
+                        </div>
+                      </Motion.div>
                     )}
                   </AnimatePresence>
                 </div>
               </div>
-          </div>
-        </header>
-
-        <header className="sticky top-0 z-30 bg-violet-600 px-4 pb-4 pt-[calc(1rem+env(safe-area-inset-top))] text-white shadow-md lg:hidden">
-          <div className="flex items-center justify-between gap-3">
-            <button type="button" onClick={() => navigate('/teacher/settings')} className="flex min-w-0 items-center gap-3 text-left" aria-label="Open teacher profile">
-              <span className="relative shrink-0">
-                {hasProfileImage ? (
-                  <img src={teacherProfile.profilePic} alt="" className="h-10 w-10 rounded-full border border-white/40 object-cover" />
-                ) : (
-                  <span className="flex h-10 w-10 items-center justify-center rounded-full border border-white/40 bg-white/20 text-sm font-bold shadow-inner">{initialsLabel}</span>
-                )}
-                <span className="absolute right-0 top-0 h-3 w-3 rounded-full border-2 border-violet-600 bg-emerald-400" />
-              </span>
-              <span className="min-w-0"><span className="block truncate text-base font-bold leading-tight tracking-tight">{teacherProfile.name || 'Teacher'}</span><span className="block truncate text-xs font-medium text-purple-200">{teacherProfile.department || 'Academic workspace'}</span></span>
-            </button>
-            <div className="flex items-center gap-2">
-              <div className="relative" ref={notificationsRef}>
-                <button type="button" onClick={handleToggleNotifications} className="relative flex h-9 w-9 items-center justify-center rounded-full bg-white/10 transition active:scale-95" aria-label="Notifications">
-                  <Bell size={19} />
-                  {unreadCount > 0 && (
-                    <span className="absolute -right-1 -top-1 flex min-h-[17px] min-w-[17px] items-center justify-center rounded-full border-2 border-violet-600 bg-red-500 px-1 text-[10px] font-bold leading-none text-white">
-                      {unreadCount > 9 ? '9+' : unreadCount}
-                    </span>
-                  )}
-                </button>
-                <AnimatePresence>
-                  {showNotifications && (
-                    <NotificationPopover
-                      notifications={notificationItems}
-                      seenState={moduleSeenState}
-                      unreadCount={unreadCount}
-                      loading={notifLoading}
-                      error={notifError}
-                      onMarkAllRead={markAllRead}
-                      onDismissNotification={dismissHeaderNotification}
-                      formatTime={timeAgo}
-                      onOpenNotification={async (notification) => {
-                        const id = String(notification?._id || notification?.id || '');
-                        if (!notification?.isRead) await markRead(id);
-                        setShowNotifications(false);
-                        navigate(resolveNotifPath(notification));
-                      }}
-                    />
-                  )}
-                </AnimatePresence>
-              </div>
-              <button type="button" onClick={() => setSidebarOpen(true)} className="flex h-9 w-9 items-center justify-center rounded-full bg-white/10 transition active:scale-95" aria-label="Open all teacher options" aria-expanded={sidebarOpen}><Menu size={19} /></button>
             </div>
-          </div>
-        </header>
+          </header>
 
-        <main className={`flex-1 min-h-0 pb-[calc(4.5rem+env(safe-area-inset-bottom))] lg:pb-0 ${isSmartPlannerRoute ? 'p-0' : ''} ${hasContainedPageScroll ? 'overflow-hidden' : 'overflow-y-auto overscroll-contain'}`}>
-          <div className={isChatRoute
-            ? 'flex h-full min-h-0 flex-col'
-            : isSmartPlannerRoute
-              ? 'h-full min-h-0'
-              : isAttendanceRoute
-                ? 'h-full min-h-0 overflow-y-auto overscroll-contain p-3 sm:p-6'
-                : `min-h-full ${isDashboardRoute ? 'p-0 lg:p-6' : 'p-3 sm:p-6'}`}>
-            <Routes>
-              <Route index element={<Navigate to="/teacher/dashboard" replace />} />
-              <Route path="dashboard" element={<TeacherDashboard />} />
-              <Route path="classes" element={<ClassesHub />} />
-              <Route path="classes/:classId" element={<ClassWorkspace notifications={notificationItems} seenState={moduleSeenState} />}>
-                <Route index element={<Navigate to="overview/analytics" replace />} />
-                <Route
-                  path="students"
-                  element={
-                    <PlaceholderModule
-                      icon={Users}
-                      title="Students"
-                      description="Student list, attendance, health records, observations, achievements, analytics, and student-specific AI learning paths live here."
-                      actions={studentSectionLinks}
-                      notifications={notificationItems}
-                      seenState={moduleSeenState}
-                    />
-                  }
-                />
-                <Route path="overview/analytics"  element={<StudentAnalyticsPortal />} />
-                <Route path="overview/attendance" element={<AttendanceManagement />} />
-                <Route path="students/attendance" element={<AttendanceManagement />} />
-                <Route path="students/health-records" element={<HealthUpdatesAdvanced />} />
-                <Route path="students/observations" element={<StudentObservationOverview />} />
-                <Route path="students/achievements" element={<TeacherAchievements />} />
-                <Route path="students/analytics" element={<StudentAnalyticsPortal />} />
-                <Route path="students/:studentId/ai-learning/:subject" element={<AILearningPath />} />
-                <Route
-                  path="teaching"
-                  element={
-                    <PlaceholderModule
-                      icon={BookOpen}
-                      title="Teaching Workspace"
-                      description="Lesson planning, notes, questions, materials, and AI teaching assistance are owned by this class workspace."
-                      actions={teachingSectionLinks}
-                      notifications={notificationItems}
-                      seenState={moduleSeenState}
-                    />
-                  }
-                />
-                <Route path="teaching/lesson-planner" element={<SmartTeachingLessonPlanner />} />
-                <Route path="teaching/lesson-planner-wizard" element={<LessonPlannerWizard />} />
-                <Route path="teaching/class-notes" element={<ClassNotes />} />
-                <Route path="teaching/practice-questions" element={<PracticeQuestions />} />
-                <Route path="teaching/language-practice" element={<LanguagePracticeManager />} />
-                <Route path="teaching/study-materials" element={<TeacherAlcove />} />
-                <Route path="teaching/ai-assistant" element={<GenerateAIPathPortal />} />
-                <Route path="teaching/video-lecture" element={<VideoUnderstandingTool />} />
-                <Route path="assignments" element={<Navigate to="manage" replace />} />
-                <Route path="assignments/manage" element={<AssignmentPortal view="manage" notificationCount={getTeacherModuleNotificationCount(notificationItems, 'assignments-manage', moduleSeenState)} siblingNotificationCount={getTeacherModuleNotificationCount(notificationItems, 'assignments-evaluate', moduleSeenState)} />} />
-                <Route path="assignments/evaluate" element={<AssignmentPortal view="evaluate" notificationCount={getTeacherModuleNotificationCount(notificationItems, 'assignments-evaluate', moduleSeenState)} siblingNotificationCount={getTeacherModuleNotificationCount(notificationItems, 'assignments-manage', moduleSeenState)} />} />
-                <Route
-                  path="assessments"
-                  element={
-                    <PlaceholderModule
-                      icon={GraduationCap}
-                      title="Assessments"
-                      description="Formal exams, results, evaluations, and report cards are separated from practice assignments."
-                      actions={assessmentSectionLinks}
-                      notifications={notificationItems}
-                      seenState={moduleSeenState}
-                    />
-                  }
-                />
-                <Route path="assessments/exam" element={<ExamResultPortal />} />
-                <Route
-                  path="communication"
-                  element={
-                    <PlaceholderModule
-                      icon={MessageSquare}
-                      title="Communication"
-                      description="Chat, parent meetings, student feedback, and excuse letters are centralized so other modules trigger communication instead of duplicating it."
-                      actions={communicationSectionLinks}
-                      notifications={notificationItems}
-                    />
-                  }
-                />
-                <Route path="communication/chat" element={<TeacherChat />} />
-                <Route path="communication/parent-meetings" element={<ParentMeetings />} />
-                <Route path="communication/feedback" element={<TeacherFeedbackPortal />} />
-                <Route path="communication/excuse-letters" element={<ExcuseLetters />} />
-                <Route
-                  path="reports"
-                  element={<Navigate to="../assessments/exam" replace />}
-                />
-              </Route>
+          <header className="sticky top-0 z-30 bg-violet-600 px-4 pb-4 pt-[calc(1rem+env(safe-area-inset-top))] text-white shadow-md lg:hidden">
+            <div className="flex items-center justify-between gap-3">
+              <button type="button" onClick={() => navigate('/teacher/settings')} className="flex min-w-0 items-center gap-3 text-left" aria-label="Open teacher profile">
+                <span className="relative shrink-0">
+                  {hasProfileImage ? (
+                    <img src={teacherProfile.profilePic} alt="" className="h-10 w-10 rounded-full border border-white/40 object-cover" />
+                  ) : (
+                    <span className="flex h-10 w-10 items-center justify-center rounded-full border border-white/40 bg-white/20 text-sm font-bold shadow-inner">{initialsLabel}</span>
+                  )}
+                  <span className="absolute right-0 top-0 h-3 w-3 rounded-full border-2 border-violet-600 bg-emerald-400" />
+                </span>
+                <span className="min-w-0"><span className="block truncate text-base font-bold leading-tight tracking-tight">{teacherProfile.name || 'Teacher'}</span><span className="block truncate text-xs font-medium text-purple-200">{teacherProfile.department || 'Academic workspace'}</span></span>
+              </button>
+              <div className="flex items-center gap-2">
+                <div className="relative" ref={notificationsRef}>
+                  <button type="button" onClick={handleToggleNotifications} className="relative flex h-9 w-9 items-center justify-center rounded-full bg-white/10 transition active:scale-95" aria-label="Notifications">
+                    <Bell size={19} />
+                    {unreadCount > 0 && (
+                      <span className="absolute -right-1 -top-1 flex min-h-[17px] min-w-[17px] items-center justify-center rounded-full border-2 border-violet-600 bg-red-500 px-1 text-[10px] font-bold leading-none text-white">
+                        {unreadCount > 9 ? '9+' : unreadCount}
+                      </span>
+                    )}
+                  </button>
+                  <AnimatePresence>
+                    {showNotifications && (
+                      <NotificationPopover
+                        notifications={notificationItems}
+                        seenState={moduleSeenState}
+                        unreadCount={unreadCount}
+                        loading={notifLoading}
+                        error={notifError}
+                        onMarkAllRead={markAllRead}
+                        onDismissNotification={dismissHeaderNotification}
+                        formatTime={timeAgo}
+                        onOpenNotification={async (notification) => {
+                          const id = String(notification?._id || notification?.id || '');
+                          if (!notification?.isRead) await markRead(id);
+                          setShowNotifications(false);
+                          navigate(resolveNotifPath(notification));
+                        }}
+                      />
+                    )}
+                  </AnimatePresence>
+                </div>
+                <button type="button" onClick={() => setSidebarOpen(true)} className="flex h-9 w-9 items-center justify-center rounded-full bg-white/10 transition active:scale-95" aria-label="Open all teacher options" aria-expanded={sidebarOpen}><Menu size={19} /></button>
+              </div>
+            </div>
+          </header>
 
-              <Route path="calendar" element={<HolidayList />} />
-              <Route path="timetable" element={<ClassRoutine />} />
-              <Route
-                path="notifications"
-                element={<TeacherNotifications />}
-              />
-              <Route path="exam-duty" element={<TeacherExamDutyList />} />
-              <Route path="exam-duty/:notificationId" element={<TeacherExamDuty />} />
-              <Route path="resource-library" element={<TeacherAlcove />} />
-              <Route path="lesson-plan" element={<AIPoweredTeaching />} />
-              <Route path="tryout" element={<TryoutManagement />} />
-              <Route path="ai-tools" element={<TeacherAIToolsPanel />} />
-              <Route path="live-monitor" element={<LiveExamMonitor />} />
-              <Route path="ptm" element={<ParentMeetings />} />
-              <Route path="settings" element={<MyWorkPortal />} />
-              {import.meta.env.DEV && <Route path="test" element={<TestTeacherPortal />} />}
+          <main className={`flex-1 min-h-0 pb-[calc(4.5rem+env(safe-area-inset-bottom))] lg:pb-0 ${isSmartPlannerRoute ? 'p-0' : ''} ${hasContainedPageScroll ? 'overflow-hidden' : 'overflow-y-auto overscroll-contain'}`}>
+            <div className={isChatRoute
+              ? 'flex h-full min-h-0 flex-col'
+              : isSmartPlannerRoute
+                ? 'h-full min-h-0'
+                : isAttendanceRoute
+                  ? 'h-full min-h-0 overflow-y-auto overscroll-contain p-3 sm:p-6'
+                  : `min-h-full ${isDashboardRoute ? 'p-0 lg:p-6' : 'p-3 sm:p-6'}`}>
+              <Routes>
+                <Route index element={<Navigate to="/teacher/dashboard" replace />} />
+                <Route path="dashboard" element={<TeacherDashboard />} />
+                <Route path="classes" element={<ClassesHub />} />
+                <Route path="classes/:classId" element={<ClassWorkspace notifications={notificationItems} seenState={moduleSeenState} />}>
+                  <Route index element={<Navigate to="overview/analytics" replace />} />
+                  <Route
+                    path="students"
+                    element={
+                      <PlaceholderModule
+                        icon={Users}
+                        title="Students"
+                        description="Student list, attendance, health records, observations, achievements, analytics, and student-specific AI learning paths live here."
+                        actions={studentSectionLinks}
+                        notifications={notificationItems}
+                        seenState={moduleSeenState}
+                      />
+                    }
+                  />
+                  <Route path="overview/analytics" element={<StudentAnalyticsPortal />} />
+                  <Route path="overview/attendance" element={<AttendanceManagement />} />
+                  <Route path="students/attendance" element={<AttendanceManagement />} />
+                  <Route path="students/health-records" element={<HealthUpdatesAdvanced />} />
+                  <Route path="students/observations" element={<StudentObservationOverview />} />
+                  <Route path="students/achievements" element={<TeacherAchievements />} />
+                  <Route path="students/analytics" element={<StudentAnalyticsPortal />} />
+                  <Route path="students/:studentId/ai-learning/:subject" element={<AILearningPath />} />
+                  <Route
+                    path="teaching"
+                    element={
+                      <PlaceholderModule
+                        icon={BookOpen}
+                        title="Teaching Workspace"
+                        description="Lesson planning, notes, questions, materials, and AI teaching assistance are owned by this class workspace."
+                        actions={teachingSectionLinks}
+                        notifications={notificationItems}
+                        seenState={moduleSeenState}
+                      />
+                    }
+                  />
+                  <Route path="teaching/lesson-planner" element={<SmartTeachingLessonPlanner />} />
+                  <Route path="teaching/lesson-planner-wizard" element={<LessonPlannerWizard />} />
+                  <Route path="teaching/class-notes" element={<ClassNotes />} />
+                  <Route path="teaching/practice-questions" element={<PracticeQuestions />} />
+                  <Route path="teaching/language-practice" element={<LanguagePracticeManager />} />
+                  <Route path="teaching/study-materials" element={<TeacherAlcove />} />
+                  <Route path="teaching/ai-assistant" element={<GenerateAIPathPortal />} />
+                  <Route path="teaching/video-lecture" element={<VideoUnderstandingTool />} />
+                  <Route path="assignments" element={<Navigate to="manage" replace />} />
+                  <Route path="assignments/manage" element={<AssignmentPortal view="manage" notificationCount={getTeacherModuleNotificationCount(notificationItems, 'assignments-manage', moduleSeenState)} siblingNotificationCount={getTeacherModuleNotificationCount(notificationItems, 'assignments-evaluate', moduleSeenState)} />} />
+                  <Route path="assignments/evaluate" element={<AssignmentPortal view="evaluate" notificationCount={getTeacherModuleNotificationCount(notificationItems, 'assignments-evaluate', moduleSeenState)} siblingNotificationCount={getTeacherModuleNotificationCount(notificationItems, 'assignments-manage', moduleSeenState)} />} />
+                  <Route
+                    path="assessments"
+                    element={
+                      <PlaceholderModule
+                        icon={GraduationCap}
+                        title="Assessments"
+                        description="Formal exams, results, evaluations, and report cards are separated from practice assignments."
+                        actions={assessmentSectionLinks}
+                        notifications={notificationItems}
+                        seenState={moduleSeenState}
+                      />
+                    }
+                  />
+                  <Route path="assessments/exam" element={<ExamResultPortal />} />
+                  <Route
+                    path="communication"
+                    element={
+                      <PlaceholderModule
+                        icon={MessageSquare}
+                        title="Communication"
+                        description="Chat, parent meetings, student feedback, and excuse letters are centralized so other modules trigger communication instead of duplicating it."
+                        actions={communicationSectionLinks}
+                        notifications={notificationItems}
+                      />
+                    }
+                  />
+                  <Route path="communication/chat" element={<TeacherChat />} />
+                  <Route path="communication/parent-meetings" element={<ParentMeetings />} />
+                  <Route path="communication/feedback" element={<TeacherFeedbackPortal />} />
+                  <Route path="communication/excuse-letters" element={<ExcuseLetters />} />
+                  <Route
+                    path="reports"
+                    element={<Navigate to="../assessments/exam" replace />}
+                  />
+                </Route>
 
-              <Route path="my-work-portal" element={<Navigate to="/teacher/settings" replace />} />
-              <Route path="class-routine" element={<Navigate to="/teacher/timetable" replace />} />
-              <Route path="holidays" element={<Navigate to="/teacher/calendar" replace />} />
-              <Route path="attendance" element={<Navigate to={buildClassPath('current', 'students/attendance')} replace />} />
-              <Route path="achievements" element={<Navigate to={buildClassPath('current', 'students/achievements')} replace />} />
-              <Route path="student-analytics" element={<Navigate to={buildClassPath('current', 'students/analytics')} replace />} />
-              <Route path="progress" element={<Navigate to={buildClassPath('current', 'students/analytics')} replace />} />
-              <Route path="weak-students" element={<Navigate to={buildClassPath('current', 'students/analytics')} replace />} />
-              <Route path="health-updates" element={<Navigate to={buildClassPath('current', 'students/health-records')} replace />} />
-              <Route path="student-observations" element={<Navigate to={buildClassPath('current', 'students/observations')} replace />} />
-              <Route path="smart-teaching" element={<Navigate to={buildClassPath('current', 'teaching/ai-assistant')} replace />} />
-              <Route path="smart-teaching/lesson-planner" element={<Navigate to={buildClassPath('current', 'teaching/lesson-planner')} replace />} />
-              <Route path="smart-teaching/lesson-planner-wizard" element={<Navigate to={buildClassPath('current', 'teaching/lesson-planner-wizard')} replace />} />
-              <Route path="ai-center" element={<Navigate to="/teacher/lesson-plan" replace />} />
-              <Route path="ai-powered-teaching" element={<Navigate to="/teacher/lesson-plan" replace />} />
-              <Route path="academic-alcove" element={<Navigate to="/teacher/resource-library" replace />} />
-              <Route path="ai-learning/:studentId/:subject" element={<Navigate to={buildClassPath('current', 'students')} replace />} />
-              <Route path="parent-meetings" element={<Navigate to={buildClassPath('current', 'communication/parent-meetings')} replace />} />
-              <Route path="assignments" element={<Navigate to={buildClassPath('current', 'assignments/manage')} replace />} />
-              <Route path="evaluation" element={<Navigate to={buildClassPath('current', 'assignments/evaluate')} replace />} />
-              <Route path="practice-questions" element={<Navigate to={buildClassPath('current', 'teaching/practice-questions')} replace />} />
-              <Route path="language-practice" element={<Navigate to={buildClassPath('current', 'teaching/language-practice')} replace />} />
-              <Route path="chat" element={<Navigate to={buildClassPath('current', 'communication/chat')} replace />} />
-              <Route path="class-notes" element={<Navigate to={buildClassPath('current', 'teaching/class-notes')} replace />} />
-              <Route path="exams" element={<Navigate to={buildClassPath('current', 'assessments/exam')} replace />} />
-              <Route path="result-management" element={<Navigate to={buildClassPath('current', 'assessments/exam')} replace />} />
-              <Route path="results" element={<Navigate to={buildClassPath('current', 'assessments/exam')} replace />} />
-              <Route path="excuse-letters" element={<Navigate to={buildClassPath('current', 'communication/excuse-letters')} replace />} />
-              <Route path="feedback" element={<Navigate to={buildClassPath('current', 'communication/feedback')} replace />} />
-            </Routes>
-          </div>
-        </main>
+                <Route path="calendar" element={<HolidayList />} />
+                <Route path="timetable" element={<ClassRoutine />} />
+                <Route
+                  path="notifications"
+                  element={<TeacherNotifications />}
+                />
+                <Route path="exam-duty" element={<TeacherExamDutyList />} />
+                <Route path="exam-duty/:notificationId" element={<TeacherExamDuty />} />
+                <Route path="resource-library" element={<TeacherAlcove />} />
+                <Route path="lesson-plan" element={<AIPoweredTeaching />} />
+                <Route path="tryout" element={<TryoutManagement />} />
+                <Route path="ai-tools" element={<TeacherAIToolsPanel />} />
+                <Route path="live-monitor" element={<LiveExamMonitor />} />
+                <Route path="ptm" element={<ParentMeetings />} />
+                <Route path="settings" element={<MyWorkPortal />} />
+                {import.meta.env.DEV && <Route path="test" element={<TestTeacherPortal />} />}
 
-        <nav aria-label="Teacher mobile navigation" className="fixed inset-x-0 bottom-0 z-40 border-t border-slate-200/80 bg-white/95 px-2 pb-[calc(.375rem+env(safe-area-inset-bottom))] pt-1.5 shadow-[0_-4px_20px_rgba(0,0,0,0.04)] backdrop-blur-md will-change-transform lg:hidden">
-          <div className="mx-auto flex max-w-md items-center justify-around sm:max-w-xl md:max-w-2xl">
-            {mobileNavigation.map((item) => {
-              const Icon = item.icon;
-              const notificationCount = item.action === 'profile'
-                ? getTeacherModuleNotificationCount(notificationItems, 'notifications', moduleSeenState)
-                : getTeacherModuleNotificationCount(notificationItems, teacherNotificationModuleKeyForPath(item.path), moduleSeenState);
-              const active = item.action === 'profile'
-                ? showMobileProfileMenu || location.pathname.startsWith('/teacher/settings')
-                : isItemActive(item.path) || (item.label === 'Classes' && location.pathname.startsWith('/teacher/classes') && !location.pathname.includes('/communication/chat'));
-              const itemClasses = `flex min-w-[58px] flex-col items-center rounded-xl px-2 py-1 text-[10px] font-semibold transition active:scale-95 ${active ? 'text-violet-600' : 'text-slate-400'}`;
-              const content = (
-                <>
-                  <span className={`relative mb-0.5 flex h-8 w-8 items-center justify-center rounded-full ${active ? 'bg-purple-100' : ''}`}><Icon size={active ? 17 : 19} fill={active && item.icon === Home ? 'currentColor' : 'none'} />{notificationCount > 0 && <span className="absolute -right-1 -top-1 flex min-h-4 min-w-4 items-center justify-center rounded-full bg-red-500 px-1 text-[9px] font-bold leading-none text-white shadow">{notificationCount > 99 ? '99+' : notificationCount}</span>}</span>
-                  {item.label}
-                </>
-              );
+                <Route path="my-work-portal" element={<Navigate to="/teacher/settings" replace />} />
+                <Route path="class-routine" element={<Navigate to="/teacher/timetable" replace />} />
+                <Route path="holidays" element={<Navigate to="/teacher/calendar" replace />} />
+                <Route path="attendance" element={<Navigate to={buildClassPath('current', 'students/attendance')} replace />} />
+                <Route path="achievements" element={<Navigate to={buildClassPath('current', 'students/achievements')} replace />} />
+                <Route path="student-analytics" element={<Navigate to={buildClassPath('current', 'students/analytics')} replace />} />
+                <Route path="progress" element={<Navigate to={buildClassPath('current', 'students/analytics')} replace />} />
+                <Route path="weak-students" element={<Navigate to={buildClassPath('current', 'students/analytics')} replace />} />
+                <Route path="health-updates" element={<Navigate to={buildClassPath('current', 'students/health-records')} replace />} />
+                <Route path="student-observations" element={<Navigate to={buildClassPath('current', 'students/observations')} replace />} />
+                <Route path="smart-teaching" element={<Navigate to={buildClassPath('current', 'teaching/ai-assistant')} replace />} />
+                <Route path="smart-teaching/lesson-planner" element={<Navigate to={buildClassPath('current', 'teaching/lesson-planner')} replace />} />
+                <Route path="smart-teaching/lesson-planner-wizard" element={<Navigate to={buildClassPath('current', 'teaching/lesson-planner-wizard')} replace />} />
+                <Route path="ai-center" element={<Navigate to="/teacher/lesson-plan" replace />} />
+                <Route path="ai-powered-teaching" element={<Navigate to="/teacher/lesson-plan" replace />} />
+                <Route path="academic-alcove" element={<Navigate to="/teacher/resource-library" replace />} />
+                <Route path="ai-learning/:studentId/:subject" element={<Navigate to={buildClassPath('current', 'students')} replace />} />
+                <Route path="parent-meetings" element={<Navigate to={buildClassPath('current', 'communication/parent-meetings')} replace />} />
+                <Route path="assignments" element={<Navigate to={buildClassPath('current', 'assignments/manage')} replace />} />
+                <Route path="evaluation" element={<Navigate to={buildClassPath('current', 'assignments/evaluate')} replace />} />
+                <Route path="practice-questions" element={<Navigate to={buildClassPath('current', 'teaching/practice-questions')} replace />} />
+                <Route path="language-practice" element={<Navigate to={buildClassPath('current', 'teaching/language-practice')} replace />} />
+                <Route path="chat" element={<Navigate to={buildClassPath('current', 'communication/chat')} replace />} />
+                <Route path="class-notes" element={<Navigate to={buildClassPath('current', 'teaching/class-notes')} replace />} />
+                <Route path="exams" element={<Navigate to={buildClassPath('current', 'assessments/exam')} replace />} />
+                <Route path="result-management" element={<Navigate to={buildClassPath('current', 'assessments/exam')} replace />} />
+                <Route path="results" element={<Navigate to={buildClassPath('current', 'assessments/exam')} replace />} />
+                <Route path="excuse-letters" element={<Navigate to={buildClassPath('current', 'communication/excuse-letters')} replace />} />
+                <Route path="feedback" element={<Navigate to={buildClassPath('current', 'communication/feedback')} replace />} />
+              </Routes>
+            </div>
+          </main>
 
-              if (item.action === 'profile') {
-                return (
-                  <div key={item.label} className="relative" ref={mobileProfileMenuRef}>
-                    <button
-                      type="button"
-                      onClick={() => setShowMobileProfileMenu((prev) => !prev)}
-                      aria-label="Open profile menu"
-                      aria-haspopup="menu"
-                      aria-expanded={showMobileProfileMenu}
-                      className={itemClasses}
-                    >
-                      {content}
-                    </button>
-                    <AnimatePresence>
-                      {showMobileProfileMenu && (
-                        <Motion.div
-                          initial={{ opacity: 0, y: 8, scale: 0.97 }}
-                          animate={{ opacity: 1, y: 0, scale: 1 }}
-                          exit={{ opacity: 0, y: 8, scale: 0.97 }}
-                          transition={{ type: 'spring', stiffness: 420, damping: 30 }}
-                          role="menu"
-                          className="absolute bottom-full right-0 z-50 mb-3 w-48 overflow-hidden rounded-2xl border border-slate-100 bg-white p-1.5 shadow-[0_16px_40px_-16px_rgba(15,23,42,0.25),0_4px_12px_rgba(15,23,42,0.08)]"
-                        >
-                          <button
-                            type="button"
-                            role="menuitem"
-                            onClick={() => { setShowMobileProfileMenu(false); navigate('/teacher/settings'); }}
-                            className="flex w-full items-center gap-2.5 rounded-xl px-3 py-2.5 text-left text-sm font-medium text-slate-700 transition hover:bg-slate-50"
-                          >
-                            <CircleUser size={16} className="text-slate-400" /> My Profile
-                          </button>
-                          <button
-                            type="button"
-                            role="menuitem"
-                            onClick={() => { setShowMobileProfileMenu(false); handleLogout(); }}
-                            className="flex w-full items-center gap-2.5 rounded-xl px-3 py-2.5 text-left text-sm font-medium text-red-500 transition hover:bg-red-50"
-                          >
-                            <LogOut size={16} /> Sign out
-                          </button>
-                        </Motion.div>
-                      )}
-                    </AnimatePresence>
-                  </div>
+          <nav aria-label="Teacher mobile navigation" className="fixed inset-x-0 bottom-0 z-40 border-t border-slate-200/80 bg-white/95 px-2 pb-[calc(.375rem+env(safe-area-inset-bottom))] pt-1.5 shadow-[0_-4px_20px_rgba(0,0,0,0.04)] backdrop-blur-md will-change-transform lg:hidden">
+            <div className="mx-auto flex max-w-md items-center justify-around sm:max-w-xl md:max-w-2xl">
+              {mobileNavigation.map((item) => {
+                const Icon = item.icon;
+                const notificationCount = item.action === 'profile'
+                  ? getTeacherModuleNotificationCount(notificationItems, 'notifications', moduleSeenState)
+                  : getTeacherModuleNotificationCount(notificationItems, teacherNotificationModuleKeyForPath(item.path), moduleSeenState);
+                const active = item.action === 'profile'
+                  ? showMobileProfileMenu || location.pathname.startsWith('/teacher/settings')
+                  : isItemActive(item.path) || (item.label === 'Classes' && location.pathname.startsWith('/teacher/classes') && !location.pathname.includes('/communication/chat'));
+                const itemClasses = `flex min-w-[58px] flex-col items-center rounded-xl px-2 py-1 text-[10px] font-semibold transition active:scale-95 ${active ? 'text-violet-600' : 'text-slate-400'}`;
+                const content = (
+                  <>
+                    <span className={`relative mb-0.5 flex h-8 w-8 items-center justify-center rounded-full ${active ? 'bg-purple-100' : ''}`}><Icon size={active ? 17 : 19} fill={active && item.icon === Home ? 'currentColor' : 'none'} />{notificationCount > 0 && <span className="absolute -right-1 -top-1 flex min-h-4 min-w-4 items-center justify-center rounded-full bg-red-500 px-1 text-[9px] font-bold leading-none text-white shadow">{notificationCount > 99 ? '99+' : notificationCount}</span>}</span>
+                    {item.label}
+                  </>
                 );
-              }
 
-              return (
-                <NavLink key={item.path} to={item.path} aria-label={`${item.label} mobile navigation`} className={itemClasses}>
-                  {content}
-                </NavLink>
-              );
-            })}
-          </div>
-        </nav>
+                if (item.action === 'profile') {
+                  return (
+                    <div key={item.label} className="relative" ref={mobileProfileMenuRef}>
+                      <button
+                        type="button"
+                        onClick={() => setShowMobileProfileMenu((prev) => !prev)}
+                        aria-label="Open profile menu"
+                        aria-haspopup="menu"
+                        aria-expanded={showMobileProfileMenu}
+                        className={itemClasses}
+                      >
+                        {content}
+                      </button>
+                      <AnimatePresence>
+                        {showMobileProfileMenu && (
+                          <Motion.div
+                            initial={{ opacity: 0, y: 8, scale: 0.97 }}
+                            animate={{ opacity: 1, y: 0, scale: 1 }}
+                            exit={{ opacity: 0, y: 8, scale: 0.97 }}
+                            transition={{ type: 'spring', stiffness: 420, damping: 30 }}
+                            role="menu"
+                            className="absolute bottom-full right-0 z-50 mb-3 w-48 overflow-hidden rounded-2xl border border-slate-100 bg-white p-1.5 shadow-[0_16px_40px_-16px_rgba(15,23,42,0.25),0_4px_12px_rgba(15,23,42,0.08)]"
+                          >
+                            <button
+                              type="button"
+                              role="menuitem"
+                              onClick={() => { setShowMobileProfileMenu(false); navigate('/teacher/settings'); }}
+                              className="flex w-full items-center gap-2.5 rounded-xl px-3 py-2.5 text-left text-sm font-medium text-slate-700 transition hover:bg-slate-50"
+                            >
+                              <CircleUser size={16} className="text-slate-400" /> My Profile
+                            </button>
+                            <button
+                              type="button"
+                              role="menuitem"
+                              onClick={() => { setShowMobileProfileMenu(false); handleLogout(); }}
+                              className="flex w-full items-center gap-2.5 rounded-xl px-3 py-2.5 text-left text-sm font-medium text-red-500 transition hover:bg-red-50"
+                            >
+                              <LogOut size={16} /> Sign out
+                            </button>
+                          </Motion.div>
+                        )}
+                      </AnimatePresence>
+                    </div>
+                  );
+                }
+
+                return (
+                  <NavLink key={item.path} to={item.path} aria-label={`${item.label} mobile navigation`} className={itemClasses}>
+                    {content}
+                  </NavLink>
+                );
+              })}
+            </div>
+          </nav>
+        </div>
       </div>
-    </div>
-    <DesktopNotificationPermissionModal
-      open={showPermissionModal}
-      onAllow={requestPermissionFromModal}
-      onLater={dismissPermissionModal}
-      pendingCount={pendingCount}
-    />
+      <DesktopNotificationPermissionModal
+        open={showPermissionModal}
+        onAllow={requestPermissionFromModal}
+        onLater={dismissPermissionModal}
+        pendingCount={pendingCount}
+      />
     </>
   );
 };
