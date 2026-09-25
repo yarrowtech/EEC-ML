@@ -14,6 +14,7 @@ const Subject = require('../models/Subject');
 const Timetable = require('../models/Timetable');
 const PushSubscription = require('../models/PushSubscription');
 const { initializeWebPush } = require('../utils/webPushService');
+const { EVENTS, publishNotice } = require('../services/communicationService');
 const { logStudentPortalEvent, logStudentPortalError } = require('../utils/studentPortalLogger');
 
 const router = express.Router();
@@ -125,6 +126,15 @@ const hasUserEntry = (entries, userId) => (
 const toObjectIdIfPossible = (value) => (
   mongoose.isValidObjectId(value) ? new mongoose.Types.ObjectId(value) : value
 );
+
+// ?kind=notice → Notices pages; ?kind=notification → bell. Omitted → both
+// (legacy callers keep working until each page is switched over).
+const kindFilter = (kind) => {
+  const k = String(kind || '').trim().toLowerCase();
+  if (k === 'notice') return { kind: 'notice' };
+  if (k === 'notification') return { kind: { $ne: 'notice' } };
+  return {};
+};
 
 // 'exam' included so an admin who creates/publishes an exam routine never
 // sees their own action land back in their own notification feed/count.
@@ -243,29 +253,57 @@ router.post('/', adminAuth, async (req, res) => {
       subjectName = subjectDoc?.name || '';
     }
 
-    const created = await Notification.create({
+    // Admin "Post Notice" = an official NOTICE (kind 'notice', Notices pages).
+    const created = await publishNotice({
+      schoolId,
+      campusId,
+      notice: {
+        title: String(title).trim(),
+        message: String(message).trim(),
+        audience: resolvedAudience,
+        classId: classId || undefined,
+        sectionId: sectionId || undefined,
+        createdBy: req.admin?.id || null,
+        createdByType: 'admin',
+        createdByName: req.admin?.name || req.admin?.username || '',
+        type: safeType,
+        typeLabel: typeLabel ? String(typeLabel).trim() : '',
+        priority: priority || undefined,
+        category: category || undefined,
+        className,
+        sectionName,
+        subjectId: subjectId || undefined,
+        subjectName,
+        attachments: Array.isArray(attachments) ? attachments : [],
+        isPinned: Boolean(isPinned),
+        expiresAt: expiresAt ? new Date(expiresAt) : undefined,
+      },
+    });
+
+    // …plus one short NOTICE_PUBLISHED alert to the same audience for the bell,
+    // linking back to the notice (the alert carries the web push).
+    Notification.create({
       schoolId,
       campusId: campusId || null,
-      title: String(title).trim(),
-      message: String(message).trim(),
+      kind: 'notification',
+      eventType: EVENTS.NOTICE_PUBLISHED,
+      typeLabel: 'notice_published',
+      type: 'notice',
+      title: `New notice: ${String(title).trim()}`,
+      message: String(message).trim().slice(0, 160),
       audience: resolvedAudience,
+      targetRole: resolvedAudience === 'All' ? 'all' : String(resolvedAudience).toLowerCase(),
       classId: classId || undefined,
       sectionId: sectionId || undefined,
-      createdBy: req.admin?.id || null,
-      createdByType: 'admin',
-      createdByName: req.admin?.name || req.admin?.username || '',
-      type: safeType,
-      typeLabel: typeLabel ? String(typeLabel).trim() : '',
-      priority: priority || undefined,
-      category: category || undefined,
       className,
       sectionName,
-      subjectId: subjectId || undefined,
-      subjectName,
-      attachments: Array.isArray(attachments) ? attachments : [],
-      isPinned: Boolean(isPinned),
-      expiresAt: expiresAt ? new Date(expiresAt) : undefined,
-    });
+      category: category || undefined,
+      priority: priority || undefined,
+      createdBy: req.admin?.id || null,
+      createdByType: 'admin',
+      relatedEntity: { entityType: 'notice', entityId: created._id },
+      dedupeKey: `NOTICE_PUBLISHED:${created._id}`,
+    }).catch((err) => console.error('Failed to create notice-published alert:', err.message));
 
     res.status(201).json(created);
   } catch (err) {
@@ -359,6 +397,9 @@ router.post('/teacher', authTeacher, async (req, res) => {
       classId,
       sectionId,
       createdByType: 'teacher',
+      // A class note is persistent class information → NOTICE (not a bell alert).
+      kind: 'notice',
+      eventType: 'NOTICE_PUBLISHED',
       createdByTeacherId: teacherId,
       createdByName: teacher?.name || '',
       type: 'class_note',
@@ -372,6 +413,30 @@ router.post('/teacher', authTeacher, async (req, res) => {
       attachments: Array.isArray(attachments) ? attachments : [],
       expiresAt: expiresAt ? new Date(expiresAt) : undefined,
     });
+
+    // Short bell alert for the class note (the note itself is a notice and
+    // doesn't push) — same audience/class, linked back to the note.
+    Notification.create({
+      schoolId,
+      campusId: campusId || null,
+      kind: 'notification',
+      eventType: EVENTS.NOTICE_PUBLISHED,
+      typeLabel: 'class_note_published',
+      type: 'class_note',
+      title: `New class note: ${String(title).trim()}`,
+      message: String(message).trim().slice(0, 160),
+      audience: created.audience,
+      targetRole: 'student',
+      classId,
+      sectionId,
+      className: created.className || '',
+      sectionName: created.sectionName || '',
+      createdByType: 'teacher',
+      createdByTeacherId: teacherId,
+      createdByName: teacher?.name || '',
+      relatedEntity: { entityType: 'notice', entityId: created._id },
+      dedupeKey: `CLASS_NOTE_PUBLISHED:${created._id}`,
+    }).catch((err) => console.error('Failed to create class-note alert:', err.message));
 
     res.status(201).json(created);
   } catch (err) {
@@ -393,6 +458,8 @@ router.get('/', adminAuth, async (req, res) => {
       // notices — keep them out of the Notice Board console (they still
       // reach students/parents/teachers via /user).
       typeLabel: { $nin: HIDDEN_FROM_NOTICEBOARD_TYPE_LABELS },
+      // The Notices console lists official NOTICES only — event alerts live in the bell.
+      kind: 'notice',
       ...(campusId
         ? { $or: [{ campusId }, { campusId: null }, { campusId: { $exists: false } }] }
         : {}),
@@ -537,6 +604,7 @@ router.get('/user', authAnyUser, async (req, res) => {
     const filter = {
       schoolId,
       ...buildCampusVisibilityFilter(campusId),
+      ...kindFilter(req.query?.kind),
       'dismissedBy.userId': { $ne: userId },
       $and: [
         {
@@ -868,6 +936,7 @@ router.post('/user/read-all', authAnyUser, async (req, res) => {
     const filter = {
       schoolId,
       ...buildCampusVisibilityFilter(campusId),
+      ...kindFilter(req.query?.kind ?? req.body?.kind),
       $and: [
         {
           $or: [
@@ -950,6 +1019,7 @@ router.get('/user/unread-count', authAnyUser, async (req, res) => {
     const filter = {
       schoolId,
       ...buildCampusVisibilityFilter(campusId),
+      ...kindFilter(req.query?.kind ?? req.body?.kind),
       $and: [
         {
           $or: [

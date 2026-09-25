@@ -25,6 +25,9 @@ const teacherFeedbackSchema = new mongoose.Schema(
       fairness: { type: Number, min: 1, max: 5 }
     },
     overallRating: { type: Number, min: 1, max: 5 },
+    // Who gave it: the student, or a parent on behalf of that child (studentId).
+    respondentType: { type: String, enum: ['student', 'parent'], default: 'student', index: true },
+    parentId: { type: mongoose.Schema.Types.ObjectId, ref: 'ParentUser', default: null },
     comments: { type: String, default: '' }
   },
   { timestamps: true }

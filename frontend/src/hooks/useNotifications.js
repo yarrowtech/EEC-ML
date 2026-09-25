@@ -28,7 +28,7 @@ export const useNotifications = () => {
       }
 
       const response = await fetch(
-        `${import.meta.env.VITE_API_URL}/api/notifications/user`,
+        `${import.meta.env.VITE_API_URL}/api/notifications/user?kind=notification`,
         {
           headers: {
             'Authorization': `Bearer ${token}`,
@@ -139,7 +139,7 @@ export const useNotifications = () => {
       const token = localStorage.getItem('token');
 
       const response = await fetch(
-        `${import.meta.env.VITE_API_URL}/api/notifications/user/read-all`,
+        `${import.meta.env.VITE_API_URL}/api/notifications/user/read-all?kind=notification`,
         {
           method: 'POST',
           headers: {

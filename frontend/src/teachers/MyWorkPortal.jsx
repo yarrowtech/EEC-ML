@@ -725,7 +725,7 @@ const MyWorkPortal = () => {
     try {
       const token = localStorage.getItem('token');
       if (!token) { setNotifications([]); return; }
-      const res = await fetch(`${API_BASE}/api/notifications/user`, {
+      const res = await fetch(`${API_BASE}/api/notifications/user?kind=notification`, {
         headers: { authorization: `Bearer ${token}` },
         cache: 'no-store',
       });

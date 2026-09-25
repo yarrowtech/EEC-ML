@@ -30,6 +30,15 @@ const notificationSchema = new mongoose.Schema(
       index: true
     },
     typeLabel: { type: String, default: '' },
+    // NOTICE vs NOTIFICATION (same collection, clearly separated):
+    //  - 'notice'       → official, persistent school communication (Notices pages)
+    //  - 'notification' → short, actionable event alert (bell / notifications page)
+    kind: { type: String, enum: ['notice', 'notification'], default: 'notification', index: true },
+    // Machine-readable event that produced a notification (EXAM_CREATED,
+    // EXAM_DUTY_ASSIGNED, FEE_PAYMENT_RECEIVED, …) — see services/communicationService.js.
+    eventType: { type: String, default: '', index: true },
+    // Role this copy is worded for (student / parent / teacher / admin / all).
+    targetRole: { type: String, enum: ['student', 'parent', 'teacher', 'admin', 'principal', 'all', ''], default: '' },
     priority: {
       type: String,
       enum: ['low', 'medium', 'high'],
@@ -38,14 +47,15 @@ const notificationSchema = new mongoose.Schema(
     },
     category: {
       type: String,
-      enum: ['academic', 'events', 'transport', 'general'],
+      // Notice categories: General, Academic, Exam, Events, Fee, Transport.
+      enum: ['academic', 'exam', 'events', 'fee', 'transport', 'general'],
       default: 'general'
     },
     isPinned: { type: Boolean, default: false, index: true },
 
     // Related entity reference
     relatedEntity: {
-      entityType: { type: String, enum: ['assignment', 'exam', 'fee', 'result', 'meeting', 'mastery', 'mastery_badge', 'gap_detection', 'at_risk', 'learning_path', 'practice_question', 'practice_paper', null] },
+      entityType: { type: String, enum: ['assignment', 'exam', 'examGroup', 'examDuty', 'fee', 'payment', 'holiday', 'notice', 'result', 'meeting', 'promotion', 'leave', 'mastery', 'mastery_badge', 'gap_detection', 'at_risk', 'learning_path', 'practice_question', 'practice_paper', 'feedbackWindow', null] },
       entityId: { type: mongoose.Schema.Types.ObjectId }
     },
     attachments: [
@@ -88,6 +98,10 @@ const notificationSchema = new mongoose.Schema(
     // notice list every class an exam was published for instead of teachers
     // getting a separate notice per class/section.
     classesCovered: [{ type: String }],
+    // Formal, letterhead-style content for system-generated notices (school
+    // header, notice number, salutation, body, details table, signature) —
+    // rendered by the FormalNotice component; `message` stays the plain-text copy.
+    document: { type: mongoose.Schema.Types.Mixed, default: undefined },
     targetUserIds: [{ type: mongoose.Schema.Types.ObjectId, index: true }],
 
     // Read tracking
@@ -129,6 +143,7 @@ const emitNotificationCreated = (doc) => {
       audience: notification.audience || 'All',
       type: notification.type || 'general',
       typeLabel: notification.typeLabel || '',
+      kind: notification.kind || 'notification',
     });
   } catch (_err) {
     // Notification persistence must not fail because a realtime hint could not be sent.
@@ -137,6 +152,7 @@ const emitNotificationCreated = (doc) => {
 // Add compound indexes for efficient queries
 notificationSchema.index({ schoolId: 1, audience: 1, createdAt: -1 });
 notificationSchema.index({ schoolId: 1, campusId: 1, audience: 1 });
+notificationSchema.index({ schoolId: 1, kind: 1, createdAt: -1 });
 
 notificationSchema.pre('save', function (next) {
   this.$locals = this.$locals || {};
@@ -148,7 +164,8 @@ notificationSchema.post('save', function (doc) {
   if (!this?.$locals?.wasNew) return;
   setImmediate(() => {
     emitNotificationCreated(doc);
-    sendPushForNotification(doc).catch(() => {});
+    // Notices are persistent records; the alert that accompanies them carries the push.
+    if (doc?.kind !== 'notice') sendPushForNotification(doc).catch(() => {});
   });
 });
 
@@ -157,7 +174,7 @@ notificationSchema.post('insertMany', function (docs = []) {
   docs.forEach((doc) => {
     setImmediate(() => {
       emitNotificationCreated(doc);
-      sendPushForNotification(doc).catch(() => {});
+      if (doc?.kind !== 'notice') sendPushForNotification(doc).catch(() => {});
     });
   });
 });

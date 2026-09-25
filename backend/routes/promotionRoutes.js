@@ -768,6 +768,11 @@ router.post('/execute', adminAuth, async (req, res) => {
       academicYearRelaxed,
     });
 
+    require('../services/schoolCommunication').notifyStudentsPromoted({
+      schoolId, campusId, studentIds: finalPromoteIds, historyId: history._id,
+      toClass, toSection, toAcademicYear, createdBy: req.admin?.id || null,
+    }).catch((err) => console.error('Failed to send promotion notifications:', err.message));
+
     await writeAuditLog({
       schoolId,
       actorId: req.admin?._id || req.admin?.id,

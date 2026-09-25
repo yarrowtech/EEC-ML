@@ -297,6 +297,13 @@ const Students = ({ setShowAdminHeader }) => {
 
   const [currentPage, setCurrentPage] = useState(1);
 
+  // Changing page must show the new page from its first row, not keep the
+  // previous page's scroll offset (which left you at the bottom of page 2).
+  useEffect(() => {
+    const el = tableBodyScrollRef.current;
+    if (el) el.scrollTop = 0;
+  }, [currentPage]);
+
   /* -------------------- Derived -------------------- */
   const filteredStudents = useMemo(() => {
     const rows = studentData.filter((student) => {

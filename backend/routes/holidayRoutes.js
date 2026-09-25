@@ -3,6 +3,7 @@ const mongoose = require('mongoose');
 const Holiday = require('../models/Holiday');
 const School = require('../models/School');
 const adminAuth = require('../middleware/adminAuth');
+const { notifyHolidayChange } = require('../services/schoolCommunication');
 const authTeacher = require('../middleware/authTeacher');
 const authStudent = require('../middleware/authStudent');
 const authParent = require('../middleware/authParent');
@@ -126,6 +127,8 @@ router.post('/', adminAuth, async (req, res) => {
       createdBy: req.admin?.id || null,
     });
 
+    notifyHolidayChange({ ...scope, holiday: created, action: 'created', createdBy: req.admin?.id || null })
+      .catch((err) => console.error('Failed to send holiday notifications:', err.message));
     return res.status(201).json(toPublicHoliday(created));
   } catch (err) {
     if (err?.code === 11000) {
@@ -161,6 +164,8 @@ router.delete('/:id', adminAuth, async (req, res) => {
     if (!deleted) {
       return jsonError(res, 404, 'Holiday not found');
     }
+    notifyHolidayChange({ ...scope, holiday: deleted, action: 'deleted', createdBy: req.admin?.id || null })
+      .catch((err) => console.error('Failed to send holiday notifications:', err.message));
     return res.json({ message: 'Holiday deleted successfully' });
   } catch (err) {
     return jsonError(res, 500, err.message || 'Unable to delete holiday');
@@ -215,6 +220,9 @@ router.put('/:id', adminAuth, async (req, res) => {
     }
 
     await holiday.save();
+    // Silent when nothing visible (name/dates) actually changed.
+    notifyHolidayChange({ ...scope, holiday, action: 'updated', createdBy: req.admin?.id || null })
+      .catch((err) => console.error('Failed to send holiday notifications:', err.message));
     return res.json(toPublicHoliday(holiday));
   } catch (err) {
     if (err?.code === 11000) {

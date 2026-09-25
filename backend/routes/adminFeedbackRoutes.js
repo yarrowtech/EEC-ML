@@ -5,7 +5,7 @@ const TeacherFeedback = require('../models/TeacherFeedback');
 const TeacherUser = require('../models/TeacherUser');
 const School = require('../models/School');
 const AcademicYear = require('../models/AcademicYear');
-const { notifyTeacherFeedbackWindowStarted } = require('../utils/teacherFeedbackNotify');
+const { handleFeedbackWindowChange } = require('../utils/teacherFeedbackNotify');
 
 const router = express.Router();
 
@@ -98,6 +98,11 @@ router.put('/teacher-feedback/settings', adminAuth, async (req, res) => {
       if (startDate > endDate) {
         return res.status(400).json({ error: 'Start date must be before or equal to end date' });
       }
+      const todayUtc = new Date();
+      todayUtc.setUTCHours(0, 0, 0, 0);
+      if (endDate < todayUtc) {
+        return res.status(400).json({ error: 'End date is already in the past — choose a future end date' });
+      }
     }
 
     const [school, session] = await Promise.all([
@@ -114,7 +119,10 @@ router.put('/teacher-feedback/settings', adminAuth, async (req, res) => {
     const existingIndex = (school.teacherFeedbackWindows || []).findIndex(
       (window) => String(window.sessionId) === String(sessionId)
     );
-    const wasEnabled = existingIndex >= 0 ? Boolean(school.teacherFeedbackWindows[existingIndex].enabled) : false;
+    const previous = existingIndex >= 0 ? school.teacherFeedbackWindows[existingIndex] : null;
+    const before = previous
+      ? { enabled: Boolean(previous.enabled), startDate: previous.startDate, endDate: previous.endDate }
+      : null;
 
     const nextWindow = { sessionId, enabled, startDate: startDate || null, endDate: endDate || null };
     if (existingIndex >= 0) {
@@ -125,11 +133,12 @@ router.put('/teacher-feedback/settings', adminAuth, async (req, res) => {
 
     await school.save();
 
-    if (enabled && !wasEnabled) {
-      notifyTeacherFeedbackWindowStarted({ schoolId: school._id, sessionId, startDate, endDate }).catch((err) => {
-        console.error('[teacher-feedback] failed to send start notifications:', err.message);
-      });
-    }
+    // Opened → notice (student/parent) + alerts (student/parent/teacher);
+    // dates changed → notice updated + "dates changed" alerts;
+    // disabled → notices removed + "closed" alerts; unchanged → nothing.
+    handleFeedbackWindowChange({ schoolId: school._id, sessionId, before, after: nextWindow }).catch((err) => {
+      console.error('[teacher-feedback] failed to send notifications:', err.message);
+    });
 
     return res.json({
       message: 'Teacher feedback settings updated',

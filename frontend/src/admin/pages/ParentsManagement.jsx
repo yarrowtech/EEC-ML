@@ -119,6 +119,13 @@ const ParentsManagement = ({ setShowAdminHeader }) => {
   const tableBodyScrollRef = useRef(null);
   const tableHeaderRef = useRef(null);
 
+  // Changing page must show the new page from its first row, not keep the
+  // previous page's scroll offset.
+  useEffect(() => {
+    const el = tableBodyScrollRef.current;
+    if (el) el.scrollTop = 0;
+  }, [currentPage]);
+
   const filteredParents = useMemo(() => {
     const query = searchTerm.trim().toLowerCase();
     return parents.filter((parent) => {

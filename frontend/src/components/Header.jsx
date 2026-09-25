@@ -58,6 +58,9 @@ const Header = ({ sidebarOpen, setSidebarOpen, onOpenProfile }) => {
   }, []);
 
   const resolveNotifPath = useCallback((notification) => {
+    // Teacher-feedback window alerts/notices open the feedback form.
+    if (String(notification?.typeLabel || '').toLowerCase().startsWith('feedback_')
+      || String(notification?.eventType || '').startsWith('FEEDBACK_WINDOW')) return '/student/teacherfeedback';
     const type = notification?.type?.toLowerCase();
     const relatedEntity = notification?.relatedEntity?.entityType?.toLowerCase();
     const typeLabel = String(notification?.typeLabel || '').toLowerCase();

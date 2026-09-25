@@ -27,6 +27,8 @@ import {
   LogOut,
   BarChart2,
   CalendarClock,
+  Megaphone,
+  MessageSquareHeart,
 } from 'lucide-react';
 import { useDesktopNotificationBridge } from '../hooks/useDesktopNotificationBridge';
 import DesktopNotificationPermissionModal from '../components/DesktopNotificationPermissionModal';
@@ -49,6 +51,8 @@ const PTMPortal = lazy(() => import('./PTMPortal'));
 const ComplaintManagementSystem = lazy(() => import('./ComplaintManagementSystem'));
 const ParentObservationNonAcademic = lazy(() => import('./ParentObservationNonAcademic'));
 const ExcuseLetters = lazy(() => import('./ExcuseLetters'));
+const ParentNotices = lazy(() => import('./ParentNotices'));
+const ParentTeacherFeedback = lazy(() => import('./ParentTeacherFeedback'));
 
 const PortalRouteFallback = () => (
   <div className="flex min-h-[50vh] items-center justify-center" role="status" aria-live="polite">
@@ -82,6 +86,7 @@ const NAV_GROUPS = [
       { icon: Clock, label: 'Class Routine', description: 'Weekly timetable', path: '/parents/routine' },
       { icon: CalendarClock, label: 'Exam Routine', description: 'Exam schedule & downloads', path: '/parents/exam-routine' },
       { icon: Sun, label: 'Holidays', description: 'School holiday list', path: '/parents/holidays' },
+      { icon: Megaphone, label: 'Notices', description: 'School announcements', path: '/parents/notices' },
     ],
   },
   {
@@ -97,6 +102,7 @@ const NAV_GROUPS = [
       { icon: Video, label: 'Meetings', description: 'Parent-teacher meetings', path: '/parents/ptm' },
       { icon: AlertOctagon, label: 'Complaints', description: 'Raise an issue', path: '/parents/complaints' },
       { icon: FileEdit, label: 'Observations', description: 'Share home feedback', path: '/parents/parent-observation' },
+      { icon: MessageSquareHeart, label: 'Teacher Feedback', description: "Your child's feedback status", path: '/parents/teacher-feedback' },
       { icon: FileText, label: 'Excuse Letters', description: 'Leave requests', path: '/parents/excuse-letters' },
     ],
   },
@@ -257,7 +263,7 @@ const ParentPortal = () => {
     setNotifLoading(true);
     setNotifError('');
     try {
-      const res = await apiFetch(`${API_BASE}/api/notifications/user`, {
+      const res = await apiFetch(`${API_BASE}/api/notifications/user?kind=notification`, {
         cache: 'no-store',
         headers: {
           'Content-Type': 'application/json',
@@ -321,7 +327,7 @@ const ParentPortal = () => {
     if (!token) return;
     setNotifications((prev) => prev.map((item) => ({ ...item, isRead: true })));
     try {
-      const res = await apiFetch(`${API_BASE}/api/notifications/user/read-all`, {
+      const res = await apiFetch(`${API_BASE}/api/notifications/user/read-all?kind=notification`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json', authorization: `Bearer ${token}` },
       }, navigate);
@@ -359,6 +365,8 @@ const ParentPortal = () => {
     const message = String(notification?.message || '').toLowerCase();
     const type = String(notification?.type || notification?.typeLabel || '').toLowerCase();
     const blob = `${title} ${message} ${type}`;
+    if (String(notification?.typeLabel || '').toLowerCase().startsWith('feedback_')
+      || String(notification?.eventType || '').startsWith('FEEDBACK_WINDOW')) return '/parents/teacher-feedback';
     if (blob.includes('analytics') || blob.includes('growth')) return '/parents/analytics';
     if (blob.includes('achievement')) return '/parents/achievements';
     if (blob.includes('attendance')) return '/parents/attendance';
@@ -797,6 +805,8 @@ const ParentPortal = () => {
             <Route path="analytics" element={<ChildGrowthAnalytics />} />
             <Route path="attendance" element={<AttendanceReport />} />
             <Route path="holidays" element={<HolidayList />} />
+            <Route path="notices" element={<ParentNotices />} />
+            <Route path="teacher-feedback" element={<ParentTeacherFeedback />} />
             <Route path="routine" element={<ClassRoutine />} />
             <Route path="exam-routine" element={<ExamRoutine />} />
             <Route path="academic" element={<AcademicReport />} />

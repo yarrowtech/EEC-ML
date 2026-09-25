@@ -445,6 +445,14 @@ const Teachers = ({ setShowAdminHeader }) => {
 
   // Pagination states
   const [currentPage, setCurrentPage] = useState(1);
+  const teacherTableScrollRef = useRef(null);
+
+  // Changing page must show the new page from its first row, not keep the
+  // previous page's scroll offset.
+  useEffect(() => {
+    const el = teacherTableScrollRef.current;
+    if (el) el.scrollTop = 0;
+  }, [currentPage]);
   const [itemsPerPage] = useState(10);
 
   const NEW_TEACHER_INITIAL = {
@@ -2160,7 +2168,7 @@ const Teachers = ({ setShowAdminHeader }) => {
 
           {/* Teachers Table */}
           {activeTab === 'teachers' && <div className="flex-1 min-h-0 flex flex-col bg-white rounded-xl border border-gray-200 shadow-sm overflow-hidden">
-            <div className="flex-1 min-h-0 overflow-auto">
+            <div ref={teacherTableScrollRef} className="flex-1 min-h-0 overflow-auto">
               <table className="w-full min-w-[720px]">
                 <thead className="sticky top-0 z-10">
                   <tr className="bg-gradient-to-r from-gray-50 to-slate-50/80 border-b border-gray-100">

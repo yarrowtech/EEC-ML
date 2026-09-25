@@ -455,6 +455,22 @@ const TeacherFeedbackOverview = ({ setShowAdminHeader }) => {
     return today >= windowSettings.startDate && today <= windowSettings.endDate;
   }, [windowSettings]);
 
+  // active | scheduled (enabled, starts later) | ended (enabled, end passed) | off
+  const windowStatus = useMemo(() => {
+    if (!windowSettings.enabled || !windowSettings.startDate || !windowSettings.endDate) return { key: 'off', label: 'Feedback Window Off' };
+    const today = toLocalIsoDate(new Date());
+    const fmt = (iso) => new Date(`${iso}T00:00:00`).toLocaleDateString('en-GB', { day: 'numeric', month: 'short' });
+    if (today < windowSettings.startDate) return { key: 'scheduled', label: `Scheduled · opens ${fmt(windowSettings.startDate)}` };
+    if (today > windowSettings.endDate) return { key: 'ended', label: `Ended · ${fmt(windowSettings.endDate)}` };
+    return { key: 'active', label: `Feedback Window Active · till ${fmt(windowSettings.endDate)}` };
+  }, [windowSettings]);
+  const STATUS_TONE = {
+    active: ['bg-emerald-50 text-emerald-700 border border-emerald-200', 'bg-emerald-500 animate-pulse'],
+    scheduled: ['bg-amber-50 text-amber-700 border border-amber-200', 'bg-amber-500'],
+    ended: ['bg-slate-100 text-slate-500 border border-slate-200', 'bg-slate-400'],
+    off: ['bg-slate-100 text-slate-500 border border-slate-200', 'bg-slate-400'],
+  }[windowStatus.key];
+
   const persistSettings = async (payload) => {
     const token = localStorage.getItem('token');
     const res = await fetch(`${API_BASE}/api/admin/feedback/teacher-feedback/settings`, {
@@ -678,12 +694,10 @@ const TeacherFeedbackOverview = ({ setShowAdminHeader }) => {
         </div>
         <div className="flex items-center justify-center gap-2.5 shrink-0 flex-wrap">
           <span
-            className={`hidden sm:inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-semibold ${
-              isWindowCurrentlyActive ? 'bg-emerald-50 text-emerald-700 border border-emerald-200' : 'bg-slate-100 text-slate-500 border border-slate-200'
-            }`}
+            className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-semibold ${STATUS_TONE[0]}`}
           >
-            <span className={`w-1.5 h-1.5 rounded-full ${isWindowCurrentlyActive ? 'bg-emerald-500 animate-pulse' : 'bg-slate-400'}`} />
-            Feedback Window {isWindowCurrentlyActive ? 'Active' : 'Inactive'}
+            <span className={`w-1.5 h-1.5 rounded-full ${STATUS_TONE[1]}`} />
+            {windowStatus.label}
           </span>
           
           <button

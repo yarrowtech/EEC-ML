@@ -23,7 +23,7 @@ export const useAdminNotifications = ({ isSuperAdmin = false } = {}) => {
     setNotifLoading(true);
     setNotifError('');
     try {
-      const res = await apiFetch(`${API_BASE}/api/notifications/user`, {
+      const res = await apiFetch(`${API_BASE}/api/notifications/user?kind=notification`, {
         cache: 'no-store',
         headers: { 'Content-Type': 'application/json', authorization: `Bearer ${token}` },
       }, navigate);
@@ -103,7 +103,7 @@ export const useAdminNotifications = ({ isSuperAdmin = false } = {}) => {
     if (!token) return;
     setNotifications((prev) => prev.map((n) => ({ ...n, isRead: true })));
     try {
-      const res = await apiFetch(`${API_BASE}/api/notifications/user/read-all`, {
+      const res = await apiFetch(`${API_BASE}/api/notifications/user/read-all?kind=notification`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json', authorization: `Bearer ${token}` },
       }, navigate);

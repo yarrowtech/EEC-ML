@@ -20,6 +20,7 @@ const AcademicYear = require('../models/AcademicYear');
 const School = require('../models/School');
 const Holiday = require('../models/Holiday');
 const NotificationService = require('../utils/notificationService');
+const { notifyFeeInvoicesCreated, notifyFeePaymentReceived } = require('../services/schoolCommunication');
 const { logger } = require('../utils/logger');
 const {
   buildRazorpayReceipt,
@@ -936,24 +937,10 @@ router.post('/invoices', adminAuth, async (req, res) => {
       dueDate: dueDate ? new Date(dueDate) : undefined,
     });
 
-    // Create notification if due date is within 7 days
-    if (created.dueDate) {
-      const daysUntilDue = Math.ceil((new Date(created.dueDate) - new Date()) / (1000 * 60 * 60 * 24));
-
-      if (daysUntilDue <= 7 && daysUntilDue >= 0) {
-        try {
-          await NotificationService.notifyFeeReminder({
-            schoolId,
-            campusId: req.campusId || null,
-            invoice: created,
-            createdBy: req.admin?.id || null
-          });
-        } catch (notifErr) {
-          (req.log || logger).error({ err: notifErr, invoiceId: created._id }, 'Failed to create fee notification');
-          // Don't fail the entire request if notification fails
-        }
-      }
-    }
+    // Student + linked parents: invoice issued (idempotent per invoice).
+    notifyFeeInvoicesCreated({
+      schoolId, campusId: req.campusId || null, invoices: [created], entityId: created._id, createdBy: req.admin?.id || null,
+    }).catch((err) => console.error('Failed to send fee invoice notifications:', err.message));
 
     res.status(201).json(created);
   } catch (err) {
@@ -1087,6 +1074,8 @@ router.post('/payments', adminAuth, async (req, res) => {
     });
     feeSummaryCache.clear();
     invoicesListCache.clear();
+    notifyFeePaymentReceived({ schoolId, campusId: req.campusId || null, payment: created, invoice })
+      .catch((err) => console.error('Failed to send fee payment notifications:', err.message));
 
     res.status(201).json({
       success: true,
@@ -2366,6 +2355,9 @@ router.post('/admin/invoices/bulk', adminAuth, async (req, res) => {
 
     if (invoicesToCreate.length > 0) {
       await FeeInvoice.insertMany(invoicesToCreate);
+      notifyFeeInvoicesCreated({
+        schoolId, campusId: req.campusId || null, invoices: invoicesToCreate, entityId: structure._id, createdBy: req.admin?.id || null,
+      }).catch((err) => console.error('Failed to send fee invoice notifications:', err.message));
     }
 
     res.json({

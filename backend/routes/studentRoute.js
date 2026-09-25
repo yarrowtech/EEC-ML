@@ -2423,7 +2423,7 @@ router.get('/teacher-feedback', authStudent, async (req, res) => {
       targetType: 'student',
       targetId: req.user?.id,
     });
-    const feedbackDocs = await TeacherFeedback.find({ studentId: req.user.id })
+    const feedbackDocs = await TeacherFeedback.find({ studentId: req.user.id, respondentType: { $ne: 'parent' } })
       .sort({ createdAt: -1 })
       .lean();
 
@@ -2758,3 +2758,5 @@ router.delete('/enrollment-drafts/:id', adminAuth, async (req, res) => {
 });
 
 module.exports = router;
+// Shared with the parent feedback routes (same window + teacher rules).
+module.exports.feedbackHelpers = { buildTeacherFeedbackContext, resolveTeacherFeedbackAvailability };

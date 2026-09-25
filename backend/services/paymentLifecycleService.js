@@ -85,6 +85,14 @@ const capturePayment = async ({
     feeId: captured.feeId,
   });
 
+  // Student + parents: one alert per receipt (webhook and callback both land
+  // here; the receipt-scoped dedupeKey keeps it to one).
+  if (receipt) {
+    require('./schoolCommunication')
+      .notifyFeePaymentReceived({ schoolId: captured.schoolId, payment: receipt, invoice })
+      .catch(() => {});
+  }
+
   if (updated) {
     await PaymentAudit.create({
       organizationId,

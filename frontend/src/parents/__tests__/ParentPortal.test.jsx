@@ -623,7 +623,7 @@ describe('ParentPortal', () => {
       mockFetch = createMockFetch({
         '/api/parent/auth/profile': { ok: true, data: mockParentProfile },
         'http://localhost:5000/api/parent/auth/profile': { ok: true, data: mockParentProfile },
-        'http://localhost:5000/api/notifications/user': {
+        'http://localhost:5000/api/notifications/user?kind=notification': {
           ok: true,
           data: [{ _id: 'n1', title: 'Fee due soon', message: 'Pay by Friday', isRead: false, createdAt: new Date().toISOString(), type: 'fee' }],
         },
