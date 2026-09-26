@@ -408,12 +408,16 @@ const Dashboard = ({ setShowAdminHeader }) => {
   const updateQaScroll = useCallback(() => {
     const el = qaScrollRef.current;
     if (!el) return;
+    // A few px of tolerance: snap alignment against the grid's padding can
+    // leave scrollLeft at ~4px on the first page, which isn't "scrolled".
     setQaScroll({
-      canLeft: el.scrollLeft > 2,
-      canRight: el.scrollLeft + el.clientWidth < el.scrollWidth - 2,
+      canLeft: el.scrollLeft > 8,
+      canRight: el.scrollLeft + el.clientWidth < el.scrollWidth - 8,
     });
   }, []);
   useEffect(() => {
+    // Always open on the first page (browsers may restore/snap an offset).
+    if (qaScrollRef.current) qaScrollRef.current.scrollLeft = 0;
     updateQaScroll();
     window.addEventListener('resize', updateQaScroll);
     return () => window.removeEventListener('resize', updateQaScroll);
@@ -607,17 +611,23 @@ const Dashboard = ({ setShowAdminHeader }) => {
               <div
                 ref={qaScrollRef}
                 onScroll={updateQaScroll}
-                className="qa-scroll grid w-full grid-flow-col grid-rows-3 auto-cols-max content-center gap-2 overflow-x-auto scroll-smooth px-1 py-1"
+                className="qa-scroll grid h-full w-full grid-flow-col grid-rows-2 auto-cols-[calc(50%-0.3125rem)] content-center gap-2.5 overflow-x-auto scroll-smooth snap-x scroll-px-1 px-1 py-1"
               >
+                {/* 2 rows × columns of half the panel width → 4 cards visible
+                    (a 2×2 block); the rest scroll in left ↔ right. */}
                 {quickActions.map((action) => (
                   <button
                     key={action.label}
                     type="button"
                     onClick={() => navigate(action.path)}
-                    className="group inline-flex items-center gap-2 rounded-full bg-slate-100 px-4 py-2 text-sm font-medium text-slate-700 transition-colors hover:bg-white/30 hover:text-black"
+                    className="group flex snap-start flex-col items-center justify-center gap-1.5 rounded-2xl border border-slate-100 bg-white px-2 py-3 text-center text-xs font-semibold leading-tight text-slate-700 shadow-sm transition-all hover:-translate-y-0.5 hover:border-slate-200 hover:shadow-md"
                   >
-                    <span style={{ color: action.color }} className="flex" aria-hidden="true">
-                      {React.cloneElement(action.icon, { size: 15 })}
+                    <span
+                      className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl transition-transform group-hover:scale-105"
+                      style={{ color: action.color, background: `${action.color}1a` }}
+                      aria-hidden="true"
+                    >
+                      {React.cloneElement(action.icon, { size: 18 })}
                     </span>
                     {action.label}
                   </button>

@@ -1901,7 +1901,7 @@ const Result = ({ setShowAdminHeader }) => {
     <div className="min-h-screen bg-slate-50">
 
       {/* ── Sticky Header ── */}
-      <div className="sticky top-0 z-30 bg-white border-b border-slate-200 shadow-sm">
+      <div className="sticky top-0 z-20 bg-white border-b border-slate-200 shadow-sm">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 py-4 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3">
           <div className="flex items-center gap-3">
             <div className="h-10 w-10 rounded-xl bg-indigo-600 flex items-center justify-center shadow-md">
