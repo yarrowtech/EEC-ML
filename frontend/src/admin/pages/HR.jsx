@@ -1,7 +1,7 @@
 import React, { useEffect, useMemo, useState, useRef } from 'react';
 import { useSearchParams } from 'react-router-dom';
 import { jsPDF } from 'jspdf';
-import { FileText, Users, Building2, CalendarCheck, Plus, X, CreditCard, Search, Filter, ChevronDown, ChevronUp, Clock, CheckCircle, XCircle, AlertCircle, RefreshCw, IndianRupee, Eye } from 'lucide-react';
+import { FileText, Users, Building2, CalendarCheck, X, CreditCard, Search, ChevronLeft, ChevronRight, Clock, CheckCircle, XCircle, AlertCircle, RefreshCw, IndianRupee, Eye, Settings } from 'lucide-react';
 import IDCard from '../components/IDCard';
 
 const API_BASE = (import.meta.env.VITE_API_URL || 'http://localhost:5000').replace(/\/$/, '');
@@ -38,6 +38,109 @@ const getSchoolDisplayName = () => {
   }
   return 'EEC School';
 };
+
+
+/* ─── Table pagination (shared by Attendance / Leaves / Expenses) ─── */
+const PAGE_SIZES = [10, 25, 50];
+
+// Slice a list into pages; jumps back to page 1 whenever the list changes
+// (search / filters / month) so you never land on an empty page.
+function usePagination(items) {
+  const [page, setPage] = useState(1);
+  const [pageSize, setPageSize] = useState(10);
+  const total = items.length;
+  const totalPages = Math.max(1, Math.ceil(total / pageSize));
+  useEffect(() => { setPage(1); }, [items, pageSize]);
+  const current = Math.min(page, totalPages);
+  const rows = items.slice((current - 1) * pageSize, current * pageSize);
+  return { rows, page: current, setPage, pageSize, setPageSize, total, totalPages };
+}
+
+// 1 … 4 [5] 6 … 12
+const pageWindow = (current, total) => {
+  if (total <= 7) return Array.from({ length: total }, (_, i) => i + 1);
+  const set = new Set([1, total, current - 1, current, current + 1]);
+  if (current <= 3) [2, 3, 4].forEach((p) => set.add(p));
+  if (current >= total - 2) [total - 3, total - 2, total - 1].forEach((p) => set.add(p));
+  const sorted = [...set].filter((p) => p >= 1 && p <= total).sort((a, b) => a - b);
+  const out = [];
+  sorted.forEach((p, i) => { if (i && p - sorted[i - 1] > 1) out.push('…'); out.push(p); });
+  return out;
+};
+
+function TablePagination({ pager, label = 'records', extra = null }) {
+  const { page, setPage, pageSize, setPageSize, total, totalPages } = pager;
+  if (!total) return null;
+  const from = (page - 1) * pageSize + 1;
+  const to = Math.min(page * pageSize, total);
+  const navBtn = 'flex h-8 w-8 items-center justify-center rounded-lg border border-gray-200 text-gray-500 transition hover:bg-gray-50 disabled:cursor-not-allowed disabled:opacity-40';
+  return (
+    <div className="flex flex-col gap-3 border-t border-gray-100 px-4 py-3 text-xs text-gray-500 sm:flex-row sm:items-center sm:justify-between">
+      <div className="flex flex-wrap items-center gap-3">
+        <span>Showing <b className="text-gray-700">{from}–{to}</b> of <b className="text-gray-700">{total}</b> {label}</span>
+        <label className="flex items-center gap-1.5">
+          Rows
+          <select value={pageSize} onChange={(e) => setPageSize(Number(e.target.value))} className="rounded-lg border border-gray-200 bg-white px-2 py-1 text-xs text-gray-700">
+            {PAGE_SIZES.map((n) => <option key={n} value={n}>{n}</option>)}
+          </select>
+        </label>
+        {extra}
+      </div>
+      {totalPages > 1 && (
+        <nav className="flex items-center gap-1" aria-label="Pagination">
+          <button type="button" className={navBtn} onClick={() => setPage(page - 1)} disabled={page === 1} aria-label="Previous page"><ChevronLeft size={15} /></button>
+          {pageWindow(page, totalPages).map((p, i) => (p === '…'
+            ? <span key={`gap-${i}`} className="w-6 text-center text-gray-400">…</span>
+            : (
+              <button
+                key={p}
+                type="button"
+                onClick={() => setPage(p)}
+                aria-current={p === page ? 'page' : undefined}
+                className={`h-8 min-w-8 rounded-lg px-2 text-xs font-semibold transition ${p === page ? 'bg-yellow-500 text-white shadow-sm' : 'border border-gray-200 text-gray-600 hover:bg-gray-50'}`}
+              >
+                {p}
+              </button>
+            )))}
+          <button type="button" className={navBtn} onClick={() => setPage(page + 1)} disabled={page === totalPages} aria-label="Next page"><ChevronRight size={15} /></button>
+        </nav>
+      )}
+    </div>
+  );
+}
+
+/* ─── Small shared UI bits for the HR tabs ─── */
+const initialsOf = (name) => String(name || '?').split(/\s+/).filter(Boolean).slice(0, 2).map((w) => w[0]).join('').toUpperCase();
+function PersonCell({ name, sub }) {
+  return (
+    <div className="flex items-center gap-2.5">
+      <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-yellow-100 text-[11px] font-bold text-yellow-700">{initialsOf(name)}</span>
+      <div className="min-w-0">
+        <p className="truncate text-sm font-medium text-gray-900">{name || '-'}</p>
+        {sub ? <p className="truncate text-xs text-gray-500">{sub}</p> : null}
+      </div>
+    </div>
+  );
+}
+function StatChip({ icon: Icon, label, value, sub, tone }) {
+  const tones = {
+    blue: 'bg-blue-50 text-blue-600', green: 'bg-green-50 text-green-600', red: 'bg-red-50 text-red-600',
+    amber: 'bg-amber-50 text-amber-600', purple: 'bg-purple-50 text-purple-600',
+  };
+  return (
+    <div className="flex items-center gap-3 rounded-xl border border-gray-200 bg-white px-4 py-3">
+      <span className={`flex h-10 w-10 shrink-0 items-center justify-center rounded-lg ${tones[tone] || tones.blue}`}><Icon size={19} /></span>
+      <div className="min-w-0">
+        <p className="text-xs text-gray-500">{label}</p>
+        <p className="text-lg font-bold leading-tight text-gray-900">{value}{sub ? <span className="ml-1.5 text-xs font-medium text-gray-400">{sub}</span> : null}</p>
+      </div>
+    </div>
+  );
+}
+const toolbarInput = 'rounded-lg border border-gray-200 bg-white px-3 py-2 text-sm text-gray-700 focus:border-yellow-400 focus:outline-none focus:ring-2 focus:ring-yellow-100';
+const thCls = 'px-4 py-3 text-left text-xs font-semibold uppercase tracking-wider text-gray-500';
+const tdCls = 'px-4 py-3 text-sm text-gray-600';
+
 
 const HR = ({ setShowAdminHeader }) => {
   const [searchParams] = useSearchParams();
@@ -135,14 +238,12 @@ const HR = ({ setShowAdminHeader }) => {
   const [attendanceTeacherFilter, setAttendanceTeacherFilter] = useState('all');
   const [attendanceStatusFilter, setAttendanceStatusFilter] = useState('all');
   const [attendanceSearch, setAttendanceSearch] = useState('');
-  const [showAttendanceFilters, setShowAttendanceFilters] = useState(false);
 
   // Leave filters
   const [leaveTeacherFilter, setLeaveTeacherFilter] = useState('all');
   const [leaveStatusFilter, setLeaveStatusFilter] = useState('all');
   const [leaveTypeFilter, setLeaveTypeFilter] = useState('all');
   const [leaveSearch, setLeaveSearch] = useState('');
-  const [showLeaveFilters, setShowLeaveFilters] = useState(false);
   const [showLeaveLetterModal, setShowLeaveLetterModal] = useState(false);
   const [selectedLeaveRequest, setSelectedLeaveRequest] = useState(null);
 
@@ -151,7 +252,6 @@ const HR = ({ setShowAdminHeader }) => {
   const [expenseStatusFilter, setExpenseStatusFilter] = useState('all');
   const [expenseCategoryFilter, setExpenseCategoryFilter] = useState('all');
   const [expenseSearch, setExpenseSearch] = useState('');
-  const [showExpenseFilters, setShowExpenseFilters] = useState(false);
 
   const toFriendlyHrError = (err, fallback) => {
     const message = String(err?.message || '').trim();
@@ -430,6 +530,13 @@ const HR = ({ setShowAdminHeader }) => {
   }, [teacherExpenses]);
 
   // Status badge helper
+
+  // Table pagination per tab (see usePagination above the component).
+  const attendancePager = usePagination(attendanceFilteredRecords);
+  const leavesPager = usePagination(filteredLeaves);
+  const expensesPager = usePagination(filteredExpenses);
+  const [showHrSettings, setShowHrSettings] = useState(false);
+
   const StatusBadge = ({ status }) => {
     const s = normalizedStatus(status);
     const config = {
@@ -1007,25 +1114,43 @@ const HR = ({ setShowAdminHeader }) => {
   };
 
   return (
-    <div className="w-full min-h-screen bg-gray-50 p-6">
+    <div className="w-full min-h-screen bg-gray-50 p-4 md:p-5">
       <div className="max-w-7xl mx-auto">
-        <div className="flex items-center justify-between mb-6">
-          <h1 className="text-2xl font-bold text-gray-800">HR Management</h1>
-          <div className="bg-white rounded-lg border border-gray-200 p-1 flex">
-            {/* {['attendance', 'leaves', 'expenses','payroll','vendors','employees','recruitment','policies','add-new'].map(key => ( */}
-            {['attendance', 'leaves', 'expenses'].map(key => (
-              <button key={key} className={`px-3 py-1 rounded-md text-sm font-medium ${tab === key
-                  ? (key === 'add-new' ? 'bg-green-500 text-white' : 'bg-yellow-100 text-yellow-700')
-                  : (key === 'add-new' ? 'bg-green-100 text-green-700 hover:bg-green-200' : 'text-gray-600 hover:text-gray-800')
-                }`} onClick={() => setTab(key)}>
-                {key === 'add-new' ? (
-                  <span className="flex items-center gap-1">
-                    <Plus size={14} />
-                    Add New
-                  </span>
-                ) : key.charAt(0).toUpperCase() + key.slice(1)}
+        <div className="mb-5 flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
+          <div>
+            <h1 className="text-2xl font-bold text-gray-900">HR Management</h1>
+            <p className="mt-0.5 text-sm text-gray-500">Teacher attendance, leave requests and expense claims in one place.</p>
+          </div>
+          <div className="flex items-center gap-2">
+            <div className="inline-flex rounded-xl border border-gray-200 bg-white p-1 shadow-sm">
+              {[
+                { key: 'attendance', label: 'Attendance', icon: Clock },
+                { key: 'leaves', label: 'Leaves', icon: CalendarCheck, badge: leaveSummary.pending },
+                // { key: 'expenses', label: 'Expenses', icon: IndianRupee, badge: expenseSummary.pending },
+              ].map(({ key, label, icon: Icon, badge }) => (
+                <button
+                  key={key}
+                  type="button"
+                  onClick={() => { setTab(key); setShowHrSettings(false); }}
+                  className={`inline-flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-sm font-semibold transition ${tab === key ? 'bg-yellow-500 text-white shadow-sm' : 'text-gray-600 hover:bg-gray-50 hover:text-gray-900'}`}
+                >
+                  <Icon size={15} /> {label}
+                  {badge > 0 && (
+                    <span className={`rounded-full px-1.5 text-[10px] font-bold ${tab === key ? 'bg-white/25 text-white' : 'bg-amber-100 text-amber-700'}`}>{badge}</span>
+                  )}
+                </button>
+              ))}
+            </div>
+            {tab !== 'expenses' && (
+              <button
+                type="button"
+                onClick={() => setShowHrSettings((v) => !v)}
+                className={`inline-flex h-10 items-center gap-1.5 rounded-xl border px-3 text-sm font-semibold transition ${showHrSettings ? 'border-yellow-300 bg-yellow-50 text-yellow-700' : 'border-gray-200 bg-white text-gray-600 hover:bg-gray-50'}`}
+                title={tab === 'attendance' ? 'Attendance timings' : 'Leave policy'}
+              >
+                <Settings size={15} /> <span className="hidden sm:inline">Settings</span>
               </button>
-            ))}
+            )}
           </div>
         </div>
 
@@ -1137,177 +1262,101 @@ const HR = ({ setShowAdminHeader }) => {
         {/* Attendance */}
         {tab === 'attendance' && (
           <div className="space-y-4">
-            {/* Summary Cards */}
-            <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
-              <div className="bg-white rounded-xl border border-gray-200 p-5 flex items-center gap-4">
-                <div className="w-12 h-12 rounded-lg bg-blue-100 flex items-center justify-center"><Users size={22} className="text-blue-600" /></div>
-                <div><div className="text-sm text-gray-500">Teachers</div><div className="text-2xl font-bold text-gray-900">{attendanceSummary.teachers}</div></div>
-              </div>
-              <div className="bg-white rounded-xl border border-green-200 p-5 flex items-center gap-4">
-                <div className="w-12 h-12 rounded-lg bg-green-100 flex items-center justify-center"><CheckCircle size={22} className="text-green-600" /></div>
-                <div><div className="text-sm text-gray-500">Present Entries</div><div className="text-2xl font-bold text-green-700">{attendanceSummary.presentDays}</div></div>
-              </div>
-              <div className="bg-white rounded-xl border border-red-200 p-5 flex items-center gap-4">
-                <div className="w-12 h-12 rounded-lg bg-red-100 flex items-center justify-center"><XCircle size={22} className="text-red-600" /></div>
-                <div><div className="text-sm text-gray-500">Absent (Month)</div><div className="text-2xl font-bold text-red-700">{attendanceSummary.absentDays}</div></div>
-              </div>
+            <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
+              <StatChip icon={Users} label="Teachers" value={attendanceSummary.teachers} tone="blue" />
+              <StatChip icon={CheckCircle} label="Present entries" value={attendanceSummary.presentDays} tone="green" />
+              <StatChip icon={XCircle} label="Absent (month)" value={attendanceSummary.absentDays} tone="red" />
             </div>
 
-            <div className="bg-white rounded-xl border border-gray-200 p-4">
-              <div className="flex flex-col lg:flex-row lg:items-end gap-3">
-                <div className="min-w-[220px]">
-                  <label className="block text-xs font-medium text-gray-600 mb-1">Entry Time</label>
-                  <input
-                    type="time"
-                    value={attendanceSettings.entryTime}
-                    onChange={(e) => setAttendanceSettings((prev) => ({ ...prev, entryTime: e.target.value }))}
-                    className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm"
-                  />
+            {showHrSettings && (
+              <div className="rounded-xl border border-yellow-200 bg-yellow-50/40 p-4">
+                <p className="mb-3 text-sm font-semibold text-gray-800">Attendance timings</p>
+                <div className="flex flex-col gap-3 sm:flex-row sm:items-end">
+                  <label className="text-xs font-medium text-gray-600">Entry time
+                    <input type="time" value={attendanceSettings.entryTime} onChange={(e) => setAttendanceSettings((prev) => ({ ...prev, entryTime: e.target.value }))} className={`mt-1 block w-full sm:w-40 ${toolbarInput}`} />
+                  </label>
+                  <label className="text-xs font-medium text-gray-600">Exit time
+                    <input type="time" value={attendanceSettings.exitTime} onChange={(e) => setAttendanceSettings((prev) => ({ ...prev, exitTime: e.target.value }))} className={`mt-1 block w-full sm:w-40 ${toolbarInput}`} />
+                  </label>
+                  <label className="text-xs font-medium text-gray-600">Grace (min)
+                    <input type="number" min="0" max="720" value={attendanceSettings.graceMinutes} onChange={(e) => setAttendanceSettings((prev) => ({ ...prev, graceMinutes: Number(e.target.value || 0) }))} className={`mt-1 block w-full sm:w-32 ${toolbarInput}`} />
+                  </label>
+                  <button type="button" onClick={saveAttendanceSettings} disabled={attendanceSettingsSaving || activityLoading} className="inline-flex h-10 items-center justify-center gap-1.5 rounded-lg bg-yellow-500 px-4 text-sm font-semibold text-white hover:bg-yellow-600 disabled:opacity-50">
+                    <Clock size={14} /> {attendanceSettingsSaving ? 'Saving...' : 'Save timings'}
+                  </button>
                 </div>
-                <div className="min-w-[220px]">
-                  <label className="block text-xs font-medium text-gray-600 mb-1">Exit Time</label>
-                  <input
-                    type="time"
-                    value={attendanceSettings.exitTime}
-                    onChange={(e) => setAttendanceSettings((prev) => ({ ...prev, exitTime: e.target.value }))}
-                    className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm"
-                  />
-                </div>
-                <div className="min-w-[200px]">
-                  <label className="block text-xs font-medium text-gray-600 mb-1">Consideration (min)</label>
-                  <input
-                    type="number"
-                    min="0"
-                    max="720"
-                    value={attendanceSettings.graceMinutes}
-                    onChange={(e) => setAttendanceSettings((prev) => ({ ...prev, graceMinutes: Number(e.target.value || 0) }))}
-                    className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm"
-                  />
-                </div>
-                <button
-                  onClick={saveAttendanceSettings}
-                  disabled={attendanceSettingsSaving || activityLoading}
-                  className="inline-flex items-center gap-1.5 px-4 py-2 rounded-lg bg-yellow-600 text-white hover:bg-yellow-700 disabled:opacity-50 text-sm font-medium"
-                >
-                  <Clock size={14} />
-                  {attendanceSettingsSaving ? 'Saving...' : 'Save Timings'}
+                <p className="mt-2 text-xs text-gray-500">Teachers checking in within the grace time are marked Present. Working hours run from check-in to check-out.</p>
+              </div>
+            )}
+
+            {activityError && (
+              <div className="flex items-center gap-3 rounded-xl border border-red-200 bg-red-50 px-4 py-3">
+                <AlertCircle size={18} className="shrink-0 text-red-500" />
+                <span className="text-sm text-red-700">{activityError}</span>
+              </div>
+            )}
+
+            <div className="overflow-hidden rounded-xl border border-gray-200 bg-white">
+
+            <div className="flex flex-col gap-2 rounded-t-xl border-b border-gray-100 p-3 lg:flex-row lg:items-center">
+              <div className="relative flex-1">
+                <Search size={16} className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" />
+                <input
+                  type="text"
+                  placeholder="Search by name or date..."
+                  value={attendanceSearch}
+                  onChange={(e) => setAttendanceSearch(e.target.value)}
+                  className={`w-full pl-9 ${toolbarInput}`}
+                />
+              </div>
+              <div className="flex flex-wrap items-center gap-2">
+                <input type="month" value={teacherActivityMonth} onChange={(e) => setTeacherActivityMonth(e.target.value)} className={toolbarInput} aria-label="Month" />
+                <select value={attendanceTeacherFilter} onChange={(e) => setAttendanceTeacherFilter(e.target.value)} className={toolbarInput}>
+                  <option value="all">All teachers</option>
+                  {attendanceTeacherOptions.map((t) => <option key={t.id} value={t.id}>{t.name}</option>)}
+                </select>
+                <select value={attendanceStatusFilter} onChange={(e) => setAttendanceStatusFilter(e.target.value)} className={toolbarInput}>
+                  <option value="all">All statuses</option>
+                  {attendanceStatusOptions.map((s) => <option key={s} value={s}>{s}</option>)}
+                </select>
+                {(countActiveFilters([attendanceTeacherFilter, attendanceStatusFilter]) > 0 || attendanceSearch) && (
+                  <button type="button" onClick={() => { setAttendanceTeacherFilter('all'); setAttendanceStatusFilter('all'); setAttendanceSearch(''); }} className="px-2 text-sm font-medium text-gray-500 hover:text-gray-800">Reset</button>
+                )}
+                <button type="button" onClick={() => fetchTeacherActivities(teacherActivityMonth)} className="flex h-9 w-9 items-center justify-center rounded-lg border border-gray-200 text-gray-600 transition hover:bg-gray-50" title="Refresh" aria-label="Refresh">
+                  <RefreshCw size={15} className={activityLoading ? 'animate-spin' : ''} />
                 </button>
               </div>
-              <div className="mt-2 flex flex-wrap items-center gap-2 text-xs text-gray-500">
-                <span>Saved: {attendanceSettings.entryTime} - {attendanceSettings.exitTime}</span>
-                <span className="text-gray-400">|</span>
-                <span>Consideration: {attendanceSettings.graceMinutes} min</span>
-              </div>
-              <p className="mt-1 text-xs text-gray-500">
-                Teachers checking in within the consideration time are marked as Present. Working hours are calculated from check-in to check-out.
-              </p>
             </div>
-
-            {/* Filter Panel */}
-            <div className="bg-white rounded-xl border border-gray-200 p-4">
-              <div className="flex flex-wrap items-center gap-3">
-                <div className="flex items-center gap-2 flex-1 min-w-[200px]">
-                  <div className="relative flex-1">
-                    <Search size={16} className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" />
-                    <input
-                      type="text"
-                      placeholder="Search by name or date..."
-                      value={attendanceSearch}
-                      onChange={(e) => setAttendanceSearch(e.target.value)}
-                      className="w-full pl-9 pr-3 py-2 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-yellow-500 focus:border-transparent"
-                    />
-                  </div>
-                </div>
-                <input type="month" value={teacherActivityMonth} onChange={(e) => setTeacherActivityMonth(e.target.value)} className="border border-gray-300 rounded-lg px-3 py-2 text-sm" />
-                <button
-                  onClick={() => setShowAttendanceFilters(!showAttendanceFilters)}
-                  className={`inline-flex items-center gap-1.5 px-3 py-2 rounded-lg border text-sm font-medium transition-colors ${showAttendanceFilters || countActiveFilters([attendanceTeacherFilter, attendanceStatusFilter]) > 0 ? 'bg-yellow-50 border-yellow-300 text-yellow-700' : 'border-gray-300 text-gray-700 hover:bg-gray-50'}`}
-                >
-                  <Filter size={14} />
-                  Filters
-                  {countActiveFilters([attendanceTeacherFilter, attendanceStatusFilter]) > 0 && (
-                    <span className="ml-1 bg-yellow-500 text-white text-xs rounded-full w-5 h-5 flex items-center justify-center">{countActiveFilters([attendanceTeacherFilter, attendanceStatusFilter])}</span>
-                  )}
-                  {showAttendanceFilters ? <ChevronUp size={14} /> : <ChevronDown size={14} />}
-                </button>
-                <button onClick={() => fetchTeacherActivities(teacherActivityMonth)} className="inline-flex items-center gap-1.5 px-3 py-2 rounded-lg bg-yellow-600 text-white hover:bg-yellow-700 text-sm font-medium">
-                  <RefreshCw size={14} />
-                  Refresh
-                </button>
-              </div>
-
-              {/* Advanced Filters */}
-              {showAttendanceFilters && (
-                <div className="mt-3 pt-3 border-t border-gray-200 grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
-                  <div>
-                    <label className="block text-xs font-medium text-gray-600 mb-1">Teacher</label>
-                    <select value={attendanceTeacherFilter} onChange={(e) => setAttendanceTeacherFilter(e.target.value)} className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm">
-                      <option value="all">All Teachers</option>
-                      {attendanceTeacherOptions.map((t) => <option key={t.id} value={t.id}>{t.name}</option>)}
-                    </select>
-                  </div>
-                  <div>
-                    <label className="block text-xs font-medium text-gray-600 mb-1">Status</label>
-                    <select value={attendanceStatusFilter} onChange={(e) => setAttendanceStatusFilter(e.target.value)} className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm">
-                      <option value="all">All Statuses</option>
-                      {attendanceStatusOptions.map((s) => <option key={s} value={s}>{s}</option>)}
-                    </select>
-                  </div>
-                  <div className="flex items-end">
-                    <button
-                      onClick={() => { setAttendanceTeacherFilter('all'); setAttendanceStatusFilter('all'); setAttendanceSearch(''); }}
-                      className="px-3 py-2 text-sm text-gray-600 hover:text-gray-800 hover:bg-gray-100 rounded-lg transition-colors"
-                    >
-                      Clear All Filters
-                    </button>
-                  </div>
-                </div>
-              )}
-            </div>
-
-            {/* Table */}
-            <div className="bg-white rounded-xl border border-gray-200 overflow-hidden">
-              {activityLoading ? (
-                <div className="flex items-center justify-center py-12">
-                  <RefreshCw size={20} className="animate-spin text-yellow-600 mr-2" />
-                  <span className="text-sm text-gray-500">Loading attendance...</span>
-                </div>
-              ) : (
-                <div className="overflow-x-auto">
-                  <table className="min-w-full divide-y divide-gray-200">
-                    <thead>
-                      <tr className="bg-gray-50">
-                        <th className="px-5 py-3 text-left text-xs font-semibold text-gray-600 uppercase tracking-wider">Date</th>
-                        <th className="px-5 py-3 text-left text-xs font-semibold text-gray-600 uppercase tracking-wider">Teacher</th>
-                        <th className="px-5 py-3 text-left text-xs font-semibold text-gray-600 uppercase tracking-wider">Check In</th>
-                        <th className="px-5 py-3 text-left text-xs font-semibold text-gray-600 uppercase tracking-wider">Check Out</th>
-                        <th className="px-5 py-3 text-left text-xs font-semibold text-gray-600 uppercase tracking-wider">Working Hours</th>
-                        <th className="px-5 py-3 text-left text-xs font-semibold text-gray-600 uppercase tracking-wider">Status</th>
+              <div className="overflow-x-auto">
+                <table className="min-w-full">
+                  <thead className="bg-gray-50">
+                    <tr>
+                      <th className={thCls}>Teacher</th>
+                      <th className={thCls}>Date</th>
+                      <th className={thCls}>Check in</th>
+                      <th className={thCls}>Check out</th>
+                      <th className={thCls}>Hours</th>
+                      <th className={thCls}>Status</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-gray-100">
+                    {activityLoading ? <tr><td colSpan={6} className="px-4 py-12 text-center text-sm text-gray-400"><RefreshCw size={16} className="mr-2 inline animate-spin text-yellow-600" />Loading attendance…</td></tr> : attendancePager.rows.map((record) => (
+                      <tr key={record.id} className="transition-colors hover:bg-gray-50/70">
+                        <td className="px-4 py-2.5"><PersonCell name={record.teacherName} /></td>
+                        <td className={tdCls}>{formatLongDate(record.date) || record.date}</td>
+                        <td className={tdCls}>{record.checkInAt ? new Date(record.checkInAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : '—'}</td>
+                        <td className={tdCls}>{record.checkOutAt ? new Date(record.checkOutAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : '—'}</td>
+                        <td className={tdCls}>{formatWorkingHours(record.workingMinutes)}</td>
+                        <td className="px-4 py-2.5"><StatusBadge status={record.status} /></td>
                       </tr>
-                    </thead>
-                    <tbody className="divide-y divide-gray-100">
-                      {attendanceFilteredRecords.map((record) => (
-                        <tr key={record.id} className="hover:bg-gray-50 transition-colors">
-                          <td className="px-5 py-3 text-sm text-gray-700 font-medium">{record.date}</td>
-                          <td className="px-5 py-3 text-sm text-gray-900 font-medium">{record.teacherName || '-'}</td>
-                          <td className="px-5 py-3 text-sm text-gray-600">{record.checkInAt ? new Date(record.checkInAt).toLocaleTimeString() : '-'}</td>
-                          <td className="px-5 py-3 text-sm text-gray-600">{record.checkOutAt ? new Date(record.checkOutAt).toLocaleTimeString() : '-'}</td>
-                          <td className="px-5 py-3 text-sm text-gray-600">{formatWorkingHours(record.workingMinutes)}</td>
-                          <td className="px-5 py-3"><StatusBadge status={record.status} /></td>
-                        </tr>
-                      ))}
-                      {attendanceFilteredRecords.length === 0 && (
-                        <tr><td colSpan={6} className="px-5 py-12 text-sm text-center text-gray-400">No attendance records found</td></tr>
-                      )}
-                    </tbody>
-                  </table>
-                  {attendanceFilteredRecords.length > 0 && (
-                    <div className="px-5 py-3 bg-gray-50 border-t border-gray-200 text-xs text-gray-500">
-                      Showing {attendanceFilteredRecords.length} of {teacherAttendanceRecords.length} records
-                    </div>
-                  )}
-                </div>
-              )}
+                    ))}
+                    {!activityLoading && attendanceFilteredRecords.length === 0 && (
+                      <tr><td colSpan={6} className="px-4 py-12 text-center text-sm text-gray-400">No attendance records found</td></tr>
+                    )}
+                  </tbody>
+                </table>
+              </div>
+              {!activityLoading && <TablePagination pager={attendancePager} label="records" />}
             </div>
           </div>
         )}
@@ -1376,206 +1425,116 @@ const HR = ({ setShowAdminHeader }) => {
         {/* Leaves */}
         {tab === 'leaves' && (
           <div className="space-y-4">
-            {/* Summary Cards */}
-            <div className="grid grid-cols-1 sm:grid-cols-4 gap-4">
-              <div className="bg-white rounded-xl border border-gray-200 p-5 flex items-center gap-4">
-                <div className="w-12 h-12 rounded-lg bg-blue-100 flex items-center justify-center"><CalendarCheck size={22} className="text-blue-600" /></div>
-                <div><div className="text-sm text-gray-500">Total Requests</div><div className="text-2xl font-bold text-gray-900">{leaveSummary.total}</div></div>
-              </div>
-              <div className="bg-white rounded-xl border border-amber-200 p-5 flex items-center gap-4">
-                <div className="w-12 h-12 rounded-lg bg-amber-100 flex items-center justify-center"><Clock size={22} className="text-amber-600" /></div>
-                <div><div className="text-sm text-gray-500">Pending</div><div className="text-2xl font-bold text-amber-700">{leaveSummary.pending}</div></div>
-              </div>
-              <div className="bg-white rounded-xl border border-green-200 p-5 flex items-center gap-4">
-                <div className="w-12 h-12 rounded-lg bg-green-100 flex items-center justify-center"><CheckCircle size={22} className="text-green-600" /></div>
-                <div><div className="text-sm text-gray-500">Approved</div><div className="text-2xl font-bold text-green-700">{leaveSummary.approved}</div></div>
-              </div>
-              <div className="bg-white rounded-xl border border-red-200 p-5 flex items-center gap-4">
-                <div className="w-12 h-12 rounded-lg bg-red-100 flex items-center justify-center"><XCircle size={22} className="text-red-600" /></div>
-                <div><div className="text-sm text-gray-500">Rejected</div><div className="text-2xl font-bold text-red-700">{leaveSummary.rejected}</div></div>
-              </div>
+            <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
+              <StatChip icon={CalendarCheck} label="Total requests" value={leaveSummary.total} tone="blue" />
+              <StatChip icon={Clock} label="Pending" value={leaveSummary.pending} tone="amber" />
+              <StatChip icon={CheckCircle} label="Approved" value={leaveSummary.approved} tone="green" />
+              <StatChip icon={XCircle} label="Rejected" value={leaveSummary.rejected} tone="red" />
             </div>
 
-            <div className="bg-white rounded-xl border border-gray-200 p-4">
-              <div className="flex flex-col sm:flex-row sm:items-end gap-3">
-                <div className="flex-1">
-                  <label className="block text-xs font-semibold text-gray-600 uppercase tracking-wide mb-1">
-                    Casual Leave Days (Per Teacher)
-                  </label>
-                  <input
-                    type="number"
-                    min="0"
-                    max="365"
-                    value={leavePolicy.casualLeaveDays}
-                    onChange={(e) => setLeavePolicy((prev) => ({ ...prev, casualLeaveDays: e.target.value }))}
-                    className="w-full sm:w-56 border border-gray-300 rounded-lg px-3 py-2 text-sm focus:ring-2 focus:ring-yellow-500 focus:border-transparent"
-                  />
-                  <p className="text-xs text-gray-500 mt-1">Teachers can apply casual leave up to this approved quota.</p>
-                </div>
-                <button
-                  onClick={saveLeavePolicy}
-                  disabled={leavePolicySaving}
-                  className="inline-flex items-center gap-2 px-4 py-2 rounded-lg bg-yellow-600 text-white hover:bg-yellow-700 disabled:opacity-60 text-sm font-medium"
-                >
+            {showHrSettings && (
+              <div className="flex flex-col gap-3 rounded-xl border border-yellow-200 bg-yellow-50/40 p-4 sm:flex-row sm:items-end">
+                <label className="text-xs font-medium text-gray-600">Casual leave days per teacher
+                  <input type="number" min="0" max="365" value={leavePolicy.casualLeaveDays} onChange={(e) => setLeavePolicy((prev) => ({ ...prev, casualLeaveDays: e.target.value }))} className={`mt-1 block w-full sm:w-48 ${toolbarInput}`} />
+                </label>
+                <button type="button" onClick={saveLeavePolicy} disabled={leavePolicySaving} className="inline-flex h-10 items-center justify-center gap-1.5 rounded-lg bg-yellow-500 px-4 text-sm font-semibold text-white hover:bg-yellow-600 disabled:opacity-60">
                   {leavePolicySaving ? <RefreshCw size={14} className="animate-spin" /> : <CheckCircle size={14} />}
-                  {leavePolicySaving ? 'Saving...' : 'Save Policy'}
+                  {leavePolicySaving ? 'Saving...' : 'Save policy'}
                 </button>
+                <p className="text-xs text-gray-500 sm:pb-2.5">Teachers can take casual leave up to this approved quota.</p>
               </div>
-            </div>
+            )}
 
-            {/* Filter Panel */}
-            <div className="bg-white rounded-xl border border-gray-200 p-4">
-              <div className="flex flex-wrap items-center gap-3">
-                <div className="flex items-center gap-2 flex-1 min-w-[200px]">
-                  <div className="relative flex-1">
-                    <Search size={16} className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" />
-                    <input
-                      type="text"
-                      placeholder="Search by name, type, or reason..."
-                      value={leaveSearch}
-                      onChange={(e) => setLeaveSearch(e.target.value)}
-                      className="w-full pl-9 pr-3 py-2 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-yellow-500 focus:border-transparent"
-                    />
-                  </div>
-                </div>
-                <input type="month" value={teacherActivityMonth} onChange={(e) => setTeacherActivityMonth(e.target.value)} className="border border-gray-300 rounded-lg px-3 py-2 text-sm" />
-                <button
-                  onClick={() => setShowLeaveFilters(!showLeaveFilters)}
-                  className={`inline-flex items-center gap-1.5 px-3 py-2 rounded-lg border text-sm font-medium transition-colors ${showLeaveFilters || countActiveFilters([leaveTeacherFilter, leaveStatusFilter, leaveTypeFilter]) > 0 ? 'bg-yellow-50 border-yellow-300 text-yellow-700' : 'border-gray-300 text-gray-700 hover:bg-gray-50'}`}
-                >
-                  <Filter size={14} />
-                  Filters
-                  {countActiveFilters([leaveTeacherFilter, leaveStatusFilter, leaveTypeFilter]) > 0 && (
-                    <span className="ml-1 bg-yellow-500 text-white text-xs rounded-full w-5 h-5 flex items-center justify-center">{countActiveFilters([leaveTeacherFilter, leaveStatusFilter, leaveTypeFilter])}</span>
-                  )}
-                  {showLeaveFilters ? <ChevronUp size={14} /> : <ChevronDown size={14} />}
-                </button>
-                <button onClick={() => fetchTeacherActivities(teacherActivityMonth)} className="inline-flex items-center gap-1.5 px-3 py-2 rounded-lg bg-yellow-600 text-white hover:bg-yellow-700 text-sm font-medium">
-                  <RefreshCw size={14} />
-                  Refresh
-                </button>
-              </div>
-
-              {/* Advanced Filters */}
-              {showLeaveFilters && (
-                <div className="mt-3 pt-3 border-t border-gray-200 grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3">
-                  <div>
-                    <label className="block text-xs font-medium text-gray-600 mb-1">Teacher</label>
-                    <select value={leaveTeacherFilter} onChange={(e) => setLeaveTeacherFilter(e.target.value)} className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm">
-                      <option value="all">All Teachers</option>
-                      {leaveTeacherOptions.map((t) => <option key={t.id} value={t.id}>{t.name}</option>)}
-                    </select>
-                  </div>
-                  <div>
-                    <label className="block text-xs font-medium text-gray-600 mb-1">Status</label>
-                    <select value={leaveStatusFilter} onChange={(e) => setLeaveStatusFilter(e.target.value)} className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm">
-                      <option value="all">All Statuses</option>
-                      <option value="pending">Pending</option>
-                      <option value="approved">Approved</option>
-                      <option value="rejected">Rejected</option>
-                    </select>
-                  </div>
-                  <div>
-                    <label className="block text-xs font-medium text-gray-600 mb-1">Leave Type</label>
-                    <select value={leaveTypeFilter} onChange={(e) => setLeaveTypeFilter(e.target.value)} className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm">
-                      <option value="all">All Types</option>
-                      {leaveTypeOptions.map((t) => <option key={t} value={t}>{t}</option>)}
-                    </select>
-                  </div>
-                  <div className="flex items-end">
-                    <button
-                      onClick={() => { setLeaveTeacherFilter('all'); setLeaveStatusFilter('all'); setLeaveTypeFilter('all'); setLeaveSearch(''); }}
-                      className="px-3 py-2 text-sm text-gray-600 hover:text-gray-800 hover:bg-gray-100 rounded-lg transition-colors"
-                    >
-                      Clear All Filters
-                    </button>
-                  </div>
-                </div>
-              )}
-            </div>
-
-            {/* Error */}
             {activityError && (
-              <div className="rounded-xl border border-red-200 bg-red-50 p-4 flex items-center gap-3">
-                <AlertCircle size={18} className="text-red-500 shrink-0" />
+              <div className="flex items-center gap-3 rounded-xl border border-red-200 bg-red-50 px-4 py-3">
+                <AlertCircle size={18} className="shrink-0 text-red-500" />
                 <span className="text-sm text-red-700">{activityError}</span>
               </div>
             )}
 
-            {/* Table */}
-            <div className="bg-white rounded-xl border border-gray-200 overflow-hidden">
-              {activityLoading ? (
-                <div className="flex items-center justify-center py-12">
-                  <RefreshCw size={20} className="animate-spin text-yellow-600 mr-2" />
-                  <span className="text-sm text-gray-500">Loading leave requests...</span>
-                </div>
-              ) : (
-                <div className="overflow-x-auto">
-                  <table className="min-w-full divide-y divide-gray-200">
-                    <thead>
-                      <tr className="bg-gray-50">
-                        <th className="px-5 py-3 text-xs font-semibold text-gray-600 uppercase tracking-wider">Teacher</th>
-                        <th className="px-5 py-3 text-xs font-semibold text-gray-600 uppercase tracking-wider">Type</th>
-                        <th className="px-5 py-3 text-xs font-semibold text-gray-600 uppercase tracking-wider">From</th>
-                        <th className="px-5 py-3 text-xs font-semibold text-gray-600 uppercase tracking-wider">To</th>
-                        {/* <th className="px-5 py-3 text-left text-xs font-semibold text-gray-600 uppercase tracking-wider">Reason</th> */}
-                        <th className="px-5 py-3 text-xs font-semibold text-gray-600 uppercase tracking-wider">Status</th>
-                        <th className="px-5 py-3 text-xs font-semibold text-gray-600 uppercase tracking-wider">Actions</th>
-                      </tr>
-                    </thead>
-                    <tbody className="divide-y divide-gray-100">
-                      {filteredLeaves.map((r) => {
-                        const status = normalizedStatus(r.status);
-                        return (
-                          <tr key={r.id} className="hover:bg-gray-50 transition-colors">
-                            <td className="px-5 py-3 text-sm text-gray-900 font-medium">{r.teacherName || '-'}</td>
-                            <td className="px-5 py-3">
-                              <span className="inline-flex px-2 py-0.5 rounded-md bg-blue-50 text-blue-700 text-xs font-medium">{r.type}</span>
-                            </td>
-                            <td className="px-5 py-3 text-sm text-gray-600">{formatLongDate(r.startDate)}</td>
-                            <td className="px-5 py-3 text-sm text-gray-600">{formatLongDate(r.endDate)}</td>
-                            {/* <td className="px-5 py-3 text-sm text-gray-600 max-w-[200px] truncate" title={r.reason || ''}>{r.reason || '-'}</td> */}
-                            <td className="px-5 py-3"><StatusBadge status={r.status} /></td>
-                            <td className="px-5 py-3 text-sm">
-                              <div className="flex gap-2">
-                                <button
-                                  onClick={() => openLeaveLetter(r)}
-                                  className="inline-flex items-center gap-1 px-2.5 py-1.5 rounded-lg border border-gray-300 text-gray-700 text-xs font-medium hover:bg-gray-50 transition-colors"
-                                  title="View leave letter"
-                                >
-                                  <Eye size={12} /> View
-                                </button>
-                                <button
-                                  onClick={() => reviewLeaveRequest(r.id, 'Approved')}
-                                  disabled={status === 'approved' || status === 'accepted'}
-                                  className="inline-flex items-center gap-1 px-2.5 py-1.5 rounded-lg bg-green-600 text-white text-xs font-medium hover:bg-green-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
-                                >
-                                  <CheckCircle size={12} /> Approve
-                                </button>
-                                <button
-                                  onClick={() => reviewLeaveRequest(r.id, 'Rejected')}
-                                  disabled={status === 'rejected'}
-                                  className="inline-flex items-center gap-1 px-2.5 py-1.5 rounded-lg bg-red-600 text-white text-xs font-medium hover:bg-red-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
-                                >
-                                  <XCircle size={12} /> Reject
-                                </button>
-                              </div>
-                            </td>
-                          </tr>
-                        );
-                      })}
-                      {filteredLeaves.length === 0 && (
-                        <tr><td colSpan={7} className="px-5 py-12 text-sm text-center text-gray-400">No leave requests found</td></tr>
-                      )}
-                    </tbody>
-                  </table>
-                  {filteredLeaves.length > 0 && (
-                    <div className="px-5 py-3 bg-gray-50 border-t border-gray-200 text-xs text-gray-500">
-                      Showing {filteredLeaves.length} of {teacherLeaves.length} requests
-                    </div>
-                  )}
-                </div>
-              )}
+            <div className="overflow-hidden rounded-xl border border-gray-200 bg-white">
+
+            <div className="flex flex-col gap-2 rounded-t-xl border-b border-gray-100 p-3 lg:flex-row lg:items-center">
+              <div className="relative flex-1">
+                <Search size={16} className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" />
+                <input
+                  type="text"
+                  placeholder="Search by name, type or reason..."
+                  value={leaveSearch}
+                  onChange={(e) => setLeaveSearch(e.target.value)}
+                  className={`w-full pl-9 ${toolbarInput}`}
+                />
+              </div>
+              <div className="flex flex-wrap items-center gap-2">
+                <input type="month" value={teacherActivityMonth} onChange={(e) => setTeacherActivityMonth(e.target.value)} className={toolbarInput} aria-label="Month" />
+                <select value={leaveTeacherFilter} onChange={(e) => setLeaveTeacherFilter(e.target.value)} className={toolbarInput}>
+                  <option value="all">All teachers</option>
+                  {leaveTeacherOptions.map((t) => <option key={t.id} value={t.id}>{t.name}</option>)}
+                </select>
+                <select value={leaveStatusFilter} onChange={(e) => setLeaveStatusFilter(e.target.value)} className={toolbarInput}>
+                  <option value="all">All statuses</option>
+                  <option value="pending">Pending</option>
+                  <option value="approved">Approved</option>
+                  <option value="rejected">Rejected</option>
+                </select>
+                <select value={leaveTypeFilter} onChange={(e) => setLeaveTypeFilter(e.target.value)} className={toolbarInput}>
+                  <option value="all">All types</option>
+                  {leaveTypeOptions.map((t) => <option key={t} value={t}>{t}</option>)}
+                </select>
+                {(countActiveFilters([leaveTeacherFilter, leaveStatusFilter, leaveTypeFilter]) > 0 || leaveSearch) && (
+                  <button type="button" onClick={() => { setLeaveTeacherFilter('all'); setLeaveStatusFilter('all'); setLeaveTypeFilter('all'); setLeaveSearch(''); }} className="px-2 text-sm font-medium text-gray-500 hover:text-gray-800">Reset</button>
+                )}
+                <button type="button" onClick={() => fetchTeacherActivities(teacherActivityMonth)} className="flex h-9 w-9 items-center justify-center rounded-lg border border-gray-200 text-gray-600 transition hover:bg-gray-50" title="Refresh" aria-label="Refresh">
+                  <RefreshCw size={15} className={activityLoading ? 'animate-spin' : ''} />
+                </button>
+              </div>
+            </div>
+              <div className="overflow-x-auto">
+                <table className="min-w-full">
+                  <thead className="bg-gray-50">
+                    <tr>
+                      <th className={thCls}>Teacher</th>
+                      <th className={thCls}>Type</th>
+                      <th className={thCls}>Dates</th>
+                      <th className={thCls}>Status</th>
+                      <th className={thCls}>Actions</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-gray-100">
+                    {activityLoading ? <tr><td colSpan={5} className="px-4 py-12 text-center text-sm text-gray-400"><RefreshCw size={16} className="mr-2 inline animate-spin text-yellow-600" />Loading leave requests…</td></tr> : leavesPager.rows.map((r) => {
+                      const status = normalizedStatus(r.status);
+                      const isPending = !['approved', 'accepted', 'rejected'].includes(status);
+                      return (
+                        <tr key={r.id} className="transition-colors hover:bg-gray-50/70">
+                          <td className="px-4 py-2.5"><PersonCell name={r.teacherName} /></td>
+                          <td className={tdCls}><span className="inline-flex rounded-md bg-blue-50 px-2 py-0.5 text-xs font-medium text-blue-700">{r.type}</span></td>
+                          <td className={tdCls}>{formatLeaveDateRange(r.startDate, r.endDate)}</td>
+                          <td className="px-4 py-2.5"><StatusBadge status={r.status} /></td>
+                          <td className="px-4 py-2.5">
+                          <div className="flex items-center gap-1.5">
+                            <button type="button" onClick={() => openLeaveLetter(r)} className="inline-flex items-center gap-1 rounded-lg border border-gray-200 bg-white px-2.5 py-1.5 text-xs font-semibold text-gray-700 transition hover:bg-gray-50" title="View leave letter"><Eye size={13} /> View</button>
+                            {isPending ? (
+                              <>
+                                <button type="button" onClick={() => reviewLeaveRequest(r.id, 'Approved')} className="inline-flex items-center gap-1 rounded-lg bg-green-600 px-2.5 py-1.5 text-xs font-semibold text-white transition hover:bg-green-700" title="Approve"><CheckCircle size={13} /> Approve</button>
+                                <button type="button" onClick={() => reviewLeaveRequest(r.id, 'Rejected')} className="inline-flex items-center gap-1 rounded-lg border border-red-200 bg-white px-2.5 py-1.5 text-xs font-semibold text-red-600 transition hover:bg-red-50" title="Reject"><XCircle size={13} /> Reject</button>
+                              </>
+                            ) : (
+                              <button type="button" onClick={() => reviewLeaveRequest(r.id, status === 'rejected' ? 'Approved' : 'Rejected')} className="text-xs font-medium text-gray-400 underline-offset-2 hover:text-gray-700 hover:underline" title="Change decision">
+                                {status === 'rejected' ? 'Approve instead' : 'Reject instead'}
+                              </button>
+                            )}
+                          </div>
+                          </td>
+                        </tr>
+                      );
+                    })}
+                    {!activityLoading && filteredLeaves.length === 0 && (
+                      <tr><td colSpan={5} className="px-4 py-12 text-center text-sm text-gray-400">No leave requests found</td></tr>
+                    )}
+                  </tbody>
+                </table>
+              </div>
+              {!activityLoading && <TablePagination pager={leavesPager} label="requests" />}
             </div>
           </div>
         )}
@@ -1680,172 +1639,112 @@ const HR = ({ setShowAdminHeader }) => {
         {/* Expenses */}
         {tab === 'expenses' && (
           <div className="space-y-4">
-            {/* Summary Cards */}
-            <div className="grid grid-cols-1 sm:grid-cols-4 gap-4">
-              <div className="bg-white rounded-xl border border-gray-200 p-5 flex items-center gap-4">
-                <div className="w-12 h-12 rounded-lg bg-purple-100 flex items-center justify-center"><IndianRupee size={22} className="text-purple-600" /></div>
-                <div><div className="text-sm text-gray-500">Total Claims</div><div className="text-2xl font-bold text-gray-900">{expenseSummary.total}</div><div className="text-xs text-gray-400">₹{expenseSummary.totalAmount.toLocaleString()}</div></div>
-              </div>
-              <div className="bg-white rounded-xl border border-amber-200 p-5 flex items-center gap-4">
-                <div className="w-12 h-12 rounded-lg bg-amber-100 flex items-center justify-center"><Clock size={22} className="text-amber-600" /></div>
-                <div><div className="text-sm text-gray-500">Pending</div><div className="text-2xl font-bold text-amber-700">{expenseSummary.pending}</div><div className="text-xs text-amber-500">₹{expenseSummary.pendingAmount.toLocaleString()}</div></div>
-              </div>
-              <div className="bg-white rounded-xl border border-green-200 p-5 flex items-center gap-4">
-                <div className="w-12 h-12 rounded-lg bg-green-100 flex items-center justify-center"><CheckCircle size={22} className="text-green-600" /></div>
-                <div><div className="text-sm text-gray-500">Approved</div><div className="text-2xl font-bold text-green-700">{expenseSummary.approved}</div><div className="text-xs text-green-500">₹{expenseSummary.approvedAmount.toLocaleString()}</div></div>
-              </div>
-              <div className="bg-white rounded-xl border border-red-200 p-5 flex items-center gap-4">
-                <div className="w-12 h-12 rounded-lg bg-red-100 flex items-center justify-center"><XCircle size={22} className="text-red-600" /></div>
-                <div><div className="text-sm text-gray-500">Rejected</div><div className="text-2xl font-bold text-red-700">{expenseSummary.rejected}</div></div>
-              </div>
+            <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
+              <StatChip icon={IndianRupee} label="Total claims" value={expenseSummary.total} sub={`₹${expenseSummary.totalAmount.toLocaleString('en-IN')}`} tone="purple" />
+              <StatChip icon={Clock} label="Pending" value={expenseSummary.pending} sub={`₹${expenseSummary.pendingAmount.toLocaleString('en-IN')}`} tone="amber" />
+              <StatChip icon={CheckCircle} label="Approved" value={expenseSummary.approved} sub={`₹${expenseSummary.approvedAmount.toLocaleString('en-IN')}`} tone="green" />
+              <StatChip icon={XCircle} label="Rejected" value={expenseSummary.rejected} tone="red" />
             </div>
 
-            {/* Filter Panel */}
-            <div className="bg-white rounded-xl border border-gray-200 p-4">
-              <div className="flex flex-wrap items-center gap-3">
-                <div className="flex items-center gap-2 flex-1 min-w-[200px]">
-                  <div className="relative flex-1">
-                    <Search size={16} className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" />
-                    <input
-                      type="text"
-                      placeholder="Search by name, category, or description..."
-                      value={expenseSearch}
-                      onChange={(e) => setExpenseSearch(e.target.value)}
-                      className="w-full pl-9 pr-3 py-2 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-yellow-500 focus:border-transparent"
-                    />
-                  </div>
-                </div>
-                <input type="month" value={teacherActivityMonth} onChange={(e) => setTeacherActivityMonth(e.target.value)} className="border border-gray-300 rounded-lg px-3 py-2 text-sm" />
-                <button
-                  onClick={() => setShowExpenseFilters(!showExpenseFilters)}
-                  className={`inline-flex items-center gap-1.5 px-3 py-2 rounded-lg border text-sm font-medium transition-colors ${showExpenseFilters || countActiveFilters([expenseTeacherFilter, expenseStatusFilter, expenseCategoryFilter]) > 0 ? 'bg-yellow-50 border-yellow-300 text-yellow-700' : 'border-gray-300 text-gray-700 hover:bg-gray-50'}`}
-                >
-                  <Filter size={14} />
-                  Filters
-                  {countActiveFilters([expenseTeacherFilter, expenseStatusFilter, expenseCategoryFilter]) > 0 && (
-                    <span className="ml-1 bg-yellow-500 text-white text-xs rounded-full w-5 h-5 flex items-center justify-center">{countActiveFilters([expenseTeacherFilter, expenseStatusFilter, expenseCategoryFilter])}</span>
-                  )}
-                  {showExpenseFilters ? <ChevronUp size={14} /> : <ChevronDown size={14} />}
-                </button>
-                <button onClick={() => fetchTeacherActivities(teacherActivityMonth)} className="inline-flex items-center gap-1.5 px-3 py-2 rounded-lg bg-yellow-600 text-white hover:bg-yellow-700 text-sm font-medium">
-                  <RefreshCw size={14} />
-                  Refresh
-                </button>
-              </div>
-
-              {/* Advanced Filters */}
-              {showExpenseFilters && (
-                <div className="mt-3 pt-3 border-t border-gray-200 grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3">
-                  <div>
-                    <label className="block text-xs font-medium text-gray-600 mb-1">Teacher</label>
-                    <select value={expenseTeacherFilter} onChange={(e) => setExpenseTeacherFilter(e.target.value)} className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm">
-                      <option value="all">All Teachers</option>
-                      {expenseTeacherOptions.map((t) => <option key={t.id} value={t.id}>{t.name}</option>)}
-                    </select>
-                  </div>
-                  <div>
-                    <label className="block text-xs font-medium text-gray-600 mb-1">Status</label>
-                    <select value={expenseStatusFilter} onChange={(e) => setExpenseStatusFilter(e.target.value)} className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm">
-                      <option value="all">All Statuses</option>
-                      <option value="pending">Pending</option>
-                      <option value="approved">Approved</option>
-                      <option value="rejected">Rejected</option>
-                    </select>
-                  </div>
-                  <div>
-                    <label className="block text-xs font-medium text-gray-600 mb-1">Category</label>
-                    <select value={expenseCategoryFilter} onChange={(e) => setExpenseCategoryFilter(e.target.value)} className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm">
-                      <option value="all">All Categories</option>
-                      {expenseCategoryOptions.map((c) => <option key={c} value={c}>{c}</option>)}
-                    </select>
-                  </div>
-                  <div className="flex items-end">
-                    <button
-                      onClick={() => { setExpenseTeacherFilter('all'); setExpenseStatusFilter('all'); setExpenseCategoryFilter('all'); setExpenseSearch(''); }}
-                      className="px-3 py-2 text-sm text-gray-600 hover:text-gray-800 hover:bg-gray-100 rounded-lg transition-colors"
-                    >
-                      Clear All Filters
-                    </button>
-                  </div>
-                </div>
-              )}
-            </div>
-
-            {/* Error */}
             {activityError && (
-              <div className="rounded-xl border border-red-200 bg-red-50 p-4 flex items-center gap-3">
-                <AlertCircle size={18} className="text-red-500 shrink-0" />
+              <div className="flex items-center gap-3 rounded-xl border border-red-200 bg-red-50 px-4 py-3">
+                <AlertCircle size={18} className="shrink-0 text-red-500" />
                 <span className="text-sm text-red-700">{activityError}</span>
               </div>
             )}
 
-            {/* Table */}
-            <div className="bg-white rounded-xl border border-gray-200 overflow-hidden">
-              {activityLoading ? (
-                <div className="flex items-center justify-center py-12">
-                  <RefreshCw size={20} className="animate-spin text-yellow-600 mr-2" />
-                  <span className="text-sm text-gray-500">Loading expense claims...</span>
-                </div>
-              ) : (
-                <div className="overflow-x-auto">
-                  <table className="min-w-full divide-y divide-gray-200">
-                    <thead>
-                      <tr className="bg-gray-50">
-                        <th className="px-5 py-3 text-left text-xs font-semibold text-gray-600 uppercase tracking-wider">Teacher</th>
-                        <th className="px-5 py-3 text-left text-xs font-semibold text-gray-600 uppercase tracking-wider">Category</th>
-                        <th className="px-5 py-3 text-left text-xs font-semibold text-gray-600 uppercase tracking-wider">Amount</th>
-                        <th className="px-5 py-3 text-left text-xs font-semibold text-gray-600 uppercase tracking-wider">Date</th>
-                        <th className="px-5 py-3 text-left text-xs font-semibold text-gray-600 uppercase tracking-wider">Description</th>
-                        <th className="px-5 py-3 text-left text-xs font-semibold text-gray-600 uppercase tracking-wider">Status</th>
-                        <th className="px-5 py-3 text-left text-xs font-semibold text-gray-600 uppercase tracking-wider">Actions</th>
-                      </tr>
-                    </thead>
-                    <tbody className="divide-y divide-gray-100">
-                      {filteredExpenses.map((expense) => {
-                        const status = normalizedStatus(expense.status);
-                        return (
-                          <tr key={expense.id} className="hover:bg-gray-50 transition-colors">
-                            <td className="px-5 py-3 text-sm text-gray-900 font-medium">{expense.teacherName || '-'}</td>
-                            <td className="px-5 py-3">
-                              <span className="inline-flex px-2 py-0.5 rounded-md bg-purple-50 text-purple-700 text-xs font-medium">{expense.category}</span>
-                            </td>
-                            <td className="px-5 py-3 text-sm text-gray-900 font-semibold">₹{Number(expense.amount || 0).toLocaleString()}</td>
-                            <td className="px-5 py-3 text-sm text-gray-600">{expense.date}</td>
-                            <td className="px-5 py-3 text-sm text-gray-600 max-w-[200px] truncate" title={expense.description || ''}>{expense.description || '-'}</td>
-                            <td className="px-5 py-3"><StatusBadge status={expense.status} /></td>
-                            <td className="px-5 py-3 text-sm">
-                              <div className="flex gap-2">
-                                <button
-                                  onClick={() => reviewExpenseClaim(expense.id, 'Approved')}
-                                  disabled={status === 'approved' || status === 'accepted'}
-                                  className="inline-flex items-center gap-1 px-2.5 py-1.5 rounded-lg bg-green-600 text-white text-xs font-medium hover:bg-green-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
-                                >
-                                  <CheckCircle size={12} /> Approve
-                                </button>
-                                <button
-                                  onClick={() => reviewExpenseClaim(expense.id, 'Rejected')}
-                                  disabled={status === 'rejected'}
-                                  className="inline-flex items-center gap-1 px-2.5 py-1.5 rounded-lg bg-red-600 text-white text-xs font-medium hover:bg-red-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
-                                >
-                                  <XCircle size={12} /> Reject
-                                </button>
-                              </div>
-                            </td>
-                          </tr>
-                        );
-                      })}
-                      {filteredExpenses.length === 0 && (
-                        <tr><td colSpan={7} className="px-5 py-12 text-sm text-center text-gray-400">No expense claims found</td></tr>
-                      )}
-                    </tbody>
-                  </table>
-                  {filteredExpenses.length > 0 && (
-                    <div className="px-5 py-3 bg-gray-50 border-t border-gray-200 flex items-center justify-between text-xs text-gray-500">
-                      <span>Showing {filteredExpenses.length} of {teacherExpenses.length} claims</span>
-                      <span>Filtered total: ₹{filteredExpenses.reduce((s, e) => s + Number(e.amount || 0), 0).toLocaleString()}</span>
-                    </div>
-                  )}
-                </div>
+            <div className="overflow-hidden rounded-xl border border-gray-200 bg-white">
+
+            <div className="flex flex-col gap-2 rounded-t-xl border-b border-gray-100 p-3 lg:flex-row lg:items-center">
+              <div className="relative flex-1">
+                <Search size={16} className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" />
+                <input
+                  type="text"
+                  placeholder="Search by name, category or description..."
+                  value={expenseSearch}
+                  onChange={(e) => setExpenseSearch(e.target.value)}
+                  className={`w-full pl-9 ${toolbarInput}`}
+                />
+              </div>
+              <div className="flex flex-wrap items-center gap-2">
+                <input type="month" value={teacherActivityMonth} onChange={(e) => setTeacherActivityMonth(e.target.value)} className={toolbarInput} aria-label="Month" />
+                <select value={expenseTeacherFilter} onChange={(e) => setExpenseTeacherFilter(e.target.value)} className={toolbarInput}>
+                  <option value="all">All teachers</option>
+                  {expenseTeacherOptions.map((t) => <option key={t.id} value={t.id}>{t.name}</option>)}
+                </select>
+                <select value={expenseStatusFilter} onChange={(e) => setExpenseStatusFilter(e.target.value)} className={toolbarInput}>
+                  <option value="all">All statuses</option>
+                  <option value="pending">Pending</option>
+                  <option value="approved">Approved</option>
+                  <option value="rejected">Rejected</option>
+                </select>
+                <select value={expenseCategoryFilter} onChange={(e) => setExpenseCategoryFilter(e.target.value)} className={toolbarInput}>
+                  <option value="all">All categories</option>
+                  {expenseCategoryOptions.map((c) => <option key={c} value={c}>{c}</option>)}
+                </select>
+                {(countActiveFilters([expenseTeacherFilter, expenseStatusFilter, expenseCategoryFilter]) > 0 || expenseSearch) && (
+                  <button type="button" onClick={() => { setExpenseTeacherFilter('all'); setExpenseStatusFilter('all'); setExpenseCategoryFilter('all'); setExpenseSearch(''); }} className="px-2 text-sm font-medium text-gray-500 hover:text-gray-800">Reset</button>
+                )}
+                <button type="button" onClick={() => fetchTeacherActivities(teacherActivityMonth)} className="flex h-9 w-9 items-center justify-center rounded-lg border border-gray-200 text-gray-600 transition hover:bg-gray-50" title="Refresh" aria-label="Refresh">
+                  <RefreshCw size={15} className={activityLoading ? 'animate-spin' : ''} />
+                </button>
+              </div>
+            </div>
+              <div className="overflow-x-auto">
+                <table className="min-w-full">
+                  <thead className="bg-gray-50">
+                    <tr>
+                      <th className={thCls}>Teacher</th>
+                      <th className={thCls}>Category</th>
+                      <th className={thCls}>Amount</th>
+                      <th className={thCls}>Date</th>
+                      <th className={thCls}>Description</th>
+                      <th className={thCls}>Status</th>
+                      <th className={thCls}>Actions</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-gray-100">
+                    {activityLoading ? <tr><td colSpan={7} className="px-4 py-12 text-center text-sm text-gray-400"><RefreshCw size={16} className="mr-2 inline animate-spin text-yellow-600" />Loading expense claims…</td></tr> : expensesPager.rows.map((expense) => {
+                      const status = normalizedStatus(expense.status);
+                      const isPending = !['approved', 'accepted', 'rejected'].includes(status);
+                      return (
+                        <tr key={expense.id} className="transition-colors hover:bg-gray-50/70">
+                          <td className="px-4 py-2.5"><PersonCell name={expense.teacherName} /></td>
+                          <td className={tdCls}><span className="inline-flex rounded-md bg-purple-50 px-2 py-0.5 text-xs font-medium text-purple-700">{expense.category}</span></td>
+                          <td className="px-4 py-3 text-sm font-semibold text-gray-900">₹{Number(expense.amount || 0).toLocaleString('en-IN')}</td>
+                          <td className={tdCls}>{formatLongDate(expense.date) || expense.date}</td>
+                          <td className={`${tdCls} max-w-[220px] truncate`} title={expense.description || ''}>{expense.description || '—'}</td>
+                          <td className="px-4 py-2.5"><StatusBadge status={expense.status} /></td>
+                          <td className="px-4 py-2.5">
+                          <div className="flex items-center gap-1.5">
+
+                            {isPending ? (
+                              <>
+                                <button type="button" onClick={() => reviewExpenseClaim(expense.id, 'Approved')} className="inline-flex items-center gap-1 rounded-lg bg-green-600 px-2.5 py-1.5 text-xs font-semibold text-white transition hover:bg-green-700" title="Approve"><CheckCircle size={13} /> Approve</button>
+                                <button type="button" onClick={() => reviewExpenseClaim(expense.id, 'Rejected')} className="inline-flex items-center gap-1 rounded-lg border border-red-200 bg-white px-2.5 py-1.5 text-xs font-semibold text-red-600 transition hover:bg-red-50" title="Reject"><XCircle size={13} /> Reject</button>
+                              </>
+                            ) : (
+                              <button type="button" onClick={() => reviewExpenseClaim(expense.id, status === 'rejected' ? 'Approved' : 'Rejected')} className="text-xs font-medium text-gray-400 underline-offset-2 hover:text-gray-700 hover:underline" title="Change decision">
+                                {status === 'rejected' ? 'Approve instead' : 'Reject instead'}
+                              </button>
+                            )}
+                          </div>
+                          </td>
+                        </tr>
+                      );
+                    })}
+                    {!activityLoading && filteredExpenses.length === 0 && (
+                      <tr><td colSpan={7} className="px-4 py-12 text-center text-sm text-gray-400">No expense claims found</td></tr>
+                    )}
+                  </tbody>
+                </table>
+              </div>
+              {!activityLoading && (
+                <TablePagination
+                  pager={expensesPager}
+                  label="claims"
+                  extra={<span>Filtered total: <b className="text-gray-700">₹{filteredExpenses.reduce((s, e) => s + Number(e.amount || 0), 0).toLocaleString('en-IN')}</b></span>}
+                />
               )}
             </div>
           </div>

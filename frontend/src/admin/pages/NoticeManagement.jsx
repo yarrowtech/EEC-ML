@@ -1,11 +1,12 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import {
-  Bell, Plus, Trash2, Megaphone, Filter, Pin, PinOff, Edit2, Calendar, User, ChevronRight, ChevronLeft, ChevronsLeft, ChevronsRight,
+  Bell, Trash2, Megaphone, Filter, Pin, PinOff, Edit2, Calendar, User, ChevronRight, ChevronLeft, ChevronsLeft, ChevronsRight,
   LayoutGrid, List as ListIcon,
-  Send, FileText, X, Search
+  X, Search
 } from 'lucide-react';
 import toast from 'react-hot-toast';
+import NoticePostForm from './NoticePostForm';
 import Swal from 'sweetalert2';
 import {
   CATEGORY_ORDER, CATEGORY_META, getDisplayCategory, isNewNotice, getCreatorLabel,
@@ -452,7 +453,7 @@ const NoticeManagement = ({ setShowAdminHeader, viewMode = 'view' }) => {
   const labelCls = 'block text-xs font-semibold text-slate-500 uppercase tracking-wide mb-1.5';
 
   return (
-    <div className="min-h-screen bg-slate-50">
+    <div className={`bg-slate-50 ${isPostView ? '' : 'min-h-screen'}`}>
 
       {/* ── Header ── */}
       {isViewPage ? (
@@ -490,265 +491,26 @@ const NoticeManagement = ({ setShowAdminHeader, viewMode = 'view' }) => {
             </div>
           )}
         </div>
-      ) : (
-        <div className="relative overflow-hidden bg-linear-to-r from-slate-900 via-blue-950 to-slate-900 px-6 py-6 shadow-lg">
-          <div className="absolute top-0 right-0 w-72 h-72 bg-indigo-400/10 rounded-full -translate-y-1/2 translate-x-1/4 blur-3xl pointer-events-none" />
-          <div className="absolute bottom-0 left-0 w-56 h-56 bg-cyan-500/10 rounded-full translate-y-1/2 -translate-x-1/4 blur-3xl pointer-events-none" />
-          <div className="relative max-w-7xl mx-auto flex flex-wrap items-center justify-between gap-4">
-            <div className="flex items-center gap-4">
-              <div className="w-11 h-11 rounded-2xl bg-white/10 border border-white/20 flex items-center justify-center backdrop-blur-sm">
-                <Bell className="h-5 w-5 text-white" />
-              </div>
-              <div>
-                <h1 className="text-xl font-bold text-white tracking-tight">New Notice</h1>
-                <p className="text-sm text-slate-400 mt-0.5">Create and publish a new notice</p>
-              </div>
-            </div>
-          </div>
-        </div>
-      )}
+      ) : null}
 
       {/* ── Main content ── */}
-      <div className="mx-auto max-w-7xl px-4 sm:px-6 py-6">
+      <div className={`mx-auto max-w-7xl px-4 sm:px-6 ${isPostView ? 'py-3' : 'py-6'}`}>
         {isPostView ? (
-          <div className="mx-auto max-w-4xl">
-            <form onSubmit={submitNotice}>
-              <div className="rounded-2xl border border-slate-200 bg-white shadow-sm overflow-hidden">
-
-              {/* Form header */}
-              <div className="px-5 py-4 bg-linear-to-r from-indigo-600 to-indigo-500 flex items-center gap-3">
-                <div className="w-8 h-8 rounded-lg bg-white/20 flex items-center justify-center">
-                  <Plus className="h-4 w-4 text-white" />
-                </div>
-                <div>
-                  <h2 className="text-sm font-semibold text-white">New Notice</h2>
-                  <p className="text-xs text-indigo-200">Fill details and publish</p>
-                </div>
-              </div>
-
-              <div className="px-5 py-5 space-y-4">
-
-                {/* Session */}
-                <div>
-                  <label className={labelCls}>Session</label>
-                  <select
-                    className={inputCls}
-                    value={selectedAcademicYearId}
-                    onChange={(e) => {
-                      setSelectedAcademicYearId(e.target.value);
-                      setForm((current) => ({ ...current, classId: '', sectionId: '' }));
-                    }}
-                  >
-                    {academicYears.length === 0 ? (
-                      <option value="">No sessions found</option>
-                    ) : (
-                      academicYears.map((year) => (
-                        <option key={year._id} value={year._id}>
-                          {year.name}{year.isActive ? ' (active)' : ''}
-                        </option>
-                      ))
-                    )}
-                  </select>
-                  {selectedAcademicYear && (
-                    <p className="mt-1 text-[11px] text-slate-400">
-                      Showing classes from {selectedAcademicYear.name}
-                    </p>
-                  )}
-                </div>
-
-                {/* Title */}
-                <div>
-                  <label className={labelCls}>Title <span className="text-red-400 normal-case tracking-normal">*</span></label>
-                  <input
-                    className={inputCls}
-                    value={form.title}
-                    onChange={(e) => setForm((p) => ({ ...p, title: e.target.value }))}
-                    placeholder="Enter notice title…"
-                    required
-                  />
-                </div>
-
-                {/* Message */}
-                <div>
-                  <label className={labelCls}>Message <span className="text-red-400 normal-case tracking-normal">*</span></label>
-                  <textarea
-                    rows={4}
-                    className={`${inputCls} resize-none`}
-                    value={form.message}
-                    onChange={(e) => setForm((p) => ({ ...p, message: e.target.value }))}
-                    placeholder="Write your message here…"
-                    required
-                  />
-                </div>
-
-                <div className="border-t border-slate-100" />
-
-                {/* Category + Type */}
-                <div className="grid grid-cols-2 gap-3">
-                  <div>
-                    <label className={labelCls}>Category</label>
-                    <select className={inputCls} value={form.category} onChange={(e) => setForm((p) => ({ ...p, category: e.target.value }))}>
-                      <option value="general">General</option>
-                      <option value="academic">Academic</option>
-                      <option value="events">Events</option>
-                      <option value="transport">Transport</option>
-                    </select>
-                  </div>
-                  <div>
-                    <label className={labelCls}>Type</label>
-                    <select className={inputCls} value={form.type} onChange={(e) => setForm((p) => ({ ...p, type: e.target.value }))}>
-                      <option value="notice">Notice</option>
-                      <option value="announcement">Announcement</option>
-                      <option value="assignment">Assignment</option>
-                      <option value="exam">Exam</option>
-                      <option value="result">Result</option>
-                      <option value="fee">Fee</option>
-                      <option value="other">Other</option>
-                    </select>
-                  </div>
-                </div>
-
-                {/* Class + Section */}
-                <div className="grid grid-cols-2 gap-3">
-                  <div>
-                    <label className={labelCls}>Class</label>
-                    <select
-                      className={inputCls}
-                      value={form.classId}
-                      onChange={(e) => setForm((p) => ({ ...p, classId: e.target.value, sectionId: '' }))}
-                      disabled={!selectedAcademicYearId}
-                    >
-                      <option value="">{selectedAcademicYearId ? 'All classes' : 'Select session first'}</option>
-                      {classOptions.map((cls) => (
-                        <option key={cls._id} value={cls._id}>{cls.name}</option>
-                      ))}
-                    </select>
-                  </div>
-                  <div>
-                    <label className={labelCls}>Section</label>
-                    <select
-                      className={inputCls}
-                      value={form.sectionId}
-                      onChange={(e) => setForm((p) => ({ ...p, sectionId: e.target.value }))}
-                      disabled={!form.classId}
-                    >
-                      <option value="">{form.classId ? 'All sections' : 'Select class first'}</option>
-                      {sectionOptions.map((sec) => (
-                        <option key={sec._id} value={sec._id}>{sec.name}</option>
-                      ))}
-                    </select>
-                  </div>
-                </div>
-
-                {/* Priority + Audience */}
-                <div className="grid grid-cols-2 gap-3">
-                  <div>
-                    <label className={labelCls}>Priority</label>
-                    <select className={inputCls} value={form.priority} onChange={(e) => setForm((p) => ({ ...p, priority: e.target.value }))}>
-                      <option value="low">Low</option>
-                      <option value="medium">Medium</option>
-                      <option value="high">High</option>
-                    </select>
-                  </div>
-                  <div>
-                    <label className={labelCls}>Audience</label>
-                    <select className={inputCls} value={form.audience} onChange={(e) => setForm((p) => ({ ...p, audience: e.target.value }))}>
-                      <option value="All">All</option>
-                      <option value="Student">Students</option>
-                      <option value="Parent">Parents</option>
-                      <option value="Teacher">Teachers</option>
-                    </select>
-                  </div>
-                </div>
-
-                {/* Pin */}
-                <label className="flex items-center gap-2.5 rounded-xl border border-slate-200 bg-slate-50 px-3 py-2.5 cursor-pointer">
-                  <input
-                    type="checkbox"
-                    checked={form.isPinned}
-                    onChange={(e) => setForm((p) => ({ ...p, isPinned: e.target.checked }))}
-                    className="h-4 w-4 rounded border-slate-300 text-indigo-600 focus:ring-indigo-400"
-                  />
-                  <span className="text-sm font-medium text-slate-700">Pin this notice to the top</span>
-                </label>
-
-                {/* Custom label */}
-                {form.type === 'other' && (
-                  <div>
-                    <label className={labelCls}>Custom Label</label>
-                    <input
-                      className={inputCls}
-                      value={form.typeLabel}
-                      onChange={(e) => setForm((p) => ({ ...p, typeLabel: e.target.value }))}
-                      placeholder="e.g., Holiday"
-                    />
-                  </div>
-                )}
-
-                <div className="border-t border-slate-100" />
-
-                {/* PDF Upload */}
-                <div>
-                  <label className={labelCls}>PDF Attachment <span className="normal-case tracking-normal font-normal text-slate-400">(optional)</span></label>
-                  <label className={`flex flex-col items-center justify-center gap-2 w-full rounded-xl border-2 border-dashed px-4 py-5 cursor-pointer transition ${isUploading ? 'border-slate-200 bg-slate-50 opacity-60 cursor-not-allowed' : 'border-indigo-200 bg-indigo-50/40 hover:border-indigo-400 hover:bg-indigo-50'}`}>
-                    <div className="w-10 h-10 rounded-xl bg-white border border-indigo-100 flex items-center justify-center shadow-sm">
-                      <FileText className="h-5 w-5 text-indigo-400" />
-                    </div>
-                    <div className="text-center">
-                      <p className="text-sm font-medium text-slate-600">{isUploading ? 'Uploading…' : 'Click to upload PDF'}</p>
-                      <p className="text-xs text-slate-400 mt-0.5">PDF files only</p>
-                    </div>
-                    <input
-                      type="file"
-                      accept="application/pdf"
-                      className="hidden"
-                      onChange={(e) => { const f = e.target.files?.[0]; if (f) uploadAttachment(f); }}
-                      disabled={isUploading}
-                    />
-                  </label>
-
-                  {attachments.length > 0 && (
-                    <div className="mt-2 space-y-1.5">
-                      {attachments.map((att, idx) => (
-                        <div key={`${att.url}-${idx}`} className="flex items-center gap-2 rounded-lg border border-indigo-100 bg-indigo-50 px-3 py-2">
-                          <FileText className="h-4 w-4 text-indigo-500 shrink-0" />
-                          <span className="text-xs text-slate-700 truncate flex-1">{att.name || `Attachment ${idx + 1}`}</span>
-                          <button
-                            type="button"
-                            onClick={() => setAttachments(prev => prev.filter((_, i) => i !== idx))}
-                            className="text-slate-400 hover:text-red-500 transition shrink-0"
-                          >
-                            <X className="h-3.5 w-3.5" />
-                          </button>
-                        </div>
-                      ))}
-                    </div>
-                  )}
-                </div>
-
-              </div>
-
-              {/* Form footer */}
-              <div className="px-5 py-4 bg-slate-50 border-t border-slate-100 flex items-center justify-between">
-                <button
-                  type="button"
-                  onClick={resetForm}
-                  className="text-sm text-slate-400 hover:text-slate-600 transition"
-                >
-                  Clear
-                </button>
-                <button
-                  type="submit"
-                  disabled={loading || isUploading}
-                  className="inline-flex items-center gap-2 rounded-xl bg-indigo-600 px-5 py-2.5 text-sm font-semibold text-white hover:bg-indigo-700 disabled:opacity-50 disabled:cursor-not-allowed transition shadow-md shadow-indigo-200"
-                >
-                  <Send className="h-4 w-4" />
-                  {loading ? 'Publishing…' : 'Publish Notice'}
-                </button>
-              </div>
-            </div>
-            </form>
-          </div>
+          <NoticePostForm
+            form={form}
+            setForm={setForm}
+            selectedAcademicYearId={selectedAcademicYearId}
+            selectedAcademicYear={selectedAcademicYear}
+            classOptions={classOptions}
+            sectionOptions={sectionOptions}
+            attachments={attachments}
+            setAttachments={setAttachments}
+            isUploading={isUploading}
+            uploadAttachment={uploadAttachment}
+            loading={loading}
+            onSubmit={submitNotice}
+            onReset={resetForm}
+          />
         ) : null}
 
         {isViewPage ? (
