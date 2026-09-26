@@ -648,22 +648,31 @@ const teacherDutyTo12Hour = (value) => {
 // carry the same slot more than once, e.g. one row per class/section sharing
 // a subject+date+time+room — collapse those here too so the table only ever
 // shows a duty slot once, regardless of when the notice was created.
-const teacherDutyRowKey = (row) => [row?.date, row?.subject, row?.time, row?.duration, row?.building, row?.floor, row?.room].join('|');
+// One invigilation slot = same date + time + duration + building + floor +
+// room. Several classes often sit different papers together in one room (a
+// combined sitting) — the teacher invigilates that room once, so the slot is
+// shown once, listing every subject in it ("English, Drawing").
+const teacherDutyRowKey = (row) => [row?.date, row?.time, row?.duration, row?.building, row?.floor, row?.room].join('|');
 
 const teacherDutyRows = (examRoutine = []) => {
-  const seen = new Set();
-  return (Array.isArray(examRoutine) ? examRoutine : [])
-    .filter((row) => {
-      const key = teacherDutyRowKey(row);
-      if (seen.has(key)) return false;
-      seen.add(key);
-      return true;
-    })
+  const slots = new Map();
+  (Array.isArray(examRoutine) ? examRoutine : []).forEach((row) => {
+    const key = teacherDutyRowKey(row);
+    const subject = String(row?.subject || '').trim();
+    if (!slots.has(key)) {
+      slots.set(key, { ...row, subjects: subject ? [subject] : [] });
+    } else if (subject && !slots.get(key).subjects.includes(subject)) {
+      slots.get(key).subjects.push(subject);
+    }
+  });
+  // Sort on the raw 24h time before it's turned into "h:mm AM/PM".
+  return [...slots.values()]
+    .sort((a, b) => new Date(a?.date || 0) - new Date(b?.date || 0) || String(a?.time || '').localeCompare(String(b?.time || '')))
     .map((row) => ({
       ...row,
+      subject: row.subjects.join(', ') || row.subject || '',
       time: teacherDutyTo12Hour(row?.time),
-    }))
-    .sort((a, b) => new Date(a?.date || 0) - new Date(b?.date || 0));
+    }));
 };
 
 // One notification per exam group ("Exam Duty Assigned: <group title>") — its
@@ -673,6 +682,7 @@ const TeacherExamDuty = () => {
   const navigate = useNavigate();
   const { notificationId } = useParams();
   const [notification, setNotification] = useState(null);
+  const [liveExams, setLiveExams] = useState(null); // null = not loaded / unavailable
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
 
@@ -683,10 +693,16 @@ const TeacherExamDuty = () => {
       setError('');
       try {
         const token = localStorage.getItem('token');
-        const response = await apiFetch(`${API_BASE}/api/notifications/user`, {
-          cache: 'no-store',
-          headers: { 'Content-Type': 'application/json', authorization: `Bearer ${token}` },
-        }, navigate);
+        const headers = { 'Content-Type': 'application/json', authorization: `Bearer ${token}` };
+        // The notice's stored rows can be stale (older publishes, older
+        // recipient rules). The live invigilation data — same source as
+        // "My Exam Duty" — is the source of truth; stored rows are a fallback.
+        const [response, liveResponse] = await Promise.all([
+          apiFetch(`${API_BASE}/api/notifications/user`, { cache: 'no-store', headers }, navigate),
+          apiFetch(`${API_BASE}/api/exam/teacher/routine`, { cache: 'no-store', headers }, navigate).catch(() => null),
+        ]);
+        const live = liveResponse?.ok ? await liveResponse.json().catch(() => null) : null;
+        if (!cancelled) setLiveExams(Array.isArray(live) ? live : null);
         const data = await response.json().catch(() => []);
         if (!response.ok) throw new Error(data?.error || 'Unable to load exam duty');
         const list = Array.isArray(data) ? data : [];
@@ -705,7 +721,31 @@ const TeacherExamDuty = () => {
     return () => { cancelled = true; };
   }, [notificationId, navigate]);
 
-  const rows = useMemo(() => teacherDutyRows(notification?.examRoutine), [notification]);
+  // "Exam Duty Assigned: Class Test 2" / "Exam Duty Changed: Class Test 2" → "Class Test 2".
+  const examTitle = String(notification?.title || '').replace(/^[^:]*:\s*/, '').trim();
+  const rows = useMemo(() => {
+    if (Array.isArray(liveExams) && examTitle) {
+      const mine = liveExams.filter((e) => String(e.groupId?.title || e.title || '').trim().toLowerCase() === examTitle.toLowerCase());
+      return teacherDutyRows(mine.map((e) => ({
+        subject: e.subjectId?.name || e.subject || '',
+        date: e.date ? String(e.date).slice(0, 10) : '',
+        // Weekday from the exam date, e.g. "Monday".
+        day: e.date && !Number.isNaN(new Date(e.date).getTime())
+          ? new Date(e.date).toLocaleDateString('en-US', { weekday: 'long' })
+          : '',
+        time: e.time || '',
+        duration: e.duration ?? null,
+        building: e.roomId?.floorId?.buildingId?.name || '',
+        floor: e.roomId?.floorId?.name || '',
+        room: e.roomId?.roomNumber || '',
+        venue: e.venue || '',
+      })));
+    }
+    return teacherDutyRows(notification?.examRoutine);
+  }, [notification, liveExams, examTitle]);
+  const dutyMessage = examTitle && Array.isArray(liveExams)
+    ? `You have ${rows.length} invigilation dut${rows.length === 1 ? 'y' : 'ies'} in ${examTitle}.`
+    : notification?.message;
 
   return (
     <div className="min-h-full bg-slate-50 p-3 sm:p-5 lg:p-6">
@@ -724,7 +764,7 @@ const TeacherExamDuty = () => {
             {notification?.typeLabel === 'exam_routine_published_teacher' ? 'Exam Routine' : 'Exam Duty'}
           </p>
           <h1 className="mt-2 text-2xl font-semibold text-slate-950">{notification?.title || 'Exam Duty'}</h1>
-          {notification?.message && <p className="mt-2 max-w-2xl text-sm text-slate-500">{notification.message}</p>}
+          {dutyMessage && <p className="mt-2 max-w-2xl text-sm text-slate-500">{dutyMessage}</p>}
         </section>
 
         {loading ? (
