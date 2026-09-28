@@ -18,6 +18,7 @@ import {
   EyeOff,
   Lock,
   Pencil,
+  Trash2,
   ChevronDown,
   Crown,
   Info,
@@ -561,15 +562,33 @@ const AdminSettings = ({ setShowAdminHeader, onSettingsUpdated }) => {
                 e.target.value = '';
               }}
             />
-            <button
-              type="button"
-              disabled={uploadingCover}
-              onClick={() => coverInputRef.current?.click()}
-              className="absolute bottom-3 right-3 sm:bottom-4 sm:right-4 inline-flex items-center gap-2 rounded-full bg-black px-3 py-2 sm:py-2.5 text-sm font-semibold text-white shadow-md hover:bg-gray-50 active:scale-[0.98] transition-all disabled:opacity-60"
-            >
-              {uploadingCover ? <Loader2 size={16} className="animate-spin" /> : <Camera size={16} />}
-              {/* Change Cover */}
-            </button>
+            <div className="absolute bottom-3 right-3 sm:bottom-4 sm:right-4 flex items-center gap-2">
+              {adminForm.coverImage && (
+                <button
+                  type="button"
+                  disabled={uploadingCover}
+                  onClick={() => {
+                    setAdminForm((p) => ({ ...p, coverImage: '' }));
+                    saveCoverImage('');
+                  }}
+                  aria-label="Remove cover photo"
+                  title="Remove cover photo"
+                  className="inline-flex h-9 w-9 items-center justify-center rounded-full bg-rose-600 text-white shadow-md hover:bg-rose-700 active:scale-[0.98] transition-all disabled:opacity-60"
+                >
+                  <Trash2 size={16} />
+                </button>
+              )}
+              <button
+                type="button"
+                disabled={uploadingCover}
+                onClick={() => coverInputRef.current?.click()}
+                aria-label="Change cover photo"
+                title="Change cover photo"
+                className="inline-flex h-9 w-9 items-center justify-center rounded-full bg-black text-white shadow-md hover:bg-gray-900 active:scale-[0.98] transition-all disabled:opacity-60"
+              >
+                {uploadingCover ? <Loader2 size={16} className="animate-spin" /> : <Camera size={16} />}
+              </button>
+            </div>
           </div>
         </motion.div>
 
