@@ -1066,6 +1066,17 @@ const Teachers = ({ setShowAdminHeader }) => {
     setShowAddForm(true);
   };
 
+  // Dashboard "Add Teacher" quick action links here with ?add=1 — open the
+  // form straight away, then drop the flag so a refresh doesn't reopen it.
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search);
+    if (params.get('add') !== '1') return;
+    startNewTeacherForm();
+    params.delete('add');
+    const qs = params.toString();
+    window.history.replaceState(window.history.state, '', `${window.location.pathname}${qs ? `?${qs}` : ''}`);
+  }, []);
+
   // Auto-save the Add Teacher form as a draft, 2.5s after the last edit —
   // mirrors StudentEnrollWizard's auto-save exactly. New teachers only;
   // editing an existing teacher never creates/updates a draft.

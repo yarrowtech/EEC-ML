@@ -1664,6 +1664,17 @@ const Students = ({ setShowAdminHeader }) => {
     setShowAddForm(true);
   };
 
+  // Dashboard "Add Student" quick action links here with ?add=1 — open the
+  // form straight away, then drop the flag so a refresh doesn't reopen it.
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search);
+    if (params.get("add") !== "1") return;
+    startNewEnrollment();
+    params.delete("add");
+    const qs = params.toString();
+    window.history.replaceState(window.history.state, "", `${window.location.pathname}${qs ? `?${qs}` : ""}`);
+  }, []);
+
   // Open the multi-step wizard pre-filled with an existing student, in edit mode.
   // Applies a normalized student record into the wizard's form + selector state.
   const applyEditSource = useCallback((src) => {
