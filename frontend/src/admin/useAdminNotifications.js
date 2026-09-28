@@ -125,6 +125,19 @@ export const useAdminNotifications = ({ isSuperAdmin = false } = {}) => {
     );
     const ids = matches.map(notificationId).filter(Boolean);
     if (ids.length === 0) return;
+    // Persist on the server too: the local seen-state is wiped on logout, so
+    // without this the same old alerts re-badge the module on every login.
+    const unreadIds = matches.filter((n) => !n?.isRead).map(notificationId).filter(Boolean);
+    const token = localStorage.getItem('token');
+    if (unreadIds.length && token) {
+      setNotifications((prev) => prev.map((n) => (unreadIds.includes(notificationId(n)) ? { ...n, isRead: true } : n)));
+      unreadIds.forEach((id) => {
+        apiFetch(`${API_BASE}/api/notifications/user/${id}/read`, {
+          method: 'PATCH',
+          headers: { 'Content-Type': 'application/json', authorization: `Bearer ${token}` },
+        }, navigate).catch(() => {});
+      });
+    }
     setSeenState((prev) => {
       const current = new Set(Array.isArray(prev?.[target]) ? prev[target] : []);
       let changed = false;
@@ -134,7 +147,7 @@ export const useAdminNotifications = ({ isSuperAdmin = false } = {}) => {
       writeModuleSeenState('admin', next);
       return next;
     });
-  }, [notifications]);
+  }, [notifications, navigate]);
 
   useEffect(() => {
     const path = location.pathname;
@@ -151,7 +164,7 @@ export const useAdminNotifications = ({ isSuperAdmin = false } = {}) => {
     const seenIds = new Set(Array.isArray(seenState?.[target]) ? seenState[target] : []);
     return notifications.filter((n) => {
       const id = notificationId(n);
-      if (!id || seenIds.has(id)) return false;
+      if (!id || n?.isRead || seenIds.has(id)) return false;
       return normalizeAdminPath(resolveAdminNotificationPath(n)) === target;
     }).length;
   }, [notifications, seenState]);

@@ -5,6 +5,7 @@
  */
 
 const express = require('express');
+const { invalidateHrCacheOnWrite } = require('../utils/hrDataCache');
 const mongoose = require('mongoose');
 const authTeacher = require('../middleware/authTeacher');
 const StudentUser = require('../models/StudentUser');
@@ -31,6 +32,12 @@ const ParentMeeting = require('../models/ParentMeeting');
 const TeacherTaskAcknowledgement = require('../models/TeacherTaskAcknowledgement');
 
 const router = express.Router();
+
+// Teacher check-in/out, leave and expense writes feed the admin HR screens —
+// drop the admin HR response cache so those show the change immediately.
+router.use(['/work-attendance', '/leave-requests', '/expenses'], (req, res, next) => (
+  req.method === 'GET' ? next() : invalidateHrCacheOnWrite(req, res, next)
+));
 const WEEK_DAYS = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday'];
 const DAY_LOOKUP = WEEK_DAYS.reduce((acc, day) => {
   acc[day.toLowerCase()] = day;

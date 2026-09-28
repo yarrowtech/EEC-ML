@@ -1,4 +1,5 @@
 const express = require('express');
+const { cacheHrResponse, invalidateHrCacheOnWrite } = require('../utils/hrDataCache');
 const router = express.Router();
 const mongoose = require('mongoose');
 const { logger } = require('../utils/logger');
@@ -2056,7 +2057,7 @@ router.get("/dashboard-stats", adminAuth, async (req, res) => {
   }
 });
 
-router.get('/teacher-leaves', adminAuth, async (req, res) => {
+router.get('/teacher-leaves', adminAuth, cacheHrResponse, async (req, res) => {
   // #swagger.tags = ['Admin Users']
   try {
     const filter = buildScopedFilter(req);
@@ -2081,7 +2082,7 @@ router.get('/teacher-leaves', adminAuth, async (req, res) => {
         .filter((teacherId) => mongoose.isValidObjectId(teacherId))
     )];
     const teachers = teacherIds.length
-      ? await TeacherUser.find({ _id: { $in: teacherIds } }).select('_id email mobile').lean()
+      ? await TeacherUser.find({ _id: { $in: teacherIds } }).select('_id email mobile profilePic').lean()
       : [];
     const teacherById = new Map(
       teachers.map((teacher) => [String(teacher._id), teacher])
@@ -2095,6 +2096,7 @@ router.get('/teacher-leaves', adminAuth, async (req, res) => {
         teacherName: leave.teacherName || '',
         teacherEmail: teacherById.get(String(leave.teacherId))?.email || '',
         teacherPhone: teacherById.get(String(leave.teacherId))?.mobile || '',
+        teacherProfilePic: teacherById.get(String(leave.teacherId))?.profilePic || '',
         type: leave.type,
         startDate: leave.startDate,
         endDate: leave.endDate,
@@ -2110,7 +2112,7 @@ router.get('/teacher-leaves', adminAuth, async (req, res) => {
   }
 });
 
-router.patch('/teacher-leaves/:id/status', adminAuth, async (req, res) => {
+router.patch('/teacher-leaves/:id/status', adminAuth, invalidateHrCacheOnWrite, async (req, res) => {
   // #swagger.tags = ['Admin Users']
   try {
     const { status, adminNote } = req.body || {};
@@ -2167,7 +2169,7 @@ router.patch('/teacher-leaves/:id/status', adminAuth, async (req, res) => {
   }
 });
 
-router.get('/teacher-expenses', adminAuth, async (req, res) => {
+router.get('/teacher-expenses', adminAuth, cacheHrResponse, async (req, res) => {
   // #swagger.tags = ['Admin Users']
   try {
     const filter = buildScopedFilter(req);
@@ -2180,6 +2182,11 @@ router.get('/teacher-expenses', adminAuth, async (req, res) => {
     }
 
     const expenses = await TeacherExpense.find(query).sort({ expenseDate: -1, createdAt: -1 }).lean();
+    const expenseTeacherIds = [...new Set(expenses.map((e) => String(e.teacherId || '')).filter((id) => mongoose.isValidObjectId(id)))];
+    const expenseTeachers = expenseTeacherIds.length
+      ? await TeacherUser.find({ _id: { $in: expenseTeacherIds } }).select('_id profilePic').lean()
+      : [];
+    const expensePicById = new Map(expenseTeachers.map((t) => [String(t._id), t.profilePic || '']));
     res.json({
       expenses: expenses.map((expense) => ({
         id: expense._id,
@@ -2187,6 +2194,7 @@ router.get('/teacher-expenses', adminAuth, async (req, res) => {
         campusId: expense.campusId || null,
         teacherId: expense.teacherId,
         teacherName: expense.teacherName || '',
+        teacherProfilePic: expensePicById.get(String(expense.teacherId)) || '',
         category: expense.category,
         amount: expense.amount,
         description: expense.description || '',
@@ -2204,7 +2212,7 @@ router.get('/teacher-expenses', adminAuth, async (req, res) => {
   }
 });
 
-router.patch('/teacher-expenses/:id/status', adminAuth, async (req, res) => {
+router.patch('/teacher-expenses/:id/status', adminAuth, invalidateHrCacheOnWrite, async (req, res) => {
   // #swagger.tags = ['Admin Users']
   try {
     const { status, adminNote } = req.body || {};
@@ -2260,7 +2268,7 @@ router.patch('/teacher-expenses/:id/status', adminAuth, async (req, res) => {
   }
 });
 
-router.get('/teacher-attendance-settings', adminAuth, async (req, res) => {
+router.get('/teacher-attendance-settings', adminAuth, cacheHrResponse, async (req, res) => {
   // #swagger.tags = ['Admin Users']
   try {
     const schoolId = req.schoolId || req.query?.schoolId || null;
@@ -2285,7 +2293,7 @@ router.get('/teacher-attendance-settings', adminAuth, async (req, res) => {
   }
 });
 
-router.get('/teacher-leave-policy', adminAuth, async (req, res) => {
+router.get('/teacher-leave-policy', adminAuth, cacheHrResponse, async (req, res) => {
   // #swagger.tags = ['Admin Users']
   try {
     const schoolId = req.schoolId || req.query?.schoolId || null;
@@ -2310,7 +2318,7 @@ router.get('/teacher-leave-policy', adminAuth, async (req, res) => {
   }
 });
 
-router.put('/teacher-leave-policy', adminAuth, async (req, res) => {
+router.put('/teacher-leave-policy', adminAuth, invalidateHrCacheOnWrite, async (req, res) => {
   // #swagger.tags = ['Admin Users']
   try {
     const schoolId = req.schoolId || req.body?.schoolId || null;
@@ -2342,7 +2350,7 @@ router.put('/teacher-leave-policy', adminAuth, async (req, res) => {
   }
 });
 
-router.put('/teacher-attendance-settings', adminAuth, async (req, res) => {
+router.put('/teacher-attendance-settings', adminAuth, invalidateHrCacheOnWrite, async (req, res) => {
   // #swagger.tags = ['Admin Users']
   try {
     const schoolId = req.schoolId || req.body?.schoolId || null;
@@ -2387,7 +2395,7 @@ router.put('/teacher-attendance-settings', adminAuth, async (req, res) => {
   }
 });
 
-router.get('/teacher-attendance', adminAuth, async (req, res) => {
+router.get('/teacher-attendance', adminAuth, cacheHrResponse, async (req, res) => {
   // #swagger.tags = ['Admin Users']
   try {
     const scope = buildScopedFilter(req);
@@ -2422,17 +2430,21 @@ router.get('/teacher-attendance', adminAuth, async (req, res) => {
 
     const teacherIds = [...new Set(records.map((r) => String(r.teacherId)).filter(Boolean))];
     const teachers = teacherIds.length > 0
-      ? await TeacherUser.find({ _id: { $in: teacherIds } }).select('name').lean()
+      ? await TeacherUser.find({ _id: { $in: teacherIds } }).select('name profilePic username').lean()
       : [];
     const teacherNameById = new Map(teachers.map((t) => [String(t._id), t.name || 'Teacher']));
+    const teacherPicById = new Map(teachers.map((t) => [String(t._id), t.profilePic || '']));
+    const teacherLoginById = new Map(teachers.map((t) => [String(t._id), t.username || '']));
 
     res.json({
       records: records.map((record) => ({
+        teacherLoginId: teacherLoginById.get(String(record.teacherId)) || '',
         id: record._id,
         schoolId: record.schoolId,
         campusId: record.campusId || null,
         teacherId: record.teacherId,
         teacherName: teacherNameById.get(String(record.teacherId)) || 'Teacher',
+        teacherProfilePic: teacherPicById.get(String(record.teacherId)) || '',
         date: record.dateKey,
         checkInAt: record.checkInAt || null,
         checkOutAt: record.checkOutAt || null,

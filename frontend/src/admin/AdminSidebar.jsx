@@ -88,7 +88,7 @@ const AdminSidebar = ({
         `}
       >
         {/* ── Brand header ── */}
-        <div className="flex items-center gap-3 px-4 py-3 border-b border-gray-100 relative">
+        <div className="bg-indigo-50 flex items-center gap-3 px-4 py-3 border-b border-gray-100 relative">
           {/* Logo */}
           <div className={`
             shrink-0 rounded-xl overflow-hidden flex items-center justify-center
@@ -284,6 +284,9 @@ const AdminSidebar = ({
                 ) : (
                   <NavLink
                     to={item.path}
+                    // Exact-match when another menu entry lives under this path
+                    // (e.g. /admin/settings vs /admin/settings/payment-gateway).
+                    end={menuItems.some((m) => [m, ...(m.submenu || [])].some((x) => x.path !== item.path && String(x.path || '').startsWith(`${item.path}/`)))}
                     onClick={() => { onMenuItemClick(item.label); onMobileClose?.(); }}
                   >
                     {({ isActive }) => (
