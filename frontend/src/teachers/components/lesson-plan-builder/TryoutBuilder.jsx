@@ -118,33 +118,47 @@ const MCQCreator = ({ question, onChange }) => {
           </Button>
         </div>
         <div className="space-y-2">
-          {options.map((option, index) => (
-            <div key={index} className="flex items-center gap-2">
-              <input
-                type="radio"
-                name="correct-answer"
-                checked={correctAnswer === index}
-                onChange={() => {
-                  setCorrectAnswer(index);
-                  handleUpdate({ correctAnswer: index });
-                }}
-                className="accent-purple-500 w-4 h-4"
-              />
-              <Input
-                value={option}
-                onChange={(e) => updateOption(index, e.target.value)}
-                placeholder={`Option ${index + 1}`}
-                className="flex-1"
-              />
-              {options.length > 2 && (
-                <Button variant="ghost" size="icon-sm" onClick={() => removeOption(index)}>
-                  <Trash2 className="size-4 text-red-500" />
-                </Button>
-              )}
-            </div>
-          ))}
+          {options.map((option, index) => {
+            const isCorrect = correctAnswer === index;
+            return (
+              <div
+                key={index}
+                className={`flex items-center gap-2 rounded-lg border p-1.5 transition-colors ${
+                  isCorrect ? 'border-green-400 bg-green-50 dark:bg-green-950/30' : 'border-transparent'
+                }`}
+              >
+                <button
+                  type="button"
+                  onClick={() => {
+                    setCorrectAnswer(index);
+                    handleUpdate({ correctAnswer: index });
+                  }}
+                  title="Mark as correct answer"
+                  className={`shrink-0 flex items-center gap-1 rounded-full px-2.5 py-1 text-xs font-semibold border transition-colors ${
+                    isCorrect
+                      ? 'bg-green-600 border-green-600 text-white'
+                      : 'bg-white border-slate-300 text-slate-500 hover:border-green-400 hover:text-green-600'
+                  }`}
+                >
+                  <CheckCircle2 className="size-3.5" />
+                  {isCorrect ? 'Correct' : 'Mark correct'}
+                </button>
+                <Input
+                  value={option}
+                  onChange={(e) => updateOption(index, e.target.value)}
+                  placeholder={`Option ${index + 1}`}
+                  className="flex-1"
+                />
+                {options.length > 2 && (
+                  <Button variant="ghost" size="icon-sm" onClick={() => removeOption(index)}>
+                    <Trash2 className="size-4 text-red-500" />
+                  </Button>
+                )}
+              </div>
+            );
+          })}
         </div>
-        <p className="text-xs text-slate-500 mt-1">Select the radio button for the correct answer</p>
+        <p className="text-xs text-slate-500 mt-1">Click "Mark correct" on the option that is the right answer</p>
       </div>
     </div>
   );
@@ -259,9 +273,19 @@ const ClozeDragDropCreator = ({ question, onChange }) => {
   const [options, setOptions] = useState(question.options || []);
   const [hints, setHints] = useState(question.hints || []);
   const [optionPosition, setOptionPosition] = useState(question.optionPosition || 'down');
+  const [correctAnswers, setCorrectAnswers] = useState(question.correctAnswers || []);
 
   const handleUpdate = (updates) => {
     onChange({ ...question, ...updates });
+  };
+
+  const blankCount = (text.match(/\$\{\{blank\}\}/g) || []).length;
+
+  const updateCorrectAnswer = (blankIndex, optionIndex) => {
+    const newCorrect = [...correctAnswers];
+    newCorrect[blankIndex] = optionIndex;
+    setCorrectAnswers(newCorrect);
+    handleUpdate({ correctAnswers: newCorrect });
   };
 
   const addOption = () => {
@@ -275,9 +299,16 @@ const ClozeDragDropCreator = ({ question, onChange }) => {
   const removeOption = (index) => {
     const newOptions = options.filter((_, i) => i !== index);
     const newHints = hints.filter((_, i) => i !== index);
+    // Drop or shift any correct-answer references to the removed option
+    const newCorrect = correctAnswers.map((optIndex) => {
+      if (optIndex === index) return undefined;
+      if (optIndex > index) return optIndex - 1;
+      return optIndex;
+    });
     setOptions(newOptions);
     setHints(newHints);
-    handleUpdate({ options: newOptions, hints: newHints });
+    setCorrectAnswers(newCorrect);
+    handleUpdate({ options: newOptions, hints: newHints, correctAnswers: newCorrect });
   };
 
   const updateOption = (index, value) => {
@@ -359,6 +390,30 @@ const ClozeDragDropCreator = ({ question, onChange }) => {
           ))}
         </div>
       </div>
+
+      {blankCount > 0 && options.length > 0 && (
+        <div>
+          <label className="block text-sm font-medium text-slate-700 dark:text-slate-200 mb-2">Correct Answers (for auto-grading)</label>
+          <div className="space-y-2">
+            {Array.from({ length: blankCount }).map((_, blankIndex) => (
+              <div key={blankIndex} className="flex items-center gap-2">
+                <span className="text-sm text-slate-500 w-20 shrink-0">Blank {blankIndex + 1}:</span>
+                <select
+                  value={correctAnswers[blankIndex] ?? ''}
+                  onChange={(e) => updateCorrectAnswer(blankIndex, e.target.value === '' ? undefined : Number(e.target.value))}
+                  style={{ colorScheme: 'light' }}
+                  className="flex-1 h-9 rounded-lg border border-slate-200 bg-white px-3 text-sm text-slate-900 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-100"
+                >
+                  <option value="">Select correct option...</option>
+                  {options.map((opt, optIndex) => (
+                    <option key={optIndex} value={optIndex} className="text-slate-900">{opt || `Option ${optIndex + 1}`}</option>
+                  ))}
+                </select>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
     </div>
   );
 };
@@ -367,9 +422,17 @@ const ClozeDragDropCreator = ({ question, onChange }) => {
 const ClozeDropdownCreator = ({ question, onChange }) => {
   const [text, setText] = useState(question.text || '');
   const [dropdownOptions, setDropdownOptions] = useState(question.dropdownOptions || [[]]);
+  const [correctAnswers, setCorrectAnswers] = useState(question.correctAnswers || []);
 
   const handleUpdate = (updates) => {
     onChange({ ...question, ...updates });
+  };
+
+  const updateCorrectAnswer = (dropIndex, value) => {
+    const newCorrect = [...correctAnswers];
+    newCorrect[dropIndex] = value;
+    setCorrectAnswers(newCorrect);
+    handleUpdate({ correctAnswers: newCorrect });
   };
 
   const addDropdown = () => {
@@ -381,16 +444,23 @@ const ClozeDropdownCreator = ({ question, onChange }) => {
   const removeDropdown = (index) => {
     if (dropdownOptions.length <= 1) return;
     const newOptions = dropdownOptions.filter((_, i) => i !== index);
+    const newCorrect = correctAnswers.filter((_, i) => i !== index);
     setDropdownOptions(newOptions);
-    handleUpdate({ dropdownOptions: newOptions });
+    setCorrectAnswers(newCorrect);
+    handleUpdate({ dropdownOptions: newOptions, correctAnswers: newCorrect });
   };
 
   const updateDropdownOption = (dropIndex, optIndex, value) => {
     const newOptions = [...dropdownOptions];
+    const oldValue = newOptions[dropIndex]?.[optIndex];
     newOptions[dropIndex] = [...(newOptions[dropIndex] || [])];
     newOptions[dropIndex][optIndex] = value;
     setDropdownOptions(newOptions);
-    handleUpdate({ dropdownOptions: newOptions });
+    // Keep the correct-answer pointer in sync if the correct option's text was edited
+    const newCorrect = [...correctAnswers];
+    if (newCorrect[dropIndex] === oldValue) newCorrect[dropIndex] = value;
+    setCorrectAnswers(newCorrect);
+    handleUpdate({ dropdownOptions: newOptions, correctAnswers: newCorrect });
   };
 
   const addOptionToDropdown = (dropIndex) => {
@@ -402,9 +472,13 @@ const ClozeDropdownCreator = ({ question, onChange }) => {
 
   const removeOptionFromDropdown = (dropIndex, optIndex) => {
     const newOptions = [...dropdownOptions];
+    const removedValue = newOptions[dropIndex]?.[optIndex];
     newOptions[dropIndex] = newOptions[dropIndex].filter((_, i) => i !== optIndex);
     setDropdownOptions(newOptions);
-    handleUpdate({ dropdownOptions: newOptions });
+    const newCorrect = [...correctAnswers];
+    if (newCorrect[dropIndex] === removedValue) newCorrect[dropIndex] = undefined;
+    setCorrectAnswers(newCorrect);
+    handleUpdate({ dropdownOptions: newOptions, correctAnswers: newCorrect });
   };
 
   return (
@@ -463,6 +537,22 @@ const ClozeDropdownCreator = ({ question, onChange }) => {
                   </div>
                 ))}
               </div>
+              {(options || []).filter(Boolean).length > 0 && (
+                <div className="mt-2 flex items-center gap-2">
+                  <span className="text-xs text-slate-500 shrink-0">Correct answer:</span>
+                  <select
+                    value={correctAnswers[dropIndex] ?? ''}
+                    onChange={(e) => updateCorrectAnswer(dropIndex, e.target.value === '' ? undefined : e.target.value)}
+                    style={{ colorScheme: 'light' }}
+                    className="flex-1 h-8 rounded-lg border border-slate-200 bg-white px-2 text-xs text-slate-900 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-100"
+                  >
+                    <option value="">Select correct option...</option>
+                    {(options || []).filter(Boolean).map((opt, optIndex) => (
+                      <option key={optIndex} value={opt} className="text-slate-900">{opt}</option>
+                    ))}
+                  </select>
+                </div>
+              )}
             </div>
           ))}
         </div>

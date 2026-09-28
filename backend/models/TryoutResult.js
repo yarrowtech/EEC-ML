@@ -5,6 +5,7 @@ const answerSchema = new mongoose.Schema({
   questionType: { type: String, default: '' },
   questionText: { type: String, default: '' },
   answer: { type: mongoose.Schema.Types.Mixed, default: null },
+  correctAnswer: { type: mongoose.Schema.Types.Mixed, default: null },
   isCorrect: { type: Boolean, default: null },
   autoScore: { type: Number, default: null },
 }, { _id: false });

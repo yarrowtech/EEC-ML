@@ -3169,9 +3169,87 @@ router.post('/student/tryout-submit', authStudent, async (req, res) => {
       let autoScore = null;
 
       const qType = String(q.type || '').toLowerCase().replace(/-/g, '_');
+      let correctAnswer = null;
       if (qType === 'mcq' && q.correctAnswer !== undefined && q.correctAnswer !== null) {
         isCorrect = Number(studentAnswer?.selectedOption) === Number(q.correctAnswer);
         autoScore = isCorrect ? 1 : 0;
+        correctAnswer = Array.isArray(q.options) ? q.options[Number(q.correctAnswer)] : q.correctAnswer;
+      } else if (qType === 'choice_matrix' && Array.isArray(q.answers)) {
+        const submitted = studentAnswer?.value;
+        if (submitted && typeof submitted === 'object') {
+          const total = q.answers.length;
+          const correctCount = q.answers.reduce((count, expected, idx) => {
+            return submitted[String(idx)] === expected ? count + 1 : count;
+          }, 0);
+          isCorrect = total > 0 && correctCount === total;
+          autoScore = total > 0 ? correctCount / total : null;
+        }
+        correctAnswer = q.statements ? q.statements.map((s, idx) => ({ statement: s, answer: q.answers[idx] })) : q.answers;
+      } else if (qType === 'cloze_text' && Array.isArray(q.correctAnswers)) {
+        const submitted = studentAnswer?.value;
+        if (submitted && typeof submitted === 'object') {
+          const total = q.correctAnswers.length;
+          const correctCount = q.correctAnswers.reduce((count, expected, idx) => {
+            const given = String(submitted[String(idx)] ?? '').trim().toLowerCase();
+            const want = String(expected ?? '').trim().toLowerCase();
+            return given && given === want ? count + 1 : count;
+          }, 0);
+          isCorrect = total > 0 && correctCount === total;
+          autoScore = total > 0 ? correctCount / total : null;
+        }
+        correctAnswer = q.correctAnswers;
+      } else if (qType === 'cloze_drag_drop' && Array.isArray(q.correctAnswers)) {
+        const submitted = studentAnswer?.value;
+        if (submitted && typeof submitted === 'object') {
+          const total = q.correctAnswers.length;
+          const correctCount = q.correctAnswers.reduce((count, expected, idx) => {
+            if (expected === undefined || expected === null) return count;
+            return Number(submitted[String(idx)]) === Number(expected) ? count + 1 : count;
+          }, 0);
+          const gradable = q.correctAnswers.filter((a) => a !== undefined && a !== null).length;
+          isCorrect = gradable > 0 && correctCount === gradable;
+          autoScore = gradable > 0 ? correctCount / gradable : null;
+        }
+        correctAnswer = q.correctAnswers.map((idx) => (idx !== undefined && idx !== null ? q.options?.[idx] : null));
+      } else if (qType === 'cloze_dropdown' && Array.isArray(q.correctAnswers)) {
+        const submitted = studentAnswer?.value;
+        if (submitted && typeof submitted === 'object') {
+          const total = q.correctAnswers.length;
+          const correctCount = q.correctAnswers.reduce((count, expected, idx) => {
+            if (expected === undefined || expected === null) return count;
+            const given = String(submitted[String(idx)] ?? '').trim().toLowerCase();
+            const want = String(expected).trim().toLowerCase();
+            return given && given === want ? count + 1 : count;
+          }, 0);
+          const gradable = q.correctAnswers.filter((a) => a !== undefined && a !== null).length;
+          isCorrect = gradable > 0 && correctCount === gradable;
+          autoScore = gradable > 0 ? correctCount / gradable : null;
+        }
+        correctAnswer = q.correctAnswers;
+      } else if (q.correctAnswer !== undefined && q.correctAnswer !== null) {
+        correctAnswer = q.correctAnswer;
+      } else if (Array.isArray(q.correctAnswers)) {
+        correctAnswer = q.correctAnswers;
+      } else if (qType === 'sort_list' && Array.isArray(q.items)) {
+        const submitted = studentAnswer?.value;
+        if (Array.isArray(submitted)) {
+          const total = q.items.length;
+          isCorrect = total > 0 && submitted.length === total && submitted.every((idx, pos) => Number(idx) === pos);
+          const correctCount = submitted.filter((idx, pos) => Number(idx) === pos).length;
+          autoScore = total > 0 ? correctCount / total : null;
+        }
+        correctAnswer = q.items;
+      } else if (qType === 'match_list' && Array.isArray(q.items) && Array.isArray(q.pairs)) {
+        const submitted = studentAnswer?.value;
+        if (submitted && typeof submitted === 'object') {
+          const total = q.items.length;
+          const correctCount = q.items.reduce((count, _, idx) => {
+            return Number(submitted[String(idx)]) === idx ? count + 1 : count;
+          }, 0);
+          isCorrect = total > 0 && correctCount === total;
+          autoScore = total > 0 ? correctCount / total : null;
+        }
+        correctAnswer = q.items.map((item, idx) => ({ item, pair: q.pairs[idx] }));
       }
 
       return {
@@ -3179,6 +3257,7 @@ router.post('/student/tryout-submit', authStudent, async (req, res) => {
         questionType: qType,
         questionText: String(q.question || q.text || ''),
         answer: studentAnswer?.value ?? studentAnswer ?? null,
+        correctAnswer,
         isCorrect,
         autoScore,
       };
@@ -3217,7 +3296,11 @@ router.get('/student/tryout-results', authStudent, async (req, res) => {
     if (topicTitle) filter.topicTitle = new RegExp(escapeRegex(topicTitle), 'i');
 
     const results = await TryoutResult.find(filter).sort({ createdAt: -1 }).lean();
-    return res.json({ success: true, results });
+    const sanitized = results.map((r) => ({
+      ...r,
+      answers: (r.answers || []).map(({ correctAnswer, ...rest }) => rest),
+    }));
+    return res.json({ success: true, results: sanitized });
   } catch (err) {
     return res.status(500).json({ error: err.message });
   }
