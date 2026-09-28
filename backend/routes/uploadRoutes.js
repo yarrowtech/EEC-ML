@@ -29,6 +29,7 @@ const ALLOWED_FOLDERS = new Set([
   "exam-routines",
   "admin-avatars",
   "school-logos",
+  "admin-covers",
 ]);
 
 const ALLOWED_MIME_TYPES = new Set([

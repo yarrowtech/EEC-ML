@@ -2025,14 +2025,60 @@ router.get("/dashboard-stats", adminAuth, async (req, res) => {
       (parent) => parent.createdAt && new Date(parent.createdAt) >= thirtyDaysAgo
     ).length;
 
+    // Dashboard summary cards: student growth this calendar year, teachers on
+    // approved leave today, and today's student attendance.
+    const now = new Date();
+    const yearStart = new Date(now.getFullYear(), 0, 1);
+    const dayStart = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+    const dayEnd = new Date(dayStart.getTime() + 24 * 60 * 60 * 1000);
+    const todayKey = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`;
+    const leaveQuery = { status: 'Approved', startDate: { $lte: todayKey }, endDate: { $gte: todayKey } };
+    if (filter.schoolId) leaveQuery.schoolId = filter.schoolId;
+    const [studentsThisYear, leaveTeacherIds, attendanceToday] = await Promise.all([
+      StudentUser.countDocuments({ ...activeStudentFilter, createdAt: { $gte: yearStart } }),
+      TeacherLeave.distinct('teacherId', leaveQuery),
+      StudentUser.aggregate([
+        { $match: { ...activeStudentFilter, 'attendance.date': { $gte: dayStart, $lt: dayEnd } } },
+        {
+          $project: {
+            today: {
+              $filter: {
+                input: '$attendance',
+                as: 'a',
+                cond: { $and: [{ $gte: ['$$a.date', dayStart] }, { $lt: ['$$a.date', dayEnd] }] },
+              },
+            },
+          },
+        },
+        {
+          $group: {
+            _id: null,
+            marked: { $sum: 1 },
+            present: { $sum: { $cond: [{ $in: ['present', '$today.status'] }, 1, 0] } },
+          },
+        },
+      ]),
+    ]);
+    const studentsBeforeYear = Math.max(studentCount - studentsThisYear, 0);
+
     const payload = {
       students: {
         total: studentCount,
-        recent: recentStudents
+        recent: recentStudents,
+        thisYear: studentsThisYear,
+        growthThisYear: studentsBeforeYear > 0
+          ? Math.round((studentsThisYear / studentsBeforeYear) * 1000) / 10
+          : null,
       },
       teachers: {
         total: teacherCount,
-        recent: recentTeachers
+        recent: recentTeachers,
+        onLeaveToday: leaveTeacherIds.length,
+      },
+      attendanceToday: {
+        present: attendanceToday[0]?.present || 0,
+        marked: attendanceToday[0]?.marked || 0,
+        total: studentCount,
       },
       parents: {
         total: parentCount,

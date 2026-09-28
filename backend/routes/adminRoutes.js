@@ -443,6 +443,7 @@ router.put('/settings', adminAuth, async (req, res) => {
     if (nextName !== undefined) admin.name = nextName;
     if (nextEmail !== undefined) admin.email = nextEmail;
     if (nextAvatar !== undefined) admin.avatar = nextAvatar;
+    if (typeof adminPayload.coverImage === 'string') admin.coverImage = adminPayload.coverImage.trim();
     if (nextCampusName !== undefined) admin.campusName = nextCampusName || null;
     if (nextCampusType !== undefined) admin.campusType = nextCampusType || null;
 

@@ -25,11 +25,20 @@ import {
   Wallet,
   Receipt,
   Megaphone,
+  ClipboardCheck,
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { cn } from '@/lib/utils';
 import { apiFetch } from '../utils/authSession';
 import './Dashboard.css';
+// ₹ in Indian short form: 8.42L, 1.2Cr, 45.6K.
+const formatRupeesShort = (amount) => {
+  const n = Number(amount) || 0;
+  if (n >= 1e7) return `₹${(n / 1e7).toFixed(2)}Cr`;
+  if (n >= 1e5) return `₹${(n / 1e5).toFixed(2)}L`;
+  if (n >= 1e3) return `₹${(n / 1e3).toFixed(1)}K`;
+  return `₹${Math.round(n).toLocaleString('en-IN')}`;
+};
 
 // ── Data layer ───────────────────────────────────────────────────────────────
 
@@ -101,6 +110,9 @@ const formatCompactINR = (value = 0) => {
   return `₹${n}`;
 };
 
+// Greeting-banner cover photo, kept as an object URL across dashboard visits.
+const coverObjectUrlCache = { remote: '', url: '' };
+
 // ── Presentational ───────────────────────────────────────────────────────────
 
 // Counts up from 0 to `target` over `duration` ms whenever `target` changes
@@ -129,7 +141,7 @@ const useCountUp = (target, duration = 900) => {
 
 // Stat card: tinted icon tile, label + big count, arrow link, "+N vs last 30
 // days" pill, optional footnote and a soft decorative wave in the corner.
-const StatCard = ({ label, value, icon, recent, color, tint, delay, loading, note, info, onOpen }) => {
+const StatCard = ({ label, value, valueText, sub, subTone = 'neutral', icon, recent, color, tint, delay, loading, note, info, onOpen }) => {
   const animatedValue = useCountUp(loading ? 0 : value);
   return (
     <motion.div
@@ -137,7 +149,7 @@ const StatCard = ({ label, value, icon, recent, color, tint, delay, loading, not
       animate={{ opacity: 1, y: 0 }}
       transition={{ delay, duration: 0.5, ease: 'easeOut' }}
       whileHover={{ y: -3, transition: { duration: 0.15 } }}
-      className="relative overflow-hidden rounded-2xl border border-slate-100 bg-white p-4 shadow-[0_4px_20px_rgba(15,23,42,0.05)] flex flex-col"
+      className="relative min-w-0 overflow-hidden rounded-2xl border border-slate-100 bg-white p-3 sm:p-4 shadow-[0_4px_20px_rgba(15,23,42,0.05)] flex flex-col"
     >
       <svg
         className="pointer-events-none absolute -bottom-2 right-0 h-20 w-3/5"
@@ -150,14 +162,14 @@ const StatCard = ({ label, value, icon, recent, color, tint, delay, loading, not
 
       <div className="relative flex items-start gap-3">
         <span
-          className="flex h-12 w-12 shrink-0 items-center justify-center rounded-xl"
+          className="flex h-10 w-10 sm:h-12 sm:w-12 shrink-0 items-center justify-center rounded-xl"
           style={{ color, background: tint }}
           aria-hidden="true"
         >
           {icon}
         </span>
         <div className="min-w-0 flex-1">
-          <p className="flex items-center gap-1.5 text-sm font-medium text-slate-700">
+          <p className="flex min-w-0 items-center gap-1.5 text-xs sm:text-sm font-medium text-slate-700">
             {label}
             {info ? (
               <span title={info} className="text-slate-400">
@@ -165,15 +177,15 @@ const StatCard = ({ label, value, icon, recent, color, tint, delay, loading, not
               </span>
             ) : null}
           </p>
-          <p className="text-2xl font-bold leading-tight text-slate-900 tabular-nums">
-            {loading ? '—' : animatedValue.toLocaleString('en-IN')}
+          <p className="whitespace-nowrap text-xl sm:text-2xl font-bold leading-tight text-slate-900 tabular-nums">
+            {loading ? '—' : (valueText ?? animatedValue.toLocaleString('en-IN'))}
           </p>
         </div>
         {onOpen ? (
           <button
             type="button"
             onClick={onOpen}
-            className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-blue-50 text-blue-600 transition-colors hover:bg-blue-100"
+            className="hidden sm:flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-blue-50 text-blue-600 transition-colors hover:bg-blue-100"
             aria-label={`Open ${label}`}
           >
             <ArrowRight size={16} />
@@ -181,13 +193,29 @@ const StatCard = ({ label, value, icon, recent, color, tint, delay, loading, not
         ) : null}
       </div>
 
-      <div className="relative mt-2.5 flex items-center gap-2">
-        <span className="inline-flex items-center gap-1 rounded-full bg-emerald-50 px-2.5 py-0.5 text-xs font-semibold text-emerald-600">
-          <ArrowUp size={12} strokeWidth={2.5} />
-          {loading ? '—' : `+${Number(recent || 0).toLocaleString('en-IN')}`}
-        </span>
-        <span className="text-xs text-slate-400">vs last 30 days</span>
-      </div>
+      {sub !== undefined ? (
+        <div className="relative mt-2.5 flex items-center gap-2">
+          <span
+            className={`inline-flex max-w-full items-center gap-1 rounded-full px-2 sm:px-2.5 py-0.5 text-[11px] sm:text-xs font-semibold leading-snug ${
+              subTone === 'up' ? 'bg-emerald-50 text-emerald-600'
+                : subTone === 'down' ? 'bg-rose-50 text-rose-600'
+                  : 'bg-slate-100 text-slate-600'
+            }`}
+          >
+            {subTone === 'up' ? <ArrowUp size={12} strokeWidth={2.5} /> : null}
+            {subTone === 'down' ? <ArrowUp size={12} strokeWidth={2.5} className="rotate-180" /> : null}
+            {loading ? '—' : sub}
+          </span>
+        </div>
+      ) : (
+        <div className="relative mt-2.5 flex items-center gap-2">
+          <span className="inline-flex items-center gap-1 rounded-full bg-emerald-50 px-2.5 py-0.5 text-xs font-semibold text-emerald-600">
+            <ArrowUp size={12} strokeWidth={2.5} />
+            {loading ? '—' : `+${Number(recent || 0).toLocaleString('en-IN')}`}
+          </span>
+          <span className="text-xs text-slate-400">vs last 30 days</span>
+        </div>
+      )}
       {note ? <p className="relative mt-1.5 text-[11px] leading-snug text-slate-500">{note}</p> : null}
     </motion.div>
   );
@@ -328,6 +356,43 @@ const Dashboard = ({ setShowAdminHeader }) => {
     };
   }, [navigate]);
 
+  // School cover photo for the greeting banner. Loaded as a blob and shown via
+  // an in-memory object URL (CSS background, no <img>), so the Cloudinary URL
+  // never appears in the DOM and the photo can't be dragged / right-click saved.
+  const [coverSrc, setCoverSrc] = useState(() => coverObjectUrlCache.url || '');
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      try {
+        const res = await apiFetch(
+          `${import.meta.env.VITE_API_URL}/api/admin/auth/settings`,
+          { headers: { authorization: `Bearer ${localStorage.getItem('token')}` } },
+          navigate,
+        );
+        const data = await res.json().catch(() => ({}));
+        const remote = String(data?.admin?.coverImage || '').trim();
+        if (!res.ok || !remote) {
+          if (!cancelled) setCoverSrc('');
+          return;
+        }
+        if (coverObjectUrlCache.remote === remote && coverObjectUrlCache.url) {
+          if (!cancelled) setCoverSrc(coverObjectUrlCache.url);
+          return;
+        }
+        const imgRes = await fetch(remote, { credentials: 'omit', referrerPolicy: 'no-referrer' });
+        if (!imgRes.ok) throw new Error('cover fetch failed');
+        const blob = await imgRes.blob();
+        if (coverObjectUrlCache.url) URL.revokeObjectURL(coverObjectUrlCache.url);
+        coverObjectUrlCache.remote = remote;
+        coverObjectUrlCache.url = URL.createObjectURL(blob);
+        if (!cancelled) setCoverSrc(coverObjectUrlCache.url);
+      } catch {
+        /* no cover — banner keeps its illustration */
+      }
+    })();
+    return () => { cancelled = true; };
+  }, [navigate]);
+
   const greeting = useMemo(() => {
     const h = new Date().getHours();
     if (h < 12) return 'Good morning';
@@ -335,12 +400,34 @@ const Dashboard = ({ setShowAdminHeader }) => {
     return 'Good evening';
   }, []);
 
-  const statCards = useMemo(
-    () => [
+  const statCards = useMemo(() => {
+    const studentGrowth = stats?.students?.growthThisYear;
+    const onLeave = stats?.teachers?.onLeaveToday ?? 0;
+
+    // Fees: total collected this session; trend = this month vs last month.
+    const trend = financial?.trend ?? [];
+    const thisMonth = Number(trend[trend.length - 1]?.collected || 0);
+    const lastMonth = Number(trend[trend.length - 2]?.collected || 0);
+    const feeChange = lastMonth > 0 ? Math.round(((thisMonth - lastMonth) / lastMonth) * 1000) / 10 : null;
+
+    const att = stats?.attendanceToday || {};
+    const attTotal = Number(att.total || stats?.students?.total || 0);
+    const attPresent = Number(att.present || 0);
+    const attMarked = Number(att.marked || 0) > 0;
+    const attPct = attMarked && attTotal > 0 ? Math.round((attPresent / attTotal) * 1000) / 10 : null;
+
+    const pctSub = (pct, suffix) => ({
+      sub: pct === null || pct === undefined ? `No change ${suffix}` : `${Math.abs(pct)}% ${suffix}`,
+      subTone: pct > 0 ? 'up' : pct < 0 ? 'down' : 'neutral',
+    });
+
+    return [
       {
         label: 'Students',
         value: stats?.students?.total ?? 0,
-        recent: stats?.students?.recent ?? 0,
+        ...(studentGrowth === null || studentGrowth === undefined
+          ? { sub: `+${Number(stats?.students?.thisYear || 0).toLocaleString('en-IN')} this year`, subTone: 'up' }
+          : pctSub(studentGrowth, 'this year')),
         icon: <Users size={24} strokeWidth={2} />,
         color: '#2563eb',
         tint: '#e8f0fe',
@@ -350,38 +437,44 @@ const Dashboard = ({ setShowAdminHeader }) => {
       {
         label: 'Teachers',
         value: stats?.teachers?.total ?? 0,
-        recent: stats?.teachers?.recent ?? 0,
+        sub: `${onLeave} on leave today`,
+        subTone: 'neutral',
         icon: <GraduationCap size={24} strokeWidth={2} />,
         color: '#7c3aed',
         tint: '#f1ebfe',
-        path: '/admin/teachers',
+        path: '/admin/hr?tab=leaves',
         delay: 0.1,
       },
       {
-        label: 'Parents',
-        value: stats?.parents?.total ?? 0,
-        recent: stats?.parents?.recent ?? 0,
-        icon: <Users size={24} strokeWidth={2} />,
+        label: 'Fees',
+        value: 0,
+        valueText: financialLoading && !financial ? '—' : formatRupeesShort(financial?.totals?.totalCollected),
+        ...(feeChange === null
+          ? { sub: `${formatRupeesShort(thisMonth)} this month`, subTone: 'neutral' }
+          : pctSub(feeChange, 'this month')),
+        info: 'Collected in the active session; trend compares this month with last month',
+        icon: <Wallet size={24} strokeWidth={2} />,
         color: '#059669',
         tint: '#e3f7ee',
-        path: '/admin/parents',
+        path: '/admin/fees/collection',
         delay: 0.15,
       },
       {
-        label: 'All Users',
-        value: stats?.totalUsers ?? 0,
-        recent: stats?.recentTotal ?? 0,
-        icon: <Users size={24} strokeWidth={2} />,
+        label: 'Attendance',
+        value: 0,
+        valueText: attPct === null ? '—' : `${attPct}%`,
+        sub: attMarked
+          ? `${attPresent.toLocaleString('en-IN')} / ${attTotal.toLocaleString('en-IN')}`
+          : 'Not marked yet today',
+        subTone: 'neutral',
+        info: "Today's student attendance",
+        icon: <ClipboardCheck size={24} strokeWidth={2} />,
         color: '#ea580c',
         tint: '#fdeee2',
-        path: '/admin/analytics',
-        info: 'Students, teachers, parents and school admins',
-        // note: 'Includes students, teachers, parents and school admins',
         delay: 0.2,
       },
-    ],
-    [stats],
-  );
+    ];
+  }, [stats, financial, financialLoading]);
 
   const todayLabel = new Date().toLocaleDateString('en-GB', {
     weekday: 'short',
@@ -392,8 +485,8 @@ const Dashboard = ({ setShowAdminHeader }) => {
 
   const quickActions = [
     { label: 'Academic Setup', icon: <BookOpen size={18} strokeWidth={2} />, color: '#8b5cf6', path: '/admin/academics' },
-    { label: 'Add Student', icon: <UserPlus size={18} strokeWidth={2} />, color: '#60a5fa', path: '/admin/students' },
-    { label: 'Add Teacher', icon: <School size={18} strokeWidth={2} />, color: '#10b981', path: '/admin/teachers' },
+    { label: 'Add Student', icon: <UserPlus size={18} strokeWidth={2} />, color: '#60a5fa', path: '/admin/students?add=1' },
+    { label: 'Add Teacher', icon: <School size={18} strokeWidth={2} />, color: '#10b981', path: '/admin/teachers?add=1' },
     { label: 'Collect Fees', icon: <Wallet size={18} strokeWidth={2} />, color: '#f59e0b', path: '/admin/fees/collection?view=payments' },
     { label: 'Fee Receipts', icon: <Receipt size={18} strokeWidth={2} />, color: '#f43f5e', path: '/admin/fees/receipts' },
     { label: 'Post Notice', icon: <Megaphone size={18} strokeWidth={2} />, color: '#0ea5e9', path: '/admin/notices/post' },
@@ -451,6 +544,18 @@ const Dashboard = ({ setShowAdminHeader }) => {
           variants={itemVariants}
           className="relative overflow-hidden rounded-2xl border border-white/70 bg-gradient-to-r from-white via-slate-50 to-indigo-50/70 px-4 py-2.5 shadow-[0_4px_20px_rgba(15,23,42,0.04)] lg:shrink-0"
         >
+          {coverSrc ? (
+            <div
+              aria-hidden="true"
+              onContextMenu={(e) => e.preventDefault()}
+              className="pointer-events-none absolute inset-y-0 right-0 w-3/5 select-none bg-cover bg-center"
+              style={{
+                backgroundImage: `url(${coverSrc})`,
+                WebkitMaskImage: 'linear-gradient(to right, transparent 0%, rgba(0,0,0,0.45) 35%, #000 75%)',
+                maskImage: 'linear-gradient(to right, transparent 0%, rgba(0,0,0,0.45) 35%, #000 75%)',
+              }}
+            />
+          ) : null}
           <div className="relative flex flex-col gap-3 md:flex-row md:items-center md:gap-5">
             <div className="min-w-0">
               <h1 className="flex flex-wrap items-center gap-1.5 text-xl font-bold tracking-tight text-slate-900 md:text-2xl">
@@ -466,15 +571,19 @@ const Dashboard = ({ setShowAdminHeader }) => {
               <CalendarDays size={22} className="shrink-0 text-slate-500" />
               <div>
                 <p className="text-sm font-semibold text-slate-800">{todayLabel}</p>
-                {activeYearLabel ? <p className="text-xs text-slate-500">Academic Year {activeYearLabel}</p> : null}
+                {activeYearLabel ? <p className="text-xs text-black">Academic Year {activeYearLabel}</p> : null}
               </div>
             </div>
 
-            <div className="hidden h-12 flex-1 justify-end opacity-90 xl:flex">
-              <SchoolIllustration />
-            </div>
+            {coverSrc ? (
+              <div className="hidden flex-1 md:block" />
+            ) : (
+              <div className="hidden h-12 flex-1 justify-end opacity-90 xl:flex">
+                <SchoolIllustration />
+              </div>
+            )}
 
-            <div className="flex flex-col items-start gap-0.5 md:ml-auto md:items-end">
+            {/* <div className="flex flex-col items-start gap-0.5 md:ml-auto md:items-end">
               <span className="inline-flex items-center gap-1.5 rounded-full bg-emerald-50 px-2.5 py-0.5 text-xs font-semibold text-emerald-700">
                 <span className="h-2 w-2 animate-pulse rounded-full bg-emerald-500" />
                 Live
@@ -482,14 +591,14 @@ const Dashboard = ({ setShowAdminHeader }) => {
               <span className="text-xs text-slate-500">
                 {statsLoading || financialLoading ? 'Updating…' : 'Updated just now'}
               </span>
-            </div>
+            </div> */}
           </div>
         </motion.div>
 
         {/* ── Stats Row ── */}
-        <div className="grid grid-cols-2 md:grid-cols-4 gap-4 lg:shrink-0">
+        <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 sm:gap-4 lg:shrink-0">
           {statCards.map((stat) => (
-            <StatCard key={stat.label} {...stat} loading={statsLoading} onOpen={() => navigate(stat.path)} />
+            <StatCard key={stat.label} {...stat} loading={statsLoading} onOpen={stat.path ? () => navigate(stat.path) : undefined} />
           ))}
         </div>
 
