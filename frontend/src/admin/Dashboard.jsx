@@ -196,11 +196,10 @@ const StatCard = ({ label, value, valueText, sub, subTone = 'neutral', icon, rec
       {sub !== undefined ? (
         <div className="relative mt-2.5 flex items-center gap-2">
           <span
-            className={`inline-flex max-w-full items-center gap-1 rounded-full px-2 sm:px-2.5 py-0.5 text-[11px] sm:text-xs font-semibold leading-snug ${
-              subTone === 'up' ? 'bg-emerald-50 text-emerald-600'
-                : subTone === 'down' ? 'bg-rose-50 text-rose-600'
-                  : 'bg-slate-100 text-slate-600'
-            }`}
+            className={`inline-flex max-w-full items-center gap-1 rounded-full px-2 sm:px-2.5 py-0.5 text-[11px] sm:text-xs font-semibold leading-snug ${subTone === 'up' ? 'bg-emerald-50 text-emerald-600'
+              : subTone === 'down' ? 'bg-rose-50 text-rose-600'
+                : 'bg-slate-100 text-slate-600'
+              }`}
           >
             {subTone === 'up' ? <ArrowUp size={12} strokeWidth={2.5} /> : null}
             {subTone === 'down' ? <ArrowUp size={12} strokeWidth={2.5} className="rotate-180" /> : null}
@@ -548,13 +547,30 @@ const Dashboard = ({ setShowAdminHeader }) => {
             <div
               aria-hidden="true"
               onContextMenu={(e) => e.preventDefault()}
-              className="pointer-events-none absolute inset-y-0 right-0 w-3/5 select-none bg-cover bg-center"
-              style={{
-                backgroundImage: `url(${coverSrc})`,
-                WebkitMaskImage: 'linear-gradient(to right, transparent 0%, rgba(0,0,0,0.45) 35%, #000 75%)',
-                maskImage: 'linear-gradient(to right, transparent 0%, rgba(0,0,0,0.45) 35%, #000 75%)',
-              }}
-            />
+              className="pointer-events-none absolute inset-y-0 right-0 w-3/5 select-none overflow-hidden"
+            >
+              {/* Cover Image */}
+              <div
+                className="absolute inset-0 bg-cover bg-center"
+                style={{
+                  backgroundImage: `url(${coverSrc})`,
+                  WebkitMaskImage:
+                    "linear-gradient(to right, transparent 0%, rgba(0,0,0,0.45) 35%, #000 75%)",
+                  maskImage:
+                    "linear-gradient(to right, transparent 0%, rgba(0,0,0,0.45) 35%, #000 75%)",
+                }}
+              />
+
+              {/* Light Black Overlay */}
+              {/* <div className="absolute inset-0 bg-black/20" /> */}
+              <div
+                className="absolute inset-0"
+                style={{
+                  background:
+                    "linear-gradient(to right, rgba(255,255,255,0.95) 0%, rgba(15,23,42,0.12) 35%, rgba(0,0,0,0.20) 70%, rgba(0,0,0,0.25) 100%)",
+                }}
+              />
+            </div>
           ) : null}
           <div className="relative flex flex-col gap-3 md:flex-row md:items-center md:gap-5">
             <div className="min-w-0">
