@@ -1,7 +1,8 @@
 import React, { useEffect, useMemo, useState, useRef } from 'react';
+import { createPortal } from 'react-dom';
 import { useSearchParams } from 'react-router-dom';
 import { jsPDF } from 'jspdf';
-import { FileText, Users, Building2, CalendarCheck, X, CreditCard, Search, ChevronLeft, ChevronRight, Clock, CheckCircle, XCircle, AlertCircle, RefreshCw, IndianRupee, Eye, Settings } from 'lucide-react';
+import { FileText, Users, Building2, CalendarCheck, X, CreditCard, Search, ChevronLeft, ChevronRight, Clock, CheckCircle, XCircle, AlertCircle, RefreshCw, IndianRupee, Eye, Settings, Printer, Download, SlidersHorizontal } from 'lucide-react';
 import IDCard from '../components/IDCard';
 
 const API_BASE = (import.meta.env.VITE_API_URL || 'http://localhost:5000').replace(/\/$/, '');
@@ -39,15 +40,114 @@ const getSchoolDisplayName = () => {
   return 'EEC School';
 };
 
+// School letterhead details for printed documents (from the cached admin profile).
+const getSchoolProfileForPrint = (fallbackName) => {
+  try {
+    const raw = sessionStorage.getItem(getAdminProfileCacheKey());
+    const p = raw ? JSON.parse(raw) : {};
+    const logo = p?.schoolLogo?.secure_url || p?.schoolLogo || p?.logo?.secure_url || p?.logo || '';
+    return {
+      name: String(p?.schoolName || fallbackName || 'School').trim(),
+      address: String(p?.schoolAddress || p?.address || '').trim(),
+      email: String(p?.schoolEmail || p?.contactEmail || '').trim(),
+      phone: String(p?.schoolPhone || p?.contactPhone || '').trim(),
+      logo: typeof logo === 'string' ? logo : '',
+    };
+  } catch {
+    return { name: fallbackName || 'School', address: '', email: '', phone: '', logo: '' };
+  }
+};
+
 
 /* ─── Table pagination (shared by Attendance / Leaves / Expenses) ─── */
-const PAGE_SIZES = [10, 25, 50];
+// Full-screen settings modal: dark backdrop, fades/scales in and out smoothly.
+const MODAL_ANIM_MS = 220;
+const SettingsModal = ({ open, title, onClose, children }) => {
+  const [mounted, setMounted] = useState(open);
+  const [visible, setVisible] = useState(false);
+
+  useEffect(() => {
+    if (open) {
+      setMounted(true);
+      const id = requestAnimationFrame(() => requestAnimationFrame(() => setVisible(true)));
+      return () => cancelAnimationFrame(id);
+    }
+    setVisible(false);
+    const t = setTimeout(() => setMounted(false), MODAL_ANIM_MS);
+    return () => clearTimeout(t);
+  }, [open]);
+
+  useEffect(() => {
+    if (!open) return undefined;
+    const onKey = (e) => { if (e.key === 'Escape') onClose(); };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, [open, onClose]);
+
+  if (!mounted) return null;
+  // Portal to <body> so a transformed/overflow ancestor can't clip the fixed backdrop.
+  return createPortal(
+    <div
+      className={`fixed inset-0 z-[9999] flex h-screen w-screen items-center justify-center bg-black/60 p-4 backdrop-blur-sm transition-opacity duration-200 ease-out ${visible ? 'opacity-100' : 'opacity-0'}`}
+      onMouseDown={(e) => { if (e.target === e.currentTarget) onClose(); }}
+    >
+      <div
+        role="dialog"
+        aria-modal="true"
+        className={`w-full max-w-md rounded-2xl bg-white shadow-2xl transition-all duration-200 ease-out ${visible ? 'translate-y-0 scale-100 opacity-100' : 'translate-y-4 scale-95 opacity-0'}`}
+      >
+        <div className="flex items-center justify-between border-b border-gray-100 px-5 py-4">
+          <h3 className="flex items-center gap-2 text-base font-semibold text-gray-900">
+            <Settings size={17} className="text-yellow-600" /> {title}
+          </h3>
+          <button type="button" onClick={onClose} className="rounded-lg p-1.5 text-gray-400 hover:bg-gray-100 hover:text-gray-600" aria-label="Close">
+            <X size={18} />
+          </button>
+        </div>
+        <div className="p-5">{children}</div>
+      </div>
+    </div>,
+    document.body,
+  );
+};
+
+// Client cache for HR data, per month: in memory for SPA navigation plus
+// sessionStorage so a reload also paints instantly. Scoped to the admin token
+// so a different login never sees another school's data.
+const HR_CLIENT_CACHE_PREFIX = 'hr:activities:v1:';
+const HR_CLIENT_CACHE_MAX_AGE_MS = 10 * 60 * 1000;
+const HR_CLIENT_CACHE_FRESH_MS = 60 * 1000; // reuse without a request
+const hrMemoryCache = new Map();
+const hrClientCacheKey = (month) => {
+  let token = '';
+  try { token = localStorage.getItem('token') || ''; } catch { /* ignore */ }
+  return `${HR_CLIENT_CACHE_PREFIX}${token.slice(-16)}:${month}`;
+};
+const readHrClientCache = (month) => {
+  const key = hrClientCacheKey(month);
+  let entry = hrMemoryCache.get(key);
+  if (!entry) {
+    try { entry = JSON.parse(sessionStorage.getItem(key) || 'null'); } catch { entry = null; }
+  }
+  if (!entry || Date.now() - entry.at > HR_CLIENT_CACHE_MAX_AGE_MS) return null;
+  return entry;
+};
+const writeHrClientCache = (month, data) => {
+  const key = hrClientCacheKey(month);
+  const entry = { at: Date.now(), data };
+  hrMemoryCache.set(key, entry);
+  try { sessionStorage.setItem(key, JSON.stringify(entry)); } catch { /* quota / private mode */ }
+};
+
+const PAGE_SIZES = [4, 10, 25, 50];
+// Laptop / desktop: 4 rows so the whole HR page fits without scrolling.
+const defaultPageSize = () => (typeof window !== 'undefined' && window.matchMedia?.('(min-width: 1024px)').matches ? 4 : 10);
 
 // Slice a list into pages; jumps back to page 1 whenever the list changes
 // (search / filters / month) so you never land on an empty page.
 function usePagination(items) {
   const [page, setPage] = useState(1);
-  const [pageSize, setPageSize] = useState(10);
+  const [pageSize, setPageSize] = useState(defaultPageSize);
   const total = items.length;
   const totalPages = Math.max(1, Math.ceil(total / pageSize));
   useEffect(() => { setPage(1); }, [items, pageSize]);
@@ -111,10 +211,17 @@ function TablePagination({ pager, label = 'records', extra = null }) {
 
 /* ─── Small shared UI bits for the HR tabs ─── */
 const initialsOf = (name) => String(name || '?').split(/\s+/).filter(Boolean).slice(0, 2).map((w) => w[0]).join('').toUpperCase();
-function PersonCell({ name, sub }) {
+// Profile photo when available (falls back to initials if missing / broken).
+function PersonCell({ name, sub, photo }) {
+  const [broken, setBroken] = useState(false);
+  const src = typeof photo === 'string' && /^(https?:|data:|\/)/.test(photo) ? photo : '';
   return (
     <div className="flex items-center gap-2.5">
-      <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-yellow-100 text-[11px] font-bold text-yellow-700">{initialsOf(name)}</span>
+      {src && !broken ? (
+        <img src={src} alt="" onError={() => setBroken(true)} className="h-8 w-8 shrink-0 rounded-full object-cover ring-1 ring-gray-200" />
+      ) : (
+        <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-yellow-100 text-[11px] font-bold text-yellow-700">{initialsOf(name)}</span>
+      )}
       <div className="min-w-0">
         <p className="truncate text-sm font-medium text-gray-900">{name || '-'}</p>
         {sub ? <p className="truncate text-xs text-gray-500">{sub}</p> : null}
@@ -304,87 +411,188 @@ const HR = ({ setShowAdminHeader }) => {
 
   const schoolDisplayName = useMemo(() => getSchoolDisplayName(), []);
 
-  const escapeHtml = (value) => String(value ?? '').replace(/[&<>"']/g, (char) => ({
-    '&': '&amp;',
-    '<': '&lt;',
-    '>': '&gt;',
-    '"': '&quot;',
-    "'": '&#39;',
-  }[char]));
-
-  const handlePrintLeaveLetter = () => {
+  // Leave letter → real A4 PDF (jsPDF) → Blob → opened in the browser's PDF
+  // viewer in a new tab (print / download from there). Formal letter layout:
+  // letterhead, ref + date, addressee, subject, body, signature, office use.
+  const handlePrintLeaveLetter = async () => {
     if (!selectedLeaveRequest) return;
-    const teacherName = selectedLeaveRequest.teacherName || 'Teacher';
-    const teacherEmail = String(selectedLeaveRequest.teacherEmail || '').trim() || 'Not provided';
-    const teacherPhone = String(selectedLeaveRequest.teacherPhone || '').trim() || 'Not provided';
-    const subjectDate = formatLeaveSubjectDate(selectedLeaveRequest.startDate, selectedLeaveRequest.endDate);
-    const leavePeriod = formatLeaveDateRange(selectedLeaveRequest.startDate, selectedLeaveRequest.endDate);
-    const printHtml = `
-      <html>
-        <head>
-          <title>Leave Letter</title>
-          <style>
-            @page { size: A4; margin: 18mm; }
-            html, body { width: 210mm; min-height: 297mm; margin: 0; padding: 0; background: #fff; font-family: Arial, sans-serif; color: #111827; }
-            body { -webkit-print-color-adjust: exact; print-color-adjust: exact; }
-            .page { width: 100%; min-height: 297mm; box-sizing: border-box; }
-            .header { display: flex; justify-content: space-between; gap: 16px; margin-bottom: 28px; }
-            .title { font-size: 16px; font-weight: 700; margin: 0 0 4px; }
-            .muted { color: #6b7280; font-size: 12px; margin: 0; line-height: 1.5; }
-            .body { font-size: 13px; line-height: 1.8; }
-            .body p { margin: 0 0 14px; }
-            .subject { text-align: center; font-weight: 600; }
-            .reason { white-space: pre-wrap; }
-            .signature { margin-top: 40px; }
-            .signature .name { font-weight: 700; margin-top: 6px; }
-            .label { font-weight: 700; }
-          </style>
-        </head>
-        <body>
-          <div class="page">
-            <div class="header">
-              <div>
-                <p class="title">${escapeHtml(`${schoolDisplayName} Administration`)}</p>
-                <p class="muted">Human Resource Department</p>
-              </div>
-              <div style="text-align:right;">
-                <p class="muted">${escapeHtml(formatLongDate(selectedLeaveRequest.createdAt))}</p>
-                <p class="muted">Status: ${escapeHtml(selectedLeaveRequest.status || '-')}</p>
-              </div>
-            </div>
+    const r = selectedLeaveRequest;
+    const school = getSchoolProfileForPrint(schoolDisplayName);
+    const teacherName = r.teacherName || 'Teacher';
+    const pdf = new jsPDF({ unit: 'pt', format: 'a4' });
+    const W = pdf.internal.pageSize.getWidth();
+    const H = pdf.internal.pageSize.getHeight();
+    const M = 56; // ~20mm margins
+    const width = W - M * 2;
+    const ink = [30, 41, 59];
+    const muted = [100, 116, 139];
+    let y = M;
 
-            <div class="body">
-              <p><span class="label">To,</span><br />The HR/Admin<br />${escapeHtml(schoolDisplayName)}</p>
-              <p class="subject"><span class="label">Subject:</span> Application for ${escapeHtml(selectedLeaveRequest.type || 'leave')} ${escapeHtml(subjectDate)}</p>
-              <p>Dear Sir/Madam,</p>
-              <p>I respectfully request leave for the period mentioned above. The reason provided by me is shown below.</p>
-              <p class="reason">${escapeHtml(selectedLeaveRequest.reason?.trim() || 'No reason provided.')}</p>
-              ${selectedLeaveRequest.adminNote ? `<p><span class="label">Admin note:</span><br />${escapeHtml(selectedLeaveRequest.adminNote)}</p>` : ''}
-              <p>I request you to kindly consider this leave application and grant approval.</p>
-              <p>Regards,</p>
-              <div class="signature">
-                <p class="name">${escapeHtml(teacherName)}</p>
-                <p class="muted">Email: ${escapeHtml(teacherEmail)}</p>
-                <p class="muted">Phone: ${escapeHtml(teacherPhone)}</p>
-              </div>
-              <p class="muted" style="margin-top: 18px;">Leave period: ${escapeHtml(leavePeriod)}</p>
-            </div>
-          </div>
-        </body>
-      </html>
-    `;
+    const text = (str, x, yy, opts = {}) => {
+      pdf.setFont('helvetica', opts.bold ? 'bold' : (opts.italic ? 'italic' : 'normal'));
+      pdf.setFontSize(opts.size || 11);
+      pdf.setTextColor(...(opts.color || ink));
+      pdf.text(String(str ?? ''), x, yy, { align: opts.align || 'left', maxWidth: opts.maxWidth });
+    };
+    const para = (str, opts = {}) => {
+      pdf.setFont('helvetica', opts.bold ? 'bold' : 'normal');
+      pdf.setFontSize(opts.size || 11);
+      pdf.setTextColor(...(opts.color || ink));
+      const lines = pdf.splitTextToSize(String(str || ''), opts.width || width);
+      lines.forEach((line) => {
+        if (y > H - M - 40) { pdf.addPage(); y = M; }
+        pdf.text(line, opts.x || M, y, { align: 'left' });
+        y += (opts.size || 11) * 1.55;
+      });
+      y += opts.gap ?? 8;
+    };
+    const rule = (yy, color = [203, 213, 225], w = 0.8) => {
+      pdf.setDrawColor(...color);
+      pdf.setLineWidth(w);
+      pdf.line(M, yy, W - M, yy);
+    };
 
-    const printWindow = window.open('', '_blank', 'noopener,noreferrer,width=900,height=1200');
-    if (!printWindow) return;
+    // ── Letterhead ──
+    let logoData = null;
+    if (school.logo) {
+      try {
+        const res = await fetch(school.logo);
+        const blob = await res.blob();
+        logoData = await new Promise((resolve, reject) => {
+          const fr = new FileReader();
+          fr.onload = () => resolve(fr.result);
+          fr.onerror = reject;
+          fr.readAsDataURL(blob);
+        });
+      } catch { logoData = null; }
+    }
+    if (logoData) {
+      try { pdf.addImage(logoData, M, y - 8, 48, 48); } catch { /* unsupported image — skip */ }
+    }
+    // School name, address and contact always centred on the page (logo stays at the left).
+    const headX = W / 2;
+    const headAlign = 'center';
+    text(school.name.toUpperCase(), headX, y + 8, { bold: true, size: 16, align: headAlign });
+    let hy = y + 24;
+    if (school.address) { text(school.address, headX, hy, { size: 9.5, color: muted, align: headAlign }); hy += 13; }
+    const contact = [school.email && `Email: ${school.email}`, school.phone && `Phone: ${school.phone}`].filter(Boolean).join('  |  ');
+    if (contact) { text(contact, headX, hy, { size: 9, color: muted, align: headAlign }); hy += 13; }
+    y = Math.max(hy, y + (logoData ? 48 : 30)) + 6;
+    rule(y, ink, 1.6);
+    y += 3;
+    rule(y, [148, 163, 184], 0.5);
+    y += 26;
 
-    printWindow.document.open();
-    printWindow.document.write(printHtml);
-    printWindow.document.close();
-    printWindow.focus();
-    setTimeout(() => {
-      printWindow.focus();
-      printWindow.print();
-    }, 300);
+    // ── Ref + date ──
+    const refNo = `HR/LV/${String(r.id || '').slice(-6).toUpperCase() || '000000'}`;
+    text(`Ref. No.: ${refNo}`, M, y, { size: 10, color: muted });
+    text(`Date: ${formatLongDate(r.createdAt) || formatLongDate(new Date())}`, W - M, y, { size: 10, color: muted, align: 'right' });
+    y += 34;
+
+    // ── Addressee ──
+    text('To,', M, y, { bold: true }); y += 16;
+    text('The Principal / HR Administrator', M, y); y += 16;
+    text(school.name, M, y); y += 16;
+    if (school.address) { para(school.address, { gap: 0 }); } else { y += 2; }
+    y += 18;
+
+    // ── Subject ──
+    const subject = `Subject: Application for ${r.type || 'Leave'} ${formatLeaveSubjectDate(r.startDate, r.endDate)}`.trim();
+    pdf.setFont('helvetica', 'bold');
+    pdf.setFontSize(11.5);
+    const subjLines = pdf.splitTextToSize(subject, width);
+    subjLines.forEach((line) => {
+      pdf.setTextColor(...ink);
+      pdf.text(line, W / 2, y, { align: 'center' });
+      const lw = pdf.getTextWidth(line);
+      pdf.setDrawColor(...ink); pdf.setLineWidth(0.6);
+      pdf.line(W / 2 - lw / 2, y + 2.5, W / 2 + lw / 2, y + 2.5);
+      y += 17;
+    });
+    y += 14;
+
+    // ── Body ──
+    para('Respected Sir/Madam,', { gap: 10 });
+    // Plain text paragraph with **bold** segments, wrapped word by word.
+    const richPara = (str, opts = {}) => {
+      const size = opts.size || 11;
+      const lineH = size * 1.55;
+      const words = [];
+      String(str).split('**').forEach((part, i) => {
+        // Bold phrases (name, leave type, date) stay together on one line.
+        if (i % 2 === 1) { if (part) words.push({ w: part, bold: true }); return; }
+        part.split(/(\s+)/).filter((w) => w !== '').forEach((w) => words.push({ w, bold: false }));
+      });
+      pdf.setFontSize(size);
+      pdf.setTextColor(...ink);
+      let x = M;
+      const newLine = () => {
+        x = M;
+        y += lineH;
+        if (y > H - M - 40) { pdf.addPage(); y = M; }
+      };
+      words.forEach(({ w, bold }) => {
+        pdf.setFont('helvetica', bold ? 'bold' : 'normal');
+        if (/^\s+$/.test(w)) { if (x > M) x += pdf.getTextWidth(' '); return; }
+        const ww = pdf.getTextWidth(w);
+        if (x > M && x + ww > M + width) newLine();
+        pdf.text(w, x, y);
+        x += ww;
+      });
+      y += lineH + (opts.gap ?? 8);
+    };
+    // Teacher name, leave type and date(s) in bold.
+    richPara(`I, **${teacherName}**, respectfully request you to grant me **${r.type || 'leave'}** for the period **${formatLeaveDateRange(r.startDate, r.endDate)}**. The reason for my leave is stated below:`);
+    // Reason — plain text, bold.
+    const reason = String(r.reason || '').trim() || 'No reason provided.';
+    para(reason, { bold: true });
+    para('During my absence, I will ensure that my responsibilities are managed and any pending work is handed over appropriately. I kindly request you to consider my application and grant me leave for the above period.');
+    para('Thanking you.', { gap: 22 });
+
+    // ── Signature ──
+    if (y > H - M - 190) { pdf.addPage(); y = M; }
+    text('Yours faithfully,', M, y); y += 18;
+    text(teacherName, M, y, { bold: true }); y += 15;
+    if (r.teacherPhone) { text(`Phone: ${r.teacherPhone}`, M, y, { size: 10, color: muted }); y += 13; }
+    if (r.teacherEmail) { text(`Email: ${r.teacherEmail}`, M, y, { size: 10, color: muted }); y += 13; }
+    y += 22;
+
+    // ── For office use ──
+    if (y > H - M - 130) { pdf.addPage(); y = M; }
+    const statusLabel = r.status || 'Pending';
+    const officeH = r.adminNote ? 118 : 96;
+    pdf.setDrawColor(203, 213, 225); pdf.setLineWidth(0.8); pdf.setLineDashPattern([3, 2], 0);
+    pdf.roundedRect(M, y, width, officeH, 4, 4, 'S');
+    pdf.setLineDashPattern([], 0);
+    text('FOR OFFICE USE', M + 14, y + 18, { bold: true, size: 9.5, color: muted });
+    const statusColor = /approv|accept/i.test(statusLabel) ? [4, 120, 87] : /reject/i.test(statusLabel) ? [190, 18, 60] : [180, 83, 9];
+    text('Status:', M + 14, y + 38, { size: 10.5, color: muted });
+    text(statusLabel.toUpperCase(), M + 60, y + 38, { size: 10.5, bold: true, color: statusColor });
+    text(`Reviewed on: ${r.reviewedAt ? formatLongDate(r.reviewedAt) : '—'}`, M + width / 2, y + 38, { size: 10.5, color: muted });
+    let oy = y + 56;
+    if (r.adminNote) {
+      text(`Remarks: ${String(r.adminNote).slice(0, 140)}`, M + 14, oy, { size: 10, color: ink, maxWidth: width - 28 });
+      oy += 22;
+    }
+    pdf.setDrawColor(148, 163, 184); pdf.setLineWidth(0.6);
+    pdf.line(W - M - 180, oy + 18, W - M - 14, oy + 18);
+    text('Authorised Signatory', W - M - 97, oy + 31, { size: 9.5, color: muted, align: 'center' });
+
+    // ── Footer on every page ──
+    const pages = pdf.getNumberOfPages();
+    for (let i = 1; i <= pages; i += 1) {
+      pdf.setPage(i);
+      rule(H - 40, [226, 232, 240], 0.5);
+      text(`${school.name} · Human Resource Department`, M, H - 26, { size: 8, color: muted });    }
+
+    // ── Blob → PDF viewer tab ──
+    const fileName = `Leave-Letter-${String(teacherName).replace(/[^a-z0-9]+/gi, '-')}.pdf`;
+    pdf.setProperties({ title: fileName.replace(/\.pdf$/, ''), subject: subject, author: school.name });
+    const blob = pdf.output('blob');
+    const url = URL.createObjectURL(blob);
+    const tab = window.open(url, '_blank');
+    if (!tab) pdf.save(fileName); // popup blocked → download instead
+    setTimeout(() => URL.revokeObjectURL(url), 120000);
   };
 
   const countWeekdaysInMonth = (month) => {
@@ -536,6 +744,14 @@ const HR = ({ setShowAdminHeader }) => {
   const leavesPager = usePagination(filteredLeaves);
   const expensesPager = usePagination(filteredExpenses);
   const [showHrSettings, setShowHrSettings] = useState(false);
+  const closeHrSettings = React.useCallback(() => setShowHrSettings(false), []);
+  const [showMobileFilters, setShowMobileFilters] = useState(false);
+  const hrFetchSeq = useRef(0);
+  const [showAttendanceDownload, setShowAttendanceDownload] = useState(false);
+  const closeAttendanceDownload = React.useCallback(() => setShowAttendanceDownload(false), []);
+  const [downloadMonth, setDownloadMonth] = useState('');
+  const [downloadingAttendance, setDownloadingAttendance] = useState(false);
+  const [downloadError, setDownloadError] = useState('');
 
   const StatusBadge = ({ status }) => {
     const s = normalizedStatus(status);
@@ -580,8 +796,88 @@ const HR = ({ setShowAdminHeader }) => {
     return `${hours}h ${String(mins).padStart(2, '0')}m`;
   };
 
-  const fetchTeacherActivities = async (month = teacherActivityMonth) => {
-    setActivityLoading(true);
+  // Month-wise teacher attendance report → .xlsx
+  const downloadAttendanceExcel = async () => {
+    if (!downloadMonth) return;
+    setDownloadingAttendance(true);
+    setDownloadError('');
+    try {
+      const token = localStorage.getItem('token');
+      if (!token) throw new Error('Admin login required');
+      const res = await fetch(`${API_BASE}/api/admin/users/teacher-attendance?month=${encodeURIComponent(downloadMonth)}`, {
+        headers: { authorization: `Bearer ${token}` },
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(data?.error || 'Unable to load teacher attendance');
+      const records = (Array.isArray(data.records) ? data.records : [])
+        .slice()
+        .sort((a, b) => String(a.date).localeCompare(String(b.date)) || String(a.teacherName).localeCompare(String(b.teacherName)));
+      if (!records.length) throw new Error('No attendance records found for this month.');
+
+      const time = (v) => (v ? new Date(v).toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit' }) : '—');
+      const date = (key) => {
+        const [y, m, d] = String(key || '').split('-');
+        return y && m && d ? `${d}-${m}-${y}` : String(key || '');
+      };
+      const rows = records.map((r, i) => ({
+        'Sl No': i + 1,
+        'Teacher Name': r.teacherName || 'Teacher',
+        'Login ID': r.teacherLoginId || '—',
+        Date: date(r.date),
+        'Check-in Time': time(r.checkInAt),
+        'Check-out Time': time(r.checkOutAt),
+        'Working Hours': formatWorkingHours(r.workingMinutes),
+        Status: r.status || 'Present',
+      }));
+
+      const XLSX = await import('xlsx');
+      const ws = XLSX.utils.json_to_sheet(rows);
+      ws['!cols'] = [{ wch: 7 }, { wch: 26 }, { wch: 18 }, { wch: 12 }, { wch: 14 }, { wch: 14 }, { wch: 14 }, { wch: 12 }];
+      const wb = XLSX.utils.book_new();
+      XLSX.utils.book_append_sheet(wb, ws, `Attendance ${downloadMonth}`);
+      XLSX.writeFile(wb, `Teacher-Attendance-${downloadMonth}.xlsx`);
+      setShowAttendanceDownload(false);
+    } catch (err) {
+      setDownloadError(err.message || 'Download failed. Please try again.');
+    } finally {
+      setDownloadingAttendance(false);
+    }
+  };
+
+  const applyHrPayload = ({ leavesData, expensesData, attendanceData, attendanceSettingsData, leavePolicyData }) => {
+    setTeacherLeaves(Array.isArray(leavesData?.leaves) ? leavesData.leaves : []);
+    setTeacherExpenses(Array.isArray(expensesData?.expenses) ? expensesData.expenses : []);
+    setTeacherAttendanceRecords(Array.isArray(attendanceData?.records) ? attendanceData.records : []);
+    setAttendanceSettings({
+      entryTime: attendanceSettingsData?.settings?.entryTime || '09:00',
+      exitTime: attendanceSettingsData?.settings?.exitTime || '17:00',
+      graceMinutes: Number.isFinite(attendanceSettingsData?.settings?.graceMinutes)
+        ? attendanceSettingsData.settings.graceMinutes
+        : 0,
+    });
+    setLeavePolicy({
+      casualLeaveDays: Number.isFinite(Number(leavePolicyData?.policy?.casualLeaveDays))
+        ? Number(leavePolicyData.policy.casualLeaveDays)
+        : 12,
+    });
+  };
+
+  // Stale-while-revalidate: paint the cached month instantly, then refresh in
+  // the background. Only the latest request may write state.
+  // preferCache: tab switches reuse data fetched in the last minute without
+  // hitting the server; Refresh / after-save calls always revalidate.
+  const fetchTeacherActivities = async (month = teacherActivityMonth, { preferCache = false } = {}) => {
+    const cachedEntry = readHrClientCache(month);
+    const cached = cachedEntry?.data || null;
+    if (preferCache && cachedEntry && Date.now() - cachedEntry.at < HR_CLIENT_CACHE_FRESH_MS) {
+      hrFetchSeq.current += 1;
+      applyHrPayload(cached);
+      setActivityLoading(false);
+      return;
+    }
+    const requestId = ++hrFetchSeq.current;
+    if (cached) applyHrPayload(cached);
+    setActivityLoading(!cached);
     setActivityError('');
     try {
       const token = localStorage.getItem('token');
@@ -619,25 +915,16 @@ const HR = ({ setShowAdminHeader }) => {
       if (!attendanceSettingsRes.ok) throw new Error(attendanceSettingsData?.error || 'Unable to load attendance settings');
       if (!leavePolicyRes.ok) throw new Error(leavePolicyData?.error || 'Unable to load leave policy');
 
-      setTeacherLeaves(Array.isArray(leavesData.leaves) ? leavesData.leaves : []);
-      setTeacherExpenses(Array.isArray(expensesData.expenses) ? expensesData.expenses : []);
-      setTeacherAttendanceRecords(Array.isArray(attendanceData.records) ? attendanceData.records : []);
-      setAttendanceSettings({
-        entryTime: attendanceSettingsData?.settings?.entryTime || '09:00',
-        exitTime: attendanceSettingsData?.settings?.exitTime || '17:00',
-        graceMinutes: Number.isFinite(attendanceSettingsData?.settings?.graceMinutes)
-          ? attendanceSettingsData.settings.graceMinutes
-          : 0,
-      });
-      setLeavePolicy({
-        casualLeaveDays: Number.isFinite(Number(leavePolicyData?.policy?.casualLeaveDays))
-          ? Number(leavePolicyData.policy.casualLeaveDays)
-          : 12,
-      });
+      const payload = { leavesData, expensesData, attendanceData, attendanceSettingsData, leavePolicyData };
+      writeHrClientCache(month, payload);
+      if (requestId !== hrFetchSeq.current) return;
+      applyHrPayload(payload);
     } catch (err) {
-      setActivityError(toFriendlyHrError(err, 'Could not load HR data. Please try again.'));
+      if (requestId !== hrFetchSeq.current) return;
+      // Keep showing cached data if the background refresh fails.
+      if (!cached) setActivityError(toFriendlyHrError(err, 'Could not load HR data. Please try again.'));
     } finally {
-      setActivityLoading(false);
+      if (requestId === hrFetchSeq.current) setActivityLoading(false);
     }
   };
 
@@ -708,7 +995,7 @@ const HR = ({ setShowAdminHeader }) => {
 
   useEffect(() => {
     if (tab === 'attendance' || tab === 'leaves' || tab === 'expenses') {
-      fetchTeacherActivities(teacherActivityMonth);
+      fetchTeacherActivities(teacherActivityMonth, { preferCache: true });
     }
   }, [tab, teacherActivityMonth]);
 
@@ -1114,7 +1401,7 @@ const HR = ({ setShowAdminHeader }) => {
   };
 
   return (
-    <div className="w-full min-h-screen bg-gray-50 p-4 md:p-5">
+    <div className="w-full bg-gray-50 p-4 md:p-5">
       <div className="max-w-7xl mx-auto">
         <div className="mb-5 flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
           <div>
@@ -1122,7 +1409,7 @@ const HR = ({ setShowAdminHeader }) => {
             <p className="mt-0.5 text-sm text-gray-500">Teacher attendance, leave requests and expense claims in one place.</p>
           </div>
           <div className="flex items-center gap-2">
-            <div className="inline-flex rounded-xl border border-gray-200 bg-white p-1 shadow-sm">
+            <div className="inline-flex rounded-full border border-gray-200 bg-white p-1 shadow-sm">
               {[
                 { key: 'attendance', label: 'Attendance', icon: Clock },
                 { key: 'leaves', label: 'Leaves', icon: CalendarCheck, badge: leaveSummary.pending },
@@ -1131,8 +1418,8 @@ const HR = ({ setShowAdminHeader }) => {
                 <button
                   key={key}
                   type="button"
-                  onClick={() => { setTab(key); setShowHrSettings(false); }}
-                  className={`inline-flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-sm font-semibold transition ${tab === key ? 'bg-yellow-500 text-white shadow-sm' : 'text-gray-600 hover:bg-gray-50 hover:text-gray-900'}`}
+                  onClick={() => { setTab(key); setShowHrSettings(false); setShowMobileFilters(false); }}
+                  className={`inline-flex items-center gap-1.5 rounded-full px-3 py-1.5 text-sm font-semibold transition ${tab === key ? 'bg-yellow-500 text-white shadow-sm' : 'text-gray-600 hover:bg-gray-50 hover:text-gray-900'}`}
                 >
                   <Icon size={15} /> {label}
                   {badge > 0 && (
@@ -1145,10 +1432,11 @@ const HR = ({ setShowAdminHeader }) => {
               <button
                 type="button"
                 onClick={() => setShowHrSettings((v) => !v)}
-                className={`inline-flex h-10 items-center gap-1.5 rounded-xl border px-3 text-sm font-semibold transition ${showHrSettings ? 'border-yellow-300 bg-yellow-50 text-yellow-700' : 'border-gray-200 bg-white text-gray-600 hover:bg-gray-50'}`}
+                className={`inline-flex h-10 items-center gap-1.5 rounded-full border px-3 text-sm font-semibold transition ${showHrSettings ? 'border-yellow-300 bg-yellow-50 text-yellow-700' : 'border-gray-200 bg-white text-gray-600 hover:bg-gray-50'}`}
                 title={tab === 'attendance' ? 'Attendance timings' : 'Leave policy'}
               >
-                <Settings size={15} /> <span className="hidden sm:inline">Settings</span>
+                <Settings size={15} />
+                 {/* <span className="hidden sm:inline">Settings</span> */}
               </button>
             )}
           </div>
@@ -1268,26 +1556,25 @@ const HR = ({ setShowAdminHeader }) => {
               <StatChip icon={XCircle} label="Absent (month)" value={attendanceSummary.absentDays} tone="red" />
             </div>
 
-            {showHrSettings && (
-              <div className="rounded-xl border border-yellow-200 bg-yellow-50/40 p-4">
-                <p className="mb-3 text-sm font-semibold text-gray-800">Attendance timings</p>
-                <div className="flex flex-col gap-3 sm:flex-row sm:items-end">
-                  <label className="text-xs font-medium text-gray-600">Entry time
-                    <input type="time" value={attendanceSettings.entryTime} onChange={(e) => setAttendanceSettings((prev) => ({ ...prev, entryTime: e.target.value }))} className={`mt-1 block w-full sm:w-40 ${toolbarInput}`} />
+            <SettingsModal open={showHrSettings} title="Attendance timings" onClose={closeHrSettings}>
+              <div className="space-y-4">
+                <div className="grid grid-cols-2 gap-4">
+                  <label className="min-w-0 text-xs font-medium text-gray-600">Entry time
+                    <input type="time" value={attendanceSettings.entryTime} onChange={(e) => setAttendanceSettings((prev) => ({ ...prev, entryTime: e.target.value }))} className={`mt-1 block w-full min-w-0 max-w-full appearance-none ${toolbarInput}`} />
                   </label>
-                  <label className="text-xs font-medium text-gray-600">Exit time
-                    <input type="time" value={attendanceSettings.exitTime} onChange={(e) => setAttendanceSettings((prev) => ({ ...prev, exitTime: e.target.value }))} className={`mt-1 block w-full sm:w-40 ${toolbarInput}`} />
+                  <label className="min-w-0 text-xs font-medium text-gray-600">Exit time
+                    <input type="time" value={attendanceSettings.exitTime} onChange={(e) => setAttendanceSettings((prev) => ({ ...prev, exitTime: e.target.value }))} className={`mt-1 block w-full min-w-0 max-w-full appearance-none ${toolbarInput}`} />
                   </label>
-                  <label className="text-xs font-medium text-gray-600">Grace (min)
-                    <input type="number" min="0" max="720" value={attendanceSettings.graceMinutes} onChange={(e) => setAttendanceSettings((prev) => ({ ...prev, graceMinutes: Number(e.target.value || 0) }))} className={`mt-1 block w-full sm:w-32 ${toolbarInput}`} />
-                  </label>
-                  <button type="button" onClick={saveAttendanceSettings} disabled={attendanceSettingsSaving || activityLoading} className="inline-flex h-10 items-center justify-center gap-1.5 rounded-lg bg-yellow-500 px-4 text-sm font-semibold text-white hover:bg-yellow-600 disabled:opacity-50">
-                    <Clock size={14} /> {attendanceSettingsSaving ? 'Saving...' : 'Save timings'}
-                  </button>
                 </div>
-                <p className="mt-2 text-xs text-gray-500">Teachers checking in within the grace time are marked Present. Working hours run from check-in to check-out.</p>
+                <label className="block text-xs font-medium text-gray-600">Grace (min)
+                  <input type="number" min="0" max="720" value={attendanceSettings.graceMinutes} onChange={(e) => setAttendanceSettings((prev) => ({ ...prev, graceMinutes: Number(e.target.value || 0) }))} className={`mt-1 block w-full ${toolbarInput}`} />
+                </label>
+                <button type="button" onClick={saveAttendanceSettings} disabled={attendanceSettingsSaving || activityLoading} className="inline-flex h-10 w-full items-center justify-center gap-1.5 rounded-lg bg-yellow-500 px-4 text-sm font-semibold text-white hover:bg-yellow-600 disabled:opacity-50">
+                  <Clock size={14} /> {attendanceSettingsSaving ? 'Saving...' : 'Save timings'}
+                </button>
+                <p className="text-xs text-gray-500">Teachers checking in within the grace time are marked Present. Working hours run from check-in to check-out.</p>
               </div>
-            )}
+            </SettingsModal>
 
             {activityError && (
               <div className="flex items-center gap-3 rounded-xl border border-red-200 bg-red-50 px-4 py-3">
@@ -1299,7 +1586,7 @@ const HR = ({ setShowAdminHeader }) => {
             <div className="overflow-hidden rounded-xl border border-gray-200 bg-white">
 
             <div className="flex flex-col gap-2 rounded-t-xl border-b border-gray-100 p-3 lg:flex-row lg:items-center">
-              <div className="relative flex-1">
+              <div className="flex items-center gap-2 lg:flex-1"><div className="relative flex-1">
                 <Search size={16} className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" />
                 <input
                   type="text"
@@ -1308,8 +1595,8 @@ const HR = ({ setShowAdminHeader }) => {
                   onChange={(e) => setAttendanceSearch(e.target.value)}
                   className={`w-full pl-9 ${toolbarInput}`}
                 />
-              </div>
-              <div className="flex flex-wrap items-center gap-2">
+              </div><button type="button" onClick={() => setShowMobileFilters((v) => !v)} className={`flex h-9 w-9 shrink-0 items-center justify-center rounded-lg border transition lg:hidden ${showMobileFilters ? 'border-red-200 bg-red-50 text-red-600' : 'border-gray-200 text-gray-600 hover:bg-gray-50'}`} title={showMobileFilters ? 'Close filters' : 'Filters'} aria-label={showMobileFilters ? 'Close filters' : 'Show filters'} aria-expanded={showMobileFilters}>{showMobileFilters ? <X size={16} /> : <SlidersHorizontal size={16} />}</button></div>
+              <div className={`flex-wrap items-center gap-2 lg:flex ${showMobileFilters ? 'flex' : 'hidden'}`}>
                 <input type="month" value={teacherActivityMonth} onChange={(e) => setTeacherActivityMonth(e.target.value)} className={toolbarInput} aria-label="Month" />
                 <select value={attendanceTeacherFilter} onChange={(e) => setAttendanceTeacherFilter(e.target.value)} className={toolbarInput}>
                   <option value="all">All teachers</option>
@@ -1325,8 +1612,25 @@ const HR = ({ setShowAdminHeader }) => {
                 <button type="button" onClick={() => fetchTeacherActivities(teacherActivityMonth)} className="flex h-9 w-9 items-center justify-center rounded-lg border border-gray-200 text-gray-600 transition hover:bg-gray-50" title="Refresh" aria-label="Refresh">
                   <RefreshCw size={15} className={activityLoading ? 'animate-spin' : ''} />
                 </button>
+                <button type="button" onClick={() => { setDownloadMonth(teacherActivityMonth); setDownloadError(''); setShowAttendanceDownload(true); }} className="inline-flex h-9 items-center gap-1.5 rounded-lg bg-emerald-600 px-3 text-sm font-semibold text-white transition hover:bg-emerald-700" title="Download attendance report">
+                  <Download size={15} /> <span className="hidden sm:inline">Download</span>
+                </button>
               </div>
             </div>
+
+            <SettingsModal open={showAttendanceDownload} title="Download attendance report" onClose={closeAttendanceDownload}>
+              <div className="space-y-4">
+                <label className="block text-xs font-medium text-gray-600">Month
+                  <input type="month" value={downloadMonth} onChange={(e) => setDownloadMonth(e.target.value)} className={`mt-1 block w-full min-w-0 max-w-full appearance-none ${toolbarInput}`} />
+                </label>
+                {downloadError && <p className="rounded-lg bg-red-50 px-3 py-2 text-xs text-red-700">{downloadError}</p>}
+                <button type="button" onClick={downloadAttendanceExcel} disabled={downloadingAttendance || !downloadMonth} className="inline-flex h-10 w-full items-center justify-center gap-1.5 rounded-lg bg-emerald-600 px-4 text-sm font-semibold text-white hover:bg-emerald-700 disabled:opacity-50">
+                  {downloadingAttendance ? <RefreshCw size={14} className="animate-spin" /> : <Download size={14} />}
+                  {downloadingAttendance ? 'Preparing...' : 'Download Excel'}
+                </button>
+                <p className="text-xs text-gray-500">Includes Sl No, teacher name, login ID, date, check-in, check-out, working hours and status for every teacher in the selected month.</p>
+              </div>
+            </SettingsModal>
               <div className="overflow-x-auto">
                 <table className="min-w-full">
                   <thead className="bg-gray-50">
@@ -1342,7 +1646,7 @@ const HR = ({ setShowAdminHeader }) => {
                   <tbody className="divide-y divide-gray-100">
                     {activityLoading ? <tr><td colSpan={6} className="px-4 py-12 text-center text-sm text-gray-400"><RefreshCw size={16} className="mr-2 inline animate-spin text-yellow-600" />Loading attendance…</td></tr> : attendancePager.rows.map((record) => (
                       <tr key={record.id} className="transition-colors hover:bg-gray-50/70">
-                        <td className="px-4 py-2.5"><PersonCell name={record.teacherName} /></td>
+                        <td className="px-4 py-2.5"><PersonCell name={record.teacherName} photo={record.teacherProfilePic} /></td>
                         <td className={tdCls}>{formatLongDate(record.date) || record.date}</td>
                         <td className={tdCls}>{record.checkInAt ? new Date(record.checkInAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : '—'}</td>
                         <td className={tdCls}>{record.checkOutAt ? new Date(record.checkOutAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : '—'}</td>
@@ -1432,18 +1736,18 @@ const HR = ({ setShowAdminHeader }) => {
               <StatChip icon={XCircle} label="Rejected" value={leaveSummary.rejected} tone="red" />
             </div>
 
-            {showHrSettings && (
-              <div className="flex flex-col gap-3 rounded-xl border border-yellow-200 bg-yellow-50/40 p-4 sm:flex-row sm:items-end">
-                <label className="text-xs font-medium text-gray-600">Casual leave days per teacher
-                  <input type="number" min="0" max="365" value={leavePolicy.casualLeaveDays} onChange={(e) => setLeavePolicy((prev) => ({ ...prev, casualLeaveDays: e.target.value }))} className={`mt-1 block w-full sm:w-48 ${toolbarInput}`} />
+            <SettingsModal open={showHrSettings} title="Leave policy" onClose={closeHrSettings}>
+              <div className="space-y-4">
+                <label className="block text-xs font-medium text-gray-600">Casual leave days per teacher
+                  <input type="number" min="0" max="365" value={leavePolicy.casualLeaveDays} onChange={(e) => setLeavePolicy((prev) => ({ ...prev, casualLeaveDays: e.target.value }))} className={`mt-1 block w-full ${toolbarInput}`} />
                 </label>
-                <button type="button" onClick={saveLeavePolicy} disabled={leavePolicySaving} className="inline-flex h-10 items-center justify-center gap-1.5 rounded-lg bg-yellow-500 px-4 text-sm font-semibold text-white hover:bg-yellow-600 disabled:opacity-60">
+                <button type="button" onClick={saveLeavePolicy} disabled={leavePolicySaving} className="inline-flex h-10 w-full items-center justify-center gap-1.5 rounded-lg bg-yellow-500 px-4 text-sm font-semibold text-white hover:bg-yellow-600 disabled:opacity-60">
                   {leavePolicySaving ? <RefreshCw size={14} className="animate-spin" /> : <CheckCircle size={14} />}
                   {leavePolicySaving ? 'Saving...' : 'Save policy'}
                 </button>
-                <p className="text-xs text-gray-500 sm:pb-2.5">Teachers can take casual leave up to this approved quota.</p>
+                <p className="text-xs text-gray-500">Teachers can take casual leave up to this approved quota.</p>
               </div>
-            )}
+            </SettingsModal>
 
             {activityError && (
               <div className="flex items-center gap-3 rounded-xl border border-red-200 bg-red-50 px-4 py-3">
@@ -1455,7 +1759,7 @@ const HR = ({ setShowAdminHeader }) => {
             <div className="overflow-hidden rounded-xl border border-gray-200 bg-white">
 
             <div className="flex flex-col gap-2 rounded-t-xl border-b border-gray-100 p-3 lg:flex-row lg:items-center">
-              <div className="relative flex-1">
+              <div className="flex items-center gap-2 lg:flex-1"><div className="relative flex-1">
                 <Search size={16} className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" />
                 <input
                   type="text"
@@ -1464,8 +1768,8 @@ const HR = ({ setShowAdminHeader }) => {
                   onChange={(e) => setLeaveSearch(e.target.value)}
                   className={`w-full pl-9 ${toolbarInput}`}
                 />
-              </div>
-              <div className="flex flex-wrap items-center gap-2">
+              </div><button type="button" onClick={() => setShowMobileFilters((v) => !v)} className={`flex h-9 w-9 shrink-0 items-center justify-center rounded-lg border transition lg:hidden ${showMobileFilters ? 'border-red-200 bg-red-50 text-red-600' : 'border-gray-200 text-gray-600 hover:bg-gray-50'}`} title={showMobileFilters ? 'Close filters' : 'Filters'} aria-label={showMobileFilters ? 'Close filters' : 'Show filters'} aria-expanded={showMobileFilters}>{showMobileFilters ? <X size={16} /> : <SlidersHorizontal size={16} />}</button></div>
+              <div className={`flex-wrap items-center gap-2 lg:flex ${showMobileFilters ? 'flex' : 'hidden'}`}>
                 <input type="month" value={teacherActivityMonth} onChange={(e) => setTeacherActivityMonth(e.target.value)} className={toolbarInput} aria-label="Month" />
                 <select value={leaveTeacherFilter} onChange={(e) => setLeaveTeacherFilter(e.target.value)} className={toolbarInput}>
                   <option value="all">All teachers</option>
@@ -1506,7 +1810,7 @@ const HR = ({ setShowAdminHeader }) => {
                       const isPending = !['approved', 'accepted', 'rejected'].includes(status);
                       return (
                         <tr key={r.id} className="transition-colors hover:bg-gray-50/70">
-                          <td className="px-4 py-2.5"><PersonCell name={r.teacherName} /></td>
+                          <td className="px-4 py-2.5"><PersonCell name={r.teacherName} photo={r.teacherProfilePic} /></td>
                           <td className={tdCls}><span className="inline-flex rounded-md bg-blue-50 px-2 py-0.5 text-xs font-medium text-blue-700">{r.type}</span></td>
                           <td className={tdCls}>{formatLeaveDateRange(r.startDate, r.endDate)}</td>
                           <td className="px-4 py-2.5"><StatusBadge status={r.status} /></td>
@@ -1618,13 +1922,14 @@ const HR = ({ setShowAdminHeader }) => {
               </div>
 
               <div className="px-6 py-4 border-t border-gray-100 bg-white flex items-center justify-end gap-2">
-                {/* <button
+                <button
+                  type="button"
                   onClick={handlePrintLeaveLetter}
                   className="inline-flex items-center gap-2 px-4 py-2 rounded-lg border border-gray-300 text-gray-700 hover:bg-gray-50 text-sm font-medium"
                 >
-                  <FileText size={16} />
+                  <Printer size={16} />
                   Print
-                </button> */}
+                </button>
                 <button
                   onClick={closeLeaveLetter}
                   className="inline-flex items-center gap-2 px-4 py-2 rounded-lg bg-yellow-600 text-white hover:bg-yellow-700 text-sm font-medium"
@@ -1656,7 +1961,7 @@ const HR = ({ setShowAdminHeader }) => {
             <div className="overflow-hidden rounded-xl border border-gray-200 bg-white">
 
             <div className="flex flex-col gap-2 rounded-t-xl border-b border-gray-100 p-3 lg:flex-row lg:items-center">
-              <div className="relative flex-1">
+              <div className="flex items-center gap-2 lg:flex-1"><div className="relative flex-1">
                 <Search size={16} className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" />
                 <input
                   type="text"
@@ -1665,8 +1970,8 @@ const HR = ({ setShowAdminHeader }) => {
                   onChange={(e) => setExpenseSearch(e.target.value)}
                   className={`w-full pl-9 ${toolbarInput}`}
                 />
-              </div>
-              <div className="flex flex-wrap items-center gap-2">
+              </div><button type="button" onClick={() => setShowMobileFilters((v) => !v)} className={`flex h-9 w-9 shrink-0 items-center justify-center rounded-lg border transition lg:hidden ${showMobileFilters ? 'border-red-200 bg-red-50 text-red-600' : 'border-gray-200 text-gray-600 hover:bg-gray-50'}`} title={showMobileFilters ? 'Close filters' : 'Filters'} aria-label={showMobileFilters ? 'Close filters' : 'Show filters'} aria-expanded={showMobileFilters}>{showMobileFilters ? <X size={16} /> : <SlidersHorizontal size={16} />}</button></div>
+              <div className={`flex-wrap items-center gap-2 lg:flex ${showMobileFilters ? 'flex' : 'hidden'}`}>
                 <input type="month" value={teacherActivityMonth} onChange={(e) => setTeacherActivityMonth(e.target.value)} className={toolbarInput} aria-label="Month" />
                 <select value={expenseTeacherFilter} onChange={(e) => setExpenseTeacherFilter(e.target.value)} className={toolbarInput}>
                   <option value="all">All teachers</option>
@@ -1709,7 +2014,7 @@ const HR = ({ setShowAdminHeader }) => {
                       const isPending = !['approved', 'accepted', 'rejected'].includes(status);
                       return (
                         <tr key={expense.id} className="transition-colors hover:bg-gray-50/70">
-                          <td className="px-4 py-2.5"><PersonCell name={expense.teacherName} /></td>
+                          <td className="px-4 py-2.5"><PersonCell name={expense.teacherName} photo={expense.teacherProfilePic} /></td>
                           <td className={tdCls}><span className="inline-flex rounded-md bg-purple-50 px-2 py-0.5 text-xs font-medium text-purple-700">{expense.category}</span></td>
                           <td className="px-4 py-3 text-sm font-semibold text-gray-900">₹{Number(expense.amount || 0).toLocaleString('en-IN')}</td>
                           <td className={tdCls}>{formatLongDate(expense.date) || expense.date}</td>

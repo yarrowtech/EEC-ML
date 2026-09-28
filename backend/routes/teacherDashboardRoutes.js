@@ -14,10 +14,6 @@ const ExamResult = require('../models/ExamResult');
 const StudentProgress = require('../models/StudentProgress');
 const Assignment = require('../models/Assignment');
 const Timetable = require('../models/Timetable');
-// Registered for the routine's room → floor → building populate.
-require('../models/Room');
-require('../models/Floor');
-require('../models/Building');
 const Subject = require('../models/Subject');
 const ClassModel = require('../models/Class');
 const Section = require('../models/Section');
@@ -34,17 +30,8 @@ const SupportRequest = require('../models/SupportRequest');
 const Notification = require('../models/Notification');
 const ParentMeeting = require('../models/ParentMeeting');
 const TeacherTaskAcknowledgement = require('../models/TeacherTaskAcknowledgement');
-const Admin = require('../models/Admin');
-const { createResponseCache } = require('../utils/responseCache');
 
-const { notifyParentComplaintStatus } = require('../utils/complaintNotifications');
 const router = express.Router();
-
-// Short-lived per-teacher cache so the dashboard opens instantly on revisit.
-// Any write through this router (e.g. completing a deadline) clears it; the
-// TTL bounds staleness from writes made elsewhere (attendance, assignments).
-const teacherDashboardCache = createResponseCache({ ttlMs: 30 * 1000 });
-router.use(teacherDashboardCache.invalidateOnWrite);
 
 // Teacher check-in/out, leave and expense writes feed the admin HR screens —
 // drop the admin HR response cache so those show the change immediately.
@@ -486,7 +473,7 @@ const resolveComplaintGuardianNames = async (complaints, schoolId) => {
   return byComplaint;
 };
 
-router.get('/', authTeacher, teacherDashboardCache.cache, async (req, res) => {
+router.get('/', authTeacher, async (req, res) => {
   // #swagger.tags = ['Teacher Dashboard']
   try {
     const schoolId = req.schoolId || req.user?.schoolId || null;
@@ -506,7 +493,7 @@ router.get('/', authTeacher, teacherDashboardCache.cache, async (req, res) => {
     }
     const scope = await buildTeacherScope({ schoolId, campusId, teacherId });
     const students = await StudentUser.find(studentFilter)
-      .select('name grade section attendance attendanceSummary')
+      .select('name grade section attendance')
       .lean();
     const scopedStudents = students.filter((student) => studentIsWithinScope(student, scope));
     const studentIds = scopedStudents.map((student) => student._id);
@@ -839,63 +826,19 @@ router.get('/', authTeacher, teacherDashboardCache.cache, async (req, res) => {
       schoolId,
       teacherId,
       status: 'active',
-      // Upcoming work plus the last 14 days of overdue work, so assignments that
-      // still have missing or ungraded submissions stay visible after the due date.
-      dueDate: { $gte: new Date(todayStart.getTime() - 14 * 24 * 60 * 60 * 1000) },
+      dueDate: { $gte: today },
       ...(completedAssignmentIds.length ? { _id: { $nin: completedAssignmentIds } } : {}),
     };
     if (campusId) {
       assignmentFilter.campusId = campusId;
     }
-    const deadlineCandidates = await Assignment.find(assignmentFilter)
+    const upcomingDeadlines = await Assignment.find(assignmentFilter)
       .sort({ dueDate: 1 })
-      .limit(50)
-      .select('title class section subject dueDate')
-      .lean();
-
-    // Per-deadline submission progress for the dashboard's homework card.
-    const submittedByAssignment = new Map();
-    const toGradeByAssignment = new Map();
-    submissionItems.forEach((item) => {
-      const key = String(item.assignmentId || '');
-      if (!key) return;
-      submittedByAssignment.set(key, (submittedByAssignment.get(key) || 0) + 1);
-      if (item.status === 'submitted' || item.status === 'late') {
-        toGradeByAssignment.set(key, (toGradeByAssignment.get(key) || 0) + 1);
-      }
-    });
-    const classStudentCount = (cls, section) => scopedStudents.filter((student) => (
-      String(student.grade || '') === String(cls || '')
-      && (!section || String(student.section || '') === String(section))
-    )).length;
-
-    // Keep upcoming items, and overdue items only while something is left to do
-    // (submissions to grade or students who have not submitted). Overdue first.
-    const upcomingDeadlines = deadlineCandidates
-      .map((item) => {
-        const id = String(item._id);
-        const total = classStudentCount(item.class, item.section);
-        const submitted = submittedByAssignment.get(id) || 0;
-        return {
-          item,
-          id,
-          total,
-          submitted,
-          toGrade: toGradeByAssignment.get(id) || 0,
-          overdue: new Date(item.dueDate) < todayStart,
-        };
-      })
-      .filter((d) => !d.overdue || d.toGrade > 0 || d.submitted < d.total)
-      .sort((a, b) => (Number(b.overdue) - Number(a.overdue)) || (new Date(a.item.dueDate) - new Date(b.item.dueDate)))
-      .slice(0, 5);
-
-    // School cover photo for the greeting banner (set in admin settings).
-    const coverAdmin = await Admin.findOne({ schoolId, role: 'admin', coverImage: { $nin: [null, ''] } })
-      .select('coverImage')
+      .limit(3)
+      .select('title class subject dueDate')
       .lean();
 
     res.json({
-      school: { coverImage: coverAdmin?.coverImage || '' },
       teacher: {
         name: teacher?.name || 'Teacher',
         campusName: teacher?.campusName || null,
@@ -907,29 +850,18 @@ router.get('/', authTeacher, teacherDashboardCache.cache, async (req, res) => {
         pendingEvaluations,
         upcomingEvents: upcomingClasses.length,
       },
-      attendanceSummary: {
-        present: attendancePresent,
-        absent: attendanceMarked - attendancePresent,
-        notMarked: scopedStudents.length - attendanceMarked,
-        total: scopedStudents.length,
-      },
       upcomingClasses,
       todaysClasses,
       nextClass,
       recentActivities,
       performanceMetrics,
       topStudents,
-      upcomingDeadlines: upcomingDeadlines.map(({ item, id, total, submitted, toGrade, overdue }) => ({
-        id,
+      upcomingDeadlines: upcomingDeadlines.map((item) => ({
+        id: String(item._id),
         title: item.title,
         class: item.class || '',
         subject: item.subject || '',
-        section: item.section || '',
         dueDate: item.dueDate,
-        submittedCount: submitted,
-        totalStudents: total,
-        toGradeCount: toGrade,
-        overdue,
       })),
     });
   } catch (err) {
@@ -967,7 +899,7 @@ router.post('/deadlines/:assignmentId/complete', authTeacher, async (req, res) =
 });
 
 // Get teacher allocations (classes/sections/subjects)
-router.get('/allocations', authTeacher, teacherDashboardCache.cache, async (req, res) => {
+router.get('/allocations', authTeacher, async (req, res) => {
   try {
     const isTeacherUser =
       String(req.user?.userType || '').toLowerCase() === 'teacher' ||
@@ -1143,7 +1075,7 @@ router.get('/students', authTeacher, async (req, res) => {
 
     // Fetch students
     const students = await StudentUser.find(studentFilter)
-      .select('name username rollNumber grade section className sectionName campusId campusName attendance attendanceSummary profilePic')
+      .select('name username rollNumber grade section className sectionName campusId campusName attendance profilePic')
       .sort({ grade: 1, section: 1, rollNumber: 1 })
       .lean();
 
@@ -1882,7 +1814,6 @@ router.get('/routine', authTeacher, async (req, res) => {
       .populate('classId', 'name')
       .populate('sectionId', 'name')
       .populate('entries.subjectId', 'name')
-      .populate({ path: 'entries.roomId', select: 'roomNumber floorId', populate: { path: 'floorId', select: 'name buildingId', populate: { path: 'buildingId', select: 'name' } } })
       .lean();
 
     // Fallback for legacy records that may not have campusId set
@@ -1895,7 +1826,6 @@ router.get('/routine', authTeacher, async (req, res) => {
         .populate('classId', 'name')
         .populate('sectionId', 'name')
         .populate('entries.subjectId', 'name')
-      .populate({ path: 'entries.roomId', select: 'roomNumber floorId', populate: { path: 'floorId', select: 'name buildingId', populate: { path: 'buildingId', select: 'name' } } })
         .lean();
     }
 
@@ -1933,10 +1863,7 @@ router.get('/routine', authTeacher, async (req, res) => {
           className,
           sectionName,
           classLabel,
-          room: entry.room || entry.roomId?.roomNumber || 'TBA',
-          roomNumber: entry.roomId?.roomNumber || entry.room || '',
-          floor: entry.roomId?.floorId?.name || '',
-          building: entry.roomId?.floorId?.buildingId?.name || '',
+          room: entry.room || 'TBA',
           startTime: entry.startTime || '',
           endTime: entry.endTime || '',
           period: entry.period || null,
@@ -2147,7 +2074,6 @@ router.put('/complaints/:id/status', authTeacher, async (req, res) => {
       return res.status(404).json({ error: 'Complaint not found' });
     }
 
-    const previousStatus = complaint.status;
     complaint.status = status;
     if (typeof resolutionNotes === 'string') {
       complaint.resolutionNotes = resolutionNotes;
@@ -2167,7 +2093,6 @@ router.put('/complaints/:id/status', authTeacher, async (req, res) => {
     }
 
     await complaint.save();
-    notifyParentComplaintStatus(complaint, { previousStatus, actorName: teacher.name || 'Class Teacher' });
 
     const guardianNames = await resolveComplaintGuardianNames([complaint], schoolId);
     res.json(formatTeacherComplaint(complaint, guardianNames.get(String(complaint._id))));
