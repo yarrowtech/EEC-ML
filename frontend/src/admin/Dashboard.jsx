@@ -770,35 +770,39 @@ const Dashboard = ({ setShowAdminHeader }) => {
               )}
             </div>
             <div className="mt-2 flex items-center justify-center gap-1.5 lg:mt-1.5">
-              {Array.from({
-                length: Math.ceil(quickActions.length / 4),
-              }).map((_, index) => {
-                const activePage =
-                  Math.round(
-                    (qaScrollRef.current?.scrollLeft || 0) /
-                    (qaScrollRef.current?.clientWidth || 1)
-                  ) === index;
+              {(qaScroll.canLeft || qaScroll.canRight) && (
+                <div className="mt-2 flex items-center justify-center gap-1.5 lg:mt-1.5">
+                  {Array.from({
+                    length: Math.ceil(quickActions.length / 4),
+                  }).map((_, index) => {
+                    const activePage =
+                      Math.round(
+                        (qaScrollRef.current?.scrollLeft || 0) /
+                        (qaScrollRef.current?.clientWidth || 1)
+                      ) === index;
 
-                return (
-                  <button
-                    key={index}
-                    type="button"
-                    onClick={() => {
-                      qaScrollRef.current?.scrollTo({
-                        left: index * qaScrollRef.current.clientWidth,
-                        behavior: "smooth",
-                      });
-                    }}
-                    className={`
-          h-1.5 rounded-full transition-all duration-300
-          ${activePage
-                        ? "w-5 bg-indigo-500"
-                        : "w-1.5 bg-slate-300"
-                      }
-        `}
-                  />
-                );
-              })}
+                    return (
+                      <button
+                        key={index}
+                        type="button"
+                        onClick={() => {
+                          qaScrollRef.current?.scrollTo({
+                            left: index * qaScrollRef.current.clientWidth,
+                            behavior: 'smooth',
+                          });
+                        }}
+                        className={cn(
+                          'h-1.5 rounded-full transition-all duration-300',
+                          activePage
+                            ? 'w-5 bg-indigo-500'
+                            : 'w-1.5 bg-slate-300'
+                        )}
+                        aria-label={`Go to quick actions page ${index + 1}`}
+                      />
+                    );
+                  })}
+                </div>
+              )}
             </div>
             <div className="mt-4 pt-4 lg:mt-3 lg:pt-2.5 lg:shrink-0 border-t border-slate-200/50">
               <p className="text-[10px] text-slate-400 text-center">

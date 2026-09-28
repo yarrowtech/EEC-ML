@@ -3,25 +3,25 @@ import { useLocation } from 'react-router-dom';
 import {
   AlertTriangle,
   CheckCircle,
-  ClipboardList,
+  ChevronDown,
+  ChevronRight,
+  ChevronUp,
   Clock,
+  FileText,
   Headphones,
+  KeyRound,
   LifeBuoy,
   Loader2,
   Mail,
   MessageCircle,
+  Phone,
   RefreshCcw,
   Send,
-  Phone,
   ShieldCheck,
-  KeyRound,
-  ChevronDown,
-  ChevronUp,
   Ticket,
-  ArrowRight,
-  Zap,
   WifiOff,
-  Star
+  Zap,
+  ArrowRight,
 } from 'lucide-react';
 
 const API_BASE = (import.meta.env.VITE_API_URL || 'http://localhost:5000').replace(/\/$/, '');
@@ -38,14 +38,13 @@ const SUPPORT_STATUS_LABELS = {
   open: 'Open',
   in_progress: 'In Progress',
   investigating: 'In Progress',
-  resolved: 'Resolved'
+  resolved: 'Resolved',
 };
 
 const Support = ({ setShowAdminHeader }) => {
   const location = useLocation();
   const recentRequestsRef = useRef(null);
 
-  // Scroll to Recent Requests section when navigated here with #recent-requests
   useEffect(() => {
     if (location.hash === '#recent-requests' && recentRequestsRef.current) {
       setTimeout(() => {
@@ -65,8 +64,6 @@ const Support = ({ setShowAdminHeader }) => {
   const [complaintForm, setComplaintForm] = useState(defaultComplaint);
   const [submitting, setSubmitting] = useState('');
   const [statusBanner, setStatusBanner] = useState(null);
-  // Keep failed support requests in memory only. Support payloads can contain
-  // student/staff details and must not persist in browser storage.
   const [queuedRequests, setQueuedRequests] = useState([]);
   const [syncingQueue, setSyncingQueue] = useState(false);
   const [recentRequests, setRecentRequests] = useState([]);
@@ -78,7 +75,7 @@ const Support = ({ setShowAdminHeader }) => {
     email: 'support@eecschools.com',
     availableDays: 'Mon - Fri',
     availableTime: '8 AM - 6 PM IST',
-    onCall24x7: true
+    onCall24x7: true,
   });
 
   const supportPhoneHref = useMemo(() => {
@@ -90,6 +87,7 @@ const Support = ({ setShowAdminHeader }) => {
     const email = String(supportSettings.email || '').trim();
     return email ? `mailto:${email}` : 'mailto:support@eecschools.com';
   }, [supportSettings.email]);
+
   const supportEscalationEmail = useMemo(() => {
     const email = String(supportSettings.email || '').trim();
     return email || 'support@eecschools.com';
@@ -136,9 +134,7 @@ const Support = ({ setShowAdminHeader }) => {
     setter((prev) => ({ ...prev, [name]: value }));
   };
 
-  const persistQueue = (queue) => {
-    setQueuedRequests(queue);
-  };
+  const persistQueue = (queue) => { setQueuedRequests(queue); };
 
   const saveOfflineRequest = (payload) => {
     persistQueue([...queuedRequests, { ...payload, queuedAt: new Date().toISOString() }]);
@@ -152,7 +148,7 @@ const Support = ({ setShowAdminHeader }) => {
       const res = await fetch(`${API_BASE}/api/support/requests`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json', authorization: `Bearer ${(typeof window !== 'undefined' && window.localStorage.getItem('token')) || ''}` },
-        body: JSON.stringify(body)
+        body: JSON.stringify(body),
       });
       if (!res.ok) throw new Error('Support service unavailable');
       setStatusBanner({ type: 'success', title: 'Request sent to the EEC support desk.', description: 'You will receive a confirmation email shortly.' });
@@ -173,7 +169,7 @@ const Support = ({ setShowAdminHeader }) => {
         const res = await fetch(`${API_BASE}/api/support/requests`, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json', authorization: `Bearer ${(typeof window !== 'undefined' && window.localStorage.getItem('token')) || ''}` },
-          body: JSON.stringify(req)
+          body: JSON.stringify(req),
         });
         if (!res.ok) throw new Error();
       } catch { remaining.push(req); }
@@ -224,7 +220,7 @@ const Support = ({ setShowAdminHeader }) => {
       const res = await fetch(`${API_BASE}/api/admin/users/password-reset/reset`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json', authorization: `Bearer ${(typeof window !== 'undefined' && window.localStorage.getItem('token')) || ''}` },
-        body: JSON.stringify({ role: passwordResetRole, userId: selectedPasswordResetUser.id })
+        body: JSON.stringify({ role: passwordResetRole, userId: selectedPasswordResetUser.id }),
       });
       const data = await res.json().catch(() => ({}));
       if (!res.ok) throw new Error(data?.error || 'Unable to reset password');
@@ -235,20 +231,38 @@ const Support = ({ setShowAdminHeader }) => {
     } finally { setSubmitting(''); }
   };
 
-  /* ── Helpers ──────────────────────────────────────────────────────────────── */
+  const getStatusDot = (status) => ({
+    resolved: 'bg-emerald-500',
+    in_progress: 'bg-blue-500',
+    investigating: 'bg-blue-500',
+    open: 'bg-amber-500',
+  }[status] || 'bg-gray-400');
 
-  const getStatusBadge = (status) => ({
-    resolved: 'bg-emerald-100 text-emerald-700 border-emerald-200',
-    in_progress: 'bg-blue-100 text-blue-700 border-blue-200',
-    investigating: 'bg-blue-100 text-blue-700 border-blue-200',
-    open: 'bg-amber-100 text-amber-700 border-amber-200',
-  }[status] || 'bg-gray-100 text-gray-500 border-gray-200');
+  const getStatusColor = (status) => ({
+    resolved: 'text-emerald-600',
+    in_progress: 'text-blue-600',
+    investigating: 'text-blue-600',
+    open: 'text-amber-600',
+  }[status] || 'text-gray-500');
 
-  const getTypeIcon = (type) => ({
-    'password-reset': <KeyRound className="h-3.5 w-3.5" />,
-    feedback: <Star className="h-3.5 w-3.5" />,
-    complaint: <AlertTriangle className="h-3.5 w-3.5" />,
-  }[type] || <Ticket className="h-3.5 w-3.5" />);
+  const getTypeBadge = (type) => ({
+    'password-reset': 'bg-blue-100 text-blue-700',
+    feedback: 'bg-purple-100 text-purple-700',
+    complaint: 'bg-red-100 text-red-600',
+  }[type] || 'bg-gray-100 text-gray-600');
+
+  const getTypeLabel = (type) => ({
+    'password-reset': 'Password Reset',
+    feedback: 'Feedback',
+    complaint: 'Complaint',
+  }[type] || type);
+
+  const getPriorityBadge = (priority) => ({
+    high: 'bg-red-50 text-red-600 border-red-200',
+    medium: 'bg-gray-50 text-gray-600 border-gray-200',
+    low: 'bg-gray-50 text-gray-500 border-gray-200',
+    critical: 'bg-red-100 text-red-700 border-red-300',
+  }[priority] || 'bg-gray-50 text-gray-500 border-gray-200');
 
   const getTypeStyle = (type) => ({
     'password-reset': 'bg-blue-100 text-blue-600',
@@ -256,59 +270,46 @@ const Support = ({ setShowAdminHeader }) => {
     complaint: 'bg-red-100 text-red-500',
   }[type] || 'bg-gray-100 text-gray-500');
 
-  const impactBadge = { low: 'bg-slate-100 text-slate-600', medium: 'bg-amber-100 text-amber-700', high: 'bg-orange-100 text-orange-700', critical: 'bg-red-100 text-red-700' };
+  const getTypeIcon = (type) => ({
+    'password-reset': <KeyRound className="h-3.5 w-3.5" />,
+    feedback: <MessageCircle className="h-3.5 w-3.5" />,
+    complaint: <AlertTriangle className="h-3.5 w-3.5" />,
+  }[type] || <Ticket className="h-3.5 w-3.5" />);
 
-  const fieldBase = 'mt-1 w-full rounded-xl border border-gray-200 px-3 py-2.5 text-sm focus:ring-2 focus:ring-indigo-500/30 focus:border-indigo-400 outline-none transition bg-gray-50 hover:bg-white focus:bg-white';
-  const fieldLabel = 'block text-xs font-semibold text-slate-500 uppercase tracking-wider mb-0';
+  const fieldBase = 'mt-1 w-full rounded-xl border border-gray-200 px-3 py-2.5 text-sm focus:ring-2 focus:ring-blue-500/20 focus:border-blue-400 outline-none transition bg-white';
+  const fieldLabel = 'block text-xs font-semibold text-gray-500 uppercase tracking-wider mb-0';
 
-  /* ── Render ───────────────────────────────────────────────────────────────── */
   return (
-    <div className="min-h-screen bg-slate-50">
+    <div className="bg-gray-50/50">
+      <div className="max-w-6xl mx-auto px-6 pt-6 pb-8 space-y-6">
 
-      {/* ── Gradient Hero ─────────────────────────────────────────────────── */}
-      <div className="relative overflow-hidden bg-linear-to-r from-slate-900 via-blue-950 to-slate-900 px-6 py-6 shadow-lg">
-        <div className="pointer-events-none absolute top-0 right-0 w-72 h-72 rounded-full bg-indigo-400/10 -translate-y-1/2 translate-x-1/4 blur-3xl" />
-        <div className="pointer-events-none absolute bottom-0 left-0 w-56 h-56 rounded-full bg-cyan-500/10 translate-y-1/2 -translate-x-1/4 blur-3xl" />
-
-        <div className="relative max-w-6xl mx-auto">
-          <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-5">
-            <div className="flex items-center gap-4">
-              <div className="w-11 h-11 rounded-2xl bg-white/10 border border-white/20 flex items-center justify-center backdrop-blur-sm shrink-0">
-                <LifeBuoy className="h-5 w-5 text-white" />
-              </div>
-              <div>
-                <p className="text-xs font-semibold text-slate-400 uppercase tracking-widest">EEC Support Desk</p>
-                <h1 className="text-xl font-bold text-white mt-0.5 tracking-tight">How can we help you?</h1>
-                <p className="text-slate-400 text-sm mt-0.5">
-                  Reset credentials, share feedback, or escalate complaints.
-                </p>
-              </div>
+        {/* ── Header ─── */}
+        <div className="flex flex-col gap-4 md:flex-row md:items-start md:justify-between">
+          <div className="flex items-center gap-3">
+            <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-blue-50">
+              <LifeBuoy className="h-5 w-5 text-blue-600" />
             </div>
-
-            <div className="flex flex-wrap gap-2.5 md:shrink-0">
-              <a className="flex items-center gap-2 px-4 py-2 rounded-xl bg-white/10 hover:bg-white/20 backdrop-blur-sm border border-white/15 text-sm font-semibold text-white transition"
-                href={supportPhoneHref}>
-                <Phone className="h-4 w-4 text-white" /> {supportSettings.phoneNumber}
-              </a>
-              <a className="flex items-center gap-2 px-4 py-2 rounded-xl bg-white/10 hover:bg-white/20 backdrop-blur-sm border border-white/15 text-sm font-semibold text-white transition"
-                href={supportMailHref}>
-                <Mail className="h-4 w-4 text-white" /> Email us
-              </a>
-              <div className="flex items-center gap-2 px-4 py-2 rounded-xl bg-white/10 border border-white/15 text-sm text-white">
-                <span className="inline-block w-2 h-2 rounded-full bg-emerald-400 animate-pulse" />
-                {supportSettings.onCall24x7
-                  ? <span className="font-semibold">24 / 7 On-call</span>
-                  : <span className="font-semibold">{supportSettings.availableDays} · {supportSettings.availableTime}</span>
-                }
-              </div>
+            <div>
+              <p className="text-xs font-bold text-blue-600 uppercase tracking-widest">Support Center</p>
+              <h1 className="text-2xl font-bold text-gray-900 mt-0.5">How can we help you?</h1>
+              <p className="text-sm text-gray-500 mt-0.5">Reset credentials, share feedback, or report an issue to the EEC support team.</p>
+            </div>
+          </div>
+          <div className="flex flex-wrap items-center gap-2.5 shrink-0">
+            <a href={supportPhoneHref} className="inline-flex items-center gap-2 rounded-xl border border-gray-200 bg-white px-4 py-2.5 text-sm font-semibold text-gray-700 hover:bg-gray-50 shadow-sm">
+              <Phone className="h-4 w-4 text-gray-500" /> {supportSettings.phoneNumber}
+            </a>
+            <a href={supportMailHref} className="inline-flex items-center gap-2 rounded-xl border border-gray-200 bg-white px-4 py-2.5 text-sm font-semibold text-gray-700 hover:bg-gray-50 shadow-sm">
+              <Mail className="h-4 w-4 text-gray-500" /> Email support
+            </a>
+            <div className="inline-flex items-center gap-2 rounded-xl bg-linear-to-r from-purple-600 to-pink-600 px-4 py-2.5 text-sm font-bold text-white shadow-sm">
+              <span className="inline-block h-2.5 w-2.5 rounded-full bg-emerald-400 animate-pulse" />
+              {supportSettings.onCall24x7 ? '24 / 7 On-call' : `${supportSettings.availableDays} · ${supportSettings.availableTime}`}
             </div>
           </div>
         </div>
-      </div>
 
-      <div className="max-w-6xl mx-auto px-6 pt-6 pb-10 space-y-6">
-
-        {/* ── Status Banner ─────────────────────────────────────────────────── */}
+        {/* ── Status Banner ─── */}
         {statusBanner && (() => {
           const cfgMap = {
             success: { wrap: 'bg-emerald-50 border-emerald-200 border-l-emerald-500', text: 'text-emerald-800', icon: <CheckCircle className="h-5 w-5 text-emerald-500 shrink-0" /> },
@@ -327,7 +328,7 @@ const Support = ({ setShowAdminHeader }) => {
           );
         })()}
 
-        {/* ── Offline Queue ─────────────────────────────────────────────────── */}
+        {/* ── Offline Queue ─── */}
         {queuedRequests.length > 0 && (
           <div className="rounded-2xl border border-amber-200 bg-linear-to-r from-amber-50 to-orange-50 p-5">
             <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 mb-4">
@@ -337,9 +338,7 @@ const Support = ({ setShowAdminHeader }) => {
                 </div>
                 <div>
                   <p className="text-xs font-bold text-amber-600 uppercase tracking-widest">Offline Queue</p>
-                  <p className="text-sm font-semibold text-gray-900">
-                    {queuedRequests.length} pending request{queuedRequests.length > 1 ? 's' : ''}
-                  </p>
+                  <p className="text-sm font-semibold text-gray-900">{queuedRequests.length} pending request{queuedRequests.length > 1 ? 's' : ''}</p>
                 </div>
               </div>
               <button type="button" onClick={retryQueuedRequests} disabled={syncingQueue}
@@ -356,30 +355,31 @@ const Support = ({ setShowAdminHeader }) => {
                     <p className="text-sm font-semibold text-gray-800 capitalize">{req.supportType?.replace('-', ' ')}</p>
                   </div>
                   <p className="text-xs text-gray-400 mt-1.5">Saved {new Date(req.queuedAt || req.submittedAt).toLocaleString()}</p>
-                  {req.subject && <p className="mt-1 text-gray-600 text-xs truncate">{req.subject}</p>}
                 </div>
               ))}
             </div>
           </div>
         )}
 
-        {/* ── Forms: Password Reset + Feedback ──────────────────────────────── */}
+        {/* ── Password Reset + Feedback ─── */}
         <div className="grid gap-5 lg:grid-cols-2">
 
-          {/* Password Reset Card */}
-          <section className="bg-white rounded-2xl shadow-sm border border-gray-200 overflow-hidden">
-            <div className="h-1 w-full bg-linear-to-r from-blue-500 to-indigo-500" />
-            <div className="px-6 pt-5 pb-2 flex items-center gap-3">
-              <div className="p-2.5 rounded-xl bg-blue-50">
-                <KeyRound className="h-5 w-5 text-blue-600" />
+          {/* Password Reset */}
+          <section className="rounded-2xl border border-gray-200 bg-white shadow-sm overflow-hidden">
+            <div className="px-6 pt-5 pb-3 flex items-center justify-between">
+              <div className="flex items-center gap-3">
+                <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-blue-50">
+                  <KeyRound className="h-5 w-5 text-blue-600" />
+                </div>
+                <div>
+                  <h2 className="text-base font-bold text-gray-900">Password Reset</h2>
+                  <p className="text-xs text-gray-400">Reset to default for teachers, students, or parents.</p>
+                </div>
               </div>
-              <div>
-                <h2 className="text-base font-bold text-gray-900">Password Reset</h2>
-                <p className="text-xs text-gray-400">Reset to default for teachers, students, or parents.</p>
-              </div>
+              <span className="inline-flex items-center rounded-lg border border-blue-200 bg-blue-50 px-2.5 py-1 text-[10px] font-bold uppercase tracking-widest text-blue-600">Quick Action</span>
             </div>
 
-            <form className="px-6 pb-6 pt-4 space-y-4" onSubmit={handlePasswordResetSubmit}>
+            <form className="px-6 pb-6 pt-2 space-y-4" onSubmit={handlePasswordResetSubmit}>
               <div>
                 <label className={fieldLabel}>Role <span className="text-red-400 normal-case text-xs">*</span></label>
                 <select value={passwordResetRole}
@@ -409,7 +409,7 @@ const Support = ({ setShowAdminHeader }) => {
                   <div className="absolute z-20 mt-1 w-full rounded-2xl border border-gray-200 bg-white shadow-2xl p-3">
                     <input type="text" value={passwordResetSearch}
                       onChange={(e) => setPasswordResetSearch(e.target.value)}
-                      className="w-full rounded-xl border border-gray-200 px-3 py-2 text-sm bg-gray-50 focus:bg-white focus:ring-2 focus:ring-amber-400 focus:border-amber-400 outline-none"
+                      className="w-full rounded-xl border border-gray-200 px-3 py-2 text-sm bg-gray-50 focus:bg-white focus:ring-2 focus:ring-blue-400 focus:border-blue-400 outline-none"
                       placeholder="Search by ID or name…"
                       autoFocus
                     />
@@ -423,7 +423,7 @@ const Support = ({ setShowAdminHeader }) => {
                       ) : (
                         passwordResetUsers.map((user) => (
                           <button key={user.id} type="button"
-                            className="w-full text-left px-3 py-2.5 rounded-xl hover:bg-amber-50 transition"
+                            className="w-full text-left px-3 py-2.5 rounded-xl hover:bg-blue-50 transition"
                             onClick={() => { setSelectedPasswordResetUser(user); setPasswordResetUserPickerOpen(false); }}
                           >
                             <p className="text-sm font-semibold text-gray-900">{user.userId}</p>
@@ -456,25 +456,27 @@ const Support = ({ setShowAdminHeader }) => {
               <button type="submit" disabled={submitting === 'password-reset'}
                 className="w-full inline-flex items-center justify-center gap-2 rounded-xl bg-linear-to-r from-blue-600 to-indigo-600 text-white py-2.5 text-sm font-bold hover:from-blue-700 hover:to-indigo-700 transition shadow-sm disabled:opacity-50 disabled:cursor-wait">
                 {submitting === 'password-reset' ? <Loader2 className="h-4 w-4 animate-spin" /> : <KeyRound className="h-4 w-4" />}
-                Generate temporary password
+                Generate Temporary Password
               </button>
             </form>
           </section>
 
-          {/* Feedback Card */}
-          <section className="bg-white rounded-2xl shadow-sm border border-gray-200 overflow-hidden">
-            <div className="h-1 w-full bg-linear-to-r from-purple-500 to-pink-500" />
-            <div className="px-6 pt-5 pb-2 flex items-center gap-3">
-              <div className="p-2.5 rounded-xl bg-purple-50">
-                <MessageCircle className="h-5 w-5 text-purple-600" />
+          {/* Feedback */}
+          <section className="rounded-2xl border border-purple-200 bg-white shadow-sm overflow-hidden">
+            <div className="px-6 pt-5 pb-3 flex items-center justify-between">
+              <div className="flex items-center gap-3">
+                <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-purple-50">
+                  <MessageCircle className="h-5 w-5 text-purple-600" />
+                </div>
+                <div>
+                  <h2 className="text-base font-bold text-gray-900">Product Feedback</h2>
+                  <p className="text-xs text-gray-400">Share ideas, improvements, or appreciation with our team.</p>
+                </div>
               </div>
-              <div>
-                <h2 className="text-base font-bold text-gray-900">Product Feedback</h2>
-                <p className="text-xs text-gray-400">Share ideas, improvements, or appreciation with our team.</p>
-              </div>
+              <span className="inline-flex items-center rounded-lg border border-purple-200 bg-purple-50 px-2.5 py-1 text-[10px] font-bold uppercase tracking-widest text-purple-600">We Value Your Input</span>
             </div>
 
-            <form className="px-6 pb-6 pt-4 space-y-4"
+            <form className="px-6 pb-6 pt-2 space-y-4"
               onSubmit={(e) => { e.preventDefault(); handleSupportSubmit('feedback', feedbackForm, () => setFeedbackForm(defaultFeedback)); }}>
               <div>
                 <label className={fieldLabel}>Subject</label>
@@ -503,7 +505,7 @@ const Support = ({ setShowAdminHeader }) => {
               <div>
                 <label className={fieldLabel}>Message</label>
                 <textarea name="message" value={feedbackForm.message} onChange={handleInput(setFeedbackForm)}
-                  rows={5} className={`${fieldBase} resize-none`}
+                  rows={3} className={`${fieldBase} resize-none`}
                   placeholder="Be as descriptive as possible — it helps our team prioritise." />
               </div>
               <button type="submit" disabled={submitting === 'feedback'}
@@ -515,20 +517,22 @@ const Support = ({ setShowAdminHeader }) => {
           </section>
         </div>
 
-        {/* ── Complaint Form ─────────────────────────────────────────────────── */}
-        <section className="bg-white rounded-2xl shadow-sm border border-gray-200 overflow-hidden">
-          <div className="h-1 w-full bg-linear-to-r from-red-500 to-rose-500" />
-          <div className="px-6 pt-5 pb-2 flex items-center gap-3">
-            <div className="p-2.5 rounded-xl bg-red-50">
-              <AlertTriangle className="h-5 w-5 text-red-500" />
+        {/* ── Complaint ─── */}
+        <section className="rounded-2xl border border-red-200 bg-white shadow-sm overflow-hidden">
+          <div className="px-6 pt-5 pb-3 flex items-center justify-between">
+            <div className="flex items-center gap-3">
+              <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-red-50">
+                <AlertTriangle className="h-5 w-5 text-red-500" />
+              </div>
+              <div>
+                <h2 className="text-base font-bold text-gray-900">File a Complaint</h2>
+                <p className="text-xs text-gray-400">Escalate safeguarding, product incidents, or compliance concerns to our desk.</p>
+              </div>
             </div>
-            <div>
-              <h2 className="text-base font-bold text-gray-900">File a Complaint</h2>
-              <p className="text-xs text-gray-400">Escalate safeguarding, product incidents, or compliance concerns to our desk.</p>
-            </div>
+            <span className="inline-flex items-center rounded-lg border border-red-200 bg-red-50 px-2.5 py-1 text-[10px] font-bold uppercase tracking-widest text-red-600">Report an Issue</span>
           </div>
 
-          <form className="px-6 pb-6 pt-4 space-y-4"
+          <form className="px-6 pb-6 pt-2 space-y-4"
             onSubmit={(e) => { e.preventDefault(); handleSupportSubmit('complaint', complaintForm, () => setComplaintForm(defaultComplaint)); }}>
             <div className="grid sm:grid-cols-2 lg:grid-cols-4 gap-4">
               <div>
@@ -542,12 +546,11 @@ const Support = ({ setShowAdminHeader }) => {
               </div>
               <div>
                 <label className={fieldLabel}>Impact Level</label>
-                <select name="impactLevel" value={complaintForm.impactLevel} onChange={handleInput(setComplaintForm)}
-                  className={`${fieldBase} font-semibold`}>
+                <select name="impactLevel" value={complaintForm.impactLevel} onChange={handleInput(setComplaintForm)} className={fieldBase}>
                   <option value="low">Low</option>
                   <option value="medium">Medium</option>
                   <option value="high">High</option>
-                  <option value="critical">🚨 Critical</option>
+                  <option value="critical">Critical</option>
                 </select>
               </div>
               <div>
@@ -562,17 +565,9 @@ const Support = ({ setShowAdminHeader }) => {
               </div>
             </div>
 
-            {/* impact badge */}
-            {complaintForm.impactLevel !== 'low' && (
-              <div className={`inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-bold ${impactBadge[complaintForm.impactLevel]}`}>
-                <AlertTriangle className="h-3 w-3" />
-                {complaintForm.impactLevel.charAt(0).toUpperCase() + complaintForm.impactLevel.slice(1)} impact — {complaintForm.impactLevel === 'critical' ? 'urgent escalation will be triggered' : 'will be prioritised'}
-              </div>
-            )}
-
             <div>
-              <label className={fieldLabel}>Describe the issue</label>
-              <textarea name="description" rows={4} value={complaintForm.description}
+              <label className={fieldLabel}>Describe the Issue</label>
+              <textarea name="description" rows={3} value={complaintForm.description}
                 onChange={handleInput(setComplaintForm)} required className={`${fieldBase} resize-none`}
                 placeholder="Include evidence, attachments shared via email, and the expected resolution timeline." />
             </div>
@@ -587,36 +582,40 @@ const Support = ({ setShowAdminHeader }) => {
           </form>
         </section>
 
-        {/* ── Recent Requests ────────────────────────────────────────────────── */}
-        <section id="recent-requests" ref={recentRequestsRef} className="bg-white rounded-2xl shadow-sm border border-gray-200 overflow-hidden">
-          <div className="px-6 py-4 border-b border-gray-100 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
-            <div>
-              <p className="text-xs font-bold text-gray-400 uppercase tracking-widest">Live History</p>
-              <h2 className="text-base font-bold text-gray-900 mt-0.5">Recent Requests</h2>
+        {/* ── Recent Requests (table layout) ─── */}
+        <section id="recent-requests" ref={recentRequestsRef} className="rounded-2xl border border-gray-200 bg-white shadow-sm overflow-hidden">
+          <div className="px-6 py-5 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
+            <div className="flex items-center gap-3">
+              <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-gray-100">
+                <Headphones className="h-5 w-5 text-gray-600" />
+              </div>
+              <div>
+                <h2 className="text-base font-bold text-gray-900">Recent Requests</h2>
+                <p className="text-xs text-gray-400">Track the status of your support requests.</p>
+              </div>
             </div>
             <div className="flex items-center gap-2">
-              <button type="button" onClick={() => setShowAllHistory((p) => !p)} disabled={loadingRecent}
-                className="inline-flex items-center gap-1.5 px-3 py-2 rounded-xl border border-gray-200 text-sm font-medium text-gray-600 hover:bg-gray-50 transition disabled:opacity-60">
-                {showAllHistory ? <ChevronUp className="h-4 w-4" /> : <ChevronDown className="h-4 w-4" />}
-                {showAllHistory ? 'View less' : 'View more'}
-              </button>
               <button type="button" onClick={() => fetchRecentRequests({ all: showAllHistory })} disabled={loadingRecent}
-                className="inline-flex items-center gap-1.5 px-3 py-2 rounded-xl border border-gray-200 text-sm font-medium text-gray-600 hover:bg-gray-50 transition disabled:opacity-60">
+                className="inline-flex items-center gap-1.5 rounded-xl border border-gray-200 bg-white px-4 py-2 text-sm font-semibold text-gray-600 hover:bg-gray-50 shadow-sm disabled:opacity-60">
                 {loadingRecent ? <Loader2 className="h-4 w-4 animate-spin" /> : <RefreshCcw className="h-4 w-4" />}
                 Refresh
+              </button>
+              <button type="button" onClick={() => setShowAllHistory((p) => !p)} disabled={loadingRecent}
+                className="inline-flex items-center gap-1.5 rounded-xl border border-gray-200 bg-white px-4 py-2 text-sm font-semibold text-gray-600 hover:bg-gray-50 shadow-sm disabled:opacity-60">
+                {showAllHistory ? 'View less' : 'View more'} <ChevronRight className="h-4 w-4" />
               </button>
             </div>
           </div>
 
           {recentError && (
-            <div className="mx-6 mt-4 rounded-xl bg-red-50 border border-red-100 px-4 py-2.5 text-xs text-red-600 font-medium">
+            <div className="mx-6 mb-4 rounded-xl bg-red-50 border border-red-100 px-4 py-2.5 text-xs text-red-600 font-medium">
               {recentError}
             </div>
           )}
 
           {loadingRecent ? (
             <div className="flex items-center justify-center gap-3 py-14 text-sm text-gray-400">
-              <Loader2 className="h-5 w-5 animate-spin text-amber-500" /> Loading tickets…
+              <Loader2 className="h-5 w-5 animate-spin text-blue-500" /> Loading tickets…
             </div>
           ) : recentRequests.length === 0 ? (
             <div className="flex flex-col items-center justify-center py-14 gap-3">
@@ -627,95 +626,111 @@ const Support = ({ setShowAdminHeader }) => {
               <p className="text-xs text-gray-400">Your submitted requests will appear here.</p>
             </div>
           ) : (
-            <div className="divide-y divide-gray-50">
-              {recentRequests.map((req) => (
-                <div key={req.id} className="px-6 py-4 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 hover:bg-gray-50/60 transition">
-                  <div className="flex items-start gap-3 flex-1 min-w-0">
-                    {/* type icon */}
-                    <div className={`p-2 rounded-xl shrink-0 mt-0.5 ${getTypeStyle(req.supportType)}`}>
-                      {getTypeIcon(req.supportType)}
-                    </div>
-                    <div className="min-w-0">
-                      <div className="flex items-center gap-2 flex-wrap">
-                        <p className="text-sm font-bold text-gray-800 truncate">
-                          {req.subject || req.supportType?.replace('-', ' ')}
-                        </p>
-                        {req.ticketNumber && (
-                          <span className="text-xs text-gray-400 font-mono bg-gray-100 px-2 py-0.5 rounded-md">{req.ticketNumber}</span>
+            <div className="overflow-x-auto">
+              <table className="w-full text-sm">
+                <thead>
+                  <tr className="border-t border-gray-100 bg-gray-50/60 text-left text-xs font-semibold uppercase tracking-wider text-gray-400">
+                    <th className="px-6 py-3">#</th>
+                    <th className="px-4 py-3">Title</th>
+                    <th className="px-4 py-3">Type</th>
+                    <th className="px-4 py-3">Date</th>
+                    <th className="px-4 py-3">Status</th>
+                    <th className="px-4 py-3">Priority</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-gray-50">
+                  {recentRequests.map((req) => (
+                    <tr key={req.id} className="hover:bg-gray-50/60 transition">
+                      <td className="px-6 py-3.5">
+                        <div className="flex items-center gap-2">
+                          <FileText className="h-4 w-4 text-gray-300 shrink-0" />
+                          <span className="font-mono text-xs text-gray-500">{req.ticketNumber || '—'}</span>
+                        </div>
+                      </td>
+                      <td className="px-4 py-3.5">
+                        <p className="font-medium text-gray-800 truncate max-w-xs">{req.subject || req.supportType?.replace('-', ' ')}</p>
+                      </td>
+                      <td className="px-4 py-3.5">
+                        <span className={`inline-flex items-center rounded-full px-2.5 py-0.5 text-xs font-semibold ${getTypeBadge(req.supportType)}`}>
+                          {getTypeLabel(req.supportType)}
+                        </span>
+                      </td>
+                      <td className="px-4 py-3.5 whitespace-nowrap text-xs text-gray-500">
+                        {new Date(req.updatedAt || req.createdAt).toLocaleString('en-IN', { day: 'numeric', month: 'numeric', year: 'numeric', hour: 'numeric', minute: '2-digit', hour12: true })}
+                      </td>
+                      <td className="px-4 py-3.5">
+                        <span className={`inline-flex items-center gap-1.5 text-xs font-semibold ${getStatusColor(req.status)}`}>
+                          <span className={`h-2 w-2 rounded-full ${getStatusDot(req.status)}`} />
+                          {SUPPORT_STATUS_LABELS[req.status] || req.status?.replace('_', ' ') || 'Open'}
+                        </span>
+                      </td>
+                      <td className="px-4 py-3.5">
+                        {req.priority && (
+                          <span className={`inline-flex items-center rounded-full border px-2.5 py-0.5 text-xs font-semibold capitalize ${getPriorityBadge(req.priority)}`}>
+                            {req.priority}
+                          </span>
                         )}
-                      </div>
-                      <p className="text-xs text-gray-400 mt-0.5 capitalize">
-                        {req.supportType?.replace('-', ' ')} &nbsp;·&nbsp; {new Date(req.updatedAt || req.createdAt).toLocaleString()}
-                      </p>
-                      {req.message && <p className="text-xs text-gray-500 mt-1 line-clamp-1">{req.message}</p>}
-                      {req.resolutionNotes && (
-                        <p className="inline-flex items-center gap-1 text-xs text-emerald-700 mt-1.5 bg-emerald-50 border border-emerald-100 px-2.5 py-1 rounded-lg">
-                          <CheckCircle className="h-3 w-3" /> {req.resolutionNotes}
-                        </p>
-                      )}
-                    </div>
-                  </div>
-                  <div className="flex items-center gap-2 shrink-0 ml-11 sm:ml-0">
-                    <span className={`text-xs px-2.5 py-1 rounded-full font-bold capitalize border ${getStatusBadge(req.status)}`}>
-                      {SUPPORT_STATUS_LABELS[req.status] || req.status?.replace('_', ' ') || 'Open'}
-                    </span>
-                    {req.priority && (
-                      <span className="text-xs px-2.5 py-1 rounded-full bg-gray-100 text-gray-500 capitalize border border-gray-200">
-                        {req.priority}
-                      </span>
-                    )}
-                  </div>
-                </div>
-              ))}
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
             </div>
           )}
         </section>
 
-        {/* Urgent Help */}
-        <section className="rounded-2xl bg-linear-to-br from-gray-900 to-gray-800 text-white overflow-hidden flex flex-col shadow-sm">
-            <div className="p-6 flex-1">
-              <div className="flex items-center gap-2 mb-4">
-                <div className="p-2 rounded-xl bg-amber-500/20">
-                  <Zap className="h-4 w-4 text-amber-400" />
-                </div>
-                <p className="text-xs font-bold text-amber-400 uppercase tracking-widest">Urgent Help</p>
+        {/* ── Urgent Help Footer ─── */}
+        <section className="rounded-2xl bg-linear-to-r from-gray-900 via-slate-900 to-gray-900 text-white overflow-hidden shadow-sm">
+          <div className="px-6 py-5 flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
+            <div className="flex items-center gap-3">
+              <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-amber-500/20">
+                <Zap className="h-5 w-5 text-amber-400" />
               </div>
-              <h2 className="text-xl font-extrabold leading-snug">
-                {supportSettings.onCall24x7 ? 'On-call team, 24 / 7' : 'Support team'}
-              </h2>
-              <p className="text-gray-400 text-xs mt-2 leading-relaxed">
-                Security and compliance incidents are escalated immediately. Our engineers track the same case ID as your portal ticket.
-              </p>
-
-              <div className="mt-6 space-y-3.5">
-                {[
-                  { icon: ClipboardList, label: 'Service status', value: 'All systems normal', color: 'text-emerald-400', bg: 'bg-emerald-500/10' },
-                  { icon: Clock, label: 'Available window', value: `${supportSettings.availableDays} · ${supportSettings.availableTime}`, color: 'text-amber-400', bg: 'bg-amber-500/10' },
-                  { icon: Mail, label: 'Escalation email', value: supportEscalationEmail, color: 'text-blue-400', bg: 'bg-blue-500/10' },
-                ].map((item) => (
-                  <div key={item.label} className="flex items-center gap-3">
-                    <div className={`p-1.5 rounded-lg ${item.bg}`}>
-                      <item.icon className={`h-3.5 w-3.5 ${item.color}`} />
-                    </div>
-                    <div>
-                      <p className="text-xs text-gray-500">{item.label}</p>
-                      <p className={`text-sm font-semibold text-white ${item.label === 'Escalation email' ? 'break-all' : 'truncate max-w-56'}`}>
-                        {item.value}
-                      </p>
-                    </div>
-                  </div>
-                ))}
+              <div>
+                <p className="text-[10px] font-bold text-amber-400 uppercase tracking-widest">Urgent Help</p>
+                <h2 className="text-lg font-extrabold">
+                  {supportSettings.onCall24x7 ? 'On-call team, 24 / 7' : 'Support team'}
+                </h2>
+                <p className="text-xs text-gray-400 mt-0.5 max-w-sm">
+                  Security and compliance incidents are escalated immediately. Our engineers track the same case ID as your portal ticket.
+                </p>
               </div>
             </div>
 
-            <div className="px-6 pb-6">
+            <div className="flex flex-wrap items-center gap-5">
+              <div className="flex items-center gap-2.5">
+                <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-emerald-500/15">
+                  <CheckCircle className="h-4 w-4 text-emerald-400" />
+                </div>
+                <div>
+                  <p className="text-[10px] text-gray-500">Service status</p>
+                  <p className="text-xs font-semibold text-white">All systems normal</p>
+                </div>
+              </div>
+              <div className="flex items-center gap-2.5">
+                <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-blue-500/15">
+                  <Clock className="h-4 w-4 text-blue-400" />
+                </div>
+                <div>
+                  <p className="text-[10px] text-gray-500">Available window</p>
+                  <p className="text-xs font-semibold text-white">{supportSettings.availableDays} · {supportSettings.availableTime}</p>
+                </div>
+              </div>
+              <div className="flex items-center gap-2.5">
+                <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-purple-500/15">
+                  <Mail className="h-4 w-4 text-purple-400" />
+                </div>
+                <div>
+                  <p className="text-[10px] text-gray-500">Escalation email</p>
+                  <p className="text-xs font-semibold text-white">{supportEscalationEmail}</p>
+                </div>
+              </div>
               <a href={supportPhoneHref}
-                className="flex items-center justify-center gap-2 w-full rounded-xl bg-amber-500 hover:bg-amber-400 transition text-none text-white font-extrabold text-sm py-3 shadow-lg shadow-amber-500/30">
-                <Phone className="h-4 w-4" />
-                Call Now
-                <ArrowRight className="h-4 w-4" />
+                className="inline-flex items-center gap-2 rounded-xl bg-amber-500 hover:bg-amber-400 transition text-white font-bold text-sm px-5 py-2.5 shadow-lg shadow-amber-500/30 shrink-0">
+                <Phone className="h-4 w-4" /> Call Now <ArrowRight className="h-4 w-4" />
               </a>
             </div>
+          </div>
         </section>
       </div>
     </div>

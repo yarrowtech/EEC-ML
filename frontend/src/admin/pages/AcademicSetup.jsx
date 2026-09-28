@@ -12,6 +12,7 @@ import toast from "react-hot-toast";
 import { clearSessionScopedCaches } from "../../utils/swrCache";
 
 const API_BASE = import.meta.env.VITE_API_URL;
+const coverObjectUrlCache = { remote: '', url: '' };
 const ACADEMIC_SETUP_CACHE_PREFIX = "academic_setup_cache_v1";
 const ACADEMIC_SETUP_CACHE_TTL_MS = 5 * 60 * 1000;
 // Display-only relabel — the stored status value is still "archived" (same
@@ -313,6 +314,31 @@ const AcademicSetup = ({ setShowAdminHeader }) => {
       "Content-Type": "application/json",
       authorization: token ? `Bearer ${token}` : "",
     };
+  }, []);
+
+  const [coverSrc, setCoverSrc] = useState(() => coverObjectUrlCache.url || '');
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      try {
+        const res = await fetch(`${API_BASE}/api/admin/auth/settings`, { headers: authHeaders });
+        const data = await res.json().catch(() => ({}));
+        const remote = String(data?.admin?.coverImage || '').trim();
+        if (!res.ok || !remote) { if (!cancelled) setCoverSrc(''); return; }
+        if (coverObjectUrlCache.remote === remote && coverObjectUrlCache.url) {
+          if (!cancelled) setCoverSrc(coverObjectUrlCache.url);
+          return;
+        }
+        const imgRes = await fetch(remote, { credentials: 'omit', referrerPolicy: 'no-referrer' });
+        if (!imgRes.ok) throw new Error('cover fetch failed');
+        const blob = await imgRes.blob();
+        if (coverObjectUrlCache.url) URL.revokeObjectURL(coverObjectUrlCache.url);
+        coverObjectUrlCache.remote = remote;
+        coverObjectUrlCache.url = URL.createObjectURL(blob);
+        if (!cancelled) setCoverSrc(coverObjectUrlCache.url);
+      } catch { /* no cover */ }
+    })();
+    return () => { cancelled = true; };
   }, []);
 
   const isYearActive = (year) => {
@@ -2156,7 +2182,22 @@ const AcademicSetup = ({ setShowAdminHeader }) => {
 
                       {/* Right: live preview */}
                       <div className="relative overflow-hidden border-t border-gray-100 bg-blue-500/50 p-6 text-white sm:border-l sm:border-t-0">
-                        <img src="/academic_setup_image.png" alt="Academic Setup" className="absolute -right-12 -bottom-8 w-full opacity-60" />
+                        {coverSrc ? (
+                          <>
+                            <div
+                              aria-hidden="true"
+                              onContextMenu={(e) => e.preventDefault()}
+                              className="pointer-events-none absolute inset-0 select-none bg-cover bg-center"
+                              style={{
+                                backgroundImage: `url(${coverSrc})`,
+                                opacity: 0.35,
+                              }}
+                            />
+                            <div className="absolute inset-0 bg-blue-600/40" />
+                          </>
+                        ) : (
+                          <img src="/academic_setup_image.png" alt="Academic Setup" className="absolute -right-12 -bottom-8 w-full opacity-60" />
+                        )}
                         <div className="relative z-10">
                           <p className="flex items-center gap-1.5 text-xs font-bold text-white/80">
                             <Calendar size={16} /> Academic Year Preview
@@ -2188,8 +2229,28 @@ const AcademicSetup = ({ setShowAdminHeader }) => {
               </AnimatePresence>
 
               {/* Current academic year — full-width banner, above the year picker cards */}
-              <div className="rounded-2xl border border-indigo-100 bg-gradient-to-r from-indigo-50 via-slate-50 to-violet-50/70 px-5 py-3.5 shadow-sm">
-                <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
+              <div className="relative overflow-hidden rounded-2xl border border-indigo-100 bg-gradient-to-r from-indigo-50 via-slate-50 to-violet-50/70 px-5 py-3.5 shadow-sm">
+                {coverSrc && (
+                  <div
+                    aria-hidden="true"
+                    onContextMenu={(e) => e.preventDefault()}
+                    className="pointer-events-none absolute inset-y-0 right-0 w-3/5 select-none overflow-hidden"
+                  >
+                    <div
+                      className="absolute inset-0 bg-cover bg-center"
+                      style={{
+                        backgroundImage: `url(${coverSrc})`,
+                        WebkitMaskImage: "linear-gradient(to right, transparent 0%, rgba(0,0,0,0.45) 35%, #000 75%)",
+                        maskImage: "linear-gradient(to right, transparent 0%, rgba(0,0,0,0.45) 35%, #000 75%)",
+                      }}
+                    />
+                    <div
+                      className="absolute inset-0"
+                      style={{ background: "linear-gradient(to right, rgba(255,255,255,0.95) 0%, rgba(15,23,42,0.12) 35%, rgba(0,0,0,0.20) 70%, rgba(0,0,0,0.25) 100%)" }}
+                    />
+                  </div>
+                )}
+                <div className="relative flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
                   <div className="flex items-center gap-4">
                     <span className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl bg-indigo-100 text-indigo-600">
                       <Calendar className="h-5 w-5" />

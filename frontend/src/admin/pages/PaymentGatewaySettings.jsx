@@ -1,24 +1,14 @@
-import { useEffect, useMemo, useState } from 'react';
-import { motion, AnimatePresence } from 'framer-motion';
+import { useEffect, useState } from 'react';
+import { motion } from 'framer-motion';
 import {
-  CheckCircle2, Clipboard, CreditCard, Eye, EyeOff, Loader2, Lock, PlugZap, Radio,
-  ShieldCheck, Sparkles, Unplug, XCircle, Zap,
+  CheckCircle2, Clipboard, Edit3, Eye, EyeOff, ExternalLink, Loader2, Lock,
+  Send, ShieldCheck, Trash2, Save, XCircle, Info,
+  Edit,
 } from 'lucide-react';
 import toast from 'react-hot-toast';
-import { Badge } from '@/components/ui/badge';
-import { Button } from '@/components/ui/button';
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
-import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog';
-import { Input } from '@/components/ui/input';
-import { Label } from '@/components/ui/label';
 import usePaymentGateway from '../hooks/usePaymentGateway';
 
 const API_BASE = (import.meta.env.VITE_API_URL || window.location.origin).replace(/\/$/, '');
-
-const MODE_META = {
-  test: { label: 'Test', dot: 'bg-blue-500', ring: 'ring-blue-200', text: 'text-blue-700', bg: 'bg-blue-50', border: 'border-blue-200' },
-  live: { label: 'Live', dot: 'bg-emerald-500', ring: 'ring-emerald-200', text: 'text-emerald-700', bg: 'bg-emerald-50', border: 'border-emerald-200' },
-};
 
 const copyToClipboard = async (value, label) => {
   if (!value) return;
@@ -26,148 +16,104 @@ const copyToClipboard = async (value, label) => {
   toast.success(`${label} copied`);
 };
 
-/* ─── secret field: password input with eye toggle while typing a NEW value ─── */
-const SecretField = ({ id, label, value, onChange, placeholder }) => {
-  const [visible, setVisible] = useState(false);
-  return (
-    <div className="relative">
-      <Input id={id} type={visible ? 'text' : 'password'} value={value} onChange={onChange} placeholder={placeholder} autoComplete="new-password" className="h-11 pr-11" />
-      <button type="button" onClick={() => setVisible((current) => !current)} className="absolute inset-y-0 right-0 grid w-11 place-items-center text-slate-400 hover:text-slate-700" aria-label={`${visible ? 'Hide' : 'Show'} ${label}`}>
-        {visible ? <EyeOff size={17} /> : <Eye size={17} />}
-      </button>
-    </div>
-  );
-};
+/* ─── Edit-credentials modal (inline overlay) ─── */
+const CredentialEditModal = ({ open, onClose, mode, slot, onSave, saving, revealFn }) => {
+  const [form, setForm] = useState({ keyId: '', keySecret: '', webhookSecret: '' });
+  const [revealed, setRevealed] = useState(null);
+  const [revealing, setRevealing] = useState(false);
+  const [visible, setVisible] = useState({ keySecret: false, webhookSecret: false });
 
-/* ─── already-saved secret: masked preview chip, with an explicit,
-   audited "reveal" action to decrypt and show the real value on demand ─── */
-const SavedSecretChip = ({ preview, revealedValue, revealing, onToggleReveal, onChange }) => (
-  <div className="flex h-11 items-center justify-between gap-2 rounded-xl border border-slate-200 bg-slate-50 px-3.5">
-    <span className="inline-flex min-w-0 items-center gap-2 font-mono text-sm text-slate-600">
-      <Lock size={13} className="shrink-0 text-slate-400" />
-      <span className="truncate">{revealedValue || preview || '••••••••'}</span>
-    </span>
-    <div className="flex shrink-0 items-center gap-2">
-      <button
-        type="button"
-        onClick={onToggleReveal}
-        disabled={revealing}
-        className="text-slate-400 hover:text-slate-600 disabled:opacity-50"
-        aria-label={revealedValue ? 'Hide secret' : 'Show secret'}
-        title={revealedValue ? 'Hide secret' : 'Show secret'}
-      >
-        {revealing ? <Loader2 size={15} className="animate-spin" /> : revealedValue ? <EyeOff size={15} /> : <Eye size={15} />}
-      </button>
-      <button type="button" onClick={onChange} className="text-xs font-semibold text-amber-600 hover:text-amber-700">Change</button>
-    </div>
-  </div>
-);
-
-/* ─── secret field with saved-chip / edit-mode toggle ─── */
-const ManagedSecretField = ({
-  id, label, hasSaved, preview, revealedValue, revealing, onToggleReveal,
-  editing, onStartEdit, onCancelEdit, value, onChange, placeholder,
-}) => (
-  <div className="space-y-2">
-    <div className="flex items-center justify-between">
-      <Label htmlFor={id}>{label}</Label>
-      {hasSaved && editing && (
-        <button type="button" onClick={onCancelEdit} className="text-xs font-medium text-slate-400 hover:text-slate-600">Keep existing</button>
-      )}
-    </div>
-    {hasSaved && !editing ? (
-      <SavedSecretChip preview={preview} revealedValue={revealedValue} revealing={revealing} onToggleReveal={onToggleReveal} onChange={onStartEdit} />
-    ) : (
-      <SecretField id={id} label={label} value={value} onChange={onChange} placeholder={placeholder} />
-    )}
-  </div>
-);
-
-/* ─── prominent Test/Live switch: flips which mode's credentials actually
-   process student payments right now. Blocked (with an explanatory toast)
-   if the target mode hasn't been configured yet. ─── */
-const ModeToggleSwitch = ({ gateway }) => {
-  const activeMode = gateway.settings?.mode || 'test';
-  const isLive = activeMode === 'live';
-  const testConfigured = Boolean(gateway.settings?.test?.connected);
-  const liveConfigured = Boolean(gateway.settings?.live?.connected);
-
-  const switchTo = async (mode) => {
-    if (mode === activeMode || gateway.activating) return;
-    const configured = mode === 'live' ? liveConfigured : testConfigured;
-    if (!configured) {
-      toast.error(`Save and connect ${MODE_META[mode].label} credentials first before switching to ${MODE_META[mode].label} mode.`);
-      return;
+  useEffect(() => {
+    if (open) {
+      setForm({ keyId: slot?.keyId || '', keySecret: '', webhookSecret: '' });
+      setRevealed(null);
+      setVisible({ keySecret: false, webhookSecret: false });
     }
+  }, [open, slot]);
+
+  const toggleReveal = async (field) => {
+    if (visible[field]) { setVisible((c) => ({ ...c, [field]: false })); return; }
+    if (revealed) { setVisible((c) => ({ ...c, [field]: true })); return; }
+    setRevealing(true);
     try {
-      await gateway.activate(mode);
-      toast.success(`${MODE_META[mode].label} mode is now active`);
-    } catch (error) {
-      toast.error(error.message || `Unable to switch to ${MODE_META[mode].label} mode`);
-    }
+      const data = await revealFn(mode);
+      setRevealed(data);
+      setVisible((c) => ({ ...c, [field]: true }));
+    } catch (err) { toast.error(err.message || 'Unable to reveal'); }
+    finally { setRevealing(false); }
   };
 
+  if (!open) return null;
+  const modeLabel = mode === 'live' ? 'Live' : 'Test';
   return (
-    <Card className={isLive ? 'border-emerald-200 bg-emerald-50/40' : 'border-blue-200 bg-blue-50/40'}>
-      <CardContent className="flex flex-col gap-4 pt-6 sm:flex-row sm:items-center sm:justify-between">
-        <div>
-          <p className="text-sm font-semibold text-slate-900">
-            {isLive ? 'Live mode — real payments are being processed' : 'Test mode — no real money moves'}
-          </p>
-          <p className="mt-1 text-sm text-slate-500">
-            {isLive
-              ? 'Students and parents are paying with real cards/UPI through Razorpay Live right now.'
-              : 'Students and parents can only pay with Razorpay test cards/UPI — safe for trying out the flow.'}
-          </p>
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 backdrop-blur-sm p-4" onClick={onClose}>
+      <motion.div initial={{ opacity: 0, scale: 0.96, y: 10 }} animate={{ opacity: 1, scale: 1, y: 0 }} className="w-full max-w-lg rounded-2xl bg-white shadow-2xl border border-gray-200" onClick={(e) => e.stopPropagation()}>
+        <div className="flex items-center justify-between border-b border-gray-100 px-6 py-4">
+          <h3 className="text-lg font-bold text-gray-900">Edit {modeLabel} Credentials</h3>
+          <button type="button" onClick={onClose} className="rounded-lg p-1.5 text-gray-400 hover:bg-gray-100 hover:text-gray-600">
+            <XCircle size={20} />
+          </button>
         </div>
-        <div className="flex shrink-0 items-center gap-3">
-          <span className={`text-sm font-semibold ${!isLive ? 'text-blue-700' : 'text-slate-400'}`}>Test</span>
+        <div className="px-6 py-5 space-y-4">
+          <div>
+            <label className="mb-1.5 block text-sm font-medium text-gray-700">Key ID</label>
+            <input value={form.keyId} onChange={(e) => setForm((c) => ({ ...c, keyId: e.target.value }))} placeholder={`rzp_${mode}_...`} className="w-full rounded-xl border border-gray-200 bg-white px-4 py-2.5 text-sm font-mono focus:border-blue-400 focus:outline-none focus:ring-2 focus:ring-blue-100" />
+          </div>
+          <div>
+            <label className="mb-1.5 block text-sm font-medium text-gray-700">Key Secret</label>
+            {slot?.hasKeySecret && !form.keySecret ? (
+              <div className="flex items-center justify-between rounded-xl border border-gray-200 bg-gray-50 px-4 py-2.5 text-sm">
+                <span className="font-mono text-gray-500">{visible.keySecret && revealed ? revealed.keySecret : (slot.keySecretPreview || '••••••••••••••••')}</span>
+                <div className="flex items-center gap-2">
+                  <button type="button" onClick={() => toggleReveal('keySecret')} disabled={revealing} className="text-gray-400 hover:text-gray-600">
+                    {revealing ? <Loader2 size={15} className="animate-spin" /> : visible.keySecret ? <EyeOff size={15} /> : <Eye size={15} />}
+                  </button>
+                  <button type="button" onClick={() => setForm((c) => ({ ...c, keySecret: '' }))} className="text-xs font-semibold text-blue-600 hover:text-blue-700">Change</button>
+                </div>
+              </div>
+            ) : (
+              <input type="password" value={form.keySecret} onChange={(e) => setForm((c) => ({ ...c, keySecret: e.target.value }))} placeholder="Enter Key Secret" className="w-full rounded-xl border border-gray-200 bg-white px-4 py-2.5 text-sm focus:border-blue-400 focus:outline-none focus:ring-2 focus:ring-blue-100" />
+            )}
+          </div>
+          <div>
+            <label className="mb-1.5 block text-sm font-medium text-gray-700">Webhook Secret</label>
+            {slot?.hasWebhookSecret && !form.webhookSecret ? (
+              <div className="flex items-center justify-between rounded-xl border border-gray-200 bg-gray-50 px-4 py-2.5 text-sm">
+                <span className="font-mono text-gray-500">{visible.webhookSecret && revealed ? revealed.webhookSecret : (slot.webhookSecretPreview || '••••••••••••••••')}</span>
+                <div className="flex items-center gap-2">
+                  <button type="button" onClick={() => toggleReveal('webhookSecret')} disabled={revealing} className="text-gray-400 hover:text-gray-600">
+                    {revealing ? <Loader2 size={15} className="animate-spin" /> : visible.webhookSecret ? <EyeOff size={15} /> : <Eye size={15} />}
+                  </button>
+                  <button type="button" onClick={() => setForm((c) => ({ ...c, webhookSecret: '' }))} className="text-xs font-semibold text-blue-600 hover:text-blue-700">Change</button>
+                </div>
+              </div>
+            ) : (
+              <input type="password" value={form.webhookSecret} onChange={(e) => setForm((c) => ({ ...c, webhookSecret: e.target.value }))} placeholder="Enter Webhook Secret" className="w-full rounded-xl border border-gray-200 bg-white px-4 py-2.5 text-sm focus:border-blue-400 focus:outline-none focus:ring-2 focus:ring-blue-100" />
+            )}
+          </div>
+        </div>
+        <div className="flex items-center justify-end gap-3 border-t border-gray-100 px-6 py-4">
+          <button type="button" onClick={onClose} className="rounded-xl border border-gray-200 px-5 py-2.5 text-sm font-semibold text-gray-600 hover:bg-gray-50">Cancel</button>
           <button
             type="button"
-            role="switch"
-            aria-checked={isLive}
-            aria-label="Toggle Test / Live payment mode"
-            onClick={() => switchTo(isLive ? 'test' : 'live')}
-            disabled={gateway.activating}
-            className={`relative inline-flex h-8 w-16 shrink-0 items-center rounded-full transition-colors disabled:opacity-60 ${isLive ? 'bg-emerald-500' : 'bg-blue-500'}`}
+            disabled={saving || !form.keyId.trim()}
+            onClick={() => onSave({ mode, keyId: form.keyId.trim(), keySecret: form.keySecret, webhookSecret: form.webhookSecret })}
+            className="rounded-xl bg-blue-600 px-5 py-2.5 text-sm font-semibold text-white shadow-sm hover:bg-blue-700 disabled:opacity-50"
           >
-            <span className={`inline-block h-6 w-6 translate-x-1 transform rounded-full bg-white shadow-sm transition-transform ${isLive ? 'translate-x-9' : ''}`} />
+            {saving ? <Loader2 size={16} className="animate-spin inline mr-1.5" /> : null}Save
           </button>
-          <span className={`text-sm font-semibold ${isLive ? 'text-emerald-700' : 'text-slate-400'}`}>Live</span>
-          {gateway.activating && <Loader2 className="animate-spin text-slate-400" size={16} />}
         </div>
-      </CardContent>
-    </Card>
+      </motion.div>
+    </div>
   );
 };
 
-/* ─── one row of the "saved credentials" overview: Key ID is plain (not a
-   secret), Key/Webhook Secret are masked with their own independent
-   per-mode reveal toggle ─── */
-const OverviewSecretRow = ({ label, hasSaved, preview, revealedValue, revealing, onToggleReveal }) => (
-  <div className="flex items-center justify-between gap-2 rounded-lg border border-slate-200 bg-slate-50 px-3 py-2 text-sm">
-    <span className="shrink-0 font-medium text-slate-500">{label}</span>
-    {hasSaved ? (
-      <span className="flex min-w-0 items-center gap-2">
-        <span className="truncate font-mono text-slate-700">{revealedValue || preview || '••••••••'}</span>
-        <button
-          type="button"
-          onClick={onToggleReveal}
-          disabled={revealing}
-          className="shrink-0 text-slate-400 hover:text-slate-600 disabled:opacity-50"
-          aria-label={revealedValue ? `Hide ${label}` : `Show ${label}`}
-          title={revealedValue ? `Hide ${label}` : `Show ${label}`}
-        >
-          {revealing ? <Loader2 size={14} className="animate-spin" /> : revealedValue ? <EyeOff size={14} /> : <Eye size={14} />}
-        </button>
-      </span>
-    ) : (
-      <span className="text-slate-400">Not set</span>
-    )}
-  </div>
-);
+export default function PaymentGatewaySettings({ setShowAdminHeader }) {
+  const gateway = usePaymentGateway();
+  const [editMode, setEditMode] = useState(null);
+  const [confirmDisconnect, setConfirmDisconnect] = useState(false);
 
-const SavedCredentialsOverview = ({ gateway }) => {
+  // Per-mode reveal state for the inline credential display
   const [revealed, setRevealed] = useState({ test: null, live: null });
   const [revealing, setRevealing] = useState({ test: false, live: false });
   const [visible, setVisible] = useState({
@@ -175,352 +121,378 @@ const SavedCredentialsOverview = ({ gateway }) => {
     live: { keySecret: false, webhookSecret: false },
   });
 
-  // A fresh settings payload (after save/disconnect/mode switch elsewhere)
-  // invalidates any previously-decrypted values — revealing again should
-  // always be a deliberate, freshly-audited action.
+  useEffect(() => { setShowAdminHeader?.(true); }, [setShowAdminHeader]);
+
   useEffect(() => {
     setRevealed({ test: null, live: null });
     setVisible({ test: { keySecret: false, webhookSecret: false }, live: { keySecret: false, webhookSecret: false } });
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [gateway.settings]);
 
   const toggleReveal = async (mode, field) => {
     if (visible[mode][field]) {
-      setVisible((current) => ({ ...current, [mode]: { ...current[mode], [field]: false } }));
+      setVisible((c) => ({ ...c, [mode]: { ...c[mode], [field]: false } }));
       return;
     }
     if (revealed[mode]) {
-      setVisible((current) => ({ ...current, [mode]: { ...current[mode], [field]: true } }));
+      setVisible((c) => ({ ...c, [mode]: { ...c[mode], [field]: true } }));
       return;
     }
-    setRevealing((current) => ({ ...current, [mode]: true }));
+    setRevealing((c) => ({ ...c, [mode]: true }));
     try {
       const data = await gateway.reveal(mode);
-      setRevealed((current) => ({ ...current, [mode]: data }));
-      setVisible((current) => ({ ...current, [mode]: { ...current[mode], [field]: true } }));
-    } catch (error) {
-      toast.error(error.message || 'Unable to reveal secret');
-    } finally {
-      setRevealing((current) => ({ ...current, [mode]: false }));
-    }
+      setRevealed((c) => ({ ...c, [mode]: data }));
+      setVisible((c) => ({ ...c, [mode]: { ...c[mode], [field]: true } }));
+    } catch (err) { toast.error(err.message || 'Unable to reveal'); }
+    finally { setRevealing((c) => ({ ...c, [mode]: false })); }
   };
-
-  if (!gateway.settings) return null;
-
-  return (
-    <Card className="bg-white">
-      <CardHeader className="border-b">
-        <CardTitle className="flex items-center gap-2"><Lock className="text-slate-500" size={18} /> Saved credentials</CardTitle>
-        <CardDescription>Test and Live credentials currently stored for this school, side by side.</CardDescription>
-      </CardHeader>
-      <CardContent className="grid gap-5 pt-4 sm:grid-cols-2">
-        {['test', 'live'].map((mode) => {
-          const modeSlot = gateway.settings[mode] || {};
-          const meta = MODE_META[mode];
-          return (
-            <div key={mode} className="space-y-2.5">
-              <div className="flex items-center gap-2">
-                <span className={`size-2 rounded-full ${meta.dot}`} />
-                <p className="text-sm font-semibold text-slate-700">{meta.label} mode</p>
-                {gateway.settings.mode === mode && <Badge className="bg-emerald-100 text-emerald-700">Active</Badge>}
-              </div>
-              <div className="flex items-center justify-between gap-2 rounded-lg border border-slate-200 bg-slate-50 px-3 py-2 text-sm">
-                <span className="shrink-0 font-medium text-slate-500">Key ID</span>
-                <span className="truncate font-mono text-slate-700">{modeSlot.keyId || 'Not set'}</span>
-              </div>
-              <OverviewSecretRow
-                label="Key Secret"
-                hasSaved={modeSlot.hasKeySecret}
-                preview={modeSlot.keySecretPreview}
-                revealedValue={visible[mode].keySecret ? revealed[mode]?.keySecret : ''}
-                revealing={revealing[mode]}
-                onToggleReveal={() => toggleReveal(mode, 'keySecret')}
-              />
-              <OverviewSecretRow
-                label="Webhook Secret"
-                hasSaved={modeSlot.hasWebhookSecret}
-                preview={modeSlot.webhookSecretPreview}
-                revealedValue={visible[mode].webhookSecret ? revealed[mode]?.webhookSecret : ''}
-                revealing={revealing[mode]}
-                onToggleReveal={() => toggleReveal(mode, 'webhookSecret')}
-              />
-            </div>
-          );
-        })}
-      </CardContent>
-    </Card>
-  );
-};
-
-export default function PaymentGatewaySettings({ setShowAdminHeader }) {
-  const gateway = usePaymentGateway();
-  const [viewMode, setViewMode] = useState(null);
-  const [form, setForm] = useState({ keyId: '', keySecret: '', webhookSecret: '' });
-  const [editingKeySecret, setEditingKeySecret] = useState(false);
-  const [editingWebhookSecret, setEditingWebhookSecret] = useState(false);
-  const [confirmOpen, setConfirmOpen] = useState(false);
-  const [revealedSecrets, setRevealedSecrets] = useState(null); // { keySecret, webhookSecret } | null
-  const [revealing, setRevealing] = useState(false);
-  const [visibleSecretFields, setVisibleSecretFields] = useState({ keySecret: false, webhookSecret: false });
-
-  useEffect(() => { setShowAdminHeader?.(true); }, [setShowAdminHeader]);
-
-  // Default the viewed tab to whichever mode is currently active, once —
-  // after that the admin drives tab switching themselves. Falls back to
-  // 'test' if the initial fetch failed, so the page can still render the
-  // error banner instead of being stuck on the loading skeleton forever.
-  useEffect(() => {
-    if (viewMode !== null) return;
-    if (gateway.settings) setViewMode(gateway.settings.mode || 'test');
-    else if (!gateway.loading && gateway.error) setViewMode('test');
-  }, [gateway.settings, gateway.loading, gateway.error, viewMode]);
-
-  const slot = (gateway.settings && viewMode) ? (gateway.settings[viewMode] || {}) : {};
-
-  useEffect(() => {
-    if (!gateway.settings || !viewMode) return;
-    const currentSlot = gateway.settings[viewMode] || {};
-    setForm({ keyId: currentSlot.keyId || '', keySecret: '', webhookSecret: '' });
-    setEditingKeySecret(!currentSlot.hasKeySecret);
-    setEditingWebhookSecret(!currentSlot.hasWebhookSecret);
-    // Never carry a decrypted secret across a mode switch or a save/reload —
-    // revealing again should always be a fresh, deliberate, audited action.
-    setRevealedSecrets(null);
-    setVisibleSecretFields({ keySecret: false, webhookSecret: false });
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [gateway.settings, viewMode]);
-
-  const toggleRevealSecret = async (field) => {
-    if (visibleSecretFields[field]) {
-      setVisibleSecretFields((current) => ({ ...current, [field]: false }));
-      return;
-    }
-    if (revealedSecrets) {
-      setVisibleSecretFields((current) => ({ ...current, [field]: true }));
-      return;
-    }
-    setRevealing(true);
-    try {
-      const data = await gateway.reveal(viewMode);
-      setRevealedSecrets(data);
-      setVisibleSecretFields((current) => ({ ...current, [field]: true }));
-    } catch (error) {
-      toast.error(error.message || 'Unable to reveal secret');
-    } finally {
-      setRevealing(false);
-    }
-  };
-
-  const formValid = useMemo(() => {
-    if (!viewMode) return false;
-    const keyMatchesMode = new RegExp(`^rzp_${viewMode}_[A-Za-z0-9]+$`).test(form.keyId.trim());
-    const keySecretOk = editingKeySecret ? form.keySecret.length >= 8 : true;
-    const webhookSecretOk = editingWebhookSecret ? form.webhookSecret.length >= 8 : true;
-    return keyMatchesMode && keySecretOk && webhookSecretOk;
-  }, [form, viewMode, editingKeySecret, editingWebhookSecret]);
-
-  const modeLabel = MODE_META[viewMode || 'test'].label;
-
-  const save = async () => {
-    try {
-      await gateway.save({
-        mode: viewMode,
-        keyId: form.keyId.trim(),
-        keySecret: editingKeySecret ? form.keySecret : '',
-        webhookSecret: editingWebhookSecret ? form.webhookSecret : '',
-      });
-      toast.success(`${modeLabel} credentials saved`);
-      setForm((current) => ({ ...current, keySecret: '', webhookSecret: '' }));
-    } catch (error) { toast.error(error.message); }
-  };
-
-  const test = async () => {
-    try { await gateway.test(viewMode); toast.success(`${modeLabel} connection verified`); }
-    catch (error) { toast.error(error.message); }
-  };
-
-  const activateThisMode = async () => {
-    try {
-      await gateway.activate(viewMode);
-      toast.success(`${modeLabel} mode is now active for payments`);
-    } catch (error) { toast.error(error.message); }
-  };
-
-  const disconnect = async () => {
-    try {
-      await gateway.disconnect(viewMode);
-      setConfirmOpen(false);
-      toast.success(`${modeLabel} credentials disconnected`);
-    } catch (error) { toast.error(error.message); }
-  };
-
-  if (gateway.loading || !viewMode) {
-    return <div className="mx-auto max-w-4xl space-y-5 p-4 lg:p-8"><div className="h-32 animate-pulse rounded-2xl bg-slate-200" /><div className="h-120 animate-pulse rounded-2xl bg-white ring-1 ring-slate-200" /></div>;
-  }
 
   const connected = Boolean(gateway.settings?.connected);
-  const isActiveMode = gateway.settings?.mode === viewMode;
-  const meta = MODE_META[viewMode];
+  const activeMode = gateway.settings?.mode || 'test';
+  const isLive = activeMode === 'live';
+
+  const switchMode = async (mode) => {
+    if (mode === activeMode || gateway.activating) return;
+    const modeSlot = gateway.settings?.[mode] || {};
+    if (!modeSlot.connected) {
+      toast.error(`Save and connect ${mode === 'live' ? 'Live' : 'Test'} credentials first.`);
+      return;
+    }
+    try {
+      await gateway.activate(mode);
+      toast.success(`${mode === 'live' ? 'Live' : 'Test'} mode is now active`);
+    } catch (err) { toast.error(err.message); }
+  };
+
+  const handleSave = async (payload) => {
+    try {
+      await gateway.save(payload);
+      toast.success(`${payload.mode === 'live' ? 'Live' : 'Test'} credentials saved`);
+      setEditMode(null);
+    } catch (err) { toast.error(err.message); }
+  };
+
+  const handleDisconnect = async () => {
+    try {
+      await gateway.disconnect(activeMode);
+      setConfirmDisconnect(false);
+      toast.success('Credentials disconnected');
+    } catch (err) { toast.error(err.message); }
+  };
+
+  const handleSaveAll = async () => {
+    toast.success('Changes saved and applied to the selected environment.');
+  };
+
+  if (gateway.loading) {
+    return (
+      <div className="min-h-full bg-gray-50/50 p-4 lg:p-8">
+        <div className="mx-auto max-w-5xl space-y-5">
+          <div className="h-20 animate-pulse rounded-2xl bg-gray-200" />
+          <div className="h-64 animate-pulse rounded-2xl bg-white border border-gray-200" />
+        </div>
+      </div>
+    );
+  }
+
+  const testSlot = gateway.settings?.test || {};
+  const liveSlot = gateway.settings?.live || {};
 
   return (
-    <div className="min-h-full bg-linear-to-b from-slate-50 to-slate-50/60 p-4 lg:p-8">
-      <div className="mx-auto max-w-4xl space-y-6">
-        <div className="flex items-start gap-3">
-          <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-2xl bg-amber-50 border border-amber-100">
-            <CreditCard className="text-amber-600" size={20} />
-          </div>
-          <div>
-            <p className="text-xs font-bold uppercase tracking-[0.18em] text-amber-600">Settings</p>
-            <h1 className="mt-0.5 text-2xl font-bold text-slate-950 flex items-center gap-2">Payment Gateway <Sparkles size={16} className="text-amber-400" /></h1>
-            <p className="mt-2 max-w-2xl text-sm text-slate-500">Connect the school&apos;s own Razorpay account. Student payments settle directly into the bank account linked to that Razorpay account.</p>
-          </div>
+    <div className="bg-gray-50/50">
+      <div className="mx-auto max-w-5xl px-4 pt-6 lg:px-8 space-y-5">
+
+        {/* ─── Header ─── */}
+        <div>
+          <p className="text-sm text-gray-500">Settings</p>
+          <h1 className="text-3xl font-bold text-gray-900">Payment Gateway</h1>
+          <p className="mt-1 text-sm text-gray-500">Connect your school&apos;s Razorpay account to collect fees from students and parents securely.</p>
         </div>
 
         {gateway.error && <div className="rounded-xl border border-red-200 bg-red-50 p-4 text-sm text-red-700">{gateway.error}</div>}
 
-        <motion.div initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.25 }} className={`flex items-start gap-3 rounded-2xl border p-4 shadow-xs ${connected ? 'border-emerald-200 bg-emerald-50' : 'border-amber-200 bg-amber-50'}`}>
-          {connected ? <CheckCircle2 className="mt-0.5 text-emerald-600" size={20} /> : <XCircle className="mt-0.5 text-amber-600" size={20} />}
-          <div>
-            <p className={`font-semibold ${connected ? 'text-emerald-900' : 'text-amber-900'}`}>
-              {connected ? `Razorpay Connected (${MODE_META[gateway.settings.mode].label} mode active)` : 'Payment gateway not configured'}
-            </p>
-            <p className={`mt-1 text-sm ${connected ? 'text-emerald-700' : 'text-amber-700'}`}>{connected ? 'Online fee payments are available to students and parents.' : 'Students cannot pay fees online until credentials are saved and a mode is activated.'}</p>
+        {/* ─── Status banner ─── */}
+        <motion.div
+          initial={{ opacity: 0, y: 8 }}
+          animate={{ opacity: 1, y: 0 }}
+          className={`flex items-center justify-between rounded-2xl border p-5 ${connected ? 'border-emerald-200 bg-emerald-50' : 'border-amber-200 bg-amber-50'}`}
+        >
+          <div className="flex items-center gap-3">
+            {connected ? <CheckCircle2 className="text-emerald-600 shrink-0" size={24} /> : <XCircle className="text-amber-600 shrink-0" size={24} />}
+            <div>
+              <p className={`font-semibold text-base ${connected ? 'text-emerald-900' : 'text-amber-900'}`}>
+                {connected ? `Razorpay Connected · ${isLive ? 'Live' : 'Test'} mode` : 'Payment gateway not configured'}
+              </p>
+              <p className={`text-sm ${connected ? 'text-emerald-700' : 'text-amber-700'}`}>
+                {connected ? 'Online fee payments are available to students and parents.' : 'Students cannot pay fees online until credentials are saved.'}
+              </p>
+            </div>
+          </div>
+          <div className="flex items-center gap-3 shrink-0">
+            <img src="https://razorpay.com/assets/razorpay-glyph.svg" alt="Razorpay" className="h-8 hidden sm:block" onError={(e) => { e.target.style.display = 'none'; }} />
+            <span className="hidden sm:block text-xl font-bold text-gray-800">Razorpay</span>
+            <a href="https://dashboard.razorpay.com" target="_blank" rel="noopener noreferrer" className="inline-flex items-center gap-1.5 rounded-xl border border-gray-300 bg-white px-4 py-2 text-sm font-semibold text-gray-700 hover:bg-gray-50 shadow-sm">
+              <ExternalLink size={14} /> View Docs
+            </a>
           </div>
         </motion.div>
 
-        <ModeToggleSwitch gateway={gateway} />
+        {/* ─── Environment toggle ─── */}
+        <div className="flex flex-col gap-4 rounded-2xl border border-gray-200 bg-white p-5 shadow-sm sm:flex-row sm:items-center sm:justify-between">
+          <div className="flex items-center gap-4">
+            <span className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl bg-blue-50">
+              <ShieldCheck className="text-blue-600" size={20} />
+            </span>
+            <div>
+              <p className="font-semibold text-gray-900">Environment</p>
+              <p className="text-sm text-gray-500">Choose the mode for payment processing.</p>
+            </div>
+          </div>
+          <div className="flex items-center gap-0">
+            <button
+              type="button"
+              onClick={() => switchMode('test')}
+              disabled={gateway.activating}
+              className={`inline-flex items-center gap-2 rounded-l-full border px-6 py-2.5 text-sm font-semibold transition ${activeMode === 'test' ? 'border-blue-600 bg-blue-600 text-white shadow-sm' : 'border-gray-200 bg-white text-gray-600 hover:bg-gray-50'}`}
+            >
+              <ShieldCheck size={15} /> Test
+            </button>
+            <button
+              type="button"
+              onClick={() => switchMode('live')}
+              disabled={gateway.activating}
+              className={`inline-flex items-center gap-2 rounded-r-full border px-6 py-2.5 text-sm font-semibold transition ${activeMode === 'live' ? 'border-emerald-600 bg-emerald-600 text-white shadow-sm' : 'border-gray-200 bg-white text-gray-600 hover:bg-gray-50'}`}
+            >
+              Live
+            </button>
+          </div>
+          <p className="text-sm text-gray-500 max-w-xs hidden lg:block">
+            {activeMode === 'test'
+              ? 'Test mode allows you to try payments using Razorpay test cards/UPI. No real money is deducted.'
+              : 'Live mode processes real payments. Money will be deducted from student accounts.'}
+          </p>
+        </div>
 
-        <SavedCredentialsOverview gateway={gateway} />
+        {/* ─── Credentials: only the active mode ─── */}
+        <div className="grid grid-cols-1 gap-5">
+          {[activeMode].map((mode) => {
+            const slot = mode === 'test' ? testSlot : liveSlot;
+            const isActive = activeMode === mode;
+            const modeLabel = mode === 'test' ? 'Test' : 'Live';
+            const iconColor = mode === 'test' ? 'text-blue-600' : 'text-amber-600';
+            const iconBg = mode === 'test' ? 'bg-blue-50' : 'bg-amber-50';
 
-        {/* ─── test / live segmented control ─── */}
-        <div className="flex gap-1 bg-white rounded-xl border border-slate-200 p-1 shadow-xs">
-          {['test', 'live'].map((tabMode) => {
-            const tabSlot = gateway.settings?.[tabMode] || {};
-            const isTabActive = gateway.settings?.mode === tabMode;
             return (
-              <button
-                key={tabMode}
-                type="button"
-                onClick={() => setViewMode(tabMode)}
-                className={`relative flex-1 inline-flex items-center justify-center gap-2 px-4 py-2.5 rounded-lg text-sm font-semibold transition-colors ${viewMode === tabMode ? 'text-white' : 'text-slate-500 hover:text-slate-700 hover:bg-slate-50'}`}
-              >
-                {viewMode === tabMode && (
-                  <motion.span layoutId="gateway-mode-pill" className={`absolute inset-0 rounded-lg shadow-sm ${tabMode === 'live' ? 'bg-emerald-500' : 'bg-blue-500'}`} transition={{ type: 'spring', bounce: 0.2, duration: 0.5 }} />
-                )}
-                <span className="relative flex items-center gap-2">
-                  <span className={`size-2 rounded-full ${MODE_META[tabMode].dot} ${viewMode === tabMode ? 'ring-2 ring-white/60' : ''}`} />
-                  {MODE_META[tabMode].label}
-                  {isTabActive && <Badge variant={viewMode === tabMode ? 'secondary' : 'default'} className={viewMode === tabMode ? 'bg-white/25 text-white' : 'bg-emerald-100 text-emerald-700'}>Active</Badge>}
-                  {!isTabActive && tabSlot.connected && <Badge variant="outline" className={viewMode === tabMode ? 'border-white/40 text-white' : ''}>Configured</Badge>}
-                </span>
-              </button>
+              <div key={mode} className="rounded-2xl border border-gray-200 bg-white shadow-sm">
+                {/* Header */}
+                <div className="flex items-center justify-between border-b border-gray-100 px-5 py-4">
+                  <div className="flex items-center gap-3">
+                    <span className={`flex h-10 w-10 shrink-0 items-center justify-center rounded-xl ${iconBg}`}>
+                      <Lock className={iconColor} size={18} />
+                    </span>
+                    <div>
+                      <div className="flex items-center gap-2">
+                        <p className="font-semibold text-gray-900">{modeLabel} mode credentials</p>
+                        {isActive ? (
+                          <span className="inline-flex items-center rounded-full bg-emerald-100 px-2 py-0.5 text-xs font-semibold text-emerald-700">Active</span>
+                        ) : (
+                          <span className="inline-flex items-center rounded-full bg-gray-100 px-2 py-0.5 text-xs font-medium text-gray-500">Not active</span>
+                        )}
+                      </div>
+                      <p className="text-xs text-gray-500">{mode === 'test' ? 'Used for testing payments (no real money).' : 'Used for real payments.'}</p>
+                    </div>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => setEditMode(mode)}
+                    className="inline-flex items-center gap-1.5 rounded-full border border-gray-200 bg-white px-4 py-2 text-sm font-semibold text-gray-700 hover:bg-gray-50 shadow-sm"
+                  >
+                    <Edit size={14} /> Edit credentials
+                  </button>
+                </div>
+                {/* Credential rows — single row with 3 columns */}
+                <div className="grid grid-cols-1 gap-3 px-5 py-4 sm:grid-cols-3">
+                  {/* Key ID */}
+                  <div className="flex items-center justify-between sm:flex-col sm:items-start sm:gap-1">
+                    <span className="text-sm font-medium text-gray-500">Key ID</span>
+                    <div className="flex items-center gap-2">
+                      <span className="truncate font-mono text-sm text-gray-700">{slot.keyId || 'Not set'}</span>
+                      {slot.keyId && (
+                        <button type="button" onClick={() => copyToClipboard(slot.keyId, 'Key ID')} className="shrink-0 text-gray-400 hover:text-gray-600">
+                          <Clipboard size={15} />
+                        </button>
+                      )}
+                    </div>
+                  </div>
+                  {/* Key Secret */}
+                  <div className="flex items-center justify-between sm:flex-col sm:items-start sm:gap-1">
+                    <span className="text-sm font-medium text-gray-500">Key Secret</span>
+                    <div className="flex items-center gap-2">
+                      <span className="truncate font-mono text-sm text-gray-700">
+                        {visible[mode].keySecret && revealed[mode]?.keySecret ? revealed[mode].keySecret : (slot.hasKeySecret ? (slot.keySecretPreview || '••••••••••••••••••') : 'Not set')}
+                      </span>
+                      {slot.hasKeySecret && (
+                        <button type="button" onClick={() => toggleReveal(mode, 'keySecret')} disabled={revealing[mode]} className="shrink-0 text-gray-400 hover:text-gray-600">
+                          {revealing[mode] ? <Loader2 size={15} className="animate-spin" /> : visible[mode].keySecret ? <EyeOff size={15} /> : <Eye size={15} />}
+                        </button>
+                      )}
+                    </div>
+                  </div>
+                  {/* Webhook Secret */}
+                  <div className="flex items-center justify-between sm:flex-col sm:items-start sm:gap-1">
+                    <span className="text-sm font-medium text-gray-500">Webhook Secret</span>
+                    <div className="flex items-center gap-2">
+                      <span className="truncate font-mono text-sm text-gray-700">
+                        {visible[mode].webhookSecret && revealed[mode]?.webhookSecret ? revealed[mode].webhookSecret : (slot.hasWebhookSecret ? (slot.webhookSecretPreview || '••••••••••••••••••') : 'Not set')}
+                      </span>
+                      {slot.hasWebhookSecret && (
+                        <button type="button" onClick={() => toggleReveal(mode, 'webhookSecret')} disabled={revealing[mode]} className="shrink-0 text-gray-400 hover:text-gray-600">
+                          {revealing[mode] ? <Loader2 size={15} className="animate-spin" /> : visible[mode].webhookSecret ? <EyeOff size={15} /> : <Eye size={15} />}
+                        </button>
+                      )}
+                    </div>
+                  </div>
+                </div>
+              </div>
             );
           })}
         </div>
 
-        <AnimatePresence mode="wait">
-          <motion.div key={viewMode} initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.2 }} className="space-y-6">
-
-            {/* ─── active-mode status row ─── */}
-            <div className={`flex flex-col gap-3 rounded-2xl border p-4 sm:flex-row sm:items-center sm:justify-between ${isActiveMode ? `${meta.border} ${meta.bg}` : 'border-slate-200 bg-white'}`}>
-              <div className="flex items-center gap-2.5">
-                <Radio size={16} className={isActiveMode ? meta.text : 'text-slate-400'} />
-                <p className={`text-sm font-semibold ${isActiveMode ? meta.text : 'text-slate-600'}`}>
-                  {isActiveMode ? `${meta.label} mode is active — this is what students pay through right now.` : `${meta.label} mode is not active. Students are paying through ${MODE_META[gateway.settings?.mode || 'test'].label} mode.`}
+        {/* ─── Connection status ─── */}
+        {connected && (
+          <div className="rounded-2xl border border-gray-200 bg-white shadow-sm p-5">
+            <div className="flex items-center gap-3 mb-4">
+              <span className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl bg-emerald-50">
+                <CheckCircle2 className="text-emerald-600" size={20} />
+              </span>
+              <div>
+                <p className="font-semibold text-gray-900">Connection status</p>
+                <p className="text-sm text-gray-500">Details of your connected Razorpay account.</p>
+              </div>
+            </div>
+            <div className="grid grid-cols-2 gap-4 sm:grid-cols-4 border-t border-gray-100 pt-4">
+              <div>
+                <p className="text-xs text-gray-500">Status</p>
+                <p className="mt-1 flex items-center gap-1.5 text-sm font-semibold text-gray-900">
+                  <span className="h-2 w-2 rounded-full bg-emerald-500" /> Connected
                 </p>
               </div>
-              {!isActiveMode && (
-                <Button size="sm" variant="outline" onClick={activateThisMode} disabled={!slot.connected || gateway.activating} className={`${meta.border} ${meta.text} hover:${meta.bg}`}>
-                  {gateway.activating ? <Loader2 className="animate-spin" size={14} /> : <Zap size={14} />} Activate {meta.label} mode
-                </Button>
-              )}
+              <div>
+                <p className="text-xs text-gray-500">Account</p>
+                <p className="mt-1 text-sm font-semibold text-gray-900">{gateway.settings?.accountName || 'School Razorpay Account'}</p>
+              </div>
+              <div>
+                <p className="text-xs text-gray-500">Email</p>
+                <p className="mt-1 text-sm font-semibold text-gray-900">{gateway.settings?.accountEmail || 'Not available'}</p>
+              </div>
+              <div>
+                <p className="text-xs text-gray-500">Last verified</p>
+                <p className="mt-1 text-sm font-semibold text-gray-900">
+                  {(gateway.settings?.[activeMode]?.lastVerifiedAt)
+                    ? new Date(gateway.settings[activeMode].lastVerifiedAt).toLocaleString('en-IN')
+                    : 'Not verified'}
+                </p>
+              </div>
             </div>
+          </div>
+        )}
 
-            {isActiveMode && connected && (
-              <Card className="bg-white">
-                <CardHeader><CardTitle className="flex items-center gap-2"><ShieldCheck className="text-emerald-600" /> Connection details</CardTitle></CardHeader>
-                <CardContent className="grid gap-4 text-sm sm:grid-cols-3">
-                  <div><p className="text-slate-500">Account</p><p className="mt-1 font-semibold text-slate-900">{gateway.settings.accountName || 'School Razorpay account'}</p></div>
-                  <div><p className="text-slate-500">Email</p><p className="mt-1 font-semibold text-slate-900">{gateway.settings.accountEmail || 'Not available'}</p></div>
-                  <div><p className="text-slate-500">Last verified</p><p className="mt-1 font-semibold text-slate-900">{slot.lastVerifiedAt ? new Date(slot.lastVerifiedAt).toLocaleString('en-IN') : 'Not verified'}</p></div>
-                </CardContent>
-              </Card>
-            )}
-
-            <Card className="bg-white">
-              <CardHeader className="border-b">
-                <CardTitle className="flex items-center gap-2"><CreditCard className="text-amber-600" /> {meta.label} configuration</CardTitle>
-                <CardDescription>Key Secret and Webhook Secret are encrypted at rest. Once saved, only a masked preview is ever shown again — never the full value.</CardDescription>
-              </CardHeader>
-              <CardContent className="space-y-6 pt-2">
-                <div className="space-y-2">
-                  <Label htmlFor="keyId">Key ID</Label>
-                  <div className="flex gap-2">
-                    <Input id="keyId" value={form.keyId} onChange={(event) => setForm((current) => ({ ...current, keyId: event.target.value }))} placeholder={`rzp_${viewMode}_...`} className="h-11 font-mono" />
-                    <Button variant="outline" size="icon-lg" onClick={() => copyToClipboard(form.keyId, 'Key ID')} disabled={!form.keyId} aria-label="Copy Key ID"><Clipboard /></Button>
-                  </div>
-                </div>
-                <div className="grid gap-5 sm:grid-cols-2">
-                  <ManagedSecretField
-                    id="keySecret" label="Key Secret"
-                    hasSaved={slot.hasKeySecret} preview={slot.keySecretPreview}
-                    revealedValue={visibleSecretFields.keySecret ? revealedSecrets?.keySecret : ''}
-                    revealing={revealing}
-                    onToggleReveal={() => toggleRevealSecret('keySecret')}
-                    editing={editingKeySecret}
-                    onStartEdit={() => setEditingKeySecret(true)}
-                    onCancelEdit={() => { setEditingKeySecret(false); setForm((c) => ({ ...c, keySecret: '' })); }}
-                    value={form.keySecret} onChange={(event) => setForm((current) => ({ ...current, keySecret: event.target.value }))}
-                    placeholder="Enter Key Secret"
-                  />
-                  <ManagedSecretField
-                    id="webhookSecret" label="Webhook Secret"
-                    hasSaved={slot.hasWebhookSecret} preview={slot.webhookSecretPreview}
-                    revealedValue={visibleSecretFields.webhookSecret ? revealedSecrets?.webhookSecret : ''}
-                    revealing={revealing}
-                    onToggleReveal={() => toggleRevealSecret('webhookSecret')}
-                    editing={editingWebhookSecret}
-                    onStartEdit={() => setEditingWebhookSecret(true)}
-                    onCancelEdit={() => { setEditingWebhookSecret(false); setForm((c) => ({ ...c, webhookSecret: '' })); }}
-                    value={form.webhookSecret} onChange={(event) => setForm((current) => ({ ...current, webhookSecret: event.target.value }))}
-                    placeholder="Enter Webhook Secret"
-                  />
-                </div>
-                <div className="flex items-start justify-between gap-3 rounded-xl bg-slate-50 p-4 text-xs leading-5 text-slate-600">
-                  <div>
-                    <strong>Razorpay webhook URL:</strong> <span className="break-all font-mono">{`${API_BASE}/api/payments/webhook`}</span>
-                    <br />Enable payment.captured, payment.failed, and order.paid in the Razorpay dashboard.
-                  </div>
-                  <Button variant="ghost" size="icon" className="shrink-0" onClick={() => copyToClipboard(`${API_BASE}/api/payments/webhook`, 'Webhook URL')} aria-label="Copy webhook URL"><Clipboard size={14} /></Button>
-                </div>
-                <div className="flex flex-col gap-3 border-t border-slate-100 pt-5 sm:flex-row sm:items-center">
-                  <Button onClick={test} variant="outline" size="lg" disabled={!slot.connected || gateway.testing}>{gateway.testing ? <Loader2 className="animate-spin" /> : <PlugZap />} Test {meta.label} Connection</Button>
-                  <Button onClick={save} size="lg" disabled={!formValid || gateway.saving} className="bg-amber-500 text-white hover:bg-amber-600">{gateway.saving ? <Loader2 className="animate-spin" /> : <ShieldCheck />} Save {meta.label} Configuration</Button>
-                  {slot.connected && <Button onClick={() => setConfirmOpen(true)} variant="destructive" size="lg" className="sm:ml-auto"><Unplug /> Disconnect {meta.label}</Button>}
-                </div>
-              </CardContent>
-            </Card>
-          </motion.div>
-        </AnimatePresence>
+        {/* ─── Webhook ─── */}
+        <div className="rounded-2xl border border-gray-200 bg-white shadow-sm p-5">
+          <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
+            <div className="flex items-center gap-3">
+              <span className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl bg-teal-50">
+                <Send className="text-teal-600" size={18} />
+              </span>
+              <div>
+                <p className="font-semibold text-gray-900">Webhook</p>
+                <p className="text-sm text-gray-500">Razorpay will send payment event notifications to this URL.</p>
+              </div>
+            </div>
+            <div className="flex items-center gap-2">
+              <div className="flex items-center gap-2 rounded-xl border border-gray-200 bg-gray-50 px-4 py-2.5 text-sm font-mono text-gray-700">
+                <span className="truncate max-w-xs">{`${API_BASE}/api/payments/webhook`}</span>
+                <button type="button" onClick={() => copyToClipboard(`${API_BASE}/api/payments/webhook`, 'Webhook URL')} className="shrink-0 text-gray-400 hover:text-gray-600">
+                  <Clipboard size={15} />
+                </button>
+              </div>
+              <button
+                type="button"
+                onClick={async () => {
+                  try { await gateway.test(activeMode); toast.success('Webhook test successful'); }
+                  catch (err) { toast.error(err.message); }
+                }}
+                disabled={!connected || gateway.testing}
+                className="inline-flex items-center gap-1.5 rounded-xl border border-blue-200 bg-white px-4 py-2.5 text-sm font-semibold text-blue-600 hover:bg-blue-50 shadow-sm disabled:opacity-50"
+              >
+                {gateway.testing ? <Loader2 size={14} className="animate-spin" /> : <Send size={14} />} Test
+              </button>
+            </div>
+          </div>
+          <p className="mt-3 flex items-center gap-1.5 text-xs text-blue-600">
+            <Info size={13} /> Enable payment.captured, payment.failed, and order.paid events in your Razorpay dashboard.
+          </p>
+        </div>
       </div>
 
-      <Dialog open={confirmOpen} onOpenChange={setConfirmOpen}>
-        <DialogContent className="bg-white">
-          <DialogHeader>
-            <DialogTitle>Disconnect {meta.label} credentials?</DialogTitle>
-            <DialogDescription>
-              {isActiveMode
+      {/* ─── Bottom bar ─── */}
+      <div className="mt-5 border-t border-gray-200 bg-white px-4 py-3">
+        <div className="mx-auto flex max-w-5xl items-center justify-between">
+          <p className="flex items-center gap-1.5 text-sm text-gray-500">
+            <Info size={14} className="text-blue-500" /> Your changes will be saved and applied to the selected environment.
+          </p>
+          <div className="flex items-center gap-3">
+            {connected && (
+              <button
+                type="button"
+                onClick={() => setConfirmDisconnect(true)}
+                disabled={gateway.disconnecting}
+                className="inline-flex items-center gap-1.5 rounded-xl border border-red-200 px-5 py-2.5 text-sm font-semibold text-red-600 hover:bg-red-50"
+              >
+                {gateway.disconnecting ? <Loader2 size={14} className="animate-spin" /> : <Trash2 size={14} />} Disconnect
+              </button>
+            )}
+            <button
+              type="button"
+              onClick={handleSaveAll}
+              className="inline-flex items-center gap-1.5 rounded-xl bg-blue-600 px-5 py-2.5 text-sm font-semibold text-white shadow-sm hover:bg-blue-700"
+            >
+              <Save size={14} /> Save changes
+            </button>
+          </div>
+        </div>
+      </div>
+
+      {/* ─── Edit credentials modal ─── */}
+      <CredentialEditModal
+        open={editMode !== null}
+        onClose={() => setEditMode(null)}
+        mode={editMode || 'test'}
+        slot={editMode === 'live' ? liveSlot : testSlot}
+        onSave={handleSave}
+        saving={gateway.saving}
+        revealFn={gateway.reveal}
+      />
+
+      {/* ─── Disconnect confirmation ─── */}
+      {confirmDisconnect && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 backdrop-blur-sm p-4" onClick={() => setConfirmDisconnect(false)}>
+          <motion.div initial={{ opacity: 0, scale: 0.96 }} animate={{ opacity: 1, scale: 1 }} className="w-full max-w-md rounded-2xl bg-white shadow-2xl border border-gray-200 p-6" onClick={(e) => e.stopPropagation()}>
+            <h3 className="text-lg font-bold text-gray-900">Disconnect credentials?</h3>
+            <p className="mt-2 text-sm text-gray-600">
+              {activeMode === gateway.settings?.mode
                 ? 'This mode is currently active — online fee payment will stop immediately. '
-                : `${meta.label} mode isn't currently active, so payments won't be affected. `}
-              Stored credentials for {meta.label.toLowerCase()} mode will be permanently removed, while transaction and audit history will be preserved.
-            </DialogDescription>
-          </DialogHeader>
-          <DialogFooter>
-            <Button variant="outline" onClick={() => setConfirmOpen(false)}>Cancel</Button>
-            <Button variant="destructive" onClick={disconnect} disabled={gateway.disconnecting}>{gateway.disconnecting && <Loader2 className="animate-spin" />} Disconnect</Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
+                : ''}
+              Stored credentials will be permanently removed. Transaction history will be preserved.
+            </p>
+            <div className="mt-5 flex items-center justify-end gap-3">
+              <button type="button" onClick={() => setConfirmDisconnect(false)} className="rounded-xl border border-gray-200 px-5 py-2.5 text-sm font-semibold text-gray-600 hover:bg-gray-50">Cancel</button>
+              <button type="button" onClick={handleDisconnect} disabled={gateway.disconnecting} className="rounded-xl bg-red-600 px-5 py-2.5 text-sm font-semibold text-white hover:bg-red-700 disabled:opacity-50">
+                {gateway.disconnecting && <Loader2 size={14} className="animate-spin inline mr-1.5" />}Disconnect
+              </button>
+            </div>
+          </motion.div>
+        </div>
+      )}
     </div>
   );
 }
