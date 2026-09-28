@@ -1471,6 +1471,14 @@ const TryoutSubmissionsPanel = ({ submissions, loading, grading, saving, saved, 
                         : String(ans.answer)
                       : <span className="italic text-slate-400">No answer</span>}
                   </p>
+                  {ans.correctAnswer !== null && ans.correctAnswer !== undefined && (
+                    <p className="text-sm text-emerald-700 mt-1">
+                      <span className="font-semibold">Correct answer: </span>
+                      {typeof ans.correctAnswer === 'object'
+                        ? JSON.stringify(ans.correctAnswer)
+                        : String(ans.correctAnswer)}
+                    </p>
+                  )}
                 </div>
               ))}
             </div>
