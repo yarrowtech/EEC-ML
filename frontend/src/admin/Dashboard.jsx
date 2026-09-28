@@ -264,13 +264,13 @@ const QuickAction = ({ label, icon, color, onClick }) => (
     onClick={onClick}
     className={cn(
       'h-auto w-full flex-col items-center justify-center gap-2 lg:gap-1.5 whitespace-normal',
-      'bg-white/30 backdrop-blur-sm border border-white/40 rounded-2xl',
+      'bg-white/30 backdrop-blur-sm border border-white/40 rounded-full',
       'hover:bg-white/70 hover:border-white/70 hover:-translate-y-0.5 transition-all',
       'text-slate-700 font-medium text-xs sm:text-sm px-2 py-4 lg:py-1.5 text-center leading-tight',
     )}
   >
     <span
-      className="flex h-10 w-10 lg:h-8 lg:w-8 shrink-0 items-center justify-center rounded-xl"
+      className="flex h-10 w-10 lg:h-8 lg:w-8 shrink-0 items-center justify-center rounded-full"
       style={{ color, background: `${color}1a` }}
       aria-hidden="true"
     >
@@ -748,7 +748,7 @@ const Dashboard = ({ setShowAdminHeader }) => {
                     className="group flex snap-start flex-col items-center justify-center gap-1.5 rounded-2xl border border-slate-100 bg-white px-2 py-3 text-center text-xs font-semibold leading-tight text-slate-700 shadow-sm transition-all hover:-translate-y-0.5 hover:border-slate-200 hover:shadow-md"
                   >
                     <span
-                      className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl transition-transform group-hover:scale-105"
+                      className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full transition-transform group-hover:scale-105"
                       style={{ color: action.color, background: `${action.color}1a` }}
                       aria-hidden="true"
                     >
@@ -768,6 +768,37 @@ const Dashboard = ({ setShowAdminHeader }) => {
                   <ChevronRight size={16} />
                 </button>
               )}
+            </div>
+            <div className="mt-2 flex items-center justify-center gap-1.5 lg:mt-1.5">
+              {Array.from({
+                length: Math.ceil(quickActions.length / 4),
+              }).map((_, index) => {
+                const activePage =
+                  Math.round(
+                    (qaScrollRef.current?.scrollLeft || 0) /
+                    (qaScrollRef.current?.clientWidth || 1)
+                  ) === index;
+
+                return (
+                  <button
+                    key={index}
+                    type="button"
+                    onClick={() => {
+                      qaScrollRef.current?.scrollTo({
+                        left: index * qaScrollRef.current.clientWidth,
+                        behavior: "smooth",
+                      });
+                    }}
+                    className={`
+          h-1.5 rounded-full transition-all duration-300
+          ${activePage
+                        ? "w-5 bg-indigo-500"
+                        : "w-1.5 bg-slate-300"
+                      }
+        `}
+                  />
+                );
+              })}
             </div>
             <div className="mt-4 pt-4 lg:mt-3 lg:pt-2.5 lg:shrink-0 border-t border-slate-200/50">
               <p className="text-[10px] text-slate-400 text-center">
