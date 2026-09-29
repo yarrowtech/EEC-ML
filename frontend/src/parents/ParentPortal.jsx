@@ -561,7 +561,7 @@ const ParentPortal = () => {
       >
         {/* ── Brand header ── */}
         <div className="relative flex items-center gap-3 border-b border-gray-100 px-4 py-3">
-          <div className={`flex shrink-0 items-center justify-center overflow-hidden rounded-xl transition-all duration-300 ${sidebarOpen ? 'h-10 w-10' : 'h-9 w-9'} ${schoolBrand.logo ? 'bg-white ring-1 ring-gray-100' : 'bg-linear-to-br from-violet-600 to-violet-500 text-white shadow-sm'}`}>
+          <div className={`flex shrink-0 items-center justify-center overflow-hidden rounded-xl transition-all duration-300 ${sidebarOpen ? 'h-10 w-10' : 'h-9 w-9'} ${schoolBrand.logo ? '' : 'bg-linear-to-br from-violet-600 to-violet-500 text-white shadow-sm'}`}>
             {schoolBrand.logo ? (
               <img src={schoolBrand.logo} alt={schoolBrand.name || 'School logo'} className="h-full w-full object-cover" />
             ) : (
@@ -613,19 +613,19 @@ const ParentPortal = () => {
                       onClick={handleMenuClick}
                       aria-current={isActive ? 'page' : undefined}
                       title={!sidebarOpen ? item.label : undefined}
-                      className={`group relative flex items-center gap-3 rounded-xl px-3 py-2.5 transition-colors duration-150 ${
+                      className={`group relative flex items-center gap-3 rounded-full px-3 py-2.5 transition-colors duration-150 ${
                         sidebarOpen ? '' : 'justify-center'
                       } ${isActive ? 'bg-violet-50 text-violet-700' : 'text-gray-600 hover:bg-gray-50 hover:text-gray-900'}`}
                     >
                       {isActive && (
                         <motion.span
                           layoutId="parent-sidebar-active-pill"
-                          className="absolute inset-0 rounded-xl bg-violet-50 shadow-sm"
+                          className="absolute inset-0 rounded-full bg-violet-50 shadow-[0_1px_2px_rgba(15,23,42,0.05)]"
                           transition={prefersReducedMotion ? { duration: 0 } : { type: 'spring', stiffness: 400, damping: 32 }}
                         />
                       )}
                       <span className="relative z-10 shrink-0">
-                        <span className={`flex rounded-full p-1 transition-colors ${isActive ? 'bg-violet-600 text-white' : 'bg-gray-100 text-gray-400 group-hover:text-violet-500'}`}>
+                        <span className={`flex rounded-full p-1 transition-colors ${isActive ? 'bg-violet-500 text-white' : 'bg-gray-100 text-gray-400 group-hover:text-violet-500'}`}>
                           <Icon size={16} />
                         </span>
                         {!sidebarOpen && badgeCount > 0 && (
@@ -645,7 +645,8 @@ const ParentPortal = () => {
                         </span>
                       )}
                       {sidebarOpen && isActive && badgeCount <= 0 && (
-                        <span className="relative z-10 h-1.5 w-1.5 shrink-0 animate-pulse rounded-full bg-violet-600" />
+                       <></>
+                       // <span className="relative z-10 h-1.5 w-1.5 shrink-0 animate-pulse rounded-full bg-violet-600" />
                       )}
                     </Link>
                   );
