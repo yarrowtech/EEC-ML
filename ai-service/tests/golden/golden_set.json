@@ -1,0 +1,69 @@
+{
+  "$comment": "Golden set built from real ingested materials for school 6a699e1313a7a0e3f1df7b60 (KSHS-9622), verified via a live student login (KSHS-9622-STD-26-002) on 2026-09-29.",
+  "cases": [
+    {
+      "name": "english-ch001-papas-spectacles",
+      "request": {
+        "mode": "explain",
+        "subject": "English",
+        "topic": "ENGLISH CHAPTER 001",
+        "chapterTitle": "ENGLISH CHAPTER 001",
+        "question": "Can you explain what this chapter is about?",
+        "gradeLevel": "class 5",
+        "schoolId": "6a699e1313a7a0e3f1df7b60",
+        "classId": "6a69a04e13a7a0e3f1df7d25",
+        "sectionId": "6a69a05e13a7a0e3f1df7d44"
+      },
+      "expect_no_material": false,
+      "retrieval_any_of": ["spectacles", "papa"],
+      "answer_any_of": ["spectacles", "papa"]
+    },
+    {
+      "name": "maths-numbers-quiz",
+      "request": {
+        "mode": "quiz",
+        "subject": "Mathematics",
+        "topic": "Numbers",
+        "chapterTitle": "Numbers",
+        "gradeLevel": "class 5",
+        "schoolId": "6a699e1313a7a0e3f1df7b60",
+        "classId": "6a69a04e13a7a0e3f1df7d25",
+        "sectionId": "6a69a05e13a7a0e3f1df7d44"
+      },
+      "expect_no_material": false,
+      "retrieval_any_of": [],
+      "answer_any_of": ["answer:"]
+    },
+    {
+      "name": "general-science-super-senses-explain",
+      "request": {
+        "mode": "explain",
+        "subject": "General Science",
+        "topic": "Super Senses",
+        "chapterTitle": "Super Senses",
+        "question": "What is this chapter about?",
+        "gradeLevel": "class 5",
+        "schoolId": "6a699e1313a7a0e3f1df7b60",
+        "classId": "6a69a04e13a7a0e3f1df7d25",
+        "sectionId": "6a69a05e13a7a0e3f1df7d44"
+      },
+      "expect_no_material": false,
+      "retrieval_any_of": [],
+      "answer_any_of": []
+    },
+    {
+      "name": "out-of-scope-question-is-refused",
+      "request": {
+        "mode": "explain",
+        "subject": "Physics",
+        "topic": "Quantum entanglement",
+        "question": "Explain quantum entanglement in detail",
+        "gradeLevel": "class 5",
+        "schoolId": "6a699e1313a7a0e3f1df7b60",
+        "classId": "6a69a04e13a7a0e3f1df7d25",
+        "sectionId": "6a69a05e13a7a0e3f1df7d44"
+      },
+      "expect_no_material": true
+    }
+  ]
+}
