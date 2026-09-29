@@ -4,7 +4,7 @@ import {
   ChevronDown, ChevronRight, ChevronLeft, Trophy, Bell,
   MessageCircle, MessageSquare, Brain, X, BarChart3,
   Heart, Star, Target, Zap, AlertOctagon, Video, Activity,
-  GraduationCap, CalendarClock, ClipboardCheck, NotebookPen,
+  GraduationCap, CalendarClock, ClipboardCheck, NotebookPen, FileBadge,
 } from 'lucide-react';
 
 import { useNavigate } from 'react-router-dom';
@@ -47,6 +47,7 @@ const MENU_ITEMS = [
       { id: 'routine', name: 'Timetable', icon: Calendar },
       { id: 'attendance', name: 'Attendance', icon: Users },
       { id: 'exams', name: 'Exams', icon: FileText },
+      { id: 'admit-cards', name: 'Admit Cards', icon: FileBadge },
       { id: 'lesson-plan-status', name: 'Syllabus', icon: BookOpen },
       { id: 'holidays', name: 'Holidays', icon: CalendarClock },
       { id: 'noticeboard', name: 'Notice Board', icon: Bell },
@@ -491,3 +492,4 @@ const Sidebar = ({ activeView, isOpen, setIsOpen }) => {
 };
 
 export default Sidebar;
+
