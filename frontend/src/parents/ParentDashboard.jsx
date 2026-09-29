@@ -519,7 +519,7 @@ const ParentDashboard = ({ parentName = '' }) => {
               </div>
               <div className="mt-4">
                 {fees.balance > 0 && (
-                  <Link to="/parents/fees" className="flex w-full items-center justify-center gap-2 rounded-lg bg-blue-600 px-4 py-2.5 text-sm font-semibold text-white shadow-sm hover:bg-blue-700">
+                  <Link to="/parents/fees" className="flex w-full items-center justify-center gap-2 rounded-lg bg-violet-500 px-4 py-2.5 text-sm font-semibold text-white shadow-sm hover:bg-blue-700">
                     <CreditCard size={18} /> Pay Now
                   </Link>
                 )}
