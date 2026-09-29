@@ -234,7 +234,7 @@ describe('ParentPortal', () => {
 
       await waitFor(() => {
         expect(screen.getByText((content, element) => {
-          return element?.textContent === '2 children';
+          return element?.textContent === 'Parent · 2 children';
         })).toBeInTheDocument();
       }, { timeout: 5000 });
     });
@@ -403,7 +403,7 @@ describe('ParentPortal', () => {
 
       await waitFor(() => {
         const sidebar = screen.getByLabelText('Sidebar navigation');
-        expect(sidebar).toHaveClass('lg:w-80');
+        expect(sidebar).toHaveClass('w-64');
       });
     });
 
@@ -425,7 +425,7 @@ describe('ParentPortal', () => {
 
       await waitFor(() => {
         const sidebar = screen.getByLabelText('Sidebar navigation');
-        expect(sidebar).toHaveClass('w-20');
+        expect(sidebar).toHaveClass('w-[72px]');
       });
     });
 
@@ -448,7 +448,7 @@ describe('ParentPortal', () => {
 
       await waitFor(() => {
         const sidebar = screen.getByLabelText('Sidebar navigation');
-        expect(sidebar).toHaveClass('w-20');
+        expect(sidebar).toHaveClass('w-[72px]');
       });
 
       // Expand
@@ -457,7 +457,7 @@ describe('ParentPortal', () => {
 
       await waitFor(() => {
         const sidebar = screen.getByLabelText('Sidebar navigation');
-        expect(sidebar).toHaveClass('lg:w-80');
+        expect(sidebar).toHaveClass('w-64');
       });
     });
 
@@ -511,7 +511,7 @@ describe('ParentPortal', () => {
       // The mobile button might be shown
       await waitFor(() => {
         const sidebar = screen.getByLabelText('Sidebar navigation');
-        expect(sidebar).toHaveClass('w-20');
+        expect(sidebar).toHaveClass('w-[72px]');
       });
     });
   });
@@ -575,7 +575,6 @@ describe('ParentPortal', () => {
       const dashboardLink = nav.getByText('Dashboard').closest('a');
       expect(dashboardLink).toHaveAttribute('aria-current', 'page');
       expect(dashboardLink).toHaveClass('bg-violet-50');
-      expect(dashboardLink).toHaveClass('border-violet-600');
     });
 
     test('attendance link is highlighted when on attendance route', async () => {
@@ -591,7 +590,6 @@ describe('ParentPortal', () => {
         const attendanceLink = screen.getAllByText('Attendance')[0].closest('a');
         expect(attendanceLink).toHaveAttribute('aria-current', 'page');
         expect(attendanceLink).toHaveClass('bg-violet-50');
-        expect(attendanceLink).toHaveClass('border-violet-600');
       });
     });
   });
@@ -704,7 +702,7 @@ describe('ParentPortal', () => {
 
       await waitFor(() => {
         expect(screen.getByText((content, element) => {
-          return element?.textContent === 'Your children';
+          return element?.tagName === 'SPAN' && element?.textContent === 'Parent';
         })).toBeInTheDocument();
       });
     });
@@ -738,7 +736,7 @@ describe('ParentPortal', () => {
 
       await waitFor(() => {
         expect(screen.getByText((content, element) => {
-          return element?.textContent === '1 child';
+          return element?.textContent === 'Parent · 1 child';
         })).toBeInTheDocument();
       }, { timeout: 5000 });
     });

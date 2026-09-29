@@ -17,7 +17,6 @@ import {
   Sun,
   Video,
   Clock,
-  User,
   ChevronLeft,
   MoreHorizontal,
   ChevronRight,
@@ -34,12 +33,15 @@ import {
   CalendarDays,
   UserCircle,
   FolderOpen,
+  Search,
 } from 'lucide-react';
 import { useDesktopNotificationBridge } from '../hooks/useDesktopNotificationBridge';
 import DesktopNotificationPermissionModal from '../components/DesktopNotificationPermissionModal';
 import { AUTH_NOTICE, apiFetch, logoutAndRedirect } from '../utils/authSession';
 import { useDialog } from './useDialog';
 import './parentPortalDesign.css';
+import TenantContext from '../context/TenantContext';
+import { parentApiJson } from './parentApi';
 
 const ParentDashboard = lazy(() => import('./ParentDashboard'));
 const ChildGrowthAnalytics = lazy(() => import('./ChildGrowthAnalytics'));
@@ -166,6 +168,42 @@ const ParentPortal = () => {
   const notifSheetRef = useDialog(showNotifications && !isDesktop, () => setShowNotifications(false));
   const mobileMenuRef = useDialog(mobileMenuOpen, () => setMobileMenuOpen(false));
   const API_BASE = (import.meta.env.VITE_API_URL || 'http://localhost:5000').replace(/\/$/, '');
+  // School branding for the sidebar: tenant (subdomain) first, else the
+  // school block the parent exam-schedule API already returns.
+  const tenant = React.useContext(TenantContext); // optional: null outside a TenantProvider
+  const [fetchedSchool, setFetchedSchool] = useState(null);
+  const tenantIsDefault = !tenant?.logo && (!tenant?.name || tenant.name === 'Electronic Educare');
+  useEffect(() => {
+    if (!tenantIsDefault || !parentProfile || !localStorage.getItem('token')) return undefined;
+    let cancelled = false;
+    parentApiJson('/api/exam/groups/parent-schedule')
+      .then((data) => { if (!cancelled && data?.school) setFetchedSchool({ name: data.school.name || '', logo: data.school.logo || '' }); })
+      .catch(() => {});
+    return () => { cancelled = true; };
+  }, [tenantIsDefault, parentProfile]);
+  const schoolBrand = tenantIsDefault ? (fetchedSchool || { name: '', logo: '' }) : { name: tenant.name, logo: tenant.logo };
+  const schoolInitials = String(schoolBrand.name || '').trim().split(/\s+/).filter(Boolean)
+    .map((w) => w.replace(/[^A-Za-z0-9]/g, '').charAt(0).toUpperCase()).filter(Boolean).join('.');
+  const headerSearchRef = useRef(null);
+  const [headerSearch, setHeaderSearch] = useState('');
+  const [showSearchResults, setShowSearchResults] = useState(false);
+  const [headerNow, setHeaderNow] = useState(() => new Date());
+  useEffect(() => {
+    const t = setInterval(() => setHeaderNow(new Date()), 30000);
+    return () => clearInterval(t);
+  }, []);
+  useEffect(() => {
+    const close = (e) => { if (headerSearchRef.current && !headerSearchRef.current.contains(e.target)) setShowSearchResults(false); };
+    document.addEventListener('mousedown', close);
+    return () => document.removeEventListener('mousedown', close);
+  }, []);
+  const searchMatches = useMemo(() => {
+    const q = headerSearch.trim().toLowerCase();
+    if (!q) return [];
+    return NAV_GROUPS.flatMap((g) => g.items)
+      .filter((item) => `${item.label} ${item.description}`.toLowerCase().includes(q))
+      .slice(0, 8);
+  }, [headerSearch]);
 
   useEffect(() => {
     const loadParentProfile = async () => {
@@ -369,8 +407,7 @@ const ParentPortal = () => {
     const nextOpen = !showNotifications;
     setShowNotifications(nextOpen);
     setProfileOpen(false);
-    if (nextOpen && !sidebarOpen) setSidebarOpen(true);
-  }, [showNotifications, sidebarOpen]);
+  }, [showNotifications]);
 
   const timeAgo = useCallback((value) => {
     if (!value) return '';
@@ -515,267 +552,311 @@ const ParentPortal = () => {
           </div>
         </div>
       )}
-      {/* Desktop sidebar only — on mobile the app bar + bottom nav take over. */}
-      <div
-        className={`parent-sidebar hidden lg:flex fixed lg:relative h-[100dvh] min-h-0 shrink-0 bg-white shadow-2xl transition-all duration-500 ease-in-out z-30 flex-col border-r border-gray-200 overflow-hidden
-          ${sidebarOpen ? 'w-[min(20rem,calc(100vw-1rem))] lg:w-80' : 'w-20'}
-          ${sidebarOpen ? 'translate-x-0' : '-translate-x-full lg:translate-x-0'}
-        `}
-        style={{
-          transitionProperty: 'width, transform, box-shadow',
-          transitionDuration: '0.4s',
-          transitionTimingFunction: 'cubic-bezier(0.4, 0, 0.2, 1)'
-        }}
+      {/* Desktop sidebar only — same layout as the school admin sidebar, in the
+          parent portal's violet. On mobile the app bar + bottom nav take over. */}
+      <aside
+        className={`parent-sidebar hidden lg:flex sticky top-0 h-dvh shrink-0 flex-col border-r border-gray-100 bg-white shadow-lg z-30 transition-all duration-300 ease-in-out
+          ${sidebarOpen ? 'w-64' : 'w-[72px]'}`}
         aria-label="Sidebar navigation"
       >
-        <div className="relative overflow-hidden">
-          <div className={`transition-all duration-400 ease-in-out ${sidebarOpen ? 'opacity-100 translate-x-0' : 'opacity-0 -translate-x-4 pointer-events-none absolute inset-0'}`}>
-            <div className="absolute inset-0 bg-gradient-to-br from-violet-700 via-violet-600 to-violet-500 opacity-95" />
-            <div className="relative px-4 py-5">
-              <div className="flex items-center gap-4">
-                <div className="flex min-w-0 flex-1 items-center gap-4">
-                  <div className="relative shrink-0">
-                    <div className="w-12 h-12 bg-white/20 backdrop-blur-sm rounded-2xl flex items-center justify-center shadow-lg border border-white/30">
-                      <Users className="w-6 h-6 text-white" />
-                    </div>
-                    <div className="absolute -top-1 -right-1 w-3 h-3 bg-green-400 rounded-full border-2 border-white animate-pulse" />
-                  </div>
-                  <div className="min-w-0 flex-1 text-white">
-                    <div className="font-semibold text-lg leading-tight">
-                      {parentProfile?.name ? `${parentProfile.name}` : 'Parent Portal'}
-                    </div>
-                    <div className="text-white/80 text-xs">
-                      {childrenCount ? `${childrenCount} ${wardLabel}` : 'Your children'}
-                    </div>
-                  </div>
-                </div>
-                <div className="ml-auto flex shrink-0 gap-2">
-                  <button
-                    onClick={() => setSidebarOpen(false)}
-                    className="hidden lg:flex p-2 rounded-xl bg-white/20 backdrop-blur-sm text-white hover:bg-white/30 transition-colors border border-white/30"
-                    aria-label="Collapse sidebar"
-                  >
-                    <ChevronLeft size={20} />
-                  </button>
-                  <button
-                    onClick={() => setSidebarOpen(false)}
-                    className="lg:hidden p-2 rounded-xl bg-white/20 backdrop-blur-sm text-white hover:bg-white/30 transition-colors border border-white/30"
-                    aria-label="Close sidebar"
-                  >
-                    <X size={20} />
-                  </button>
-                </div>
-              </div>
-            </div>
+        {/* ── Brand header ── */}
+        <div className="relative flex items-center gap-3 border-b border-gray-100 px-4 py-3">
+          <div className={`flex shrink-0 items-center justify-center overflow-hidden rounded-xl transition-all duration-300 ${sidebarOpen ? 'h-10 w-10' : 'h-9 w-9'} ${schoolBrand.logo ? 'bg-white ring-1 ring-gray-100' : 'bg-linear-to-br from-violet-600 to-violet-500 text-white shadow-sm'}`}>
+            {schoolBrand.logo ? (
+              <img src={schoolBrand.logo} alt={schoolBrand.name || 'School logo'} className="h-full w-full object-cover" />
+            ) : (
+              <Users size={sidebarOpen ? 20 : 18} />
+            )}
           </div>
-
-          <div className={`transition-all duration-400 ease-in-out ${!sidebarOpen ? 'opacity-100 translate-x-0' : 'opacity-0 translate-x-4 pointer-events-none absolute inset-0'}`}>
-            <div className="p-3 border-b border-gray-200 bg-white">
-              <div className="flex flex-col items-center space-y-3">
-                <div className="w-10 h-10 bg-gradient-to-br from-violet-600 to-violet-500 rounded-xl flex items-center justify-center shadow-md">
-                  <Users className="w-5 h-5 text-white" />
-                </div>
-                <div className="hidden lg:flex">
-                  <button
-                    onClick={() => setSidebarOpen(true)}
-                    className="p-2 rounded-lg text-violet-600 hover:bg-violet-50 transition-colors"
-                    aria-label="Expand sidebar"
-                  >
-                    <ChevronRight size={18} />
-                  </button>
-                </div>
-              </div>
+          {sidebarOpen && (
+            <div className="min-w-0 flex-1">
+              <p className="truncate text-sm font-bold leading-tight text-gray-900">Parent Portal</p>
+              <p className="mt-0.5 truncate text-[11px] font-semibold tracking-wide text-violet-500" title={schoolBrand.name || undefined}>
+                {schoolInitials || 'Your school'}
+              </p>
             </div>
-          </div>
+          )}
+          <button
+            type="button"
+            onClick={() => setSidebarOpen((open) => !open)}
+            className={`flex shrink-0 items-center justify-center transition-all duration-200 ${
+              sidebarOpen
+                ? 'h-7 w-7 rounded-lg text-gray-400 hover:bg-violet-50 hover:text-violet-600'
+                : 'absolute -right-2.5 top-1/2 h-5 w-5 -translate-y-1/2 rounded-full bg-violet-600 text-white shadow-md hover:bg-violet-700'
+            }`}
+            aria-label={sidebarOpen ? 'Collapse sidebar' : 'Expand sidebar'}
+          >
+            {sidebarOpen ? <ChevronLeft size={15} /> : <ChevronRight size={14} />}
+          </button>
         </div>
 
-        <nav className={`min-h-0 flex-1 overflow-y-auto overscroll-contain modern-scrollbar ${sidebarOpen ? 'px-4 py-5 space-y-4' : 'px-1 py-4 space-y-3'}`}>
+        {/* ── Navigation ── */}
+        <nav className="modern-scrollbar min-h-0 flex-1 space-y-0.5 overflow-y-auto overflow-x-hidden overscroll-contain px-2 py-3">
           {NAV_GROUPS.map((group, groupIndex) => (
-            <div key={group.heading || 'primary'} className={sidebarOpen ? 'space-y-1' : 'space-y-1'}>
-              {group.heading && sidebarOpen && (
-                <p className="px-4 pt-1 pb-1 text-[11px] font-semibold uppercase tracking-wider text-gray-400">
+            <div key={group.heading || 'primary'}>
+              {group.heading && (sidebarOpen ? (
+                <p className="select-none px-3 pb-1 pt-4 text-[10px] font-bold uppercase tracking-wider text-gray-400">
                   {group.heading}
                 </p>
-              )}
-              {group.heading && !sidebarOpen && groupIndex > 0 && (
-                <div className="mx-2 my-1 border-t border-gray-200" aria-hidden="true" />
-              )}
-              {group.items.map((item) => {
-                const Icon = item.icon;
-                const targetPath = normalizePath(item.path);
-                const badgeCount = badgeFor(item.path);
-                const isRootLink = targetPath === '/parents';
-                const isActive = isRootLink
-                  ? currentPath === targetPath
-                  : currentPath === targetPath || currentPath.startsWith(`${targetPath}/`);
-
-                return (
-                  <Link
-                    key={item.path}
-                    to={item.path}
-                    onClick={handleMenuClick}
-                    aria-current={isActive ? 'page' : undefined}
-                    title={!sidebarOpen ? item.label : undefined}
-                    className={`
-                      group flex items-center rounded-xl transition-colors duration-200 ${
-                        sidebarOpen ? 'px-4 py-2.5' : 'px-2 py-2.5 justify-center'
-                      }
-                      ${
-                        isActive
-                          ? 'bg-violet-50 text-violet-700 border-l-[3px] border-violet-600'
-                          : 'text-gray-600 hover:bg-gray-100 hover:text-gray-900 border-l-[3px] border-transparent'
-                      }
-                    `}
-                  >
-                    <span className="relative flex-shrink-0">
-                      <Icon
-                        className={`transition-colors duration-200 ${isActive ? 'text-violet-600' : 'text-gray-400 group-hover:text-gray-600'}`}
-                        size={sidebarOpen ? 19 : 18}
-                      />
-                      {!sidebarOpen && badgeCount > 0 && (
-                        <span className="absolute -right-2 -top-2 flex h-4 min-w-[1rem] items-center justify-center rounded-full bg-violet-600 px-1 text-[10px] font-bold text-white">
+              ) : (
+                groupIndex > 0 && <div className="mx-3 my-2 border-t border-gray-100" aria-hidden="true" />
+              ))}
+              <div className="space-y-0.5">
+                {group.items.map((item) => {
+                  const Icon = item.icon;
+                  const badgeCount = badgeFor(item.path);
+                  const isActive = isNavActive(item.path);
+                  return (
+                    <Link
+                      key={item.path}
+                      to={item.path}
+                      onClick={handleMenuClick}
+                      aria-current={isActive ? 'page' : undefined}
+                      title={!sidebarOpen ? item.label : undefined}
+                      className={`group relative flex items-center gap-3 rounded-xl px-3 py-2.5 transition-colors duration-150 ${
+                        sidebarOpen ? '' : 'justify-center'
+                      } ${isActive ? 'bg-violet-50 text-violet-700' : 'text-gray-600 hover:bg-gray-50 hover:text-gray-900'}`}
+                    >
+                      {isActive && (
+                        <motion.span
+                          layoutId="parent-sidebar-active-pill"
+                          className="absolute inset-0 rounded-xl bg-violet-50 shadow-sm"
+                          transition={prefersReducedMotion ? { duration: 0 } : { type: 'spring', stiffness: 400, damping: 32 }}
+                        />
+                      )}
+                      <span className="relative z-10 shrink-0">
+                        <span className={`flex rounded-full p-1 transition-colors ${isActive ? 'bg-violet-600 text-white' : 'bg-gray-100 text-gray-400 group-hover:text-violet-500'}`}>
+                          <Icon size={16} />
+                        </span>
+                        {!sidebarOpen && badgeCount > 0 && (
+                          <span className="absolute -right-1.5 -top-1.5 flex h-3.5 min-w-3.5 items-center justify-center rounded-full bg-red-500 px-1 text-[9px] font-bold text-white">
+                            {badgeCount > 9 ? '9+' : badgeCount}
+                          </span>
+                        )}
+                      </span>
+                      {sidebarOpen && (
+                        <span className={`relative z-10 flex-1 truncate text-sm ${isActive ? 'font-bold' : 'font-semibold'}`}>
+                          {item.label}
+                        </span>
+                      )}
+                      {sidebarOpen && badgeCount > 0 && (
+                        <span className="relative z-10 flex h-5 min-w-5 items-center justify-center rounded-full bg-red-500 px-1.5 text-[10px] font-bold text-white">
                           {badgeCount > 9 ? '9+' : badgeCount}
                         </span>
                       )}
-                    </span>
-                    {sidebarOpen && (
-                      <div className="ml-3 flex-1 min-w-0">
-                        <div className="font-medium text-sm">{item.label}</div>
-                        <div className="text-xs text-gray-400 truncate">{item.description}</div>
-                      </div>
-                    )}
-                    {sidebarOpen && badgeCount > 0 && (
-                      <span className="ml-2 flex h-5 min-w-[1.25rem] items-center justify-center rounded-full bg-violet-600 px-1.5 text-[11px] font-bold text-white">
-                        {badgeCount > 9 ? '9+' : badgeCount}
-                      </span>
-                    )}
-                  </Link>
-                );
-              })}
+                      {sidebarOpen && isActive && badgeCount <= 0 && (
+                        <span className="relative z-10 h-1.5 w-1.5 shrink-0 animate-pulse rounded-full bg-violet-600" />
+                      )}
+                    </Link>
+                  );
+                })}
+              </div>
             </div>
           ))}
         </nav>
 
-        <div className={`${sidebarOpen ? 'p-3' : 'p-2'} shrink-0 border-t border-gray-200 bg-white`}>
-          {sidebarOpen && showNotifications && (
-            <section ref={notificationsRef} aria-label="Notifications panel" className="mb-3 overflow-hidden rounded-2xl border border-violet-100 bg-white shadow-lg">
-              <div className="flex items-center justify-between border-b border-gray-100 px-3 py-2.5">
-                <div className="flex items-center gap-2">
-                  <Bell size={15} className="text-violet-600" />
-                  <span className="text-sm font-bold text-gray-900">Notifications</span>
-                  {unreadCount > 0 && <span className="rounded-full bg-violet-100 px-1.5 py-0.5 text-[10px] font-bold text-violet-700">{unreadCount}</span>}
-                </div>
-                {unreadCount > 0 && (
-                  <button type="button" onClick={markAllRead} className="inline-flex items-center gap-1 text-[11px] font-semibold text-violet-600 hover:text-violet-800">
-                    <CheckCheck size={12} /> Mark all read
-                  </button>
-                )}
-              </div>
-              <div className="max-h-[30dvh] min-h-0 divide-y divide-gray-100 overflow-y-auto overscroll-contain" aria-live="polite">
-                {notifLoading && <p className="px-3 py-5 text-center text-xs text-gray-500">Loading notifications…</p>}
-                {!notifLoading && notifError && <p role="alert" className="px-3 py-4 text-xs text-red-600">{notifError}</p>}
-                {!notifLoading && !notifError && notifications.length === 0 && <p className="px-3 py-5 text-center text-xs text-gray-500">No notifications yet</p>}
-                {!notifLoading && !notifError && notifications.map((notification) => {
-                  const id = String(notification?._id || notification?.id || '');
-                  const isRead = Boolean(notification?.isRead);
-                  return (
-                    <button
-                      key={id || notification?.title}
-                      type="button"
-                      onClick={async () => {
-                        await markRead(id);
-                        setShowNotifications(false);
-                        navigate(resolveNotifPath(notification));
-                        if (window.innerWidth < 1024) setSidebarOpen(false);
-                      }}
-                      className={`w-full px-3 py-2.5 text-left transition hover:bg-violet-50 ${isRead ? 'bg-white' : 'bg-violet-50/60'}`}
-                    >
-                      <span className="flex items-start gap-2">
-                        <span className={`mt-1.5 h-1.5 w-1.5 shrink-0 rounded-full ${isRead ? 'bg-gray-200' : 'bg-violet-500'}`} />
-                        <span className="min-w-0">
-                          <span className="block truncate text-xs font-semibold text-gray-800">{notification?.title || 'Notification'}</span>
-                          {notification?.message && <span className="mt-0.5 block line-clamp-2 text-[11px] text-gray-500">{formatNotificationMessage(notification.message)}</span>}
-                          <span className="mt-1 block text-[10px] text-gray-400">{timeAgo(notification?.createdAt)}</span>
-                        </span>
-                      </span>
-                    </button>
-                  );
-                })}
-              </div>
-            </section>
-          )}
-
-          {sidebarOpen && profileOpen && (
-            <section ref={profileRef} aria-label="Profile panel" className="mb-3 rounded-2xl border border-violet-100 bg-violet-50/70 p-3 shadow-sm">
-              <div className="flex items-center gap-3">
-                <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-gradient-to-br from-violet-600 to-violet-400 text-sm font-bold text-white">{initials}</div>
-                <div className="min-w-0">
-                  <p className="truncate text-sm font-bold text-gray-900">{parentName}</p>
-                  <p className="text-[11px] text-gray-500">{childrenCount ? `${childrenCount} ${wardLabel}` : 'Parent account'}</p>
-                </div>
-              </div>
-              <button type="button" onClick={() => { setProfileOpen(false); navigate('/parents'); }} className="mt-3 flex w-full items-center gap-2 rounded-xl bg-white px-3 py-2 text-xs font-semibold text-gray-700 transition hover:bg-violet-100">
-                <User size={15} className="text-violet-600" /> Open dashboard
-              </button>
-            </section>
-          )}
-
-          <div className={`grid gap-2 ${sidebarOpen ? 'grid-cols-2' : 'grid-cols-1'}`}>
-            <motion.button
-              data-notification-control
-              type="button"
-              onClick={handleToggleNotifications}
-              whileTap={prefersReducedMotion ? undefined : { scale: 0.96 }}
-              aria-expanded={showNotifications}
-              aria-label="Notifications"
-              className={`relative flex items-center rounded-xl border transition ${sidebarOpen ? 'justify-start gap-2 px-3 py-2.5' : 'justify-center p-2.5'} ${showNotifications ? 'border-violet-200 bg-violet-50 text-violet-700' : 'border-gray-200 text-gray-600 hover:bg-gray-50'}`}
-            >
-              <Bell size={18} />
-              {sidebarOpen && <span className="text-xs font-semibold">Notifications</span>}
-              {unreadCount > 0 && <span className="absolute right-1.5 top-1.5 flex h-4 min-w-4 items-center justify-center rounded-full bg-violet-600 px-1 text-[9px] font-bold text-white">{unreadCount > 9 ? '9+' : unreadCount}</span>}
-            </motion.button>
-            <motion.button
-              data-profile-control
-              type="button"
-              onClick={() => {
-                if (!sidebarOpen) setSidebarOpen(true);
-                setProfileOpen((open) => !open);
-                setShowNotifications(false);
-              }}
-              whileTap={prefersReducedMotion ? undefined : { scale: 0.96 }}
-              aria-expanded={profileOpen}
-              aria-label="Profile"
-              className={`flex items-center rounded-xl border transition ${sidebarOpen ? 'justify-start gap-2 px-3 py-2.5' : 'justify-center p-2.5'} ${profileOpen ? 'border-violet-200 bg-violet-50 text-violet-700' : 'border-gray-200 text-gray-600 hover:bg-gray-50'}`}
-            >
-              <User size={18} />
-              {sidebarOpen && <span className="min-w-0 flex-1 truncate text-left text-xs font-semibold">Profile</span>}
-              {sidebarOpen && <ChevronDown size={13} className={`transition-transform ${profileOpen ? 'rotate-180' : ''}`} />}
-            </motion.button>
-          </div>
-
-          <button
-            type="button"
-            onClick={handleLogout}
-            className={`group relative mt-2 w-full flex items-center rounded-xl transition-all duration-300 ease-out transform ${
-              sidebarOpen ? 'px-3 py-2.5' : 'px-0 py-2 justify-center'
-            } text-red-600 hover:bg-gradient-to-r hover:from-red-50 hover:to-pink-50 hover:text-red-700 hover:shadow-md hover:scale-105 active:scale-95`}
-          >
-            <div className={`flex items-center justify-center rounded-lg transition-all duration-300 ${
-              sidebarOpen ? 'w-10 h-10 bg-red-100 group-hover:bg-red-200' : 'w-10 h-10 bg-red-100'
-            }`}>
-              <LogOut size={20} />
+        {/* ── Footer: account + logout ── */}
+        <div className="shrink-0 border-t border-gray-100 p-3">
+          <div className={`flex items-center gap-3 ${sidebarOpen ? '' : 'flex-col'}`}>
+            <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-linear-to-br from-violet-600 to-violet-400 text-xs font-bold text-white">
+              {initials}
             </div>
             {sidebarOpen && (
-              <div className="ml-3 text-left">
-                <div className="font-medium text-sm">Logout</div>
-                <div className="text-xs text-red-500">Sign out securely</div>
+              <div className="min-w-0 flex-1">
+                <p className="truncate text-sm font-semibold text-gray-900">{parentName}</p>
+                <p className="truncate text-[11px] text-gray-500">Parent</p>
               </div>
             )}
-          </button>
+            <button
+              type="button"
+              onClick={handleLogout}
+              title="Logout"
+              className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg text-red-500 transition-colors hover:bg-red-50 hover:text-red-600"
+            >
+              <LogOut size={17} />
+              <span className="sr-only">Logout</span>
+            </button>
+          </div>
         </div>
-      </div>
+      </aside>
 
       <div className="flex-1 min-w-0 flex flex-col h-screen bg-slate-50">
+        {/* Desktop header — same layout as the school admin header (module
+            search, clock, notifications, profile), in the parent violet. */}
+        <div className="sticky top-0 z-30 hidden shrink-0 lg:block">
+          <div className="flex items-center gap-3 border-b border-white/70 bg-violet-50 px-5 py-2 shadow-[0_16px_44px_-12px_rgba(15,23,42,0.10),0_4px_12px_rgba(15,23,42,0.04)] backdrop-blur-xl">
+            {/* Module search */}
+            <div className="relative max-w-md flex-1" ref={headerSearchRef}>
+              <form
+                className="flex w-full items-center gap-2 rounded-full border border-gray-300/70 bg-white py-0.5 pl-4 pr-1.5 transition focus-within:border-violet-300 focus-within:shadow-[0_4px_16px_rgba(15,23,42,0.05)]"
+                onSubmit={(e) => {
+                  e.preventDefault();
+                  if (searchMatches[0]) { goTo(searchMatches[0].path); setHeaderSearch(''); }
+                }}
+              >
+                <Search className="h-4 w-4 shrink-0 text-slate-400" />
+                <input
+                  type="text"
+                  value={headerSearch}
+                  onChange={(e) => { setHeaderSearch(e.target.value); setShowSearchResults(true); }}
+                  onFocus={() => setShowSearchResults(true)}
+                  placeholder="Search modules…"
+                  aria-label="Search modules"
+                  className="admin-search-input w-full border-none bg-transparent py-2 text-sm font-medium text-slate-900 outline-none placeholder:font-normal placeholder:text-slate-400"
+                />
+                {headerSearch && (
+                  <button type="button" onClick={() => setHeaderSearch('')} className="shrink-0 pr-1 text-slate-400 hover:text-slate-600" aria-label="Clear search">
+                    <X size={14} />
+                  </button>
+                )}
+              </form>
+              {showSearchResults && headerSearch.trim() && (
+                <div className="absolute left-0 right-0 top-full z-50 mt-1 overflow-hidden rounded-2xl border border-white/60 bg-white/95 shadow-xl backdrop-blur-xl">
+                  {searchMatches.length === 0 ? (
+                    <p className="px-4 py-3 text-sm text-slate-400">No results</p>
+                  ) : (
+                    <ul className="divide-y divide-slate-50">
+                      {searchMatches.map((item) => (
+                        <li key={item.path}>
+                          <button
+                            type="button"
+                            onMouseDown={(e) => e.preventDefault()}
+                            onClick={() => { goTo(item.path); setHeaderSearch(''); setShowSearchResults(false); }}
+                            className="flex w-full items-center gap-3 px-4 py-2.5 text-left transition hover:bg-violet-50/70"
+                          >
+                            <item.icon size={15} className="shrink-0 text-violet-400" />
+                            <span>
+                              <span className="block text-sm font-medium text-slate-800">{item.label}</span>
+                              <span className="block text-[11px] text-slate-400">{item.description}</span>
+                            </span>
+                          </button>
+                        </li>
+                      ))}
+                    </ul>
+                  )}
+                </div>
+              )}
+            </div>
+
+            <div className="ml-auto flex items-center gap-2">
+              {/* Live clock */}
+              <div className="hidden items-center gap-2 rounded-full border border-white/30 bg-white/40 px-3.5 py-1.5 text-sm font-medium text-slate-900 xl:flex">
+                <Clock size={14} className="shrink-0 text-slate-400" />
+                <span className="whitespace-nowrap tabular-nums">{headerNow.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</span>
+                <span className="text-slate-400">{headerNow.toLocaleDateString('en-IN', { day: 'numeric', month: 'short' })}</span>
+              </div>
+
+              {/* Notifications */}
+              <div className="relative">
+                <button
+                  data-notification-control
+                  type="button"
+                  onClick={handleToggleNotifications}
+                  aria-expanded={showNotifications}
+                  aria-label="Open notifications"
+                  className="relative flex h-10 w-10 items-center justify-center rounded-full border border-white/30 bg-white/40 text-slate-600 transition hover:border-white/60 hover:bg-white/80"
+                >
+                  <Bell size={18} />
+                  {unreadCount > 0 && (
+                    <span className="absolute -right-0.5 -top-0.5 flex h-4.5 min-w-4.5 items-center justify-center rounded-full border-2 border-white bg-red-500 px-1 text-[10px] font-bold text-white">
+                      {unreadCount > 9 ? '9+' : unreadCount}
+                    </span>
+                  )}
+                </button>
+                {isDesktop && showNotifications && (
+                  <section ref={notificationsRef} aria-label="Notifications panel" className="absolute right-0 top-full z-50 mt-2 w-96 overflow-hidden rounded-2xl border border-violet-100 bg-white shadow-2xl">
+                    <div className="flex items-center justify-between border-b border-gray-100 px-4 py-3">
+                      <div className="flex items-center gap-2">
+                        <Bell size={15} className="text-violet-600" />
+                        <span className="text-sm font-bold text-gray-900">Notifications</span>
+                        {unreadCount > 0 && <span className="rounded-full bg-violet-100 px-1.5 py-0.5 text-[10px] font-bold text-violet-700">{unreadCount}</span>}
+                      </div>
+                      {unreadCount > 0 && (
+                        <button type="button" onClick={markAllRead} className="inline-flex items-center gap-1 text-[11px] font-semibold text-violet-600 hover:text-violet-800">
+                          <CheckCheck size={12} /> Mark all read
+                        </button>
+                      )}
+                    </div>
+                    <div className="max-h-[60dvh] divide-y divide-gray-100 overflow-y-auto overscroll-contain" aria-live="polite">
+                      {notifLoading && <p className="px-4 py-5 text-center text-xs text-gray-500">Loading notifications…</p>}
+                      {!notifLoading && notifError && <p role="alert" className="px-4 py-4 text-xs text-red-600">{notifError}</p>}
+                      {!notifLoading && !notifError && notifications.length === 0 && <p className="px-4 py-5 text-center text-xs text-gray-500">No notifications yet</p>}
+                      {!notifLoading && !notifError && notifications.map((notification) => {
+                        const id = String(notification?._id || notification?.id || '');
+                        const isRead = Boolean(notification?.isRead);
+                        return (
+                          <button
+                            key={id || notification?.title}
+                            type="button"
+                            onClick={async () => {
+                              await markRead(id);
+                              setShowNotifications(false);
+                              navigate(resolveNotifPath(notification));
+                            }}
+                            className={`w-full px-4 py-3 text-left transition hover:bg-violet-50 ${isRead ? 'bg-white' : 'bg-violet-50/60'}`}
+                          >
+                            <span className="flex items-start gap-2">
+                              <span className={`mt-1.5 h-1.5 w-1.5 shrink-0 rounded-full ${isRead ? 'bg-gray-200' : 'bg-violet-500'}`} />
+                              <span className="min-w-0">
+                                <span className="block truncate text-sm font-semibold text-gray-800">{notification?.title || 'Notification'}</span>
+                                {notification?.message && <span className="mt-0.5 block line-clamp-2 text-xs text-gray-500">{formatNotificationMessage(notification.message)}</span>}
+                                <span className="mt-1 block text-[10px] text-gray-400">{timeAgo(notification?.createdAt)}</span>
+                              </span>
+                            </span>
+                          </button>
+                        );
+                      })}
+                    </div>
+                  </section>
+                )}
+              </div>
+
+              {/* Profile pill */}
+              <div className="relative">
+                <button
+                  data-profile-control
+                  type="button"
+                  onClick={() => { setProfileOpen((open) => !open); setShowNotifications(false); }}
+                  aria-expanded={profileOpen}
+                  aria-label="Profile"
+                  className="flex items-center gap-2.5 rounded-full border border-white/30 bg-white/40 py-1 pl-1.5 pr-3 transition hover:border-white/50 hover:bg-white/70 active:scale-[0.98]"
+                >
+                  <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-linear-to-br from-violet-600 to-violet-400 text-xs font-semibold text-white shadow-sm ring-2 ring-white/70">
+                    {initials}
+                  </span>
+                  <span className="flex min-w-0 flex-col text-left leading-tight">
+                    <span className="whitespace-nowrap text-sm font-semibold text-slate-900">{parentName}</span>
+                    <span className="text-[10px] font-medium tracking-wide text-slate-500">
+                      {childrenCount ? `Parent · ${childrenCount} ${wardLabel}` : 'Parent'}
+                    </span>
+                  </span>
+                  <ChevronDown size={14} className={`text-slate-400 transition-transform ${profileOpen ? 'rotate-180' : ''}`} />
+                </button>
+                {profileOpen && (
+                  <section ref={profileRef} aria-label="Profile panel" className="absolute right-0 top-full z-50 mt-2 w-60 overflow-hidden rounded-2xl border border-violet-100 bg-white p-2 shadow-2xl">
+                    <div className="flex items-center gap-3 border-b border-gray-100 px-2 pb-3 pt-1">
+                      <span className="flex h-10 w-10 items-center justify-center rounded-xl bg-linear-to-br from-violet-600 to-violet-400 text-sm font-bold text-white">{initials}</span>
+                      <span className="min-w-0">
+                        <span className="block truncate text-sm font-bold text-gray-900">{parentName}</span>
+                        <span className="block text-[11px] text-gray-500">{childrenCount ? `${childrenCount} ${wardLabel}` : 'Parent account'}</span>
+                      </span>
+                    </div>
+                    <button type="button" onClick={() => goTo('/parents/profile')} className="mt-1 flex w-full items-center gap-2 rounded-xl px-3 py-2 text-sm font-medium text-gray-700 transition hover:bg-violet-50">
+                      <UserCircle size={16} className="text-violet-600" /> Child Profile
+                    </button>
+                    <button type="button" onClick={() => goTo('/parents/documents')} className="flex w-full items-center gap-2 rounded-xl px-3 py-2 text-sm font-medium text-gray-700 transition hover:bg-violet-50">
+                      <FolderOpen size={16} className="text-violet-600" /> Documents
+                    </button>
+                    <button type="button" onClick={() => { setProfileOpen(false); handleLogout(); }} className="flex w-full items-center gap-2 rounded-xl px-3 py-2 text-sm font-medium text-red-600 transition hover:bg-red-50">
+                      <LogOut size={16} /> Sign out
+                    </button>
+                  </section>
+                )}
+              </div>
+            </div>
+          </div>
+        </div>
+
         {/* Mobile app bar */}
         <header className="lg:hidden sticky top-0 z-40 shrink-0 bg-violet-600 px-4 py-4 text-white shadow-md">
           <div className="flex items-center justify-between gap-3">
