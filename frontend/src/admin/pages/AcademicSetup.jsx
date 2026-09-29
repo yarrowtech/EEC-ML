@@ -2234,19 +2234,16 @@ const AcademicSetup = ({ setShowAdminHeader }) => {
                   <div
                     aria-hidden="true"
                     onContextMenu={(e) => e.preventDefault()}
-                    className="pointer-events-none absolute inset-y-0 right-0 w-3/5 select-none overflow-hidden"
+                    className="pointer-events-none absolute inset-y-0 right-0 w-full lg:w-3/5 select-none overflow-hidden"
                   >
                     <div
-                      className="absolute inset-0 bg-cover bg-center"
+                      className="cover-fade absolute inset-0 bg-cover bg-center"
                       style={{
                         backgroundImage: `url(${coverSrc})`,
-                        WebkitMaskImage: "linear-gradient(to right, transparent 0%, rgba(0,0,0,0.45) 35%, #000 75%)",
-                        maskImage: "linear-gradient(to right, transparent 0%, rgba(0,0,0,0.45) 35%, #000 75%)",
                       }}
                     />
                     <div
-                      className="absolute inset-0"
-                      style={{ background: "linear-gradient(to right, rgba(255,255,255,0.95) 0%, rgba(15,23,42,0.12) 35%, rgba(0,0,0,0.20) 70%, rgba(0,0,0,0.25) 100%)" }}
+                      className="cover-shade absolute inset-0"
                     />
                   </div>
                 )}

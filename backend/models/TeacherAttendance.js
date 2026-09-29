@@ -1,5 +1,15 @@
 const mongoose = require('mongoose');
 
+const locationSchema = new mongoose.Schema(
+  {
+    latitude: Number,
+    longitude: Number,
+    accuracy: Number,
+    distanceFromSchool: Number,
+  },
+  { _id: false }
+);
+
 const teacherAttendanceSchema = new mongoose.Schema(
   {
     schoolId: { type: mongoose.Schema.Types.ObjectId, ref: 'School', required: true, index: true },
@@ -14,6 +24,9 @@ const teacherAttendanceSchema = new mongoose.Schema(
       default: 'Present',
     },
     workingMinutes: { type: Number, default: 0 },
+    // GPS audit trail, recorded when the school's teacher geofence is on.
+    checkInLocation: { type: locationSchema, default: null },
+    checkOutLocation: { type: locationSchema, default: null },
   },
   { timestamps: true }
 );

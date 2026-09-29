@@ -3,6 +3,7 @@ const bcrypt = require('bcryptjs');
 const jwt = require('jsonwebtoken');
 const Admin = require('../models/Admin');
 const TeacherUser = require('../models/TeacherUser');
+const { verifyTeacherLocation } = require('../utils/schoolGeofence');
 const StudentUser = require('../models/StudentUser');
 const { isLoginBlockedStudentStatus, STUDENT_BLOCKED_MESSAGE } = require('../utils/studentStatus');
 const { isParentLoginBlocked, PARENT_BLOCKED_MESSAGE } = require('../utils/parentArchiveSync');
@@ -82,9 +83,14 @@ const tryAdmin = async ({ admin, password, rememberMe }) => {
   };
 };
 
-const tryTeacher = async ({ user, password, rememberMe }) => {
+const tryTeacher = async ({ user, password, rememberMe, body }) => {
   if (!user) return null;
   if (!(await bcrypt.compare(password, user.password))) return null;
+  // School geofence: no teacher session is issued from outside the campus.
+  const geo = await verifyTeacherLocation(user.schoolId, body);
+  if (!geo.ok) {
+    return { errorStatus: geo.status, error: geo.error, code: geo.code, userType: 'Teacher' };
+  }
   if (!user.campusId && user.schoolId) {
     const schoolDoc = await School.findById(user.schoolId).select('campuses').lean();
     const campuses = schoolDoc?.campuses || [];
@@ -123,6 +129,7 @@ const tryTeacher = async ({ user, password, rememberMe }) => {
   const token = signToken({
     id: user._id,
     userType: 'teacher',
+    ...(geo.enforced ? { geoVerified: true } : {}),
     organizationId: user.organizationId || null,
     schoolId: user.schoolId || null,
     campusId: user.campusId || null,
@@ -285,7 +292,7 @@ router.post('/login', rateLimit({
 
     const checks = [
       () => tryAdmin({ admin, password, rememberMe }),
-      () => tryTeacher({ user: teacher, password, rememberMe }),
+      () => tryTeacher({ user: teacher, password, rememberMe, body: req.body }),
       () => tryPrincipal({ principal, password, rememberMe }),
       () => tryStudent({ user: student, password, rememberMe }),
       () => tryParent({ user: parent, password, rememberMe }),

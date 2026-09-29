@@ -8,6 +8,7 @@ import { useLocation, useNavigate } from 'react-router-dom';
 import toast from 'react-hot-toast';
 import { AUTH_NOTICE, consumeAuthNotice, purgeStaleSessionCaches } from '../utils/authSession';
 import { useTenant } from '../context/TenantContext';
+import { GEOFENCE_CODES, postWithLocationRetry } from '../utils/geolocation';
 
 const API_BASE = (import.meta.env.VITE_API_URL || '').replace(/\/$/, '');
 
@@ -256,23 +257,17 @@ const LoginForm = () => {
           throw new Error(data?.error || 'Unable to reset password');
         }
 
-        const loginRes = await fetch(`${API_BASE}${resetConfig.loginEndpoint}`, {
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-            ...(resetTenantToken ? { Authorization: `Bearer ${resetTenantToken}` } : {}),
-          },
-          body: JSON.stringify({
-            username: sanitizedUsername,
-            password: formData.newPassword
-          })
+        const { res: loginRes, data: loginData } = await postWithLocationRetry(`${API_BASE}${resetConfig.loginEndpoint}`, {
+          headers: resetTenantToken ? { Authorization: `Bearer ${resetTenantToken}` } : {},
+          body: { username: sanitizedUsername, password: formData.newPassword },
+          onLocating: () => setResetNotice('Verifying that you are inside the school…'),
         });
 
         if (!loginRes.ok) {
+          if (GEOFENCE_CODES.has(loginData?.code)) throw new Error(loginData.error);
           throw new Error('Login failed after reset. Please sign in again.');
         }
 
-        const loginData = await loginRes.json();
         purgeStaleSessionCaches();
         localStorage.setItem('token', loginData.token);
         localStorage.setItem('userType', resetUserType);
@@ -282,19 +277,17 @@ const LoginForm = () => {
         return;
       }
 
-      const res = await fetch(`${API_BASE}/api/auth/login`, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json'
-        },
-        body: JSON.stringify({
+      // Teachers of a school with the geofence on get LOCATION_REQUIRED first;
+      // the helper then reads GPS and retries so the server can verify it.
+      const { res, data } = await postWithLocationRetry(`${API_BASE}/api/auth/login`, {
+        body: {
           username: sanitizedUsername,
           password: formData.password,
-          rememberMe: formData.rememberMe
-        })
+          rememberMe: formData.rememberMe,
+        },
+        onLocating: () => setResetNotice('Verifying that you are inside the school…'),
       });
-
-      const data = await res.json().catch(() => ({}));
+      setResetNotice('');
       if (!res.ok) {
         throw new Error(data?.error || data?.message || 'Invalid credentials. Please check your User ID and password.');
       }
@@ -351,6 +344,7 @@ const LoginForm = () => {
       }
     } catch (error) {
       console.error('Login failed:', error);
+      setResetNotice((n) => (n.startsWith('Verifying') ? '' : n));
       setLoginError(error.message || 'Login failed. Please try again.');
     }
     setIsLoading(false);

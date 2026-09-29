@@ -1,5 +1,6 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { AnimatePresence, motion, useReducedMotion } from 'framer-motion';
+import { postWithLocationRetry } from '../utils/geolocation';
 import {
   Activity,
   AlertCircle,
@@ -406,11 +407,10 @@ const MyWorkPortal = () => {
     setAttendanceError('');
     try {
       const token = localStorage.getItem('token');
-      const res = await fetch(`${API_BASE}/api/teacher/dashboard/work-attendance/check-in`, {
-        method: 'POST',
-        headers: { authorization: `Bearer ${token}` }
+      // Geofenced schools need GPS; the helper retries with it on LOCATION_REQUIRED.
+      const { res, data } = await postWithLocationRetry(`${API_BASE}/api/teacher/dashboard/work-attendance/check-in`, {
+        headers: { authorization: `Bearer ${token}` },
       });
-      const data = await res.json().catch(() => ({}));
       if (!res.ok) throw new Error(data?.error || 'Unable to check in');
       await fetchWorkAttendance(selectedMonth);
     } catch (error) {
@@ -425,11 +425,9 @@ const MyWorkPortal = () => {
     setAttendanceError('');
     try {
       const token = localStorage.getItem('token');
-      const res = await fetch(`${API_BASE}/api/teacher/dashboard/work-attendance/check-out`, {
-        method: 'POST',
-        headers: { authorization: `Bearer ${token}` }
+      const { res, data } = await postWithLocationRetry(`${API_BASE}/api/teacher/dashboard/work-attendance/check-out`, {
+        headers: { authorization: `Bearer ${token}` },
       });
-      const data = await res.json().catch(() => ({}));
       if (!res.ok) throw new Error(data?.error || 'Unable to check out');
       await fetchWorkAttendance(selectedMonth);
     } catch (error) {

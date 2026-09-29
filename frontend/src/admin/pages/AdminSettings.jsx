@@ -26,6 +26,7 @@ import {
   UserRound,
 } from 'lucide-react';
 import toast from 'react-hot-toast';
+import { getCurrentLocation } from '../../utils/geolocation';
 
 const API_BASE = import.meta.env.VITE_API_URL;
 
@@ -59,6 +60,7 @@ const EMPTY_SCHOOL = {
   academicYearStructure: '',
   estimatedUsers: '',
   logo: '',
+  teacherGeofence: { enabled: false, latitude: '', longitude: '', radius: 100, maxAccuracy: 100 },
 };
 
 // Same option lists as the school registration form (SchoolRegistrationForm.jsx),
@@ -300,6 +302,13 @@ const AdminSettings = ({ setShowAdminHeader, onSettingsUpdated }) => {
           academicYearStructure: school?.academicYearStructure || '',
           estimatedUsers: school?.estimatedUsers || '',
           logo: school?.logo?.secure_url || school?.logo?.url || '',
+          teacherGeofence: {
+            enabled: Boolean(school?.teacherGeofence?.enabled),
+            latitude: school?.teacherGeofence?.latitude ?? '',
+            longitude: school?.teacherGeofence?.longitude ?? '',
+            radius: school?.teacherGeofence?.radius ?? 100,
+            maxAccuracy: school?.teacherGeofence?.maxAccuracy ?? 100,
+          },
         }));
       } catch (err) {
         toast.error(err.message || 'Unable to load settings');
@@ -357,6 +366,7 @@ const AdminSettings = ({ setShowAdminHeader, onSettingsUpdated }) => {
               academicYearStructure: schoolForm.academicYearStructure,
               estimatedUsers: schoolForm.estimatedUsers,
               logo: schoolForm.logo,
+              teacherGeofence: schoolForm.teacherGeofence,
             },
       };
       const res = await fetch(`${API_BASE}/api/admin/auth/settings`, {
@@ -373,6 +383,24 @@ const AdminSettings = ({ setShowAdminHeader, onSettingsUpdated }) => {
       toast.error(err.message || 'Unable to update settings');
     } finally {
       setSaving(false);
+    }
+  };
+
+  /* ─── teacher geofence ─── */
+  const geofence = schoolForm.teacherGeofence || EMPTY_SCHOOL.teacherGeofence;
+  const setGeofence = (patch) =>
+    setSchoolForm((p) => ({ ...p, teacherGeofence: { ...(p.teacherGeofence || EMPTY_SCHOOL.teacherGeofence), ...patch } }));
+  const [locatingSchool, setLocatingSchool] = useState(false);
+  const captureSchoolLocation = async () => {
+    setLocatingSchool(true);
+    try {
+      const loc = await getCurrentLocation();
+      setGeofence({ latitude: Number(loc.latitude.toFixed(6)), longitude: Number(loc.longitude.toFixed(6)) });
+      toast.success(`Location captured (±${Math.round(loc.accuracy)} m). Press Save Changes to apply.`);
+    } catch (err) {
+      toast.error(err.message || 'Unable to get your location');
+    } finally {
+      setLocatingSchool(false);
     }
   };
 
@@ -453,10 +481,8 @@ const AdminSettings = ({ setShowAdminHeader, onSettingsUpdated }) => {
             <img
               src={adminForm.coverImage}
               alt=""
-              className="absolute inset-y-0 right-0 h-full w-full sm:w-3/5 object-cover opacity-90"
+              className="cover-fade absolute inset-y-0 right-0 h-full w-full lg:w-3/5 object-cover opacity-90"
               style={{
-                WebkitMaskImage: 'linear-gradient(to right, transparent 0%, rgba(0,0,0,0.35) 30%, #000 70%)',
-                maskImage: 'linear-gradient(to right, transparent 0%, rgba(0,0,0,0.35) 30%, #000 70%)',
               }}
             />
           ) : (
@@ -663,6 +689,40 @@ const AdminSettings = ({ setShowAdminHeader, onSettingsUpdated }) => {
                 <Field label="Website URL" value={schoolForm.websiteURL} onChange={(e) => setSchoolForm((p) => ({ ...p, websiteURL: e.target.value }))} placeholder="https://..." icon={Globe} />
                 <Field label="Official Email" value={schoolForm.officialEmail} onChange={(e) => setSchoolForm((p) => ({ ...p, officialEmail: e.target.value }))} placeholder="Enter official email" icon={Mail} />
                 <Field label="Contact Person" value={schoolForm.contactPersonName} onChange={(e) => setSchoolForm((p) => ({ ...p, contactPersonName: e.target.value }))} placeholder="Enter contact person name" icon={UserRound} />
+              </SectionCard>
+
+              <SectionCard icon={MapPin} title="Teacher Access Geofence" subtitle="When on, teachers can only log in and mark attendance from inside the school.">
+                <div className="md:col-span-2 flex items-center justify-between gap-4 rounded-lg border border-gray-200 bg-gray-50/60 px-4 py-3">
+                  <div className="min-w-0">
+                    <p className="text-sm font-semibold text-gray-800">Restrict teachers to school premises</p>
+                    <p className="text-xs text-gray-500">Teachers outside the radius can't sign in, check in or check out.</p>
+                  </div>
+                  <button
+                    type="button"
+                    role="switch"
+                    aria-checked={geofence.enabled}
+                    onClick={() => setGeofence({ enabled: !geofence.enabled })}
+                    className={`relative h-6 w-11 shrink-0 rounded-full transition-colors ${geofence.enabled ? 'bg-blue-600' : 'bg-gray-300'}`}
+                  >
+                    <span className={`absolute top-0.5 h-5 w-5 rounded-full bg-white shadow transition-all ${geofence.enabled ? 'left-5.5' : 'left-0.5'}`} />
+                  </button>
+                </div>
+                <Field label="School Latitude" type="number" step="any" value={geofence.latitude} onChange={(e) => setGeofence({ latitude: e.target.value })} placeholder="e.g. 22.7196" icon={MapPin} />
+                <Field label="School Longitude" type="number" step="any" value={geofence.longitude} onChange={(e) => setGeofence({ longitude: e.target.value })} placeholder="e.g. 88.4820" icon={MapPin} />
+                <Field label="Allowed Radius (metres)" type="number" min="20" max="5000" value={geofence.radius} onChange={(e) => setGeofence({ radius: e.target.value })} placeholder="100" icon={Globe} />
+                <Field label="Max GPS Inaccuracy (metres)" type="number" min="10" max="1000" value={geofence.maxAccuracy} onChange={(e) => setGeofence({ maxAccuracy: e.target.value })} placeholder="100" icon={Globe} />
+                <div className="md:col-span-2 flex flex-col gap-2 sm:flex-row sm:items-center">
+                  <button
+                    type="button"
+                    onClick={captureSchoolLocation}
+                    disabled={locatingSchool}
+                    className="inline-flex items-center justify-center gap-2 rounded-lg border border-blue-200 bg-blue-50 px-4 py-2 text-sm font-semibold text-blue-700 hover:bg-blue-100 disabled:opacity-60"
+                  >
+                    {locatingSchool ? <Loader2 size={15} className="animate-spin" /> : <MapPin size={15} />}
+                    {locatingSchool ? 'Getting location…' : 'Use my current location'}
+                  </button>
+                  <p className="text-xs text-gray-500">Stand inside the school (e.g. the main gate or office) when using this, then press Save Changes.</p>
+                </div>
               </SectionCard>
 
               <SectionCard icon={GraduationCap} title="Academic Configuration" subtitle="Board affiliation, structure, and capacity." footer={saveFooter}>

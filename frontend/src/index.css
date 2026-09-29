@@ -505,3 +505,29 @@ textarea:-webkit-autofill {
   caret-color: inherit;
   transition: background-color 0s 600000s, color 0s 600000s;
 }
+
+/* Cover-photo fade used by the admin hero banners (Dashboard greeting,
+   Settings profile, Academic Setup). Phones/tablets stack the content, so the
+   photo fills the card and the white fade rises from the bottom; on desktop
+   the photo sits on the right and fades in from the left. */
+.cover-fade {
+  -webkit-mask-image: linear-gradient(to top, transparent 0%, rgba(0, 0, 0, 0.45) 35%, #000 75%);
+  mask-image: linear-gradient(to top, transparent 0%, rgba(0, 0, 0, 0.45) 35%, #000 75%);
+}
+@media (min-width: 1024px) {
+  .cover-fade {
+    -webkit-mask-image: linear-gradient(to right, transparent 0%, rgba(0, 0, 0, 0.45) 35%, #000 75%);
+    mask-image: linear-gradient(to right, transparent 0%, rgba(0, 0, 0, 0.45) 35%, #000 75%);
+  }
+}
+
+/* White wash over the cover photo so banner text stays readable — rises from
+   the bottom on phones/tablets, sweeps from the left on desktop. */
+.cover-shade {
+  background: linear-gradient(to top, rgba(255, 255, 255, 0.95) 0%, rgba(15, 23, 42, 0.12) 35%, rgba(0, 0, 0, 0.2) 70%, rgba(0, 0, 0, 0.25) 100%);
+}
+@media (min-width: 1024px) {
+  .cover-shade {
+    background: linear-gradient(to right, rgba(255, 255, 255, 0.95) 0%, rgba(15, 23, 42, 0.12) 35%, rgba(0, 0, 0, 0.2) 70%, rgba(0, 0, 0, 0.25) 100%);
+  }
+}
