@@ -75,6 +75,47 @@ const getChapterTimestamp = (chapter) => {
   return Number(localIdTimestamp) || 0;
 };
 
+const parseResourceRef = (value) => {
+  const text = String(value || '').trim();
+  if (!text) return { bucket: '', title: '', url: '' };
+  const parts = text.split('::');
+  if (parts.length >= 3) {
+    const bucket = String(parts[0] || '').trim();
+    const title = String(parts[1] || '').trim();
+    const url = String(parts.slice(2).join('::') || '').trim();
+    return { bucket, title: title || url, url };
+  }
+  const separator = text.indexOf('::');
+  if (separator >= 0) {
+    return { bucket: '', title: String(text.slice(0, separator)).trim(), url: String(text.slice(separator + 2)).trim() };
+  }
+  return { bucket: '', title: text, url: '' };
+};
+
+// A published plan only ever persists uploads as flat "bucket::name::url" strings
+// on plan.materialsNeeded (see serializeResourceRef) — plannerContent never carries
+// contentUploads — so reopening a published chapter must rebuild the bucketed
+// upload-card state from that flat list, or every uploaded file silently
+// disappears from the builder even though it's still stored and indexed.
+const rebuildContentUploadsFromMaterialsNeeded = (materialsNeeded) => {
+  const buckets = {};
+  (Array.isArray(materialsNeeded) ? materialsNeeded : []).forEach((raw, index) => {
+    const { bucket, title, url } = parseResourceRef(raw);
+    if (!title || !MATERIAL_BUCKETS.has(bucket)) return;
+    buckets[bucket] = [...(buckets[bucket] || []), {
+      id: `material-${bucket}-${index}`,
+      name: title,
+      url,
+      type: getFileType(title),
+      isUploading: false,
+    }];
+  });
+  return buckets;
+};
+
+const hasAnyUploadedFile = (contentUploads) =>
+  Object.values(contentUploads || {}).some((files) => Array.isArray(files) && files.length > 0);
+
 const normalizeLoadedChapter = (chapter, plan, index) => {
   const source = chapter && typeof chapter === 'object' ? chapter : {};
   const chapterTitle = String(source.title || plan?.title || 'Untitled Chapter').trim() || 'Untitled Chapter';
@@ -101,7 +142,9 @@ const normalizeLoadedChapter = (chapter, plan, index) => {
     lessonDate,
     status,
     isDraft: status !== 'published',
-    contentUploads: source.contentUploads || defaultContentUploads,
+    contentUploads: hasAnyUploadedFile(source.contentUploads)
+      ? { ...defaultContentUploads, ...source.contentUploads }
+      : { ...defaultContentUploads, ...rebuildContentUploadsFromMaterialsNeeded(plan?.materialsNeeded) },
     worksheetFiles: Array.isArray(source.worksheetFiles) ? source.worksheetFiles : [],
     worksheetLink: source.worksheetLink || '',
     assessments: Array.isArray(source.assessments) ? source.assessments : [],
