@@ -7,6 +7,8 @@ const Assignment = require('../models/Assignment');
 const adminAuth = require('../middleware/adminAuth');
 const authStudent = require('../middleware/authStudent');
 const authTeacher = require('../middleware/authTeacher');
+const authParent = require('../middleware/authParent');
+const ParentUser = require('../models/ParentUser');
 const StudentProgress = require('../models/StudentProgress');
 const StudentUser = require('../models/StudentUser');
 const NotificationService = require('../utils/notificationService');
@@ -1065,7 +1067,8 @@ router.post("/teacher/grade-bulk", authTeacher, async (req, res) => {
 // ========== STUDENT ROUTES ==========
 
 // Students get assignments for their class/section
-router.get("/student/assignments", authStudent, async (req, res) => {
+// Shared by the student portal and (for a linked child) the parent portal.
+const studentAssignmentsHandler = async (req, res) => {
   // #swagger.tags = ['Assignments']
     try {
         const schoolId = req.schoolId || req.user?.schoolId || null;
@@ -1189,6 +1192,26 @@ router.get("/student/assignments", authStudent, async (req, res) => {
         });
         logger.error('Student assignments error:', err);
         res.status(500).json({ error: err.message });
+    }
+};
+router.get("/student/assignments", authStudent, studentAssignmentsHandler);
+
+// Parent portal: a linked child's homework (read-only), same shape as the student view.
+router.get("/parent/assignments", authParent, async (req, res) => {
+    try {
+        const studentId = String(req.query?.studentId || '').trim();
+        if (!mongoose.isValidObjectId(studentId)) return res.status(400).json({ error: 'studentId is required' });
+        const parent = await ParentUser.findById(req.user?.id).select('childrenIds').lean();
+        const linked = (parent?.childrenIds || []).some((id) => String(id) === studentId);
+        if (!linked) return res.status(403).json({ error: 'This student is not linked to your account' });
+        const child = await StudentUser.findById(studentId).select('schoolId campusId').lean();
+        if (!child) return res.status(404).json({ error: 'Student not found' });
+        req.schoolId = child.schoolId || req.schoolId;
+        req.campusId = child.campusId || req.campusId || null;
+        req.student = { id: studentId };
+        return studentAssignmentsHandler(req, res);
+    } catch (err) {
+        return res.status(500).json({ error: err.message || 'Unable to load homework' });
     }
 });
 

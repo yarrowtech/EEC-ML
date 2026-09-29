@@ -29,7 +29,11 @@ import {
   CalendarClock,
   Megaphone,
   MessageSquareHeart,
-  FileBadge
+  FileBadge,
+  NotebookPen,
+  CalendarDays,
+  UserCircle,
+  FolderOpen,
 } from 'lucide-react';
 import { useDesktopNotificationBridge } from '../hooks/useDesktopNotificationBridge';
 import DesktopNotificationPermissionModal from '../components/DesktopNotificationPermissionModal';
@@ -55,6 +59,10 @@ const ParentObservationNonAcademic = lazy(() => import('./ParentObservationNonAc
 const ExcuseLetters = lazy(() => import('./ExcuseLetters'));
 const ParentNotices = lazy(() => import('./ParentNotices'));
 const ParentTeacherFeedback = lazy(() => import('./ParentTeacherFeedback'));
+const ParentHomework = lazy(() => import('./ParentHomework'));
+const SchoolCalendar = lazy(() => import('./SchoolCalendar'));
+const ChildProfile = lazy(() => import('./ChildProfile'));
+const ParentDocuments = lazy(() => import('./ParentDocuments'));
 
 const PortalRouteFallback = () => (
   <div className="flex min-h-[50vh] items-center justify-center" role="status" aria-live="polite">
@@ -65,7 +73,9 @@ const PortalRouteFallback = () => (
   </div>
 );
 
-// Navigation is grouped so a parent scans by intent, not through a flat list.
+// Navigation follows the parent's recommended access map: overview first,
+// then the child's learning, exams, money, school info, communication and
+// the child's own records. Everything is view-only except requests/messages.
 const NAV_GROUPS = [
   {
     items: [
@@ -73,49 +83,62 @@ const NAV_GROUPS = [
     ],
   },
   {
-    heading: 'Progress',
+    heading: 'Learning',
     items: [
+      { icon: Calendar, label: 'Attendance', description: 'Daily record & calendar', path: '/parents/attendance' },
+      { icon: NotebookPen, label: 'Homework', description: 'Assignments & due dates', path: '/parents/homework' },
+      { icon: Clock, label: 'Class Routine', description: 'Weekly timetable', path: '/parents/routine' },
       { icon: BarChart2, label: 'Growth Analytics', description: 'Academic & wellbeing', path: '/parents/analytics' },
-      { icon: BookOpen, label: 'Report Card', description: 'Marks & assessments', path: '/parents/academic' },
-      { icon: Calendar, label: 'Attendance', description: 'Punctuality tracker', path: '/parents/attendance' },
+    ],
+  },
+  {
+    heading: 'Exams & Results',
+    items: [
+      { icon: CalendarClock, label: 'Exam Schedule', description: 'Exam routine & downloads', path: '/parents/exam-routine' },
+      { icon: BookOpen, label: 'Results & Report Card', description: 'Marks, grades & PDF', path: '/parents/academic' },
+      { icon: FileBadge, label: 'Admit Cards', description: 'Download exam admit cards', path: '/parents/admit-cards' },
+    ],
+  },
+  {
+    heading: 'Fees',
+    items: [
+      { icon: CreditCard, label: 'Fees & Payments', description: 'Dues, receipts & pay online', path: '/parents/fees' },
+    ],
+  },
+  {
+    heading: 'School',
+    items: [
+      { icon: Megaphone, label: 'Notices', description: 'Announcements & circulars', path: '/parents/notices' },
+      { icon: CalendarDays, label: 'School Calendar', description: 'Holidays, exams & PTMs', path: '/parents/calendar' },
+      { icon: Sun, label: 'Holidays', description: 'School holiday list', path: '/parents/holidays' },
+    ],
+  },
+  {
+    heading: 'Communication',
+    items: [
+      { icon: MessageCircle, label: 'Messages', description: 'Talk to teachers & office', path: '/parents/chat' },
+      { icon: Video, label: 'Meetings / PTM', description: 'Parent-teacher meetings', path: '/parents/ptm' },
+      { icon: AlertOctagon, label: 'Support & Complaints', description: 'Raise a request, track replies', path: '/parents/complaints' },
+      { icon: FileText, label: 'Leave / Excuse Letters', description: 'Inform the school of absence', path: '/parents/excuse-letters' },
+      { icon: FileEdit, label: 'Observations', description: 'Share home feedback', path: '/parents/parent-observation' },
+      { icon: MessageSquareHeart, label: 'Teacher Feedback', description: "Your child's feedback status", path: '/parents/teacher-feedback' },
+    ],
+  },
+  {
+    heading: 'My Child',
+    items: [
+      { icon: UserCircle, label: 'Child Profile', description: 'School record & contacts', path: '/parents/profile' },
+      { icon: FolderOpen, label: 'Documents', description: 'Report cards, receipts, circulars', path: '/parents/documents' },
       { icon: Award, label: 'Achievements', description: 'Celebrate wins', path: '/parents/achievements' },
       { icon: Activity, label: 'Health Record', description: 'Wellness & medical', path: '/parents/health' },
     ],
   },
-  {
-    heading: 'Schedule',
-    items: [
-      { icon: Clock, label: 'Class Routine', description: 'Weekly timetable', path: '/parents/routine' },
-      { icon: CalendarClock, label: 'Exam Routine', description: 'Exam schedule & downloads', path: '/parents/exam-routine' },
-      { icon: FileBadge, label: 'Admit Cards', description: 'Download exam admit cards', path: '/parents/admit-cards' },
-      { icon: Sun, label: 'Holidays', description: 'School holiday list', path: '/parents/holidays' },
-      { icon: Megaphone, label: 'Notices', description: 'School announcements', path: '/parents/notices' },
-    ],
-  },
-  {
-    heading: 'Money',
-    items: [
-      { icon: CreditCard, label: 'Fees', description: 'Bills & payments', path: '/parents/fees' },
-    ],
-  },
-  {
-    heading: 'Talk to school',
-    items: [
-      { icon: MessageCircle, label: 'Chat', description: 'Message staff', path: '/parents/chat' },
-      { icon: Video, label: 'Meetings', description: 'Parent-teacher meetings', path: '/parents/ptm' },
-      { icon: AlertOctagon, label: 'Complaints', description: 'Raise an issue', path: '/parents/complaints' },
-      { icon: FileEdit, label: 'Observations', description: 'Share home feedback', path: '/parents/parent-observation' },
-      { icon: MessageSquareHeart, label: 'Teacher Feedback', description: "Your child's feedback status", path: '/parents/teacher-feedback' },
-      { icon: FileText, label: 'Excuse Letters', description: 'Leave requests', path: '/parents/excuse-letters' },
-    ],
-  },
 ];
-
 // Mobile bottom-bar destinations. Everything else is one tap away via "More".
 const BOTTOM_NAV = [
   { icon: Home, label: 'Dashboard', path: '/parents' },
-  { icon: BarChart2, label: 'Analytics', path: '/parents/analytics' },
-  { icon: Clock, label: 'Routine', path: '/parents/routine' },
+  { icon: Calendar, label: 'Attendance', path: '/parents/attendance' },
+  { icon: NotebookPen, label: 'Homework', path: '/parents/homework' },
   { icon: CreditCard, label: 'Fees', path: '/parents/fees' },
 ];
 
@@ -824,6 +847,10 @@ const ParentPortal = () => {
             {/* "Results" merged into the Report Card screen — keep the old path working. */}
             <Route path="results" element={<Navigate to="/parents/academic" replace />} />
             <Route path="achievements" element={<AchievementsView />} />
+            <Route path="homework" element={<ParentHomework />} />
+            <Route path="calendar" element={<SchoolCalendar />} />
+            <Route path="profile" element={<ChildProfile />} />
+            <Route path="documents" element={<ParentDocuments />} />
             <Route path="*" element={<Navigate to="/parents" replace />} />
           </Routes>
           </Suspense>
