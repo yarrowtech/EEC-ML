@@ -206,10 +206,14 @@ body {
 .submenu-closed {
   pointer-events: none;
 }
-a {
-  font-weight: 500;
-  color: inherit;
-  text-decoration: inherit;
+/* In the base layer so Tailwind utilities on links (text-white, font-bold…)
+   win; unlayered, this rule beat every utility class on every <a>. */
+@layer base {
+  a {
+    font-weight: 500;
+    color: inherit;
+    text-decoration: inherit;
+  }
 }
 * {
   box-sizing: border-box;

@@ -515,16 +515,28 @@ router.get('/children-profile', authParent, async (req, res) => {
       return res.status(403).json({ error: 'Forbidden - not a parent' });
     }
     const parent = await ParentUser.findById(req.user.id)
-      .select('name email mobile phone username childrenIds')
+      .select('name email mobile phone username childrenIds schoolId')
       .lean();
     if (!parent) return res.status(404).json({ error: 'Parent not found' });
     const ids = Array.isArray(parent.childrenIds) ? parent.childrenIds : [];
     const students = ids.length
       ? await StudentUser.find({ _id: { $in: ids } })
-        .select('name profilePic studentCode admissionNumber admissionDate grade section roll dob gender bloodGroup academicYear campusName fatherName fatherPhone motherName motherPhone guardianName guardianPhone guardianRelation address status isArchived')
+        .select('schoolId name profilePic studentCode admissionNumber admissionDate grade section roll dob gender bloodGroup academicYear campusName fatherName fatherPhone motherName motherPhone guardianName guardianPhone guardianRelation address status isArchived')
         .lean()
       : [];
+    // School cover photo (set by the school admin in Settings) for the
+    // parent dashboard banner.
+    let coverImage = '';
+    const schoolId = parent.schoolId || req.schoolId || students[0]?.schoolId || null;
+    if (schoolId) {
+      const Admin = require('../models/Admin');
+      const admin = await Admin.findOne({ schoolId, role: 'admin', coverImage: { $nin: [null, ''] } })
+        .select('coverImage').lean();
+      coverImage = admin?.coverImage || '';
+    }
+
     res.json({
+      school: { coverImage },
       parent: {
         name: parent.name || '',
         email: parent.email || '',

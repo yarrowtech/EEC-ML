@@ -48,6 +48,7 @@ const useParentChildren = () => {
 
   return {
     parent: data?.parent || null,
+    school: data?.school || null,
     children,
     options,
     childKey,
