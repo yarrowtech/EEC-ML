@@ -6,7 +6,6 @@ const bcrypt = require('bcryptjs');
 const mongoose = require('mongoose');
 const Admin = require('../models/Admin');
 const School = require('../models/School');
-const { invalidateSchoolFence } = require('../utils/schoolGeofence');
 const Organization = require('../models/Organization');
 const adminAuth = require('../middleware/adminAuth');
 const rateLimit = require('../middleware/rateLimit');
@@ -480,34 +479,6 @@ router.put('/settings', adminAuth, async (req, res) => {
         assignIfString('estimatedUsers');
         assignIfString('websiteURL');
         assignIfString('campusName');
-
-        if (schoolPayload.teacherGeofence && typeof schoolPayload.teacherGeofence === 'object') {
-          const g = schoolPayload.teacherGeofence;
-          const enabled = Boolean(g.enabled);
-          const lat = g.latitude === '' || g.latitude === null ? null : Number(g.latitude);
-          const lng = g.longitude === '' || g.longitude === null ? null : Number(g.longitude);
-          const radius = Number(g.radius) || 100;
-          const maxAccuracy = Number(g.maxAccuracy) || 100;
-          const latOk = lat !== null && Number.isFinite(lat) && lat >= -90 && lat <= 90;
-          const lngOk = lng !== null && Number.isFinite(lng) && lng >= -180 && lng <= 180;
-          if (enabled && (!latOk || !lngOk)) {
-            return res.status(400).json({ error: 'Set a valid school latitude and longitude before enabling the teacher geofence' });
-          }
-          if (radius < 20 || radius > 5000) {
-            return res.status(400).json({ error: 'Geofence radius must be between 20 and 5000 metres' });
-          }
-          if (maxAccuracy < 10 || maxAccuracy > 1000) {
-            return res.status(400).json({ error: 'Allowed GPS accuracy must be between 10 and 1000 metres' });
-          }
-          invalidateSchoolFence(school._id);
-          school.teacherGeofence = {
-            enabled,
-            latitude: latOk ? lat : null,
-            longitude: lngOk ? lng : null,
-            radius,
-            maxAccuracy,
-          };
-        }
 
         if (schoolPayload.logo !== undefined) {
           if (typeof schoolPayload.logo === 'string') {

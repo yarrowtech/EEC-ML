@@ -36,15 +36,6 @@ const schoolSchema = new mongoose.Schema(
       enum: ['Year', 'Semester', 'Trimester', 'Quarter'],
       required: false
     },
-    // Teacher geofence: when enabled, teachers can only log in / check in /
-    // check out from within `radius` metres of this point (utils/schoolGeofence).
-    teacherGeofence: {
-      enabled: { type: Boolean, default: false },
-      latitude: { type: Number, default: null },
-      longitude: { type: Number, default: null },
-      radius: { type: Number, default: 100, min: 20, max: 5000 },
-      maxAccuracy: { type: Number, default: 100, min: 10, max: 1000 },
-    },
     estimatedUsers: {
       type: String,
       enum: [

@@ -2,7 +2,6 @@ const express = require('express');
 const router = express.Router();
 const mongoose = require('mongoose');
 const TeacherUser = require('../models/TeacherUser');
-const { verifyTeacherLocation } = require('../utils/schoolGeofence');
 const TeacherEnrollmentDraft = require('../models/TeacherEnrollmentDraft');
 const bcrypt = require('bcryptjs');
 const jwt = require('jsonwebtoken');
@@ -230,19 +229,6 @@ router.post('/login', rateLimit({ windowMs: 60 * 1000, max: 20, keyGenerator: ra
       });
       return res.status(401).json({ error: 'Invalid credentials' });
     }
-    // School geofence: no teacher session is issued from outside the campus.
-    const geo = await verifyTeacherLocation(user.schoolId, req.body);
-    if (!geo.ok) {
-      logAuthEvent(req, {
-        action: 'login',
-        outcome: 'failure',
-        userType: 'teacher',
-        identifier: username,
-        reason: geo.code,
-        statusCode: geo.status,
-      });
-      return res.status(geo.status).json({ error: geo.error, code: geo.code });
-    }
     if (!user.campusId && user.schoolId) {
       const schoolDoc = await School.findById(user.schoolId).select('campuses').lean();
       const campuses = schoolDoc?.campuses || [];
@@ -280,7 +266,6 @@ router.post('/login', rateLimit({ windowMs: 60 * 1000, max: 20, keyGenerator: ra
       {
         id: user._id,
         userType: 'teacher',
-        ...(geo.enforced ? { geoVerified: true } : {}),
         organizationId: user.organizationId || req.organizationId || null,
         schoolId: user.schoolId || null,
         campusId: user.campusId || null,
