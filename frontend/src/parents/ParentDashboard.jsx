@@ -40,6 +40,63 @@ const to12h = (t) => {
 const initialsOf = (name) => String(name || 'S').trim().split(/\s+/).slice(0, 2).map((w) => w[0]).join('').toUpperCase();
 const subjectName = (s) => s?.subject?.name || s?.subjectName || s?.subject || '';
 const greetingFor = (h) => (h < 12 ? 'Good Morning' : h < 17 ? 'Good Afternoon' : 'Good Evening');
+const DASHBOARD_CACHE_PREFIX = 'parent_dashboard_cache_v1';
+const DASHBOARD_CACHE_TTL_MS = 3 * 60 * 1000;
+
+const getTokenScope = () => {
+  const token = localStorage.getItem('token');
+  if (!token) return 'anonymous';
+  try {
+    const payload = JSON.parse(atob(token.split('.')[1].replace(/-/g, '+').replace(/_/g, '/')));
+    return `${payload?.id || 'parent'}__`;
+  } catch {
+    return 'fallback';
+  }
+};
+
+const dashboardCacheKey = (segment) => `${DASHBOARD_CACHE_PREFIX}:${segment}:${getTokenScope()}`;
+
+const readDashboardCache = (segment) => {
+  try {
+    const raw = sessionStorage.getItem(dashboardCacheKey(segment));
+    if (!raw) return null;
+    const parsed = JSON.parse(raw);
+    if (!parsed?.cachedAt || Date.now() - parsed.cachedAt > DASHBOARD_CACHE_TTL_MS) return null;
+    return parsed.data || null;
+  } catch {
+    return null;
+  }
+};
+
+const writeDashboardCache = (segment, data) => {
+  try {
+    sessionStorage.setItem(dashboardCacheKey(segment), JSON.stringify({ cachedAt: Date.now(), data }));
+  } catch {
+    // Storage is best-effort; the dashboard still works without it.
+  }
+};
+
+const useCountUp = (target, duration = 900) => {
+  const [value, setValue] = useState(0);
+  useEffect(() => {
+    const end = Number(target) || 0;
+    if (end <= 0) {
+      setValue(0);
+      return undefined;
+    }
+    let frame;
+    const start = performance.now();
+    const tick = (now) => {
+      const progress = Math.min(1, (now - start) / duration);
+      const eased = 1 - (1 - progress) ** 3;
+      setValue(Math.round(end * eased));
+      if (progress < 1) frame = requestAnimationFrame(tick);
+    };
+    frame = requestAnimationFrame(tick);
+    return () => cancelAnimationFrame(frame);
+  }, [target, duration]);
+  return value;
+};
 
 const SUBJECT_TONES = [
   { tile: 'bg-emerald-50 text-emerald-700', icon: 'bg-violet-50 text-violet-600' },
@@ -71,20 +128,26 @@ const Delta = ({ value }) => {
   );
 };
 
-const StatCard = ({ to, Icon, tone, label, value, delta, sub }) => (
-  <Link to={to} className="group relative flex items-start gap-4 rounded-2xl border border-slate-100 bg-white p-4 pr-8 shadow-[0_2px_12px_rgba(15,23,42,0.04)] transition hover:-translate-y-0.5 hover:shadow-md">
-    <span className={`flex h-12 w-12 shrink-0 items-center justify-center rounded-xl ${tone}`}><Icon size={22} /></span>
-    <div className="min-w-0 flex-1">
-      <p className="text-sm font-medium text-slate-700">{label}</p>
-      <div className="mt-0.5 flex flex-wrap items-center gap-2">
-        <p className="truncate text-2xl font-bold leading-tight text-slate-900">{value}</p>
-        <Delta value={delta} />
+const StatCard = ({ to, Icon, tone, label, value, animatedValue, formatter, delta, sub }) => {
+  const count = useCountUp(animatedValue ?? 0);
+  const displayValue = animatedValue === null || animatedValue === undefined
+    ? value
+    : (formatter ? formatter(count) : count.toLocaleString('en-IN'));
+  return (
+    <Link to={to} className="group relative flex items-start gap-4 rounded-2xl border border-slate-100 bg-white p-4 pr-8 shadow-[0_2px_12px_rgba(15,23,42,0.04)] transition hover:-translate-y-0.5 hover:shadow-md">
+      <span className={`flex h-12 w-12 shrink-0 items-center justify-center rounded-xl ${tone}`}><Icon size={22} /></span>
+      <div className="min-w-0 flex-1">
+        <p className="text-sm font-medium text-slate-700">{label}</p>
+        <div className="mt-0.5 flex flex-wrap items-center gap-2">
+          <p className="truncate text-2xl font-bold leading-tight text-slate-900 tabular-nums">{displayValue}</p>
+          <Delta value={delta} />
+        </div>
+        <p className="mt-1 truncate text-xs text-slate-500">{sub}</p>
       </div>
-      <p className="mt-1 truncate text-xs text-slate-500">{sub}</p>
-    </div>
-    <ChevronRight size={17} className="absolute right-3 top-4 text-slate-400 transition group-hover:translate-x-0.5" />
-  </Link>
-);
+      <ChevronRight size={17} className="absolute right-3 top-4 text-slate-400 transition group-hover:translate-x-0.5" />
+    </Link>
+  );
+};
 
 // Soft school-building line art for the child banner (right side).
 const BannerBuilding = () => (
@@ -115,14 +178,15 @@ const ParentDashboard = ({ parentName = '' }) => {
   const [pickerOpen, setPickerOpen] = useState(false);
   const pickerRef = useRef(null);
 
-  const [attendanceKids, setAttendanceKids] = useState([]);
+  const cachedPortalData = useMemo(() => readDashboardCache('portal'), []);
+  const [attendanceKids, setAttendanceKids] = useState(() => cachedPortalData?.attendanceKids || []);
   const [invoices, setInvoices] = useState([]);
-  const [reportCards, setReportCards] = useState([]);
-  const [examKids, setExamKids] = useState([]);
+  const [reportCards, setReportCards] = useState(() => (cachedPortalData?.reportCards || []).map(normalizeReportCard));
+  const [examKids, setExamKids] = useState(() => cachedPortalData?.examKids || []);
   const [homework, setHomework] = useState([]);
-  const [notices, setNotices] = useState([]);
-  const [meetings, setMeetings] = useState([]);
-  const [holidays, setHolidays] = useState([]);
+  const [notices, setNotices] = useState(() => cachedPortalData?.notices || []);
+  const [meetings, setMeetings] = useState(() => cachedPortalData?.meetings || []);
+  const [holidays, setHolidays] = useState(() => cachedPortalData?.holidays || []);
 
   // School-wide sources — once.
   useEffect(() => {
@@ -137,13 +201,24 @@ const ParentDashboard = ({ parentName = '' }) => {
     ]).then(([a, r, e, n, m, h]) => {
       if (off) return;
       const ok = (x) => (x.status === 'fulfilled' ? x.value : null);
-      setAttendanceKids(ok(a)?.children || []);
-      setReportCards((ok(r)?.reportCards || []).map(normalizeReportCard));
-      setExamKids(ok(e)?.children || []);
-      setNotices(Array.isArray(ok(n)) ? ok(n) : []);
-      setMeetings(Array.isArray(ok(m)) ? ok(m) : []);
-      const hv = ok(h);
-      setHolidays(Array.isArray(hv) ? hv : hv?.holidays || []);
+      const nextPortalData = {
+        attendanceKids: ok(a)?.children || [],
+        reportCards: ok(r)?.reportCards || [],
+        examKids: ok(e)?.children || [],
+        notices: Array.isArray(ok(n)) ? ok(n) : [],
+        meetings: Array.isArray(ok(m)) ? ok(m) : [],
+        holidays: (() => {
+          const hv = ok(h);
+          return Array.isArray(hv) ? hv : hv?.holidays || [];
+        })(),
+      };
+      setAttendanceKids(nextPortalData.attendanceKids);
+      setReportCards(nextPortalData.reportCards.map(normalizeReportCard));
+      setExamKids(nextPortalData.examKids);
+      setNotices(nextPortalData.notices);
+      setMeetings(nextPortalData.meetings);
+      setHolidays(nextPortalData.holidays);
+      writeDashboardCache('portal', nextPortalData);
     });
     return () => { off = true; };
   }, [navigate]);
@@ -151,6 +226,13 @@ const ParentDashboard = ({ parentName = '' }) => {
   // Per-child sources.
   useEffect(() => {
     if (!child?.id) return undefined;
+    const childCacheKey = `child:${child.id}`;
+    const cachedChildData = readDashboardCache(childCacheKey);
+    if (cachedChildData) {
+      setInvoices(cachedChildData.invoices || []);
+      setHomework(cachedChildData.homework || []);
+    }
+
     let off = false;
     const q = encodeURIComponent(child.id);
     Promise.allSettled([
@@ -158,8 +240,13 @@ const ParentDashboard = ({ parentName = '' }) => {
       parentApiJson(`/api/assignment/parent/assignments?studentId=${q}`, {}, navigate),
     ]).then(([f, hw]) => {
       if (off) return;
-      setInvoices(f.status === 'fulfilled' ? (f.value?.invoices || []) : []);
-      setHomework(hw.status === 'fulfilled' && Array.isArray(hw.value) ? hw.value : []);
+      const nextChildData = {
+        invoices: f.status === 'fulfilled' ? (f.value?.invoices || []) : [],
+        homework: hw.status === 'fulfilled' && Array.isArray(hw.value) ? hw.value : [],
+      };
+      setInvoices(nextChildData.invoices);
+      setHomework(nextChildData.homework);
+      writeDashboardCache(childCacheKey, nextChildData);
     });
     return () => { off = true; };
   }, [child?.id, navigate]);
@@ -291,7 +378,9 @@ const ParentDashboard = ({ parentName = '' }) => {
       {/* ── Greeting + child picker ── */}
       <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
         <div>
-          <h1 className="text-xl font-bold text-slate-900 sm:text-2xl">{greeting} <span aria-hidden="true">👋</span></h1>
+          <h1 className="text-xl font-bold text-slate-900 sm:text-2xl">{greeting}
+            {/* <span aria-hidden="true">👋</span> */}
+          </h1>
           <p className="mt-0.5 text-sm text-slate-600">Here&apos;s an overview of your child&apos;s academic journey.</p>
         </div>
         {child && (
@@ -369,35 +458,39 @@ const ParentDashboard = ({ parentName = '' }) => {
       {/* ── Stat cards ── */}
       <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-4 sm:gap-4">
         <StatCard to="/parents/attendance" Icon={Users} tone="bg-emerald-50 text-emerald-600" label="Attendance"
-          value={`${attendance.percent}%`} delta={attendance.delta} sub={`Present: ${attendance.present} / ${attendance.total} days`} />
+          value={`${attendance.percent}%`} animatedValue={attendance.percent} formatter={(n) => `${n}%`} delta={attendance.delta} sub={`Present: ${attendance.present} / ${attendance.total} days`} />
         <StatCard to="/parents/fees" Icon={Wallet} tone="bg-rose-50 text-rose-500" label="Fee Due"
-          value={inr(fees.due)} sub={fees.focus ? `${fees.focus.title || 'Fees'}${validDate(fees.focus.dueDate) ? ` (Due: ${fmtDate(fees.focus.dueDate)})` : ''}` : 'No fees due'} />
+          value={inr(fees.due)} animatedValue={fees.due} formatter={inr} sub={fees.focus ? `${fees.focus.title || 'Fees'}${validDate(fees.focus.dueDate) ? ` (Due: ${fmtDate(fees.focus.dueDate)})` : ''}` : 'No fees due'} />
         <StatCard to="/parents/academic" Icon={BarChart3} tone="bg-violet-50 text-violet-600" label="Average Marks"
-          value={results.average === null ? '—' : `${results.average}%`} delta={results.delta} sub={results.count ? `Last ${results.count} Exam${results.count > 1 ? 's' : ''}` : 'No results yet'} />
-        <Link to="/parents/exam-routine" className="group relative flex items-start gap-4 rounded-2xl border border-slate-100 bg-white p-4 pr-8 shadow-[0_2px_12px_rgba(15,23,42,0.04)] transition hover:-translate-y-0.5 hover:shadow-md">
-          <span className="flex h-12 w-12 shrink-0 items-center justify-center rounded-xl bg-amber-50 text-amber-500"><CalendarDays size={22} /></span>
-          <div className="min-w-0 flex-1">
-            <p className="text-sm font-medium text-slate-700">Upcoming Exam</p>
-            <p className="mt-1.5 truncate text-lg font-bold leading-tight text-slate-900">{nextExam?.name || 'No exam scheduled'}</p>
-            <p className="mt-1.5 truncate text-xs text-slate-500">{nextExam ? `${fmtDate(nextExam.date)}${nextExam.time ? `  |  ${nextExam.time}` : ''}` : 'Check back later'}</p>
-          </div>
-          <ChevronRight size={17} className="absolute right-3 top-4 text-slate-400 transition group-hover:translate-x-0.5" />
-        </Link>
+          value={results.average === null ? '�' : `${results.average}%`} animatedValue={results.average ?? null} formatter={(n) => `${n}%`} delta={results.delta} sub={results.count ? `Last ${results.count} Exam${results.count > 1 ? 's' : ''}` : 'No results yet'} />
+        {/* <StatCard to="/parents/exam-routine" Icon={CalendarDays} tone="bg-amber-50 text-amber-500" label="Upcoming Exam"
+          value={nextExam ? '1 Scheduled' : '0 Scheduled'} animatedValue={nextExam ? 1 : 0} formatter={(n) => (n > 0 ? '1 Scheduled' : '0 Scheduled')} sub={nextExam ? `${nextExam.name} | ${fmtDate(nextExam.date)}${nextExam.time ? ` | ${nextExam.time}` : ''}` : 'Check back later'} /> */}
+        <StatCard
+          to="/parents/exam-routine"
+          Icon={CalendarDays}
+          tone="bg-amber-50 text-amber-500"
+          label="Upcoming Exam"
+          value={nextExam ? nextExam.name : 'No Upcoming Exam'}
+          animatedValue={null}
+          sub={
+            nextExam
+              ? `${fmtDate(nextExam.date)}${nextExam.time ? ` | ${nextExam.time}` : ''}`
+              : 'Check back later'
+          }
+        />
       </div>
 
-      {/* ── Today / Fee summary / Events ── */}
+      {/* -- Today / Fee summary / Events -- */}
       <div className="grid grid-cols-1 gap-4 lg:grid-cols-3">
         <Card>
           <CardHead title="Today's Attendance" right={<span className="text-sm text-slate-500">{todayLabel}</span>} />
           <Link
             to="/parents/attendance"
-            className={`flex items-center gap-4 rounded-xl border px-4 py-4 transition hover:shadow-sm ${
-              todayStatus === 'present' ? 'border-emerald-200 bg-emerald-50' : todayStatus === 'absent' ? 'border-rose-100 bg-rose-50' : 'border-slate-100 bg-slate-50'
-            }`}
+            className={`flex items-center gap-4 rounded-xl border px-4 py-4 transition hover:shadow-sm ${todayStatus === 'present' ? 'border-emerald-200 bg-emerald-50' : todayStatus === 'absent' ? 'border-rose-100 bg-rose-50' : 'border-slate-100 bg-slate-50'
+              }`}
           >
-            <span className={`flex h-10 w-10 shrink-0 items-center justify-center rounded-full text-white ${
-              todayStatus === 'present' ? 'bg-emerald-600' : todayStatus === 'absent' ? 'bg-rose-500' : 'bg-slate-400'
-            }`}>
+            <span className={`flex h-10 w-10 shrink-0 items-center justify-center rounded-full text-white ${todayStatus === 'present' ? 'bg-emerald-600' : todayStatus === 'absent' ? 'bg-rose-500' : 'bg-slate-400'
+              }`}>
               {todayStatus === 'absent' ? <X size={22} strokeWidth={3} /> : <Check size={22} strokeWidth={3} />}
             </span>
             <span className="min-w-0 flex-1">
@@ -413,7 +506,7 @@ const ParentDashboard = ({ parentName = '' }) => {
         </Card>
 
         <Card>
-          <CardHead title={`Fee Summary${fees.focus?.title ? ` (${fees.focus.title})` : ''}`} to="/parents/fees" linkLabel="View Details" />
+          <CardHead title="Fee Summary" to="/parents/fees" linkLabel="View Details" />
           {fees.focus ? (
             <>
               <div className="mt-2 h-2.5 w-full overflow-hidden rounded-full bg-slate-200">
@@ -457,7 +550,6 @@ const ParentDashboard = ({ parentName = '' }) => {
           )}
         </Card>
       </div>
-
       {/* ── Homework / Notices ── */}
       <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
         <Card>
@@ -556,3 +648,13 @@ const ParentDashboard = ({ parentName = '' }) => {
 };
 
 export default ParentDashboard;
+
+
+
+
+
+
+
+
+
+

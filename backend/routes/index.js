@@ -5,7 +5,28 @@
 
 const paymentWebhookController = require('../controllers/paymentWebhookController');
 
+const PARENT_DASHBOARD_CACHE_PATHS = [
+  /^\/api\/attendance\/parent\/children(?:\?|$)/,
+  /^\/api\/reports\/report-cards\/parent(?:\?|$)/,
+  /^\/api\/exam\/groups\/parent-schedule(?:\?|$)/,
+  /^\/api\/notifications\/user(?:\?|$)/,
+  /^\/api\/meeting\/parent\/my-meetings(?:\?|$)/,
+  /^\/api\/holidays\/parent(?:\?|$)/,
+  /^\/api\/fees\/parent\/invoices(?:\?|$)/,
+  /^\/api\/assignment\/parent\/assignments(?:\?|$)/,
+];
+
+const parentDashboardCacheHeaders = (req, res, next) => {
+  if (req.method === 'GET' && PARENT_DASHBOARD_CACHE_PATHS.some((pattern) => pattern.test(req.originalUrl || req.url || ''))) {
+    res.set('Cache-Control', 'private, max-age=60, stale-while-revalidate=120');
+    res.set('Vary', 'Authorization');
+  }
+  next();
+};
+
+
 module.exports = function registerRoutes(app, { generalApiLimiter, authApiLimiter, aiApiLimiter, uploadApiLimiter, writeHeavyApiLimiter, adminActionLogger, requireOrganizationDomain } = {}) {
+  app.use(parentDashboardCacheHeaders);
   // Razorpay webhook must receive the raw body before express.json() is applied.
   // This registration lives in index.js before body parsing, so this function
   // only mounts the HTTP-standard routes that come after body parsing.
@@ -118,3 +139,4 @@ module.exports = function registerRoutes(app, { generalApiLimiter, authApiLimite
   app.use('/api/uploads', uploadApiLimiter, require('./uploadRoutes'));
   app.use('/api', require('./organizationRoutes'));
 };
+
