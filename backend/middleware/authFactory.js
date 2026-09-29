@@ -23,6 +23,9 @@ const createRoleAuth = ({
   requireValidSchoolId = false,
   forbiddenMessage = 'Forbidden',
   setExtras = null,
+  // Optional async gate run after the token is accepted; resolve true to
+  // continue, or send a response yourself and resolve false.
+  afterAuth = null,
 }) => (req, res, next) => {
   const token = extractBearerToken(req.headers.authorization);
   if (!token) return res.status(401).json({ error: 'Unauthorized' });
@@ -50,6 +53,11 @@ const createRoleAuth = ({
 
     if (setExtras) setExtras(req, decoded);
 
+    if (afterAuth) {
+      return Promise.resolve(afterAuth(req, res, decoded))
+        .then((ok) => { if (ok) next(); })
+        .catch(() => { if (!res.headersSent) res.status(500).json({ error: 'Unable to verify session' }); });
+    }
     next();
   } catch {
     res.status(401).json({ error: 'Invalid token' });

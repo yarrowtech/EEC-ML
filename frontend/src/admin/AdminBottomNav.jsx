@@ -1,5 +1,5 @@
 import { Link, useLocation } from 'react-router-dom';
-import { Home, GraduationCap, Users, IndianRupee, Menu } from 'lucide-react';
+import { Home, GraduationCap, Users, IndianRupee } from 'lucide-react';
 
 /**
  * Mobile-only bottom tab bar for the admin portal.
@@ -39,8 +39,12 @@ const TABS = [
   },
 ];
 
-const AdminBottomNav = ({ onOpenMore, getNotificationCount = () => 0 }) => {
+const AdminBottomNav = ({ getNotificationCount = () => 0, adminUser }) => {
   const { pathname } = useLocation();
+  const profileActive = pathname === '/admin/settings' || pathname === '/admin/settings/';
+  const profileImage = adminUser?.schoolLogo || adminUser?.avatar || '';
+  const profileInitials = String(adminUser?.schoolName || adminUser?.name || 'A')
+    .trim().split(/\s+/).slice(0, 2).map((w) => w.charAt(0).toUpperCase()).join('');
 
   return (
     <nav
@@ -182,15 +186,31 @@ const AdminBottomNav = ({ onOpenMore, getNotificationCount = () => 0 }) => {
           }
         )}
 
-        <button
-          type="button"
-          onClick={onOpenMore}
-          className="flex flex-col items-center justify-center gap-0.5 pt-1 text-slate-400 transition-transform active:scale-95"
-          aria-label="Open full menu"
+        {/* Profile tab: school logo → Settings (the full menu stays on the header's hamburger) */}
+        <Link
+          to="/admin/settings"
+          aria-current={profileActive ? 'page' : undefined}
+          className="flex flex-col items-center justify-center gap-0.5 transition-all active:scale-95"
         >
-          <Menu size={20} strokeWidth={2} />
-          <span className="text-[10px] leading-none font-medium tracking-tight">More</span>
-        </button>
+          <span
+            className={`flex h-8 w-8 items-center justify-center overflow-hidden rounded-full bg-slate-100 transition-all duration-200 ${
+              profileActive ? 'ring-2 ring-amber-500 ring-offset-1' : 'ring-1 ring-slate-200'
+            }`}
+          >
+            {profileImage ? (
+              <img src={profileImage} alt="" className="h-full w-full object-cover" draggable="false" />
+            ) : (
+              <span className="text-[11px] font-bold text-slate-500">{profileInitials}</span>
+            )}
+          </span>
+          <span
+            className={`text-[10px] leading-none tracking-tight transition-colors ${
+              profileActive ? 'font-bold text-amber-600' : 'font-medium text-slate-400'
+            }`}
+          >
+            Profile
+          </span>
+        </Link>
       </div>
     </nav>
   );

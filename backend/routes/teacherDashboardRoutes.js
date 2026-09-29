@@ -6,6 +6,7 @@
 
 const express = require('express');
 const { invalidateHrCacheOnWrite } = require('../utils/hrDataCache');
+const { verifyTeacherLocation } = require('../utils/schoolGeofence');
 const mongoose = require('mongoose');
 const authTeacher = require('../middleware/authTeacher');
 const StudentUser = require('../models/StudentUser');
@@ -1294,11 +1295,15 @@ router.post('/work-attendance/check-in', authTeacher, async (req, res) => {
       return res.status(400).json({ error: 'Check-in already recorded for today' });
     }
 
+    const geo = await verifyTeacherLocation(schoolId, req.body);
+    if (!geo.ok) return res.status(geo.status).json({ error: geo.error, code: geo.code });
+    const checkInLocation = geo.location || null;
+
     const status = isLateCheckIn(now, attendanceSettings.entryTime, attendanceSettings.graceMinutes) ? 'Late' : 'Present';
     const record = existing
       ? await TeacherAttendance.findByIdAndUpdate(
         existing._id,
-        { $set: { checkInAt: now, status } },
+        { $set: { checkInAt: now, status, checkInLocation } },
         { new: true, runValidators: true }
       )
       : await TeacherAttendance.create({
@@ -1308,6 +1313,7 @@ router.post('/work-attendance/check-in', authTeacher, async (req, res) => {
         dateKey,
         checkInAt: now,
         status,
+        checkInLocation,
       });
 
     res.json({
@@ -1344,7 +1350,11 @@ router.post('/work-attendance/check-out', authTeacher, async (req, res) => {
       return res.status(400).json({ error: 'Check-out already recorded for today' });
     }
 
+    const geo = await verifyTeacherLocation(schoolId, req.body);
+    if (!geo.ok) return res.status(geo.status).json({ error: geo.error, code: geo.code });
+
     const workingMinutes = Math.max(Math.round((now.getTime() - new Date(record.checkInAt).getTime()) / 60000), 0);
+    record.checkOutLocation = geo.location || null;
     record.checkOutAt = now;
     record.workingMinutes = workingMinutes;
     await record.save();
