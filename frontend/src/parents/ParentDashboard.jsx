@@ -26,6 +26,7 @@ import {
 import { Link, useNavigate } from 'react-router-dom';
 import { formatStudentDisplay } from '../utils/studentDisplay';
 import { parentApiFetch, parentApiJson } from './parentApi';
+import DashboardHighlights from './DashboardHighlights';
 import { mapAttendanceChildForDashboard } from './attendanceViewModel';
 
 const getInitials = (name) => String(name || 'Student')
@@ -551,6 +552,7 @@ const ParentDashboard = ({
             </motion.article>
           ))}
 
+          <motion.div variants={itemVariants} className="md:col-span-2"><DashboardHighlights /></motion.div>
           <motion.div variants={itemVariants}><WeakAreasCard /></motion.div>
           <motion.div variants={itemVariants}><RemarksFeedCard /></motion.div>
 

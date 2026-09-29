@@ -164,23 +164,23 @@ describe('ParentPortal', () => {
       [
         'Dashboard',
         'Growth Analytics',
-        'Report Card',
+        'Results & Report Card',
         'Attendance',
         'Achievements',
         'Health Record',
         'Class Routine',
         'Holidays',
-        'Fees',
-        'Chat',
-        'Meetings',
-        'Complaints',
+        'Fees & Payments',
+        'Messages',
+        'Meetings / PTM',
+        'Support & Complaints',
         'Observations',
-        'Excuse Letters',
+        'Leave / Excuse Letters',
       ].forEach((label) => {
         expect(nav.getByText(label)).toBeInTheDocument();
       });
       // Grouped navigation headings
-      ['Progress', 'Schedule', 'Money', 'Talk to school'].forEach((heading) => {
+      ['Learning', 'Exams & Results', 'School', 'Communication', 'My Child'].forEach((heading) => {
         expect(nav.getByText(heading)).toBeInTheDocument();
       });
     });
@@ -298,7 +298,7 @@ describe('ParentPortal', () => {
         expect(screen.getByTestId('parent-dashboard')).toBeInTheDocument();
       });
 
-      const attendanceLink = screen.getByText('Attendance');
+      const attendanceLink = within(screen.getByLabelText('Sidebar navigation')).getByText('Attendance');
       fireEvent.click(attendanceLink);
 
       await waitFor(() => {
@@ -319,7 +319,7 @@ describe('ParentPortal', () => {
         expect(screen.getByTestId('parent-dashboard')).toBeInTheDocument();
       });
 
-      const academicLink = screen.getByText('Report Card');
+      const academicLink = screen.getByText('Results & Report Card');
       fireEvent.click(academicLink);
 
       await waitFor(() => {
@@ -340,7 +340,7 @@ describe('ParentPortal', () => {
         expect(screen.getByTestId('parent-dashboard')).toBeInTheDocument();
       });
 
-      const feesLink = screen.getAllByText('Fees')[0];
+      const feesLink = screen.getByText('Fees & Payments');
       fireEvent.click(feesLink);
 
       await waitFor(() => {
@@ -361,7 +361,7 @@ describe('ParentPortal', () => {
         expect(screen.getByTestId('parent-dashboard')).toBeInTheDocument();
       });
 
-      const ptmLink = screen.getByText('Meetings');
+      const ptmLink = screen.getByText('Meetings / PTM');
       fireEvent.click(ptmLink);
 
       await waitFor(() => {
@@ -382,7 +382,7 @@ describe('ParentPortal', () => {
         expect(screen.getByTestId('parent-dashboard')).toBeInTheDocument();
       });
 
-      const chatLink = screen.getByText('Chat');
+      const chatLink = screen.getByText('Messages');
       fireEvent.click(chatLink);
 
       await waitFor(() => {

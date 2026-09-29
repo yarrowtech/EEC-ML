@@ -506,6 +506,58 @@ router.get('/profile', authParent, async (req, res) => {
   }
 });
 
+// Read-only child profiles for the parent portal. Only non-sensitive fields —
+// no Aadhaar, caste/religion, enrolment documents or credentials.
+router.get('/children-profile', authParent, async (req, res) => {
+  // #swagger.tags = ['Parents']
+  try {
+    if (req.userType !== 'parent') {
+      return res.status(403).json({ error: 'Forbidden - not a parent' });
+    }
+    const parent = await ParentUser.findById(req.user.id)
+      .select('name email mobile phone username childrenIds')
+      .lean();
+    if (!parent) return res.status(404).json({ error: 'Parent not found' });
+    const ids = Array.isArray(parent.childrenIds) ? parent.childrenIds : [];
+    const students = ids.length
+      ? await StudentUser.find({ _id: { $in: ids } })
+        .select('name profilePic studentCode admissionNumber admissionDate grade section roll dob gender bloodGroup academicYear campusName fatherName fatherPhone motherName motherPhone guardianName guardianPhone guardianRelation address status isArchived')
+        .lean()
+      : [];
+    res.json({
+      parent: {
+        name: parent.name || '',
+        email: parent.email || '',
+        phone: parent.mobile || parent.phone || '',
+        username: parent.username || '',
+      },
+      children: students.map((s) => ({
+        id: String(s._id),
+        name: s.name || '',
+        photo: s.profilePic || '',
+        studentCode: s.studentCode || '',
+        admissionNumber: s.admissionNumber || '',
+        admissionDate: s.admissionDate || null,
+        grade: s.grade || '',
+        section: s.section || '',
+        roll: s.roll ?? '',
+        dob: s.dob || null,
+        gender: s.gender || '',
+        bloodGroup: s.bloodGroup || '',
+        academicYear: s.academicYear || '',
+        campusName: s.campusName || '',
+        address: s.address || '',
+        father: { name: s.fatherName || '', phone: s.fatherPhone || '' },
+        mother: { name: s.motherName || '', phone: s.motherPhone || '' },
+        guardian: { name: s.guardianName || '', phone: s.guardianPhone || '', relation: s.guardianRelation || '' },
+        status: s.isArchived ? 'Archived' : (s.status || 'Active'),
+      })),
+    });
+  } catch (err) {
+    res.status(500).json({ error: err.message || 'Unable to load child profile' });
+  }
+});
+
 router.get('/routine', authParent, async (req, res) => {
   // #swagger.tags = ['Parents']
   try {

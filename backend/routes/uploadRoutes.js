@@ -30,6 +30,7 @@ const ALLOWED_FOLDERS = new Set([
   "admin-avatars",
   "school-logos",
   "admin-covers",
+  "support-attachments",
 ]);
 
 const ALLOWED_MIME_TYPES = new Set([

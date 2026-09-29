@@ -154,6 +154,9 @@ const PasswordField = ({ label, value, onChange, placeholder }) => {
         </div>
         <input
           type={show ? 'text' : 'password'}
+          // Stop the browser auto-filling the saved login password here —
+          // a Save would then silently change the account password.
+          autoComplete="new-password"
           className={`${inputBase} ${inputEditable} pl-11 pr-10`}
           value={value}
           onChange={onChange}
