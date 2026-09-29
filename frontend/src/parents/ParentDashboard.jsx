@@ -443,9 +443,9 @@ const ParentDashboard = ({ parentName = '' }) => {
             {child && <p className="mt-1 text-sm font-semibold text-slate-800 sm:text-base">{classLine}</p>}
             {child && (
               <p className="mt-2 text-sm text-slate-500">
-                Admission No: {child.admissionNumber || child.studentCode || '—'}
+                Admission No: <strong>{child.admissionNumber || child.studentCode || '—'}</strong>
                 <span className="mx-2 text-slate-300">|</span>
-                Roll No: {child.roll !== '' && child.roll !== null && child.roll !== undefined ? child.roll : '—'}
+                Roll No: <strong>{child.roll !== '' && child.roll !== null && child.roll !== undefined ? child.roll : '—'}</strong>
               </p>
             )}
           </div>
