@@ -347,3 +347,122 @@ export const generateExamSchedulePdf = async (group, pdfHeader = {}) => {
   const safeSection = String(sectionName || 'section').replace(/\s+/g, '_');
   doc.save(`${safeTitle}_${safeClass}_${safeSection}.pdf`);
 };
+
+export const generateAdmitCardPdf = async ({ student = {}, group = {}, pdfHeader = {} } = {}) => {
+  if (!group?._id) return;
+  const subjects = Array.isArray(group.subjects) ? group.subjects : [];
+  const doc = new jsPDF({ orientation: 'p', unit: 'mm', format: 'a4' });
+  const pageWidth = doc.internal.pageSize.getWidth();
+  const margin = 14;
+  let y = 14;
+  const navy = [15, 41, 82];
+  const text = [51, 65, 85];
+  const muted = [100, 116, 139];
+
+  const logoData = await toDataUrl(pdfHeader.logoUrl);
+  if (logoData) doc.addImage(logoData, 'PNG', margin, y, 18, 18);
+  doc.setFont('helvetica', 'bold');
+  doc.setFontSize(16);
+  doc.setTextColor(...navy);
+  doc.text(pdfHeader.schoolName || 'School', pageWidth / 2, y + 6, { align: 'center' });
+  doc.setFont('helvetica', 'normal');
+  doc.setFontSize(9);
+  doc.setTextColor(...muted);
+  if (pdfHeader.schoolAddressLine) doc.text(pdfHeader.schoolAddressLine, pageWidth / 2, y + 12, { align: 'center' });
+  y += 27;
+
+  doc.setDrawColor(...navy);
+  doc.setLineWidth(0.5);
+  doc.line(margin, y, pageWidth - margin, y);
+  y += 10;
+  doc.setFont('helvetica', 'bold');
+  doc.setFontSize(15);
+  doc.setTextColor(...navy);
+  doc.text('ADMIT CARD', pageWidth / 2, y, { align: 'center' });
+  y += 8;
+  doc.setFontSize(11);
+  doc.text(String(group.title || 'Examination'), pageWidth / 2, y, { align: 'center' });
+  y += 10;
+
+  const className = group.classId?.name || student.grade || group.grade || '-';
+  const sectionName = group.sectionId?.name || student.section || group.section || '-';
+  const rows = [
+    ['Student Name', student.studentName || student.name || '-'],
+    ['Admission No.', student.admissionNumber || '-'],
+    ['Roll No.', student.roll || '-'],
+    ['Class / Section', `Class ${className} / Section ${sectionName}`],
+    ['Academic Session', group.academicYearName || '-'],
+  ];
+  doc.setFontSize(10);
+  rows.forEach(([label, value], index) => {
+    const x = index % 2 === 0 ? margin : pageWidth / 2 + 4;
+    if (index % 2 === 0 && index > 0) y += 10;
+    doc.setFont('helvetica', 'bold');
+    doc.setTextColor(...muted);
+    doc.text(label, x, y);
+    doc.setFont('helvetica', 'normal');
+    doc.setTextColor(...text);
+    doc.text(String(value), x + 34, y);
+  });
+  y += 14;
+
+  doc.setFont('helvetica', 'bold');
+  doc.setFillColor(...navy);
+  doc.setTextColor(255, 255, 255);
+  doc.rect(margin, y, pageWidth - margin * 2, 8, 'F');
+  doc.text('Date', margin + 3, y + 5.5);
+  doc.text('Subject', margin + 33, y + 5.5);
+  doc.text('Time', margin + 92, y + 5.5);
+  doc.text('Venue', margin + 130, y + 5.5);
+  y += 8;
+
+  doc.setFont('helvetica', 'normal');
+  doc.setFontSize(9);
+  subjects.forEach((exam, index) => {
+    if (y > 252) {
+      doc.addPage();
+      y = 18;
+    }
+    const rowY = y;
+    if (index % 2 === 0) {
+      doc.setFillColor(248, 250, 252);
+      doc.rect(margin, rowY, pageWidth - margin * 2, 9, 'F');
+    }
+    const date = exam?.date ? new Date(exam.date).toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' }) : '-';
+    const subject = exam?.subjectId?.name || exam?.subject || exam?.title || 'Subject';
+    doc.setTextColor(...text);
+    doc.text(date, margin + 3, rowY + 6);
+    doc.text(String(subject).slice(0, 32), margin + 33, rowY + 6);
+    doc.text(String(exam?.time || '-'), margin + 92, rowY + 6);
+    doc.text(buildFullVenueLabel(exam).slice(0, 28), margin + 130, rowY + 6);
+    y += 9;
+  });
+
+  y += 8;
+  doc.setFont('helvetica', 'bold');
+  doc.setTextColor(...navy);
+  doc.text('Instructions', margin, y);
+  y += 6;
+  doc.setFont('helvetica', 'normal');
+  doc.setTextColor(...text);
+  [
+    'Carry this admit card and school identity card for every examination.',
+    'Report to the examination venue at least 15 minutes before the scheduled time.',
+    'Follow all instructions given by the invigilator.',
+  ].forEach((line, index) => doc.text(`${index + 1}. ${line}`, margin, y + index * 5));
+
+  const footerY = 276;
+  doc.setDrawColor(...text);
+  doc.line(pageWidth - margin - 48, footerY - 8, pageWidth - margin, footerY - 8);
+  doc.setFont('helvetica', 'bold');
+  if (pdfHeader.principalName) doc.text(pdfHeader.principalName, pageWidth - margin - 24, footerY - 11, { align: 'center' });
+  doc.text('Principal', pageWidth - margin - 24, footerY - 3, { align: 'center' });
+  doc.setFont('helvetica', 'normal');
+  doc.setFontSize(8);
+  doc.setTextColor(...muted);
+  doc.text(`Issued: ${new Date().toLocaleDateString('en-IN')}`, margin, footerY - 3);
+
+  const safeStudent = String(student.studentName || 'student').replace(/[^\w\s-]/g, '').trim().replace(/\s+/g, '_');
+  const safeTitle = String(group.title || 'admit_card').replace(/[^\w\s-]/g, '').trim().replace(/\s+/g, '_');
+  doc.save(`${safeStudent}_${safeTitle}_Admit_Card.pdf`);
+};

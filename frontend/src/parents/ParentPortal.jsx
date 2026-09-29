@@ -29,6 +29,7 @@ import {
   CalendarClock,
   Megaphone,
   MessageSquareHeart,
+  FileBadge
 } from 'lucide-react';
 import { useDesktopNotificationBridge } from '../hooks/useDesktopNotificationBridge';
 import DesktopNotificationPermissionModal from '../components/DesktopNotificationPermissionModal';
@@ -44,6 +45,7 @@ const AchievementsView = lazy(() => import('./AchievementsView'));
 const HealthReport = lazy(() => import('./HealthReport'));
 const ClassRoutine = lazy(() => import('./ClassRoutine'));
 const ExamRoutine = lazy(() => import('./ExamRoutine'));
+const AdmitCardsView = lazy(() => import('../components/AdmitCardsView'));
 const HolidayList = lazy(() => import('./HolidayList'));
 const FeesPayment = lazy(() => import('./FeesPayment'));
 const ParentChat = lazy(() => import('./ParentChat'));
@@ -85,6 +87,7 @@ const NAV_GROUPS = [
     items: [
       { icon: Clock, label: 'Class Routine', description: 'Weekly timetable', path: '/parents/routine' },
       { icon: CalendarClock, label: 'Exam Routine', description: 'Exam schedule & downloads', path: '/parents/exam-routine' },
+      { icon: FileBadge, label: 'Admit Cards', description: 'Download exam admit cards', path: '/parents/admit-cards' },
       { icon: Sun, label: 'Holidays', description: 'School holiday list', path: '/parents/holidays' },
       { icon: Megaphone, label: 'Notices', description: 'School announcements', path: '/parents/notices' },
     ],
@@ -809,6 +812,7 @@ const ParentPortal = () => {
             <Route path="teacher-feedback" element={<ParentTeacherFeedback />} />
             <Route path="routine" element={<ClassRoutine />} />
             <Route path="exam-routine" element={<ExamRoutine />} />
+            <Route path="admit-cards" element={<AdmitCardsView mode="parent" />} />
             <Route path="academic" element={<AcademicReport />} />
             <Route path="fees" element={<FeesPayment />} />
             <Route path="health" element={<HealthReport />} />
@@ -1035,3 +1039,6 @@ const ParentPortal = () => {
 };
 
 export default ParentPortal;
+
+
+

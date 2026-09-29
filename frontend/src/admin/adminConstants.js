@@ -22,6 +22,7 @@ import {
   ArrowUpCircle,
   CalendarDays,
   CreditCard,
+  FileBadge,
   Plus,
   Eye,
   UserX
@@ -146,6 +147,11 @@ export const ADMIN_MENU_ITEMS = [
     path: '/admin/examination'
   },
   {
+    icon: FileBadge,
+    label: 'Admit Cards',
+    path: '/admin/admit-cards'
+  },
+  {
     icon: FileText,
     label: 'Result Management',
     path: '/admin/result'
@@ -197,7 +203,7 @@ export const ADMIN_MENU_SECTIONS = [
   { section: 'OVERVIEW', items: ['Analytics'] },
   {
     section: 'ACADEMIC MANAGEMENT',
-    items: ['Academic Setup', 'Teachers Management', 'Teacher Feedback', 'Routine Management', 'Exam Management', 'Result Management', 'Report Cards'],
+    items: ['Academic Setup', 'Teachers Management', 'Teacher Feedback', 'Routine Management', 'Exam Management', 'Admit Cards', 'Result Management', 'Report Cards'],
   },
   { section: 'STUDENTS', items: ['Students', 'Parents', 'Student Promotion', 'Leave & Left Students'] },
   { section: 'FEES MANAGEMENT', items: ['Create Fees', 'Fees Collection', 'Fee Receipts'] },
@@ -207,3 +213,4 @@ export const ADMIN_MENU_SECTIONS = [
   { section: 'SUPPORT', items: ['Support'] },
   { section: 'SETTINGS', items: ['Profile & School', 'Payment Gateway'] },
 ];
+

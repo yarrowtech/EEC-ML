@@ -17,6 +17,7 @@ const SchoolAdminsManagement = lazy(() => import('./pages/SchoolAdminsManagement
 const Routines = lazy(() => import('./Routines'));
 const FloorRoomManagement = lazy(() => import('./pages/FloorRoomManagement'));
 const ExaminationManagement = lazy(() => import('./pages/ExaminationManagement'));
+const AdmitCards = lazy(() => import('./pages/AdmitCards'));
 const ParentsManagement = lazy(() => import('./pages/ParentsManagement'));
 const SubjectManagement = lazy(() => import('./pages/SubjectManagement'));
 const AcademicSetup = lazy(() => import('./pages/AcademicSetup'));
@@ -349,6 +350,7 @@ const AdminApp = () => {
           <Route path="academics" element={<AcademicSetup setShowAdminHeader={setShowAdminHeader} />} />
           <Route path="subjects" element={<SubjectManagement setShowAdminHeader={setShowAdminHeader} />} />
           <Route path="examination" element={<ExaminationManagement setShowAdminHeader={setShowAdminHeader} />} />
+          <Route path="admit-cards" element={<AdmitCards setShowAdminHeader={setShowAdminHeader} />} />
           {/* Lesson Plan is managed by teachers — hidden from the admin portal */}
           <Route path="lesson-plans" element={<Navigate to="/admin/dashboard" replace />} />
           <Route path="result" element={<Result setShowAdminHeader={setShowAdminHeader} />} />
@@ -382,3 +384,5 @@ const AdminApp = () => {
 };
 
 export default AdminApp;
+
+

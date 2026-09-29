@@ -348,6 +348,18 @@ const buildExamRoutineRow = (exam = {}) => ({
   room: exam?.roomId?.roomNumber || '',
   groupId: exam?.groupId ? String(exam.groupId) : '',
 });
+const isGroupRoutinePublished = (group = {}) =>
+  group.status === 'Published' || Boolean(group.publishedAt);
+
+const buildAdmitCardGroupPayload = (group, subjects = []) => ({
+  ...group,
+  subjects,
+  routinePublished: isGroupRoutinePublished(group),
+  admitCardGenerated: isGroupRoutinePublished(group) && subjects.length > 0,
+  academicYearId: group.classId?.academicYearId?._id || null,
+  academicYearName: group.classId?.academicYearId?.name || '',
+  academicYearIsActive: Boolean(group.classId?.academicYearId?.isActive),
+});
 
 const slugifyDutyKey = (value) => String(value || '').trim().toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '');
 
@@ -734,6 +746,75 @@ router.get('/groups/student-schedule', authStudent, async (req, res) => {
   }
 });
 
+// GET /groups/student-admit-cards - published exam routines for the logged-in student's admit cards
+router.get('/groups/student-admit-cards', authStudent, async (req, res) => {
+  try {
+    const schoolId = req.schoolId || req.user?.schoolId || null;
+    if (!schoolId) return res.status(400).json({ error: 'schoolId is required' });
+    const campusId = req.campusId || null;
+    const studentId = req.user?.id || null;
+    if (!studentId || !mongoose.isValidObjectId(studentId)) {
+      return res.status(400).json({ error: 'Valid studentId is required' });
+    }
+
+    const student = await StudentUser.findOne({ _id: studentId, schoolId, ...(campusId ? { campusId } : {}) })
+      .select('name grade section roll admissionNumber enrollmentNo studentCode profilePic')
+      .lean();
+    if (!student) return res.status(404).json({ error: 'Student not found' });
+
+    const filter = { schoolId, ...(campusId ? { campusId } : {}) };
+    const [groups, exams, school, principal] = await Promise.all([
+      ExamGroup.find(filter)
+        .populate({ path: 'classId', select: 'name academicYearId', populate: { path: 'academicYearId', select: 'name isActive' } })
+        .populate('sectionId', 'name classId')
+        .sort({ startDate: 1, createdAt: -1 })
+        .lean(),
+      Exam.find({ ...filter, groupId: { $exists: true, $ne: null } })
+        .populate('subjectId', 'name code')
+        .populate('classId', 'name')
+        .populate('sectionId', 'name classId')
+        .populate({ path: 'roomId', select: 'roomNumber floorId', populate: { path: 'floorId', select: 'name floorCode buildingId', populate: { path: 'buildingId', select: 'name code' } } })
+        .sort({ date: 1, createdAt: 1 })
+        .lean(),
+      School.findById(schoolId).select('name code address logo').lean(),
+      Principal.findOne(campusId ? { schoolId, $or: [{ campusId }, { campusId: null }, { campusId: { $exists: false } }] } : { schoolId })
+        .sort({ updatedAt: -1, createdAt: -1 })
+        .select('name')
+        .lean(),
+    ]);
+
+    const studentGroups = groups.filter((group) => studentMatchesExamScope(student, group) && isGroupRoutinePublished(group));
+    const allowedGroupIds = new Set(studentGroups.map((group) => String(group._id)));
+    const examsByGroup = new Map();
+    exams.forEach((exam) => {
+      const gid = String(exam.groupId || '');
+      if (!gid || !allowedGroupIds.has(gid)) return;
+      if (!examsByGroup.has(gid)) examsByGroup.set(gid, []);
+      examsByGroup.get(gid).push(exam);
+    });
+
+    const groupsPayload = studentGroups
+      .map((group) => buildAdmitCardGroupPayload(group, examsByGroup.get(String(group._id)) || []))
+      .filter((group) => group.admitCardGenerated);
+
+    return res.status(200).json({
+      student: {
+        studentId: student._id,
+        studentName: student.name || 'Student',
+        grade: student.grade || '',
+        section: student.section || '',
+        roll: student.roll || '',
+        admissionNumber: student.admissionNumber || student.enrollmentNo || student.studentCode || '',
+        profilePic: resolveStudentPhoto(student.profilePic),
+      },
+      groups: groupsPayload,
+      school: { name: school?.name || '', address: school?.address || '', logo: school?.logo?.secure_url || school?.logo?.url || null },
+      principalName: String(principal?.name || '').trim(),
+    });
+  } catch (err) {
+    return res.status(500).json({ error: err.message || 'Failed to fetch admit cards' });
+  }
+});
 // GET /groups/parent-schedule — exam schedule for every child linked to the logged-in parent
 router.get('/groups/parent-schedule', authParent, async (req, res) => {
   try {
@@ -870,6 +951,86 @@ router.get('/groups/parent-schedule', authParent, async (req, res) => {
   }
 });
 
+// GET /groups/parent-admit-cards - published admit cards for every linked child
+router.get('/groups/parent-admit-cards', authParent, async (req, res) => {
+  try {
+    const parent = await ParentUser.findById(req.user.id).select('schoolId campusId childrenIds children').lean();
+    if (!parent) return res.status(404).json({ error: 'Parent not found' });
+
+    const schoolId = parent.schoolId || req.schoolId || null;
+    if (!schoolId) return res.status(400).json({ error: 'schoolId is required' });
+    const campusId = parent.campusId || req.campusId || null;
+    const studentFilter = { schoolId, ...(campusId ? { campusId } : {}) };
+    let students = [];
+
+    if (Array.isArray(parent.childrenIds) && parent.childrenIds.length > 0) {
+      students = await StudentUser.find({ ...studentFilter, _id: { $in: parent.childrenIds } })
+        .select('name grade section roll admissionNumber enrollmentNo studentCode profilePic')
+        .lean();
+    }
+    if (students.length === 0 && Array.isArray(parent.children) && parent.children.length > 0) {
+      const validNames = parent.children.map((name) => String(name || '').trim()).filter(Boolean);
+      if (validNames.length > 0) {
+        students = await StudentUser.find({ ...studentFilter, name: { $in: validNames } })
+          .select('name grade section roll admissionNumber enrollmentNo studentCode profilePic')
+          .lean();
+      }
+    }
+    if (students.length === 0) return res.status(200).json({ children: [] });
+
+    const filter = { schoolId, ...(campusId ? { campusId } : {}) };
+    const [groups, exams, school, principal] = await Promise.all([
+      ExamGroup.find(filter)
+        .populate({ path: 'classId', select: 'name academicYearId', populate: { path: 'academicYearId', select: 'name isActive' } })
+        .populate('sectionId', 'name classId')
+        .sort({ startDate: 1, createdAt: -1 })
+        .lean(),
+      Exam.find({ ...filter, groupId: { $exists: true, $ne: null } })
+        .populate('subjectId', 'name code')
+        .populate('classId', 'name')
+        .populate('sectionId', 'name classId')
+        .populate({ path: 'roomId', select: 'roomNumber floorId', populate: { path: 'floorId', select: 'name floorCode buildingId', populate: { path: 'buildingId', select: 'name code' } } })
+        .sort({ date: 1, createdAt: 1 })
+        .lean(),
+      School.findById(schoolId).select('name code address logo').lean(),
+      Principal.findOne(campusId ? { schoolId, $or: [{ campusId }, { campusId: null }, { campusId: { $exists: false } }] } : { schoolId })
+        .sort({ updatedAt: -1, createdAt: -1 })
+        .select('name')
+        .lean(),
+    ]);
+
+    const publishedGroups = groups.filter(isGroupRoutinePublished);
+    const examsByGroup = new Map();
+    exams.forEach((exam) => {
+      const gid = String(exam.groupId || '');
+      if (!gid) return;
+      if (!examsByGroup.has(gid)) examsByGroup.set(gid, []);
+      examsByGroup.get(gid).push(exam);
+    });
+
+    const children = students.map((student) => ({
+      studentId: student._id,
+      studentName: student.name || 'Student',
+      grade: student.grade || '',
+      section: student.section || '',
+      roll: student.roll || '',
+      admissionNumber: student.admissionNumber || student.enrollmentNo || student.studentCode || '',
+      profilePic: resolveStudentPhoto(student.profilePic),
+      groups: publishedGroups
+        .filter((group) => studentMatchesExamScope(student, group))
+        .map((group) => buildAdmitCardGroupPayload(group, examsByGroup.get(String(group._id)) || []))
+        .filter((group) => group.admitCardGenerated),
+    }));
+
+    return res.status(200).json({
+      children,
+      school: { name: school?.name || '', address: school?.address || '', logo: school?.logo?.secure_url || school?.logo?.url || null },
+      principalName: String(principal?.name || '').trim(),
+    });
+  } catch (err) {
+    return res.status(500).json({ error: err.message || 'Failed to fetch admit cards' });
+  }
+});
 // POST /groups — create group
 router.post('/groups', adminAuth, async (req, res) => {
   try {
@@ -3161,6 +3322,7 @@ Format your response strictly as JSON:
   }
 });
 
+
 // POST /groups/generate-routine — constraint-based room + invigilator
 // auto-scheduler (services/examSchedulingEngine.js). Distinct from the
 // legacy frontend "Auto Schedule" wizard step: this runs server-side against
@@ -3193,3 +3355,6 @@ router.post('/groups/generate-routine', adminAuth, async (req, res) => {
 });
 
 module.exports = router;
+
+
+

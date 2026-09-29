@@ -28,6 +28,7 @@ const AcademicAlcove = lazy(() => import('./AcademicAlcove'));
 const StudentWellbeing = lazy(() => import('./StudentWellbeing'));
 const LessonPlanStatusView = lazy(() => import('./LessonPlanStatusView'));
 const StudentExamsView = lazy(() => import('./StudentExamsView'));
+const AdmitCardsView = lazy(() => import('./AdmitCardsView'));
 const HolidayListView = lazy(() => import('./HolidayListView'));
 const StudentNotificationCenter = lazy(() => import('./StudentNotificationCenter'));
 const StudentOnboarding = lazy(() => import('./StudentOnboarding'));
@@ -202,6 +203,7 @@ const Dashboard = () => {
     routine: RoutineView,
     schedule: RoutineView,
     exams: StudentExamsView,
+    'admit-cards': AdmitCardsView,
     holidays: HolidayListView,
     'lesson-plan-status': LessonPlanStatusView,
     assignments: (props) => <AssignmentView {...props} defaultType="school" />,
@@ -314,3 +316,4 @@ const Dashboard = () => {
 };
 
 export default Dashboard;
+
