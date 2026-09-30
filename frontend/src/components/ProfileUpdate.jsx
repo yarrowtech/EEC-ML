@@ -203,7 +203,7 @@ const ProfileUpdate = () => {
         break;
       case 'phone':
         const phoneRegex = /^\+?[\d\s()-]+$/;
-        if (!phoneRegex.test(value)) {
+        if (value && !phoneRegex.test(value)) {
           newErrors[name] = 'Please enter a valid phone number';
         } else {
           delete newErrors[name];
@@ -230,18 +230,49 @@ const ProfileUpdate = () => {
     validateField(name, value, nextProfile);
   };
 
+  // Save the photo straight away — no need to press "Save" for a new picture.
+  const uploadPhotoNow = async (file) => {
+    setPhotoUploading(true);
+    try {
+      const token = localStorage.getItem('token');
+      const formData = new FormData();
+      formData.append('profilePic', file);
+      const response = await fetch(`${import.meta.env.VITE_API_URL}/api/student/profile/update`, {
+        method: 'POST',
+        headers: { Authorization: `Bearer ${token}` },
+        body: formData,
+      });
+      const result = await response.json().catch(() => ({}));
+      if (!response.ok) throw new Error(result?.error || 'Unable to update profile photo');
+      const url = result?.student?.profilePic || '';
+      if (url) { setPreview(url); setProfile((prev) => ({ ...prev, profilePic: url })); }
+      setErrors((prev) => { const next = { ...prev }; delete next.profilePic; delete next.submit; return next; });
+      setSuccess(true);
+      setTimeout(() => setSuccess(false), 3000);
+    } catch (error) {
+      setPreview(typeof profile.profilePic === 'string' ? profile.profilePic : '');
+      setErrors((prev) => ({ ...prev, profilePic: error.message || 'Unable to update profile photo' }));
+    } finally {
+      setPhotoUploading(false);
+    }
+  };
+
   const handleImageChange = (e) => {
     const file = e.target.files[0];
     if (file) {
+      if (!/^image\/(jpeg|png|webp|gif)$/.test(file.type)) {
+        setErrors(prev => ({ ...prev, profilePic: 'Please choose a JPG, PNG, WEBP or GIF image' }));
+        return;
+      }
       if (file.size > 5 * 1024 * 1024) {
         setErrors(prev => ({ ...prev, profilePic: 'Image size must be less than 5MB' }));
         return;
       }
 
-      setProfile((prev) => ({ ...prev, profilePic: file }));
       const reader = new FileReader();
       reader.onloadend = () => setPreview(reader.result);
       reader.readAsDataURL(file);
+      uploadPhotoNow(file);
 
       if (errors.submit) {
         setErrors((prev) => {
@@ -280,7 +311,8 @@ const ProfileUpdate = () => {
       return;
     }
 
-    if (Object.keys(errors).length > 0) {
+    // Only real field errors block saving (not a previous submit/photo message).
+    if (Object.keys(errors).some((k) => k !== 'submit' && k !== 'profilePic')) {
       return;
     }
 

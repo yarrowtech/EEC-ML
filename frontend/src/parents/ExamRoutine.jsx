@@ -1,125 +1,880 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { UserCircle2, BookOpenText, CalendarClock, Download, Info, ChevronDown, CheckCircle2 } from 'lucide-react';
+import {
+  CalendarDays,
+  UserCircle2,
+  ChevronDown,
+  CheckCircle2,
+  Clock3,
+  Info,
+  BookOpen,
+  Monitor,
+  Palette,
+  FlaskConical,
+  Globe2,
+  Landmark,
+  Calculator,
+  PersonStanding,
+  Languages,
+  GraduationCap,
+  Download,
+} from 'lucide-react';
 import { motion as Motion, AnimatePresence } from 'framer-motion';
 import toast from 'react-hot-toast';
+
 import { parentApiJson } from './parentApi';
 import { generateExamSchedulePdf } from '../utils/examRoutinePdf';
 import { downloadAttachment } from '../utils/noticeDisplay';
-import ExamRoutineTable from '../components/ExamRoutineTable';
 import ChildSwitcher, { useSharedChildSelection } from './ChildSwitcher';
 import Loading from './Loading';
 import { EmptyState, ErrorState } from './StateBlock';
 
-const PREP_QUOTE = 'Preparation today, confident tomorrow!';
+/* -------------------------------------------------------------------------- */
+/* Helpers                                                                    */
+/* -------------------------------------------------------------------------- */
 
-// "HH:mm" (24h, from a <input type="time">) → "h:mm AM/PM". Anything that
-// doesn't parse as 24h time (already-formatted strings, free text) passes
-// through unchanged rather than being mangled.
 const to12Hour = (value) => {
   const raw = String(value || '').trim();
+
   const match = raw.match(/^(\d{1,2}):(\d{2})$/);
+
   if (!match) return raw;
+
   const h = Number(match[1]);
   const m = Number(match[2]);
-  if (!Number.isFinite(h) || !Number.isFinite(m)) return raw;
+
+  if (!Number.isFinite(h) || !Number.isFinite(m)) {
+    return raw;
+  }
+
   const period = h >= 12 ? 'PM' : 'AM';
   const hh = ((h + 11) % 12) + 1;
+
   return `${hh}:${String(m).padStart(2, '0')} ${period}`;
 };
 
 const addMinutes = (time24, minutes) => {
-  const match = String(time24 || '').trim().match(/^(\d{1,2}):(\d{2})$/);
-  if (!match || !Number.isFinite(Number(minutes))) return '';
-  const total = Number(match[1]) * 60 + Number(match[2]) + Number(minutes);
+  const match = String(time24 || '')
+    .trim()
+    .match(/^(\d{1,2}):(\d{2})$/);
+
+  if (!match || !Number.isFinite(Number(minutes))) {
+    return '';
+  }
+
+  const total =
+    Number(match[1]) * 60 +
+    Number(match[2]) +
+    Number(minutes);
+
   const wrapped = ((total % 1440) + 1440) % 1440;
+
   const h = Math.floor(wrapped / 60);
   const m = wrapped % 60;
+
   return `${String(h).padStart(2, '0')}:${String(m).padStart(2, '0')}`;
 };
 
+const formatDate = (value) => {
+  if (!value) return '—';
+
+  const date = new Date(value);
+
+  if (Number.isNaN(date.getTime())) {
+    return '—';
+  }
+
+  return date.toLocaleDateString('en-GB', {
+    day: '2-digit',
+    month: 'short',
+    year: 'numeric',
+  });
+};
+
+const formatMonthYear = (value) => {
+  if (!value) return '';
+
+  const date = new Date(value);
+
+  if (Number.isNaN(date.getTime())) {
+    return '';
+  }
+
+  return date.toLocaleDateString('en-US', {
+    month: 'long',
+    year: 'numeric',
+  });
+};
+
+const getDay = (value) => {
+  if (!value) return '—';
+
+  const date = new Date(value);
+
+  if (Number.isNaN(date.getTime())) {
+    return '—';
+  }
+
+  return date.toLocaleDateString('en-US', {
+    weekday: 'short',
+  });
+};
+
+const getTimeRange = (exam) => {
+  if (exam?.startTime && exam?.endTime) {
+    return `${to12Hour(exam.startTime)} – ${to12Hour(exam.endTime)}`;
+  }
+
+  if (exam?.startTime) {
+    return to12Hour(exam.startTime);
+  }
+
+  if (exam?.time) {
+    const duration =
+      exam?.duration ??
+      exam?.durationMinutes ??
+      null;
+
+    const endTime24 = duration
+      ? addMinutes(exam.time, duration)
+      : '';
+
+    return endTime24
+      ? `${to12Hour(exam.time)} – ${to12Hour(endTime24)}`
+      : to12Hour(exam.time);
+  }
+
+  return '—';
+};
+
+const getSubjectName = (exam) => {
+  return (
+    exam?.subjectId?.name ||
+    exam?.subject ||
+    'Subject'
+  );
+};
+
+const getSubjectIcon = (subject) => {
+  const name = String(subject || '').toLowerCase();
+
+  if (
+    name.includes('computer') ||
+    name.includes('ict') ||
+    name.includes('information')
+  ) {
+    return Monitor;
+  }
+
+  if (
+    name.includes('drawing') ||
+    name.includes('art') ||
+    name.includes('craft')
+  ) {
+    return Palette;
+  }
+
+  if (
+    name.includes('science') ||
+    name.includes('physics') ||
+    name.includes('chemistry') ||
+    name.includes('biology')
+  ) {
+    return FlaskConical;
+  }
+
+  if (
+    name.includes('geography')
+  ) {
+    return Globe2;
+  }
+
+  if (
+    name.includes('history') ||
+    name.includes('civics') ||
+    name.includes('social')
+  ) {
+    return Landmark;
+  }
+
+  if (
+    name.includes('math') ||
+    name.includes('mathematics')
+  ) {
+    return Calculator;
+  }
+
+  if (
+    name.includes('physical') ||
+    name.includes('sports') ||
+    name.includes('p.e.')
+  ) {
+    return PersonStanding;
+  }
+
+  if (
+    name.includes('bengali') ||
+    name.includes('english') ||
+    name.includes('language')
+  ) {
+    return BookOpen;
+  }
+
+  return GraduationCap;
+};
+
+const getSubjectIconClass = (subject) => {
+  const name = String(subject || '').toLowerCase();
+
+  if (
+    name.includes('computer') ||
+    name.includes('ict') ||
+    name.includes('information')
+  ) {
+    return 'text-blue-500 bg-blue-50';
+  }
+
+  if (
+    name.includes('drawing') ||
+    name.includes('art') ||
+    name.includes('craft')
+  ) {
+    return 'text-violet-500 bg-violet-50';
+  }
+
+  if (
+    name.includes('science') ||
+    name.includes('physics') ||
+    name.includes('chemistry') ||
+    name.includes('biology')
+  ) {
+    return 'text-emerald-500 bg-emerald-50';
+  }
+
+  if (name.includes('geography')) {
+    return 'text-amber-500 bg-amber-50';
+  }
+
+  if (
+    name.includes('history') ||
+    name.includes('civics') ||
+    name.includes('social')
+  ) {
+    return 'text-purple-500 bg-purple-50';
+  }
+
+  if (
+    name.includes('math') ||
+    name.includes('mathematics')
+  ) {
+    return 'text-blue-500 bg-blue-50';
+  }
+
+  if (
+    name.includes('physical') ||
+    name.includes('sports') ||
+    name.includes('p.e.')
+  ) {
+    return 'text-green-500 bg-green-50';
+  }
+
+  return 'text-rose-500 bg-rose-50';
+};
+
+/* -------------------------------------------------------------------------- */
+/* Exam rows                                                                  */
+/* -------------------------------------------------------------------------- */
+
 const toRoutineRows = (group) => {
-  const subjects = Array.isArray(group?.subjects) ? group.subjects : [];
+  const subjects = Array.isArray(group?.subjects)
+    ? group.subjects
+    : [];
+
   return subjects
     .map((exam) => {
-      const date = exam?.date ? new Date(exam.date) : null;
-      const validDate = date && !Number.isNaN(date.getTime());
-      let time = '—';
-      if (exam?.startTime && exam?.endTime) {
-        time = `${to12Hour(exam.startTime)} – ${to12Hour(exam.endTime)}`;
-      } else if (exam?.startTime) {
-        time = to12Hour(exam.startTime);
-      } else if (exam?.time) {
-        const duration = exam?.duration ?? exam?.durationMinutes ?? null;
-        const endTime24 = duration ? addMinutes(exam.time, duration) : '';
-        time = endTime24 ? `${to12Hour(exam.time)} – ${to12Hour(endTime24)}` : to12Hour(exam.time);
-      }
+      const date = exam?.date
+        ? new Date(exam.date)
+        : null;
+
+      const validDate =
+        date &&
+        !Number.isNaN(date.getTime());
+
+      const subject = getSubjectName(exam);
 
       return {
-        rawDate: validDate ? date.getTime() : Number.MAX_SAFE_INTEGER,
-        date: validDate ? date.toISOString() : null,
-        day: validDate ? date.toLocaleDateString('en-US', { weekday: 'short' }) : '—',
-        subject: exam?.subjectId?.name || exam?.subject || 'Subject',
-        time,
-        duration: exam?.duration ?? exam?.durationMinutes ?? null,
-        building: exam?.roomId?.floorId?.buildingId?.name || '',
-        floor: exam?.roomId?.floorId?.name || '',
-        room: exam?.roomId?.roomNumber || '',
-        venue: exam?.venue || '',
+        rawDate: validDate
+          ? date.getTime()
+          : Number.MAX_SAFE_INTEGER,
+
+        date: validDate
+          ? date.toISOString()
+          : null,
+
+        day: validDate
+          ? getDay(date)
+          : '—',
+
+        subject,
+
+        time: getTimeRange(exam),
+
+        duration:
+          exam?.duration ??
+          exam?.durationMinutes ??
+          null,
+
+        building:
+          exam?.roomId?.floorId?.buildingId?.name ||
+          '',
+
+        floor:
+          exam?.roomId?.floorId?.name ||
+          '',
+
+        room:
+          exam?.roomId?.roomNumber ||
+          '',
+
+        venue:
+          exam?.venue ||
+          '',
       };
     })
     .sort((a, b) => a.rawDate - b.rawDate);
 };
 
-// Groups (exam routines) → the distinct academic sessions they belong to,
-// newest first, with whichever one the school has flagged isActive (falling
-// back to the most recent) picked as the default "current" session.
-const buildSessions = (groups) => {
-  const byId = new Map();
-  groups.forEach((group) => {
-    const id = group.academicYearId ? String(group.academicYearId) : `__unknown_${group.academicYearName || 'session'}`;
-    if (!byId.has(id)) {
-      byId.set(id, { id, name: group.academicYearName || 'Unknown session', isActive: Boolean(group.academicYearIsActive) });
-    } else if (group.academicYearIsActive) {
-      byId.get(id).isActive = true;
-    }
-  });
-  const sessions = Array.from(byId.values()).sort((a, b) => b.name.localeCompare(a.name, undefined, { numeric: true }));
-  if (!sessions.some((s) => s.isActive) && sessions.length) sessions[0].isActive = true;
-  return sessions;
+/* -------------------------------------------------------------------------- */
+/* Exam status                                                                */
+/* -------------------------------------------------------------------------- */
+
+const getExamState = (group) => {
+  const backendState = String(
+    group?.examState || ''
+  ).toLowerCase();
+
+  if (
+    backendState === 'completed' ||
+    String(group?.status || '').toLowerCase() === 'completed'
+  ) {
+    return 'completed';
+  }
+
+  if (
+    backendState === 'published' ||
+    String(group?.status || '').toLowerCase() === 'published'
+  ) {
+    return 'upcoming';
+  }
+
+  return 'coming-soon';
 };
+
+const getStateConfig = (state) => {
+  switch (state) {
+    case 'completed':
+      return {
+        label: 'Completed',
+        icon: CheckCircle2,
+        badgeClass:
+          'border border-emerald-100 bg-emerald-50 text-emerald-600',
+        iconClass:
+          'bg-emerald-500 text-white',
+        headerClass:
+          'border-blue-100 bg-gradient-to-r from-blue-50 via-white to-blue-50/60',
+        iconBoxClass:
+          'bg-blue-100 text-blue-600',
+      };
+
+    case 'upcoming':
+      return {
+        label: 'Upcoming',
+        icon: Clock3,
+        badgeClass:
+          'border border-amber-100 bg-amber-50 text-amber-600',
+        iconClass:
+          'bg-amber-500 text-white',
+        headerClass:
+          'border-violet-100 bg-gradient-to-r from-violet-50 via-white to-violet-50/60',
+        iconBoxClass:
+          'bg-violet-100 text-violet-600',
+      };
+
+    default:
+      return {
+        label: 'Coming Soon',
+        icon: Clock3,
+        badgeClass:
+          'border border-slate-200 bg-slate-100 text-slate-600',
+        iconClass:
+          'bg-slate-400 text-white',
+        headerClass:
+          'border-emerald-100 bg-gradient-to-r from-emerald-50 via-white to-emerald-50/60',
+        iconBoxClass:
+          'bg-emerald-100 text-emerald-600',
+      };
+  }
+};
+
+/* -------------------------------------------------------------------------- */
+/* Routine Table                                                              */
+/* -------------------------------------------------------------------------- */
+
+const RoutineTable = ({ group }) => {
+  const rows = useMemo(
+    () => toRoutineRows(group),
+    [group]
+  );
+
+  if (!rows.length) {
+    return (
+      <div className="border-t border-slate-100 bg-white px-5 py-6">
+        <div className="flex items-start gap-3 rounded-xl bg-slate-50 px-4 py-4 text-sm text-slate-500">
+          <Info className="mt-0.5 h-4 w-4 shrink-0 text-slate-400" />
+
+          <p>
+            The detailed subject-wise routine has not
+            been published yet.
+          </p>
+        </div>
+      </div>
+    );
+  }
+
+  return (
+    <div className="border-t border-slate-100 bg-white">
+      <div className="overflow-x-auto">
+        <table className="min-w-[1000px] w-full border-collapse">
+          <thead>
+            <tr className="bg-slate-50/90 text-left">
+              <th className="px-5 py-3 text-xs font-bold text-slate-500">
+                #
+              </th>
+
+              <th className="px-4 py-3 text-xs font-bold text-slate-500">
+                Date
+              </th>
+
+              <th className="px-4 py-3 text-xs font-bold text-slate-500">
+                Day
+              </th>
+
+              <th className="px-4 py-3 text-xs font-bold text-slate-500">
+                Subject
+              </th>
+
+              <th className="px-4 py-3 text-xs font-bold text-slate-500">
+                Time
+              </th>
+
+              <th className="px-4 py-3 text-xs font-bold text-slate-500">
+                Duration
+              </th>
+
+              <th className="px-4 py-3 text-xs font-bold text-slate-500">
+                Building
+              </th>
+
+              <th className="px-4 py-3 text-xs font-bold text-slate-500">
+                Floor
+              </th>
+
+              <th className="px-4 py-3 text-xs font-bold text-slate-500">
+                Room
+              </th>
+            </tr>
+          </thead>
+
+          <tbody>
+            {rows.map((row, index) => {
+              const SubjectIcon =
+                getSubjectIcon(row.subject);
+
+              const subjectIconClass =
+                getSubjectIconClass(row.subject);
+
+              return (
+                <tr
+                  key={`${row.subject}-${row.date}-${index}`}
+                  className="border-t border-slate-100 transition hover:bg-slate-50/70"
+                >
+                  <td className="px-5 py-2.5 text-xs font-medium text-slate-500">
+                    {index + 1}
+                  </td>
+
+                  <td className="px-4 py-2.5 text-xs font-medium text-slate-600">
+                    {formatDate(row.date)}
+                  </td>
+
+                  <td className="px-4 py-2.5 text-xs font-medium text-slate-600">
+                    <span className="underline decoration-slate-200 underline-offset-2">
+                      {row.day}
+                    </span>
+                  </td>
+
+                  <td className="px-4 py-2.5">
+                    <div className="flex items-center gap-2.5">
+                      <span
+                        className={`flex h-7 w-7 shrink-0 items-center justify-center rounded-lg ${subjectIconClass}`}
+                      >
+                        <SubjectIcon
+                          className="h-4 w-4"
+                          strokeWidth={2.2}
+                        />
+                      </span>
+
+                      <span className="text-xs font-medium text-slate-700">
+                        {row.subject}
+                      </span>
+                    </div>
+                  </td>
+
+                  <td className="px-4 py-2.5 text-xs font-medium text-slate-600">
+                    <span className="underline decoration-slate-200 underline-offset-2">
+                      {row.time}
+                    </span>
+                  </td>
+
+                  <td className="px-4 py-2.5 text-xs font-medium text-slate-600">
+                    {row.duration
+                      ? `${row.duration} min`
+                      : '—'}
+                  </td>
+
+                  <td className="px-4 py-2.5 text-xs font-medium text-slate-600">
+                    {row.building || '—'}
+                  </td>
+
+                  <td className="px-4 py-2.5 text-xs font-medium text-slate-600">
+                    {row.floor || '—'}
+                  </td>
+
+                  <td className="px-4 py-2.5 text-xs font-medium text-slate-600">
+                    {row.room || '—'}
+                  </td>
+                </tr>
+              );
+            })}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  );
+};
+
+/* -------------------------------------------------------------------------- */
+/* Exam Card                                                                  */
+/* -------------------------------------------------------------------------- */
+
+const ExamCard = ({
+  group,
+  isOpen,
+  onToggle,
+  onDownload,
+  isExporting,
+}) => {
+  const state = getExamState(group);
+  const config = getStateConfig(state);
+
+  const StatusIcon = config.icon;
+
+  const firstExamDate =
+    Array.isArray(group?.subjects) &&
+    group.subjects.length
+      ? group.subjects
+          .map((subject) => subject?.date)
+          .filter(Boolean)
+          .sort(
+            (a, b) =>
+              new Date(a).getTime() -
+              new Date(b).getTime()
+          )[0]
+      : group?.startDate;
+
+  const monthText =
+    formatMonthYear(firstExamDate);
+
+  const termText =
+    group?.termName ||
+    group?.term ||
+    group?.academicTerm ||
+    '';
+
+  const subtitleParts = [];
+
+  if (termText) {
+    subtitleParts.push(termText);
+  }
+
+  if (monthText) {
+    subtitleParts.push(monthText);
+  }
+
+  return (
+    <div
+      className={`overflow-hidden rounded-2xl border shadow-sm ${config.headerClass}`}
+    >
+      {/* ------------------------------------------------------------------ */}
+      {/* Header                                                             */}
+      {/* ------------------------------------------------------------------ */}
+
+      <div
+        role="button"
+        tabIndex={0}
+        aria-expanded={isOpen}
+        onClick={onToggle}
+        onKeyDown={(event) => {
+          if (
+            event.key === 'Enter' ||
+            event.key === ' '
+          ) {
+            event.preventDefault();
+            onToggle();
+          }
+        }}
+        className="flex cursor-pointer items-center justify-between gap-4 px-5 py-4 select-none"
+      >
+        <div className="flex min-w-0 items-center gap-4">
+          {/* Exam Icon */}
+          <div
+            className={`flex h-12 w-12 shrink-0 items-center justify-center rounded-xl ${config.iconBoxClass}`}
+          >
+            <CalendarDays
+              className="h-6 w-6"
+              strokeWidth={2}
+            />
+          </div>
+
+          {/* Title */}
+          <div className="min-w-0">
+            <h2 className="truncate text-base font-bold text-slate-900 sm:text-lg">
+              {group?.title || 'Examination'}
+            </h2>
+
+            <p className="mt-0.5 text-xs font-medium text-slate-500 sm:text-sm">
+              {subtitleParts.length
+                ? subtitleParts.join(' · ')
+                : `Class ${
+                    group?.classId?.name || '—'
+                  }`}
+            </p>
+          </div>
+        </div>
+
+        {/* Right Controls */}
+        <div className="flex shrink-0 items-center gap-2">
+          {state === 'published' && (
+            <button
+              type="button"
+              onClick={(event) => {
+                event.stopPropagation();
+                onDownload();
+              }}
+              disabled={isExporting}
+              className="hidden items-center gap-1.5 rounded-lg bg-white px-3 py-2 text-xs font-semibold text-slate-600 shadow-sm ring-1 ring-slate-200 transition hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-50 sm:inline-flex"
+            >
+              <Download className="h-3.5 w-3.5" />
+              Download
+            </button>
+          )}
+
+          {/* Status */}
+          <span
+            className={`inline-flex items-center gap-1.5 rounded-full px-3 py-1.5 text-xs font-bold ${config.badgeClass}`}
+          >
+            <StatusIcon
+              className="h-3.5 w-3.5"
+              strokeWidth={2.5}
+            />
+
+            <span className="hidden sm:inline">
+              {config.label}
+            </span>
+          </span>
+
+          <ChevronDown
+            className={`h-5 w-5 text-slate-500 transition-transform duration-200 ${
+              isOpen ? 'rotate-180' : ''
+            }`}
+          />
+        </div>
+      </div>
+
+      {/* ------------------------------------------------------------------ */}
+      {/* Body                                                               */}
+      {/* ------------------------------------------------------------------ */}
+
+      <AnimatePresence initial={false}>
+        {isOpen && (
+          <Motion.div
+            initial={{
+              height: 0,
+              opacity: 0,
+            }}
+            animate={{
+              height: 'auto',
+              opacity: 1,
+            }}
+            exit={{
+              height: 0,
+              opacity: 0,
+            }}
+            transition={{
+              duration: 0.22,
+              ease: 'easeInOut',
+            }}
+            className="overflow-hidden"
+          >
+            {/* Completed message */}
+            {state === 'completed' && (
+              <div className="flex items-start gap-3 border-t border-blue-100 bg-blue-50/70 px-5 py-3.5">
+                <span className="mt-0.5 flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-blue-100 text-blue-600">
+                  <Info className="h-3.5 w-3.5" />
+                </span>
+
+                <div>
+                  <p className="text-sm font-semibold text-blue-700">
+                    This examination has been
+                    completed.
+                  </p>
+
+                  <p className="mt-0.5 text-xs text-slate-500">
+                    The routine below is kept for your
+                    reference. Results will be shared
+                    once they are published.
+                  </p>
+                </div>
+              </div>
+            )}
+
+            {/* Published routine */}
+            {state === 'upcoming' &&
+            Array.isArray(group?.subjects) &&
+            group.subjects.length > 0 ? (
+              <RoutineTable group={group} />
+            ) : state === 'completed' &&
+              Array.isArray(group?.subjects) &&
+              group.subjects.length > 0 ? (
+              <RoutineTable group={group} />
+            ) : (
+              /* Not published yet */
+              <div className="flex items-start gap-3 border-t border-slate-100 bg-slate-50/70 px-5 py-4">
+                <Info className="mt-0.5 h-4 w-4 shrink-0 text-slate-400" />
+
+                <div>
+                  <p className="text-sm font-semibold text-slate-700">
+                    The routine for{' '}
+                    {group?.title || 'this examination'}{' '}
+                    will be published soon.
+                  </p>
+
+                  <p className="mt-0.5 text-xs text-slate-500">
+                    You will be notified once the
+                    subject-wise schedule is available.
+                  </p>
+                </div>
+              </div>
+            )}
+          </Motion.div>
+        )}
+      </AnimatePresence>
+    </div>
+  );
+};
+
+/* -------------------------------------------------------------------------- */
+/* Main Component                                                             */
+/* -------------------------------------------------------------------------- */
 
 const ExamRoutine = () => {
   const navigate = useNavigate();
+
   const [children, setChildren] = useState([]);
   const [pdfHeader, setPdfHeader] = useState({});
+
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
-  const [isExporting, setIsExporting] = useState(false);
-  const [selectedSessionId, setSelectedSessionId] = useState('');
-  const [openGroupId, setOpenGroupId] = useState('');
+
+  const [isExporting, setIsExporting] =
+    useState(false);
+
+  const [openGroupId, setOpenGroupId] =
+    useState('');
+
+  /* ---------------------------------------------------------------------- */
+  /* Children                                                               */
+  /* ---------------------------------------------------------------------- */
 
   const childOptions = useMemo(
-    () => children.map((c) => ({ id: String(c.studentId || ''), name: c.studentName || 'Student' })),
-    [children],
+    () =>
+      children.map((child) => ({
+        id: String(
+          child.studentId || ''
+        ),
+
+        name:
+          child.studentName ||
+          'Student',
+      })),
+
+    [children]
   );
-  const [childKey, setChildKey, selectedOption] = useSharedChildSelection(childOptions);
-  const selectedStudentId = selectedOption?.id || '';
+
+  const [
+    childKey,
+    setChildKey,
+    selectedOption,
+  ] = useSharedChildSelection(
+    childOptions
+  );
+
+  const selectedStudentId =
+    selectedOption?.id || '';
+
+  /* ---------------------------------------------------------------------- */
+  /* API                                                                    */
+  /* ---------------------------------------------------------------------- */
 
   const loadSchedules = async () => {
     setLoading(true);
     setError('');
+
     try {
-      const data = await parentApiJson('/api/exam/groups/parent-schedule', {}, navigate);
-      setChildren(Array.isArray(data?.children) ? data.children : []);
+      const data =
+        await parentApiJson(
+          '/api/exam/groups/parent-schedule',
+          {},
+          navigate
+        );
+
+      setChildren(
+        Array.isArray(data?.children)
+          ? data.children
+          : []
+      );
+
       setPdfHeader({
-        schoolName: String(data?.school?.name || '').trim(),
-        schoolAddressLine: String(data?.school?.address || '').trim(),
-        logoUrl: String(data?.school?.logo || '').trim(),
-        principalName: String(data?.principalName || '').trim(),
+        schoolName: String(
+          data?.school?.name || ''
+        ).trim(),
+
+        schoolAddressLine: String(
+          data?.school?.address || ''
+        ).trim(),
+
+        logoUrl: String(
+          data?.school?.logo || ''
+        ).trim(),
+
+        principalName: String(
+          data?.principalName || ''
+        ).trim(),
       });
     } catch (err) {
-      setError(err.message || 'Unable to load exam routine');
+      setError(
+        err?.message ||
+          'Unable to load exam routine'
+      );
     } finally {
       setLoading(false);
     }
@@ -127,226 +882,304 @@ const ExamRoutine = () => {
 
   useEffect(() => {
     loadSchedules();
+
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
+  /* ---------------------------------------------------------------------- */
+  /* Selected child                                                         */
+  /* ---------------------------------------------------------------------- */
+
   const selectedChild = useMemo(
-    () => children.find((c) => String(c.studentId) === String(selectedStudentId)) || null,
-    [children, selectedStudentId],
+    () =>
+      children.find(
+        (child) =>
+          String(child.studentId) ===
+          String(selectedStudentId)
+      ) || null,
+
+    [children, selectedStudentId]
   );
 
-  const groups = Array.isArray(selectedChild?.groups) ? selectedChild.groups : [];
-  const sessions = useMemo(() => buildSessions(groups), [groups]);
+  /* ---------------------------------------------------------------------- */
+  /* Groups                                                                 */
+  /* ---------------------------------------------------------------------- */
 
-  // Default to the active (current) session whenever the child or their
-  // session list changes, so switching kids never leaves a stale pick behind.
+  const groups = useMemo(() => {
+    if (
+      !Array.isArray(
+        selectedChild?.groups
+      )
+    ) {
+      return [];
+    }
+
+    return [...selectedChild.groups].sort(
+      (a, b) => {
+        const dateA = new Date(
+          a?.startDate ||
+            a?.subjects?.[0]?.date ||
+            0
+        ).getTime();
+
+        const dateB = new Date(
+          b?.startDate ||
+            b?.subjects?.[0]?.date ||
+            0
+        ).getTime();
+
+        return dateA - dateB;
+      }
+    );
+  }, [selectedChild]);
+
+  /* ---------------------------------------------------------------------- */
+  /* Open first exam                                                        */
+  /* ---------------------------------------------------------------------- */
+
   useEffect(() => {
-    const active = sessions.find((s) => s.isActive) || sessions[0] || null;
-    setSelectedSessionId(active?.id || '');
-  }, [selectedStudentId, sessions.map((s) => s.id).join(',')]); // eslint-disable-line react-hooks/exhaustive-deps
+    if (!groups.length) {
+      setOpenGroupId('');
+      return;
+    }
 
-  const sessionGroups = useMemo(() => {
-    if (!selectedSessionId) return [];
-    return groups
-      .filter((group) => {
-        const id = group.academicYearId ? String(group.academicYearId) : `__unknown_${group.academicYearName || 'session'}`;
-        return id === selectedSessionId;
-      })
-      // Latest routine first.
-      .sort((a, b) => new Date(b.startDate || 0) - new Date(a.startDate || 0));
-  }, [groups, selectedSessionId]);
+    /*
+     * Open the first available routine.
+     *
+     * If there is a published/completed routine,
+     * prefer that. Otherwise open the first exam.
+     */
 
-  // Accordion: only the first routine in the session is open by default —
-  // re-fold everything when the session (or child) switches to a new list.
-  useEffect(() => {
-    setOpenGroupId(sessionGroups[0]?._id ? String(sessionGroups[0]._id) : '');
-  }, [sessionGroups.map((g) => g._id).join(',')]); // eslint-disable-line react-hooks/exhaustive-deps
+    const preferred =
+      groups.find((group) => {
+        const state =
+          getExamState(group);
 
-  // Prefer the school's official routine PDF (same document the student gets
-  // from the Notice Board); fall back to generating one locally.
+        return (
+          state === 'completed' ||
+          state === 'upcoming'
+        );
+      }) || groups[0];
+
+    setOpenGroupId(
+      preferred?._id
+        ? String(preferred._id)
+        : ''
+    );
+  }, [
+    selectedStudentId,
+    groups,
+  ]);
+
+  /* ---------------------------------------------------------------------- */
+  /* PDF                                                                    */
+  /* ---------------------------------------------------------------------- */
+
   const handleDownload = async (group) => {
     setIsExporting(true);
+
     try {
-      if (group.routinePdf?.url) await downloadAttachment(group.routinePdf);
-      else await generateExamSchedulePdf(group, pdfHeader);
+      if (group?.routinePdf?.url) {
+        await downloadAttachment(
+          group.routinePdf
+        );
+      } else {
+        await generateExamSchedulePdf(
+          group,
+          pdfHeader
+        );
+      }
     } catch (err) {
-      toast.error('Failed to generate routine PDF');
+      toast.error(
+        'Failed to generate routine PDF'
+      );
     } finally {
       setIsExporting(false);
     }
   };
 
+  /* ---------------------------------------------------------------------- */
+  /* Loading                                                                */
+  /* ---------------------------------------------------------------------- */
+
   if (loading) {
-    return <div className="space-y-4"><Loading label="exam routine" /></div>;
+    return (
+      <div className="space-y-4">
+        <Loading label="exam routine" />
+      </div>
+    );
   }
 
+  /* ---------------------------------------------------------------------- */
+  /* UI                                                                      */
+  /* ---------------------------------------------------------------------- */
+
   return (
-    <div className="space-y-5">
-      {/* Student summary card */}
-      <div className="flex flex-wrap items-center justify-between gap-4 rounded-2xl border border-violet-100 bg-white p-4 shadow-sm">
-        <div className="flex items-center gap-3">
-          {selectedChild?.profilePic ? (
-            <img
-              src={selectedChild.profilePic}
-              alt={selectedChild.studentName || 'Student'}
-              className="h-12 w-12 shrink-0 rounded-full border border-violet-100 object-cover"
+    <div className="min-w-0 space-y-5">
+
+      {/* ================================================================== */}
+      {/* PAGE HEADER                                                        */}
+      {/* ================================================================== */}
+
+      <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
+
+        {/* Left */}
+        <div className="flex items-start gap-3">
+          <div className="flex h-12 w-12 shrink-0 items-center justify-center rounded-xl bg-blue-50 text-blue-600">
+            <CalendarDays
+              className="h-6 w-6"
+              strokeWidth={2}
             />
-          ) : (
-            <UserCircle2 className="h-12 w-12 shrink-0 text-violet-300" strokeWidth={1.2} />
-          )}
+          </div>
+
           <div>
-            <p className="text-base font-bold text-slate-800">{selectedChild?.studentName || 'Student'}</p>
-            <p className="text-sm text-slate-500">
-              {selectedChild?.grade ? `Class ${selectedChild.grade}` : 'Class —'}
-              {selectedChild?.section ? ` • Section ${selectedChild.section}` : ''}
+            <h1 className="text-2xl font-bold tracking-tight text-slate-900 sm:text-3xl">
+              Exam Schedule
+            </h1>
+
+            <p className="mt-0.5 text-sm text-slate-500">
+              View all examination schedules
+              for your child.
             </p>
-            {childOptions.length > 1 && (
-              <ChildSwitcher options={childOptions} value={childKey} onChange={setChildKey} className="mt-2" />
-            )}
           </div>
         </div>
-        <div className="flex items-center gap-2 text-right text-sm italic text-violet-500">
-          <p className="max-w-55">“{PREP_QUOTE}”</p>
-          <BookOpenText className="h-8 w-8 shrink-0 text-violet-200" strokeWidth={1.2} />
-        </div>
-      </div>
 
-      {!error && sessions.length > 0 && (
-        <div className="rounded-2xl border border-violet-100 bg-violet-50/50 p-4 shadow-sm">
-          <label htmlFor="exam-session-select" className="mb-1.5 block text-sm font-bold text-slate-700">
-            Select Academic Session
-          </label>
-          <div className="relative max-w-sm">
-            <select
-              id="exam-session-select"
-              value={selectedSessionId}
-              onChange={(e) => setSelectedSessionId(e.target.value)}
-              className="w-full appearance-none rounded-xl border border-violet-200 bg-white px-3 py-2.5 pr-9 text-sm font-medium text-slate-800 outline-none transition focus:border-violet-400 focus:ring-2 focus:ring-violet-100"
-            >
-              {sessions.map((session) => (
-                <option key={session.id} value={session.id}>
-                  {session.name} {session.isActive ? '(Current)' : '(Previous)'}
-                </option>
-              ))}
-            </select>
-            <ChevronDown className="pointer-events-none absolute right-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />
-          </div>
-        </div>
-      )}
+        {/* Right - Child Selector */}
+        {selectedChild && (
+          <div className="w-full lg:w-[275px]">
 
-      {error && <ErrorState message={error} onRetry={loadSchedules} />}
+            <div className="relative">
+              {selectedChild.profilePic ? (
+                <img
+                  src={selectedChild.profilePic}
+                  alt={
+                    selectedChild.studentName ||
+                    'Student'
+                  }
+                  className="absolute left-3 top-1/2 z-10 h-9 w-9 -translate-y-1/2 rounded-full border border-slate-200 object-cover"
+                />
+              ) : (
+                <UserCircle2 className="absolute left-3 top-1/2 z-10 h-9 w-9 -translate-y-1/2 text-slate-300" />
+              )}
 
-      {!error && sessions.length === 0 && (
-        <EmptyState
-          title="No exam schedule published yet"
-          hint="Once the school publishes an exam routine for this class, it will appear here."
-          icon={CalendarClock}
-        />
-      )}
+              <div className="rounded-xl border border-slate-200 bg-white py-2 pl-14 pr-3 shadow-sm">
+                <p className="text-sm font-bold text-slate-800">
+                  {selectedChild.studentName ||
+                    'Student'}
+                </p>
 
-      {!error && sessions.length > 0 && sessionGroups.length === 0 && (
-        <EmptyState
-          title="No exam routine for this session"
-          hint="Try selecting a different academic session above."
-          icon={CalendarClock}
-        />
-      )}
+                <p className="text-xs text-slate-500">
+                  {selectedChild.grade
+                    ? `Class ${selectedChild.grade}`
+                    : 'Class —'}
 
-      {!error && sessionGroups.map((group) => {
-        const groupId = String(group._id);
-        const isOpen = openGroupId === groupId;
-        // scheduled → routine not out yet · published → routine + download ·
-        // completed → routine kept as a record + "exam completed".
-        const state = group.examState || (group.status === 'Completed' ? 'completed' : (group.status === 'Published' ? 'published' : 'scheduled'));
-        const isPublished = state === 'published' || (state === 'completed' && (group.routinePublished || (group.subjects || []).length > 0));
-        const isCompleted = state === 'completed';
-        const headerTone = isCompleted ? 'bg-slate-600' : (isPublished ? 'bg-emerald-600' : 'bg-amber-500');
-        const STATE_BADGE = {
-          scheduled: 'Routine will be published soon',
-          published: 'Routine Published',
-          completed: 'Exam Completed',
-        };
-        return (
-          <div key={groupId} className="overflow-hidden rounded-2xl border border-emerald-100 shadow-sm">
-            <div
-              role="button"
-              tabIndex={0}
-              onClick={() => setOpenGroupId(isOpen ? '' : groupId)}
-              onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); setOpenGroupId(isOpen ? '' : groupId); } }}
-              aria-expanded={isOpen}
-              className={`flex w-full flex-wrap items-center justify-between gap-2 px-4 py-3 text-left text-white cursor-pointer select-none ${headerTone}`}
-            >
-              <div>
-                <div className="flex flex-wrap items-center gap-2">
-                  <h3 className="text-base font-bold">{group.title || 'Exam'}</h3>
-                  <span className="inline-flex items-center gap-1 rounded-full bg-white/20 px-2 py-0.5 text-[10px] font-bold uppercase tracking-wide">
-                    {isCompleted && <CheckCircle2 size={11} />}
-                    {STATE_BADGE[state]}
-                  </span>
-                </div>
-                <p className="text-xs text-white/85">
-                  Session: {group.academicYearName || '—'}
-                  {'  |  '}Class {group.classId?.name || '—'}
-                  {'  |  '}Section {group.sectionId?.name || '—'}
+                  {selectedChild.section
+                    ? ` - Section ${selectedChild.section}`
+                    : ''}
                 </p>
               </div>
-              <div className="flex items-center gap-2">
-                {isPublished && (
-                  <button
-                    type="button"
-                    onClick={(e) => { e.stopPropagation(); handleDownload(group); }}
-                    disabled={isExporting}
-                    className="inline-flex items-center gap-1.5 rounded-lg bg-white px-3 py-1.5 text-xs font-semibold text-emerald-700 shadow-sm transition hover:bg-emerald-50 disabled:opacity-50"
-                  >
-                    <Download size={14} />
-                    Download PDF
-                  </button>
-                )}
-                <ChevronDown
-                  size={18}
-                  className={`shrink-0 transition-transform duration-200 ${isOpen ? 'rotate-180' : ''}`}
-                />
-              </div>
-            </div>
-            <AnimatePresence initial={false}>
-              {isOpen && (
-                <Motion.div
-                  initial={{ height: 0, opacity: 0 }}
-                  animate={{ height: 'auto', opacity: 1 }}
-                  exit={{ height: 0, opacity: 0 }}
-                  transition={{ duration: 0.2, ease: 'easeInOut' }}
-                  style={{ overflow: 'hidden' }}
-                >
-                  {isCompleted && (
-                    <div className="flex items-start gap-2 border-b border-slate-100 bg-slate-50 px-4 py-3 text-sm text-slate-600">
-                      <CheckCircle2 className="mt-0.5 h-4 w-4 shrink-0 text-emerald-600" />
-                      <p><span className="font-semibold text-slate-800">This examination has been completed.</span>{' '}
-                        {isPublished ? 'The routine below is kept for your reference.' : ''} Results will be shared once they are published.</p>
-                    </div>
-                  )}
-                  {isPublished ? (
-                    <ExamRoutineTable rows={toRoutineRows(group)} />
-                  ) : isCompleted ? null : (
-                    <div className="flex items-start gap-2 bg-slate-50 px-4 py-3.5 text-sm text-slate-500">
-                      <Info className="mt-0.5 h-4 w-4 shrink-0 text-slate-400" />
-                      <p>This exam has been scheduled, but the school hasn&apos;t published the subject-wise routine yet. Check back once it&apos;s published.</p>
-                    </div>
-                  )}
-                </Motion.div>
-              )}
-            </AnimatePresence>
-          </div>
-        );
-      })}
 
-      {!error && sessionGroups.length > 0 && (
-        <div className="flex items-start gap-2 rounded-xl border border-violet-100 bg-violet-50/60 p-3.5 text-sm text-slate-600">
-          <Info className="mt-0.5 h-4 w-4 shrink-0 text-violet-500" />
-          <p><span className="font-bold text-slate-700">Important Note: </span>
-            Please make sure your child reaches the exam venue at least 15 minutes before the scheduled time.
-          </p>
-        </div>
+              {childOptions.length > 1 && (
+                <div className="absolute inset-0">
+                  <ChildSwitcher
+                    options={childOptions}
+                    value={childKey}
+                    onChange={setChildKey}
+                    className="h-full w-full opacity-0"
+                  />
+
+                  <div className="pointer-events-none absolute right-3 top-1/2 -translate-y-1/2">
+                    <ChevronDown className="h-4 w-4 text-slate-500" />
+                  </div>
+                </div>
+              )}
+            </div>
+          </div>
+        )}
+      </div>
+
+      {/* ================================================================== */}
+      {/* ERROR                                                              */}
+      {/* ================================================================== */}
+
+      {error && (
+        <ErrorState
+          message={error}
+          onRetry={loadSchedules}
+        />
       )}
+
+      {/* ================================================================== */}
+      {/* EMPTY                                                              */}
+      {/* ================================================================== */}
+
+      {!error &&
+        !groups.length && (
+          <EmptyState
+            title="No exam schedule published yet"
+            hint="Once the school publishes an exam routine for this class, it will appear here."
+            icon={CalendarDays}
+          />
+        )}
+
+      {/* ================================================================== */}
+      {/* EXAM LIST                                                          */}
+      {/* ================================================================== */}
+
+      {!error &&
+        groups.length > 0 && (
+          <div className="space-y-4">
+
+            {groups.map((group) => {
+              const groupId =
+                String(group?._id || '');
+
+              const isOpen =
+                openGroupId === groupId;
+
+              return (
+                <ExamCard
+                  key={groupId}
+                  group={group}
+                  isOpen={isOpen}
+                  isExporting={isExporting}
+                  onDownload={() =>
+                    handleDownload(group)
+                  }
+                  onToggle={() =>
+                    setOpenGroupId(
+                      isOpen
+                        ? ''
+                        : groupId
+                    )
+                  }
+                />
+              );
+            })}
+          </div>
+        )}
+
+      {/* ================================================================== */}
+      {/* IMPORTANT NOTE                                                     */}
+      {/* ================================================================== */}
+
+      {!error &&
+        groups.length > 0 && (
+          <div className="flex items-start gap-3 rounded-xl border border-blue-100 bg-blue-50/60 px-4 py-3.5">
+
+            <Info className="mt-0.5 h-4 w-4 shrink-0 text-blue-500" />
+
+            <p className="text-xs leading-5 text-slate-600 sm:text-sm">
+              <span className="font-bold text-slate-700">
+                Important Note:{' '}
+              </span>
+
+              Please make sure your child reaches
+              the exam venue at least 15 minutes
+              before the scheduled time.
+            </p>
+          </div>
+        )}
     </div>
   );
 };

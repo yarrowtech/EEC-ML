@@ -19,6 +19,7 @@ import {
   Users,
   Wallet,
   X,
+  UsersRound,
 } from 'lucide-react';
 import { parentApiJson } from './parentApi';
 import useParentChildren from './useParentChildren';
@@ -135,14 +136,14 @@ const Delta = ({ value }) => {
   );
 };
 
-const StatCard = ({ to, Icon, tone, label, value, animatedValue, formatter, delta, sub, sub2 }) => {
+const StatCard = ({ to, Icon, tone, fillIcon = false, label, value, animatedValue, formatter, delta, sub, sub2 }) => {
   const count = useCountUp(animatedValue ?? 0);
   const displayValue = animatedValue === null || animatedValue === undefined
     ? value
     : (formatter ? formatter(count) : count.toLocaleString('en-IN'));
   return (
     <Link to={to} className="group relative flex items-start gap-4 rounded-2xl border border-slate-100 bg-white p-4 pr-8 shadow-[0_2px_12px_rgba(15,23,42,0.04)] transition hover:-translate-y-0.5 hover:shadow-md">
-      <span className={`flex h-12 w-12 shrink-0 items-center justify-center rounded-xl ${tone}`}><Icon size={22} /></span>
+      <span className={`flex h-12 w-12 shrink-0 items-center justify-center rounded-xl ${tone}`}><Icon size={22} fill={fillIcon ? "currentColor" : "none"} /></span>
       <div className="min-w-0 flex-1">
         <p className="text-sm font-medium text-slate-700">{label}</p>
         <div className="mt-0.5 flex flex-wrap items-center gap-2">
@@ -472,9 +473,19 @@ const ParentDashboard = ({ parentName = '' }) => {
 
       {/* ── Stat cards ── */}
       <motion.div variants={RISE} className="grid grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-4 sm:gap-4">
-        <StatCard to="/parents/attendance" Icon={Users} tone="bg-green-50 text-green-600" label="Attendance"
-          value={`${attendance.percent}%`} animatedValue={attendance.percent} formatter={(n) => `${n}%`} delta={attendance.delta} sub={`Present: ${attendance.present} / ${attendance.total} days`} />
-        <StatCard to="/parents/fees" Icon={Wallet} tone="bg-red-50 text-red-500" label="Fee Due"
+        <StatCard
+          to="/parents/attendance"
+          Icon={UsersRound}
+          tone="bg-green-50 text-green-600"
+          fillIcon
+          label="Attendance"
+          value={`${attendance.percent}%`}
+          animatedValue={attendance.percent}
+          formatter={(n) => `${n}%`}
+          delta={attendance.delta}
+          sub={`Present: ${attendance.present} / ${attendance.total} days`}
+        />
+        <StatCard to="/parents/fees" Icon={Wallet} tone="bg-red-50 text-red-500"  label="Fee Due"
           // value={inr(fees.due)} animatedValue={fees.due} formatter={inr} sub={fees.focus ? (fees.focus.title || 'Fees') : 'No fees due'} sub2={fees.focus && validDate(fees.focus.dueDate) ? `Due date: ${fmtDate(fees.focus.dueDate)}` : ''} />
           value={inr(fees.due)} animatedValue={fees.due} formatter={inr} sub2={fees.focus && validDate(fees.focus.dueDate) ? `Due: ${fmtDate(fees.focus.dueDate)}` : ''} />
         <StatCard to="/parents/academic" Icon={BarChart3} tone="bg-violet-50 text-violet-600" label="Average Marks"
@@ -609,12 +620,12 @@ const ParentDashboard = ({ parentName = '' }) => {
                       state={{ openNoticeId: n._id }}
                       className="-mx-2 flex items-start gap-3 rounded-xl px-2 py-1.5 transition hover:bg-slate-50"
                     >
-                    <span className={`flex h-11 w-11 shrink-0 items-center justify-center rounded-xl ${cfg.cls}`}><cfg.Icon size={20} /></span>
-                    <span className="min-w-0 flex-1">
-                      <span className="block truncate text-sm font-semibold text-slate-900">{n.title}</span>
-                      {n.message ? <span className="block truncate text-sm text-slate-600">{n.message}</span> : null}
-                    </span>
-                    <span className="shrink-0 text-sm text-slate-500">{fmtDate(n.createdAt)}</span>
+                      <span className={`flex h-11 w-11 shrink-0 items-center justify-center rounded-xl ${cfg.cls}`}><cfg.Icon size={20} /></span>
+                      <span className="min-w-0 flex-1">
+                        <span className="block truncate text-sm font-semibold text-slate-900">{n.title}</span>
+                        {n.message ? <span className="block truncate text-sm text-slate-600">{n.message}</span> : null}
+                      </span>
+                      <span className="shrink-0 text-sm text-slate-500">{fmtDate(n.createdAt)}</span>
                     </Link>
                   </li>
                 );

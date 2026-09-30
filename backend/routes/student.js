@@ -16,11 +16,17 @@ const { normalizeClassName, normalizeText } = require('../utils/teacherAllocatio
 
 // Setup multer for file uploads (in memory)
 const storage = multer.memoryStorage();
-const upload = multer({ storage, limits: { fileSize: 3 * 1024 * 1024 } });
+const upload = multer({ storage, limits: { fileSize: 5 * 1024 * 1024 } });
+// Multer errors (e.g. file too large) come back as clean JSON instead of a 500 page.
+const profilePicUpload = (req, res, next) => upload.single('profilePic')(req, res, (err) => {
+  if (!err) return next();
+  const tooBig = err.code === 'LIMIT_FILE_SIZE';
+  return res.status(tooBig ? 413 : 400).json({ error: tooBig ? 'Image must be smaller than 5MB' : (err.message || 'Invalid upload') });
+});
 const ALLOWED_PROFILE_PIC_MIME_TYPES = new Set(['image/jpeg', 'image/png', 'image/webp', 'image/gif']);
 
 // POST request to update student profile
-router.post('/profile/update', auth, upload.single('profilePic'), async (req, res) => {
+router.post('/profile/update', auth, profilePicUpload, async (req, res) => {
   // #swagger.tags = ['Student Profile']
   try {
     logStudentPortalEvent(req, {

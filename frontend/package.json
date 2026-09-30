@@ -15,6 +15,7 @@
   "dependencies": {
     "@fontsource-variable/geist": "^5.2.8",
     "@fontsource-variable/inter": "^5.2.8",
+    "@fortawesome/react-fontawesome": "^3.5.0",
     "@phosphor-icons/react": "^2.1.10",
     "@tailwindcss/vite": "^4.1.10",
     "axios": "^1.20.0",

@@ -366,8 +366,8 @@ const ParentClassRoutine = () => {
               className="flex w-full items-center gap-3 rounded-2xl border border-slate-200 bg-white px-3 py-2.5 pr-4 text-left shadow-sm sm:w-72"
             >
               {child.photo
-                ? <img src={child.photo} alt={child.studentName} className="h-11 w-11 rounded-xl object-cover" />
-                : <span className="flex h-11 w-11 items-center justify-center rounded-xl bg-violet-100 text-sm font-bold text-violet-700">{initials(child.studentName)}</span>}
+                ? <img src={child.photo} alt={child.studentName} className="h-11 w-11 rounded-full object-cover" />
+                : <span className="flex h-11 w-11 items-center justify-center rounded-full bg-violet-100 text-sm font-bold text-violet-700">{initials(child.studentName)}</span>}
               <span className="min-w-0 flex-1">
                 <span className="block truncate text-sm font-bold text-slate-900">{child.studentName}</span>
                 <span className="block truncate text-xs text-slate-500">{classLine}</span>
