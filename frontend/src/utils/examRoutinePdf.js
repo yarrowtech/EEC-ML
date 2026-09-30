@@ -1,4 +1,5 @@
 import { jsPDF } from 'jspdf';
+import QRCode from 'qrcode';
 
 const toDataUrl = async (url) => {
   const src = String(url || '').trim();
@@ -348,121 +349,204 @@ export const generateExamSchedulePdf = async (group, pdfHeader = {}) => {
   doc.save(`${safeTitle}_${safeClass}_${safeSection}.pdf`);
 };
 
-export const generateAdmitCardPdf = async ({ student = {}, group = {}, pdfHeader = {} } = {}) => {
-  if (!group?._id) return;
-  const subjects = Array.isArray(group.subjects) ? group.subjects : [];
-  const doc = new jsPDF({ orientation: 'p', unit: 'mm', format: 'a4' });
-  const pageWidth = doc.internal.pageSize.getWidth();
-  const margin = 14;
-  let y = 14;
-  const navy = [15, 41, 82];
-  const text = [51, 65, 85];
-  const muted = [100, 116, 139];
+// output: 'save' (default) downloads the file; 'blob' returns it for in-app preview.
+// A4 landscape admit card: school letterhead + "ADMIT CARD" badge, student
+// details with photo, examination schedule table, instructions, principal
+// signature and a round school seal.
+export const generateAdmitCardPdf = async ({ student = {}, group = {}, pdfHeader = {}, output = 'save' } = {}) => {
+  if (!group?._id) return undefined;
+  const subjects = (Array.isArray(group.subjects) ? group.subjects : [])
+    .slice()
+    .sort((a, b) => new Date(a?.date || 0) - new Date(b?.date || 0));
+  const doc = new jsPDF({ orientation: 'l', unit: 'mm', format: 'a4' });
+  const W = doc.internal.pageSize.getWidth(); // 297
+  const H = doc.internal.pageSize.getHeight(); // 210
+  const navy = [22, 48, 90];
+  const ink = [15, 23, 42];
+  const mid = [51, 65, 85];
+  const line = [191, 204, 222];
+  const pale = [226, 236, 250];
+  const M = 7;
 
-  const logoData = await toDataUrl(pdfHeader.logoUrl);
-  if (logoData) doc.addImage(logoData, 'PNG', margin, y, 18, 18);
-  doc.setFont('helvetica', 'bold');
-  doc.setFontSize(16);
-  doc.setTextColor(...navy);
-  doc.text(pdfHeader.schoolName || 'School', pageWidth / 2, y + 6, { align: 'center' });
-  doc.setFont('helvetica', 'normal');
-  doc.setFontSize(9);
-  doc.setTextColor(...muted);
-  if (pdfHeader.schoolAddressLine) doc.text(pdfHeader.schoolAddressLine, pageWidth / 2, y + 12, { align: 'center' });
-  y += 27;
+  const clean = (v) => String(v ?? '').trim();
+  const fmtDate = (d) => {
+    const x = d ? new Date(d) : null;
+    if (!x || Number.isNaN(x.getTime())) return '—';
+    return `${String(x.getDate()).padStart(2, '0')}-${String(x.getMonth() + 1).padStart(2, '0')}-${x.getFullYear()}`;
+  };
+  const dayName = (d) => {
+    const x = d ? new Date(d) : null;
+    return x && !Number.isNaN(x.getTime()) ? x.toLocaleDateString('en-US', { weekday: 'long' }) : '—';
+  };
+  const toMin = (t) => { const m = clean(t).match(/(\d{1,2}):(\d{2})/); return m ? Number(m[1]) * 60 + Number(m[2]) : null; };
+  const fmt12 = (mins) => {
+    const h = Math.floor(mins / 60) % 24;
+    return `${String(((h + 11) % 12) + 1).padStart(2, '0')}:${String(mins % 60).padStart(2, '0')} ${h >= 12 ? 'PM' : 'AM'}`;
+  };
+  const timeRange = (s) => {
+    const start = toMin(s?.startTime || s?.time);
+    if (start === null) return clean(s?.time) || '—';
+    const end = toMin(s?.endTime) ?? (Number(s?.duration) ? start + Number(s.duration) : null);
+    return end === null ? fmt12(start) : `${fmt12(start)} - ${fmt12(end)}`;
+  };
+  const building = (s) => clean(s?.roomId?.floorId?.buildingId?.name || s?.roomId?.buildingId?.name) || '—';
+  const room = (s) => clean(s?.roomId?.roomNumber || s?.venue) || '—';
 
-  doc.setDrawColor(...navy);
-  doc.setLineWidth(0.5);
-  doc.line(margin, y, pageWidth - margin, y);
-  y += 10;
-  doc.setFont('helvetica', 'bold');
-  doc.setFontSize(15);
-  doc.setTextColor(...navy);
-  doc.text('ADMIT CARD', pageWidth / 2, y, { align: 'center' });
-  y += 8;
-  doc.setFontSize(11);
-  doc.text(String(group.title || 'Examination'), pageWidth / 2, y, { align: 'center' });
-  y += 10;
+  const [logo, photo] = await Promise.all([toDataUrl(pdfHeader.logoUrl), toDataUrl(student.profilePic || student.photo)]);
+  const imgType = (data) => (String(data).startsWith('data:image/png') ? 'PNG' : 'JPEG');
 
-  const className = group.classId?.name || student.grade || group.grade || '-';
-  const sectionName = group.sectionId?.name || student.section || group.section || '-';
+  // Outer border
+  doc.setDrawColor(...navy); doc.setLineWidth(0.8);
+  doc.roundedRect(M - 3, M - 3, W - 2 * (M - 3), H - 2 * (M - 3), 3, 3, 'S');
+
+  // ── Letterhead ──
+  if (logo) { try { doc.addImage(logo, imgType(logo), M + 8, M + 1, 28, 28); } catch { /* skip */ } }
+  const cx = W / 2 - 6;
+  doc.setFont('helvetica', 'bold'); doc.setFontSize(22); doc.setTextColor(...navy);
+  doc.text(clean(pdfHeader.schoolName || 'School').toUpperCase(), cx, M + 10, { align: 'center', maxWidth: 170 });
+  doc.setFont('helvetica', 'normal'); doc.setFontSize(8); doc.setTextColor(...mid);
+  if (pdfHeader.schoolAddressLine) doc.text(clean(pdfHeader.schoolAddressLine).toUpperCase(), cx, M + 16.5, { align: 'center', charSpace: 0.3, maxWidth: 175 });
+  if (pdfHeader.board) { doc.setFontSize(9.5); doc.setTextColor(...mid); doc.text(`Affiliated to ${clean(pdfHeader.board)}`, cx, M + 22.5, { align: 'center' }); }
+  const session = clean(group.academicYearName || student.academicYear);
+  if (session) {
+    doc.setFont('helvetica', 'bold'); doc.setFontSize(10); doc.setTextColor(...navy);
+    const label = `Academic Session: ${session}`;
+    doc.text(label, cx, M + 28.5, { align: 'center' });
+    const lw = doc.getTextWidth(label);
+    doc.setDrawColor(...navy); doc.setLineWidth(0.3);
+    doc.line(cx - lw / 2 - 34, M + 27.4, cx - lw / 2 - 4, M + 27.4);
+    doc.line(cx + lw / 2 + 4, M + 27.4, cx + lw / 2 + 34, M + 27.4);
+  }
+  // ADMIT CARD badge
+  const bx = W - M - 60; const by = M + 1;
+  doc.setFillColor(...pale); doc.roundedRect(bx, by, 58, 30, 2.5, 2.5, 'F');
+  doc.setFont('helvetica', 'bold'); doc.setFontSize(19); doc.setTextColor(...navy);
+  doc.text('ADMIT CARD', bx + 29, by + 11, { align: 'center' });
+  doc.setFont('helvetica', 'normal'); doc.setFontSize(8.5); doc.setTextColor(...ink);
+  doc.text(clean(group.title || 'Examination').toUpperCase(), bx + 29, by + 19, { align: 'center', maxWidth: 54 });
+  doc.text(`CLASS - ${clean(student.grade) || '—'}`, bx + 29, by + 25, { align: 'center' });
+
+  // ── Student details ──
+  let y = M + 36;
+  const detailsH = 50; // photo + QR need this height
+  doc.setDrawColor(...line); doc.setLineWidth(0.3);
+  doc.roundedRect(M, y, W - 2 * M, detailsH, 2, 2, 'S');
   const rows = [
-    ['Student Name', student.studentName || student.name || '-'],
-    ['Admission No.', student.admissionNumber || '-'],
-    ['Roll No.', student.roll || '-'],
-    ['Class / Section', `Class ${className} / Section ${sectionName}`],
-    ['Academic Session', group.academicYearName || '-'],
+    ['Student Name', clean(student.studentName) || '—', true],
+    ['Class', clean(student.grade) ? `${clean(student.grade)}${clean(student.section) ? `-${clean(student.section)}` : ''}` : '—', true],
+    ['Roll No.', clean(student.roll) || '—', true],
+    ['Date of Birth', student.dob ? fmtDate(student.dob) : '—'],
+    ["Father's Name", clean(student.fatherName) || '—'],
+    ["Mother's Name", clean(student.motherName) || '—'],
   ];
-  doc.setFontSize(10);
-  rows.forEach(([label, value], index) => {
-    const x = index % 2 === 0 ? margin : pageWidth / 2 + 4;
-    if (index % 2 === 0 && index > 0) y += 10;
-    doc.setFont('helvetica', 'bold');
-    doc.setTextColor(...muted);
-    doc.text(label, x, y);
-    doc.setFont('helvetica', 'normal');
-    doc.setTextColor(...text);
-    doc.text(String(value), x + 34, y);
+  rows.forEach(([k, v, bold], i) => {
+    const ry = y + 7.5 + i * 6.8;
+    doc.setFont('helvetica', 'normal'); doc.setFontSize(9.5); doc.setTextColor(...ink);
+    doc.text(k, M + 8, ry);
+    doc.text(':', M + 60, ry);
+    doc.setFont('helvetica', bold ? 'bold' : 'normal');
+    doc.text(v, M + 70, ry, { maxWidth: 150 });
   });
-  y += 14;
+  // Photo
+  const pw = 24; const ph = 28; const px = W - M - pw - 7; const py = y + 2.5;
+  doc.setDrawColor(...line); doc.setLineWidth(0.4); doc.rect(px - 1, py - 1, pw + 2, ph + 2, 'S');
+  if (photo) {
+    try { doc.addImage(photo, imgType(photo), px, py, pw, ph); } catch { /* skip */ }
+  } else {
+    doc.setFillColor(241, 245, 249); doc.rect(px, py, pw, ph, 'F');
+    doc.setFont('helvetica', 'normal'); doc.setFontSize(8); doc.setTextColor(...mid);
+    doc.text('Affix Photo', px + pw / 2, py + ph / 2, { align: 'center' });
+  }
+  // QR code: identifies the student + exam for verification at the hall.
+  const qrPayload = [
+    clean(pdfHeader.schoolName),
+    `Student: ${clean(student.studentName)}`,
+    `Admission: ${clean(student.admissionNumber || student.studentId)}`,
+    `Class: ${clean(student.grade)}${student.section ? `-${clean(student.section)}` : ''}`,
+    `Roll: ${clean(student.roll)}`,
+    `Exam: ${clean(group.title)}`,
+  ].join('\n');
+  try {
+    const qr = await QRCode.toDataURL(qrPayload, { margin: 0, width: 240, errorCorrectionLevel: 'M' });
+    const qs = 15.5;
+    doc.addImage(qr, 'PNG', px + (pw - qs) / 2, py + ph + 1.8, qs, qs);
+  } catch { /* QR optional */ }
+  y += detailsH + 4;
 
-  doc.setFont('helvetica', 'bold');
-  doc.setFillColor(...navy);
-  doc.setTextColor(255, 255, 255);
-  doc.rect(margin, y, pageWidth - margin * 2, 8, 'F');
-  doc.text('Date', margin + 3, y + 5.5);
-  doc.text('Subject', margin + 33, y + 5.5);
-  doc.text('Time', margin + 92, y + 5.5);
-  doc.text('Venue', margin + 130, y + 5.5);
-  y += 8;
-
-  doc.setFont('helvetica', 'normal');
-  doc.setFontSize(9);
-  subjects.forEach((exam, index) => {
-    if (y > 252) {
-      doc.addPage();
-      y = 18;
-    }
-    const rowY = y;
-    if (index % 2 === 0) {
-      doc.setFillColor(248, 250, 252);
-      doc.rect(margin, rowY, pageWidth - margin * 2, 9, 'F');
-    }
-    const date = exam?.date ? new Date(exam.date).toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' }) : '-';
-    const subject = exam?.subjectId?.name || exam?.subject || exam?.title || 'Subject';
-    doc.setTextColor(...text);
-    doc.text(date, margin + 3, rowY + 6);
-    doc.text(String(subject).slice(0, 32), margin + 33, rowY + 6);
-    doc.text(String(exam?.time || '-'), margin + 92, rowY + 6);
-    doc.text(buildFullVenueLabel(exam).slice(0, 28), margin + 130, rowY + 6);
-    y += 9;
+  // ── Examination schedule ──
+  doc.setFillColor(...pale); doc.setDrawColor(...line);
+  doc.roundedRect(M, y, W - 2 * M, 8, 1.5, 1.5, 'FD');
+  doc.setFont('helvetica', 'bold'); doc.setFontSize(12); doc.setTextColor(...ink);
+  doc.text('EXAMINATION SCHEDULE', W / 2, y + 5.6, { align: 'center', charSpace: 0.5 });
+  y += 9.5;
+  const cols = [
+    { h: 'Date', w: 34 }, { h: 'Day', w: 36 }, { h: 'Subject', w: 74 }, { h: 'Time', w: 52 },
+    { h: 'Building', w: 42 }, { h: 'Room No.', w: W - 2 * M - 238 },
+  ];
+  const headH = 7;
+  const instructionsH = 40;
+  const room4Rows = H - M - instructionsH - 4 - y - headH;
+  const rowH = Math.max(5, Math.min(7.2, subjects.length ? room4Rows / subjects.length : 7.2));
+  doc.setFillColor(...navy); doc.rect(M, y, W - 2 * M, headH, 'F');
+  doc.setFont('helvetica', 'bold'); doc.setFontSize(9.5); doc.setTextColor(255, 255, 255);
+  let x = M;
+  cols.forEach((c) => { doc.text(c.h, x + c.w / 2, y + 4.8, { align: 'center' }); x += c.w; });
+  y += headH;
+  const fs = Math.max(7, Math.min(9.5, rowH * 1.3));
+  subjects.forEach((s, i) => {
+    const cells = [fmtDate(s?.date), dayName(s?.date), clean(s?.subject) || '—', timeRange(s), building(s), room(s)];
+    x = M;
+    doc.setDrawColor(...line); doc.setLineWidth(0.25);
+    cols.forEach((c, ci) => {
+      doc.rect(x, y, c.w, rowH, 'S');
+      doc.setFont('helvetica', 'normal'); doc.setFontSize(fs); doc.setTextColor(...ink);
+      const text = doc.splitTextToSize(cells[ci], c.w - 4)[0] || '';
+      if (ci === 2) doc.text(text, x + 4, y + rowH / 2 + 1.2);
+      else doc.text(text, x + c.w / 2, y + rowH / 2 + 1.2, { align: 'center' });
+      x += c.w;
+    });
+    y += rowH;
+    if (i === subjects.length - 1) y += 0;
   });
+  if (!subjects.length) {
+    doc.setFont('helvetica', 'italic'); doc.setFontSize(9); doc.setTextColor(...mid);
+    doc.text('Schedule will be announced.', W / 2, y + 5, { align: 'center' }); y += 8;
+  }
 
-  y += 8;
-  doc.setFont('helvetica', 'bold');
-  doc.setTextColor(...navy);
-  doc.text('Instructions', margin, y);
-  y += 6;
-  doc.setFont('helvetica', 'normal');
-  doc.setTextColor(...text);
-  [
-    'Carry this admit card and school identity card for every examination.',
-    'Report to the examination venue at least 15 minutes before the scheduled time.',
-    'Follow all instructions given by the invigilator.',
-  ].forEach((line, index) => doc.text(`${index + 1}. ${line}`, margin, y + index * 5));
-
-  const footerY = 276;
-  doc.setDrawColor(...text);
-  doc.line(pageWidth - margin - 48, footerY - 8, pageWidth - margin, footerY - 8);
-  doc.setFont('helvetica', 'bold');
-  if (pdfHeader.principalName) doc.text(pdfHeader.principalName, pageWidth - margin - 24, footerY - 11, { align: 'center' });
-  doc.text('Principal', pageWidth - margin - 24, footerY - 3, { align: 'center' });
-  doc.setFont('helvetica', 'normal');
-  doc.setFontSize(8);
-  doc.setTextColor(...muted);
-  doc.text(`Issued: ${new Date().toLocaleDateString('en-IN')}`, margin, footerY - 3);
-
+  // ── Instructions + signature + seal ──
+  const iy = H - M - instructionsH;
+  doc.setFillColor(240, 245, 253); doc.setDrawColor(...line);
+  doc.roundedRect(M, iy, W - 2 * M, instructionsH, 2, 2, 'FD');
+  doc.setFont('helvetica', 'bold'); doc.setFontSize(11); doc.setTextColor(...ink);
+  doc.text('INSTRUCTIONS FOR CANDIDATES', M + 18, iy + 8);
+  // small document glyph
+  doc.setDrawColor(...ink); doc.setLineWidth(0.35); doc.rect(M + 8, iy + 4, 5, 6.5, 'S');
+  [6, 7.6, 9].forEach((d) => doc.line(M + 9, iy + d, M + 12, iy + d));
+  const tips = [
+    'This admit card must be carried to the examination hall every day.',
+    'Report to the examination centre at least 30 minutes before the start time.',
+    'Carry your school ID card and necessary stationery (pen, pencil, eraser, scale, etc.).',
+    'Use of mobile phones, smartwatches or any electronic devices is strictly prohibited.',
+    'Follow all instructions given by the invigilator and maintain discipline in the examination hall.',
+  ];
+  doc.setFont('helvetica', 'normal'); doc.setFontSize(8.8); doc.setTextColor(...ink);
+  tips.forEach((t, i) => doc.text(`${i + 1}.  ${t}`, M + 18, iy + 14.5 + i * 5.2, { maxWidth: 150 }));
+  // divider
+  doc.setDrawColor(...line); doc.line(W - M - 80, iy + 5, W - M - 80, iy + instructionsH - 5);
+  // signature
+  const sx = W - M - 66;
+  doc.setDrawColor(...ink); doc.setLineWidth(0.4); doc.line(sx, iy + 24, sx + 52, iy + 24);
+  if (pdfHeader.principalName) {
+    doc.setFont('times', 'italic'); doc.setFontSize(12); doc.setTextColor(...navy);
+    doc.text(clean(pdfHeader.principalName), sx + 26, iy + 21, { align: 'center' });
+  }
+  doc.setFont('helvetica', 'bold'); doc.setFontSize(9.5); doc.setTextColor(...ink);
+  doc.text('Signature of Principal', sx + 26, iy + 29.5, { align: 'center' });
+  doc.setFont('helvetica', 'normal'); doc.setFontSize(8.5); doc.setTextColor(...mid);
+  doc.text(clean(pdfHeader.schoolName), sx + 26, iy + 34.5, { align: 'center', maxWidth: 60 });
   const safeStudent = String(student.studentName || 'student').replace(/[^\w\s-]/g, '').trim().replace(/\s+/g, '_');
   const safeTitle = String(group.title || 'admit_card').replace(/[^\w\s-]/g, '').trim().replace(/\s+/g, '_');
+  if (output === 'blob') return doc.output('blob');
   doc.save(`${safeStudent}_${safeTitle}_Admit_Card.pdf`);
+  return undefined;
 };

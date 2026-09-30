@@ -389,7 +389,7 @@ router.put('/profile', authTeacher, async (req, res) => {
       'emergencyContact',
       'gender',
       'pinCode',
-      'profilePic',
+      // profilePic: managed by the school (admin) only
     ];
 
     const payload = {};

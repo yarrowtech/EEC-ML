@@ -297,7 +297,6 @@ const Modal = ({ open, title, description, children, footer, onClose, size = 'ma
 
 const MyWorkPortal = () => {
   const shouldReduceMotion = useReducedMotion();
-  const profilePicInputRef = useRef(null);
   const [activeTab, setActiveTab] = useState('overview');
   const [selectedMonth, setSelectedMonth] = useState(new Date().toISOString().slice(0, 7));
 
@@ -358,7 +357,6 @@ const MyWorkPortal = () => {
   const [profileSaving, setProfileSaving] = useState(false);
   const [profileError, setProfileError] = useState('');
   const [profileSuccess, setProfileSuccess] = useState('');
-  const [avatarUploading, setAvatarUploading] = useState(false);
   const [editProfile, setEditProfile] = useState(false);
 
   const [notifications, setNotifications] = useState([]);
@@ -674,45 +672,6 @@ const MyWorkPortal = () => {
       setProfileError(error.message || 'Unable to update profile');
     } finally {
       setProfileSaving(false);
-    }
-  };
-
-  const handleProfilePicUpload = async (event) => {
-    const file = event.target.files?.[0];
-    if (!file) return;
-    setProfileError('');
-    setProfileSuccess('');
-    setAvatarUploading(true);
-    try {
-      if (!file.type.startsWith('image/')) throw new Error('Please select an image file');
-      if (file.size > 5 * 1024 * 1024) throw new Error('Image size should be 5MB or less');
-
-      const formData = new FormData();
-      formData.append('file', file);
-      formData.append('folder', 'teacher_profiles');
-      const uploadRes = await fetch(`${API_BASE}/api/uploads/cloudinary/single`, {
-        method: 'POST',
-        headers: { authorization: `Bearer ${localStorage.getItem('token') || ''}` },
-        body: formData,
-      });
-      const uploadData = await uploadRes.json().catch(() => ({}));
-      const uploadedUrl = uploadData?.files?.[0]?.secure_url;
-      if (!uploadRes.ok || !uploadedUrl) throw new Error('Unable to upload image');
-
-      const token = localStorage.getItem('token');
-      const saveRes = await fetch(`${API_BASE}/api/teacher/auth/profile`, {
-        method: 'PUT',
-        headers: { 'Content-Type': 'application/json', authorization: `Bearer ${token}` },
-        body: JSON.stringify({ profilePic: uploadedUrl })
-      });
-      if (!saveRes.ok) throw new Error('Unable to save profile photo');
-      setProfileData((prev) => ({ ...prev, profilePic: uploadedUrl }));
-      toast.success('Profile photo updated successfully');
-    } catch (error) {
-      toast.error(error.message || 'Unable to update photo');
-    } finally {
-      if (profilePicInputRef.current) profilePicInputRef.current.value = '';
-      setAvatarUploading(false);
     }
   };
 
@@ -1170,11 +1129,6 @@ const MyWorkPortal = () => {
                 <AvatarImage src={profileData.profilePic} alt={profileData.name || 'Teacher'} />
                 <AvatarFallback className="bg-slate-900 text-2xl font-semibold text-white">{profileData.name?.charAt(0) || 'T'}</AvatarFallback>
               </Avatar>
-              {avatarUploading && (
-                <div className="absolute inset-0 flex items-center justify-center rounded-full bg-black/50">
-                  <Loader2 className="h-6 w-6 animate-spin text-white" />
-                </div>
-              )}
             </div>
             <h3 className="mt-4 text-lg font-semibold text-slate-950">{profileData.name || 'Teacher'}</h3>
             <p className="text-sm text-slate-500">{profileData.department || 'Department not set'}</p>
@@ -1185,11 +1139,6 @@ const MyWorkPortal = () => {
               </div>
               <Progress value={profileCompletion} className="mt-2 h-2" />
             </div>
-            <input ref={profilePicInputRef} type="file" accept="image/*" className="hidden" onChange={handleProfilePicUpload} disabled={avatarUploading} />
-            <Button variant="outline" className="mt-5 w-full" onClick={() => profilePicInputRef.current?.click()} disabled={avatarUploading}>
-              {avatarUploading ? <Loader2 className="h-4 w-4 animate-spin" /> : <Camera className="h-4 w-4" />}
-              {avatarUploading ? 'Uploading…' : 'Update Avatar'}
-            </Button>
           </CardContent>
         </Card>
         <Card className="border-slate-200 bg-white py-0 shadow-sm"><CardHeader className="p-4"><CardTitle>Identity Details</CardTitle><CardDescription>Grouped sections for personal, contact, professional, and emergency information.</CardDescription></CardHeader><CardContent className="grid gap-4 p-4 pt-0 md:grid-cols-2">

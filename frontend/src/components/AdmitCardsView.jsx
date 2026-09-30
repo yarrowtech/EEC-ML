@@ -1,4 +1,6 @@
 import React, { useEffect, useMemo, useState } from 'react';
+import { createPortal } from 'react-dom';
+import { AnimatePresence, motion } from 'framer-motion';
 import {
   AlertCircle,
   CalendarDays,
@@ -460,16 +462,40 @@ const MetaItem = ({
    MAIN COMPONENT
 ========================================================= */
 
+// Client cache (memory + sessionStorage, per login & portal) → instant visits.
+const ADMIT_CACHE_MAX_AGE = 10 * 60 * 1000;
+const admitCacheKey = (mode) => {
+  let t = '';
+  try { t = localStorage.getItem('token') || ''; } catch { /* ignore */ }
+  return `admit-cards:v1:${mode}:${t.slice(-16)}`;
+};
+const admitMem = new Map();
+const readAdmitCache = (mode) => {
+  const key = admitCacheKey(mode);
+  let entry = admitMem.get(key);
+  if (!entry) { try { entry = JSON.parse(sessionStorage.getItem(key) || 'null'); } catch { entry = null; } }
+  return entry && Date.now() - entry.at < ADMIT_CACHE_MAX_AGE ? entry.data : null;
+};
+const writeAdmitCache = (mode, data) => {
+  const key = admitCacheKey(mode);
+  const entry = { at: Date.now(), data };
+  admitMem.set(key, entry);
+  try { sessionStorage.setItem(key, JSON.stringify(entry)); } catch { /* quota */ }
+};
+
 const AdmitCardsView = ({
   mode = 'student',
 }) => {
   const navigate = useNavigate();
 
   const [payload, setPayload] =
-    useState(null);
+    useState(() => readAdmitCache(mode));
 
   const [loading, setLoading] =
-    useState(true);
+    useState(() => !readAdmitCache(mode));
+
+  // In-app admit card preview: { url, title, group }
+  const [preview, setPreview] = useState(null);
 
   const [error, setError] =
     useState('');
@@ -499,7 +525,8 @@ const AdmitCardsView = ({
         return;
       }
 
-      setLoading(true);
+      const cached = readAdmitCache(mode);
+      if (!cached) setLoading(true);
       setError('');
 
       try {
@@ -533,8 +560,10 @@ const AdmitCardsView = ({
         }
 
         setPayload(data);
+        writeAdmitCache(mode, data);
       } catch (err) {
-        setError(
+        // Keep cached admit cards visible if the background refresh fails.
+        if (!cached) setError(
           err.message ||
             'Unable to load admit cards'
         );
@@ -664,6 +693,8 @@ const AdmitCardsView = ({
 
     principalName:
       payload?.principalName || '',
+
+    board: payload?.school?.board || '',
   };
 
   /* =======================================================
@@ -706,11 +737,15 @@ const AdmitCardsView = ({
 
     setTimeout(async () => {
       try {
-        await generateAdmitCardPdf({
+        const blob = await generateAdmitCardPdf({
           student: selectedChild,
           group,
           pdfHeader,
+          output: 'blob',
         });
+        if (blob) {
+          setPreview({ url: URL.createObjectURL(blob), title: group?.title || 'Admit Card', group });
+        }
       } catch (err) {
         toast.error(
           err.message ||
@@ -721,6 +756,19 @@ const AdmitCardsView = ({
       }
     }, 50);
   };
+
+  const closePreview = () => {
+    setPreview((cur) => {
+      if (cur?.url) setTimeout(() => URL.revokeObjectURL(cur.url), 300);
+      return null;
+    });
+  };
+  useEffect(() => {
+    if (!preview) return undefined;
+    const onKey = (e) => { if (e.key === 'Escape') closePreview(); };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, [preview]);
 
   /* =======================================================
      LOADING
@@ -775,17 +823,36 @@ const AdmitCardsView = ({
 
         {/* Child Selector */}
 
-        {mode === 'parent' &&
-          childOptions.length > 0 && (
-            <div className="w-full sm:w-[260px]">
+        {mode === 'parent' && selectedChild && (
+          <motion.div
+            initial={{ opacity: 0, x: 12 }}
+            animate={{ opacity: 1, x: 0 }}
+            className="flex w-full flex-col items-stretch gap-2 sm:w-auto sm:items-end"
+          >
+            <div className="flex items-center gap-3 rounded-2xl border border-slate-200 bg-white px-3 py-2.5 pr-4 shadow-sm">
+              {selectedChild.profilePic || selectedChild.photo ? (
+                <img src={selectedChild.profilePic || selectedChild.photo} alt="" className="h-10 w-10 rounded-xl object-cover" />
+              ) : (
+                <span className="flex h-10 w-10 items-center justify-center rounded-xl bg-violet-100 text-sm font-bold text-violet-700">
+                  {String(selectedChild.studentName || 'S').trim().split(/\s+/).slice(0, 2).map((w) => w[0]).join('').toUpperCase()}
+                </span>
+              )}
+              <span className="min-w-0">
+                <span className="block truncate text-sm font-bold text-slate-900">{selectedChild.studentName || 'Student'}</span>
+                <span className="block truncate text-xs text-slate-500">
+                  {selectedChild.grade ? `Class ${selectedChild.grade}${selectedChild.section ? ` - Section ${selectedChild.section}` : ''}` : 'Student'}
+                </span>
+              </span>
+            </div>
+            {childOptions.length > 1 && (
               <ChildSwitcher
                 options={childOptions}
                 value={childKey}
                 onChange={setChildKey}
-                className="w-full"
               />
-            </div>
-          )}
+            )}
+          </motion.div>
+        )}
 
       </div>
 
@@ -828,7 +895,12 @@ const AdmitCardsView = ({
 
       {!error &&
         groups.length > 0 && (
-          <div className="space-y-3">
+          <motion.div
+            className="space-y-3"
+            initial="hidden"
+            animate="show"
+            variants={{ hidden: {}, show: { transition: { staggerChildren: 0.08 } } }}
+          >
 
             {groups.map(
               (group, index) => {
@@ -866,7 +938,12 @@ const AdmitCardsView = ({
                     : 'Class —';
 
                 return (
-                  <section
+                  <motion.section
+                    variants={{
+                      hidden: { opacity: 0, y: 16 },
+                      show: { opacity: 1, y: 0, transition: { duration: 0.4, ease: [0.22, 1, 0.36, 1] } },
+                    }}
+                    whileHover={{ y: -2 }}
                     key={
                       group?._id ||
                       index
@@ -1051,7 +1128,13 @@ const AdmitCardsView = ({
                           ACTIONS
                       ================================= */}
 
-                      <div className="flex flex-col gap-2">
+                      <div className="relative isolate flex flex-col gap-2">
+
+                        {/* Decorative circles behind the buttons */}
+                        <span aria-hidden="true" className="pointer-events-none absolute -right-6 -top-8 -z-10 h-24 w-24 rounded-full bg-violet-200/40" />
+                        <span aria-hidden="true" className="pointer-events-none absolute -bottom-7 -left-5 -z-10 h-16 w-16 rounded-full bg-sky-200/50" />
+                        <span aria-hidden="true" className="pointer-events-none absolute -right-2 bottom-2 -z-10 h-8 w-8 rounded-full border-2 border-amber-300/60" />
+                        <span aria-hidden="true" className="pointer-events-none absolute left-3 -top-4 -z-10 h-5 w-5 rounded-full bg-pink-200/70" />
 
                         {/* View */}
 
@@ -1199,12 +1282,12 @@ const AdmitCardsView = ({
 
                     </div>
 
-                  </section>
+                  </motion.section>
                 );
               }
             )}
 
-          </div>
+          </motion.div>
         )}
 
       {/* ===================================================
@@ -1229,6 +1312,57 @@ const AdmitCardsView = ({
           </div>
         )}
 
+      {/* Admit card preview — portal so the dark backdrop covers the whole screen */}
+      {createPortal(
+        <AnimatePresence>
+          {preview && (
+            <motion.div
+              className="fixed inset-0 z-[9999] flex h-dvh w-screen items-center justify-center bg-black/70 p-3 backdrop-blur-sm sm:p-6"
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              exit={{ opacity: 0 }}
+              onMouseDown={(e) => { if (e.target === e.currentTarget) closePreview(); }}
+            >
+              <motion.div
+                role="dialog"
+                aria-modal="true"
+                aria-label={`${preview.title} admit card`}
+                initial={{ opacity: 0, scale: 0.96, y: 16 }}
+                animate={{ opacity: 1, scale: 1, y: 0 }}
+                exit={{ opacity: 0, scale: 0.96, y: 16 }}
+                transition={{ duration: 0.22 }}
+                className="flex h-full max-h-[92dvh] w-full max-w-4xl flex-col overflow-hidden rounded-2xl bg-white shadow-2xl"
+              >
+                <div className="flex items-center justify-between gap-3 border-b border-slate-100 px-4 py-3">
+                  <div className="min-w-0">
+                    <p className="truncate text-sm font-bold text-slate-900">{preview.title}</p>
+                    <p className="truncate text-xs text-slate-500">{selectedChild?.studentName || ''} · Admit Card</p>
+                  </div>
+                  <div className="flex shrink-0 items-center gap-2">
+                    <button
+                      type="button"
+                      onClick={() => download(preview.group)}
+                      className="inline-flex items-center gap-1.5 rounded-lg bg-violet-600 px-3 py-2 text-xs font-semibold text-white hover:bg-violet-700"
+                    >
+                      Download
+                    </button>
+                    <button
+                      type="button"
+                      onClick={closePreview}
+                      aria-label="Close preview"
+                      className="flex h-9 w-9 items-center justify-center rounded-lg text-slate-500 hover:bg-slate-100 hover:text-slate-800"
+                    >
+                      ✕
+                    </button>
+                  </div>
+                </div>
+                <iframe title={`${preview.title} admit card`} src={preview.url} className="h-full w-full flex-1 bg-slate-100" />
+              </motion.div>
+            </motion.div>
+          )}
+        </AnimatePresence>,
+        document.body,
+      )}
     </div>
   );
 };

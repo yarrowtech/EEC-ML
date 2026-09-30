@@ -618,6 +618,10 @@ const resolveResultScore = ({ marks, status, examMaxMarks, requireMarks = true }
 
 
 const router = express.Router();
+const { createResponseCache } = require('../utils/responseCache');
+// Parent exam schedule: 60s per-parent cache; any exam write here clears it.
+const parentScheduleCache = createResponseCache({ ttlMs: 60 * 1000 });
+router.use(parentScheduleCache.invalidateOnWrite);
 
 /* ══════════════════════════════════════════════════════════
    EXAM GROUPS  (parent level)
@@ -747,7 +751,7 @@ router.get('/groups/student-schedule', authStudent, async (req, res) => {
 });
 
 // GET /groups/student-admit-cards - published exam routines for the logged-in student's admit cards
-router.get('/groups/student-admit-cards', authStudent, async (req, res) => {
+router.get('/groups/student-admit-cards', authStudent, parentScheduleCache.cache, async (req, res) => {
   try {
     const schoolId = req.schoolId || req.user?.schoolId || null;
     if (!schoolId) return res.status(400).json({ error: 'schoolId is required' });
@@ -758,7 +762,7 @@ router.get('/groups/student-admit-cards', authStudent, async (req, res) => {
     }
 
     const student = await StudentUser.findOne({ _id: studentId, schoolId, ...(campusId ? { campusId } : {}) })
-      .select('name grade section roll admissionNumber enrollmentNo studentCode profilePic')
+      .select('name grade section roll admissionNumber enrollmentNo studentCode profilePic dob fatherName motherName academicYear')
       .lean();
     if (!student) return res.status(404).json({ error: 'Student not found' });
 
@@ -776,7 +780,7 @@ router.get('/groups/student-admit-cards', authStudent, async (req, res) => {
         .populate({ path: 'roomId', select: 'roomNumber floorId', populate: { path: 'floorId', select: 'name floorCode buildingId', populate: { path: 'buildingId', select: 'name code' } } })
         .sort({ date: 1, createdAt: 1 })
         .lean(),
-      School.findById(schoolId).select('name code address logo').lean(),
+      School.findById(schoolId).select('name code address logo board boardOther contactPhone contactEmail').lean(),
       Principal.findOne(campusId ? { schoolId, $or: [{ campusId }, { campusId: null }, { campusId: { $exists: false } }] } : { schoolId })
         .sort({ updatedAt: -1, createdAt: -1 })
         .select('name')
@@ -806,9 +810,13 @@ router.get('/groups/student-admit-cards', authStudent, async (req, res) => {
         roll: student.roll || '',
         admissionNumber: student.admissionNumber || student.enrollmentNo || student.studentCode || '',
         profilePic: resolveStudentPhoto(student.profilePic),
+        dob: student.dob || null,
+        fatherName: student.fatherName || '',
+        motherName: student.motherName || '',
+        academicYear: student.academicYear || '',
       },
       groups: groupsPayload,
-      school: { name: school?.name || '', address: school?.address || '', logo: school?.logo?.secure_url || school?.logo?.url || null },
+      school: { name: school?.name || '', address: school?.address || '', logo: school?.logo?.secure_url || school?.logo?.url || null, board: school?.board === 'Other' ? (school?.boardOther || '') : (school?.board || ''), phone: school?.contactPhone || '', email: school?.contactEmail || '' },
       principalName: String(principal?.name || '').trim(),
     });
   } catch (err) {
@@ -816,7 +824,7 @@ router.get('/groups/student-admit-cards', authStudent, async (req, res) => {
   }
 });
 // GET /groups/parent-schedule — exam schedule for every child linked to the logged-in parent
-router.get('/groups/parent-schedule', authParent, async (req, res) => {
+router.get('/groups/parent-schedule', authParent, parentScheduleCache.cache, async (req, res) => {
   try {
     const parent = await ParentUser.findById(req.user.id)
       .select('schoolId campusId childrenIds children')
@@ -878,7 +886,7 @@ router.get('/groups/parent-schedule', authParent, async (req, res) => {
         })
         .sort({ date: 1, createdAt: 1 })
         .lean(),
-      School.findById(schoolId).select('name code address logo').lean(),
+      School.findById(schoolId).select('name code address logo board boardOther contactPhone contactEmail').lean(),
       Principal.findOne(principalFilter).sort({ updatedAt: -1, createdAt: -1 }).select('name').lean(),
     ]);
 
@@ -933,6 +941,10 @@ router.get('/groups/parent-schedule', authParent, async (req, res) => {
         grade: student.grade || '',
         section: student.section || '',
         profilePic: resolveStudentPhoto(student.profilePic),
+        dob: student.dob || null,
+        fatherName: student.fatherName || '',
+        motherName: student.motherName || '',
+        academicYear: student.academicYear || '',
         groups: payload,
       };
     });
@@ -952,7 +964,7 @@ router.get('/groups/parent-schedule', authParent, async (req, res) => {
 });
 
 // GET /groups/parent-admit-cards - published admit cards for every linked child
-router.get('/groups/parent-admit-cards', authParent, async (req, res) => {
+router.get('/groups/parent-admit-cards', authParent, parentScheduleCache.cache, async (req, res) => {
   try {
     const parent = await ParentUser.findById(req.user.id).select('schoolId campusId childrenIds children').lean();
     if (!parent) return res.status(404).json({ error: 'Parent not found' });
@@ -965,14 +977,14 @@ router.get('/groups/parent-admit-cards', authParent, async (req, res) => {
 
     if (Array.isArray(parent.childrenIds) && parent.childrenIds.length > 0) {
       students = await StudentUser.find({ ...studentFilter, _id: { $in: parent.childrenIds } })
-        .select('name grade section roll admissionNumber enrollmentNo studentCode profilePic')
+        .select('name grade section roll admissionNumber enrollmentNo studentCode profilePic dob fatherName motherName academicYear')
         .lean();
     }
     if (students.length === 0 && Array.isArray(parent.children) && parent.children.length > 0) {
       const validNames = parent.children.map((name) => String(name || '').trim()).filter(Boolean);
       if (validNames.length > 0) {
         students = await StudentUser.find({ ...studentFilter, name: { $in: validNames } })
-          .select('name grade section roll admissionNumber enrollmentNo studentCode profilePic')
+          .select('name grade section roll admissionNumber enrollmentNo studentCode profilePic dob fatherName motherName academicYear')
           .lean();
       }
     }
@@ -992,7 +1004,7 @@ router.get('/groups/parent-admit-cards', authParent, async (req, res) => {
         .populate({ path: 'roomId', select: 'roomNumber floorId', populate: { path: 'floorId', select: 'name floorCode buildingId', populate: { path: 'buildingId', select: 'name code' } } })
         .sort({ date: 1, createdAt: 1 })
         .lean(),
-      School.findById(schoolId).select('name code address logo').lean(),
+      School.findById(schoolId).select('name code address logo board boardOther contactPhone contactEmail').lean(),
       Principal.findOne(campusId ? { schoolId, $or: [{ campusId }, { campusId: null }, { campusId: { $exists: false } }] } : { schoolId })
         .sort({ updatedAt: -1, createdAt: -1 })
         .select('name')
@@ -1016,6 +1028,10 @@ router.get('/groups/parent-admit-cards', authParent, async (req, res) => {
       roll: student.roll || '',
       admissionNumber: student.admissionNumber || student.enrollmentNo || student.studentCode || '',
       profilePic: resolveStudentPhoto(student.profilePic),
+        dob: student.dob || null,
+        fatherName: student.fatherName || '',
+        motherName: student.motherName || '',
+        academicYear: student.academicYear || '',
       groups: publishedGroups
         .filter((group) => studentMatchesExamScope(student, group))
         .map((group) => buildAdmitCardGroupPayload(group, examsByGroup.get(String(group._id)) || []))
@@ -1024,7 +1040,7 @@ router.get('/groups/parent-admit-cards', authParent, async (req, res) => {
 
     return res.status(200).json({
       children,
-      school: { name: school?.name || '', address: school?.address || '', logo: school?.logo?.secure_url || school?.logo?.url || null },
+      school: { name: school?.name || '', address: school?.address || '', logo: school?.logo?.secure_url || school?.logo?.url || null, board: school?.board === 'Other' ? (school?.boardOther || '') : (school?.board || ''), phone: school?.contactPhone || '', email: school?.contactEmail || '' },
       principalName: String(principal?.name || '').trim(),
     });
   } catch (err) {

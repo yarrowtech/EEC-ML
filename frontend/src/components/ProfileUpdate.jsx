@@ -77,7 +77,6 @@ const ProfileUpdate = () => {
   const [dataLoading, setDataLoading] = useState(true);
   const [errors, setErrors] = useState({});
   const [activeTab, setActiveTab] = useState('personal');
-  const fileInputRef = useRef(null);
   const touchStartRef = useRef({ x: 0, y: 0 });
   const touchMoveRef = useRef({ x: 0, y: 0 });
   const swipeLockRef = useRef(0);
@@ -228,68 +227,6 @@ const ProfileUpdate = () => {
       });
     }
     validateField(name, value, nextProfile);
-  };
-
-  // Save the photo straight away — no need to press "Save" for a new picture.
-  const uploadPhotoNow = async (file) => {
-    setPhotoUploading(true);
-    try {
-      const token = localStorage.getItem('token');
-      const formData = new FormData();
-      formData.append('profilePic', file);
-      const response = await fetch(`${import.meta.env.VITE_API_URL}/api/student/profile/update`, {
-        method: 'POST',
-        headers: { Authorization: `Bearer ${token}` },
-        body: formData,
-      });
-      const result = await response.json().catch(() => ({}));
-      if (!response.ok) throw new Error(result?.error || 'Unable to update profile photo');
-      const url = result?.student?.profilePic || '';
-      if (url) { setPreview(url); setProfile((prev) => ({ ...prev, profilePic: url })); }
-      setErrors((prev) => { const next = { ...prev }; delete next.profilePic; delete next.submit; return next; });
-      setSuccess(true);
-      setTimeout(() => setSuccess(false), 3000);
-    } catch (error) {
-      setPreview(typeof profile.profilePic === 'string' ? profile.profilePic : '');
-      setErrors((prev) => ({ ...prev, profilePic: error.message || 'Unable to update profile photo' }));
-    } finally {
-      setPhotoUploading(false);
-    }
-  };
-
-  const handleImageChange = (e) => {
-    const file = e.target.files[0];
-    if (file) {
-      if (!/^image\/(jpeg|png|webp|gif)$/.test(file.type)) {
-        setErrors(prev => ({ ...prev, profilePic: 'Please choose a JPG, PNG, WEBP or GIF image' }));
-        return;
-      }
-      if (file.size > 5 * 1024 * 1024) {
-        setErrors(prev => ({ ...prev, profilePic: 'Image size must be less than 5MB' }));
-        return;
-      }
-
-      const reader = new FileReader();
-      reader.onloadend = () => setPreview(reader.result);
-      reader.readAsDataURL(file);
-      uploadPhotoNow(file);
-
-      if (errors.submit) {
-        setErrors((prev) => {
-          const newErrors = { ...prev };
-          delete newErrors.submit;
-          return newErrors;
-        });
-      }
-
-      if (errors.profilePic) {
-        setErrors(prev => {
-          const newErrors = { ...prev };
-          delete newErrors.profilePic;
-          return newErrors;
-        });
-      }
-    }
   };
 
   const handleSubmit = async (e) => {
@@ -649,8 +586,6 @@ const ProfileUpdate = () => {
       style={{ scrollbarGutter: 'stable' }}
     >
 
-      <input type="file" accept="image/*" ref={fileInputRef} onChange={handleImageChange} className="hidden" />
-
       {/* ══════════════════════════════════════════════════════
           MOBILE  (lg:hidden)
       ══════════════════════════════════════════════════════ */}
@@ -682,13 +617,6 @@ const ProfileUpdate = () => {
                   }
                 </div>
               </div>
-              <button
-                type="button"
-                onClick={() => fileInputRef.current?.click()}
-                className="absolute bottom-0 right-0 w-7 h-7 bg-white text-amber-500 rounded-full shadow-xl flex items-center justify-center active:scale-90 transition-all border-2 border-orange-100"
-              >
-                <Camera className="w-3.5 h-3.5" />
-              </button>
             </div>
 
             <h2 className="text-white font-black text-lg tracking-tight drop-shadow-sm">{profile.name || 'Student'}</h2>
@@ -845,14 +773,6 @@ const ProfileUpdate = () => {
                       : <div className="w-full h-full flex items-center justify-center text-amber-700 text-3xl font-black">{initialsLabel}</div>
                     }
                   </div>
-                  <button
-                    type="button"
-                    onClick={() => fileInputRef.current?.click()}
-                    className="absolute -bottom-2 -right-2 w-9 h-9 bg-white text-amber-500 rounded-full shadow-lg flex items-center justify-center hover:scale-110 transition-all border border-amber-100"
-                    title="Change photo"
-                  >
-                    <Camera className="w-4 h-4" />
-                  </button>
                 </div>
 
                 <div>
