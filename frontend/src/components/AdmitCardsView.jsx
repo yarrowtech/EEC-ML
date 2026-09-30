@@ -801,7 +801,7 @@ const AdmitCardsView = ({
 
         <div className="flex items-center gap-3">
 
-          <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl border border-violet-100 bg-violet-50">
+          <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-full border border-violet-100 bg-violet-50">
             <FileBadge
               size={23}
               strokeWidth={1.8}
@@ -829,11 +829,11 @@ const AdmitCardsView = ({
             animate={{ opacity: 1, x: 0 }}
             className="flex w-full flex-col items-stretch gap-2 sm:w-auto sm:items-end"
           >
-            <div className="flex items-center gap-3 rounded-2xl border border-slate-200 bg-white px-3 py-2.5 pr-4 shadow-sm">
+            <div className="flex items-center gap-3 rounded-full border border-slate-200 bg-white px-3 py-2.5 pr-4 shadow-sm">
               {selectedChild.profilePic || selectedChild.photo ? (
-                <img src={selectedChild.profilePic || selectedChild.photo} alt="" className="h-10 w-10 rounded-xl object-cover" />
+                <img src={selectedChild.profilePic || selectedChild.photo} alt="" className="h-10 w-10 rounded-full object-cover" />
               ) : (
-                <span className="flex h-10 w-10 items-center justify-center rounded-xl bg-violet-100 text-sm font-bold text-violet-700">
+                <span className="flex h-10 w-10 items-center justify-center rounded-full bg-violet-100 text-sm font-bold text-violet-700">
                   {String(selectedChild.studentName || 'S').trim().split(/\s+/).slice(0, 2).map((w) => w[0]).join('').toUpperCase()}
                 </span>
               )}
