@@ -38,21 +38,21 @@ const EXAM_STYLES = [
 
     accent: 'border-blue-100',
 
-    button: 'bg-blue-600 hover:bg-blue-700',
+    button: 'bg-violet-600 hover:bg-violet-700',
     outline:
-      'border-blue-200 text-blue-600 hover:bg-blue-50',
+      'border-violet-200 text-violet-600 hover:bg-violet-50',
 
-    previewBg: 'bg-blue-50/80',
-    previewCircle1: 'bg-blue-200/45',
-    previewCircle2: 'bg-blue-100/70',
-    previewGlow: 'bg-blue-100/60',
+    previewBg: 'bg-violet-50/80',
+    previewCircle1: 'bg-violet-200/45',
+    previewCircle2: 'bg-violet-100/70',
+    previewGlow: 'bg-violet-100/60',
 
-    previewBorder: 'border-blue-200',
-    previewTitle: 'text-blue-700',
-    previewAvatar: 'bg-blue-100',
-    previewAvatarIcon: 'text-blue-500',
-    previewLine: 'bg-blue-200',
-    previewLineLight: 'bg-blue-100',
+    previewBorder: 'border-violet-200',
+    previewTitle: 'text-violet-700',
+    previewAvatar: 'bg-violet-100',
+    previewAvatarIcon: 'text-violet-500',
+    previewLine: 'bg-violet-200',
+    previewLineLight: 'bg-violet-100',
   },
 
   {
