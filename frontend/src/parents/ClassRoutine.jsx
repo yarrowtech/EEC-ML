@@ -471,12 +471,12 @@ const ParentClassRoutine = () => {
                             const e = r.cells[d];
                             const sty = e ? subjectStyle(e.subject) : null;
                             return (
-                              <td key={d} className={`h-px border-b border-slate-100 p-1.5 ${i === todayIdx ? 'bg-blue-50/30' : ''}`}>
+                              <td key={d} className={`h-px border-b border-slate-100 p-1.5 align-top ${i === todayIdx ? 'bg-blue-50/30' : ''}`}>
                                 {e ? (
                                   <motion.div
                                     whileHover={{ y: -2 }}
                                     title={[e.subject, e.instructor && e.instructor !== 'TBA' ? e.instructor : '', e.roomLocation || e.room].filter(Boolean).join(' · ')}
-                                    className={`flex h-full items-center gap-2.5 rounded-xl px-2.5 py-2 transition-shadow hover:shadow-md ${sty.cls}`}
+                                    className={`box-border flex h-full min-h-23 items-center gap-2.5 rounded-xl px-2.5 py-2 transition-shadow hover:shadow-md ${sty.cls}`}
                                   >
                                     <span className="min-w-0 flex-1 leading-tight text-center">
                                       <span className="block truncate text-xs font-bold text-slate-900 text-center">{e.subject}</span>
@@ -498,7 +498,7 @@ const ParentClassRoutine = () => {
                                     </span>
                                   </motion.div>
                                 ) : (
-                                  <div className="flex h-full min-h-20 flex-col items-center justify-center gap-1 rounded-xl bg-slate-50 text-slate-400">
+                                  <div className="flex h-full min-h-23 flex-col items-center justify-center gap-1 rounded-xl bg-slate-50 text-slate-400">
                                     <span>-</span><span>-</span><span>-</span>
                                   </div>
                                 )}

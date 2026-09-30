@@ -1,5 +1,10 @@
 const express = require('express');
+require('../models/TeacherUser'); // registers the model for remarks populate
 const router = express.Router();
+const { createResponseCache } = require('../utils/responseCache');
+// Parent growth analytics are read-heavy and change slowly: 60s per-parent cache.
+const growthCache = createResponseCache({ ttlMs: 60 * 1000 });
+router.use(growthCache.invalidateOnWrite);
 const axios = require('axios');
 const authParent = require('../middleware/authParent');
 const StudentUser = require('../models/StudentUser');
@@ -105,7 +110,7 @@ router.get('/weak-areas', authParent, async (req, res) => {
 });
 
 // GET /api/parent-dashboard/remarks-feed
-router.get('/remarks-feed', authParent, async (req, res) => {
+router.get('/remarks-feed', authParent, growthCache.cache, async (req, res) => {
   try {
     const childIds = await getChildIds(req.user.id, req.schoolId);
     if (!childIds.length) return res.json({ success: true, data: [] });
@@ -117,7 +122,8 @@ router.get('/remarks-feed', authParent, async (req, res) => {
     })
       .sort({ recordedAt: -1 })
       .limit(20)
-      .select('studentId studentName observationText category recordedAt concernLevel')
+      .select('studentId studentName observationText category recordedAt concernLevel teacherId')
+      .populate({ path: 'teacherId', model: 'TeacherUser', select: 'name profilePic' })
       .lean();
 
     return res.json({ success: true, data: remarks });
@@ -256,7 +262,7 @@ router.get('/monthly-report/:studentId', authParent, async (req, res) => {
 });
 
 // GET /api/parent-dashboard/analytics/academic/:studentId
-router.get('/analytics/academic/:studentId', authParent, async (req, res) => {
+router.get('/analytics/academic/:studentId', authParent, growthCache.cache, async (req, res) => {
   try {
     const childIds = await getChildIds(req.user.id, req.schoolId);
     if (!ownsStudent(childIds, req.params.studentId)) {
@@ -333,7 +339,7 @@ router.get('/analytics/academic/:studentId', authParent, async (req, res) => {
 });
 
 // GET /api/parent-dashboard/analytics/wellbeing/:studentId
-router.get('/analytics/wellbeing/:studentId', authParent, async (req, res) => {
+router.get('/analytics/wellbeing/:studentId', authParent, growthCache.cache, async (req, res) => {
   try {
     const childIds = await getChildIds(req.user.id, req.schoolId);
     if (!ownsStudent(childIds, req.params.studentId)) {
@@ -424,7 +430,7 @@ router.get('/analytics/wellbeing/:studentId', authParent, async (req, res) => {
 });
 
 // GET /api/parent-dashboard/analytics/skills/:studentId
-router.get('/analytics/skills/:studentId', authParent, async (req, res) => {
+router.get('/analytics/skills/:studentId', authParent, growthCache.cache, async (req, res) => {
   try {
     const childIds = await getChildIds(req.user.id, req.schoolId);
     if (!ownsStudent(childIds, req.params.studentId)) {

@@ -21,6 +21,10 @@ const Principal = require('../models/Principal');
 const { logStudentPortalEvent, logStudentPortalError } = require('../utils/studentPortalLogger');
 
 const router = express.Router();
+const { createResponseCache } = require('../utils/responseCache');
+// Parent report-card view: 60s per-parent cache; any report write clears it.
+const parentReportCache = createResponseCache({ ttlMs: 60 * 1000 });
+router.use(parentReportCache.invalidateOnWrite);
 
 const REPORT_CARD_DEFAULTS = {
   title: 'Report Card',
@@ -831,7 +835,7 @@ router.get('/report-cards/me', authStudent, async (req, res) => {
   }
 });
 
-router.get('/report-cards/parent', authParent, async (req, res) => {
+router.get('/report-cards/parent', authParent, parentReportCache.cache, async (req, res) => {
   try {
     const schoolId = resolveSchoolId(req, res);
     if (!schoolId) return;
