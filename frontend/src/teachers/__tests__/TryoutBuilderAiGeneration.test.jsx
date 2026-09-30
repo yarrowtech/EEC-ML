@@ -44,6 +44,7 @@ describe('InlineTryoutBuilder AI generation — RAG-grounded, non-mcq types', ()
       />
     );
 
+    await user.click(screen.getByText('AI question generator'));
     await user.selectOptions(screen.getAllByRole('combobox')[2], 'choice_matrix');
     await user.click(screen.getByRole('button', { name: /Generate With AI|Append AI Questions/i }));
 
@@ -80,6 +81,7 @@ describe('InlineTryoutBuilder AI generation — RAG-grounded, non-mcq types', ()
       />
     );
 
+    await user.click(screen.getByText('AI question generator'));
     const typeSelect = screen.getAllByRole('combobox')[2];
     await user.selectOptions(typeSelect, 'cloze_text');
     await user.click(screen.getByRole('button', { name: /Generate With AI|Append AI Questions/i }));
@@ -104,6 +106,7 @@ describe('InlineTryoutBuilder AI generation — RAG-grounded, non-mcq types', ()
       />
     );
 
+    await user.click(screen.getByText('AI question generator'));
     await user.click(screen.getByRole('button', { name: /Generate With AI|Append AI Questions/i }));
 
     expect(await screen.findByText(/No indexed material matched/i)).toBeInTheDocument();

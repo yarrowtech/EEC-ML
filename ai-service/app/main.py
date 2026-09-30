@@ -10,8 +10,9 @@ load_dotenv()
 # hf_xet binary wheel is not compatible with Python 3.14; force HTTP fallback
 os.environ.setdefault("HF_HUB_DISABLE_XET", "1")
 
-from fastapi import FastAPI
+from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import JSONResponse
 
 from app.core.config import settings
 from app.core.logger import setup_logging
@@ -61,10 +62,41 @@ app = FastAPI(title="EEC AI Service", version="2.0.0", lifespan=lifespan)
 
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],
-    allow_methods=["*"],
-    allow_headers=["*"],
+    # This service is only ever called server-to-server by the Node backend, never
+    # directly from a browser — so no cross-origin access is legitimate.
+    allow_origins=[],
+    allow_methods=["GET", "POST", "DELETE"],
+    allow_headers=["Content-Type", "X-Internal-Key"],
 )
+
+_UNAUTHENTICATED_PATHS = {"/health", "/docs", "/openapi.json", "/redoc"}
+
+
+@app.middleware("http")
+async def enforce_internal_key(request: Request, call_next):
+    """Require the shared X-Internal-Key secret on every request from the Node backend.
+
+    Without AI_SERVICE_INTERNAL_KEY configured, every endpoint here (ingest, generate,
+    vision, speech, ...) is reachable by anyone who can route to this service. If the
+    key isn't configured, fail open only for local dev (empty settings) but log loudly.
+    """
+    if request.url.path in _UNAUTHENTICATED_PATHS:
+        return await call_next(request)
+
+    expected = settings.ai_service_internal_key
+    if not expected:
+        logger.warning(
+            "AI_SERVICE_INTERNAL_KEY is not set — running with no request authentication. "
+            "Set it in .env before exposing this service beyond localhost."
+        )
+        return await call_next(request)
+
+    provided = request.headers.get("x-internal-key", "")
+    if provided != expected:
+        return JSONResponse(status_code=401, content={"detail": "Missing or invalid X-Internal-Key"})
+
+    return await call_next(request)
+
 
 app.include_router(orchestrator_router)   # ← single unified entry point for all AI tasks
 app.include_router(ingest_router)

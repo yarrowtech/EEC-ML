@@ -64,5 +64,9 @@ class Settings(BaseSettings):
     # Context window for OpenRouter models (most support 128k+)
     openrouter_num_ctx: int = 32768
 
+    # Shared secret the Node backend must send as X-Internal-Key on every request.
+    # Empty by default so local dev without a .env still works; set in production.
+    ai_service_internal_key: str = ""
+
 
 settings = Settings()

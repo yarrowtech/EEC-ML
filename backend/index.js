@@ -12,6 +12,10 @@ const dotenv = require('dotenv');
 
 dotenv.config({ path: path.join(__dirname, '.env') });
 
+// Must load after dotenv.config so process.env.AI_SERVICE_INTERNAL_KEY is populated;
+// registers a global axios interceptor that signs every ai-service request.
+require('./utils/aiServiceAuth');
+
 // ── Production guard (must run before anything else) ─────────────────────────
 const assertProductionConfiguration = () => {
   if (process.env.NODE_ENV !== 'production') return;

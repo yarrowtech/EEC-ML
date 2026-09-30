@@ -2,6 +2,7 @@ import React, { useState } from 'react';
 import { motion as Motion, AnimatePresence } from 'framer-motion';
 import {
   X,
+  ArrowLeft,
   Plus,
   CheckCircle2,
   List,
@@ -18,7 +19,6 @@ import {
   Save,
   Eye,
   Play,
-  Brain,
   Zap,
 } from 'lucide-react';
 import toast from 'react-hot-toast';
@@ -45,12 +45,12 @@ const TRYOUT_TYPES = [
 // MCQ Question Creator
 const MCQCreator = ({ question, onChange }) => {
   const [options, setOptions] = useState(question.options || ['', '', '', '']);
-  const [correctAnswer, setCorrectAnswer] = useState(question.correctAnswer ?? 0);
+  const [correctAnswer, setCorrectAnswer] = useState(question.correctAnswer === undefined ? 0 : question.correctAnswer);
   const [questionText, setQuestionText] = useState(question.question || '');
   const [theme, setTheme] = useState(question.theme || 'standard');
 
   const handleUpdate = (updates) => {
-    onChange({ ...question, ...updates });
+    onChange({ ...question, options, correctAnswer, question: questionText, theme, ...updates });
   };
 
   const addOption = () => {
@@ -63,12 +63,9 @@ const MCQCreator = ({ question, onChange }) => {
     if (options.length <= 2) return;
     const newOptions = options.filter((_, i) => i !== index);
     setOptions(newOptions);
-    if (correctAnswer >= newOptions.length) {
-      setCorrectAnswer(0);
-      handleUpdate({ options: newOptions, correctAnswer: 0 });
-    } else {
-      handleUpdate({ options: newOptions });
-    }
+    const nextCorrect = index === correctAnswer ? null : correctAnswer > index ? correctAnswer - 1 : correctAnswer;
+    setCorrectAnswer(nextCorrect);
+    handleUpdate({ options: newOptions, correctAnswer: nextCorrect });
   };
 
   const updateOption = (index, value) => {
@@ -83,6 +80,7 @@ const MCQCreator = ({ question, onChange }) => {
       <div>
         <label className="block text-sm font-medium text-slate-700 dark:text-slate-200 mb-1">Question</label>
         <Textarea
+          aria-label="Question"
           value={questionText}
           onChange={(e) => {
             setQuestionText(e.target.value);
@@ -96,6 +94,7 @@ const MCQCreator = ({ question, onChange }) => {
       <div>
         <label className="block text-sm font-medium text-slate-700 dark:text-slate-200 mb-1">Display Theme</label>
         <select
+          aria-label="Display Theme"
           value={theme}
           onChange={(e) => {
             setTheme(e.target.value);
@@ -144,13 +143,14 @@ const MCQCreator = ({ question, onChange }) => {
                   {isCorrect ? 'Correct' : 'Mark correct'}
                 </button>
                 <Input
+                  aria-label={`Option ${index + 1}`}
                   value={option}
                   onChange={(e) => updateOption(index, e.target.value)}
                   placeholder={`Option ${index + 1}`}
                   className="flex-1"
                 />
                 {options.length > 2 && (
-                  <Button variant="ghost" size="icon-sm" onClick={() => removeOption(index)}>
+                  <Button aria-label={`Remove option ${index + 1}`} variant="ghost" size="icon-sm" onClick={() => removeOption(index)}>
                     <Trash2 className="size-4 text-red-500" />
                   </Button>
                 )}
@@ -228,6 +228,7 @@ const ChoiceMatrixCreator = ({ question, onChange }) => {
               <tr key={index} className="border-b dark:border-slate-700">
                 <td className="py-2 px-2">
                   <Input
+                    aria-label={`Statement ${index + 1}`}
                     value={statement}
                     onChange={(e) => updateStatement(index, e.target.value)}
                     placeholder={`Statement ${index + 1}`}
@@ -235,7 +236,8 @@ const ChoiceMatrixCreator = ({ question, onChange }) => {
                 </td>
                 <td className="py-2 px-2 text-center">
                   <input
-                    type="radio"
+                    aria-label={`Statement ${index + 1}: true`}
+                  type="radio"
                     name={`choice-${index}`}
                     checked={answers[index] === true}
                     onChange={() => updateAnswer(index, true)}
@@ -244,7 +246,8 @@ const ChoiceMatrixCreator = ({ question, onChange }) => {
                 </td>
                 <td className="py-2 px-2 text-center">
                   <input
-                    type="radio"
+                    aria-label={`Statement ${index + 1}: false`}
+                  type="radio"
                     name={`choice-${index}`}
                     checked={answers[index] === false}
                     onChange={() => updateAnswer(index, false)}
@@ -253,7 +256,7 @@ const ChoiceMatrixCreator = ({ question, onChange }) => {
                 </td>
                 <td className="py-2 px-2">
                   {statements.length > 1 && (
-                    <Button variant="ghost" size="icon-sm" onClick={() => removeStatement(index)}>
+                    <Button aria-label="Remove item" variant="ghost" size="icon-sm" onClick={() => removeStatement(index)}>
                       <Trash2 className="size-4 text-red-500" />
                     </Button>
                   )}
@@ -333,6 +336,7 @@ const ClozeDragDropCreator = ({ question, onChange }) => {
           <span className="text-xs text-slate-500 ml-2">(Use $&#123;&#123;blank&#125;&#125; for blanks)</span>
         </label>
         <Textarea
+          aria-label="There are several ${{blank}} types of drums. The ${{blank}} drum is..."
           value={text}
           onChange={(e) => {
             setText(e.target.value);
@@ -346,6 +350,7 @@ const ClozeDragDropCreator = ({ question, onChange }) => {
       <div>
         <label className="block text-sm font-medium text-slate-700 dark:text-slate-200 mb-1">Option Position</label>
         <select
+          aria-label="Option Position"
           value={optionPosition}
           onChange={(e) => {
             setOptionPosition(e.target.value);
@@ -372,18 +377,20 @@ const ClozeDragDropCreator = ({ question, onChange }) => {
           {options.map((option, index) => (
             <div key={index} className="flex items-center gap-2">
               <Input
+                aria-label={`Option ${index + 1}`}
                 value={option}
                 onChange={(e) => updateOption(index, e.target.value)}
                 placeholder={`Option ${index + 1}`}
                 className="flex-1"
               />
               <Input
+                aria-label="Hint (optional)"
                 value={hints[index] || ''}
                 onChange={(e) => updateHint(index, e.target.value)}
                 placeholder="Hint (optional)"
                 className="flex-1"
               />
-              <Button variant="ghost" size="icon-sm" onClick={() => removeOption(index)}>
+              <Button aria-label="Remove item" variant="ghost" size="icon-sm" onClick={() => removeOption(index)}>
                 <Trash2 className="size-4 text-red-500" />
               </Button>
             </div>
@@ -399,6 +406,7 @@ const ClozeDragDropCreator = ({ question, onChange }) => {
               <div key={blankIndex} className="flex items-center gap-2">
                 <span className="text-sm text-slate-500 w-20 shrink-0">Blank {blankIndex + 1}:</span>
                 <select
+                  aria-label={`Correct answer for blank ${blankIndex + 1}`}
                   value={correctAnswers[blankIndex] ?? ''}
                   onChange={(e) => updateCorrectAnswer(blankIndex, e.target.value === '' ? undefined : Number(e.target.value))}
                   style={{ colorScheme: 'light' }}
@@ -489,6 +497,7 @@ const ClozeDropdownCreator = ({ question, onChange }) => {
           <span className="text-xs text-slate-500 ml-2">(Use $&#123;&#123;input&#125;&#125; for dropdowns)</span>
         </label>
         <Textarea
+          aria-label="Yesterday, we ${{input}} to the store. Tomorrow we ${{input}} to school."
           value={text}
           onChange={(e) => {
             setText(e.target.value);
@@ -526,12 +535,13 @@ const ClozeDropdownCreator = ({ question, onChange }) => {
                 {(options || []).map((opt, optIndex) => (
                   <div key={optIndex} className="flex items-center gap-1">
                     <Input
+                      aria-label={`Option ${optIndex + 1}`}
                       value={opt}
                       onChange={(e) => updateDropdownOption(dropIndex, optIndex, e.target.value)}
                       placeholder={`Option ${optIndex + 1}`}
                       className="w-24"
                     />
-                    <Button variant="ghost" size="icon-sm" onClick={() => removeOptionFromDropdown(dropIndex, optIndex)}>
+                    <Button aria-label="Remove item" variant="ghost" size="icon-sm" onClick={() => removeOptionFromDropdown(dropIndex, optIndex)}>
                       <X className="size-3 text-red-500" />
                     </Button>
                   </div>
@@ -541,6 +551,7 @@ const ClozeDropdownCreator = ({ question, onChange }) => {
                 <div className="mt-2 flex items-center gap-2">
                   <span className="text-xs text-slate-500 shrink-0">Correct answer:</span>
                   <select
+                    aria-label={`Correct answer for dropdown ${dropIndex + 1}`}
                     value={correctAnswers[dropIndex] ?? ''}
                     onChange={(e) => updateCorrectAnswer(dropIndex, e.target.value === '' ? undefined : e.target.value)}
                     style={{ colorScheme: 'light' }}
@@ -588,6 +599,7 @@ const ClozeTextCreator = ({ question, onChange }) => {
           <span className="text-xs text-slate-500 ml-2">(Use $&#123;&#123;input&#125;&#125; for blanks)</span>
         </label>
         <Textarea
+          aria-label="We the ${{input}} of the United States, in order to form a more ${{input}}..."
           value={text}
           onChange={(e) => {
             setText(e.target.value);
@@ -608,6 +620,7 @@ const ClozeTextCreator = ({ question, onChange }) => {
               <div key={index} className="flex items-center gap-2">
                 <span className="text-sm text-slate-500 w-20">Blank {index + 1}:</span>
                 <Input
+                  aria-label={`Answer for blank ${index + 1}`}
                   value={correctAnswers[index] || ''}
                   onChange={(e) => updateAnswer(index, e.target.value)}
                   placeholder={`Answer for blank ${index + 1}`}
@@ -675,6 +688,7 @@ const MatchListCreator = ({ question, onChange }) => {
         {items.map((item, index) => (
           <div key={index} className="flex items-center gap-2">
             <Input
+              aria-label={`Item ${index + 1}`}
               value={item}
               onChange={(e) => updateItem(index, e.target.value)}
               placeholder={`Item ${index + 1}`}
@@ -682,13 +696,14 @@ const MatchListCreator = ({ question, onChange }) => {
             />
             <ArrowLeftRight className="size-4 text-slate-400" />
             <Input
+              aria-label={`Match ${index + 1}`}
               value={pairs[index] || ''}
               onChange={(e) => updatePair(index, e.target.value)}
               placeholder={`Match ${index + 1}`}
               className="flex-1"
             />
             {items.length > 1 && (
-              <Button variant="ghost" size="icon-sm" onClick={() => removePair(index)}>
+              <Button aria-label="Remove item" variant="ghost" size="icon-sm" onClick={() => removePair(index)}>
                 <Trash2 className="size-4 text-red-500" />
               </Button>
             )}
@@ -743,6 +758,7 @@ const SortListCreator = ({ question, onChange }) => {
       <div>
         <label className="block text-sm font-medium text-slate-700 dark:text-slate-200 mb-1">Question/Instruction</label>
         <Textarea
+          aria-label="Sort the countries in ascending order based on their population:"
           value={questionText}
           onChange={(e) => {
             setQuestionText(e.target.value);
@@ -767,6 +783,7 @@ const SortListCreator = ({ question, onChange }) => {
             <div key={index} className="flex items-center gap-2">
               <span className="text-sm text-slate-500 w-6">{index + 1}.</span>
               <Input
+                aria-label={`Item ${index + 1}`}
                 value={item}
                 onChange={(e) => updateItem(index, e.target.value)}
                 placeholder={`Item ${index + 1}`}
@@ -774,6 +791,7 @@ const SortListCreator = ({ question, onChange }) => {
               />
               <div className="flex gap-1">
                 <Button
+                  aria-label={`Move item ${index + 1} up`}
                   variant="ghost"
                   size="icon-sm"
                   onClick={() => moveItem(index, 'up')}
@@ -782,6 +800,7 @@ const SortListCreator = ({ question, onChange }) => {
                   <ChevronDown className="size-4 rotate-180" />
                 </Button>
                 <Button
+                  aria-label={`Move item ${index + 1} down`}
                   variant="ghost"
                   size="icon-sm"
                   onClick={() => moveItem(index, 'down')}
@@ -791,7 +810,7 @@ const SortListCreator = ({ question, onChange }) => {
                 </Button>
               </div>
               {items.length > 2 && (
-                <Button variant="ghost" size="icon-sm" onClick={() => removeItem(index)}>
+                <Button aria-label="Remove item" variant="ghost" size="icon-sm" onClick={() => removeItem(index)}>
                   <Trash2 className="size-4 text-red-500" />
                 </Button>
               )}
@@ -818,6 +837,7 @@ const TextResponseCreator = ({ question, onChange }) => {
       <div>
         <label className="block text-sm font-medium text-slate-700 dark:text-slate-200 mb-1">Question</label>
         <Textarea
+          aria-label="Enter your question..."
           value={questionText}
           onChange={(e) => {
             setQuestionText(e.target.value);
@@ -830,6 +850,7 @@ const TextResponseCreator = ({ question, onChange }) => {
       <div>
         <label className="block text-sm font-medium text-slate-700 dark:text-slate-200 mb-1">Max Words</label>
         <Input
+          aria-label="Answer"
           type="number"
           value={maxWords}
           onChange={(e) => {
@@ -865,6 +886,7 @@ const FileUploadCreator = ({ question, onChange }) => {
       <div>
         <label className="block text-sm font-medium text-slate-700 dark:text-slate-200 mb-1">Question/Instructions</label>
         <Textarea
+          aria-label="Upload your assignment..."
           value={questionText}
           onChange={(e) => {
             setQuestionText(e.target.value);
@@ -922,6 +944,7 @@ const ImageHighlighterCreator = ({ question, onChange }) => {
       <div>
         <label className="block text-sm font-medium text-slate-700 dark:text-slate-200 mb-1">Question/Instructions</label>
         <Textarea
+          aria-label="Draw on the image to highlight healthy vs unhealthy items..."
           value={questionText}
           onChange={(e) => {
             setQuestionText(e.target.value);
@@ -934,6 +957,7 @@ const ImageHighlighterCreator = ({ question, onChange }) => {
       <div>
         <label className="block text-sm font-medium text-slate-700 dark:text-slate-200 mb-1">Upload Image</label>
         <input
+          aria-label="Upload Image"
           type="file"
           accept="image/*"
           onChange={handleImageUpload}
@@ -1456,6 +1480,8 @@ export const InlineTryoutBuilder = ({
       setSelectedType(null);
       setEditingIndex(null);
       setCurrentQuestion({});
+    } else if (editingIndex !== null && index < editingIndex) {
+      setEditingIndex(editingIndex - 1);
     }
   };
 
@@ -1465,20 +1491,33 @@ export const InlineTryoutBuilder = ({
     setCurrentQuestion({});
   };
 
+  // Send every edit to the lesson-plan draft, including new questions.
+  const handleQuestionChange = (nextQuestion) => {
+    setCurrentQuestion(nextQuestion);
+    const updated = [...localTryouts];
+    const index = editingIndex ?? updated.length;
+    updated[index] = nextQuestion;
+    setEditingIndex(index);
+    setLocalTryouts(updated);
+    onSaveTryouts(updated);
+  };
+
   const CreatorComponent = selectedType ? QUESTION_CREATORS[selectedType] : null;
 
   return (
-    <div className="rounded-xl border border-rose-200 bg-rose-50/30 overflow-hidden">
+    <div className="overflow-hidden rounded-xl border border-slate-200 bg-white">
       {/* Header */}
-      <div className="border-b border-rose-200 bg-rose-100 px-4 py-4">
-        <div className="flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">
-          <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4 sm:gap-4 w-full">
+      {!selectedType && <details className="border-b border-slate-200 px-5 py-4">
+        <summary className="cursor-pointer rounded text-sm font-medium text-slate-600 focus-visible:outline focus-visible:outline-2 focus-visible:outline-slate-600">AI question generator</summary>
+        <div className="mt-4 flex flex-col gap-4">
+          <fieldset disabled={generating} className="grid min-w-0 w-full gap-2 sm:grid-cols-2 xl:grid-cols-4">
             <div>
               <label className="block text-xs font-semibold uppercase tracking-wide text-slate-600">Count</label>
               <select
+                aria-label="Count"
                 value={aiCount}
                 onChange={(e) => setAiCount(Number(e.target.value))}
-                className="mt-1 w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm text-slate-900"
+                className="mt-1 w-full rounded-md border border-slate-300 bg-white px-2.5 py-2 text-sm text-slate-900"
               >
                 {[1, 3, 5, 10].map((count) => (
                   <option key={count} value={count}>{count} question{count !== 1 ? 's' : ''}</option>
@@ -1488,9 +1527,10 @@ export const InlineTryoutBuilder = ({
             <div>
               <label className="block text-xs font-semibold uppercase tracking-wide text-slate-600">Difficulty</label>
               <select
+                aria-label="Difficulty"
                 value={aiDifficulty}
                 onChange={(e) => setAiDifficulty(e.target.value)}
-                className="mt-1 w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm text-slate-900"
+                className="mt-1 w-full rounded-md border border-slate-300 bg-white px-2.5 py-2 text-sm text-slate-900"
               >
                 {['easy', 'medium', 'hard'].map((level) => (
                   <option key={level} value={level}>{level.charAt(0).toUpperCase() + level.slice(1)}</option>
@@ -1500,9 +1540,10 @@ export const InlineTryoutBuilder = ({
             <div>
               <label className="block text-xs font-semibold uppercase tracking-wide text-slate-600">Question Type</label>
               <select
+                aria-label="Question Type"
                 value={aiQuestionType}
                 onChange={(e) => setAiQuestionType(e.target.value)}
-                className="mt-1 w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm text-slate-900"
+                className="mt-1 w-full rounded-md border border-slate-300 bg-white px-2.5 py-2 text-sm text-slate-900"
               >
                 {TRYOUT_TYPES.map((type) => (
                   <option key={type.id} value={type.id}>{type.label}</option>
@@ -1511,7 +1552,7 @@ export const InlineTryoutBuilder = ({
             </div>
             <div>
               <label className="block text-xs font-semibold uppercase tracking-wide text-slate-600">Mode</label>
-              <div className="mt-1 grid grid-cols-2 gap-1 rounded-lg border border-slate-300 bg-white p-1 text-sm">
+                <div className="mt-1 grid grid-cols-2 gap-1 rounded-md border border-slate-300 bg-white p-1 text-sm">
                 <button
                   type="button"
                   onClick={() => setAiAppend(true)}
@@ -1530,88 +1571,106 @@ export const InlineTryoutBuilder = ({
                 </button>
               </div>
             </div>
-          </div>
+          </fieldset>
 
-          <div className="flex items-center gap- sm:justify-end">
+          <div className="flex shrink-0 items-center justify-end">
             <Button
               variant="outline"
               size="sm"
               onClick={generateAiTryouts}
               disabled={generating}
-              className="text-xs"
+              className="h-9 w-full bg-slate-900 text-xs text-white hover:bg-slate-700 sm:w-auto"
             >
               <Zap className="size-3 mr-2" />
               {generating ? 'Generating…' : aiAppend ? 'Generate With AI' : 'Replace with AI Questions'}
             </Button>
           </div>
         </div>
-        <p className="mt-3 text-sm text-slate-600">
+        <p className="mt-3 text-xs text-slate-500">
           AI will generate {aiCount} {TRYOUT_TYPES.find((t) => t.id === aiQuestionType)?.label || 'MCQ'} question{aiCount !== 1 ? 's' : ''} for “{topicTitle || 'this chapter'}” at {aiDifficulty} difficulty.
         </p>
-      </div>
+      </details>}
       {aiError && (
-        <div className="px-4 py-3 text-sm text-red-700 bg-red-50">
+        <div role="alert" className="px-4 py-3 text-sm text-red-700 bg-red-50">
           {aiError}
         </div>
       )}
 
-      <div className="flex min-h-[320px]">
+      <div className="flex flex-col md:flex-row">
         {/* Left: question list */}
-        <div className="w-44 shrink-0 border-r border-rose-200 bg-white/60 overflow-y-auto">
+        {localTryouts.length > 0 && <div className="w-full shrink-0 border-b border-slate-200 p-3 md:w-52 md:border-b-0 md:border-r">
+          <div className="mb-2 flex items-center justify-between px-1">
+            <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">Questions</p>
+            <span className="text-xs text-slate-500">{localTryouts.length}</span>
+          </div>
           {localTryouts.length === 0 ? (
-            <p className="p-3 text-xs text-slate-400 text-center mt-4">No questions yet</p>
+            <div className="rounded-xl border border-dashed border-slate-300 bg-white px-4 py-6 text-center">
+              <FileText className="mx-auto size-5 text-slate-300" />
+              <p className="mt-2 text-xs font-medium text-slate-600">No questions yet</p>
+              <p className="mt-1 text-[11px] leading-4 text-slate-400">Add one from the question types.</p>
+            </div>
           ) : (
-            <div className="p-2 space-y-1.5">
+            <div className="space-y-2">
               {localTryouts.map((tryout, index) => {
                 const typeInfo = TRYOUT_TYPES.find(t => t.id === tryout.type);
                 return (
                   <div
                     key={tryout.id || index}
-                    onClick={() => handleEditQuestion(index)}
-                    className={`rounded-lg border p-2 cursor-pointer transition-colors text-xs ${
+                    className={`rounded-lg p-2 transition-colors text-xs ${
                       editingIndex === index
-                        ? 'border-rose-400 bg-rose-50'
-                        : 'border-slate-200 bg-white hover:border-rose-300'
+                        ? 'bg-slate-100'
+                        : 'hover:bg-slate-50'
                     }`}
                   >
-                    <div className="flex items-center justify-between gap-1">
-                      <div className="flex items-center gap-1 min-w-0">
-                        {typeInfo && <typeInfo.icon className="size-3 text-rose-500 shrink-0" />}
-                        <span className="font-medium text-slate-700 truncate">{typeInfo?.label || tryout.type}</span>
-                      </div>
+                    <div className="flex items-center justify-between gap-2">
+                      <button type="button" disabled={generating} onClick={() => handleEditQuestion(index)} aria-pressed={editingIndex === index} aria-label={`Edit question ${index + 1}`} className="min-w-0 flex-1 rounded text-left focus-visible:outline focus-visible:outline-2 focus-visible:outline-rose-600">
+                        <span className="flex items-center gap-1">
+                        <span className="font-medium text-slate-700">Q{index + 1} · {typeInfo?.label || tryout.type}</span>
+                        </span>
+                        <span className="mt-1 block line-clamp-2 break-words text-slate-600">{tryout.question || tryout.text || `Question ${index + 1}`}</span>
+                      </button>
                       <button
+                        type="button"
+                        disabled={generating}
+                        aria-label={`Delete question ${index + 1}`}
                         onClick={(e) => { e.stopPropagation(); handleDeleteQuestion(index); }}
-                        className="shrink-0 p-0.5 rounded hover:bg-red-50"
+                        className="shrink-0 p-2 rounded hover:bg-red-50"
                       >
-                        <Trash2 className="size-3 text-red-400" />
+                        <Trash2 className="size-3.5 text-slate-500" />
                       </button>
                     </div>
-                    <p className="text-slate-400 truncate mt-0.5">{tryout.question || tryout.text || `Q${index + 1}`}</p>
                   </div>
                 );
               })}
             </div>
           )}
-        </div>
+        </div>}
 
         {/* Right: type picker or creator */}
-        <div className="flex-1 overflow-y-auto bg-white/60 p-3">
+        <div className="min-w-0 flex-1 bg-white p-5 sm:p-6">
           {!selectedType && editingIndex === null ? (
             <div>
-              <p className="text-xs font-semibold text-slate-600 mb-2">+ Add question type</p>
-              <div className="grid grid-cols-2 gap-1.5">
+              <div className="mb-4 flex items-start justify-between gap-3">
+                <div>
+                  <p className="text-sm font-semibold text-slate-800">Add a question</p>
+                  <p className="mt-1 text-xs text-slate-500">Choose a question type.</p>
+                </div>
+              </div>
+              <div className="grid grid-cols-[repeat(auto-fit,minmax(min(100%,210px),1fr))] gap-2">
                 {TRYOUT_TYPES.map(type => (
                   <button
                     key={type.id}
+                    type="button"
+                    disabled={generating}
                     onClick={() => handleSelectType(type.id)}
-                    className="flex items-center gap-2 rounded-lg border border-slate-200 bg-white p-2 text-left hover:border-rose-300 hover:bg-rose-50 transition-colors"
+                    className="flex items-center gap-3 rounded-lg p-3 text-left transition-colors hover:bg-slate-50 focus-visible:outline focus-visible:outline-2 focus-visible:outline-slate-600"
                   >
-                    <div className="rounded-md bg-rose-100 p-1 shrink-0">
-                      <type.icon className="size-3.5 text-rose-600" />
+                    <div className="shrink-0">
+                      <type.icon className="size-4 text-slate-500" />
                     </div>
                     <div className="min-w-0">
-                      <p className="text-xs font-medium text-slate-700 truncate">{type.label}</p>
-                      <p className="text-[10px] text-slate-400 truncate">{type.description}</p>
+                      <p className="text-xs font-medium text-slate-700">{type.label}</p>
+                      <p className="mt-0.5 text-xs leading-4 text-slate-600">{type.description}</p>
                     </div>
                   </button>
                 ))}
@@ -1619,25 +1678,37 @@ export const InlineTryoutBuilder = ({
             </div>
           ) : (
             <div>
-              <div className="flex items-center justify-between mb-3">
-                <p className="text-xs font-semibold text-slate-700">
+              <div className="mb-4 flex items-center justify-between border-b border-slate-100 pb-3">
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  onClick={handleCancel}
+                  className="order-first h-8 gap-1.5 px-2 text-xs text-slate-600 hover:bg-slate-100"
+                >
+                  <ArrowLeft className="size-3.5" />
+                  Back
+                </Button>
+                <div className="mr-auto ml-3">
+                  <p className="text-sm font-semibold text-slate-800">
                   {editingIndex !== null ? 'Edit Question' : 'New Question'}
-                </p>
-                <Button variant="outline" size="sm" onClick={handleCancel} className="text-xs h-6 px-2">Cancel</Button>
+                  </p>
+                  <p className="mt-0.5 text-xs text-slate-500">{TRYOUT_TYPES.find((type) => type.id === selectedType)?.label}</p>
+                </div>
               </div>
-              <div className="max-h-64 overflow-y-auto">
+              <div>
                 {CreatorComponent && (
                   <CreatorComponent
-                    key={editingIndex ?? 'new'}
+                    key={currentQuestion.id || `${selectedType}-${editingIndex}`}
                     question={currentQuestion}
-                    onChange={setCurrentQuestion}
+                    onChange={handleQuestionChange}
                   />
                 )}
               </div>
-              <div className="mt-3 flex justify-end">
-                <Button onClick={handleSaveQuestion} size="sm" className="bg-rose-600 hover:bg-rose-700 text-white text-xs h-7">
+              <div className="mt-5 flex flex-wrap items-center justify-between gap-3 border-t border-slate-100 pt-4">
+                <p className="text-xs text-slate-600">Changes are kept in your lesson-plan draft.</p>
+                <Button onClick={handleSaveQuestion} size="sm" className="bg-slate-900 text-xs text-white hover:bg-slate-700">
                   <Save className="size-3 mr-1" />
-                  {editingIndex !== null ? 'Update' : 'Add Question'}
+                  {editingIndex !== null ? 'Done' : 'Add Question'}
                 </Button>
               </div>
             </div>

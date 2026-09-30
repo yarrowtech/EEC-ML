@@ -214,6 +214,9 @@ const AIPoweredTeaching = () => {
   const [searchQuery, setSearchQuery] = useState('');
   const [draggedChapterId, setDraggedChapterId] = useState(null);
   const [autosaveStatus, setAutosaveStatus] = useState('Not saved');
+  const [selectionChanging, setSelectionChanging] = useState(false);
+  const selectionChangingRef = useRef(false);
+  const savingRef = useRef(null);
   const [currentDraftId, setCurrentDraftId] = useState(null);
   const [classOptions, setClassOptions] = useState([]);
   const [sectionOptions, setSectionOptions] = useState([]);
@@ -429,7 +432,7 @@ const AIPoweredTeaching = () => {
     Object.values(introStreamTimersRef.current).forEach((timers) => timers.forEach(clearTimeout));
   }, []);
 
-  const saveDraft = async () => {
+  const persistDraft = async () => {
     const { currentDraftId, chapters, selectedClass, selectedSection, selectedSubject } = autosaveStateRef.current;
 
     if (!selectedClass || !selectedSection || !selectedSubject) return;
@@ -460,7 +463,7 @@ const AIPoweredTeaching = () => {
         }
         autosaveDirtyRef.current = false;
         setAutosaveStatus('Draft saved');
-        return;
+        return true;
       }
 
       const res = await fetch(`${API_BASE}/api/lesson-plans/teacher/draft/${draftId}`, {
@@ -479,9 +482,37 @@ const AIPoweredTeaching = () => {
 
       autosaveDirtyRef.current = false;
       setAutosaveStatus('Saved just now');
+      return true;
     } catch (err) {
       setAutosaveStatus('Save failed');
       console.error('Autosave failed:', err?.message);
+      return false;
+    }
+  };
+
+  const saveDraft = async () => {
+    if (savingRef.current) await savingRef.current;
+    const request = persistDraft();
+    savingRef.current = request;
+    try { return await request; }
+    finally { if (savingRef.current === request) savingRef.current = null; }
+  };
+
+  const changeSelection = async (change) => {
+    if (selectionChangingRef.current) return;
+    selectionChangingRef.current = true;
+    setSelectionChanging(true);
+    try {
+      if (autosaveTimerRef.current) clearTimeout(autosaveTimerRef.current);
+      if (savingRef.current) await savingRef.current;
+      if (autosaveStateRef.current.selectedSubject && !(await saveDraft())) {
+        toast.error('Could not save your changes. Please try switching again.');
+        return;
+      }
+      await change();
+    } finally {
+      selectionChangingRef.current = false;
+      setSelectionChanging(false);
     }
   };
 
@@ -1161,6 +1192,7 @@ const AIPoweredTeaching = () => {
       >
         <HeaderActions
           autosaveStatus={publishing ? 'Publishing...' : autosaveStatus}
+          selectionDisabled={selectionChanging || publishing}
           classValue={selectedClass}
           sectionValue={selectedSection}
           subjectValue={selectedSubject}
@@ -1171,7 +1203,7 @@ const AIPoweredTeaching = () => {
           currentStep={activeStep}
           onUploadMaterial={handleUploadMaterialFiles}
           uploadMaterialDisabled={uploadingMaterial}
-          onClassChange={async (value) => {
+          onClassChange={(value) => changeSelection(async () => {
             setSelectedClass(value);
             setSelectedSection('');
             setSelectedSubject('');
@@ -1183,8 +1215,8 @@ const AIPoweredTeaching = () => {
             setCurrentDraftId(null);
             localStorage.removeItem('currentLessonPlanDraft');
             await loadOptions({ classId: value });
-          }}
-          onSectionChange={async (value) => {
+          })}
+          onSectionChange={(value) => changeSelection(async () => {
             setSelectedSection(value);
             setSelectedSubject('');
             writeStoredSelection({ classId: selectedClass, sectionId: value });
@@ -1194,8 +1226,8 @@ const AIPoweredTeaching = () => {
             setCurrentDraftId(null);
             localStorage.removeItem('currentLessonPlanDraft');
             await loadOptions({ classId: selectedClass, sectionId: value });
-          }}
-          onSubjectChange={(value) => {
+          })}
+          onSubjectChange={(value) => changeSelection(async () => {
             setSelectedSubject(value);
             writeStoredSelection({ classId: selectedClass, sectionId: selectedSection, subjectId: value });
             setChapters([]);
@@ -1203,7 +1235,7 @@ const AIPoweredTeaching = () => {
             setCurrentDraftId(null);
             setAutosaveStatus('Not saved');
             localStorage.removeItem('currentLessonPlanDraft');
-          }}
+          })}
         />
 
         <div className="flex min-w-0 flex-1 flex-col gap-2.5 p-2 sm:p-3 lg:min-h-0 lg:flex-row">

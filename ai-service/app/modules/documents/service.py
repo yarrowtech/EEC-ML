@@ -2,7 +2,9 @@
 # All rights reserved. Unauthorized copying, modification, distribution,
 # or duplication is prohibited without prior written permission.
 
+import ipaddress
 import logging
+import socket
 import tempfile
 from functools import lru_cache
 from pathlib import Path
@@ -105,7 +107,32 @@ def resolve_extension(url: str, file_name: str, content_type: str) -> str:
     return ""
 
 
+def _assert_public_host(url: str) -> None:
+    """Block ingestion URLs that resolve to private/loopback/link-local addresses.
+
+    The ingest endpoint downloads whatever URL it's given (teacher-uploaded Cloudinary
+    material). Without this check, that URL could target internal services or the
+    cloud metadata endpoint (169.254.169.254) — a classic SSRF into the network this
+    service runs on.
+    """
+    parsed = urlparse(url)
+    if parsed.scheme not in ("http", "https"):
+        raise HTTPException(status_code=400, detail="Material URL must be http(s)")
+    host = parsed.hostname
+    if not host:
+        raise HTTPException(status_code=400, detail="Material URL is missing a host")
+    try:
+        addrs = {info[4][0] for info in socket.getaddrinfo(host, None)}
+    except socket.gaierror as exc:
+        raise HTTPException(status_code=400, detail=f"Could not resolve material URL host: {exc}") from exc
+    for addr in addrs:
+        ip = ipaddress.ip_address(addr)
+        if ip.is_private or ip.is_loopback or ip.is_link_local or ip.is_reserved or ip.is_multicast:
+            raise HTTPException(status_code=400, detail="Material URL resolves to a disallowed address")
+
+
 def download_to_temp(url: str, extension: str) -> Path:
+    _assert_public_host(url)
     try:
         resp = requests.get(url, timeout=settings.download_timeout, stream=True)
         resp.raise_for_status()
@@ -245,8 +272,12 @@ def ingest_material(
     if replace_existing:
         try:
             delete_material_chunks(material_id)
-        except Exception:
-            pass
+        except Exception as exc:
+            logger.warning(
+                "Failed to delete existing Qdrant chunks for material %s before re-ingest "
+                "(stale/duplicate chunks may remain): %s",
+                material_id, exc,
+            )
 
     indexed = upsert_chunks(
         material_id=material_id,

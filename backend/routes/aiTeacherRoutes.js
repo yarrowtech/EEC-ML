@@ -326,8 +326,12 @@ router.post('/ingest-file', authTeacher, async (req, res) => {
     const schoolId = String(req.schoolId || '');
     const classDoc = await ClassModel.findOne({ _id: classId, schoolId }).select('academicYearId').lean();
     if (!classDoc) return res.status(400).json({ error: 'Selected class was not found for this school' });
-    // Use the Cloudinary public ID as a stable vector namespace; fall back to the URL
-    const materialId = cloudinaryPublicId || url;
+    // Use the Cloudinary public ID as a stable vector namespace. Falling back to the raw
+    // URL is unsafe when it carries signed/expiring query params (e.g. rotating
+    // X-Amz-Signature) — every re-ingest would then get a different material_id and the
+    // AI service's delete-before-reingest would never find the old Qdrant chunks,
+    // leaving duplicates behind. Strip the query string so the fallback stays stable.
+    const materialId = cloudinaryPublicId || url.split('?')[0];
 
     const response = await axios.post(
       `${AI_SERVICE_URL}/ingest/material`,
