@@ -560,8 +560,8 @@ const ParentPortal = () => {
         aria-label="Sidebar navigation"
       >
         {/* ── Brand header ── */}
-        <div className="relative flex items-center gap-3 border-b border-gray-100 px-4 py-3">
-          <div className={`flex shrink-0 items-center justify-center overflow-hidden rounded-xl transition-all duration-300 ${sidebarOpen ? 'h-10 w-10' : 'h-9 w-9'} ${schoolBrand.logo ? '' : 'bg-linear-to-br from-violet-600 to-violet-500 text-white shadow-sm'}`}>
+        <div className="relative flex items-center gap-3 border-b border-gray-100 px-4 py-3 bg-indigo-50">
+          <div className={`flex shrink-0 items-center justify-center overflow-hidden rounded-full transition-all duration-300 ${sidebarOpen ? 'h-10 w-10' : 'h-9 w-9'} ${schoolBrand.logo ? '' : 'bg-linear-to-br from-violet-600 to-violet-500 text-white shadow-sm'}`}>
             {schoolBrand.logo ? (
               <img src={schoolBrand.logo} alt={schoolBrand.name || 'School logo'} className="h-full w-full object-cover" />
             ) : (
@@ -657,7 +657,7 @@ const ParentPortal = () => {
         </nav>
 
         {/* ── Footer: account + logout ── */}
-        <div className="shrink-0 border-t border-gray-100 p-3">
+        <div className="shrink-0 border-t border-gray-100 p-3 bg-gray-50">
           <div className={`flex items-center gap-3 ${sidebarOpen ? '' : 'flex-col'}`}>
             <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-linear-to-br from-violet-600 to-violet-400 text-xs font-bold text-white">
               {initials}

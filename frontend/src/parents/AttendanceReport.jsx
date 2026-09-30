@@ -298,7 +298,7 @@ const AttendanceReport = () => {
               className="flex w-full items-center gap-3 rounded-2xl border border-slate-200 bg-white px-3 py-2.5 pr-4 text-left shadow-sm sm:w-72"
             >
               {child.photo
-                ? <img src={child.photo} alt={child.name} className="h-10 w-10 rounded-xl object-cover" />
+                ? <img src={child.photo} alt={child.name} className="h-10 w-10 rounded-full object-cover" />
                 : <span className="flex h-10 w-10 items-center justify-center rounded-xl bg-violet-100 text-sm font-bold text-violet-700">{initials(child.name)}</span>}
               <span className="min-w-0 flex-1">
                 <span className="block truncate text-sm font-bold text-slate-900">{child.name}</span>

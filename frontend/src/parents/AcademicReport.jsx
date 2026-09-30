@@ -22,23 +22,19 @@ import {
   Palette,
   Languages,
   GraduationCap,
-  MousePointerClick,
-  ClipboardCheck,
-  TrendingUp,
-  AlertTriangle,
 } from 'lucide-react';
 
 import toast from 'react-hot-toast';
-import { motion } from 'framer-motion';
 
-import { downloadGradeCardPdf } from '../utils/gradeCardPdf';
+import { downloadSingleReportCardPdf } from '../utils/reportCardPdf';
 import { normalizeReportCard } from './reportCardShape';
 import { parentApiJson } from './parentApi';
 
-import { useSharedChildSelection } from './ChildSwitcher';
+import ChildSwitcher, {
+  useSharedChildSelection,
+} from './ChildSwitcher';
 
 import Loading from './Loading';
-import useParentChildren from './useParentChildren';
 import { EmptyState, ErrorState } from './StateBlock';
 
 /* ========================================================================= */
@@ -108,7 +104,7 @@ const getGradeClass = (grade) => {
     normalized === 'B+' ||
     normalized === 'B'
   ) {
-    return 'border-violet-100 bg-violet-50 text-violet-600';
+    return 'border-blue-100 bg-blue-50 text-blue-600';
   }
 
   if (normalized === 'C') {
@@ -313,10 +309,6 @@ const buildExamGroups = (report) => {
   const groups = new Map();
 
   exams.forEach((exam, index) => {
-    // Show only results the school has published.
-    if (exam?.published === false || exam?.isPublished === false) return;
-    if (/^(draft|pending|unpublished)$/i.test(String(exam?.status || ''))) return;
-
     const examName =
       String(
         exam?.examName ||
@@ -404,8 +396,6 @@ const buildExamGroups = (report) => {
         grade,
       };
     })
-    .filter((group) => group.totalMarks > 0)
-    // Latest exam first.
     .sort((a, b) => {
       const dateA = a.date
         ? new Date(a.date).getTime()
@@ -415,7 +405,7 @@ const buildExamGroups = (report) => {
         ? new Date(b.date).getTime()
         : 0;
 
-      return dateB - dateA;
+      return dateA - dateB;
     });
 };
 
@@ -423,38 +413,17 @@ const buildExamGroups = (report) => {
 /* Main component                                                            */
 /* ========================================================================= */
 
-// Client cache (memory + sessionStorage, per login) → instant repeat visits.
-const REPORT_CACHE_MAX_AGE = 10 * 60 * 1000;
-const reportCacheKey = () => {
-  let t = '';
-  try { t = localStorage.getItem('token') || ''; } catch { /* ignore */ }
-  return `parent:report-cards:v1:${t.slice(-16)}`;
-};
-let reportMemCache = null;
-const readReportCache = () => {
-  const key = reportCacheKey();
-  let entry = reportMemCache?.key === key ? reportMemCache : null;
-  if (!entry) { try { entry = JSON.parse(sessionStorage.getItem(key) || 'null'); } catch { entry = null; } }
-  return entry && Date.now() - entry.at < REPORT_CACHE_MAX_AGE ? entry.data : null;
-};
-const writeReportCache = (data) => {
-  reportMemCache = { key: reportCacheKey(), at: Date.now(), data };
-  try { sessionStorage.setItem(reportMemCache.key, JSON.stringify(reportMemCache)); } catch { /* quota */ }
-};
-
-const RISE = { hidden: { opacity: 0, y: 14 }, show: { opacity: 1, y: 0, transition: { duration: 0.4, ease: [0.22, 1, 0.36, 1] } } };
-
 const AcademicReport = () => {
   const navigate = useNavigate();
 
   const [reportCards, setReportCards] =
-    useState(() => (readReportCache()?.reportCards || []).map(normalizeReportCard));
+    useState([]);
 
   const [template, setTemplate] =
-    useState(() => readReportCache()?.template || null);
+    useState(null);
 
   const [loading, setLoading] =
-    useState(() => !readReportCache());
+    useState(true);
 
   const [error, setError] =
     useState('');
@@ -484,8 +453,8 @@ const AcademicReport = () => {
   );
 
   const [
-    ,
-    ,
+    childKey,
+    setChildKey,
     selectedOption,
   ] = useSharedChildSelection(
     childOptions
@@ -493,9 +462,6 @@ const AcademicReport = () => {
 
   const selectedStudentId =
     selectedOption?.id || '';
-
-  // Photo from the child's profile (report cards don't always carry it).
-  const { children: profileChildren, parent: profileParent } = useParentChildren();
 
   /* ----------------------------------------------------------------------- */
   /* Fetch data                                                              */
@@ -512,8 +478,7 @@ const AcademicReport = () => {
         return;
       }
 
-      const cached = readReportCache();
-      if (!cached) setLoading(true);
+      setLoading(true);
       setError('');
 
       try {
@@ -536,9 +501,8 @@ const AcademicReport = () => {
         setTemplate(
           data?.template || null
         );
-        writeReportCache({ reportCards: data?.reportCards || [], template: data?.template || null });
       } catch (err) {
-        if (!cached) setError(
+        setError(
           err?.message ||
             'Unable to load academic report'
         );
@@ -568,11 +532,6 @@ const AcademicReport = () => {
     ]
   );
 
-  const childPhoto =
-    selectedReport?.profilePic ||
-    profileChildren.find((c) => String(c.id) === String(selectedReport?.studentId))?.photo ||
-    '';
-
   /* ----------------------------------------------------------------------- */
   /* Exam groups                                                             */
   /* ----------------------------------------------------------------------- */
@@ -599,7 +558,10 @@ const AcademicReport = () => {
      * Open the latest published report first.
      */
 
-    const latest = examGroups[0];
+    const latest =
+      examGroups[
+        examGroups.length - 1
+      ];
 
     setSelectedExamId(
       latest?.id || ''
@@ -622,7 +584,9 @@ const AcademicReport = () => {
           exam.id ===
           selectedExamId
       ) ||
-      examGroups[0] ||
+      examGroups[
+        examGroups.length - 1
+      ] ||
       null,
 
     [
@@ -711,21 +675,6 @@ const AcademicReport = () => {
     selectedReport,
   ]);
 
-  const subjectHighlights = useMemo(() => {
-    const rows = (selectedExam?.subjects || [])
-      .map((s) => ({
-        name: s?.subject || 'Subject',
-        pct: Math.round(calculatePercentage(s?.obtainedMarks, s?.totalMarks)),
-        total: safeNumber(s?.totalMarks),
-      }))
-      .filter((s) => s.total > 0)
-      .sort((a, b) => b.pct - a.pct);
-    if (!rows.length) return { best: null, focus: null };
-    const best = rows[0];
-    const focus = rows.length > 1 && rows[rows.length - 1].pct < 60 ? rows[rows.length - 1] : null;
-    return { best, focus };
-  }, [selectedExam]);
-
   /* ----------------------------------------------------------------------- */
   /* Teacher remarks                                                         */
   /* ----------------------------------------------------------------------- */
@@ -792,36 +741,8 @@ const AcademicReport = () => {
     setIsExporting(true);
 
     try {
-      // The PDF prints reportCard.subjects / totals / term. Give it just the
-      // selected exam's subjects (skipping blank or zero-mark rows) instead of
-      // the all-exam aggregate, which produced rows like "Subject 290 0 0% F".
-      const pdfSubjects = (selectedExam?.subjects || [])
-        .filter((s) => String(s?.subject || '').trim() && safeNumber(s?.totalMarks) > 0)
-        .map((s) => {
-          const obtainedMarks = safeNumber(s.obtainedMarks);
-          const totalMarks = safeNumber(s.totalMarks);
-          const percentage = calculatePercentage(obtainedMarks, totalMarks);
-          return {
-            name: String(s.subject).trim(),
-            obtainedMarks,
-            totalMarks,
-            percentage,
-            grade: s.grade || getGradeFromPercentage(percentage),
-          };
-        });
-
       const reportForPdf = {
         ...selectedReport,
-
-        term: selectedExam?.examName || selectedReport.term,
-        subjects: pdfSubjects,
-        totals: {
-          ...(selectedReport.totals || {}),
-          obtainedMarks: examSummary.obtained,
-          totalMarks: examSummary.total,
-          percentage: Math.round(examSummary.percentage * 10) / 10,
-          grade: examSummary.grade,
-        },
 
         selectedExam:
           selectedExam || null,
@@ -861,19 +782,10 @@ const AcademicReport = () => {
         '.pdf';
 
       const success =
-        await downloadGradeCardPdf({
+        await downloadSingleReportCardPdf({
           template,
-          reportCard: {
-            ...reportForPdf,
-            overallRemark: teacherRemarks || '',
-            classTeacherName:
-              selectedReport.classTeacherName ||
-              (teacherName !== 'Class Teacher' ? teacherName : ''),
-          },
-          profile:
-            profileChildren.find((c) => String(c.id) === String(selectedReport.studentId)) || {},
-          parentName: profileParent?.name || '',
-          photoUrl: childPhoto,
+          reportCard:
+            reportForPdf,
           fileName,
         });
 
@@ -924,8 +836,8 @@ const AcademicReport = () => {
       <div className="space-y-5">
         <EmptyState
           icon={FileText}
-          title="No results published yet"
-          hint="Results appear here as soon as the school publishes them. You'll also get a notification."
+          title="No report card available"
+          hint="The school hasn't published any examination results for your child yet."
         />
       </div>
     );
@@ -936,27 +848,100 @@ const AcademicReport = () => {
   /* ----------------------------------------------------------------------- */
 
   return (
-    <div className="min-w-0 space-y-3">
+    <div className="min-w-0 space-y-5">
 
       {/* ================================================================== */}
       {/* PAGE HEADER                                                        */}
       {/* ================================================================== */}
 
-      <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-        <div className="flex min-w-0 items-center gap-2.5">
-          <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-violet-50 text-violet-600">
-            <FileText className="h-5 w-5" strokeWidth={2} />
+      <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
+
+        {/* Left */}
+        <div className="flex items-start gap-3">
+
+          <div className="flex h-12 w-12 shrink-0 items-center justify-center rounded-xl bg-violet-50 text-violet-600">
+            <FileText
+              className="h-6 w-6"
+              strokeWidth={2}
+            />
           </div>
-          <div className="min-w-0">
-            <h1 className="text-xl font-bold tracking-tight text-slate-900">
+
+          <div>
+            <h1 className="text-2xl font-bold tracking-tight text-slate-900 sm:text-3xl">
               Results & Report Card
             </h1>
-            <p className="mt-0.5 text-xs text-slate-500">
-              View your child&apos;s exam results, grades and report cards.
+
+            <p className="mt-0.5 text-sm text-slate-500">
+              View your child's exam results,
+              grades and report cards.
             </p>
           </div>
         </div>
 
+        {/* Right - Parent / Child */}
+        <div className="w-full lg:w-[278px]">
+
+          {selectedReport && (
+            <div className="relative">
+
+              {selectedReport.profilePic ? (
+                <img
+                  src={
+                    selectedReport.profilePic
+                  }
+                  alt={
+                    selectedReport.studentName ||
+                    'Student'
+                  }
+                  className="absolute left-3 top-1/2 z-10 h-10 w-10 -translate-y-1/2 rounded-xl border border-slate-200 object-cover"
+                />
+              ) : (
+                <User
+                  className="absolute left-4 top-1/2 z-10 h-7 w-7 -translate-y-1/2 text-slate-400"
+                />
+              )}
+
+              <div className="rounded-xl border border-slate-200 bg-white py-2.5 pl-16 pr-10 shadow-sm">
+
+                <p className="text-sm font-bold text-slate-800">
+                  {selectedReport.studentName ||
+                    'Student'}
+                </p>
+
+                <p className="text-xs text-slate-500">
+                  {selectedReport.grade
+                    ? `Class ${selectedReport.grade}`
+                    : 'Class —'}
+
+                  {selectedReport.section
+                    ? ` - Section ${selectedReport.section}`
+                    : ''}
+                </p>
+              </div>
+
+              {childOptions.length > 1 && (
+                <>
+                  <div className="absolute right-3 top-1/2 -translate-y-1/2 pointer-events-none">
+                    <ChevronDown className="h-4 w-4 text-slate-500" />
+                  </div>
+
+                  <div className="absolute inset-0 opacity-0">
+                    <ChildSwitcher
+                      options={
+                        childOptions
+                      }
+                      value={childKey}
+                      onChange={
+                        setChildKey
+                      }
+                      label="Child"
+                    />
+                  </div>
+                </>
+              )}
+            </div>
+          )}
+        </div>
       </div>
 
       {/* ================================================================== */}
@@ -970,51 +955,12 @@ const AcademicReport = () => {
       )}
 
       {/* ================================================================== */}
-      {/* HOW IT WORKS — 3 simple steps for parents                          */}
-      {/* ================================================================== */}
-
-      {!error && examGroups.length > 0 && (
-        <motion.ol
-          initial="hidden"
-          animate="show"
-          variants={{ hidden: {}, show: { transition: { staggerChildren: 0.08 } } }}
-          className="grid grid-cols-1 gap-2 sm:grid-cols-3"
-        >
-          {[
-            { n: 1, Icon: MousePointerClick, title: 'Choose an exam', text: 'Tap any published exam below.' },
-            { n: 2, Icon: ClipboardCheck, title: 'See the result', text: 'Marks, grade and remarks for every subject.' },
-            { n: 3, Icon: Download, title: 'Download', text: 'Save or print the official report card.' },
-          ].map((s) => (
-            <motion.li key={s.n} variants={RISE} className="flex min-w-0 items-center gap-2.5 rounded-xl border border-slate-200 bg-white px-3 py-2.5 shadow-sm">
-              <span className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-violet-600 text-[10px] font-bold text-white">{s.n}</span>
-              <span className="min-w-0">
-                <span className="flex items-center gap-1.5 text-xs font-semibold text-slate-900"><s.Icon className="h-4 w-4 text-violet-500" /> {s.title}</span>
-                <span className="block truncate text-[11px] text-slate-500">{s.text}</span>
-              </span>
-            </motion.li>
-          ))}
-        </motion.ol>
-      )}
-
-      {!error && examGroups.length > 0 && (
-        <div className="flex items-center justify-between gap-3">
-          <h2 className="text-sm font-bold uppercase tracking-wide text-slate-500">Published exams ({examGroups.length})</h2>
-          <span className="text-xs text-slate-400">Latest first</span>
-        </div>
-      )}
-
-      {/* ================================================================== */}
       {/* EXAM SELECTOR                                                      */}
       {/* ================================================================== */}
 
       {!error &&
         examGroups.length > 0 && (
-          <motion.div
-            initial="hidden"
-            animate="show"
-            variants={{ hidden: {}, show: { transition: { staggerChildren: 0.06 } } }}
-            className="grid grid-cols-1 gap-2.5 md:grid-cols-2 xl:grid-cols-3"
-          >
+          <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-4">
 
             {examGroups.map(
               (exam, index) => {
@@ -1063,12 +1009,8 @@ const AcademicReport = () => {
                       };
 
                 return (
-                  <motion.button
-                    variants={RISE}
-                    whileHover={{ y: -3 }}
-                    whileTap={{ scale: 0.98 }}
+                  <button
                     type="button"
-                    aria-pressed={isSelected}
                     key={exam.id}
                     onClick={() =>
                       setSelectedExamId(
@@ -1092,7 +1034,7 @@ const AcademicReport = () => {
                       <div className="flex min-w-0 items-center gap-3">
 
                         <div
-                          className={`flex h-9 w-9 shrink-0 items-center justify-center rounded-lg ${examColor.icon}`}
+                          className={`flex h-12 w-12 shrink-0 items-center justify-center rounded-xl ${examColor.icon}`}
                         >
                           <FileText
                             className="h-6 w-6"
@@ -1118,14 +1060,14 @@ const AcademicReport = () => {
                       <div className="shrink-0 text-right">
 
                         {exam.subjects?.length > 0 ? (
-                          <p className="text-sm font-bold text-slate-900">
+                          <p className="text-xl font-bold text-slate-900">
                             {Math.round(
                               percentage
                             )}
                             %
                           </p>
                         ) : (
-                          <p className="text-sm font-bold text-slate-900">
+                          <p className="text-xl font-bold text-slate-900">
                             -
                           </p>
                         )}
@@ -1135,27 +1077,22 @@ const AcademicReport = () => {
 
                     <div className="relative mt-3 flex items-center justify-between">
 
-                      <span className="flex items-center gap-1.5">
-                        <span className="inline-flex items-center rounded-full border border-emerald-100 bg-emerald-50 px-2 py-0.5 text-[9px] font-bold text-emerald-600">
-                          Published
-                        </span>
-                        {index === 0 && (
-                          <span className="inline-flex items-center rounded-full bg-violet-600 px-2 py-1 text-[10px] font-bold text-white">
-                            Latest
-                          </span>
-                        )}
+                      <span className="inline-flex items-center rounded-full border border-emerald-100 bg-emerald-50 px-2.5 py-1 text-[10px] font-bold text-emerald-600">
+                        Published
                       </span>
 
-                      <span className={`text-[11px] font-semibold ${isSelected ? 'text-violet-600' : 'text-slate-400 group-hover:text-slate-600'}`}>
-                        {isSelected ? 'Viewing ✓' : 'View result →'}
-                      </span>
+                      {isSelected && (
+                        <span className="text-[10px] font-bold text-violet-600">
+                          Selected
+                        </span>
+                      )}
 
                     </div>
-                  </motion.button>
+                  </button>
                 );
               }
             )}
-          </motion.div>
+          </div>
         )}
 
       {/* ================================================================== */}
@@ -1165,25 +1102,19 @@ const AcademicReport = () => {
       {!error &&
         selectedReport &&
         selectedExam && (
-          <motion.section
-            key={selectedExam.id}
-            initial={{ opacity: 0, y: 12 }}
-            animate={{ opacity: 1, y: 0 }}
-            transition={{ duration: 0.35 }}
-            className="overflow-hidden rounded-xl border border-slate-200 bg-white shadow-sm"
-          >
+          <section className="overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm">
 
             {/* ------------------------------------------------------------ */}
             {/* Report Header                                                 */}
             {/* ------------------------------------------------------------ */}
 
-            <div className="border-b border-slate-100 px-4 py-3">
+            <div className="border-b border-slate-100 px-5 py-4 sm:px-6">
 
               <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
 
                 <div className="flex items-start gap-3">
 
-                  <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-lg bg-blue-100 text-blue-600">
+                  <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl bg-blue-50 text-blue-600">
                     <FileText
                       className="h-6 w-6"
                       strokeWidth={2}
@@ -1194,23 +1125,23 @@ const AcademicReport = () => {
 
                     <div className="flex flex-wrap items-center gap-2">
 
-                      <h2 className="text-sm font-bold text-slate-900">
+                      <h2 className="text-lg font-bold text-slate-900 sm:text-xl">
                         {selectedExam.examName}
                       </h2>
 
-                      <span className="inline-flex items-center rounded-full border border-emerald-100 bg-emerald-50 px-2 py-0.5 text-[9px] font-bold text-emerald-600">
+                      <span className="inline-flex items-center rounded-full border border-emerald-100 bg-emerald-50 px-2.5 py-1 text-[10px] font-bold text-emerald-600">
                         Published
                       </span>
 
                     </div>
 
-                    <p className="mt-1 text-[11px] font-medium text-slate-500">
+                    <p className="mt-1 text-xs font-medium text-slate-500 sm:text-sm">
 
                       Academic Year:{' '}
                       <span className="text-slate-700">
                         {selectedReport.academicYear ||
                           selectedReport.academicSession ||
-                          '—'}
+                          '2026 - 2027'}
                       </span>
 
                       <span className="mx-2 text-slate-300">
@@ -1254,7 +1185,7 @@ const AcademicReport = () => {
                   disabled={
                     isExporting
                   }
-                  className="inline-flex items-center justify-center gap-1.5 rounded-lg border border-violet-200 bg-violet-600 px-3 py-2 text-xs font-semibold text-white transition hover:bg-violet-700 disabled:cursor-not-allowed disabled:opacity-50"
+                  className="inline-flex items-center justify-center gap-2 rounded-xl border border-blue-300 bg-white px-4 py-2.5 text-sm font-semibold text-blue-600 transition hover:bg-blue-50 disabled:cursor-not-allowed disabled:opacity-50"
                 >
 
                   {isExporting ? (
@@ -1263,7 +1194,7 @@ const AcademicReport = () => {
                     />
                   ) : (
                     <Download
-                      className="h-3.5 w-3.5"
+                      className="h-4 w-4"
                     />
                   )}
 
@@ -1278,41 +1209,15 @@ const AcademicReport = () => {
             </div>
 
             {/* ------------------------------------------------------------ */}
-            {/* In one line — what this result means                         */}
-            {/* ------------------------------------------------------------ */}
-
-            <div className="mx-4 mt-3 rounded-lg border border-emerald-100 bg-emerald-50/70 px-3 py-2.5 text-xs text-slate-700">
-              <span className="font-semibold text-slate-900">{selectedReport.studentName || 'Your child'}</span>
-              {' '}scored{' '}
-              <span className="font-semibold text-slate-900">{examSummary.obtained} out of {examSummary.total}</span>
-              {' '}({Math.round(examSummary.percentage)}%) in{' '}
-              <span className="font-semibold text-slate-900">{selectedExam.examName}</span>
-              {' '}— Grade <span className="font-semibold text-slate-900">{examSummary.grade}</span>
-              {' '}({getGradeDescription(examSummary.grade)}).
-              {subjectHighlights.best && (
-                <span className="mt-2 flex flex-wrap gap-2">
-                  <span className="inline-flex items-center gap-1 rounded-full bg-green-100 px-2.5 py-1 text-xs font-semibold text-green-700">
-                    <TrendingUp className="h-3.5 w-3.5" /> Best: {subjectHighlights.best.name} ({subjectHighlights.best.pct}%)
-                  </span>
-                  {subjectHighlights.focus && (
-                    <span className="inline-flex items-center gap-1 rounded-full bg-amber-100 px-2.5 py-1 text-xs font-semibold text-amber-700">
-                      <AlertTriangle className="h-3.5 w-3.5" /> Needs practice: {subjectHighlights.focus.name} ({subjectHighlights.focus.pct}%)
-                    </span>
-                  )}
-                </span>
-              )}
-            </div>
-
-            {/* ------------------------------------------------------------ */}
             {/* Summary Stats                                                 */}
             {/* ------------------------------------------------------------ */}
 
-            <div className={`grid grid-cols-1 gap-2 px-4 py-3 sm:grid-cols-3 ${examSummary.rank !== '—' ? 'lg:grid-cols-4' : ''}`}>
+            <div className="grid grid-cols-1 gap-3 px-5 py-4 sm:grid-cols-2 lg:grid-cols-4 sm:px-6">
 
               {/* Percentage */}
-              <div className="flex items-center gap-3 rounded-lg border border-amber-100 bg-amber-50/50 px-3 py-2.5">
+              <div className="flex items-center gap-3 rounded-xl border border-amber-100 bg-gradient-to-br from-amber-50 to-white p-3.5">
 
-                <div className="flex h-12 w-12 shrink-0 items-center justify-center rounded-lg bg-amber-100 text-amber-500">
+                <div className="flex h-12 w-12 shrink-0 items-center justify-center rounded-xl bg-amber-50 text-amber-500">
                   <Trophy
                     className="h-6 w-6"
                     strokeWidth={2}
@@ -1320,11 +1225,11 @@ const AcademicReport = () => {
                 </div>
 
                 <div>
-                  <p className="text-[10px] font-medium text-slate-500">
+                  <p className="text-xs font-medium text-slate-500">
                     Percentage
                   </p>
 
-                  <p className="mt-0.5 text-base font-bold text-slate-900">
+                  <p className="mt-0.5 text-xl font-bold text-slate-900">
                     {Math.round(
                       examSummary.percentage
                     )}
@@ -1335,18 +1240,18 @@ const AcademicReport = () => {
               </div>
 
               {/* Total Marks */}
-              <div className="flex items-center gap-3 rounded-lg border border-blue-100 bg-blue-50/50 px-3 py-2.5">
+              <div className="flex items-center gap-3 rounded-xl border border-blue-100 bg-gradient-to-br from-blue-50 to-white p-3.5">
 
-                <div className="flex h-12 w-12 shrink-0 items-center justify-center rounded-lg bg-blue-100 text-blue-600">
+                <div className="flex h-12 w-12 shrink-0 items-center justify-center rounded-xl bg-blue-50 text-blue-600">
                   <BarChartIcon />
                 </div>
 
                 <div>
-                  <p className="text-[10px] font-medium text-slate-500">
+                  <p className="text-xs font-medium text-slate-500">
                     Total Marks
                   </p>
 
-                  <p className="mt-0.5 text-base font-bold text-slate-900">
+                  <p className="mt-0.5 text-xl font-bold text-slate-900">
                     {examSummary.obtained}{' '}
                     <span className="text-slate-400">
                       /{' '}
@@ -1360,9 +1265,9 @@ const AcademicReport = () => {
               </div>
 
               {/* Grade */}
-              <div className="flex items-center gap-3 rounded-lg border border-amber-100 bg-amber-50/50 px-3 py-2.5">
+              <div className="flex items-center gap-3 rounded-xl border border-amber-100 bg-gradient-to-br from-amber-50 to-white p-3.5">
 
-                <div className="flex h-12 w-12 shrink-0 items-center justify-center rounded-lg bg-amber-100 text-amber-500">
+                <div className="flex h-12 w-12 shrink-0 items-center justify-center rounded-xl bg-amber-50 text-amber-500">
                   <Star
                     className="h-6 w-6"
                     fill="currentColor"
@@ -1370,22 +1275,21 @@ const AcademicReport = () => {
                 </div>
 
                 <div>
-                  <p className="text-[10px] font-medium text-slate-500">
+                  <p className="text-xs font-medium text-slate-500">
                     Grade
                   </p>
 
-                  <p className="mt-0.5 text-base font-bold text-slate-900">
+                  <p className="mt-0.5 text-xl font-bold text-slate-900">
                     {examSummary.grade}
                   </p>
                 </div>
 
               </div>
 
-              {/* Rank (only when the school publishes one) */}
-              {examSummary.rank !== '—' && (
-              <div className="flex items-center gap-3 rounded-lg border border-rose-100 bg-rose-50/50 px-3 py-2.5">
+              {/* Rank */}
+              <div className="flex items-center gap-3 rounded-xl border border-rose-100 bg-gradient-to-br from-rose-50 to-white p-3.5">
 
-                <div className="flex h-12 w-12 shrink-0 items-center justify-center rounded-lg bg-rose-100 text-rose-500">
+                <div className="flex h-12 w-12 shrink-0 items-center justify-center rounded-xl bg-rose-50 text-rose-500">
                   <Medal
                     className="h-6 w-6"
                     strokeWidth={2}
@@ -1393,17 +1297,16 @@ const AcademicReport = () => {
                 </div>
 
                 <div>
-                  <p className="text-[10px] font-medium text-slate-500">
+                  <p className="text-xs font-medium text-slate-500">
                     Rank
                   </p>
 
-                  <p className="mt-0.5 text-base font-bold text-slate-900">
+                  <p className="mt-0.5 text-xl font-bold text-slate-900">
                     {examSummary.rank}
                   </p>
                 </div>
 
               </div>
-              )}
 
             </div>
 
@@ -1411,38 +1314,38 @@ const AcademicReport = () => {
             {/* Subject Table                                                  */}
             {/* ------------------------------------------------------------ */}
 
-            <div className="px-4 pb-4">
+            <div className="px-5 pb-5 sm:px-6">
 
               <div className="overflow-hidden rounded-xl border border-slate-200">
 
                 <div className="overflow-x-auto">
 
-                  <table className="min-w-[760px] w-full border-collapse">
+                  <table className="min-w-[850px] w-full border-collapse">
 
                     <thead>
                       <tr className="bg-slate-50">
 
-                        <th className="px-3 py-2 text-left text-[10px] font-bold text-slate-500">
+                        <th className="px-5 py-3 text-left text-xs font-bold text-slate-500">
                           #
                         </th>
 
-                        <th className="px-3 py-2 text-left text-[10px] font-bold text-slate-500">
+                        <th className="px-4 py-3 text-left text-xs font-bold text-slate-500">
                           Subject
                         </th>
 
-                        <th className="px-3 py-2 text-center text-[10px] font-bold text-slate-500">
+                        <th className="px-4 py-3 text-center text-xs font-bold text-slate-500">
                           Max Marks
                         </th>
 
-                        <th className="px-3 py-2 text-center text-[10px] font-bold text-slate-500">
+                        <th className="px-4 py-3 text-center text-xs font-bold text-slate-500">
                           Marks Obtained
                         </th>
 
-                        <th className="px-3 py-2 text-center text-[10px] font-bold text-slate-500">
+                        <th className="px-4 py-3 text-center text-xs font-bold text-slate-500">
                           Grade
                         </th>
 
-                        <th className="px-3 py-2 text-left text-[10px] font-bold text-slate-500">
+                        <th className="px-4 py-3 text-left text-xs font-bold text-slate-500">
                           Remarks
                         </th>
 
@@ -1509,12 +1412,12 @@ const AcademicReport = () => {
                                     className={`flex h-7 w-7 shrink-0 items-center justify-center rounded-lg ${iconClass}`}
                                   >
                                     <SubjectIcon
-                                      className="h-3.5 w-3.5"
+                                      className="h-4 w-4"
                                       strokeWidth={2.2}
                                     />
                                   </span>
 
-                                  <span className="text-xs font-medium text-slate-700">
+                                  <span className="text-sm font-medium text-slate-700">
                                     {
                                       subject?.subject ||
                                       'Subject'
@@ -1526,21 +1429,21 @@ const AcademicReport = () => {
                               </td>
 
                               {/* Max */}
-                              <td className="px-3 py-2 text-center text-xs font-medium text-slate-600">
+                              <td className="px-4 py-3 text-center text-sm font-medium text-slate-600">
                                 <span className="underline decoration-slate-200 underline-offset-2">
                                   {total}
                                 </span>
                               </td>
 
                               {/* Obtained */}
-                              <td className="px-3 py-2 text-center text-xs font-medium text-slate-600">
+                              <td className="px-4 py-3 text-center text-sm font-medium text-slate-600">
                                 <span className="underline decoration-slate-200 underline-offset-2">
                                   {obtained}
                                 </span>
                               </td>
 
                               {/* Grade */}
-                              <td className="px-3 py-2 text-center">
+                              <td className="px-4 py-3 text-center">
 
                                 <span
                                   className={`inline-flex min-w-[50px] items-center justify-center rounded-full border px-3 py-1 text-xs font-bold ${getGradeClass(
@@ -1574,24 +1477,24 @@ const AcademicReport = () => {
 
                         <td
                           colSpan={2}
-                          className="px-3 py-2 text-right text-xs font-bold text-slate-800"
+                          className="px-5 py-3 text-right text-sm font-bold text-slate-800"
                         >
                           Total
                         </td>
 
-                        <td className="px-3 py-2 text-center text-xs font-bold text-slate-900">
+                        <td className="px-4 py-3 text-center text-sm font-bold text-slate-900">
                           {
                             examSummary.total
                           }
                         </td>
 
-                        <td className="px-3 py-2 text-center text-xs font-bold text-slate-900">
+                        <td className="px-4 py-3 text-center text-sm font-bold text-slate-900">
                           {
                             examSummary.obtained
                           }
                         </td>
 
-                        <td className="px-3 py-2 text-center">
+                        <td className="px-4 py-3 text-center">
 
                           <span
                             className={`inline-flex min-w-[50px] items-center justify-center rounded-full border px-3 py-1 text-xs font-bold ${getGradeClass(
@@ -1605,7 +1508,7 @@ const AcademicReport = () => {
 
                         </td>
 
-                        <td className="px-3 py-2 text-xs text-slate-500">
+                        <td className="px-4 py-3 text-sm text-slate-500">
                           -
                         </td>
 
@@ -1621,7 +1524,7 @@ const AcademicReport = () => {
 
             </div>
 
-          </motion.section>
+          </section>
         )}
 
       {/* ================================================================== */}
@@ -1631,25 +1534,25 @@ const AcademicReport = () => {
       {!error &&
         selectedReport &&
         selectedExam && (
-          <div className="grid grid-cols-1 gap-3 lg:grid-cols-5">
+          <div className="grid grid-cols-1 gap-4 lg:grid-cols-5">
 
             {/* ------------------------------------------------------------ */}
             {/* Teacher Remarks                                               */}
             {/* ------------------------------------------------------------ */}
 
-            <section className="overflow-hidden rounded-xl border border-slate-200 bg-white shadow-sm lg:col-span-3">
+            <section className="overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm lg:col-span-3">
 
-              <div className="border-b border-slate-100 px-4 py-2.5">
+              <div className="border-b border-slate-100 px-5 py-4">
 
                 <div className="flex items-center gap-2.5">
 
-                  <div className="flex h-7 w-7 items-center justify-center rounded-lg bg-violet-50 text-violet-600">
+                  <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-violet-50 text-violet-600">
                     <MessageSquareText
-                      className="h-3.5 w-3.5"
+                      className="h-4 w-4"
                     />
                   </div>
 
-                  <h3 className="text-sm font-bold text-slate-900">
+                  <h3 className="text-base font-bold text-slate-900">
                     Class Teacher's Remarks
                   </h3>
 
@@ -1657,11 +1560,11 @@ const AcademicReport = () => {
 
               </div>
 
-              <div className="p-3">
+              <div className="p-4">
 
-                <div className="flex gap-2.5 rounded-lg bg-blue-50/70 p-3">
+                <div className="flex gap-3 rounded-xl bg-blue-50/70 p-4">
 
-                  <div className="flex h-9 w-9 shrink-0 items-center justify-center overflow-hidden rounded-lg bg-white text-slate-300">
+                  <div className="flex h-12 w-12 shrink-0 items-center justify-center overflow-hidden rounded-xl bg-white text-slate-300">
 
                     {selectedReport.teacherProfilePic ? (
                       <img
@@ -1683,11 +1586,10 @@ const AcademicReport = () => {
 
                   <div className="min-w-0 flex-1">
 
-                    <p className="text-xs leading-5 text-slate-700">
+                    <p className="text-sm leading-6 text-slate-700">
 
-                      {teacherRemarks || (
-                        <span className="italic text-slate-500">The class teacher hasn&apos;t added remarks for this exam yet.</span>
-                      )}
+                      {teacherRemarks ||
+                        `${selectedReport.studentName || 'The student'} has shown consistent effort in the examination. Keep up the good work!`}
 
                     </p>
 
@@ -1695,18 +1597,18 @@ const AcademicReport = () => {
 
                       <div>
 
-                        <p className="text-xs font-bold text-slate-800">
+                        <p className="text-sm font-bold text-slate-800">
                           {teacherName}
                         </p>
 
-                        <p className="text-[10px] font-medium text-slate-500">
+                        <p className="text-xs font-medium text-slate-500">
                           Class Teacher
                         </p>
 
                       </div>
 
                       {teacherDate && (
-                        <p className="text-[10px] font-medium text-slate-500">
+                        <p className="text-xs font-medium text-slate-500">
                           {formatDate(
                             teacherDate
                           )}
@@ -1727,19 +1629,19 @@ const AcademicReport = () => {
             {/* Grading System                                                 */}
             {/* ------------------------------------------------------------ */}
 
-            <section className="overflow-hidden rounded-xl border border-slate-200 bg-white shadow-sm lg:col-span-2">
+            <section className="overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm lg:col-span-2">
 
-              <div className="border-b border-slate-100 px-4 py-2.5">
+              <div className="border-b border-slate-100 px-5 py-4">
 
                 <div className="flex items-center gap-2.5">
 
-                  <div className="flex h-7 w-7 items-center justify-center rounded-lg bg-blue-50 text-blue-600">
+                  <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-blue-50 text-blue-600">
                     <Info
-                      className="h-3.5 w-3.5"
+                      className="h-4 w-4"
                     />
                   </div>
 
-                  <h3 className="text-sm font-bold text-slate-900">
+                  <h3 className="text-base font-bold text-slate-900">
                     Grading System
                   </h3>
 
@@ -1747,7 +1649,7 @@ const AcademicReport = () => {
 
               </div>
 
-              <div className="p-3">
+              <div className="p-4">
 
                 <div className="overflow-hidden rounded-xl border border-slate-200">
 
@@ -1801,15 +1703,15 @@ const AcademicReport = () => {
                             className="border-b border-slate-100 last:border-0"
                           >
 
-                            <td className="px-2.5 py-1.5 text-[10px] font-bold text-slate-700">
+                            <td className="px-3 py-1.5 text-xs font-bold text-slate-700">
                               {item.grade}
                             </td>
 
-                            <td className="px-2.5 py-1.5 text-[10px] font-medium text-slate-600">
+                            <td className="px-3 py-1.5 text-xs font-medium text-slate-600">
                               {item.range}
                             </td>
 
-                            <td className="px-2.5 py-1.5 text-[10px] font-medium text-slate-500">
+                            <td className="px-3 py-1.5 text-xs font-medium text-slate-500">
                               {
                                 item.description
                               }
@@ -1839,7 +1741,7 @@ const AcademicReport = () => {
       {!error &&
         selectedReport &&
         selectedExam && (
-          <div className="flex items-start gap-2 rounded-lg border border-slate-200 bg-white px-3 py-2.5 text-[10px] text-slate-500">
+          <div className="flex items-start gap-2 rounded-xl border border-slate-200 bg-white px-4 py-3 text-xs text-slate-500">
 
             <Info className="mt-0.5 h-4 w-4 shrink-0 text-blue-500" />
 
