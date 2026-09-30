@@ -6,6 +6,9 @@ const StudentUser = require('../models/StudentUser');
 const ClassModel = require('../models/Class');
 const AcademicYear = require('../models/AcademicYear');
 const Timetable = require('../models/Timetable');
+const Room = require('../models/Room');
+const Building = require('../models/Building');
+const Floor = require('../models/Floor');
 const SupportRequest = require('../models/SupportRequest');
 const Admin = require('../models/Admin');
 const Section = require('../models/Section');
@@ -249,11 +252,26 @@ const buildStudentSchedule = async ({ student, schoolId, campusId, activeYear = 
     timetableFilter.campusId = campusId;
   }
 
-  const timetables = await Timetable.find(timetableFilter)
+  // Prefer the active academic year's timetable; fall back to any for older data.
+  const loadTimetables = (filter) => Timetable.find(filter)
     .populate('sectionId', 'name')
     .populate('entries.subjectId', 'name')
     .populate('entries.teacherId', 'name')
+    .populate({
+      path: 'entries.roomId',
+      model: Room,
+      select: 'roomNumber label buildingId floorId',
+      populate: [
+        { path: 'buildingId', model: Building, select: 'name code' },
+        { path: 'floorId', model: Floor, select: 'name floorCode' },
+      ],
+    })
+    .sort({ updatedAt: -1 })
     .lean();
+  let timetables = activeYear?._id
+    ? await loadTimetables({ ...timetableFilter, academicYearId: activeYear._id })
+    : [];
+  if (!timetables.length) timetables = await loadTimetables(timetableFilter);
 
   if (!Array.isArray(timetables) || timetables.length === 0) {
     return {
@@ -299,9 +317,30 @@ const buildStudentSchedule = async ({ student, schoolId, campusId, activeYear = 
     }
     scheduleByDay[entry.dayOfWeek].push({
       time: `${entry.startTime || ''}${entry.endTime ? ` - ${entry.endTime}` : ''}`.trim(),
-      subject: entry.subjectId?.name || 'Unknown',
+      startTime: entry.startTime || '',
+      endTime: entry.endTime || '',
+      isBreak: Boolean(entry.isBreak),
+      subject: entry.isBreak ? (entry.subjectId?.name || 'Break') : (entry.subjectId?.name || 'Unknown'),
       instructor: entry.teacherId?.name || 'TBA',
       room: entry.room || '',
+      // Structured parts for the routine chip (building / floor / room no.).
+      ...(() => {
+        const r = entry.roomId && typeof entry.roomId === 'object' ? entry.roomId : null;
+        return {
+          roomBuilding: r?.buildingId?.name || r?.buildingId?.code || '',
+          roomFloor: r?.floorId?.name || r?.floorId?.floorCode || '',
+          roomNumber: r?.roomNumber || r?.label || entry.room || '',
+        };
+      })(),
+      // "Main Block · 1st Floor · Room 101" from the linked room, if any.
+      roomLocation: (() => {
+        const r = entry.roomId && typeof entry.roomId === 'object' ? entry.roomId : null;
+        if (!r) return entry.room || '';
+        const building = r.buildingId?.name || r.buildingId?.code || '';
+        const floor = r.floorId?.name || r.floorId?.floorCode || '';
+        const number = r.roomNumber || r.label || entry.room || '';
+        return [building, floor, number ? `Room ${number}` : ''].filter(Boolean).join(' · ');
+      })(),
       period: entry.period,
       className: classDoc.name,
       sectionName: resolvedSectionName,
@@ -604,7 +643,7 @@ router.get('/routine', authParent, async (req, res) => {
         ...studentFilter,
         _id: { $in: parent.childrenIds },
       })
-        .select('name grade section studentCode roll admissionNumber')
+        .select('name grade section studentCode roll admissionNumber profilePic')
         .lean();
     }
 
@@ -615,7 +654,7 @@ router.get('/routine', authParent, async (req, res) => {
           ...studentFilter,
           name: { $in: validNames },
         })
-          .select('name grade section studentCode roll admissionNumber')
+          .select('name grade section studentCode roll admissionNumber profilePic')
           .lean();
       }
     }
@@ -639,6 +678,7 @@ router.get('/routine', authParent, async (req, res) => {
       childRoutines.push({
         studentId: student._id,
         studentName: student.name || 'Student',
+        photo: student.profilePic || '',
         studentCode: student.studentCode || '',
         username: student.username || '',
         roll: student.roll || null,
@@ -658,8 +698,28 @@ router.get('/routine', authParent, async (req, res) => {
       Object.values(child.schedule || {}).some((entries) => Array.isArray(entries) && entries.length > 0)
     ).length;
 
+    // Letterhead details for the routine PDF.
+    const School = require('../models/School');
+    const Principal = require('../models/Principal');
+    const principalFilter = campusId
+      ? { schoolId, $or: [{ campusId }, { campusId: null }, { campusId: { $exists: false } }] }
+      : { schoolId };
+    const [schoolDoc, principal] = await Promise.all([
+      School.findById(schoolId).select('name address logo contactEmail contactPhone officialEmail websiteURL').lean(),
+      Principal.findOne(principalFilter).sort({ updatedAt: -1, createdAt: -1 }).select('name').lean(),
+    ]);
+
     res.json({
       children: childRoutines,
+      school: {
+        name: schoolDoc?.name || '',
+        address: schoolDoc?.address || '',
+        logo: schoolDoc?.logo?.secure_url || schoolDoc?.logo?.url || (typeof schoolDoc?.logo === 'string' ? schoolDoc.logo : ''),
+        email: schoolDoc?.contactEmail || schoolDoc?.officialEmail || '',
+        phone: schoolDoc?.contactPhone || '',
+        website: schoolDoc?.websiteURL || '',
+      },
+      principalName: principal?.name || '',
       meta: {
         childCount: childRoutines.length,
         withRoutine,
@@ -974,6 +1034,7 @@ router.get('/achievements', authParent, async (req, res) => {
       return {
         studentId: student._id,
         studentName: student.name || 'Student',
+        photo: student.profilePic || '',
         studentCode: student.studentCode || '',
         username: student.username || '',
         roll: student.roll || null,
