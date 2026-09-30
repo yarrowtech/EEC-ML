@@ -2,6 +2,11 @@ const express = require('express');
 const mongoose = require('mongoose');
 const { logger } = require('../utils/logger');
 const router = express.Router();
+const { createResponseCache } = require('../utils/responseCache');
+// Parent homework view: 30s per-parent response cache. Any assignment write
+// here (create/update/publish/submit/grade/delete) clears it immediately.
+const parentHomeworkCache = createResponseCache({ ttlMs: 30 * 1000 });
+router.use(parentHomeworkCache.invalidateOnWrite);
 const crypto = require('crypto');
 const Assignment = require('../models/Assignment');
 const adminAuth = require('../middleware/adminAuth');
@@ -1197,7 +1202,7 @@ const studentAssignmentsHandler = async (req, res) => {
 router.get("/student/assignments", authStudent, studentAssignmentsHandler);
 
 // Parent portal: a linked child's homework (read-only), same shape as the student view.
-router.get("/parent/assignments", authParent, async (req, res) => {
+router.get("/parent/assignments", authParent, parentHomeworkCache.cache, async (req, res) => {
     try {
         const studentId = String(req.query?.studentId || '').trim();
         if (!mongoose.isValidObjectId(studentId)) return res.status(400).json({ error: 'studentId is required' });

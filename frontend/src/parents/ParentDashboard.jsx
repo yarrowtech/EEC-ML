@@ -1,5 +1,6 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
+import { motion, useReducedMotion } from 'framer-motion';
 import {
   ArrowUp,
   ArrowDown,
@@ -22,6 +23,12 @@ import {
 import { parentApiJson } from './parentApi';
 import useParentChildren from './useParentChildren';
 import { normalizeReportCard } from './reportCardShape';
+
+// Dashboard entrance: each section fades and rises in, one after another.
+const RISE = {
+  hidden: { opacity: 0, y: 18 },
+  show: { opacity: 1, y: 0, transition: { duration: 0.45, ease: [0.22, 1, 0.36, 1] } },
+};
 
 /* ── helpers ─────────────────────────────────────────────────────────────── */
 const inr = (n) => `₹${Math.round(Number(n) || 0).toLocaleString('en-IN')}`;
@@ -99,11 +106,11 @@ const useCountUp = (target, duration = 900) => {
 };
 
 const SUBJECT_TONES = [
-  { tile: 'bg-emerald-50 text-emerald-700', icon: 'bg-violet-50 text-violet-600' },
-  { tile: 'bg-blue-50 text-blue-700', icon: 'bg-rose-50 text-rose-500' },
-  { tile: 'bg-rose-50 text-rose-600', icon: 'bg-sky-50 text-sky-600' },
+  { tile: 'bg-green-50 text-green-700', icon: 'bg-violet-50 text-violet-600' },
+  { tile: 'bg-blue-50 text-blue-700', icon: 'bg-red-50 text-red-500' },
+  { tile: 'bg-red-50 text-red-600', icon: 'bg-sky-50 text-sky-600' },
   { tile: 'bg-violet-50 text-violet-700', icon: 'bg-amber-50 text-amber-600' },
-  { tile: 'bg-amber-50 text-amber-700', icon: 'bg-emerald-50 text-emerald-600' },
+  { tile: 'bg-amber-50 text-amber-700', icon: 'bg-green-50 text-green-600' },
 ];
 
 /* ── small building blocks ───────────────────────────────────────────────── */
@@ -122,13 +129,13 @@ const Delta = ({ value }) => {
   if (value === null || value === undefined || Number.isNaN(value) || value === 0) return null;
   const up = value > 0;
   return (
-    <span className={`inline-flex items-center gap-0.5 rounded-full px-2 py-0.5 text-xs font-bold ${up ? 'bg-emerald-50 text-emerald-600' : 'bg-rose-50 text-rose-600'}`}>
+    <span className={`inline-flex items-center gap-0.5 rounded-full px-2 py-0.5 text-xs font-bold ${up ? 'bg-green-50 text-green-600' : 'bg-red-50 text-red-600'}`}>
       {up ? <ArrowUp size={12} strokeWidth={3} /> : <ArrowDown size={12} strokeWidth={3} />}{Math.abs(value)}%
     </span>
   );
 };
 
-const StatCard = ({ to, Icon, tone, label, value, animatedValue, formatter, delta, sub }) => {
+const StatCard = ({ to, Icon, tone, label, value, animatedValue, formatter, delta, sub, sub2 }) => {
   const count = useCountUp(animatedValue ?? 0);
   const displayValue = animatedValue === null || animatedValue === undefined
     ? value
@@ -143,6 +150,7 @@ const StatCard = ({ to, Icon, tone, label, value, animatedValue, formatter, delt
           <Delta value={delta} />
         </div>
         <p className="mt-1 truncate text-xs text-slate-500">{sub}</p>
+        {sub2 ? <p className="mt-0.5 truncate text-xs font-semibold text-red-500">{sub2}</p> : null}
       </div>
       <ChevronRight size={17} className="absolute right-3 top-4 text-slate-400 transition group-hover:translate-x-0.5" />
     </Link>
@@ -173,6 +181,7 @@ const BannerBuilding = () => (
 /* ── dashboard ───────────────────────────────────────────────────────────── */
 const ParentDashboard = ({ parentName = '' }) => {
   const navigate = useNavigate();
+  const reduceMotion = useReducedMotion();
   const { children, options, setChildKey, selected: child, loading: childLoading, school } = useParentChildren();
   const coverImage = school?.coverImage || '';
   const [pickerOpen, setPickerOpen] = useState(false);
@@ -323,7 +332,7 @@ const ParentDashboard = ({ parentName = '' }) => {
     const today = new Date(new Date().toDateString());
     const rows = [];
     (kid?.groups || []).forEach((g) => (g.subjects || []).forEach((s) => {
-      if (validDate(s.date) && new Date(s.date) >= today) rows.push({ date: new Date(s.date), name: `${subjectName(s)} ${g.title || ''}`.trim(), time: to12h(s.startTime) });
+      if (validDate(s.date) && new Date(s.date) >= today) rows.push({ date: new Date(s.date), subject: subjectName(s) || g.title || 'Exam', name: `${subjectName(s)} ${g.title || ''}`.trim(), time: to12h(s.startTime || s.time) });
     }));
     return rows.sort((a, b) => a.date - b.date);
   }, [examKids, child?.id]);
@@ -374,9 +383,15 @@ const ParentDashboard = ({ parentName = '' }) => {
   ));
 
   return (
-    <div data-testid="parent-dashboard" className="mx-auto flex min-h-screen max-w-7xl flex-col gap-4 bg-slate-50 p-3 sm:gap-5 sm:p-4 lg:p-6">
+    <motion.div
+      data-testid="parent-dashboard"
+      className="mx-auto flex min-h-screen max-w-7xl flex-col gap-4 bg-slate-50 p-3 sm:gap-5 sm:p-4 lg:p-6"
+      initial="hidden"
+      animate="show"
+      variants={{ hidden: {}, show: { transition: { staggerChildren: reduceMotion ? 0 : 0.08, delayChildren: 0.05 } } }}
+    >
       {/* ── Greeting + child picker ── */}
-      <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+      <motion.div variants={RISE} className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
         <div>
           <h1 className="text-xl font-bold text-slate-900 sm:text-2xl">{greeting}
             {/* <span aria-hidden="true">👋</span> */}
@@ -420,10 +435,10 @@ const ParentDashboard = ({ parentName = '' }) => {
             )}
           </div>
         )}
-      </div>
+      </motion.div>
 
       {/* ── Child banner ── */}
-      <section className="relative overflow-hidden rounded-2xl border border-blue-100 bg-linear-to-r from-sky-50 via-blue-50 to-sky-100/70">
+      <motion.section variants={RISE} className="relative overflow-hidden rounded-2xl border border-blue-100 bg-linear-to-r from-sky-50 via-blue-50 to-sky-100/70">
         {coverImage ? (
           // School cover photo, blurred and washed out so the text stays readable.
           <div aria-hidden="true" className="pointer-events-none absolute inset-0 overflow-hidden">
@@ -453,16 +468,17 @@ const ParentDashboard = ({ parentName = '' }) => {
             “Keep learning,<br />&nbsp;&nbsp;keep growing!” <span className="text-amber-400">☀</span>
           </p>
         </div>
-      </section>
+      </motion.section>
 
       {/* ── Stat cards ── */}
-      <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-4 sm:gap-4">
-        <StatCard to="/parents/attendance" Icon={Users} tone="bg-emerald-50 text-emerald-600" label="Attendance"
+      <motion.div variants={RISE} className="grid grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-4 sm:gap-4">
+        <StatCard to="/parents/attendance" Icon={Users} tone="bg-green-50 text-green-600" label="Attendance"
           value={`${attendance.percent}%`} animatedValue={attendance.percent} formatter={(n) => `${n}%`} delta={attendance.delta} sub={`Present: ${attendance.present} / ${attendance.total} days`} />
-        <StatCard to="/parents/fees" Icon={Wallet} tone="bg-rose-50 text-rose-500" label="Fee Due"
-          value={inr(fees.due)} animatedValue={fees.due} formatter={inr} sub={fees.focus ? `${fees.focus.title || 'Fees'}${validDate(fees.focus.dueDate) ? ` (Due: ${fmtDate(fees.focus.dueDate)})` : ''}` : 'No fees due'} />
+        <StatCard to="/parents/fees" Icon={Wallet} tone="bg-red-50 text-red-500" label="Fee Due"
+          // value={inr(fees.due)} animatedValue={fees.due} formatter={inr} sub={fees.focus ? (fees.focus.title || 'Fees') : 'No fees due'} sub2={fees.focus && validDate(fees.focus.dueDate) ? `Due date: ${fmtDate(fees.focus.dueDate)}` : ''} />
+          value={inr(fees.due)} animatedValue={fees.due} formatter={inr} sub2={fees.focus && validDate(fees.focus.dueDate) ? `Due: ${fmtDate(fees.focus.dueDate)}` : ''} />
         <StatCard to="/parents/academic" Icon={BarChart3} tone="bg-violet-50 text-violet-600" label="Average Marks"
-          value={results.average === null ? '�' : `${results.average}%`} animatedValue={results.average ?? null} formatter={(n) => `${n}%`} delta={results.delta} sub={results.count ? `Last ${results.count} Exam${results.count > 1 ? 's' : ''}` : 'No results yet'} />
+          value={results.average === null ? '—' : `${results.average}%`} animatedValue={results.average ?? null} formatter={(n) => `${n}%`} delta={results.delta} sub={results.count ? `Last ${results.count} Exam${results.count > 1 ? 's' : ''}` : 'No results yet'} />
         {/* <StatCard to="/parents/exam-routine" Icon={CalendarDays} tone="bg-amber-50 text-amber-500" label="Upcoming Exam"
           value={nextExam ? '1 Scheduled' : '0 Scheduled'} animatedValue={nextExam ? 1 : 0} formatter={(n) => (n > 0 ? '1 Scheduled' : '0 Scheduled')} sub={nextExam ? `${nextExam.name} | ${fmtDate(nextExam.date)}${nextExam.time ? ` | ${nextExam.time}` : ''}` : 'Check back later'} /> */}
         <StatCard
@@ -470,7 +486,7 @@ const ParentDashboard = ({ parentName = '' }) => {
           Icon={CalendarDays}
           tone="bg-amber-50 text-amber-500"
           label="Upcoming Exam"
-          value={nextExam ? nextExam.name : 'No Upcoming Exam'}
+          value={nextExam ? nextExam.subject : 'No Upcoming Exam'}
           animatedValue={null}
           sub={
             nextExam
@@ -478,23 +494,23 @@ const ParentDashboard = ({ parentName = '' }) => {
               : 'Check back later'
           }
         />
-      </div>
+      </motion.div>
 
       {/* -- Today / Fee summary / Events -- */}
-      <div className="grid grid-cols-1 gap-4 lg:grid-cols-3">
+      <motion.div variants={RISE} className="grid grid-cols-1 gap-4 lg:grid-cols-3">
         <Card>
           <CardHead title="Today's Attendance" right={<span className="text-sm text-slate-500">{todayLabel}</span>} />
           <Link
             to="/parents/attendance"
-            className={`flex items-center gap-4 rounded-xl border px-4 py-4 transition hover:shadow-sm ${todayStatus === 'present' ? 'border-emerald-200 bg-emerald-50' : todayStatus === 'absent' ? 'border-rose-100 bg-rose-50' : 'border-slate-100 bg-slate-50'
+            className={`flex items-center gap-4 rounded-xl border px-4 py-4 transition hover:shadow-sm ${todayStatus === 'present' ? 'border-green-200 bg-green-50' : todayStatus === 'absent' ? 'border-red-100 bg-red-50' : 'border-slate-100 bg-slate-50'
               }`}
           >
-            <span className={`flex h-10 w-10 shrink-0 items-center justify-center rounded-full text-white ${todayStatus === 'present' ? 'bg-emerald-600' : todayStatus === 'absent' ? 'bg-rose-500' : 'bg-slate-400'
+            <span className={`flex h-10 w-10 shrink-0 items-center justify-center rounded-full text-white ${todayStatus === 'present' ? 'bg-green-600' : todayStatus === 'absent' ? 'bg-red-500' : 'bg-slate-400'
               }`}>
               {todayStatus === 'absent' ? <X size={22} strokeWidth={3} /> : <Check size={22} strokeWidth={3} />}
             </span>
             <span className="min-w-0 flex-1">
-              <span className={`block text-lg font-bold leading-tight ${todayStatus === 'present' ? 'text-emerald-700' : todayStatus === 'absent' ? 'text-rose-600' : 'text-slate-600'}`}>
+              <span className={`block text-lg font-bold leading-tight ${todayStatus === 'present' ? 'text-green-700' : todayStatus === 'absent' ? 'text-red-600' : 'text-slate-600'}`}>
                 {todayStatus === 'present' ? 'Present' : todayStatus === 'absent' ? 'Absent' : 'Not marked yet'}
               </span>
               <span className="mt-0.5 block text-xs text-slate-600">
@@ -510,11 +526,11 @@ const ParentDashboard = ({ parentName = '' }) => {
           {fees.focus ? (
             <>
               <div className="mt-2 h-2.5 w-full overflow-hidden rounded-full bg-slate-200">
-                <div className="h-full rounded-full bg-emerald-500" style={{ width: `${fees.total > 0 ? Math.min(100, (fees.paid / fees.total) * 100) : 0}%` }} />
+                <div className="h-full rounded-full bg-green-500" style={{ width: `${fees.total > 0 ? Math.min(100, (fees.paid / fees.total) * 100) : 0}%` }} />
               </div>
               <div className="mt-4 grid grid-cols-3 gap-2">
                 <div className="min-w-0"><p className="text-xs text-slate-500">Paid</p><p className="truncate text-base font-bold text-slate-900" title={inr(fees.paid)}>{inr(fees.paid)}</p></div>
-                <div className="min-w-0"><p className="text-xs text-slate-500">Due</p><p className="truncate text-base font-bold text-rose-600" title={inr(fees.balance)}>{inr(fees.balance)}</p></div>
+                <div className="min-w-0"><p className="text-xs text-slate-500">Due</p><p className="truncate text-base font-bold text-red-600" title={inr(fees.balance)}>{inr(fees.balance)}</p></div>
                 <div className="min-w-0"><p className="text-xs text-slate-500">Total</p><p className="truncate text-base font-bold text-slate-900" title={inr(fees.total)}>{inr(fees.total)}</p></div>
               </div>
               <div className="mt-4">
@@ -535,7 +551,7 @@ const ParentDashboard = ({ parentName = '' }) => {
               {events.map((ev, i) => {
                 const cfg = ev.kind === 'exam'
                   ? { Icon: CalendarDays, cls: 'bg-blue-50 text-blue-600' }
-                  : ev.kind === 'ptm' ? { Icon: Users, cls: 'bg-rose-50 text-rose-500' } : { Icon: Leaf, cls: 'bg-emerald-50 text-emerald-600' };
+                  : ev.kind === 'ptm' ? { Icon: Users, cls: 'bg-red-50 text-red-500' } : { Icon: Leaf, cls: 'bg-green-50 text-green-600' };
                 return (
                   <li key={i} className="flex items-center gap-3 py-1.5">
                     <span className={`flex h-9 w-9 shrink-0 items-center justify-center rounded-lg ${cfg.cls}`}><cfg.Icon size={17} /></span>
@@ -549,9 +565,9 @@ const ParentDashboard = ({ parentName = '' }) => {
             </ul>
           )}
         </Card>
-      </div>
+      </motion.div>
       {/* ── Homework / Notices ── */}
-      <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
+      <motion.div variants={RISE} className="grid grid-cols-1 gap-4 lg:grid-cols-2">
         <Card>
           <CardHead title="Recent Homework" to="/parents/homework" />
           {recentHomework.length === 0 ? <p className="rounded-xl bg-slate-50 py-6 text-center text-sm text-slate-500">No homework yet</p> : (
@@ -567,7 +583,7 @@ const ParentDashboard = ({ parentName = '' }) => {
                       <span className="block line-clamp-2 text-sm text-slate-600" title={a.title}>{a.title}</span>
                       {validDate(a.dueDate) && <span className="mt-0.5 block text-xs text-slate-500">Due: {fmtDate(a.dueDate)}</span>}
                     </span>
-                    <span className={`shrink-0 rounded-full px-3 py-1 text-sm font-semibold ${pending ? 'bg-orange-50 text-orange-500' : 'bg-emerald-50 text-emerald-600'}`}>
+                    <span className={`shrink-0 rounded-full px-3 py-1 text-sm font-semibold ${pending ? 'bg-orange-50 text-orange-500' : 'bg-green-50 text-green-600'}`}>
                       {pending ? 'Pending' : 'Submitted'}
                     </span>
                   </li>
@@ -583,27 +599,33 @@ const ParentDashboard = ({ parentName = '' }) => {
             <ul className="divide-y divide-slate-100">
               {recentNotices.map((n) => {
                 const label = String(n.typeLabel || n.title || '').toLowerCase();
-                const cfg = /holiday/.test(label) ? { Icon: Megaphone, cls: 'bg-rose-50 text-rose-500' }
+                const cfg = /holiday/.test(label) ? { Icon: Megaphone, cls: 'bg-red-50 text-red-500' }
                   : /ptm|meeting|parent/.test(label) ? { Icon: Users, cls: 'bg-violet-50 text-violet-600' }
                     : { Icon: FileText, cls: 'bg-blue-50 text-blue-600' };
                 return (
-                  <li key={n._id} className="flex items-start gap-3 py-3 first:pt-0 last:pb-0">
+                  <li key={n._id} className="py-1.5 first:pt-0 last:pb-0">
+                    <Link
+                      to="/parents/notices"
+                      state={{ openNoticeId: n._id }}
+                      className="-mx-2 flex items-start gap-3 rounded-xl px-2 py-1.5 transition hover:bg-slate-50"
+                    >
                     <span className={`flex h-11 w-11 shrink-0 items-center justify-center rounded-xl ${cfg.cls}`}><cfg.Icon size={20} /></span>
                     <span className="min-w-0 flex-1">
                       <span className="block truncate text-sm font-semibold text-slate-900">{n.title}</span>
                       {n.message ? <span className="block truncate text-sm text-slate-600">{n.message}</span> : null}
                     </span>
                     <span className="shrink-0 text-sm text-slate-500">{fmtDate(n.createdAt)}</span>
+                    </Link>
                   </li>
                 );
               })}
             </ul>
           )}
         </Card>
-      </div>
+      </motion.div>
 
       {/* ── Latest result / Quick actions ── */}
-      <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
+      <motion.div variants={RISE} className="grid grid-cols-1 gap-4 lg:grid-cols-2">
         <Card>
           <CardHead title="Latest Exam Result" to="/parents/academic" />
           {results.latest ? (
@@ -629,8 +651,8 @@ const ParentDashboard = ({ parentName = '' }) => {
           <CardHead title="Quick Actions" />
           <div className="grid grid-cols-3 gap-3 sm:grid-cols-5">
             {[
-              { to: '/parents/fees', label: 'Pay Fees', Icon: Wallet, cls: 'bg-rose-50 text-rose-500' },
-              { to: '/parents/attendance', label: 'View Attendance', Icon: Users, cls: 'bg-emerald-50 text-emerald-600' },
+              { to: '/parents/fees', label: 'Pay Fees', Icon: Wallet, cls: 'bg-red-50 text-red-500' },
+              { to: '/parents/attendance', label: 'View Attendance', Icon: Users, cls: 'bg-green-50 text-green-600' },
               { to: '/parents/academic', label: 'Check Results', Icon: BarChart3, cls: 'bg-violet-50 text-violet-600' },
               { to: '/parents/excuse-letters', label: 'Apply Leave', Icon: ClipboardList, cls: 'bg-amber-50 text-amber-500' },
               { to: '/parents/chat', label: 'Send Message', Icon: MessageSquare, cls: 'bg-blue-50 text-blue-600' },
@@ -642,8 +664,8 @@ const ParentDashboard = ({ parentName = '' }) => {
             ))}
           </div>
         </Card>
-      </div>
-    </div>
+      </motion.div>
+    </motion.div>
   );
 };
 

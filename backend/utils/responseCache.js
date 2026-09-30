@@ -50,23 +50,4 @@ const createResponseCache = ({ ttlMs = 30 * 1000, maxEntries = 1000 } = {}) => {
 // excuse letters). Writes to any of those routers clear it.
 const parentAttendanceCache = createResponseCache({ ttlMs: 30 * 1000 });
 
-// Per-user notification/notice feed. Cleared by Notification model write hooks.
-const userNotificationsCache = createResponseCache({ ttlMs: 60 * 1000 });
-
-// Parent fees screen (children + invoices/payments). Cleared by FeeInvoice and
-// FeePayment model write hooks, so payments made anywhere show up at once.
-const parentFeesCache = createResponseCache({ ttlMs: 60 * 1000 });
-
-// Teacher class-analytics reads (progress, teacher-analytics, ML, confidence,
-// help-seeking, learning-style, belonging). Any write in those routers clears it;
-// the TTL bounds staleness from student activity recorded elsewhere.
-const teacherAnalyticsCache = createResponseCache({ ttlMs: 60 * 1000, maxEntries: 2000 });
-
-// Chat reads (me, contacts, thread list). Cleared by ChatThread/ChatMessage write hooks,
-// so socket-sent messages and read receipts invalidate it too.
-const chatCache = createResponseCache({ ttlMs: 30 * 1000, maxEntries: 3000 });
-
-// Holiday calendar reads. Cleared by Holiday model write hooks, so admin edits show at once.
-const holidayCache = createResponseCache({ ttlMs: 5 * 60 * 1000 });
-
-module.exports = { createResponseCache, parentAttendanceCache, userNotificationsCache, parentFeesCache, teacherAnalyticsCache, chatCache, holidayCache };
+module.exports = { createResponseCache, parentAttendanceCache };

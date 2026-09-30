@@ -92,7 +92,9 @@ const RISE = { hidden: { opacity: 0, y: 16 }, show: { opacity: 1, y: 0, transiti
 /* ── page ────────────────────────────────────────────────────────────────── */
 const AttendanceReport = () => {
   const navigate = useNavigate();
-  const { selected: child } = useParentChildren();
+  const { children, options, setChildKey, selected: child } = useParentChildren();
+  const [pickerOpen, setPickerOpen] = useState(false);
+  const pickerRef = useRef(null);
 
   const cachedPage = readPageCache();
   const [attendanceKids, setAttendanceKids] = useState(() => cachedPage?.attendanceKids || []);
@@ -140,6 +142,11 @@ const AttendanceReport = () => {
     return () => { off = true; };
   }, [navigate]);
 
+  useEffect(() => {
+    const close = (e) => { if (pickerRef.current && !pickerRef.current.contains(e.target)) setPickerOpen(false); };
+    document.addEventListener('mousedown', close);
+    return () => document.removeEventListener('mousedown', close);
+  }, []);
 
   /* ── per-day maps ── */
   const entry = useMemo(
@@ -196,33 +203,13 @@ const AttendanceReport = () => {
     const now = new Date();
     const cur = monthPct(monthKeyOf(now));
     const prev = monthPct(monthKeyOf(new Date(now.getFullYear(), now.getMonth() - 1, 1)));
-    const delta = cur !== null && prev !== null ? cur - prev : null;
-
-    // Same academic-session figures as the dashboard: school days since the
-    // session started (Sundays + holidays excluded) vs days marked present.
-    const session = entry?.sessionSummary;
-    if (session && Number(session.schoolDays) > 0) {
-      const schoolDays = Number(session.schoolDays);
-      const sPresent = Number(session.presentDays) || 0;
-      const sAbsent = Number(session.absentDays) || 0;
-      const sPct = (n) => Math.round((n / schoolDays) * 100);
-      return {
-        present: sPresent, absent: sAbsent, late: 0, total: schoolDays,
-        overall: Number(session.percentage) || sPct(sPresent),
-        presentPct: sPct(sPresent), absentPct: sPct(sAbsent), latePct: 0,
-        delta,
-        sessionName: session.sessionName || '',
-      };
-    }
-
     return {
       present, absent, late, total,
       overall: total ? Math.round(((present + late) / total) * 100) : 0,
       presentPct: pct(present), absentPct: pct(absent), latePct: pct(late),
-      delta,
-      sessionName: '',
+      delta: cur !== null && prev !== null ? cur - prev : null,
     };
-  }, [days, entry]);
+  }, [days]);
 
   /* ── calendar ── */
   const cells = useMemo(() => {
@@ -286,6 +273,8 @@ const AttendanceReport = () => {
       .sort((a, b) => a.name.localeCompare(b.name)).slice(0, 6);
   }, [rawRecords]);
 
+  const classLine = child ? `Class ${child.grade || '—'}${child.section ? ` - Section ${child.section}` : ''}` : '';
+  const initials = (n) => String(n || 'S').trim().split(/\s+/).slice(0, 2).map((w) => w[0]).join('').toUpperCase();
 
   return (
     <motion.div
@@ -301,21 +290,52 @@ const AttendanceReport = () => {
           <h1 className="text-2xl font-bold text-slate-900">Attendance</h1>
           <p className="mt-0.5 text-sm text-slate-600">View your child&apos;s daily attendance, monthly summary and detailed records.</p>
         </div>
+        {child && (
+          <div className="relative" ref={pickerRef}>
+            <button
+              type="button"
+              onClick={() => options.length > 1 && setPickerOpen((o) => !o)}
+              className="flex w-full items-center gap-3 rounded-2xl border border-slate-200 bg-white px-3 py-2.5 pr-4 text-left shadow-sm sm:w-72"
+            >
+              {child.photo
+                ? <img src={child.photo} alt={child.name} className="h-10 w-10 rounded-xl object-cover" />
+                : <span className="flex h-10 w-10 items-center justify-center rounded-xl bg-violet-100 text-sm font-bold text-violet-700">{initials(child.name)}</span>}
+              <span className="min-w-0 flex-1">
+                <span className="block truncate text-sm font-bold text-slate-900">{child.name}</span>
+                <span className="block truncate text-xs text-slate-500">{classLine}</span>
+              </span>
+              {options.length > 1 && <ChevronDown size={17} className={`text-slate-500 transition ${pickerOpen ? 'rotate-180' : ''}`} />}
+            </button>
+            {pickerOpen && (
+              <ul className="absolute right-0 z-20 mt-2 w-full overflow-hidden rounded-2xl border border-slate-100 bg-white shadow-xl">
+                {children.map((c, i) => (
+                  <li key={c.id}>
+                    <button
+                      type="button"
+                      onClick={() => { const o = options[i]; setChildKey(`${o.id || ''}::${o.name || ''}`); setPickerOpen(false); }}
+                      className={`flex w-full items-center gap-3 px-3 py-2.5 text-left hover:bg-slate-50 ${c.id === child.id ? 'bg-violet-50' : ''}`}
+                    >
+                      <span className="flex h-8 w-8 items-center justify-center rounded-lg bg-violet-100 text-xs font-bold text-violet-700">{initials(c.name)}</span>
+                      <span className="text-sm font-semibold text-slate-800">{c.name}</span>
+                    </button>
+                  </li>
+                ))}
+              </ul>
+            )}
+          </div>
+        )}
       </motion.div>
 
       {error ? <p role="alert" className="rounded-xl border border-rose-200 bg-rose-50 px-4 py-3 text-sm text-rose-700">{error}</p> : null}
 
       {/* ── Stat cards ── */}
-      <motion.div variants={RISE} className="grid grid-cols-2 gap-3 lg:grid-cols-3">
+      <motion.div variants={RISE} className="grid grid-cols-1 gap-3 lg:grid-cols-3">
         <div className="col-span-2 flex items-start gap-4 rounded-2xl border border-slate-100 bg-white p-4 shadow-[0_2px_12px_rgba(15,23,42,0.04)] lg:col-span-1">
           <span className="flex h-14 w-14 shrink-0 items-center justify-center rounded-xl bg-emerald-50 text-green-600"><Users size={26} /></span>
           <div className="min-w-0">
             <p className="text-sm font-medium text-slate-700">Overall Attendance</p>
             <div className="mt-0.5 flex items-center gap-2"><p className="text-2xl font-bold text-slate-900">{stats.overall}%</p><Delta value={stats.delta} /></div>
             <p className="mt-1 text-xs text-slate-500">Present: {stats.present + stats.late} / {stats.total} days</p>
-            {/* {stats.sessionName ? (
-              <p className="mt-0.5 text-[11px] text-slate-400">Session: {stats.sessionName}</p>
-            ) : null} */}
           </div>
         </div>
         {[
@@ -324,8 +344,8 @@ const AttendanceReport = () => {
           // { label: 'Late Days', value: stats.late, sub: `${stats.latePct}%`, subCls: 'text-amber-500', icon: <Clock size={20} strokeWidth={3} />, tile: 'bg-amber-50', dot: 'bg-amber-400' },
           // { label: 'Total Working Days', value: stats.total, sub: 'This academic session', subCls: 'text-slate-500', icon: <CalendarDays size={22} />, tile: 'bg-violet-50', dot: '' },
         ].map((s) => (
-          <motion.div key={s.label} whileHover={{ y: -3 }} transition={{ duration: 0.15 }} className="flex min-w-0 items-start gap-3 rounded-2xl border border-slate-100 bg-white p-3 sm:p-4 shadow-[0_2px_12px_rgba(15,23,42,0.04)] hover:shadow-md">
-            <span className={`flex h-10 w-10 shrink-0 sm:h-12 sm:w-12 items-center justify-center rounded-xl ${s.tile}`}>
+          <motion.div key={s.label} whileHover={{ y: -3 }} transition={{ duration: 0.15 }} className="flex items-start gap-3 rounded-2xl border border-slate-100 bg-white p-4 shadow-[0_2px_12px_rgba(15,23,42,0.04)] hover:shadow-md">
+            <span className={`flex h-12 w-12 shrink-0 items-center justify-center rounded-xl ${s.tile}`}>
               {s.dot ? <span className={`flex h-7 w-7 items-center justify-center rounded-full text-white ${s.dot}`}>{s.icon}</span> : <span className="text-violet-600">{s.icon}</span>}
             </span>
             <div className="min-w-0">
@@ -338,8 +358,8 @@ const AttendanceReport = () => {
       </motion.div>
 
       {/* ── Calendar + records ── */}
-      <motion.div variants={RISE} className="grid grid-cols-1 items-start gap-4 md:grid-cols-2 xl:grid-cols-[minmax(0,5fr)_minmax(0,7fr)]">
-        <Card className="flex min-w-0 flex-col">
+      <motion.div variants={RISE} className="grid grid-cols-1 items-stretch gap-4 xl:grid-cols-[minmax(0,5fr)_minmax(0,7fr)]">
+        <Card className="flex h-full flex-col">
           <h2 className="text-base font-bold text-slate-900">Attendance Calendar</h2>
           <div className="mt-4 flex items-center justify-between">
             <button type="button" onClick={() => { setCalDir(-1); setCalMonth((m) => new Date(m.getFullYear(), m.getMonth() - 1, 1)); }} className="flex h-9 w-9 items-center justify-center rounded-lg border border-slate-200 text-slate-700 hover:bg-slate-50" aria-label="Previous month"><ChevronLeft size={17} /></button>
@@ -356,7 +376,7 @@ const AttendanceReport = () => {
             animate={{ opacity: 1, x: 0 }}
             exit={{ opacity: 0, x: calDir * -24 }}
             transition={{ duration: 0.22, ease: 'easeOut' }}
-            className="mt-2 grid grid-cols-7 gap-y-1.5 text-center"
+            className="mt-2 grid flex-1 grid-cols-7 content-between gap-y-2 text-center"
           >
             {cells.map((d, idx) => {
               const k = keyOf(d);
@@ -373,7 +393,7 @@ const AttendanceReport = () => {
                   whileHover={{ scale: 1.08 }}
                   whileTap={{ scale: 0.92 }}
                   onClick={() => { setSelectedDay(k); setTableMonth(k.slice(0, 7)); }}
-                  className={`mx-auto flex aspect-square w-full max-w-9 items-center justify-center rounded-full text-xs font-semibold transition sm:text-sm xl:max-w-11 ${
+                  className={`mx-auto flex h-10 w-10 items-center justify-center rounded-full text-sm font-semibold transition sm:h-11 sm:w-11 ${
                     !inMonth ? 'text-slate-300' : st ? STATUS[st].day : 'text-slate-700 hover:bg-slate-50'
                   } ${selected ? 'ring-2 ring-blue-600 ring-offset-1' : ''}`}
                   title={st ? STATUS[st].label : undefined}
@@ -384,7 +404,7 @@ const AttendanceReport = () => {
             })}
           </motion.div>
           </AnimatePresence>
-          <div className="mt-4 flex flex-wrap gap-x-4 gap-y-1.5 text-xs text-slate-600 sm:text-sm">
+          <div className="mt-5 flex flex-wrap gap-x-5 gap-y-2 text-sm text-slate-600">
             {['present', 'absent', 'holiday'].map((s) => (
               <span key={s} className="inline-flex items-center gap-1.5"><span className={`h-2.5 w-2.5 rounded-full ${STATUS[s].dot}`} />{STATUS[s].label}</span>
             ))}
@@ -392,18 +412,18 @@ const AttendanceReport = () => {
           </div>
         </Card>
 
-        <Card className="flex min-w-0 flex-col">
-          <div className="flex flex-wrap items-center justify-between gap-2">
+        <Card className="flex h-full min-w-0 flex-col">
+          <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
             <h2 className="text-base font-bold text-slate-900">Attendance Records</h2>
             <div className="flex gap-2">
               <div className="relative">
-                <select aria-label="Attendance month" value={tableMonth} onChange={(e) => setTableMonth(e.target.value)} className="appearance-none rounded-lg border border-slate-200 bg-white py-2 pl-3 pr-9 text-sm font-medium text-slate-800 outline-none focus:border-violet-300">
+                <select value={tableMonth} onChange={(e) => setTableMonth(e.target.value)} className="appearance-none rounded-lg border border-slate-200 bg-white py-2 pl-3 pr-9 text-sm font-medium text-slate-800 outline-none focus:border-violet-300">
                   {monthOptions.map((m) => <option key={monthKeyOf(m)} value={monthKeyOf(m)}>{monthLabel(m)}</option>)}
                 </select>
                 <ChevronDown size={15} className="pointer-events-none absolute right-3 top-1/2 -translate-y-1/2 text-slate-500" />
               </div>
               <div className="relative">
-                <select aria-label="Attendance status" value={statusFilter} onChange={(e) => setStatusFilter(e.target.value)} className="appearance-none rounded-lg border border-slate-200 bg-white py-2 pl-3 pr-9 text-sm font-medium text-slate-800 outline-none focus:border-violet-300">
+                <select value={statusFilter} onChange={(e) => setStatusFilter(e.target.value)} className="appearance-none rounded-lg border border-slate-200 bg-white py-2 pl-3 pr-9 text-sm font-medium text-slate-800 outline-none focus:border-violet-300">
                   <option value="all">All Status</option>
                   <option value="present">Present</option>
                   <option value="absent">Absent</option>
@@ -415,7 +435,7 @@ const AttendanceReport = () => {
             </div>
           </div>
           <div className="mt-3 flex-1 overflow-x-auto">
-            <table className="w-full min-w-[280px] text-sm">
+            <table className="w-full min-w-96 text-sm">
               <thead>
                 <tr className="border-b border-slate-100 text-left text-xs font-semibold uppercase tracking-wide text-slate-500">
                   <th className="px-2 py-3">#</th>
@@ -466,15 +486,15 @@ const AttendanceReport = () => {
       </motion.div>
 
       {/* ── Overview / Subject-wise / Leave ── */}
-      <motion.div variants={RISE} className="grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-[minmax(0,5fr)_minmax(0,3.5fr)_minmax(0,3.5fr)]">
-        <Card className="min-w-0 md:col-span-2 xl:col-span-1">
+      <motion.div variants={RISE} className="grid grid-cols-1 gap-4 lg:grid-cols-2 xl:grid-cols-[minmax(0,5fr)_minmax(0,3.5fr)_minmax(0,3.5fr)]">
+        <Card className="lg:col-span-2 xl:col-span-1">
           <h2 className="text-base font-bold text-slate-900">Attendance Overview</h2>
-          <div className="mt-4 flex gap-4 sm:gap-6">
-            <div className="flex min-w-0 flex-1 gap-2 overflow-x-auto">
+          <div className="mt-4 flex gap-6">
+            <div className="flex flex-1 gap-2">
               <div className="flex h-40 flex-col justify-between pb-5 text-right text-[11px] text-slate-400">
                 {[5, 4, 3, 2, 1, 0].map((i) => <span key={i}>{Math.round((overviewTop / 5) * i)}</span>)}
               </div>
-              <div className="flex h-40 min-w-[260px] flex-1 items-end justify-around gap-1.5 border-b border-slate-100">
+              <div className="flex h-40 flex-1 items-end justify-around gap-2 border-b border-slate-100">
                 {overview.map((o) => {
                   const h = (n) => `${(n / overviewTop) * 100}%`;
                   return (
@@ -485,7 +505,7 @@ const AttendanceReport = () => {
                         <motion.div initial={{ height: 0 }} animate={{ height: h(o.absent) }} transition={{ duration: 0.6 }} className="w-full bg-red-500" />
                         <motion.div initial={{ height: 0 }} animate={{ height: h(o.holiday) }} transition={{ duration: 0.6 }} className="w-full bg-slate-200" />
                       </div>
-                      <span className="mt-1.5 text-[10px] text-slate-500 sm:text-xs">{o.label}</span>
+                      <span className="mt-1.5 text-xs text-slate-500">{o.label}</span>
                     </div>
                   );
                 })}
@@ -512,7 +532,7 @@ const AttendanceReport = () => {
             <ul className="mt-4 space-y-3.5">
               {subjects.map((s) => (
                 <li key={s.name} className="flex items-center gap-3 text-sm">
-                  <span className="w-24 shrink-0 truncate text-slate-700 sm:w-28" title={s.name}>{s.name}</span>
+                  <span className="w-28 shrink-0 truncate text-slate-700" title={s.name}>{s.name}</span>
                   <span className="h-2.5 flex-1 overflow-hidden rounded-full bg-slate-100">
                     <motion.span initial={{ width: 0 }} animate={{ width: `${s.pct}%` }} transition={{ duration: 0.7 }} className="block h-full rounded-full bg-emerald-500" />
                   </span>

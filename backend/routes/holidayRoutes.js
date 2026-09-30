@@ -2,7 +2,6 @@ const express = require('express');
 const mongoose = require('mongoose');
 const Holiday = require('../models/Holiday');
 const School = require('../models/School');
-const AcademicYear = require('../models/AcademicYear');
 const adminAuth = require('../middleware/adminAuth');
 const { notifyHolidayChange } = require('../services/schoolCommunication');
 const authTeacher = require('../middleware/authTeacher');
@@ -11,7 +10,7 @@ const authParent = require('../middleware/authParent');
 const { logStudentPortalEvent, logStudentPortalError } = require('../utils/studentPortalLogger');
 
 const router = express.Router();
-const { parentAttendanceCache, holidayCache } = require('../utils/responseCache');
+const { parentAttendanceCache } = require('../utils/responseCache');
 // Any write here clears the parent attendance screen's response cache.
 router.use(parentAttendanceCache.invalidateOnWrite);
 
@@ -236,7 +235,7 @@ router.put('/:id', adminAuth, async (req, res) => {
   }
 });
 
-router.get('/teacher', authTeacher, holidayCache.cache, async (req, res) => {
+router.get('/teacher', authTeacher, async (req, res) => {
   try {
     const schoolId = req.schoolId || null;
     const campusId = req.campusId || null;
@@ -296,17 +295,10 @@ router.get('/parent', authParent, parentAttendanceCache.cache, async (req, res) 
     if (!schoolId || !mongoose.isValidObjectId(schoolId)) {
       return jsonError(res, 400, 'Valid schoolId is required');
     }
-    const [items, school, activeYear] = await Promise.all([
-      loadPublicHolidays({ schoolId, campusId }, req.query),
-      School.findById(schoolId).select('name address logo').lean(),
-      // Parent holiday list is scoped to the school's active session.
-      AcademicYear.findOne({ schoolId, isActive: true }).select('name startDate endDate').lean(),
-    ]);
+    const items = await loadPublicHolidays({ schoolId, campusId }, req.query);
+    const school = await School.findById(schoolId).select('name address logo').lean();
     return res.json({
       holidays: items,
-      activeSession: activeYear
-        ? { name: activeYear.name || '', startDate: activeYear.startDate || null, endDate: activeYear.endDate || null }
-        : null,
       school: {
         name: school?.name || '',
         address: school?.address || '',

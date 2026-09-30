@@ -1,5 +1,5 @@
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { useLocation, useNavigate } from 'react-router-dom';
 import { Megaphone, Paperclip, Pin, RefreshCw, Search } from 'lucide-react';
 import PageHeader from './PageHeader';
 import Loading from './Loading';
@@ -73,6 +73,26 @@ const ParentNotices = () => {
 
   useEffect(() => { load(); }, [load]);
 
+  // Opened from a dashboard notice: expand it, scroll to it and flash it.
+  const location = useLocation();
+  const focusId = location.state?.openNoticeId || '';
+  const [highlightId, setHighlightId] = useState('');
+  useEffect(() => {
+    if (!focusId || loading || !notices.some((n) => String(n._id) === String(focusId))) return undefined;
+    setCategory('all');
+    setQuery('');
+    setOpenFormalId(focusId);
+    setHighlightId(focusId);
+    // Timers are not cleared on cleanup: clearing the router state below
+    // re-runs this effect, which must not cancel the scroll.
+    setTimeout(() => {
+      document.getElementById(`notice-${focusId}`)?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    }, 80);
+    setTimeout(() => setHighlightId(''), 2600);
+    navigate(location.pathname, { replace: true, state: null }); // don't re-open on refresh
+    return undefined;
+  }, [focusId, loading, notices, navigate, location.pathname]);
+
   const visible = useMemo(() => {
     const q = query.trim().toLowerCase();
     return notices
@@ -145,7 +165,13 @@ const ParentNotices = () => {
             const cat = categoryOf(n);
             const scope = [n?.className, n?.sectionName].filter(Boolean).join(' · ');
             return (
-              <article key={n._id} className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm sm:p-5">
+              <article
+                key={n._id}
+                id={`notice-${n._id}`}
+                className={`scroll-mt-24 rounded-2xl border bg-white p-4 shadow-sm transition-all duration-500 sm:p-5 ${
+                  highlightId === String(n._id) ? 'border-violet-400 ring-4 ring-violet-100' : 'border-slate-200'
+                }`}
+              >
                 <div className="flex flex-wrap items-center gap-2">
                   <span className={`rounded-full px-2 py-0.5 text-[10px] font-bold uppercase tracking-wide ${CATEGORY_TONE[cat]}`}>{cat}</span>
                   {n?.isPinned && <span className="inline-flex items-center gap-1 text-[10px] font-semibold text-amber-600"><Pin size={11} /> Pinned</span>}
