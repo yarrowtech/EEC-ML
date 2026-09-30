@@ -11,7 +11,6 @@ const { logger } = require('../utils/logger');
 const { logStudentPortalEvent, logStudentPortalError } = require('../utils/studentPortalLogger');
 const { getJson, setJson } = require('../utils/redisClient');
 const { getStudentSubjectsCacheKey } = require('../utils/studentSubjectsCache');
-const { uploadBufferToCloudinary } = require('../utils/cloudinaryUpload');
 const { normalizeClassName, normalizeText } = require('../utils/teacherAllocationScope');
 
 // Setup multer for file uploads (in memory)
@@ -23,7 +22,6 @@ const profilePicUpload = (req, res, next) => upload.single('profilePic')(req, re
   const tooBig = err.code === 'LIMIT_FILE_SIZE';
   return res.status(tooBig ? 413 : 400).json({ error: tooBig ? 'Image must be smaller than 5MB' : (err.message || 'Invalid upload') });
 });
-const ALLOWED_PROFILE_PIC_MIME_TYPES = new Set(['image/jpeg', 'image/png', 'image/webp', 'image/gif']);
 
 // POST request to update student profile
 router.post('/profile/update', auth, profilePicUpload, async (req, res) => {
@@ -40,27 +38,10 @@ router.post('/profile/update', auth, profilePicUpload, async (req, res) => {
     const schoolId = req.schoolId || req.user?.schoolId || null;
     if (!schoolId) return res.status(400).json({ error: 'schoolId is required' });
 
-    // Handle profilePic if included. Uploaded to Cloudinary rather than
-    // stored inline — a base64 data URI here (up to ~4MB of text per photo)
-    // was bloating this student's own profile/dashboard responses to 1MB+,
-    // and getting pulled into every chat thread they're a participant in
-    // (chatRoutes.js selects profilePic to enrich other users' thread lists),
-    // slowing those down for everyone who chats with them too.
+    // Profile photos are managed by the school; students can't change them.
+    delete updates.profilePic;
     if (req.file) {
-      if (!ALLOWED_PROFILE_PIC_MIME_TYPES.has(req.file.mimetype)) {
-        return res.status(400).json({ error: 'Only JPEG, PNG, WEBP, or GIF images are allowed' });
-      }
-      const uploadResult = await uploadBufferToCloudinary(req.file.buffer, {
-        folder: 'student_profile_pics',
-        resource_type: 'image',
-        use_filename: true,
-        unique_filename: true,
-        overwrite: false,
-      });
-      if (!uploadResult?.secure_url) {
-        return res.status(502).json({ error: 'Profile picture upload failed. Please try again.' });
-      }
-      updates.profilePic = uploadResult.secure_url;
+      return res.status(403).json({ error: 'Profile photo can only be changed by the school.' });
     }
 
     // Do not overwrite DOB with empty value from form submits.

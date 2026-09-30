@@ -79,60 +79,207 @@ const PortalRouteFallback = () => (
 // then the child's learning, exams, money, school info, communication and
 // the child's own records. Everything is view-only except requests/messages.
 const NAV_GROUPS = [
+  // ─────────────────────────────────────────────
+  // 1. OVERVIEW
+  // ─────────────────────────────────────────────
   {
+    heading: 'Overview',
     items: [
-      { icon: Home, label: 'Dashboard', description: 'Overview & insights', path: '/parents' },
+      {
+        icon: Home,
+        label: 'Dashboard',
+        description: 'Overview & insights',
+        path: '/parents',
+      },
     ],
   },
+
+  // ─────────────────────────────────────────────
+  // 2. ACADEMICS
+  // ─────────────────────────────────────────────
   {
-    heading: 'Learning',
+    heading: 'Academics',
     items: [
-      { icon: Calendar, label: 'Attendance', description: 'Daily record & calendar', path: '/parents/attendance' },
-      { icon: NotebookPen, label: 'Homework', description: 'Assignments & due dates', path: '/parents/homework' },
-      { icon: Clock, label: 'Class Routine', description: 'Weekly timetable', path: '/parents/routine' },
-      { icon: BarChart2, label: 'Growth Analytics', description: 'Academic & wellbeing', path: '/parents/analytics' },
+      {
+        icon: Calendar,
+        label: 'Attendance',
+        description: 'Daily record & attendance',
+        path: '/parents/attendance',
+      },
+      {
+        icon: NotebookPen,
+        label: 'Homework',
+        description: 'Assignments & due dates',
+        path: '/parents/homework',
+      },
+      {
+        icon: Clock,
+        label: 'Class Routine',
+        description: 'Weekly timetable',
+        path: '/parents/routine',
+      },
+      {
+        icon: BarChart2,
+        label: 'Growth Analytics',
+        description: 'Academic progress & insights',
+        path: '/parents/analytics',
+      },
     ],
   },
+
+  // ─────────────────────────────────────────────
+  // 3. EXAMS & RESULTS
+  // ─────────────────────────────────────────────
   {
     heading: 'Exams & Results',
     items: [
-      { icon: CalendarClock, label: 'Exam Schedule', description: 'Exam routine & downloads', path: '/parents/exam-routine' },
-      { icon: BookOpen, label: 'Results & Report Card', description: 'Marks, grades & PDF', path: '/parents/academic' },
-      { icon: FileBadge, label: 'Admit Cards', description: 'Download exam admit cards', path: '/parents/admit-cards' },
+      {
+        icon: CalendarClock,
+        label: 'Exam Schedule',
+        description: 'Exam dates & routine',
+        path: '/parents/exam-routine',
+      },
+      {
+        icon: FileBadge,
+        label: 'Admit Cards',
+        description: 'Download exam admit cards',
+        path: '/parents/admit-cards',
+      },
+      {
+        icon: BookOpen,
+        label: 'Results & Report Card',
+        description: 'Marks, grades & report cards',
+        path: '/parents/academic',
+      },
+      {
+        icon: Award,
+        label: 'Achievements',
+        description: 'Awards, badges & milestones',
+        path: '/parents/achievements',
+      },
     ],
   },
+
+  // ─────────────────────────────────────────────
+  // 4. FEES & PAYMENTS
+  // ─────────────────────────────────────────────
   {
-    heading: 'Fees',
+    heading: 'Fees & Payments',
     items: [
-      { icon: CreditCard, label: 'Fees & Payments', description: 'Dues, receipts & pay online', path: '/parents/fees' },
+      {
+        icon: CreditCard,
+        label: 'Fees & Payments',
+        description: 'Dues, receipts & online payment',
+        path: '/parents/fees',
+      },
     ],
   },
+
+  // ─────────────────────────────────────────────
+  // 5. SCHOOL COMMUNICATION
+  // ─────────────────────────────────────────────
   {
-    heading: 'School',
+    heading: 'School Communication',
     items: [
-      { icon: Megaphone, label: 'Notices', description: 'Announcements & circulars', path: '/parents/notices' },
-      { icon: CalendarDays, label: 'School Calendar', description: 'Holidays, exams & PTMs', path: '/parents/calendar' },
-      { icon: Sun, label: 'Holidays', description: 'School holiday list', path: '/parents/holidays' },
+      {
+        icon: Megaphone,
+        label: 'Notices',
+        description: 'Announcements & circulars',
+        path: '/parents/notices',
+      },
+      {
+        icon: CalendarDays,
+        label: 'School Calendar',
+        description: 'School events & important dates',
+        path: '/parents/calendar',
+      },
+      {
+        icon: Sun,
+        label: 'Holidays',
+        description: 'School holiday list',
+        path: '/parents/holidays',
+      },
+      {
+        icon: MessageCircle,
+        label: 'Messages',
+        description: 'Talk to teachers & school',
+        path: '/parents/chat',
+      },
     ],
   },
+
+  // ─────────────────────────────────────────────
+  // 6. PARENT–SCHOOL CONNECT
+  // ─────────────────────────────────────────────
   {
-    heading: 'Communication',
+    heading: 'Parent–School Connect',
     items: [
-      { icon: MessageCircle, label: 'Messages', description: 'Talk to teachers & office', path: '/parents/chat' },
-      { icon: Video, label: 'Meetings / PTM', description: 'Parent-teacher meetings', path: '/parents/ptm' },
-      { icon: AlertOctagon, label: 'Support & Complaints', description: 'Raise a request, track replies', path: '/parents/complaints' },
-      { icon: FileText, label: 'Leave / Excuse Letters', description: 'Inform the school of absence', path: '/parents/excuse-letters' },
-      { icon: FileEdit, label: 'Observations', description: 'Share home feedback', path: '/parents/parent-observation' },
-      { icon: MessageSquareHeart, label: 'Teacher Feedback', description: "Your child's feedback status", path: '/parents/teacher-feedback' },
+      {
+        icon: Video,
+        label: 'Meetings / PTM',
+        description: 'Parent-teacher meetings',
+        path: '/parents/ptm',
+      },
+      {
+        icon: MessageSquareHeart,
+        label: 'Teacher Feedback',
+        description: 'Teacher feedback & responses',
+        path: '/parents/teacher-feedback',
+      },
+      {
+        icon: FileEdit,
+        label: 'Observations',
+        description: 'Share observations from home',
+        path: '/parents/parent-observation',
+      },
     ],
   },
+
+  // ─────────────────────────────────────────────
+  // 7. REQUESTS & SUPPORT
+  // ─────────────────────────────────────────────
   {
-    heading: 'My Child',
+    heading: 'Requests & Support',
     items: [
-      { icon: UserCircle, label: 'Child Profile', description: 'School record & contacts', path: '/parents/profile' },
-      { icon: FolderOpen, label: 'Documents', description: 'Report cards, receipts, circulars', path: '/parents/documents' },
-      { icon: Award, label: 'Achievements', description: 'Celebrate wins', path: '/parents/achievements' },
-      { icon: Activity, label: 'Health Record', description: 'Wellness & medical', path: '/parents/health' },
+      {
+        icon: FileText,
+        label: 'Leave / Excuse Letters',
+        description: 'Submit absence requests',
+        path: '/parents/excuse-letters',
+      },
+      {
+        icon: AlertOctagon,
+        label: 'Support & Complaints',
+        description: 'Raise requests & track replies',
+        path: '/parents/complaints',
+      },
+    ],
+  },
+
+  // ─────────────────────────────────────────────
+  // 8. CHILD INFORMATION
+  // ─────────────────────────────────────────────
+  {
+    heading: 'Child Information',
+    items: [
+      {
+        icon: UserCircle,
+        label: 'Child Profile',
+        description: 'School record & contacts',
+        path: '/parents/profile',
+      },
+      {
+        icon: FolderOpen,
+        label: 'Documents',
+        description: 'Reports, receipts & documents',
+        path: '/parents/documents',
+      },
+      {
+        icon: Activity,
+        label: 'Health Record',
+        description: 'Health & wellness information',
+        path: '/parents/health',
+      },
     ],
   },
 ];

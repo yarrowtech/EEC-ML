@@ -24,7 +24,6 @@ import toast from 'react-hot-toast';
 
 import { parentApiJson } from './parentApi';
 import { generateExamSchedulePdf } from '../utils/examRoutinePdf';
-import { downloadAttachment } from '../utils/noticeDisplay';
 import ChildSwitcher, { useSharedChildSelection } from './ChildSwitcher';
 import Loading from './Loading';
 import { EmptyState, ErrorState } from './StateBlock';
@@ -663,7 +662,7 @@ const ExamCard = ({
 
         {/* Right Controls */}
         <div className="flex shrink-0 items-center gap-2">
-          {state === 'published' && (
+          {(state === 'published' || state === 'completed') && (
             <button
               type="button"
               onClick={(event) => {
@@ -671,7 +670,7 @@ const ExamCard = ({
                 onDownload();
               }}
               disabled={isExporting}
-              className="hidden items-center gap-1.5 rounded-lg bg-white px-3 py-2 text-xs font-semibold text-slate-600 shadow-sm ring-1 ring-slate-200 transition hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-50 sm:inline-flex"
+              className="inline-flex items-center gap-1.5 rounded-lg bg-white px-3 py-2 text-xs font-semibold text-slate-600 shadow-sm ring-1 ring-slate-200 transition hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-50"
             >
               <Download className="h-3.5 w-3.5" />
               Download
@@ -786,13 +785,33 @@ const ExamCard = ({
 /* Main Component                                                             */
 /* -------------------------------------------------------------------------- */
 
+// Client cache (memory + sessionStorage, per login) → instant repeat visits.
+const SCHEDULE_CACHE_MAX_AGE = 10 * 60 * 1000;
+const scheduleCacheKey = () => {
+  let t = '';
+  try { t = localStorage.getItem('token') || ''; } catch { /* ignore */ }
+  return `parent:exam-schedule:v1:${t.slice(-16)}`;
+};
+let scheduleMemCache = null;
+const readScheduleCache = () => {
+  const key = scheduleCacheKey();
+  let entry = scheduleMemCache?.key === key ? scheduleMemCache : null;
+  if (!entry) { try { entry = JSON.parse(sessionStorage.getItem(key) || 'null'); } catch { entry = null; } }
+  return entry && Date.now() - entry.at < SCHEDULE_CACHE_MAX_AGE ? entry.data : null;
+};
+const writeScheduleCache = (data) => {
+  scheduleMemCache = { key: scheduleCacheKey(), at: Date.now(), data };
+  try { sessionStorage.setItem(scheduleMemCache.key, JSON.stringify(scheduleMemCache)); } catch { /* quota */ }
+};
+
 const ExamRoutine = () => {
   const navigate = useNavigate();
 
-  const [children, setChildren] = useState([]);
-  const [pdfHeader, setPdfHeader] = useState({});
+  const cachedSchedule = readScheduleCache();
+  const [children, setChildren] = useState(() => cachedSchedule?.children || []);
+  const [pdfHeader, setPdfHeader] = useState(() => cachedSchedule?.pdfHeader || {});
 
-  const [loading, setLoading] = useState(true);
+  const [loading, setLoading] = useState(!cachedSchedule);
   const [error, setError] = useState('');
 
   const [isExporting, setIsExporting] =
@@ -836,7 +855,8 @@ const ExamRoutine = () => {
   /* ---------------------------------------------------------------------- */
 
   const loadSchedules = async () => {
-    setLoading(true);
+    const cached = readScheduleCache();
+    if (!cached) setLoading(true);
     setError('');
 
     try {
@@ -847,13 +867,10 @@ const ExamRoutine = () => {
           navigate
         );
 
-      setChildren(
-        Array.isArray(data?.children)
-          ? data.children
-          : []
-      );
+      const nextChildren = Array.isArray(data?.children) ? data.children : [];
+      setChildren(nextChildren);
 
-      setPdfHeader({
+      const nextHeader = {
         schoolName: String(
           data?.school?.name || ''
         ).trim(),
@@ -869,9 +886,12 @@ const ExamRoutine = () => {
         principalName: String(
           data?.principalName || ''
         ).trim(),
-      });
+      };
+      setPdfHeader(nextHeader);
+      writeScheduleCache({ children: nextChildren, pdfHeader: nextHeader });
     } catch (err) {
-      setError(
+      // Keep cached routines on screen if the background refresh fails.
+      if (!cached) setError(
         err?.message ||
           'Unable to load exam routine'
       );
@@ -914,23 +934,15 @@ const ExamRoutine = () => {
       return [];
     }
 
-    return [...selectedChild.groups].sort(
-      (a, b) => {
-        const dateA = new Date(
-          a?.startDate ||
-            a?.subjects?.[0]?.date ||
-            0
-        ).getTime();
-
-        const dateB = new Date(
-          b?.startDate ||
-            b?.subjects?.[0]?.date ||
-            0
-        ).getTime();
-
-        return dateA - dateB;
-      }
-    );
+    // Latest exam first. An exam's date = its start date, else its earliest
+    // subject date; groups without any date go last.
+    const examTime = (g) => {
+      const times = [g?.startDate, ...(g?.subjects || []).map((s) => s?.date)]
+        .map((d) => new Date(d || '').getTime())
+        .filter((t) => Number.isFinite(t));
+      return times.length ? Math.min(...times) : -Infinity;
+    };
+    return [...selectedChild.groups].sort((a, b) => examTime(b) - examTime(a));
   }, [selectedChild]);
 
   /* ---------------------------------------------------------------------- */
@@ -979,20 +991,12 @@ const ExamRoutine = () => {
     setIsExporting(true);
 
     try {
-      if (group?.routinePdf?.url) {
-        await downloadAttachment(
-          group.routinePdf
-        );
-      } else {
-        await generateExamSchedulePdf(
-          group,
-          pdfHeader
-        );
-      }
+      // Same PDF the student portal downloads (generated from the live
+      // schedule with the school letterhead), not the admin's notice copy.
+      await generateExamSchedulePdf(group, pdfHeader);
+      toast.success('Exam routine downloaded');
     } catch (err) {
-      toast.error(
-        'Failed to generate routine PDF'
-      );
+      toast.error(err?.message || 'Failed to download exam routine');
     } finally {
       setIsExporting(false);
     }
@@ -1128,7 +1132,12 @@ const ExamRoutine = () => {
 
       {!error &&
         groups.length > 0 && (
-          <div className="space-y-4">
+          <Motion.div
+            className="space-y-4"
+            initial="hidden"
+            animate="show"
+            variants={{ hidden: {}, show: { transition: { staggerChildren: 0.08 } } }}
+          >
 
             {groups.map((group) => {
               const groupId =
@@ -1138,8 +1147,15 @@ const ExamRoutine = () => {
                 openGroupId === groupId;
 
               return (
-                <ExamCard
+                <Motion.div
                   key={groupId}
+                  layout
+                  variants={{
+                    hidden: { opacity: 0, y: 16 },
+                    show: { opacity: 1, y: 0, transition: { duration: 0.4, ease: [0.22, 1, 0.36, 1] } },
+                  }}
+                >
+                <ExamCard
                   group={group}
                   isOpen={isOpen}
                   isExporting={isExporting}
@@ -1154,9 +1170,10 @@ const ExamRoutine = () => {
                     )
                   }
                 />
+                </Motion.div>
               );
             })}
-          </div>
+          </Motion.div>
         )}
 
       {/* ================================================================== */}
