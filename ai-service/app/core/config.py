@@ -43,8 +43,6 @@ class Settings(BaseSettings):
     ollama_num_predict: int = 1500
     ollama_num_predict_extended: int = 3000  # for mind_map, notes, flashcards, summarize
     download_timeout: int = 30
-    download_max_bytes: int = 25 * 1024 * 1024
-    download_allowed_hosts: str = "res.cloudinary.com"
 
     ollama_assess_model: str = "qwen3:8b"  # dedicated model for reading/writing evaluation
     whisper_model_size: str = "large-v3-turbo"
@@ -67,7 +65,7 @@ class Settings(BaseSettings):
     openrouter_num_ctx: int = 32768
 
     # Shared secret the Node backend must send as X-Internal-Key on every request.
-    # Required for all protected endpoints, including local development.
+    # Empty by default so local dev without a .env still works; set in production.
     ai_service_internal_key: str = ""
 
 

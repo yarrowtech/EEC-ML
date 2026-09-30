@@ -1302,9 +1302,7 @@ const DrawerModal = ({
       case 'tryout':
         return (
           <div className="space-y-4">
-            <p className={`rounded-lg px-3 py-2 text-sm font-medium ${accent.banner}`}>
-              Create interactive questions students answer inside the Smart Learning portal.
-            </p>
+            
             <InlineTryoutBuilder
               tryouts={chapter.tryouts || []}
               onSaveTryouts={handleSaveTryouts}

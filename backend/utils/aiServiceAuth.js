@@ -8,15 +8,10 @@ const AI_SERVICE_URL = process.env.AI_SERVICE_URL || 'http://localhost:8000';
 const INTERNAL_KEY = process.env.AI_SERVICE_INTERNAL_KEY || '';
 
 axios.interceptors.request.use((config) => {
-  const target = config.url || '';
-  let matchesService = false;
-  try {
-    matchesService = new URL(target, config.baseURL).origin === new URL(AI_SERVICE_URL).origin;
-  } catch (_) { /* Relative or invalid URLs do not receive the secret. */ }
-  if (INTERNAL_KEY && matchesService) {
+  const target = config.baseURL ? `${config.baseURL}${config.url || ''}` : config.url || '';
+  if (INTERNAL_KEY && target.startsWith(AI_SERVICE_URL)) {
     config.headers = config.headers || {};
     config.headers['X-Internal-Key'] = INTERNAL_KEY;
-    config.maxRedirects = 0; // Never forward the secret to redirect destinations.
   }
   return config;
 });
