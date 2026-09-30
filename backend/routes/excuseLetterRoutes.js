@@ -14,6 +14,9 @@ const School = require('../models/School');
 const { logStudentPortalEvent, logStudentPortalError } = require('../utils/studentPortalLogger');
 
 const router = express.Router();
+const { parentAttendanceCache } = require('../utils/responseCache');
+// Any write here clears the parent attendance screen's response cache.
+router.use(parentAttendanceCache.invalidateOnWrite);
 
 const resolveClassCandidates = (raw) => {
   const value = String(raw || '').trim();
@@ -174,7 +177,7 @@ router.post('/student', authStudent, async (req, res) => {
 });
 
 // Parent: list letters submitted by the authenticated parent's linked children.
-router.get('/parent', authParent, async (req, res) => {
+router.get('/parent', authParent, parentAttendanceCache.cache, async (req, res) => {
   try {
     const parent = await ParentUser.findById(req.user.id)
       .select('schoolId campusId childrenIds children')

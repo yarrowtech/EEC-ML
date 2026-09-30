@@ -10,6 +10,9 @@ const authParent = require('../middleware/authParent');
 const { logStudentPortalEvent, logStudentPortalError } = require('../utils/studentPortalLogger');
 
 const router = express.Router();
+const { parentAttendanceCache } = require('../utils/responseCache');
+// Any write here clears the parent attendance screen's response cache.
+router.use(parentAttendanceCache.invalidateOnWrite);
 
 const normalizeHolidayDate = (value) => {
   const parsed = new Date(value);
@@ -285,7 +288,7 @@ router.get('/student', authStudent, async (req, res) => {
   }
 });
 
-router.get('/parent', authParent, async (req, res) => {
+router.get('/parent', authParent, parentAttendanceCache.cache, async (req, res) => {
   try {
     const schoolId = req.schoolId || null;
     const campusId = req.campusId || null;

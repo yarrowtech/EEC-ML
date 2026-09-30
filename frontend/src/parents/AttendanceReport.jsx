@@ -1,798 +1,581 @@
-import React, { useState, useMemo, useCallback, useEffect } from 'react';
-import { useNavigate } from 'react-router-dom';
-import { motion, AnimatePresence } from 'framer-motion';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
+import { Link, useNavigate } from 'react-router-dom';
+import { AnimatePresence, motion } from 'framer-motion';
 import {
-  Calendar as CalendarIcon,
-  CheckCircle2,
-  XCircle,
-  RefreshCw,
+  ArrowDown,
+  ArrowUp,
+  CalendarDays,
+  Check,
+  ChevronDown,
   ChevronLeft,
   ChevronRight,
-  ChevronDown,
-  List,
-  BarChart2,
-  Flame,
-  AlertCircle,
-  BookOpen,
-  Eye,
-  UserCircle2,
+  Clock,
+  FileText,
+  HeartPulse,
+  PartyPopper,
+  Users,
+  X,
 } from 'lucide-react';
 import { parentApiJson } from './parentApi';
-import ChildSwitcher, { useSharedChildSelection } from './ChildSwitcher';
-import Loading from './Loading';
-import { ErrorState } from './StateBlock';
+import useParentChildren from './useParentChildren';
 
-// Same design language as the student portal's own Attendance page
-// (components/AttendanceView.jsx) — Overview / Calendar / Daily / Weekly
-// tabs, circular progress ring, streak badge — adapted here to read a
-// parent-selected child's real attendance instead of sample data.
+/* ── helpers ─────────────────────────────────────────────────────────────── */
+const pad = (n) => String(n).padStart(2, '0');
+const keyOf = (d) => `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
+const monthKeyOf = (d) => `${d.getFullYear()}-${pad(d.getMonth() + 1)}`;
+const parseKey = (k) => { const [y, m, d] = String(k).split('-').map(Number); return new Date(y, (m || 1) - 1, d || 1); };
+const validDate = (v) => v && !Number.isNaN(new Date(v).getTime());
+const fmtDay = (d) => d.toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' });
+const fmtShort = (v) => (validDate(v) ? new Date(v).toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' }) : '');
+const monthLabel = (d) => d.toLocaleDateString('en-GB', { month: 'long', year: 'numeric' });
+const WEEK = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
+const PAGE_SIZE = 10;
 
-const MONTH_NAMES = [
-  'January', 'February', 'March', 'April', 'May', 'June',
-  'July', 'August', 'September', 'October', 'November', 'December',
-];
-const DAY_NAMES = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
+const STATUS = {
+  present: { label: 'Present', pill: 'bg-green-50 text-green-700', dot: 'bg-green-500', day: 'bg-green-50 text-green-700' },
+  absent: { label: 'Absent', pill: 'bg-red-50 text-red-600', dot: 'bg-red-500', day: 'bg-red-50 text-red-600' },
+  late: { label: 'Late', pill: 'bg-amber-50 text-amber-600', dot: 'bg-amber-400', day: 'bg-amber-50 text-amber-600' },
+  holiday: { label: 'Holiday', pill: 'bg-slate-100 text-slate-600', dot: 'bg-slate-400', day: 'bg-slate-100 text-slate-500' },
+};
 
-function toLocalDateKey(date) {
-  const d = date instanceof Date ? date : new Date(date);
-  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
-}
+// Several subject entries can exist for one day; the day counts as present if
+// the child attended at all, late if marked late, otherwise absent.
+const dayStatusOf = (entries) => {
+  const s = entries.map((e) => String(e.status || '').toLowerCase());
+  // if (s.includes('late')) return 'late';
+  if (s.includes('present')) return 'present';
+  if (s.includes('absent')) return 'absent';
+  return s[0] || 'present';
+};
 
-function fmtDate(dateStr, opts) {
-  return new Date(`${dateStr}T00:00:00`).toLocaleDateString(
-    'en-US',
-    opts || { weekday: 'short', month: 'short', day: 'numeric' },
-  );
-}
-
-function fmtDateLong(dateStr) {
-  return new Date(`${dateStr}T00:00:00`).toLocaleDateString('en-US', {
-    weekday: 'long', year: 'numeric', month: 'short', day: 'numeric',
-  });
-}
-
-function normalizeStatus(value) {
-  return String(value || '').toLowerCase() === 'absent' ? 'absent' : 'present';
-}
-
-function processAttendance(rawRecords) {
-  const records = rawRecords.map((r) => ({
-    id: r._id || `${r.date}-${r.subject}`,
-    date: r.date,
-    subject: r.subject || 'General',
-    status: normalizeStatus(r.status),
-  }));
-
-  const total = records.length;
-  const present = records.filter((r) => r.status === 'present').length;
-  const absent = total - present;
-  const stats = {
-    totalClasses: total,
-    attended: present,
-    absent,
-    percentage: total ? Math.round((present / total) * 100) : 0,
-  };
-
-  const byDate = {};
-  records.forEach((r) => {
-    if (!byDate[r.date]) byDate[r.date] = [];
-    byDate[r.date].push(r);
-  });
-
-  const subMap = {};
-  records.forEach((r) => {
-    if (!subMap[r.subject]) subMap[r.subject] = { total: 0, present: 0 };
-    subMap[r.subject].total += 1;
-    if (r.status === 'present') subMap[r.subject].present += 1;
-  });
-  const subjectStats = Object.entries(subMap)
-    .map(([subject, s]) => ({ subject, ...s, pct: s.total ? Math.round((s.present / s.total) * 100) : 0 }))
-    .sort((a, b) => a.pct - b.pct);
-
-  const weeks = {};
-  records.forEach((r) => {
-    const d = new Date(`${r.date}T00:00:00`);
-    const weekStart = new Date(d);
-    weekStart.setDate(weekStart.getDate() - d.getDay());
-    const weekKey = toLocalDateKey(weekStart);
-    if (!weeks[weekKey]) weeks[weekKey] = { start: weekStart, records: [], present: 0, absent: 0 };
-    weeks[weekKey].records.push(r);
-    if (r.status === 'present') weeks[weekKey].present += 1;
-    else weeks[weekKey].absent += 1;
-  });
-  const weeklyData = Object.entries(weeks)
-    .map(([key, w]) => {
-      const end = new Date(w.start);
-      end.setDate(end.getDate() + 6);
-      return {
-        key, start: w.start, end,
-        total: w.records.length, present: w.present, absent: w.absent,
-        pct: w.records.length ? Math.round((w.present / w.records.length) * 100) : 0,
-        records: w.records,
-      };
-    })
-    .sort((a, b) => b.key.localeCompare(a.key));
-
-  return { records, stats, byDate, subjectStats, weeklyData };
-}
-
-function computeStreak(records, byDate) {
-  const uniqueDates = [...new Set(records.map((r) => r.date))].sort().reverse();
-  let streak = 0;
-  for (const d of uniqueDates) {
-    const dayRecords = byDate[d] || [];
-    const allPresent = dayRecords.length > 0 && dayRecords.every((r) => r.status === 'present');
-    if (allPresent) streak += 1;
-    else break;
-  }
-  return streak;
-}
-
-function StatCard({ icon: Icon, iconBg, iconColor, label, value, sub }) {
+const Delta = ({ value }) => {
+  if (value === null || value === undefined || Number.isNaN(value) || value === 0) return null;
+  const up = value > 0;
   return (
-    <div className="rounded-2xl bg-white p-5 border border-slate-200/80 shadow-[0_2px_8px_-2px_rgba(0,0,0,0.04)] flex items-start gap-4">
-      <div className={`w-11 h-11 rounded-xl flex items-center justify-center shrink-0 border ${iconBg}`}>
-        <Icon className={`w-5 h-5 ${iconColor}`} strokeWidth={1.8} />
-      </div>
-      <div>
-        <p className="text-xs font-semibold tracking-wide text-slate-500 uppercase">{label}</p>
-        <p className="text-2xl font-bold text-slate-800 mt-1">{value}</p>
-        {sub && <p className="text-xs text-slate-400 mt-0.5">{sub}</p>}
-      </div>
-    </div>
-  );
-}
-
-function SubjectPill({ subject, status }) {
-  const isPresent = status === 'present';
-  return (
-    <span className={`text-[10px] px-2 py-0.5 rounded-full font-medium border ${
-      isPresent ? 'bg-emerald-50 text-emerald-700 border-emerald-200' : 'bg-rose-50 text-rose-700 border-rose-200'
-    }`}>
-      {isPresent ? '✓' : '✕'} {subject}
+    <span className={`inline-flex items-center gap-0.5 rounded-full px-2 py-0.5 text-xs font-bold ${up ? 'bg-emerald-50 text-emerald-600' : 'bg-rose-50 text-rose-600'}`}>
+      {up ? <ArrowUp size={12} strokeWidth={3} /> : <ArrowDown size={12} strokeWidth={3} />}{Math.abs(value)}%
     </span>
   );
-}
+};
 
-function Header({
-  child, childOptions, childKey, onChildChange,
-  streak, lastSynced, onRefresh, isRefreshing, overallPct,
-}) {
-  const onTrack = overallPct >= 75;
-  return (
-    <header
-      className="relative overflow-hidden rounded-3xl bg-white p-6 sm:p-8 shadow-[0_2px_12px_-4px_rgba(0,0,0,0.04)] border"
-      style={{
-        background: 'linear-gradient(135deg, rgb(245,243,255) 0%, rgb(250,245,255) 50%, rgb(253,244,255) 100%)',
-        borderColor: 'rgba(196,181,253,0.45)',
-      }}
-    >
-      <div className="relative z-10 flex flex-col md:flex-row md:items-center justify-between gap-6">
-        <div className="flex items-start gap-4">
-          {child?.profilePic ? (
-            <img src={child.profilePic} alt={child?.name || 'Student'} className="h-12 w-12 shrink-0 rounded-2xl border border-indigo-200/50 object-cover shadow-sm" />
-          ) : (
-            <div className="flex items-center justify-center w-12 h-12 rounded-2xl bg-indigo-500/10 border border-indigo-200/50 shadow-sm text-indigo-600 shrink-0">
-              <UserCircle2 className="w-6 h-6" strokeWidth={1.8} />
-            </div>
-          )}
-          <div>
-            <div className="flex items-center gap-3 flex-wrap">
-              <h1 className="text-2xl sm:text-3xl font-bold tracking-tight text-slate-800">
-                {child?.name ? `${child.name}'s Attendance` : 'Attendance'}
-              </h1>
-              <AnimatePresence>
-                {streak > 0 && (
-                  <motion.span
-                    initial={{ opacity: 0, scale: 0.8 }}
-                    animate={{ opacity: 1, scale: 1 }}
-                    exit={{ opacity: 0, scale: 0.8 }}
-                    className="inline-flex items-center gap-1 rounded-full border border-orange-200 bg-orange-50 px-2.5 py-0.5 text-xs font-semibold text-orange-700"
-                  >
-                    <Flame className="w-3.5 h-3.5" /> {streak} day streak
-                  </motion.span>
-                )}
-              </AnimatePresence>
-            </div>
-            <p className="mt-1 text-sm text-slate-500">
-              {child?.grade ? `Class ${child.grade}${child.section ? ` · Section ${child.section}` : ''} — ` : ''}
-              Track overall, daily, and weekly attendance in one place.
-            </p>
-            {childOptions.length > 1 && (
-              <div className="mt-3"><ChildSwitcher options={childOptions} value={childKey} onChange={onChildChange} /></div>
-            )}
-            {lastSynced && (
-              <p className="mt-3 text-xs text-slate-400 flex items-center gap-1.5 font-medium">
-                <span className="w-1.5 h-1.5 rounded-full bg-slate-400" />
-                Last updated {lastSynced.toLocaleString(undefined, { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' })}
-              </p>
-            )}
-          </div>
-        </div>
+const Card = ({ className = '', children }) => (
+  <section className={`rounded-2xl border border-slate-100 bg-white p-4 shadow-[0_2px_12px_rgba(15,23,42,0.04)] sm:p-5 ${className}`}>{children}</section>
+);
 
-        <div className="flex flex-row md:flex-col items-start md:items-end justify-between gap-3 self-stretch md:self-auto border-t md:border-t-0 pt-4 md:pt-0 border-slate-200/80">
-          <span className={`inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-medium border ${
-            onTrack ? 'bg-emerald-50 text-emerald-600 border-emerald-200/60' : 'bg-amber-50 text-amber-600 border-amber-200/60'
-          }`}>
-            <span className={`w-1.5 h-1.5 rounded-full animate-pulse ${onTrack ? 'bg-emerald-500' : 'bg-amber-500'}`} />
-            {onTrack ? 'On Track' : 'Needs Attention'}
-          </span>
-          <button
-            onClick={onRefresh}
-            disabled={isRefreshing}
-            className="inline-flex items-center gap-2 px-3.5 py-1.5 rounded-xl bg-slate-50 hover:bg-slate-100 text-xs font-medium text-slate-700 transition-colors border border-slate-200/80 shadow-sm active:scale-95 duration-150 disabled:opacity-60"
-          >
-            <motion.span
-              animate={isRefreshing ? { rotate: 360 } : { rotate: 0 }}
-              transition={isRefreshing ? { repeat: Infinity, duration: 0.8, ease: 'linear' } : {}}
-              className="flex"
-            >
-              <RefreshCw className="w-3.5 h-3.5 text-slate-500" />
-            </motion.span>
-            {isRefreshing ? 'Refreshing...' : 'Refresh data'}
-          </button>
-        </div>
-      </div>
-    </header>
-  );
-}
-
-const TABS = [
-  { id: 'overview', label: 'Overview', icon: Eye },
-  { id: 'calendar', label: 'Calendar', icon: CalendarIcon },
-  { id: 'daily', label: 'Daily', icon: List },
-  { id: 'weekly', label: 'Weekly', icon: BarChart2 },
-];
-
-function TabNav({ activeTab, setActiveTab }) {
-  return (
-    <nav className="bg-white p-1.5 rounded-full border border-slate-200/80 shadow-[0_2px_8px_-2px_rgba(0,0,0,0.03)] flex flex-wrap items-center gap-1.5 justify-center">
-      {TABS.map(({ id, label, icon: Icon }) => {
-        const active = activeTab === id;
-        return (
-          <button
-            key={id}
-            onClick={() => setActiveTab(id)}
-            className={`relative inline-flex items-center gap-2 px-4 py-2 rounded-xl text-xs font-semibold transition-colors ${active ? 'text-white' : 'text-slate-600 hover:bg-slate-100'}`}
-          >
-            {active && (
-              <motion.span
-                layoutId="parent-attendance-tab-pill"
-                className="absolute inset-0 rounded-xl bg-gradient-to-br from-indigo-500 to-purple-500 shadow-[0_4px_12px_-2px_rgba(99,102,241,0.35)]"
-                transition={{ type: 'spring', bounce: 0.2, duration: 0.5 }}
-              />
-            )}
-            <span className="relative flex items-center gap-2">
-              <Icon className="w-4 h-4" strokeWidth={2} />
-              <span className="hidden sm:inline">{label}</span>
-            </span>
-          </button>
-        );
-      })}
-    </nav>
-  );
-}
-
-function CircularProgress({ pct }) {
-  const circumference = 2 * Math.PI * 15.9155;
-  const color = pct >= 75 ? '#10b981' : pct >= 50 ? '#f59e0b' : '#ef4444';
-  return (
-    <div className="relative flex items-center justify-center my-6">
-      <svg className="w-48 h-48" viewBox="0 0 36 36">
-        <path className="fill-none stroke-slate-100" strokeWidth="2.8" d="M18 2.0845 a 15.9155 15.9155 0 0 1 0 31.831 a 15.9155 15.9155 0 0 1 0 -31.831" />
-        <motion.path
-          d="M18 2.0845 a 15.9155 15.9155 0 0 1 0 31.831 a 15.9155 15.9155 0 0 1 0 -31.831"
-          fill="none" strokeWidth="2.8" strokeLinecap="round" stroke={color}
-          strokeDasharray={`${circumference}, ${circumference}`}
-          initial={{ strokeDashoffset: circumference }}
-          animate={{ strokeDashoffset: circumference - (pct / 100) * circumference }}
-          transition={{ duration: 0.8, ease: 'easeOut' }}
-        />
-      </svg>
-      <div className="absolute flex flex-col items-center justify-center text-center">
-        <span className="text-4xl font-extrabold text-slate-800 tracking-tight">{pct}%</span>
-        <span className="text-[11px] font-semibold text-slate-400 uppercase tracking-widest mt-0.5">Overall</span>
-      </div>
-    </div>
-  );
-}
-
-function OverviewTab({ stats, streak, currentDate, records, subjectStats }) {
-  const onTrack = stats.percentage >= 75;
-  const monthKey = `${currentDate.getFullYear()}-${String(currentDate.getMonth() + 1).padStart(2, '0')}`;
-  const monthlyRecords = records.filter((r) => r.date.startsWith(monthKey));
-  const mPresent = monthlyRecords.filter((r) => r.status === 'present').length;
-  const mAbsent = monthlyRecords.length - mPresent;
-  const mPct = monthlyRecords.length ? Math.round((mPresent / monthlyRecords.length) * 100) : 0;
-
-  return (
-    <motion.div key="overview" initial={{ opacity: 0, y: 6 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: -6 }} transition={{ duration: 0.2 }} className="space-y-5">
-      <div className="grid grid-cols-1 lg:grid-cols-12 gap-5">
-        <section className="lg:col-span-4 rounded-3xl p-6 sm:p-7 border border-slate-200/80 shadow-[0_2px_12px_-4px_rgba(0,0,0,0.04)] flex flex-col items-center justify-between text-center bg-gradient-to-br from-indigo-50/70 to-slate-50">
-          <div className="w-full flex items-center justify-center">
-            <span className="text-xs font-semibold uppercase tracking-wider text-slate-400 text-center">Total Rate</span>
-            {/* <span className="inline-block w-2 h-2 rounded-full bg-slate-300" /> */}
-          </div>
-          <CircularProgress pct={stats.percentage} />
-          <div className="w-full space-y-3">
-            <div>
-              <h3 className="text-base font-semibold text-slate-800">Overall Attendance</h3>
-              <p className="text-xs text-slate-500 mt-0.5">{stats.attended} of {stats.totalClasses} classes attended</p>
-            </div>
-            <div className="pt-2">
-              <span className={`inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-medium border ${
-                onTrack ? 'bg-emerald-50 text-emerald-700 border-emerald-100' : 'bg-rose-50 text-rose-700 border-rose-100'
-              }`}>
-                {onTrack ? 'Healthy attendance trend' : 'Needs attention this term'}
-              </span>
-            </div>
-          </div>
-        </section>
-
-        <section className="lg:col-span-8 flex flex-col gap-5">
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-            <StatCard icon={BookOpen} iconBg="bg-indigo-500/10 border-indigo-200/50" iconColor="text-indigo-600" label="Total Classes" value={stats.totalClasses} />
-            <StatCard icon={CheckCircle2} iconBg="bg-emerald-500/10 border-emerald-200/50" iconColor="text-emerald-600" label="Present" value={stats.attended} />
-            <StatCard icon={XCircle} iconBg="bg-rose-500/10 border-rose-200/50" iconColor="text-rose-600" label="Absent" value={stats.absent} />
-            <StatCard icon={Flame} iconBg="bg-amber-500/10 border-amber-200/50" iconColor="text-amber-600" label="Current Streak" value={`${streak} days`} />
-          </div>
-
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-            <div className="bg-white rounded-2xl p-4 sm:p-5 border border-slate-200/80 shadow-[0_1px_4px_rgba(0,0,0,0.02)]">
-              <div className="flex items-center gap-1.5 text-slate-400 mb-2">
-                <CalendarIcon className="w-3.5 h-3.5" />
-                <span className="text-[11px] font-bold uppercase tracking-wider text-slate-500">This Month</span>
-              </div>
-              <h4 className="text-base font-semibold text-slate-800">{MONTH_NAMES[currentDate.getMonth()]} {currentDate.getFullYear()}</h4>
-              <p className="text-xs text-slate-400 mt-1">{monthlyRecords.length} classes recorded</p>
-            </div>
-            <div className="bg-white rounded-2xl p-4 sm:p-5 border border-slate-200/80 shadow-[0_1px_4px_rgba(0,0,0,0.02)]">
-              <div className="flex items-center gap-1.5 text-emerald-600 mb-2">
-                <span className="w-1.5 h-1.5 rounded-full bg-emerald-500" />
-                <span className="text-[11px] font-bold uppercase tracking-wider text-slate-500">Present Days</span>
-              </div>
-              <h4 className="text-2xl font-bold text-slate-800">{mPresent}</h4>
-              <p className="text-xs text-slate-400 mt-1">Absences this month: {mAbsent}</p>
-            </div>
-            <div className="bg-white rounded-2xl p-4 sm:p-5 border border-slate-200/80 shadow-[0_1px_4px_rgba(0,0,0,0.02)]">
-              <div className="flex items-center gap-1.5 text-amber-600 mb-2">
-                <span className="w-1.5 h-1.5 rounded-full bg-amber-500" />
-                <span className="text-[11px] font-bold uppercase tracking-wider text-slate-500">Monthly Rate</span>
-              </div>
-              <h4 className="text-2xl font-bold text-slate-800">{mPct}%</h4>
-              <p className="text-xs text-slate-400 mt-1">Based on current month records</p>
-            </div>
-          </div>
-        </section>
-      </div>
-
-      {subjectStats.length > 0 && (
-        <div className="bg-white rounded-2xl border border-slate-200/80 shadow-sm p-5">
-          <div className="mb-4 flex items-center justify-between gap-3">
-            <div className="flex items-center gap-2">
-              <BookOpen className="h-4 w-4 text-indigo-600" />
-              <h2 className="font-semibold text-slate-900 text-sm">Subject-wise Attendance</h2>
-            </div>
-            <span className="text-xs font-medium text-slate-400">{subjectStats.length} subjects</span>
-          </div>
-          <div className="space-y-4">
-            {subjectStats.map((s) => {
-              const barColor = s.pct >= 75 ? 'bg-emerald-500' : s.pct >= 50 ? 'bg-amber-500' : 'bg-rose-500';
-              const textColor = s.pct >= 75 ? 'text-emerald-600' : s.pct >= 50 ? 'text-amber-600' : 'text-rose-600';
-              return (
-                <div key={s.subject} className="rounded-2xl border border-slate-100 bg-slate-50/70 p-4">
-                  <div className="mb-2 flex items-center justify-between gap-3">
-                    <span className="text-sm font-semibold text-slate-800">{s.subject}</span>
-                    <span className="text-xs text-slate-500">{s.present}/{s.total} classes · <span className={`font-semibold ${textColor}`}>{s.pct}%</span></span>
-                  </div>
-                  <div className="h-2 w-full rounded-full bg-slate-200">
-                    <motion.div className={`h-2 rounded-full ${barColor}`} initial={{ width: 0 }} animate={{ width: `${s.pct}%` }} transition={{ duration: 0.5, ease: 'easeOut' }} />
-                  </div>
-                </div>
-              );
-            })}
-          </div>
-        </div>
-      )}
-
-      <footer className="bg-white/90 border border-slate-200/80 rounded-2xl p-4 sm:px-5 flex items-center gap-3 text-slate-600 text-xs shadow-sm">
-        <div className="flex items-center justify-center w-8 h-8 rounded-full bg-amber-50 text-amber-600 border border-amber-200/60 shrink-0">
-          <AlertCircle className="w-4 h-4" />
-        </div>
-        <p className="leading-relaxed text-slate-600">
-          <span className="font-semibold text-slate-700">Aim to maintain 75%+ attendance.</span> If any entry looks incorrect, please contact the class teacher.
-        </p>
-      </footer>
-    </motion.div>
-  );
-}
-
-function CalendarTab({ currentDate, setCurrentDate, byDate, selectedDate, setSelectedDate }) {
-  const year = currentDate.getFullYear();
-  const month = currentDate.getMonth();
-  const monthKey = `${year}-${String(month + 1).padStart(2, '0')}`;
-  const monthly = Object.entries(byDate).filter(([date]) => date.startsWith(monthKey)).flatMap(([, recs]) => recs);
-  const mPresent = monthly.filter((r) => r.status === 'present').length;
-  const mAbsent = monthly.length - mPresent;
-  const mPct = monthly.length ? Math.round((mPresent / monthly.length) * 100) : 0;
-
-  const firstDay = new Date(year, month, 1);
-  const gridStart = new Date(firstDay);
-  gridStart.setDate(gridStart.getDate() - firstDay.getDay());
-  const todayKey = toLocalDateKey(new Date());
-
-  const cells = [];
-  const cursor = new Date(gridStart);
-  for (let i = 0; i < 42; i++) {
-    const key = toLocalDateKey(cursor);
-    cells.push({
-      key, dayNum: cursor.getDate(), isCurrentMonth: cursor.getMonth() === month,
-      isToday: key === todayKey, records: byDate[key] || [],
-    });
-    cursor.setDate(cursor.getDate() + 1);
+// Client cache for this page: memory for in-app navigation + sessionStorage
+// for reloads, scoped to the signed-in token. Max age 10 min.
+const PAGE_CACHE_PREFIX = 'parent:attendance:v1:';
+const PAGE_CACHE_MAX_AGE = 10 * 60 * 1000;
+let memoryPageCache = null; // { key, at, data }
+const pageCacheKey = () => {
+  let t = '';
+  try { t = localStorage.getItem('token') || ''; } catch { /* ignore */ }
+  return PAGE_CACHE_PREFIX + t.slice(-16);
+};
+const readPageCache = () => {
+  const key = pageCacheKey();
+  let entry = memoryPageCache?.key === key ? memoryPageCache : null;
+  if (!entry) {
+    try { entry = JSON.parse(sessionStorage.getItem(key) || 'null'); } catch { entry = null; }
   }
+  if (!entry || Date.now() - entry.at > PAGE_CACHE_MAX_AGE) return null;
+  return entry.data;
+};
+const writePageCache = (data) => {
+  const entry = { key: pageCacheKey(), at: Date.now(), data };
+  memoryPageCache = entry;
+  try { sessionStorage.setItem(entry.key, JSON.stringify(entry)); } catch { /* quota / private mode */ }
+};
 
-  const selectedRecords = selectedDate ? byDate[selectedDate] || [] : [];
+const RISE = { hidden: { opacity: 0, y: 16 }, show: { opacity: 1, y: 0, transition: { duration: 0.4, ease: [0.22, 1, 0.36, 1] } } };
+
+/* ── page ────────────────────────────────────────────────────────────────── */
+const AttendanceReport = () => {
+  const navigate = useNavigate();
+  const { children, options, setChildKey, selected: child } = useParentChildren();
+  const [pickerOpen, setPickerOpen] = useState(false);
+  const pickerRef = useRef(null);
+
+  const cachedPage = readPageCache();
+  const [attendanceKids, setAttendanceKids] = useState(() => cachedPage?.attendanceKids || []);
+  const [holidays, setHolidays] = useState(() => cachedPage?.holidays || []);
+  const [letters, setLetters] = useState(() => cachedPage?.letters || []);
+  const [loading, setLoading] = useState(!cachedPage);
+  const [error, setError] = useState('');
+
+  const [calMonth, setCalMonth] = useState(() => { const n = new Date(); return new Date(n.getFullYear(), n.getMonth(), 1); });
+  const [calDir, setCalDir] = useState(1);
+  const [selectedDay, setSelectedDay] = useState(() => keyOf(new Date()));
+  const [tableMonth, setTableMonth] = useState(() => monthKeyOf(new Date()));
+  const [statusFilter, setStatusFilter] = useState('all');
+  const [page, setPage] = useState(1);
+
+  // Stale-while-revalidate: cached data (if any) is already on screen; this
+  // refreshes it in the background and re-saves the cache.
+  useEffect(() => {
+    let off = false;
+    Promise.allSettled([
+      parentApiJson('/api/attendance/parent/children', {}, navigate),
+      parentApiJson('/api/holidays/parent', {}, navigate),
+      parentApiJson('/api/excuse-letters/parent', {}, navigate),
+    ]).then(([a, h, l]) => {
+      if (off) return;
+      if (a.status === 'rejected') {
+        // Keep showing cached data if the refresh fails.
+        if (!readPageCache()) setError(a.reason?.message || 'Unable to load attendance');
+        setLoading(false);
+        return;
+      }
+      setError('');
+      const hv = h.status === 'fulfilled' ? h.value : null;
+      const next = {
+        attendanceKids: a.value?.children || [],
+        holidays: Array.isArray(hv) ? hv : hv?.holidays || [],
+        letters: l.status === 'fulfilled' && Array.isArray(l.value) ? l.value : [],
+      };
+      setAttendanceKids(next.attendanceKids);
+      setHolidays(next.holidays);
+      setLetters(next.letters);
+      writePageCache(next);
+      setLoading(false);
+    });
+    return () => { off = true; };
+  }, [navigate]);
+
+  useEffect(() => {
+    const close = (e) => { if (pickerRef.current && !pickerRef.current.contains(e.target)) setPickerOpen(false); };
+    document.addEventListener('mousedown', close);
+    return () => document.removeEventListener('mousedown', close);
+  }, []);
+
+  /* ── per-day maps ── */
+  const entry = useMemo(
+    () => attendanceKids.find((k) => String(k?.student?._id) === String(child?.id)) || attendanceKids[0] || null,
+    [attendanceKids, child?.id],
+  );
+  const rawRecords = useMemo(() => (Array.isArray(entry?.records) ? entry.records : []), [entry]);
+
+  const days = useMemo(() => {
+    const map = new Map();
+    rawRecords.forEach((r) => { if (!map.has(r.date)) map.set(r.date, []); map.get(r.date).push(r); });
+    const out = new Map();
+    map.forEach((list, k) => out.set(k, dayStatusOf(list)));
+    return out;
+  }, [rawRecords]);
+
+  const holidayDays = useMemo(() => {
+    const map = new Map();
+    holidays.forEach((h) => {
+      const start = h.startDate || h.date;
+      if (!validDate(start)) return;
+      const s = new Date(start);
+      const e = validDate(h.endDate) ? new Date(h.endDate) : s;
+      for (let d = new Date(s.getFullYear(), s.getMonth(), s.getDate()); d <= e; d.setDate(d.getDate() + 1)) {
+        map.set(keyOf(d), h.name || h.title || 'Holiday');
+      }
+    });
+    return map;
+  }, [holidays]);
+
+  const childLetters = useMemo(
+    () => letters.filter((l) => !child?.id || String(l.studentId?._id || l.studentId) === String(child.id))
+      .sort((a, b) => new Date(b.dateFrom || b.createdAt || 0) - new Date(a.dateFrom || a.createdAt || 0)),
+    [letters, child?.id],
+  );
+  const leaveReasonFor = (k) => {
+    const d = parseKey(k);
+    const hit = childLetters.find((l) => validDate(l.dateFrom) && new Date(new Date(l.dateFrom).toDateString()) <= d
+      && d <= new Date(new Date(l.dateTo || l.dateFrom).toDateString()));
+    return hit ? (hit.reason || hit.reasonType || 'Leave') : '';
+  };
+
+  /* ── stats ── */
+  const stats = useMemo(() => {
+    let present = 0; let absent = 0; let late = 0;
+    days.forEach((s) => { if (s === 'present') present += 1; else if (s === 'absent') absent += 1; else if (s === 'late') late += 1; });
+    const total = present + absent + late;
+    const pct = (n) => (total ? Math.round((n / total) * 100) : 0);
+    const monthPct = (mk) => {
+      let p = 0; let t = 0;
+      days.forEach((s, k) => { if (k.startsWith(mk)) { t += 1; if (s !== 'absent') p += 1; } });
+      return t ? Math.round((p / t) * 100) : null;
+    };
+    const now = new Date();
+    const cur = monthPct(monthKeyOf(now));
+    const prev = monthPct(monthKeyOf(new Date(now.getFullYear(), now.getMonth() - 1, 1)));
+    return {
+      present, absent, late, total,
+      overall: total ? Math.round(((present + late) / total) * 100) : 0,
+      presentPct: pct(present), absentPct: pct(absent), latePct: pct(late),
+      delta: cur !== null && prev !== null ? cur - prev : null,
+    };
+  }, [days]);
+
+  /* ── calendar ── */
+  const cells = useMemo(() => {
+    const start = new Date(calMonth);
+    start.setDate(1 - calMonth.getDay());
+    return Array.from({ length: 35 + (new Date(calMonth.getFullYear(), calMonth.getMonth() + 1, 0).getDate() + calMonth.getDay() > 35 ? 7 : 0) },
+      (_, i) => { const d = new Date(start); d.setDate(start.getDate() + i); return d; });
+  }, [calMonth]);
+  const statusForDay = (k) => days.get(k) || (holidayDays.has(k) ? 'holiday' : null);
+
+  /* ── records table ── */
+  const monthOptions = useMemo(() => {
+    const now = new Date();
+    return Array.from({ length: 12 }, (_, i) => new Date(now.getFullYear(), now.getMonth() - i, 1));
+  }, []);
+  const tableRows = useMemo(() => {
+    const keys = new Set();
+    days.forEach((_, k) => { if (k.startsWith(tableMonth)) keys.add(k); });
+    holidayDays.forEach((_, k) => { if (k.startsWith(tableMonth) && parseKey(k) <= new Date()) keys.add(k); });
+    return [...keys].sort((a, b) => b.localeCompare(a))
+      .map((k) => {
+        const status = days.get(k) || 'holiday';
+        const remark = status === 'holiday' ? (holidayDays.get(k) || 'School Closed') : status === 'absent' ? leaveReasonFor(k) : '';
+        return { key: k, date: parseKey(k), status, remark };
+      })
+      .filter((r) => statusFilter === 'all' || r.status === statusFilter);
+  }, [days, holidayDays, tableMonth, statusFilter, childLetters]);
+  const pages = Math.max(1, Math.ceil(tableRows.length / PAGE_SIZE));
+  const pageRows = tableRows.slice((page - 1) * PAGE_SIZE, page * PAGE_SIZE);
+  useEffect(() => { setPage(1); }, [tableMonth, statusFilter, child?.id]);
+
+  /* ── overview (last 6 months) ── */
+  const overview = useMemo(() => {
+    const now = new Date();
+    return Array.from({ length: 6 }, (_, i) => new Date(now.getFullYear(), now.getMonth() - 5 + i, 1)).map((m) => {
+      const mk = monthKeyOf(m);
+      const c = { present: 0, absent: 0, late: 0, holiday: 0 };
+      days.forEach((s, k) => { if (k.startsWith(mk) && c[s] !== undefined) c[s] += 1; });
+      holidayDays.forEach((_, k) => { if (k.startsWith(mk) && !days.has(k)) c.holiday += 1; });
+      return { label: m.toLocaleDateString('en-GB', { month: 'short' }), ...c };
+    });
+  }, [days, holidayDays]);
+  const overviewMax = Math.max(5, ...overview.map((o) => o.present + o.absent + o.late + o.holiday));
+  const overviewTop = Math.ceil(overviewMax / 5) * 5;
+  const holidayTotal = overview.reduce((s, o) => s + o.holiday, 0);
+
+  /* ── subject-wise ── */
+  const subjects = useMemo(() => {
+    const map = new Map();
+    rawRecords.forEach((r) => {
+      // Daily (whole-day) attendance is stored as "general::general" — skip it.
+      const raw = String(r.subject || '').trim();
+      const name = raw.includes('::') ? raw.split('::').pop().trim() : raw;
+      if (!name || /^general$/i.test(name)) return;
+      if (!map.has(name)) map.set(name, { name, total: 0, present: 0 });
+      const s = map.get(name);
+      s.total += 1;
+      if (r.status !== 'absent') s.present += 1;
+    });
+    return [...map.values()].map((s) => ({ ...s, pct: Math.round((s.present / s.total) * 100) }))
+      .sort((a, b) => a.name.localeCompare(b.name)).slice(0, 6);
+  }, [rawRecords]);
+
+  const classLine = child ? `Class ${child.grade || '—'}${child.section ? ` - Section ${child.section}` : ''}` : '';
+  const initials = (n) => String(n || 'S').trim().split(/\s+/).slice(0, 2).map((w) => w[0]).join('').toUpperCase();
 
   return (
-    <motion.div key="calendar" initial={{ opacity: 0, y: 6 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: -6 }} transition={{ duration: 0.2 }} className="space-y-5">
-      <div className="rounded-2xl border border-slate-200 bg-white shadow-sm overflow-hidden">
-        <div className="flex items-center justify-between border-b border-slate-100 p-4">
-          <button onClick={() => setCurrentDate(new Date(year, month - 1, 1))} className="rounded-lg p-2 hover:bg-slate-100 transition" aria-label="Previous month">
-            <ChevronLeft className="h-4 w-4 text-slate-700" />
-          </button>
-          <div className="text-center">
-            <h2 className="font-semibold text-slate-900">{MONTH_NAMES[month]} {year}</h2>
-            <p className="text-xs text-slate-400">{mPresent} present · {mAbsent} absent · {mPct}%</p>
-          </div>
-          <button onClick={() => setCurrentDate(new Date(year, month + 1, 1))} className="rounded-lg p-2 hover:bg-slate-100 transition" aria-label="Next month">
-            <ChevronRight className="h-4 w-4 text-slate-700" />
-          </button>
+    <motion.div
+      data-testid="attendance-report"
+      className="mx-auto flex min-h-screen max-w-7xl flex-col gap-4 bg-slate-50 p-3 sm:p-4 lg:p-6"
+      initial="hidden"
+      animate="show"
+      variants={{ hidden: {}, show: { transition: { staggerChildren: 0.07 } } }}
+    >
+      {/* ── Title + child picker ── */}
+      <motion.div variants={RISE} className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+        <div>
+          <h1 className="text-2xl font-bold text-slate-900">Attendance</h1>
+          <p className="mt-0.5 text-sm text-slate-600">View your child&apos;s daily attendance, monthly summary and detailed records.</p>
         </div>
-
-        <div className="p-2 sm:p-4">
-          <div className="mb-2 grid grid-cols-7 gap-1 sm:gap-1.5">
-            {DAY_NAMES.map((d) => <div key={d} className="py-1 text-center text-xs font-semibold text-slate-400">{d}</div>)}
+        {child && (
+          <div className="relative" ref={pickerRef}>
+            <button
+              type="button"
+              onClick={() => options.length > 1 && setPickerOpen((o) => !o)}
+              className="flex w-full items-center gap-3 rounded-2xl border border-slate-200 bg-white px-3 py-2.5 pr-4 text-left shadow-sm sm:w-72"
+            >
+              {child.photo
+                ? <img src={child.photo} alt={child.name} className="h-10 w-10 rounded-xl object-cover" />
+                : <span className="flex h-10 w-10 items-center justify-center rounded-xl bg-violet-100 text-sm font-bold text-violet-700">{initials(child.name)}</span>}
+              <span className="min-w-0 flex-1">
+                <span className="block truncate text-sm font-bold text-slate-900">{child.name}</span>
+                <span className="block truncate text-xs text-slate-500">{classLine}</span>
+              </span>
+              {options.length > 1 && <ChevronDown size={17} className={`text-slate-500 transition ${pickerOpen ? 'rotate-180' : ''}`} />}
+            </button>
+            {pickerOpen && (
+              <ul className="absolute right-0 z-20 mt-2 w-full overflow-hidden rounded-2xl border border-slate-100 bg-white shadow-xl">
+                {children.map((c, i) => (
+                  <li key={c.id}>
+                    <button
+                      type="button"
+                      onClick={() => { const o = options[i]; setChildKey(`${o.id || ''}::${o.name || ''}`); setPickerOpen(false); }}
+                      className={`flex w-full items-center gap-3 px-3 py-2.5 text-left hover:bg-slate-50 ${c.id === child.id ? 'bg-violet-50' : ''}`}
+                    >
+                      <span className="flex h-8 w-8 items-center justify-center rounded-lg bg-violet-100 text-xs font-bold text-violet-700">{initials(c.name)}</span>
+                      <span className="text-sm font-semibold text-slate-800">{c.name}</span>
+                    </button>
+                  </li>
+                ))}
+              </ul>
+            )}
           </div>
-          <div className="grid grid-cols-7 gap-1 sm:gap-1.5">
-            {cells.map((cell) => {
-              const hasAbsent = cell.records.some((r) => r.status === 'absent');
-              const hasPresent = cell.records.some((r) => r.status === 'present');
-              const isSelected = cell.key === selectedDate;
+        )}
+      </motion.div>
+
+      {error ? <p role="alert" className="rounded-xl border border-rose-200 bg-rose-50 px-4 py-3 text-sm text-rose-700">{error}</p> : null}
+
+      {/* ── Stat cards ── */}
+      <motion.div variants={RISE} className="grid grid-cols-1 gap-3 lg:grid-cols-3">
+        <div className="col-span-2 flex items-start gap-4 rounded-2xl border border-slate-100 bg-white p-4 shadow-[0_2px_12px_rgba(15,23,42,0.04)] lg:col-span-1">
+          <span className="flex h-14 w-14 shrink-0 items-center justify-center rounded-xl bg-emerald-50 text-green-600"><Users size={26} /></span>
+          <div className="min-w-0">
+            <p className="text-sm font-medium text-slate-700">Overall Attendance</p>
+            <div className="mt-0.5 flex items-center gap-2"><p className="text-2xl font-bold text-slate-900">{stats.overall}%</p><Delta value={stats.delta} /></div>
+            <p className="mt-1 text-xs text-slate-500">Present: {stats.present + stats.late} / {stats.total} days</p>
+          </div>
+        </div>
+        {[
+          { label: 'Present Days', value: stats.present, sub: `${stats.presentPct}%`, subCls: 'text-green-600', icon: <Check size={20} strokeWidth={3} />, tile: 'bg-green-50', dot: 'bg-green-600' },
+          { label: 'Absent Days', value: stats.absent, sub: `${stats.absentPct}%`, subCls: 'text-red-500', icon: <X size={20} strokeWidth={3} />, tile: 'bg-red-50', dot: 'bg-red-500' },
+          // { label: 'Late Days', value: stats.late, sub: `${stats.latePct}%`, subCls: 'text-amber-500', icon: <Clock size={20} strokeWidth={3} />, tile: 'bg-amber-50', dot: 'bg-amber-400' },
+          // { label: 'Total Working Days', value: stats.total, sub: 'This academic session', subCls: 'text-slate-500', icon: <CalendarDays size={22} />, tile: 'bg-violet-50', dot: '' },
+        ].map((s) => (
+          <motion.div key={s.label} whileHover={{ y: -3 }} transition={{ duration: 0.15 }} className="flex items-start gap-3 rounded-2xl border border-slate-100 bg-white p-4 shadow-[0_2px_12px_rgba(15,23,42,0.04)] hover:shadow-md">
+            <span className={`flex h-12 w-12 shrink-0 items-center justify-center rounded-xl ${s.tile}`}>
+              {s.dot ? <span className={`flex h-7 w-7 items-center justify-center rounded-full text-white ${s.dot}`}>{s.icon}</span> : <span className="text-violet-600">{s.icon}</span>}
+            </span>
+            <div className="min-w-0">
+              <p className="text-sm font-medium text-slate-700">{s.label}</p>
+              <p className="mt-0.5 text-2xl font-bold text-slate-900">{s.value}</p>
+              <p className={`mt-0.5 text-xs font-semibold ${s.subCls}`}>{s.sub}</p>
+            </div>
+          </motion.div>
+        ))}
+      </motion.div>
+
+      {/* ── Calendar + records ── */}
+      <motion.div variants={RISE} className="grid grid-cols-1 items-stretch gap-4 xl:grid-cols-[minmax(0,5fr)_minmax(0,7fr)]">
+        <Card className="flex h-full flex-col">
+          <h2 className="text-base font-bold text-slate-900">Attendance Calendar</h2>
+          <div className="mt-4 flex items-center justify-between">
+            <button type="button" onClick={() => { setCalDir(-1); setCalMonth((m) => new Date(m.getFullYear(), m.getMonth() - 1, 1)); }} className="flex h-9 w-9 items-center justify-center rounded-lg border border-slate-200 text-slate-700 hover:bg-slate-50" aria-label="Previous month"><ChevronLeft size={17} /></button>
+            <p className="text-base font-bold text-slate-900">{monthLabel(calMonth)}</p>
+            <button type="button" onClick={() => { setCalDir(1); setCalMonth((m) => new Date(m.getFullYear(), m.getMonth() + 1, 1)); }} className="flex h-9 w-9 items-center justify-center rounded-lg border border-slate-200 text-slate-700 hover:bg-slate-50" aria-label="Next month"><ChevronRight size={17} /></button>
+          </div>
+          <div className="mt-4 grid grid-cols-7 text-center">
+            {WEEK.map((w) => <span key={w} className="text-xs font-medium text-slate-600">{w}</span>)}
+          </div>
+          <AnimatePresence mode="wait" initial={false}>
+          <motion.div
+            key={monthKeyOf(calMonth)}
+            initial={{ opacity: 0, x: calDir * 24 }}
+            animate={{ opacity: 1, x: 0 }}
+            exit={{ opacity: 0, x: calDir * -24 }}
+            transition={{ duration: 0.22, ease: 'easeOut' }}
+            className="mt-2 grid flex-1 grid-cols-7 content-between gap-y-2 text-center"
+          >
+            {cells.map((d, idx) => {
+              const k = keyOf(d);
+              const inMonth = d.getMonth() === calMonth.getMonth();
+              const st = inMonth ? statusForDay(k) : null;
+              const selected = k === selectedDay;
               return (
-                <button
-                  key={cell.key}
-                  disabled={!cell.isCurrentMonth}
-                  onClick={() => setSelectedDate(cell.key)}
-                  className={`aspect-square flex flex-col items-center justify-center rounded-xl border transition-colors ${
-                    cell.isCurrentMonth ? 'cursor-pointer hover:bg-slate-100' : 'cursor-default text-slate-300'
-                  } ${cell.isToday ? 'border-amber-300 bg-amber-50' : 'border-transparent'} ${
-                    isSelected ? 'border-indigo-400 bg-indigo-50 ring-2 ring-indigo-200' : ''
-                  }`}
+                <motion.button
+                  key={k}
+                  type="button"
+                  initial={{ opacity: 0, scale: 0.6 }}
+                  animate={{ opacity: 1, scale: 1 }}
+                  transition={{ delay: Math.min(idx * 0.008, 0.3), type: 'spring', stiffness: 420, damping: 26 }}
+                  whileHover={{ scale: 1.08 }}
+                  whileTap={{ scale: 0.92 }}
+                  onClick={() => { setSelectedDay(k); setTableMonth(k.slice(0, 7)); }}
+                  className={`mx-auto flex h-10 w-10 items-center justify-center rounded-full text-sm font-semibold transition sm:h-11 sm:w-11 ${
+                    !inMonth ? 'text-slate-300' : st ? STATUS[st].day : 'text-slate-700 hover:bg-slate-50'
+                  } ${selected ? 'ring-2 ring-blue-600 ring-offset-1' : ''}`}
+                  title={st ? STATUS[st].label : undefined}
                 >
-                  <span className={`text-xs font-medium ${cell.isToday ? 'text-amber-600' : ''}`}>{cell.dayNum}</span>
-                  {hasAbsent ? (
-                    <span className="w-1.5 h-1.5 rounded-full mt-0.5 bg-rose-500" />
-                  ) : hasPresent ? (
-                    <span className="w-1.5 h-1.5 rounded-full mt-0.5 bg-emerald-500" />
-                  ) : null}
-                </button>
+                  {d.getDate()}
+                </motion.button>
               );
             })}
+          </motion.div>
+          </AnimatePresence>
+          <div className="mt-5 flex flex-wrap gap-x-5 gap-y-2 text-sm text-slate-600">
+            {['present', 'absent', 'holiday'].map((s) => (
+              <span key={s} className="inline-flex items-center gap-1.5"><span className={`h-2.5 w-2.5 rounded-full ${STATUS[s].dot}`} />{STATUS[s].label}</span>
+            ))}
+            <span className="inline-flex items-center gap-1.5"><span className="h-3 w-3 rounded-full border-2 border-blue-600" />Selected</span>
           </div>
-          <div className="mt-3 flex items-center gap-4 text-xs text-slate-500">
-            <div className="flex items-center gap-1.5"><span className="h-2.5 w-2.5 rounded-full bg-emerald-500" /> Present</div>
-            <div className="flex items-center gap-1.5"><span className="h-2.5 w-2.5 rounded-full bg-rose-500" /> Absent</div>
-            <div className="flex items-center gap-1.5"><span className="h-2.5 w-2.5 rounded-full bg-amber-200 ring-1 ring-amber-300" /> Today</div>
-          </div>
-        </div>
-      </div>
+        </Card>
 
-      <AnimatePresence>
-        {selectedDate && selectedRecords.length > 0 && (
-          <motion.div initial={{ opacity: 0, height: 0 }} animate={{ opacity: 1, height: 'auto' }} exit={{ opacity: 0, height: 0 }} transition={{ duration: 0.25 }} className="overflow-hidden">
-            <div className="rounded-2xl border border-amber-200 bg-amber-50/30 p-5 shadow-sm">
-              <h3 className="mb-3 text-sm font-semibold text-slate-900 flex items-center gap-2">
-                <CalendarIcon className="h-4 w-4 text-amber-600" /> {fmtDateLong(selectedDate)}
-              </h3>
-              <div className="space-y-2">
-                {selectedRecords.map((r) => {
-                  const isPresent = r.status === 'present';
-                  return (
-                    <div key={r.id} className="flex items-center justify-between rounded-xl bg-white border border-slate-200 px-4 py-3">
-                      <div className="flex items-center gap-3">
-                        <div className={`flex h-8 w-8 items-center justify-center rounded-lg ${isPresent ? 'bg-emerald-100' : 'bg-rose-100'}`}>
-                          {isPresent ? <CheckCircle2 className="h-4 w-4 text-emerald-600" /> : <XCircle className="h-4 w-4 text-rose-600" />}
-                        </div>
-                        <span className="text-sm font-medium text-slate-800">{r.subject}</span>
-                      </div>
-                      <span className={`rounded-full px-2.5 py-0.5 text-xs font-semibold ${isPresent ? 'bg-emerald-100 text-emerald-700' : 'bg-rose-100 text-rose-700'}`}>
-                        {isPresent ? 'Present' : 'Absent'}
+        <Card className="flex h-full min-w-0 flex-col">
+          <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+            <h2 className="text-base font-bold text-slate-900">Attendance Records</h2>
+            <div className="flex gap-2">
+              <div className="relative">
+                <select value={tableMonth} onChange={(e) => setTableMonth(e.target.value)} className="appearance-none rounded-lg border border-slate-200 bg-white py-2 pl-3 pr-9 text-sm font-medium text-slate-800 outline-none focus:border-violet-300">
+                  {monthOptions.map((m) => <option key={monthKeyOf(m)} value={monthKeyOf(m)}>{monthLabel(m)}</option>)}
+                </select>
+                <ChevronDown size={15} className="pointer-events-none absolute right-3 top-1/2 -translate-y-1/2 text-slate-500" />
+              </div>
+              <div className="relative">
+                <select value={statusFilter} onChange={(e) => setStatusFilter(e.target.value)} className="appearance-none rounded-lg border border-slate-200 bg-white py-2 pl-3 pr-9 text-sm font-medium text-slate-800 outline-none focus:border-violet-300">
+                  <option value="all">All Status</option>
+                  <option value="present">Present</option>
+                  <option value="absent">Absent</option>
+                  <option value="late">Late</option>
+                  <option value="holiday">Holiday</option>
+                </select>
+                <ChevronDown size={15} className="pointer-events-none absolute right-3 top-1/2 -translate-y-1/2 text-slate-500" />
+              </div>
+            </div>
+          </div>
+          <div className="mt-3 flex-1 overflow-x-auto">
+            <table className="w-full min-w-96 text-sm">
+              <thead>
+                <tr className="border-b border-slate-100 text-left text-xs font-semibold uppercase tracking-wide text-slate-500">
+                  <th className="px-2 py-3">#</th>
+                  <th className="px-2 py-3">Date</th>
+                  <th className="px-2 py-3">Day</th>
+                  <th className="px-2 py-3">Status</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-slate-50">
+                {loading ? (
+                  <tr><td colSpan={4} className="py-10 text-center text-slate-400">Loading…</td></tr>
+                ) : pageRows.length === 0 ? (
+                  <tr><td colSpan={4} className="py-10 text-center text-slate-400">No records for this month</td></tr>
+                ) : pageRows.map((r, i) => (
+                  <motion.tr
+                    key={`${tableMonth}-${statusFilter}-${page}-${r.key}`}
+                    initial={{ opacity: 0, y: 6 }}
+                    animate={{ opacity: 1, y: 0 }}
+                    transition={{ delay: i * 0.03, duration: 0.25 }}
+                    className={`transition-colors hover:bg-slate-50 ${r.key === selectedDay ? 'bg-blue-50/50' : ''}`}
+                  >
+                    <td className="px-2 py-2.5 text-slate-600">{(page - 1) * PAGE_SIZE + i + 1}</td>
+                    <td className="whitespace-nowrap px-2 py-2.5 text-slate-800">{fmtDay(r.date)}</td>
+                    <td className="px-2 py-2.5 text-slate-600">{WEEK[r.date.getDay()]}</td>
+                    <td className="px-2 py-2.5">
+                      <span className={`inline-flex items-center gap-1.5 rounded-full px-2.5 py-0.5 text-xs font-semibold ${STATUS[r.status].pill}`}>
+                        <span className={`h-2 w-2 rounded-full ${STATUS[r.status].dot}`} />{STATUS[r.status].label}
                       </span>
+                    </td>
+                  </motion.tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+          <div className="mt-3 flex flex-wrap items-center justify-end gap-3">
+            <span className="text-xs text-slate-500">
+              Showing {tableRows.length ? (page - 1) * PAGE_SIZE + 1 : 0} to {Math.min(page * PAGE_SIZE, tableRows.length)} of {tableRows.length} records
+            </span>
+            <div className="flex items-center gap-1.5">
+              <button type="button" disabled={page <= 1} onClick={() => setPage((p) => p - 1)} className="flex h-8 w-8 items-center justify-center rounded-lg border border-slate-200 text-slate-600 disabled:opacity-40" aria-label="Previous page"><ChevronLeft size={15} /></button>
+              {Array.from({ length: pages }, (_, i) => i + 1).slice(Math.max(0, page - 2), Math.max(0, page - 2) + 3).map((n) => (
+                <button key={n} type="button" onClick={() => setPage(n)} className={`flex h-8 min-w-8 items-center justify-center rounded-lg border px-2 text-sm font-semibold ${n === page ? 'border-blue-600 bg-blue-600 text-white' : 'border-slate-200 text-slate-700 hover:bg-slate-50'}`}>{n}</button>
+              ))}
+              <button type="button" disabled={page >= pages} onClick={() => setPage((p) => p + 1)} className="flex h-8 w-8 items-center justify-center rounded-lg border border-slate-200 text-slate-600 disabled:opacity-40" aria-label="Next page"><ChevronRight size={15} /></button>
+            </div>
+          </div>
+        </Card>
+      </motion.div>
+
+      {/* ── Overview / Subject-wise / Leave ── */}
+      <motion.div variants={RISE} className="grid grid-cols-1 gap-4 lg:grid-cols-2 xl:grid-cols-[minmax(0,5fr)_minmax(0,3.5fr)_minmax(0,3.5fr)]">
+        <Card className="lg:col-span-2 xl:col-span-1">
+          <h2 className="text-base font-bold text-slate-900">Attendance Overview</h2>
+          <div className="mt-4 flex gap-6">
+            <div className="flex flex-1 gap-2">
+              <div className="flex h-40 flex-col justify-between pb-5 text-right text-[11px] text-slate-400">
+                {[5, 4, 3, 2, 1, 0].map((i) => <span key={i}>{Math.round((overviewTop / 5) * i)}</span>)}
+              </div>
+              <div className="flex h-40 flex-1 items-end justify-around gap-2 border-b border-slate-100">
+                {overview.map((o) => {
+                  const h = (n) => `${(n / overviewTop) * 100}%`;
+                  return (
+                    <div key={o.label} className="flex h-full w-full max-w-9 flex-col items-center">
+                      <div className="flex w-full flex-1 flex-col-reverse overflow-hidden rounded-t">
+                        <motion.div initial={{ height: 0 }} animate={{ height: h(o.present) }} transition={{ duration: 0.6 }} className="w-full bg-green-500" />
+                        {/* <motion.div initial={{ height: 0 }} animate={{ height: h(o.late) }} transition={{ duration: 0.6 }} className="w-full bg-amber-400" /> */}
+                        <motion.div initial={{ height: 0 }} animate={{ height: h(o.absent) }} transition={{ duration: 0.6 }} className="w-full bg-red-500" />
+                        <motion.div initial={{ height: 0 }} animate={{ height: h(o.holiday) }} transition={{ duration: 0.6 }} className="w-full bg-slate-200" />
+                      </div>
+                      <span className="mt-1.5 text-xs text-slate-500">{o.label}</span>
                     </div>
                   );
                 })}
               </div>
             </div>
-          </motion.div>
-        )}
-      </AnimatePresence>
-
-      <div className="grid grid-cols-3 gap-4">
-        <div className="rounded-xl border border-slate-200 bg-white p-4 text-center">
-          <p className="text-2xl font-bold text-slate-900">{monthly.length}</p>
-          <p className="text-xs text-slate-500">Monthly Classes</p>
-        </div>
-        <div className="rounded-xl border border-slate-200 bg-white p-4 text-center">
-          <p className="text-2xl font-bold text-emerald-600">{mPresent}</p>
-          <p className="text-xs text-slate-500">Present</p>
-        </div>
-        <div className="rounded-xl border border-slate-200 bg-white p-4 text-center">
-          <p className="text-2xl font-bold text-amber-600">{mPct}%</p>
-          <p className="text-xs text-slate-500">Rate</p>
-        </div>
-      </div>
-    </motion.div>
-  );
-}
-
-function DailyTab({ records, byDate, dailyFilter, setDailyFilter }) {
-  const sortedDates = [...new Set(records.map((r) => r.date))].sort().reverse();
-  const filtered = sortedDates.filter((d) => {
-    if (dailyFilter === 'all') return true;
-    const recs = byDate[d] || [];
-    if (dailyFilter === 'present') return recs.every((r) => r.status === 'present');
-    return recs.some((r) => r.status === 'absent');
-  });
-
-  return (
-    <motion.div key="daily" initial={{ opacity: 0, y: 6 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: -6 }} transition={{ duration: 0.2 }}>
-      <div className="rounded-2xl border border-slate-200 bg-white shadow-sm overflow-hidden">
-        <div className="flex flex-wrap items-center justify-between gap-3 border-b border-slate-100 p-4">
-          <h2 className="font-semibold text-slate-900 flex items-center gap-2">
-            <List className="h-4 w-4 text-indigo-600" /> Day-by-Day Attendance
-            <span className="text-xs font-normal text-slate-400">({filtered.length} days)</span>
-          </h2>
-          <div className="flex rounded-lg border border-slate-200 p-0.5 text-xs">
-            {['all', 'present', 'absent'].map((f) => (
-              <button
-                key={f}
-                onClick={() => setDailyFilter(f)}
-                className={`rounded-md px-2.5 py-1 font-semibold capitalize transition ${dailyFilter === f ? 'bg-indigo-600 text-white' : 'text-slate-600 hover:bg-slate-100'}`}
-              >
-                {f}
-              </button>
-            ))}
+            <ul className="hidden w-36 shrink-0 space-y-3 self-center text-sm sm:block">
+              {/* {[['present', stats.present], ['absent', stats.absent], ['late', stats.late], ['holiday', holidayTotal]].map(([k, v]) => ( */}
+              {[['present', stats.present], ['absent', stats.absent],
+               ['holiday', holidayTotal]].map(([k, v]) => (
+                <li key={k} className="flex items-center justify-between">
+                  <span className="inline-flex items-center gap-2 text-slate-600"><span className={`h-2.5 w-2.5 rounded-full ${STATUS[k].dot}`} />{STATUS[k].label}</span>
+                  <span className="font-semibold text-slate-900">{v}</span>
+                </li>
+              ))}
+            </ul>
           </div>
-        </div>
+        </Card>
 
-        <div className="divide-y divide-slate-100 max-h-[600px] overflow-y-auto">
-          {filtered.length === 0 ? (
-            <p className="p-6 text-center text-sm text-slate-400">No records match the current filter.</p>
+        <Card>
+          <h2 className="text-base font-bold text-slate-900">Subject-wise Attendance</h2>
+          {subjects.length === 0 ? (
+            <p className="mt-4 rounded-xl bg-slate-50 py-6 text-center text-sm text-slate-500">Attendance is recorded per day for this class, not per subject.</p>
           ) : (
-            filtered.map((date) => {
-              const recs = byDate[date] || [];
-              const presentCount = recs.filter((r) => r.status === 'present').length;
-              const absentCount = recs.length - presentCount;
-              const allPresent = absentCount === 0;
-              const dayNum = new Date(`${date}T00:00:00`).getDate();
-
-              return (
-                <div key={date} className="px-4 py-3 hover:bg-slate-50 transition">
-                  <div className="flex items-center justify-between">
-                    <div className="flex items-center gap-3">
-                      <div className={`flex h-9 w-9 items-center justify-center rounded-lg text-xs font-bold ${allPresent ? 'bg-emerald-100 text-emerald-700' : 'bg-rose-100 text-rose-700'}`}>
-                        {dayNum}
-                      </div>
-                      <div>
-                        <p className="text-sm font-medium text-slate-800">{fmtDate(date, { weekday: 'long', month: 'short', day: 'numeric' })}</p>
-                        <p className="text-[11px] text-slate-400">
-                          {recs.length} class{recs.length !== 1 ? 'es' : ''} — {presentCount} present
-                          {absentCount > 0 && <span className="text-rose-500">, {absentCount} absent</span>}
-                        </p>
-                      </div>
-                    </div>
-                    <div className={`rounded-full px-2 py-0.5 text-[10px] font-semibold ${allPresent ? 'bg-emerald-100 text-emerald-700' : 'bg-rose-100 text-rose-700'}`}>
-                      {allPresent ? 'Full Attendance' : `${absentCount} Absent`}
-                    </div>
-                  </div>
-                  <div className="mt-2 flex flex-wrap gap-1.5 pl-12">
-                    {recs.map((r) => <SubjectPill key={r.id} subject={r.subject} status={r.status} />)}
-                  </div>
-                </div>
-              );
-            })
+            <ul className="mt-4 space-y-3.5">
+              {subjects.map((s) => (
+                <li key={s.name} className="flex items-center gap-3 text-sm">
+                  <span className="w-28 shrink-0 truncate text-slate-700" title={s.name}>{s.name}</span>
+                  <span className="h-2.5 flex-1 overflow-hidden rounded-full bg-slate-100">
+                    <motion.span initial={{ width: 0 }} animate={{ width: `${s.pct}%` }} transition={{ duration: 0.7 }} className="block h-full rounded-full bg-emerald-500" />
+                  </span>
+                  <span className="w-10 shrink-0 text-right font-semibold text-slate-900">{s.pct}%</span>
+                </li>
+              ))}
+            </ul>
           )}
-        </div>
-      </div>
-    </motion.div>
-  );
-}
+        </Card>
 
-function WeeklyTab({ weeklyData, expandedWeek, setExpandedWeek }) {
-  return (
-    <motion.div key="weekly" initial={{ opacity: 0, y: 6 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: -6 }} transition={{ duration: 0.2 }} className="space-y-3">
-      <div className="flex items-center gap-2 px-1">
-        <BarChart2 className="h-4 w-4 text-indigo-600" />
-        <h2 className="font-semibold text-slate-900">Weekly Breakdown</h2>
-        <span className="text-xs text-slate-400">({weeklyData.length} weeks)</span>
-      </div>
-
-      {weeklyData.length === 0 ? (
-        <p className="rounded-xl border border-slate-200 bg-white p-6 text-center text-sm text-slate-400">No attendance records available.</p>
-      ) : (
-        weeklyData.map((week) => {
-          const isExpanded = expandedWeek === week.key;
-          const pctColor = week.pct >= 75 ? 'bg-emerald-100 text-emerald-700' : week.pct >= 50 ? 'bg-amber-100 text-amber-700' : 'bg-rose-100 text-rose-700';
-          const startLabel = fmtDate(toLocalDateKey(week.start), { month: 'short', day: 'numeric' });
-          const endLabel = fmtDate(toLocalDateKey(week.end), { month: 'short', day: 'numeric' });
-          const sortedRecords = [...week.records].sort((a, b) => a.date.localeCompare(b.date) || a.subject.localeCompare(b.subject));
-
-          return (
-            <div key={week.key} className="rounded-2xl border border-slate-200 bg-white shadow-sm overflow-hidden">
-              <button type="button" onClick={() => setExpandedWeek(isExpanded ? null : week.key)} className="flex w-full items-center justify-between p-4 hover:bg-slate-50 transition text-left">
-                <div className="flex items-center gap-3">
-                  <div className={`flex h-10 w-10 items-center justify-center rounded-xl text-sm font-bold ${pctColor}`}>{week.pct}%</div>
-                  <div>
-                    <p className="text-sm font-medium text-slate-800">{startLabel} — {endLabel}</p>
-                    <p className="text-[11px] text-slate-400">{week.total} classes · {week.present} present · {week.absent} absent</p>
-                  </div>
-                </div>
-                <div className="flex items-center gap-3">
-                  <div className="hidden sm:flex items-center gap-0.5">
-                    {sortedRecords.slice(0, 20).map((r) => (
-                      <div key={r.id} className={`h-5 w-1.5 rounded-full ${r.status === 'present' ? 'bg-emerald-400' : 'bg-rose-400'}`} />
-                    ))}
-                  </div>
-                  <motion.span animate={{ rotate: isExpanded ? 180 : 0 }} transition={{ duration: 0.2 }}>
-                    <ChevronDown className="h-4 w-4 text-slate-400" />
-                  </motion.span>
-                </div>
-              </button>
-
-              <AnimatePresence>
-                {isExpanded && (
-                  <motion.div initial={{ opacity: 0, height: 0 }} animate={{ opacity: 1, height: 'auto' }} exit={{ opacity: 0, height: 0 }} transition={{ duration: 0.25 }} className="overflow-hidden border-t border-slate-100">
-                    <div className="divide-y divide-slate-50">
-                      {sortedRecords.map((r) => {
-                        const isPresent = r.status === 'present';
-                        return (
-                          <div key={r.id} className="flex items-center justify-between px-4 py-2.5 bg-slate-50/50">
-                            <div className="flex items-center gap-2.5">
-                              <div className={`h-2 w-2 rounded-full ${isPresent ? 'bg-emerald-500' : 'bg-rose-500'}`} />
-                              <span className="text-sm text-slate-700">{r.subject}</span>
-                            </div>
-                            <div className="flex items-center gap-3">
-                              <span className="text-xs text-slate-400">{fmtDate(r.date, { weekday: 'short', month: 'short', day: 'numeric' })}</span>
-                              <span className={`rounded-full px-2 py-0.5 text-[10px] font-semibold ${isPresent ? 'bg-emerald-100 text-emerald-700' : 'bg-rose-100 text-rose-700'}`}>
-                                {isPresent ? 'Present' : 'Absent'}
-                              </span>
-                            </div>
-                          </div>
-                        );
-                      })}
-                    </div>
-                  </motion.div>
-                )}
-              </AnimatePresence>
-            </div>
-          );
-        })
-      )}
-    </motion.div>
-  );
-}
-
-const AttendanceReport = () => {
-  const navigate = useNavigate();
-  const [children, setChildren] = useState([]);
-  const [loading, setLoading] = useState(true);
-  const [isRefreshing, setIsRefreshing] = useState(false);
-  const [error, setError] = useState('');
-  const [lastSynced, setLastSynced] = useState(null);
-
-  const [currentDate, setCurrentDate] = useState(new Date());
-  const [selectedDate, setSelectedDate] = useState(null);
-  const [activeTab, setActiveTab] = useState('overview');
-  const [dailyFilter, setDailyFilter] = useState('all');
-  const [expandedWeek, setExpandedWeek] = useState(null);
-
-  const childOptions = useMemo(
-    () => children.map((c) => ({ id: c?.student?._id || '', name: c?.student?.name || 'Student' })),
-    [children],
-  );
-  const [childKey, setChildKey, selectedOption] = useSharedChildSelection(childOptions);
-  const selectedStudentId = selectedOption?.id || '';
-
-  const loadAttendance = useCallback(async ({ silent = false } = {}) => {
-    if (silent) setIsRefreshing(true);
-    else setLoading(true);
-    setError('');
-    try {
-      const data = await parentApiJson('/api/attendance/parent/children', {}, navigate);
-      setChildren(Array.isArray(data?.children) ? data.children : []);
-      setLastSynced(new Date());
-    } catch (err) {
-      setError(err.message || 'Could not load attendance');
-    } finally {
-      setLoading(false);
-      setIsRefreshing(false);
-    }
-  }, [navigate]);
-
-  useEffect(() => { loadAttendance(); }, [loadAttendance]);
-
-  const selectedChild = useMemo(() => {
-    if (!children.length) return null;
-    if (!selectedStudentId) return children[0];
-    return children.find((child) => String(child?.student?._id) === String(selectedStudentId)) || children[0];
-  }, [children, selectedStudentId]);
-
-  const rawRecords = useMemo(
-    () => (Array.isArray(selectedChild?.records) ? selectedChild.records : []),
-    [selectedChild],
-  );
-
-  const { records, stats, byDate, subjectStats, weeklyData } = useMemo(() => processAttendance(rawRecords), [rawRecords]);
-  const streak = useMemo(() => computeStreak(records, byDate), [records, byDate]);
-
-  // Reset per-view selection state whenever the viewed child changes, so a
-  // date picked for one kid doesn't linger when switching to another.
-  useEffect(() => {
-    setSelectedDate(null);
-    setExpandedWeek(null);
-    setCurrentDate(new Date());
-  }, [selectedStudentId]);
-
-  if (loading) {
-    return <div className="min-h-screen bg-slate-50/50 p-4 sm:p-6"><Loading label="attendance" rows={5} /></div>;
-  }
-
-  if (error) {
-    return <div className="min-h-screen bg-slate-50/50 p-4 sm:p-6"><ErrorState message={error} onRetry={loadAttendance} /></div>;
-  }
-
-  return (
-    <div className="min-h-screen py-2 flex justify-center" style={{ backgroundColor: 'transparent' }}>
-      <div className="w-full max-w-5xl space-y-5">
-        <Header
-          child={selectedChild?.student}
-          childOptions={childOptions}
-          childKey={childKey}
-          onChildChange={setChildKey}
-          streak={streak}
-          lastSynced={lastSynced}
-          onRefresh={() => loadAttendance({ silent: true })}
-          isRefreshing={isRefreshing}
-          overallPct={stats.percentage}
-        />
-
-        {!selectedChild ? (
-          <div className="rounded-2xl border border-dashed border-slate-300 bg-white p-10 text-center">
-            <UserCircle2 size={38} className="mx-auto mb-3 text-slate-300" />
-            <p className="text-sm font-semibold text-slate-600">No linked children found</p>
+        <Card>
+          <div className="flex items-center justify-between">
+            <h2 className="text-base font-bold text-slate-900">Leave History</h2>
+            <Link to="/parents/excuse-letters" className="text-sm font-semibold text-blue-600 hover:text-blue-700">View All</Link>
           </div>
-        ) : (
-          <>
-            <TabNav activeTab={activeTab} setActiveTab={setActiveTab} />
-            <AnimatePresence mode="wait">
-              {activeTab === 'overview' && (
-                <OverviewTab stats={stats} streak={streak} currentDate={currentDate} records={records} subjectStats={subjectStats} />
-              )}
-              {activeTab === 'calendar' && (
-                <CalendarTab currentDate={currentDate} setCurrentDate={setCurrentDate} byDate={byDate} selectedDate={selectedDate} setSelectedDate={setSelectedDate} />
-              )}
-              {activeTab === 'daily' && (
-                <DailyTab records={records} byDate={byDate} dailyFilter={dailyFilter} setDailyFilter={setDailyFilter} />
-              )}
-              {activeTab === 'weekly' && (
-                <WeeklyTab weeklyData={weeklyData} expandedWeek={expandedWeek} setExpandedWeek={setExpandedWeek} />
-              )}
-            </AnimatePresence>
-          </>
-        )}
-      </div>
-    </div>
+          {childLetters.length === 0 ? (
+            <p className="mt-4 rounded-xl bg-slate-50 py-6 text-center text-sm text-slate-500">No leave requests yet</p>
+          ) : (
+            <ul className="mt-3 space-y-3">
+              {childLetters.slice(0, 3).map((l) => {
+                const type = String(l.reasonType || '').toLowerCase();
+                const cfg = type.includes('medical') || type.includes('sick')
+                  ? { Icon: HeartPulse, cls: 'bg-rose-50 text-rose-500' }
+                  : type.includes('family') || type.includes('function') ? { Icon: PartyPopper, cls: 'bg-amber-50 text-amber-500' }
+                    : { Icon: FileText, cls: 'bg-blue-50 text-blue-600' };
+                const status = String(l.status || 'pending').toLowerCase();
+                const pill = status === 'approved' ? 'bg-emerald-50 text-emerald-600' : status === 'rejected' ? 'bg-rose-50 text-rose-600' : 'bg-amber-50 text-amber-600';
+                return (
+                  <li key={l._id} className="flex items-center gap-3">
+                    <span className={`flex h-10 w-10 shrink-0 items-center justify-center rounded-xl ${cfg.cls}`}><cfg.Icon size={19} /></span>
+                    <span className="min-w-0 flex-1">
+                      <span className="block truncate text-sm font-semibold capitalize text-slate-900">{l.reason || l.reasonType || 'Leave'}</span>
+                      <span className="block text-xs text-slate-500">{fmtShort(l.dateFrom)}{l.dateTo && l.dateTo !== l.dateFrom ? ` – ${fmtShort(l.dateTo)}` : ''}</span>
+                    </span>
+                    <span className={`shrink-0 rounded-lg px-2.5 py-1 text-xs font-semibold capitalize ${pill}`}>{status}</span>
+                  </li>
+                );
+              })}
+            </ul>
+          )}
+        </Card>
+      </motion.div>
+    </motion.div>
   );
 };
 

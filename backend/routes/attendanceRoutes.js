@@ -1,5 +1,8 @@
 const express = require('express');
 const router = express.Router();
+const { parentAttendanceCache } = require('../utils/responseCache');
+// Any write here clears the parent attendance screen's response cache.
+router.use(parentAttendanceCache.invalidateOnWrite);
 const StudentUser = require('../models/StudentUser');
 const ParentUser = require('../models/ParentUser');
 const TeacherUser = require('../models/TeacherUser');
@@ -1572,7 +1575,7 @@ router.delete('/teacher/student/:studentId/entry/:entryId', authTeacher, async (
 });
 
 // === Parent views attendance for linked children ===
-router.get('/parent/children', authParent, async (req, res) => {
+router.get('/parent/children', authParent, parentAttendanceCache.cache, async (req, res) => {
   // #swagger.tags = ['Attendance']
   try {
     const schoolId = req.schoolId || req.user?.schoolId || null;
