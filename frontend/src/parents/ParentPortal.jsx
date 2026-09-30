@@ -307,6 +307,13 @@ const ParentPortal = () => {
   const [notifError, setNotifError] = useState('');
   const [showLogoutConfirm, setShowLogoutConfirm] = useState(false);
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
+  const [openGroups, setOpenGroups] = useState(() => (
+    Object.fromEntries(
+      NAV_GROUPS
+        .filter((group) => group.heading && group.heading !== 'Overview')
+        .map((group) => [group.heading, false])
+    )
+  ));
   const navigate = useNavigate();
   const location = useLocation();
   const profileRef = useRef(null);
@@ -439,6 +446,28 @@ const ParentPortal = () => {
     if (target === '/parents') return currentPath === target;
     return currentPath === target || currentPath.startsWith(`${target}/`);
   };
+  const toggleGroup = (heading) => {
+    setOpenGroups((prev) => ({
+      ...prev,
+      [heading]: !prev[heading],
+    }));
+  };
+
+  useEffect(() => {
+    const activeGroup = NAV_GROUPS.find(
+      (group) =>
+        group.heading &&
+        group.heading !== 'Overview' &&
+        group.items.some((item) => isNavActive(item.path))
+    );
+
+    if (activeGroup) {
+      setOpenGroups((prev) => ({
+        ...prev,
+        [activeGroup.heading]: true,
+      }));
+    }
+  }, [currentPath]);
   const goTo = (path) => {
     navigate(path);
     setMobileMenuOpen(false);
@@ -738,69 +767,128 @@ const ParentPortal = () => {
         </div>
 
         {/* ── Navigation ── */}
-        <nav className="modern-scrollbar min-h-0 flex-1 space-y-0.5 overflow-y-auto overflow-x-hidden overscroll-contain px-2 py-3">
-          {NAV_GROUPS.map((group, groupIndex) => (
-            <div key={group.heading || 'primary'}>
-              {group.heading && (sidebarOpen ? (
-                <p className="select-none px-3 pb-1 pt-4 text-[10px] font-bold uppercase tracking-wider text-gray-400">
-                  {group.heading}
-                </p>
-              ) : (
-                groupIndex > 0 && <div className="mx-3 my-2 border-t border-gray-100" aria-hidden="true" />
-              ))}
-              <div className="space-y-0.5">
-                {group.items.map((item) => {
-                  const Icon = item.icon;
-                  const badgeCount = badgeFor(item.path);
-                  const isActive = isNavActive(item.path);
-                  return (
-                    <Link
-                      key={item.path}
-                      to={item.path}
-                      onClick={handleMenuClick}
-                      aria-current={isActive ? 'page' : undefined}
-                      title={!sidebarOpen ? item.label : undefined}
-                      className={`group relative flex items-center gap-3 rounded-full px-3 py-2.5 transition-colors duration-150 ${
-                        sidebarOpen ? '' : 'justify-center'
-                      } ${isActive ? 'bg-violet-50 text-violet-700' : 'text-gray-600 hover:bg-gray-50 hover:text-gray-900'}`}
-                    >
-                      {isActive && (
-                        <motion.span
-                          layoutId="parent-sidebar-active-pill"
-                          className="absolute inset-0 rounded-full bg-violet-50 shadow-[0_1px_2px_rgba(15,23,42,0.05)]"
-                          transition={prefersReducedMotion ? { duration: 0 } : { type: 'spring', stiffness: 400, damping: 32 }}
-                        />
-                      )}
-                      <span className="relative z-10 shrink-0">
-                        <span className={`flex rounded-full p-1 transition-colors ${isActive ? 'bg-violet-500 text-white' : 'bg-gray-100 text-gray-400 group-hover:text-violet-500'}`}>
-                          <Icon size={16} />
-                        </span>
-                        {!sidebarOpen && badgeCount > 0 && (
-                          <span className="absolute -right-1.5 -top-1.5 flex h-3.5 min-w-3.5 items-center justify-center rounded-full bg-red-500 px-1 text-[9px] font-bold text-white">
-                            {badgeCount > 9 ? '9+' : badgeCount}
-                          </span>
-                        )}
+        <nav className="modern-scrollbar min-h-0 flex-1 space-y-1 overflow-y-auto overflow-x-hidden overscroll-contain px-2 py-3">
+          {NAV_GROUPS.map((group, groupIndex) => {
+            const isDashboard = group.heading === 'Overview';
+            const isOpen = Boolean(openGroups[group.heading]);
+            const groupHasActiveItem = group.items.some((item) => isNavActive(item.path));
+
+            if (isDashboard) {
+              const item = group.items[0];
+              const Icon = item.icon;
+              const badgeCount = badgeFor(item.path);
+              const isActive = isNavActive(item.path);
+
+              return (
+                <Link
+                  key={item.path}
+                  to={item.path}
+                  onClick={handleMenuClick}
+                  aria-current={isActive ? 'page' : undefined}
+                  title={!sidebarOpen ? item.label : undefined}
+                  className={`group relative flex items-center gap-3 rounded-full px-3 py-2.5 transition-all duration-200 ${sidebarOpen ? '' : 'justify-center'} ${isActive ? 'bg-violet-50 text-violet-700 shadow-sm' : 'text-gray-600 hover:bg-gray-50 hover:text-gray-900'}`}
+                >
+                  <span className="relative z-10 shrink-0">
+                    <span className={`flex rounded-full p-1.5 transition-colors ${isActive ? 'bg-violet-500 text-white' : 'bg-gray-100 text-gray-400 group-hover:bg-violet-50 group-hover:text-violet-500'}`}>
+                      <Icon size={17} />
+                    </span>
+                    {!sidebarOpen && badgeCount > 0 && (
+                      <span className="absolute -right-1.5 -top-1.5 flex h-3.5 min-w-3.5 items-center justify-center rounded-full bg-red-500 px-1 text-[9px] font-bold text-white">
+                        {badgeCount > 9 ? '9+' : badgeCount}
                       </span>
-                      {sidebarOpen && (
-                        <span className={`relative z-10 flex-1 truncate text-sm ${isActive ? 'font-bold' : 'font-semibold'}`}>
-                          {item.label}
-                        </span>
-                      )}
-                      {sidebarOpen && badgeCount > 0 && (
-                        <span className="relative z-10 flex h-5 min-w-5 items-center justify-center rounded-full bg-red-500 px-1.5 text-[10px] font-bold text-white">
-                          {badgeCount > 9 ? '9+' : badgeCount}
-                        </span>
-                      )}
-                      {sidebarOpen && isActive && badgeCount <= 0 && (
-                       <></>
-                       // <span className="relative z-10 h-1.5 w-1.5 shrink-0 animate-pulse rounded-full bg-violet-600" />
-                      )}
-                    </Link>
-                  );
-                })}
+                    )}
+                  </span>
+                  {sidebarOpen && (
+                    <span className={`relative z-10 flex-1 truncate text-sm ${isActive ? 'font-bold' : 'font-semibold'}`}>
+                      {item.label}
+                    </span>
+                  )}
+                  {sidebarOpen && badgeCount > 0 && (
+                    <span className="relative z-10 flex h-5 min-w-5 items-center justify-center rounded-full bg-red-500 px-1.5 text-[10px] font-bold text-white">
+                      {badgeCount > 9 ? '9+' : badgeCount}
+                    </span>
+                  )}
+                </Link>
+              );
+            }
+
+            const GroupIcon = group.items[0]?.icon || FolderOpen;
+
+            return (
+              <div key={group.heading} className="space-y-1">
+                {groupIndex > 1 && !sidebarOpen && (
+                  <div className="mx-3 my-1 border-t border-gray-100" aria-hidden="true" />
+                )}
+
+                <button
+                  type="button"
+                  onClick={() => {
+                    if (!sidebarOpen) {
+                      setSidebarOpen(true);
+                      setOpenGroups((prev) => ({ ...prev, [group.heading]: true }));
+                    } else {
+                      toggleGroup(group.heading);
+                    }
+                  }}
+                  title={!sidebarOpen ? group.heading : undefined}
+                  aria-expanded={sidebarOpen ? isOpen : undefined}
+                  className={`group relative flex w-full items-center gap-3 rounded-full px-3 py-2.5 text-left transition-all duration-200 ${sidebarOpen ? '' : 'justify-center'} ${groupHasActiveItem ? 'bg-violet-50/70 text-violet-700' : 'text-gray-600 hover:bg-gray-50 hover:text-gray-900'}`}
+                >
+                  <span className={`flex shrink-0 rounded-full p-1.5 transition-colors ${groupHasActiveItem ? 'bg-violet-500 text-white' : 'bg-gray-100 text-gray-400 group-hover:bg-violet-50 group-hover:text-violet-500'}`}>
+                    <GroupIcon size={17} />
+                  </span>
+
+                  {sidebarOpen && (
+                    <>
+                      <span className={`flex-1 truncate text-sm ${groupHasActiveItem ? 'font-bold' : 'font-semibold'}`}>
+                        {group.heading}
+                      </span>
+                      <ChevronDown size={15} className={`shrink-0 text-gray-400 transition-transform duration-200 ${isOpen ? 'rotate-180 text-violet-500' : ''}`} />
+                    </>
+                  )}
+                </button>
+
+                {sidebarOpen && isOpen && (
+                  <motion.div
+                    initial={{ height: 0, opacity: 0 }}
+                    animate={{ height: 'auto', opacity: 1 }}
+                    transition={{ duration: prefersReducedMotion ? 0 : 0.18 }}
+                    className="ml-4 overflow-hidden border-l border-violet-100 pl-2"
+                  >
+                    <div className="space-y-0.5 py-1">
+                      {group.items.map((item) => {
+                        const Icon = item.icon;
+                        const badgeCount = badgeFor(item.path);
+                        const isActive = isNavActive(item.path);
+
+                        return (
+                          <Link
+                            key={item.path}
+                            to={item.path}
+                            onClick={handleMenuClick}
+                            aria-current={isActive ? 'page' : undefined}
+                            className={`group relative flex items-center gap-2.5 rounded-full px-3 py-2 transition-all duration-150 ${isActive ? 'bg-violet-100 text-violet-700' : 'text-gray-500 hover:bg-gray-50 hover:text-gray-800'}`}
+                          >
+                            <span className={`flex shrink-0 rounded-full p-1 ${isActive ? 'bg-violet-500 text-white' : 'bg-gray-100 text-gray-400 group-hover:text-violet-500'}`}>
+                              <Icon size={14} />
+                            </span>
+                            <span className={`min-w-0 flex-1 truncate text-sm ${isActive ? 'font-bold' : 'font-medium'}`}>
+                              {item.label}
+                            </span>
+                            {badgeCount > 0 && (
+                              <span className="flex h-5 min-w-5 items-center justify-center rounded-full bg-red-500 px-1.5 text-[10px] font-bold text-white">
+                                {badgeCount > 9 ? '9+' : badgeCount}
+                              </span>
+                            )}
+                          </Link>
+                        );
+                      })}
+                    </div>
+                  </motion.div>
+                )}
               </div>
-            </div>
-          ))}
+            );
+          })}
         </nav>
 
         {/* ── Footer: account + logout ── */}
@@ -1165,36 +1253,53 @@ const ParentPortal = () => {
                 </button>
               </div>
               <nav className="min-h-0 flex-1 overflow-y-auto px-3 py-3">
-                {NAV_GROUPS.map((group) => (
-                  <div key={group.heading || 'primary'} className="mb-1">
-                    {group.heading && <p className="px-3 pb-1 pt-2 text-[11px] font-semibold uppercase tracking-wider text-slate-400">{group.heading}</p>}
-                    {group.items.map((item) => {
-                      const Icon = item.icon;
-                      const active = isNavActive(item.path);
-                      const badgeCount = badgeFor(item.path);
-                      return (
-                        <button
-                          key={item.path}
-                          type="button"
-                          onClick={() => goTo(item.path)}
-                          aria-current={active ? 'page' : undefined}
-                          className={`flex w-full items-center gap-3 rounded-xl px-3 py-2.5 text-left transition ${active ? 'bg-violet-50 text-violet-700' : 'text-slate-600 active:bg-slate-100'}`}
-                        >
-                          <Icon className={`h-5 w-5 shrink-0 ${active ? 'text-violet-600' : 'text-slate-400'}`} />
-                          <span className="min-w-0 flex-1">
-                            <span className="block text-sm font-medium">{item.label}</span>
-                            <span className="block truncate text-xs text-slate-400">{item.description}</span>
-                          </span>
-                          {badgeCount > 0 && (
-                            <span className="flex h-5 min-w-[1.25rem] items-center justify-center rounded-full bg-violet-600 px-1.5 text-[11px] font-bold text-white">
-                              {badgeCount > 9 ? '9+' : badgeCount}
-                            </span>
-                          )}
-                        </button>
-                      );
-                    })}
-                  </div>
-                ))}
+                {NAV_GROUPS.map((group) => {
+                  const isDashboard = group.heading === 'Overview';
+                  const isOpen = Boolean(openGroups[group.heading]);
+                  const groupHasActiveItem = group.items.some((item) => isNavActive(item.path));
+
+                  if (isDashboard) {
+                    const item = group.items[0];
+                    const Icon = item.icon;
+                    const active = isNavActive(item.path);
+                    return (
+                      <button key={item.path} type="button" onClick={() => goTo(item.path)} aria-current={active ? 'page' : undefined} className={`mb-1 flex w-full items-center gap-3 rounded-xl px-3 py-3 text-left transition ${active ? 'bg-violet-50 text-violet-700' : 'text-slate-600 hover:bg-slate-50'}`}>
+                        <Icon className={`h-5 w-5 shrink-0 ${active ? 'text-violet-600' : 'text-slate-400'}`} />
+                        <span className="text-sm font-semibold">{item.label}</span>
+                      </button>
+                    );
+                  }
+
+                  const GroupIcon = group.items[0]?.icon || FolderOpen;
+                  return (
+                    <div key={group.heading} className="mb-1">
+                      <button type="button" onClick={() => toggleGroup(group.heading)} aria-expanded={isOpen} className={`flex w-full items-center gap-3 rounded-xl px-3 py-3 text-left transition ${groupHasActiveItem ? 'bg-violet-50 text-violet-700' : 'text-slate-600 hover:bg-slate-50'}`}>
+                        <span className={`flex h-9 w-9 shrink-0 items-center justify-center rounded-lg ${groupHasActiveItem ? 'bg-violet-500 text-white' : 'bg-slate-100 text-slate-400'}`}>
+                          <GroupIcon size={17} />
+                        </span>
+                        <span className="flex-1 text-sm font-semibold">{group.heading}</span>
+                        <ChevronDown size={17} className={`transition-transform ${isOpen ? 'rotate-180 text-violet-600' : 'text-slate-400'}`} />
+                      </button>
+
+                      {isOpen && (
+                        <div className="ml-5 mt-1 space-y-1 border-l border-violet-100 pl-3">
+                          {group.items.map((item) => {
+                            const Icon = item.icon;
+                            const active = isNavActive(item.path);
+                            const badgeCount = badgeFor(item.path);
+                            return (
+                              <button key={item.path} type="button" onClick={() => goTo(item.path)} aria-current={active ? 'page' : undefined} className={`flex w-full items-center gap-3 rounded-lg px-3 py-2.5 text-left transition ${active ? 'bg-violet-100 text-violet-700' : 'text-slate-600 hover:bg-slate-50'}`}>
+                                <Icon className={`h-4 w-4 shrink-0 ${active ? 'text-violet-600' : 'text-slate-400'}`} />
+                                <span className={`min-w-0 flex-1 truncate text-sm ${active ? 'font-bold' : 'font-medium'}`}>{item.label}</span>
+                                {badgeCount > 0 && <span className="flex h-5 min-w-5 items-center justify-center rounded-full bg-violet-600 px-1.5 text-[10px] font-bold text-white">{badgeCount > 9 ? '9+' : badgeCount}</span>}
+                              </button>
+                            );
+                          })}
+                        </div>
+                      )}
+                    </div>
+                  );
+                })}
               </nav>
               <div className="border-t border-slate-100 px-5 py-3">
                 <button
