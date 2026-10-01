@@ -38,6 +38,38 @@ import { downloadAttachment, formatFileSize, getAttachmentMeta } from '../utils/
 
 const PAGE_SIZE = 5;
 
+// Client-side cache: render the last list instantly, then refresh in the background.
+const NOTICES_CACHE_KEY = 'parent_notices_cache_v1';
+const NOTICES_CACHE_TTL_MS = 5 * 60 * 1000;
+
+const noticesCacheScope = () => {
+  const token = localStorage.getItem('token') || '';
+  return token.split('.')[1] || 'anonymous';
+};
+
+const readNoticesCache = () => {
+  try {
+    const parsed = JSON.parse(sessionStorage.getItem(NOTICES_CACHE_KEY) || 'null');
+    if (!parsed || parsed.scope !== noticesCacheScope()) return null;
+    if (Date.now() - parsed.cachedAt > NOTICES_CACHE_TTL_MS) return null;
+    return Array.isArray(parsed.notices) ? parsed.notices : null;
+  } catch {
+    return null;
+  }
+};
+
+const writeNoticesCache = (notices) => {
+  try {
+    sessionStorage.setItem(NOTICES_CACHE_KEY, JSON.stringify({
+      scope: noticesCacheScope(),
+      cachedAt: Date.now(),
+      notices,
+    }));
+  } catch {
+    // Storage full/blocked — caching is best-effort.
+  }
+};
+
 const PAGE_MOTION = {
   hidden: { opacity: 0, y: 10 },
   show: { opacity: 1, y: 0, transition: { duration: 0.25, ease: 'easeOut', staggerChildren: 0.05 } },
@@ -361,10 +393,12 @@ const ParentNotices = () => {
   const navigate = useNavigate();
   const location = useLocation();
 
-  const [notices, setNotices] = useState([]);
+  const [notices, setNotices] = useState(
+    () => readNoticesCache() || []
+  );
 
   const [loading, setLoading] =
-    useState(true);
+    useState(() => !readNoticesCache());
 
   const [refreshing, setRefreshing] =
     useState(false);
@@ -421,12 +455,15 @@ const ParentNotices = () => {
           );
         }
 
-        setNotices(
-          Array.isArray(data)
-            ? data
-            : []
-        );
+        const list = Array.isArray(data)
+          ? data
+          : [];
+
+        setNotices(list);
+        writeNoticesCache(list);
       } catch (err) {
+        // Keep showing the cached list if a background refresh fails.
+        if (silent) return;
         setError(
           err?.message ||
             'Unable to load notices'
@@ -441,8 +478,9 @@ const ParentNotices = () => {
 
 
   useEffect(() => {
-    load();
-  }, [load]);
+    // Cached list is already on screen; refresh it quietly.
+    load({ silent: Boolean(readNoticesCache()) });
+  }, []);
 
 
   /* ======================================================================= */
@@ -910,7 +948,7 @@ const ParentNotices = () => {
               initial="hidden"
               animate="show"
               exit="hidden"
-              className="grid min-h-0 flex-1 content-start gap-2 overflow-hidden lg:grid-rows-5"
+              className="grid min-h-0 flex-1 content-start gap-2 overflow-y-auto"
             >
 
           {pagedVisible.map((notice) => {
@@ -960,7 +998,7 @@ const ParentNotices = () => {
                   className="
                     group
                     flex
-                    h-[72px]
+                    min-h-[76px]
                     w-full
                     text-left
                     items-center
