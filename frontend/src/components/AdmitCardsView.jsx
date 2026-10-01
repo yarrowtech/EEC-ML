@@ -270,14 +270,13 @@ const AdmitCardPreview = ({ style }) => {
         justify-center
         overflow-hidden
         rounded-xl
-        ${style.previewBg}
       `}
     >
       {/* Large soft circle */}
       <div
         className={`
           absolute
-          -left-[24px]
+          -left-[2px]
           top-1/2
           h-[108px]
           w-[108px]

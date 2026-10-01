@@ -22,6 +22,7 @@ import {
 } from 'lucide-react';
 import { parentApiJson } from './parentApi';
 import { useSharedChildSelection } from './ChildSwitcher';
+import ChildPicker from './ChildPicker';
 import Loading from './Loading';
 import { EmptyState, ErrorState } from './StateBlock';
 import { PreviewModal, fileKind } from './DocPreview';
@@ -352,7 +353,7 @@ const AchievementsView = () => {
     () => childrenReports.map((c) => ({ id: String(c.studentId || ''), name: c.studentName || 'Student' })),
     [childrenReports],
   );
-  const [, , selectedOption] = useSharedChildSelection(childOptions);
+  const [, setChildKey, selectedOption] = useSharedChildSelection(childOptions);
   const kids = useMemo(
     () => childrenReports.map((c) => ({
       id: String(c.studentId || ''),
@@ -364,6 +365,7 @@ const AchievementsView = () => {
     })),
     [childrenReports],
   );
+  const selectedKid = kids.find((k) => k.id === selectedOption?.id) || null;
   const selectedChild = childrenReports.find((c) => String(c.studentId) === selectedOption?.id) || null;
   const all = useMemo(
     () => [...(selectedChild?.achievements || [])].sort((a, b) => new Date(a.date || 0) - new Date(b.date || 0)),
@@ -392,6 +394,10 @@ const AchievementsView = () => {
     return true;
   });
 
+  const handleChildChange = (id) => {
+    const opt = childOptions.find((o) => o.id === id);
+    if (opt) setChildKey(`${opt.id || ''}::${opt.name || ''}`);
+  };
 
   const openCertificate = (a) => setPreview({
     name: `${a.title} Certificate`,
@@ -425,6 +431,11 @@ const AchievementsView = () => {
             <p className="text-xs text-slate-500 sm:text-sm">Awards, medals and certificates your child has earned this year.</p>
           </div>
         </div>
+        {selectedKid ? (
+          <ChildPicker kids={kids} selected={selectedKid} onChange={handleChildChange} />
+        ) : (
+          <p className="text-sm text-slate-400">No children found</p>
+        )}
       </Motion.div>
 
       {/* Stats */}
