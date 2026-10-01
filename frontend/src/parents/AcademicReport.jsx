@@ -938,64 +938,38 @@ const AcademicReport = () => {
   /* ----------------------------------------------------------------------- */
 
   return (
-    <div className="min-w-0 space-y-5">
+    <div className="min-w-0 space-y-3">
 
       {/* ================================================================== */}
       {/* PAGE HEADER                                                        */}
       {/* ================================================================== */}
 
-      <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
-
-        {/* Left */}
-        <div className="flex items-start gap-3">
-
-          <div className="flex h-12 w-12 shrink-0 items-center justify-center rounded-xl bg-violet-50 text-violet-600">
-            <FileText
-              className="h-6 w-6"
-              strokeWidth={2}
-            />
+      <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+        <div className="flex min-w-0 items-center gap-2.5">
+          <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-violet-50 text-violet-600">
+            <FileText className="h-5 w-5" strokeWidth={2} />
           </div>
-
-          <div>
-            <h1 className="text-2xl font-bold tracking-tight text-slate-900 sm:text-3xl">
+          <div className="min-w-0">
+            <h1 className="text-xl font-bold tracking-tight text-slate-900">
               Results & Report Card
             </h1>
-
-            <p className="mt-0.5 text-sm text-slate-500">
-              View your child's exam results,
-              grades and report cards.
+            <p className="mt-0.5 text-xs text-slate-500">
+              View your child&apos;s exam results, grades and report cards.
             </p>
           </div>
         </div>
 
-        {/* Right — the child's name and photo */}
         {selectedReport && (
-          <motion.div
-            initial={{ opacity: 0, x: 12 }}
-            animate={{ opacity: 1, x: 0 }}
-            className="flex w-full flex-col items-stretch gap-2 lg:w-auto lg:items-end"
-          >
-            <div className="flex items-center gap-3 rounded-2xl border border-slate-200 bg-white px-3 py-2.5 pr-5 shadow-sm">
-              {childPhoto ? (
-                <img src={childPhoto} alt={selectedReport.studentName || 'Student'} className="h-11 w-11 rounded-xl object-cover" />
-              ) : (
-                <span className="flex h-11 w-11 items-center justify-center rounded-xl bg-violet-100 text-sm font-bold text-violet-700">
-                  {String(selectedReport.studentName || 'S').trim().split(/\s+/).slice(0, 2).map((w) => w[0]).join('').toUpperCase()}
-                </span>
-              )}
-              <div className="min-w-0">
-                <p className="truncate text-sm font-bold text-slate-900">{selectedReport.studentName || 'Student'}</p>
-                <p className="truncate text-xs text-slate-500">
-                  {selectedReport.grade ? `Class ${selectedReport.grade}` : 'Class —'}
-                  {selectedReport.section ? ` - Section ${selectedReport.section}` : ''}
-                </p>
-              </div>
-            </div>
-            {childOptions.length > 1 && (
-              <ChildSwitcher options={childOptions} value={childKey} onChange={setChildKey} label="Child" />
-            )}
-          </motion.div>
-        )}      </div>
+          <div className="w-full shrink-0 sm:w-[280px] lg:w-[300px]">
+            <ChildSwitcher
+              options={childOptions}
+              value={childKey}
+              onChange={setChildKey}
+              label="Select Child"
+            />
+          </div>
+        )}
+      </div>
 
       {/* ================================================================== */}
       {/* ERROR                                                              */}
@@ -1023,11 +997,11 @@ const AcademicReport = () => {
             { n: 2, Icon: ClipboardCheck, title: 'See the result', text: 'Marks, grade and remarks for every subject.' },
             { n: 3, Icon: Download, title: 'Download', text: 'Save or print the official report card.' },
           ].map((s) => (
-            <motion.li key={s.n} variants={RISE} className="flex items-start gap-3 rounded-xl border border-slate-200 bg-white px-3.5 py-3 shadow-sm">
-              <span className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-violet-600 text-xs font-bold text-white">{s.n}</span>
+            <motion.li key={s.n} variants={RISE} className="flex min-w-0 items-center gap-2.5 rounded-xl border border-slate-200 bg-white px-3 py-2.5 shadow-sm">
+              <span className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-violet-600 text-[10px] font-bold text-white">{s.n}</span>
               <span className="min-w-0">
-                <span className="flex items-center gap-1.5 text-sm font-semibold text-slate-900"><s.Icon className="h-4 w-4 text-violet-500" /> {s.title}</span>
-                <span className="block text-xs text-slate-500">{s.text}</span>
+                <span className="flex items-center gap-1.5 text-xs font-semibold text-slate-900"><s.Icon className="h-4 w-4 text-violet-500" /> {s.title}</span>
+                <span className="block truncate text-[11px] text-slate-500">{s.text}</span>
               </span>
             </motion.li>
           ))}
@@ -1051,7 +1025,7 @@ const AcademicReport = () => {
             initial="hidden"
             animate="show"
             variants={{ hidden: {}, show: { transition: { staggerChildren: 0.06 } } }}
-            className="grid grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-4"
+            className="grid grid-cols-1 gap-2.5 md:grid-cols-2 xl:grid-cols-3"
           >
 
             {examGroups.map(
@@ -1130,7 +1104,7 @@ const AcademicReport = () => {
                       <div className="flex min-w-0 items-center gap-3">
 
                         <div
-                          className={`flex h-12 w-12 shrink-0 items-center justify-center rounded-xl ${examColor.icon}`}
+                          className={`flex h-9 w-9 shrink-0 items-center justify-center rounded-lg ${examColor.icon}`}
                         >
                           <FileText
                             className="h-6 w-6"
@@ -1156,14 +1130,14 @@ const AcademicReport = () => {
                       <div className="shrink-0 text-right">
 
                         {exam.subjects?.length > 0 ? (
-                          <p className="text-xl font-bold text-slate-900">
+                          <p className="text-sm font-bold text-slate-900">
                             {Math.round(
                               percentage
                             )}
                             %
                           </p>
                         ) : (
-                          <p className="text-xl font-bold text-slate-900">
+                          <p className="text-sm font-bold text-slate-900">
                             -
                           </p>
                         )}
@@ -1174,7 +1148,7 @@ const AcademicReport = () => {
                     <div className="relative mt-3 flex items-center justify-between">
 
                       <span className="flex items-center gap-1.5">
-                        <span className="inline-flex items-center rounded-full border border-emerald-100 bg-emerald-50 px-2.5 py-1 text-[10px] font-bold text-emerald-600">
+                        <span className="inline-flex items-center rounded-full border border-emerald-100 bg-emerald-50 px-2 py-0.5 text-[9px] font-bold text-emerald-600">
                           Published
                         </span>
                         {index === 0 && (
@@ -1208,20 +1182,20 @@ const AcademicReport = () => {
             initial={{ opacity: 0, y: 12 }}
             animate={{ opacity: 1, y: 0 }}
             transition={{ duration: 0.35 }}
-            className="overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm"
+            className="overflow-hidden rounded-xl border border-slate-200 bg-white shadow-sm"
           >
 
             {/* ------------------------------------------------------------ */}
             {/* Report Header                                                 */}
             {/* ------------------------------------------------------------ */}
 
-            <div className="border-b border-slate-100 px-5 py-4 sm:px-6">
+            <div className="border-b border-slate-100 px-4 py-3">
 
               <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
 
                 <div className="flex items-start gap-3">
 
-                  <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl bg-blue-50 text-blue-600">
+                  <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-lg bg-blue-100 text-blue-600">
                     <FileText
                       className="h-6 w-6"
                       strokeWidth={2}
@@ -1232,17 +1206,17 @@ const AcademicReport = () => {
 
                     <div className="flex flex-wrap items-center gap-2">
 
-                      <h2 className="text-lg font-bold text-slate-900 sm:text-xl">
+                      <h2 className="text-sm font-bold text-slate-900">
                         {selectedExam.examName}
                       </h2>
 
-                      <span className="inline-flex items-center rounded-full border border-emerald-100 bg-emerald-50 px-2.5 py-1 text-[10px] font-bold text-emerald-600">
+                      <span className="inline-flex items-center rounded-full border border-emerald-100 bg-emerald-50 px-2 py-0.5 text-[9px] font-bold text-emerald-600">
                         Published
                       </span>
 
                     </div>
 
-                    <p className="mt-1 text-xs font-medium text-slate-500 sm:text-sm">
+                    <p className="mt-1 text-[11px] font-medium text-slate-500">
 
                       Academic Year:{' '}
                       <span className="text-slate-700">
@@ -1292,7 +1266,7 @@ const AcademicReport = () => {
                   disabled={
                     isExporting
                   }
-                  className="inline-flex items-center justify-center gap-2 rounded-xl border border-blue-300 bg-white px-4 py-2.5 text-sm font-semibold text-blue-600 transition hover:bg-blue-50 disabled:cursor-not-allowed disabled:opacity-50"
+                  className="inline-flex items-center justify-center gap-1.5 rounded-lg border border-violet-200 bg-violet-600 px-3 py-2 text-xs font-semibold text-white transition hover:bg-violet-700 disabled:cursor-not-allowed disabled:opacity-50"
                 >
 
                   {isExporting ? (
@@ -1301,7 +1275,7 @@ const AcademicReport = () => {
                     />
                   ) : (
                     <Download
-                      className="h-4 w-4"
+                      className="h-3.5 w-3.5"
                     />
                   )}
 
@@ -1319,7 +1293,7 @@ const AcademicReport = () => {
             {/* In one line — what this result means                         */}
             {/* ------------------------------------------------------------ */}
 
-            <div className="mx-5 mt-4 rounded-xl border border-violet-100 bg-violet-50/60 px-4 py-3 text-sm text-slate-700 sm:mx-6">
+            <div className="mx-4 mt-3 rounded-lg border border-emerald-100 bg-emerald-50/70 px-3 py-2.5 text-xs text-slate-700">
               <span className="font-semibold text-slate-900">{selectedReport.studentName || 'Your child'}</span>
               {' '}scored{' '}
               <span className="font-semibold text-slate-900">{examSummary.obtained} out of {examSummary.total}</span>
@@ -1345,12 +1319,12 @@ const AcademicReport = () => {
             {/* Summary Stats                                                 */}
             {/* ------------------------------------------------------------ */}
 
-            <div className={`grid grid-cols-1 gap-3 px-5 py-4 sm:grid-cols-2 sm:px-6 ${examSummary.rank !== '—' ? 'lg:grid-cols-4' : 'lg:grid-cols-3'}`}>
+            <div className={`grid grid-cols-1 gap-2 px-4 py-3 sm:grid-cols-3 ${examSummary.rank !== '—' ? 'lg:grid-cols-4' : ''}`}>
 
               {/* Percentage */}
-              <div className="flex items-center gap-3 rounded-xl border border-amber-100 bg-gradient-to-br from-amber-50 to-white p-3.5">
+              <div className="flex items-center gap-3 rounded-lg border border-amber-100 bg-amber-50/50 px-3 py-2.5">
 
-                <div className="flex h-12 w-12 shrink-0 items-center justify-center rounded-xl bg-amber-50 text-amber-500">
+                <div className="flex h-12 w-12 shrink-0 items-center justify-center rounded-lg bg-amber-100 text-amber-500">
                   <Trophy
                     className="h-6 w-6"
                     strokeWidth={2}
@@ -1358,11 +1332,11 @@ const AcademicReport = () => {
                 </div>
 
                 <div>
-                  <p className="text-xs font-medium text-slate-500">
+                  <p className="text-[10px] font-medium text-slate-500">
                     Percentage
                   </p>
 
-                  <p className="mt-0.5 text-xl font-bold text-slate-900">
+                  <p className="mt-0.5 text-base font-bold text-slate-900">
                     {Math.round(
                       examSummary.percentage
                     )}
@@ -1373,18 +1347,18 @@ const AcademicReport = () => {
               </div>
 
               {/* Total Marks */}
-              <div className="flex items-center gap-3 rounded-xl border border-blue-100 bg-gradient-to-br from-blue-50 to-white p-3.5">
+              <div className="flex items-center gap-3 rounded-lg border border-blue-100 bg-blue-50/50 px-3 py-2.5">
 
-                <div className="flex h-12 w-12 shrink-0 items-center justify-center rounded-xl bg-blue-50 text-blue-600">
+                <div className="flex h-12 w-12 shrink-0 items-center justify-center rounded-lg bg-blue-100 text-blue-600">
                   <BarChartIcon />
                 </div>
 
                 <div>
-                  <p className="text-xs font-medium text-slate-500">
+                  <p className="text-[10px] font-medium text-slate-500">
                     Total Marks
                   </p>
 
-                  <p className="mt-0.5 text-xl font-bold text-slate-900">
+                  <p className="mt-0.5 text-base font-bold text-slate-900">
                     {examSummary.obtained}{' '}
                     <span className="text-slate-400">
                       /{' '}
@@ -1398,9 +1372,9 @@ const AcademicReport = () => {
               </div>
 
               {/* Grade */}
-              <div className="flex items-center gap-3 rounded-xl border border-amber-100 bg-gradient-to-br from-amber-50 to-white p-3.5">
+              <div className="flex items-center gap-3 rounded-lg border border-amber-100 bg-amber-50/50 px-3 py-2.5">
 
-                <div className="flex h-12 w-12 shrink-0 items-center justify-center rounded-xl bg-amber-50 text-amber-500">
+                <div className="flex h-12 w-12 shrink-0 items-center justify-center rounded-lg bg-amber-100 text-amber-500">
                   <Star
                     className="h-6 w-6"
                     fill="currentColor"
@@ -1408,11 +1382,11 @@ const AcademicReport = () => {
                 </div>
 
                 <div>
-                  <p className="text-xs font-medium text-slate-500">
+                  <p className="text-[10px] font-medium text-slate-500">
                     Grade
                   </p>
 
-                  <p className="mt-0.5 text-xl font-bold text-slate-900">
+                  <p className="mt-0.5 text-base font-bold text-slate-900">
                     {examSummary.grade}
                   </p>
                 </div>
@@ -1421,9 +1395,9 @@ const AcademicReport = () => {
 
               {/* Rank (only when the school publishes one) */}
               {examSummary.rank !== '—' && (
-              <div className="flex items-center gap-3 rounded-xl border border-rose-100 bg-gradient-to-br from-rose-50 to-white p-3.5">
+              <div className="flex items-center gap-3 rounded-lg border border-rose-100 bg-rose-50/50 px-3 py-2.5">
 
-                <div className="flex h-12 w-12 shrink-0 items-center justify-center rounded-xl bg-rose-50 text-rose-500">
+                <div className="flex h-12 w-12 shrink-0 items-center justify-center rounded-lg bg-rose-100 text-rose-500">
                   <Medal
                     className="h-6 w-6"
                     strokeWidth={2}
@@ -1431,11 +1405,11 @@ const AcademicReport = () => {
                 </div>
 
                 <div>
-                  <p className="text-xs font-medium text-slate-500">
+                  <p className="text-[10px] font-medium text-slate-500">
                     Rank
                   </p>
 
-                  <p className="mt-0.5 text-xl font-bold text-slate-900">
+                  <p className="mt-0.5 text-base font-bold text-slate-900">
                     {examSummary.rank}
                   </p>
                 </div>
@@ -1449,38 +1423,38 @@ const AcademicReport = () => {
             {/* Subject Table                                                  */}
             {/* ------------------------------------------------------------ */}
 
-            <div className="px-5 pb-5 sm:px-6">
+            <div className="px-4 pb-4">
 
               <div className="overflow-hidden rounded-xl border border-slate-200">
 
                 <div className="overflow-x-auto">
 
-                  <table className="min-w-[850px] w-full border-collapse">
+                  <table className="min-w-[760px] w-full border-collapse">
 
                     <thead>
                       <tr className="bg-slate-50">
 
-                        <th className="px-5 py-3 text-left text-xs font-bold text-slate-500">
+                        <th className="px-3 py-2 text-left text-[10px] font-bold text-slate-500">
                           #
                         </th>
 
-                        <th className="px-4 py-3 text-left text-xs font-bold text-slate-500">
+                        <th className="px-3 py-2 text-left text-[10px] font-bold text-slate-500">
                           Subject
                         </th>
 
-                        <th className="px-4 py-3 text-center text-xs font-bold text-slate-500">
+                        <th className="px-3 py-2 text-center text-[10px] font-bold text-slate-500">
                           Max Marks
                         </th>
 
-                        <th className="px-4 py-3 text-center text-xs font-bold text-slate-500">
+                        <th className="px-3 py-2 text-center text-[10px] font-bold text-slate-500">
                           Marks Obtained
                         </th>
 
-                        <th className="px-4 py-3 text-center text-xs font-bold text-slate-500">
+                        <th className="px-3 py-2 text-center text-[10px] font-bold text-slate-500">
                           Grade
                         </th>
 
-                        <th className="px-4 py-3 text-left text-xs font-bold text-slate-500">
+                        <th className="px-3 py-2 text-left text-[10px] font-bold text-slate-500">
                           Remarks
                         </th>
 
@@ -1547,12 +1521,12 @@ const AcademicReport = () => {
                                     className={`flex h-7 w-7 shrink-0 items-center justify-center rounded-lg ${iconClass}`}
                                   >
                                     <SubjectIcon
-                                      className="h-4 w-4"
+                                      className="h-3.5 w-3.5"
                                       strokeWidth={2.2}
                                     />
                                   </span>
 
-                                  <span className="text-sm font-medium text-slate-700">
+                                  <span className="text-xs font-medium text-slate-700">
                                     {
                                       subject?.subject ||
                                       'Subject'
@@ -1564,21 +1538,21 @@ const AcademicReport = () => {
                               </td>
 
                               {/* Max */}
-                              <td className="px-4 py-3 text-center text-sm font-medium text-slate-600">
+                              <td className="px-3 py-2 text-center text-xs font-medium text-slate-600">
                                 <span className="underline decoration-slate-200 underline-offset-2">
                                   {total}
                                 </span>
                               </td>
 
                               {/* Obtained */}
-                              <td className="px-4 py-3 text-center text-sm font-medium text-slate-600">
+                              <td className="px-3 py-2 text-center text-xs font-medium text-slate-600">
                                 <span className="underline decoration-slate-200 underline-offset-2">
                                   {obtained}
                                 </span>
                               </td>
 
                               {/* Grade */}
-                              <td className="px-4 py-3 text-center">
+                              <td className="px-3 py-2 text-center">
 
                                 <span
                                   className={`inline-flex min-w-[50px] items-center justify-center rounded-full border px-3 py-1 text-xs font-bold ${getGradeClass(
@@ -1612,24 +1586,24 @@ const AcademicReport = () => {
 
                         <td
                           colSpan={2}
-                          className="px-5 py-3 text-right text-sm font-bold text-slate-800"
+                          className="px-3 py-2 text-right text-xs font-bold text-slate-800"
                         >
                           Total
                         </td>
 
-                        <td className="px-4 py-3 text-center text-sm font-bold text-slate-900">
+                        <td className="px-3 py-2 text-center text-xs font-bold text-slate-900">
                           {
                             examSummary.total
                           }
                         </td>
 
-                        <td className="px-4 py-3 text-center text-sm font-bold text-slate-900">
+                        <td className="px-3 py-2 text-center text-xs font-bold text-slate-900">
                           {
                             examSummary.obtained
                           }
                         </td>
 
-                        <td className="px-4 py-3 text-center">
+                        <td className="px-3 py-2 text-center">
 
                           <span
                             className={`inline-flex min-w-[50px] items-center justify-center rounded-full border px-3 py-1 text-xs font-bold ${getGradeClass(
@@ -1643,7 +1617,7 @@ const AcademicReport = () => {
 
                         </td>
 
-                        <td className="px-4 py-3 text-sm text-slate-500">
+                        <td className="px-3 py-2 text-xs text-slate-500">
                           -
                         </td>
 
@@ -1669,25 +1643,25 @@ const AcademicReport = () => {
       {!error &&
         selectedReport &&
         selectedExam && (
-          <div className="grid grid-cols-1 gap-4 lg:grid-cols-5">
+          <div className="grid grid-cols-1 gap-3 lg:grid-cols-5">
 
             {/* ------------------------------------------------------------ */}
             {/* Teacher Remarks                                               */}
             {/* ------------------------------------------------------------ */}
 
-            <section className="overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm lg:col-span-3">
+            <section className="overflow-hidden rounded-xl border border-slate-200 bg-white shadow-sm lg:col-span-3">
 
-              <div className="border-b border-slate-100 px-5 py-4">
+              <div className="border-b border-slate-100 px-4 py-2.5">
 
                 <div className="flex items-center gap-2.5">
 
-                  <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-violet-50 text-violet-600">
+                  <div className="flex h-7 w-7 items-center justify-center rounded-lg bg-violet-50 text-violet-600">
                     <MessageSquareText
-                      className="h-4 w-4"
+                      className="h-3.5 w-3.5"
                     />
                   </div>
 
-                  <h3 className="text-base font-bold text-slate-900">
+                  <h3 className="text-sm font-bold text-slate-900">
                     Class Teacher's Remarks
                   </h3>
 
@@ -1695,11 +1669,11 @@ const AcademicReport = () => {
 
               </div>
 
-              <div className="p-4">
+              <div className="p-3">
 
-                <div className="flex gap-3 rounded-xl bg-blue-50/70 p-4">
+                <div className="flex gap-2.5 rounded-lg bg-blue-50/70 p-3">
 
-                  <div className="flex h-12 w-12 shrink-0 items-center justify-center overflow-hidden rounded-xl bg-white text-slate-300">
+                  <div className="flex h-9 w-9 shrink-0 items-center justify-center overflow-hidden rounded-lg bg-white text-slate-300">
 
                     {selectedReport.teacherProfilePic ? (
                       <img
@@ -1721,7 +1695,7 @@ const AcademicReport = () => {
 
                   <div className="min-w-0 flex-1">
 
-                    <p className="text-sm leading-6 text-slate-700">
+                    <p className="text-xs leading-5 text-slate-700">
 
                       {teacherRemarks || (
                         <span className="italic text-slate-500">The class teacher hasn&apos;t added remarks for this exam yet.</span>
@@ -1733,18 +1707,18 @@ const AcademicReport = () => {
 
                       <div>
 
-                        <p className="text-sm font-bold text-slate-800">
+                        <p className="text-xs font-bold text-slate-800">
                           {teacherName}
                         </p>
 
-                        <p className="text-xs font-medium text-slate-500">
+                        <p className="text-[10px] font-medium text-slate-500">
                           Class Teacher
                         </p>
 
                       </div>
 
                       {teacherDate && (
-                        <p className="text-xs font-medium text-slate-500">
+                        <p className="text-[10px] font-medium text-slate-500">
                           {formatDate(
                             teacherDate
                           )}
@@ -1765,19 +1739,19 @@ const AcademicReport = () => {
             {/* Grading System                                                 */}
             {/* ------------------------------------------------------------ */}
 
-            <section className="overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm lg:col-span-2">
+            <section className="overflow-hidden rounded-xl border border-slate-200 bg-white shadow-sm lg:col-span-2">
 
-              <div className="border-b border-slate-100 px-5 py-4">
+              <div className="border-b border-slate-100 px-4 py-2.5">
 
                 <div className="flex items-center gap-2.5">
 
-                  <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-blue-50 text-blue-600">
+                  <div className="flex h-7 w-7 items-center justify-center rounded-lg bg-blue-50 text-blue-600">
                     <Info
-                      className="h-4 w-4"
+                      className="h-3.5 w-3.5"
                     />
                   </div>
 
-                  <h3 className="text-base font-bold text-slate-900">
+                  <h3 className="text-sm font-bold text-slate-900">
                     Grading System
                   </h3>
 
@@ -1785,7 +1759,7 @@ const AcademicReport = () => {
 
               </div>
 
-              <div className="p-4">
+              <div className="p-3">
 
                 <div className="overflow-hidden rounded-xl border border-slate-200">
 
@@ -1839,15 +1813,15 @@ const AcademicReport = () => {
                             className="border-b border-slate-100 last:border-0"
                           >
 
-                            <td className="px-3 py-1.5 text-xs font-bold text-slate-700">
+                            <td className="px-2.5 py-1.5 text-[10px] font-bold text-slate-700">
                               {item.grade}
                             </td>
 
-                            <td className="px-3 py-1.5 text-xs font-medium text-slate-600">
+                            <td className="px-2.5 py-1.5 text-[10px] font-medium text-slate-600">
                               {item.range}
                             </td>
 
-                            <td className="px-3 py-1.5 text-xs font-medium text-slate-500">
+                            <td className="px-2.5 py-1.5 text-[10px] font-medium text-slate-500">
                               {
                                 item.description
                               }
@@ -1877,7 +1851,7 @@ const AcademicReport = () => {
       {!error &&
         selectedReport &&
         selectedExam && (
-          <div className="flex items-start gap-2 rounded-xl border border-slate-200 bg-white px-4 py-3 text-xs text-slate-500">
+          <div className="flex items-start gap-2 rounded-lg border border-slate-200 bg-white px-3 py-2.5 text-[10px] text-slate-500">
 
             <Info className="mt-0.5 h-4 w-4 shrink-0 text-blue-500" />
 
