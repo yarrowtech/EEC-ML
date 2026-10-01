@@ -2,6 +2,7 @@ const express = require('express');
 const mongoose = require('mongoose');
 const Holiday = require('../models/Holiday');
 const School = require('../models/School');
+const AcademicYear = require('../models/AcademicYear');
 const adminAuth = require('../middleware/adminAuth');
 const { notifyHolidayChange } = require('../services/schoolCommunication');
 const authTeacher = require('../middleware/authTeacher');
@@ -295,10 +296,17 @@ router.get('/parent', authParent, parentAttendanceCache.cache, async (req, res) 
     if (!schoolId || !mongoose.isValidObjectId(schoolId)) {
       return jsonError(res, 400, 'Valid schoolId is required');
     }
-    const items = await loadPublicHolidays({ schoolId, campusId }, req.query);
-    const school = await School.findById(schoolId).select('name address logo').lean();
+    const [items, school, activeYear] = await Promise.all([
+      loadPublicHolidays({ schoolId, campusId }, req.query),
+      School.findById(schoolId).select('name address logo').lean(),
+      // Parent holiday list is scoped to the school's active session.
+      AcademicYear.findOne({ schoolId, isActive: true }).select('name startDate endDate').lean(),
+    ]);
     return res.json({
       holidays: items,
+      activeSession: activeYear
+        ? { name: activeYear.name || '', startDate: activeYear.startDate || null, endDate: activeYear.endDate || null }
+        : null,
       school: {
         name: school?.name || '',
         address: school?.address || '',

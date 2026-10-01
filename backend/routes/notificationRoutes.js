@@ -16,8 +16,10 @@ const PushSubscription = require('../models/PushSubscription');
 const { initializeWebPush } = require('../utils/webPushService');
 const { EVENTS, publishNotice } = require('../services/communicationService');
 const { logStudentPortalEvent, logStudentPortalError } = require('../utils/studentPortalLogger');
+const { userNotificationsCache } = require('../utils/responseCache');
 
 const router = express.Router();
+router.use(userNotificationsCache.invalidateOnWrite);
 
 // Per-class exam notices teachers must not see (they get one consolidated
 // notice per exam title instead — see upsertTeacherExamScheduledNotice /
@@ -607,7 +609,7 @@ router.delete('/teacher/:id', authTeacher, async (req, res) => {
 });
 
 // Any user fetch their notifications
-router.get('/user', authAnyUser, async (req, res) => {
+router.get('/user', authAnyUser, userNotificationsCache.cache, async (req, res) => {
   // #swagger.tags = ['Notifications']
   try {
     logStudentPortalEvent(req, {

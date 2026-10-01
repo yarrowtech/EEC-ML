@@ -1,27 +1,98 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { jsPDF } from 'jspdf';
-import { CalendarCheck2, CalendarDays, Download, Loader2 } from 'lucide-react';
+import { AnimatePresence, motion } from 'framer-motion';
+import { CalendarCheck2, CalendarDays, ChevronDown, ChevronRight, ChevronUp, Download, Loader2, Search } from 'lucide-react';
 import Loading from './Loading';
 import { EmptyState, ErrorState } from './StateBlock';
 import { parentApiFetch } from './parentApi';
+import { childOptionKey } from './ChildSwitcher';
+import useParentChildren from './useParentChildren';
 
-const formatDate = (value) => {
-  const dt = new Date(value);
-  if (Number.isNaN(dt.getTime())) return '—';
-  return dt.toLocaleDateString(undefined, { weekday: 'long', year: 'numeric', month: 'short', day: 'numeric' });
+const CARD = 'rounded-xl border border-slate-100 bg-white shadow-[0_1px_3px_rgba(15,23,42,0.04)]';
+
+// Client-side cache: paint the last holiday list instantly, then refresh it
+// in the background. Scoped to the logged-in token.
+const HOLIDAYS_CACHE_KEY = 'parent_holidays_cache_v1';
+const HOLIDAYS_CACHE_TTL_MS = 5 * 60 * 1000;
+
+const holidaysCacheScope = () => {
+  try {
+    return (localStorage.getItem('token') || '').split('.')[1] || 'anonymous';
+  } catch {
+    return 'anonymous';
+  }
+};
+
+const readHolidaysCache = () => {
+  try {
+    const parsed = JSON.parse(sessionStorage.getItem(HOLIDAYS_CACHE_KEY) || 'null');
+    if (!parsed || parsed.scope !== holidaysCacheScope()) return null;
+    if (Date.now() - parsed.cachedAt > HOLIDAYS_CACHE_TTL_MS) return null;
+    return parsed.data;
+  } catch {
+    return null;
+  }
+};
+
+const writeHolidaysCache = (data) => {
+  try {
+    sessionStorage.setItem(HOLIDAYS_CACHE_KEY, JSON.stringify({ scope: holidaysCacheScope(), cachedAt: Date.now(), data }));
+  } catch {
+    // Storage full/blocked — caching is best-effort.
+  }
+};
+
+const RISE = {
+  hidden: { opacity: 0, y: 10 },
+  show: { opacity: 1, y: 0, transition: { duration: 0.3, ease: [0.22, 1, 0.36, 1] } },
+};
+const PAGE_MOTION = { hidden: {}, show: { transition: { staggerChildren: 0.05 } } };
+
+// Holidays carry no type, so the badge is inferred from the name.
+const HOLIDAY_TYPES = [
+  { label: 'National Holiday', tone: 'bg-rose-50 text-rose-600', match: /independence|republic|gandhi|christmas|guru nanak|ambedkar|labour|may day/i },
+  { label: 'Festival Holiday', tone: 'bg-emerald-50 text-emerald-600', match: /puja|durga|diwali|deepavali|holi|dussehra|navami|ashtami|saptami|dashami|pongal|onam|kali/i },
+  { label: 'Religious Holiday', tone: 'bg-amber-50 text-amber-600', match: /eid|bakrid|muharram|buddha|good friday|easter|mahavir|ramzan|ramadan|shab/i },
+];
+const DEFAULT_TYPE = { label: 'Cultural Holiday', tone: 'bg-violet-50 text-violet-600' };
+const holidayType = (name) => HOLIDAY_TYPES.find((t) => t.match.test(String(name || ''))) || DEFAULT_TYPE;
+
+// Fallback when the school has no active academic year: April → March.
+const sessionOf = (value) => {
+  const d = new Date(value);
+  if (Number.isNaN(d.getTime())) return '';
+  const startYear = d.getMonth() >= 3 ? d.getFullYear() : d.getFullYear() - 1;
+  return `${startYear}-${startYear + 1}`;
+};
+const sessionLabel = (key) => (key ? key.replace('-', ' - ') : '');
+
+// The backend sends the school's active session; derive its date window.
+const sessionWindow = (activeSession) => {
+  const start = new Date(activeSession?.startDate);
+  const end = new Date(activeSession?.endDate);
+  if (!Number.isNaN(start.getTime()) && !Number.isNaN(end.getTime())) {
+    return { name: activeSession.name || '', start, end };
+  }
+  const key = activeSession?.name || sessionOf(new Date());
+  const startYear = Number(String(key).slice(0, 4)) || new Date().getFullYear();
+  return {
+    name: activeSession?.name || sessionLabel(sessionOf(new Date())),
+    start: new Date(startYear, 3, 1),
+    end: new Date(startYear + 1, 2, 31, 23, 59, 59, 999),
+  };
 };
 
 const formatCompactDate = (value) => {
   const dt = new Date(value);
   if (Number.isNaN(dt.getTime())) return '—';
-  return dt.toLocaleDateString(undefined, { day: '2-digit', month: 'short', year: 'numeric' });
+  return dt.toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' });
 };
 
 const formatWeekday = (value) => {
   const dt = new Date(value);
   if (Number.isNaN(dt.getTime())) return '—';
-  return dt.toLocaleDateString(undefined, { weekday: 'long' });
+  return dt.toLocaleDateString('en-GB', { weekday: 'long' });
 };
 
 const toBase64Image = async (url) => {
@@ -38,22 +109,6 @@ const toBase64Image = async (url) => {
   } catch {
     return null;
   }
-};
-
-const overlapsYear = (startValue, endValue, year) => {
-  const start = new Date(startValue);
-  const end = new Date(endValue || startValue);
-  if (Number.isNaN(start.getTime()) || Number.isNaN(end.getTime())) return false;
-  const yearStart = new Date(year, 0, 1);
-  const yearEnd = new Date(year, 11, 31, 23, 59, 59, 999);
-  return end >= yearStart && start <= yearEnd;
-};
-
-const formatDateRange = (startValue, endValue) => {
-  const start = formatDate(startValue);
-  const end = formatDate(endValue || startValue);
-  if (start === end) return start;
-  return `${start} to ${end}`;
 };
 
 const getHolidayDuration = (startValue, endValue) => {
@@ -73,17 +128,27 @@ const isPastHoliday = (startValue, endValue) => {
   return holidayDay < today;
 };
 
+
+const startOf = (item) => new Date(item.startDate || item.date).getTime() || 0;
+
 const HolidayList = () => {
   const navigate = useNavigate();
-  const [holidays, setHolidays] = useState([]);
-  const [loading, setLoading] = useState(true);
+  const { options, childKey, setChildKey, selected } = useParentChildren();
+  const cached = readHolidaysCache();
+  const [holidays, setHolidays] = useState(() => cached?.holidays || []);
+  const [loading, setLoading] = useState(() => !cached);
   const [error, setError] = useState('');
   const [downloading, setDownloading] = useState(false);
-  const [schoolMeta, setSchoolMeta] = useState({ schoolName: 'School', schoolAddress: '', schoolLogo: '' });
+  const [schoolMeta, setSchoolMeta] = useState(() => cached?.schoolMeta || { schoolName: 'School', schoolAddress: '', schoolLogo: '' });
+  const [activeSession, setActiveSession] = useState(() => cached?.activeSession || null);
+  const [tab, setTab] = useState('all');
+  const [query, setQuery] = useState('');
+  const [openGroups, setOpenGroups] = useState({ upcoming: true, past: true });
 
   useEffect(() => {
     const load = async () => {
-      setLoading(true);
+      const hasCache = Boolean(readHolidaysCache());
+      if (!hasCache) setLoading(true);
       setError('');
       try {
         const res = await parentApiFetch('/api/holidays/parent', {}, navigate);
@@ -97,23 +162,39 @@ const HolidayList = () => {
           : Array.isArray(data?.holidays)
             ? data.holidays
             : [];
-        setHolidays(holidayItems);
-        setSchoolMeta({
+        const meta = {
           schoolName: data?.school?.name || 'School',
           schoolAddress: data?.school?.address || '',
           schoolLogo: data?.school?.logo || '',
-        });
+        };
+        const sessionInfo = data?.activeSession || null;
+        setHolidays(holidayItems);
+        setSchoolMeta(meta);
+        setActiveSession(sessionInfo);
+        writeHolidaysCache({ holidays: holidayItems, schoolMeta: meta, activeSession: sessionInfo });
       } catch (err) {
-        setError(err.message || 'Unable to load holidays');
+        // Keep showing cached data if a background refresh fails.
+        if (!hasCache) setError(err.message || 'Unable to load holidays');
       } finally {
         setLoading(false);
       }
     };
     load();
-  }, []);
+  }, [navigate]);
+
+  const session = useMemo(() => sessionWindow(activeSession), [activeSession]);
+
+  const sessionHolidays = useMemo(
+    () => holidays.filter((item) => {
+      const start = new Date(item.startDate || item.date);
+      const end = new Date(item.endDate || item.startDate || item.date);
+      return end >= session.start && start <= session.end;
+    }),
+    [holidays, session],
+  );
 
   const handleDownloadPdf = async () => {
-    if (!holidays.length || downloading) return;
+    if (!sessionHolidays.length || downloading) return;
     setDownloading(true);
     try {
       const now = new Date();
@@ -160,19 +241,16 @@ const HolidayList = () => {
       doc.setFont('helvetica', 'bold');
       doc.setFontSize(14);
       doc.setTextColor(17, 24, 39);
-      doc.text(`Holiday Calendar ${currentYear}`, PW / 2, y, { align: 'center' });
+      doc.text(`Holiday Calendar ${session.name}`, PW / 2, y, { align: 'center' });
       y += 7;
       doc.setFont('helvetica', 'normal');
       doc.setFontSize(9);
       doc.setTextColor(71, 85, 105);
       doc.text(`Prepared on ${now.toLocaleDateString()}`, ML, y);
-      doc.text(`Total holidays ${holidays.length}`, PW - MR, y, { align: 'right' });
+      doc.text(`Total holidays ${sessionHolidays.length}`, PW - MR, y, { align: 'right' });
       y += 8;
 
-      const yearRows = holidays.filter((item) =>
-        overlapsYear(item.startDate || item.date, item.endDate || item.startDate || item.date, currentYear)
-      );
-      const rows = yearRows.length ? yearRows : holidays;
+      const rows = [...sessionHolidays].sort((a, b) => startOf(a) - startOf(b));
 
       const col = {
         sl: 12,
@@ -250,18 +328,16 @@ const HolidayList = () => {
         doc.text(`Page ${page} of ${totalPages}`, PW - MR, PH - 7.5, { align: 'right' });
       }
 
-      doc.save(`holiday-list-${currentYear}.pdf`);
+      doc.save(`holiday-list-${(session.name || String(currentYear)).replace(/\s+/g, '')}.pdf`);
     } finally {
       setDownloading(false);
     }
   };
 
-  const startOf = (item) => new Date(item.startDate || item.date).getTime() || 0;
-
   const { upcoming, past } = useMemo(() => {
     const up = [];
     const pa = [];
-    holidays.forEach((item) => {
+    sessionHolidays.forEach((item) => {
       (isPastHoliday(
         item.startDate || item.date,
         item.endDate || item.startDate || item.date,
@@ -270,115 +346,204 @@ const HolidayList = () => {
     up.sort((a, b) => startOf(a) - startOf(b)); // soonest first
     pa.sort((a, b) => startOf(b) - startOf(a)); // most recent past first
     return { upcoming: up, past: pa };
-  }, [holidays]);
+  }, [sessionHolidays]);
 
-  const upcomingHolidayCount = upcoming.length;
+  const matches = (item) => !query.trim() || String(item.name || '').toLowerCase().includes(query.trim().toLowerCase());
+  const groups = [
+    { key: 'upcoming', label: 'Upcoming Holidays', rows: upcoming.filter(matches), tone: 'bg-emerald-50/70 text-emerald-800', icon: 'text-emerald-700' },
+    { key: 'past', label: 'Past Holidays', rows: past.filter(matches), tone: 'bg-blue-50/70 text-[#0b1446]', icon: 'text-blue-600' },
+  ].filter((g) => tab === 'all' || tab === g.key);
 
-  const renderRow = (item, isPast) => (
-    <tr key={item._id} className="group bg-white/40 shadow-sm backdrop-blur-xl transition hover:bg-white/65 hover:shadow-md">
-      <td className={`rounded-l-2xl border-y border-l border-white/80 px-4 py-4 ${isPast ? 'text-slate-400 line-through' : 'text-slate-700'}`}>
-        {formatDateRange(item.startDate || item.date, item.endDate || item.startDate || item.date)}
-      </td>
-      <td className={`rounded-r-2xl border-y border-r border-white/80 px-4 py-4 font-semibold ${isPast ? 'text-slate-400 line-through' : 'text-slate-900'}`}>
-        {item.name}
-      </td>
-    </tr>
-  );
+  const tabs = [
+    { key: 'all', label: `All (${sessionHolidays.length})` },
+    { key: 'upcoming', label: `Upcoming (${upcoming.length})` },
+    { key: 'past', label: `Past (${past.length})` },
+  ];
 
-  const groupHeader = (label, count) => (
-    <tr>
-      <td colSpan={2} className="px-4 pb-1 pt-3">
-        <span className="text-xs font-bold uppercase tracking-wider text-slate-500">{label}</span>
-        <span className="ml-2 text-xs font-medium text-slate-400">{count}</span>
-      </td>
-    </tr>
-  );
+  const childPhoto = selected?.profileImage || selected?.photo || selected?.avatar || '';
+  const childMeta = [selected?.grade && `Class ${selected.grade}`, selected?.section && `Section ${selected.section}`]
+    .filter(Boolean)
+    .join(' · ');
+
+  const dateLabel = (item) => {
+    const start = formatCompactDate(item.startDate || item.date);
+    const end = formatCompactDate(item.endDate || item.startDate || item.date);
+    return start === end ? start : `${start} – ${end}`;
+  };
 
   return (
-    <div className="relative isolate min-h-[calc(100vh-8rem)] overflow-hidden rounded-[2rem] bg-gradient-to-br from-slate-50 via-violet-50/70 to-cyan-50/60 p-3 sm:p-5 lg:p-7">
-      <div className="pointer-events-none absolute inset-0 -z-10 overflow-hidden" aria-hidden="true">
-        <div className="absolute -right-24 -top-28 h-80 w-80 rounded-full bg-violet-300/30 blur-3xl" />
-        <div className="absolute -bottom-32 -left-24 h-96 w-96 rounded-full bg-cyan-300/25 blur-3xl" />
-        <div className="absolute left-1/3 top-1/3 h-72 w-72 rounded-full bg-amber-200/20 blur-3xl" />
-      </div>
+    <motion.div variants={PAGE_MOTION} initial="hidden" animate="show" className="space-y-3 p-3 sm:p-4 md:p-5">
+      <motion.nav variants={RISE} aria-label="Breadcrumb" className="flex items-center gap-1.5 text-xs text-slate-500">
+        <span>Academic Calendar</span>
+        <ChevronRight size={12} />
+        <span className="font-medium text-[#0b1446]">Holiday List</span>
+      </motion.nav>
 
-      <div className="relative space-y-5">
-        <header className="overflow-hidden rounded-[1.75rem] border border-white/80 bg-white/55 p-5 shadow-xl shadow-slate-900/5 backdrop-blur-2xl sm:p-7">
-          <div className="flex flex-col gap-5 sm:flex-row sm:items-center sm:justify-between">
-            <div className="flex items-center gap-4">
-              <div className="flex h-12 w-12 shrink-0 items-center justify-center rounded-2xl border border-white/80 bg-white/60 text-violet-600 shadow-lg shadow-violet-900/5 backdrop-blur-xl">
-                <CalendarDays className="h-6 w-6" aria-hidden="true" />
-              </div>
-              <div>
-                <p className="text-xs font-semibold uppercase tracking-[0.18em] text-slate-500">Academic calendar</p>
-                <h1 className="mt-1 text-2xl font-bold tracking-tight text-slate-900 sm:text-3xl">Holiday List</h1>
-                <p className="mt-1 text-sm text-slate-500">School holidays and scheduled breaks in one place.</p>
-              </div>
-            </div>
-
-            <button
-              type="button"
-              onClick={handleDownloadPdf}
-              disabled={loading || !holidays.length || downloading}
-              className="inline-flex items-center justify-center gap-2 rounded-xl border border-white/70 bg-violet-600 px-4 py-2.5 text-sm font-semibold text-white shadow-lg shadow-violet-900/15 backdrop-blur-xl transition hover:-translate-y-0.5 hover:bg-violet-700 disabled:cursor-not-allowed disabled:opacity-50 disabled:hover:translate-y-0"
-            >
-              {downloading
-                ? <Loader2 className="h-4 w-4 animate-spin" aria-hidden="true" />
-                : <Download className="h-4 w-4" aria-hidden="true" />}
-              {downloading ? 'Preparing...' : 'Download PDF'}
-            </button>
+      <motion.header variants={RISE} className="flex flex-wrap items-center justify-between gap-3">
+        <div className="flex items-center gap-3">
+          <span className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl bg-rose-50 text-rose-500">
+            <CalendarCheck2 size={22} />
+          </span>
+          <div>
+            <h1 className="text-xl font-bold leading-tight text-[#0b1446]">Holiday List</h1>
+            <p className="text-xs text-slate-500 sm:text-sm">School holidays and scheduled breaks in one place.</p>
           </div>
+        </div>
+        <button
+          type="button"
+          onClick={handleDownloadPdf}
+          disabled={loading || !sessionHolidays.length || downloading}
+          className="inline-flex items-center gap-2 rounded-lg border border-blue-300 bg-white px-3.5 py-2 text-xs font-semibold text-blue-600 transition hover:bg-blue-50 disabled:cursor-not-allowed disabled:opacity-50"
+        >
+          {downloading ? <Loader2 className="h-4 w-4 animate-spin" aria-hidden="true" /> : <Download className="h-4 w-4" aria-hidden="true" />}
+          {downloading ? 'Preparing...' : 'Download PDF'}
+        </button>
+      </motion.header>
 
-          <div className="mt-6 grid grid-cols-2 gap-3 border-t border-white/70 pt-5 sm:max-w-md">
-            <div className="rounded-2xl border border-white/80 bg-white/45 px-4 py-3 shadow-sm backdrop-blur-xl">
-              <p className="text-xs font-semibold uppercase tracking-wider text-slate-500">Total holidays</p>
-              <p className="mt-1 text-2xl font-bold text-slate-900">{loading ? '—' : holidays.length}</p>
-            </div>
-            <div className="rounded-2xl border border-white/80 bg-white/45 px-4 py-3 shadow-sm backdrop-blur-xl">
-              <p className="text-xs font-semibold uppercase tracking-wider text-slate-500">Upcoming</p>
-              <p className="mt-1 text-2xl font-bold text-violet-600">{loading ? '—' : upcomingHolidayCount}</p>
-            </div>
-          </div>
-        </header>
-
-        <section className="overflow-hidden rounded-[1.75rem] border border-white/80 bg-white/50 shadow-xl shadow-slate-900/5 backdrop-blur-2xl">
-          <div className="flex items-center gap-3 border-b border-white/70 bg-white/25 px-5 py-4 sm:px-7">
-            <CalendarCheck2 className="h-5 w-5 text-violet-600" aria-hidden="true" />
-            <h2 className="font-bold text-slate-800">Published holidays</h2>
-            {!loading && !error && (
-              <span className="ml-auto rounded-full border border-white/80 bg-white/55 px-3 py-1 text-xs font-semibold text-slate-600 backdrop-blur-xl">
-                {holidays.length} {holidays.length === 1 ? 'entry' : 'entries'}
+      {/* Viewing */}
+      <motion.section variants={RISE} className={`${CARD} flex items-center gap-3 px-3 py-2.5 sm:w-fit sm:min-w-[380px]`}>
+        <div className="flex min-w-0 flex-1 items-center gap-3">
+          <span className="shrink-0 text-xs text-slate-500">Viewing</span>
+          <div className="relative flex min-w-0 flex-1 items-center gap-2.5 rounded-lg border border-slate-200 px-2.5 py-1.5">
+            {childPhoto ? (
+              <img src={childPhoto} alt="" className="h-8 w-8 shrink-0 rounded-md object-cover" />
+            ) : (
+              <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-md bg-blue-50 text-xs font-bold text-blue-600">
+                {String(selected?.name || 'C').trim().charAt(0).toUpperCase()}
               </span>
             )}
-          </div>
-
-          {loading ? (
-            <div className="p-5"><Loading label="holidays" rows={4} /></div>
-          ) : error ? (
-            <div className="p-5"><ErrorState message={error} /></div>
-          ) : holidays.length === 0 ? (
-            <div className="p-5"><EmptyState icon={CalendarDays} title="No holidays announced yet" hint="Holidays appear here once the school publishes them." /></div>
-          ) : (
-            <div className="max-h-[60vh] overflow-y-auto overflow-x-auto p-3 sm:p-5">
-              <table className="min-w-full border-separate border-spacing-y-2 text-sm">
-                <thead className="sticky top-0 z-10">
-                  <tr className="text-left text-xs uppercase tracking-wider text-slate-500 [&>th]:bg-white/80 [&>th]:backdrop-blur-xl">
-                    <th className="rounded-l-lg px-4 py-2 font-semibold">Date Range</th>
-                    <th className="rounded-r-lg px-4 py-2 font-semibold">Holiday Name</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {upcoming.length > 0 && groupHeader('Upcoming', `${upcoming.length}`)}
-                  {upcoming.map((item) => renderRow(item, false))}
-                  {past.length > 0 && groupHeader('Past', `${past.length}`)}
-                  {past.map((item) => renderRow(item, true))}
-                </tbody>
-              </table>
+            <div className="min-w-0 flex-1">
+              <p className="truncate text-sm font-bold text-[#0b1446]">{selected?.name || 'Select child'}</p>
+              {childMeta ? <p className="truncate text-[11px] text-slate-500">{childMeta}</p> : null}
             </div>
-          )}
-        </section>
-      </div>
-    </div>
+            {options.length > 1 ? (
+              <>
+                <ChevronDown size={16} className="shrink-0 text-slate-500" />
+                <select aria-label="Select child" value={childKey} onChange={(e) => setChildKey(e.target.value)} className="absolute inset-0 cursor-pointer opacity-0">
+                  {options.map((opt) => <option key={childOptionKey(opt)} value={childOptionKey(opt)}>{opt.name}</option>)}
+                </select>
+              </>
+            ) : null}
+          </div>
+        </div>
+      </motion.section>
+
+      {/* Stats */}
+      <motion.div variants={RISE} className="grid gap-3 sm:grid-cols-2">
+        <div className="flex items-center gap-4 rounded-xl border border-rose-100 bg-rose-50/60 px-4 py-3">
+          <span className="flex h-11 w-11 items-center justify-center rounded-xl bg-rose-100/80 text-rose-500"><CalendarCheck2 size={22} /></span>
+          <div>
+            <p className="text-xs font-medium text-rose-600">Total holidays</p>
+            <p className="text-2xl font-bold leading-tight text-[#0b1446]">{loading ? '—' : sessionHolidays.length}</p>
+            <p className="text-[11px] text-slate-500">{session.name ? `Session ${session.name}` : 'This session'}</p>
+          </div>
+        </div>
+        <div className="flex items-center gap-4 rounded-xl border border-emerald-100 bg-emerald-50/60 px-4 py-3">
+          <span className="flex h-11 w-11 items-center justify-center rounded-xl bg-emerald-100/80 text-emerald-600"><CalendarCheck2 size={22} /></span>
+          <div>
+            <p className="text-xs font-medium text-slate-600">Upcoming</p>
+            <p className="text-2xl font-bold leading-tight text-[#0b1446]">{loading ? '—' : upcoming.length}</p>
+            <p className="text-[11px] text-slate-500">Holidays remaining</p>
+          </div>
+        </div>
+      </motion.div>
+
+      {/* List */}
+      <motion.section variants={RISE} className={`${CARD} p-3`}>
+        <div className="mb-3 flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+          <div className="flex flex-wrap gap-1.5">
+            {tabs.map((t) => (
+              <button
+                key={t.key}
+                type="button"
+                onClick={() => setTab(t.key)}
+                className={`rounded-lg border px-4 py-1.5 text-xs font-semibold transition ${tab === t.key ? 'border-blue-600 bg-blue-600 text-white' : 'border-slate-200 bg-white text-[#0b1446] hover:bg-slate-50'}`}
+              >
+                {t.label}
+              </button>
+            ))}
+          </div>
+          <label className="relative sm:w-56">
+            <Search size={15} className="pointer-events-none absolute left-2.5 top-1/2 -translate-y-1/2 text-slate-400" />
+            <input
+              type="search"
+              value={query}
+              onChange={(e) => setQuery(e.target.value)}
+              placeholder="Search holiday..."
+              className="w-full rounded-lg border border-slate-200 py-1.5 pl-8 pr-3 text-xs outline-none focus:border-blue-300 focus:ring-2 focus:ring-blue-100"
+            />
+          </label>
+        </div>
+
+        {loading ? (
+          <Loading label="holidays" rows={4} />
+        ) : error ? (
+          <ErrorState message={error} />
+        ) : sessionHolidays.length === 0 ? (
+          <EmptyState icon={CalendarDays} title="No holidays announced yet" hint="Holidays appear here once the school publishes them." />
+        ) : (
+          <div className="overflow-x-auto rounded-lg border border-slate-100">
+            <table className="w-full min-w-[620px] text-xs">
+              <thead className="bg-slate-50 text-left text-[11px] font-semibold text-[#0b1446]">
+                <tr>
+                  <th className="w-12 px-3 py-2">#</th>
+                  <th className="w-[22%] px-3 py-2">Date</th>
+                  <th className="w-[18%] px-3 py-2">Day</th>
+                  <th className="px-3 py-2">Holiday Name</th>
+                  <th className="w-36 px-3 py-2"><span className="sr-only">Type</span></th>
+                </tr>
+              </thead>
+              {groups.map((group) => {
+                const isOpen = openGroups[group.key];
+                return (
+                  <tbody key={group.key}>
+                    <tr className={group.tone}>
+                      <td colSpan={5} className="p-0">
+                        <button
+                          type="button"
+                          onClick={() => setOpenGroups((o) => ({ ...o, [group.key]: !o[group.key] }))}
+                          aria-expanded={isOpen}
+                          className="flex w-full items-center gap-2 px-3 py-2 text-left text-xs font-semibold"
+                        >
+                          <CalendarDays size={15} className={group.icon} />
+                          {group.label} ({group.rows.length})
+                          {isOpen ? <ChevronUp size={15} className="ml-auto" /> : <ChevronDown size={15} className="ml-auto" />}
+                        </button>
+                      </td>
+                    </tr>
+                    <AnimatePresence initial={false}>
+                      {isOpen && group.rows.map((item, idx) => {
+                        const type = holidayType(item.name);
+                        return (
+                          <motion.tr
+                            key={item._id || `${group.key}-${idx}`}
+                            initial={{ opacity: 0, y: -4 }}
+                            animate={{ opacity: 1, y: 0, transition: { delay: Math.min(idx, 12) * 0.02 } }}
+                            exit={{ opacity: 0 }}
+                            className="border-t border-slate-100 text-slate-700 transition hover:bg-slate-50/70"
+                          >
+                            <td className="px-3 py-1.5">{idx + 1}</td>
+                            <td className="px-3 py-1.5">{dateLabel(item)}</td>
+                            <td className="px-3 py-1.5">{formatWeekday(item.startDate || item.date)}</td>
+                            <td className="px-3 py-1.5 text-[#0b1446]">{item.name}</td>
+                            <td className="px-3 py-1.5 text-right">
+                              <span className={`inline-block rounded-md px-2 py-0.5 text-[11px] font-medium ${type.tone}`}>{type.label}</span>
+                            </td>
+                          </motion.tr>
+                        );
+                      })}
+                    </AnimatePresence>
+                    {isOpen && group.rows.length === 0 ? (
+                      <tr className="border-t border-slate-100"><td colSpan={5} className="px-3 py-3 text-center text-slate-400">No holidays found.</td></tr>
+                    ) : null}
+                  </tbody>
+                );
+              })}
+            </table>
+          </div>
+        )}
+      </motion.section>
+    </motion.div>
   );
 };
 

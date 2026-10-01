@@ -1,5 +1,10 @@
 const express = require('express');
 const router = express.Router();
+const { createResponseCache } = require('../utils/responseCache');
+
+// Parent meeting list (used by the calendar). Cleared by any write here.
+const parentMeetingsCache = createResponseCache({ ttlMs: 60 * 1000 });
+router.use(parentMeetingsCache.invalidateOnWrite);
 const ParentMeeting = require('../models/ParentMeeting');
 const authTeacher = require('../middleware/authTeacher');
 const authParent = require('../middleware/authParent');
@@ -442,7 +447,7 @@ router.get('/student/my-meetings', authStudent, async (req, res) => {
 });
 
 // Parents get their meetings
-router.get('/parent/my-meetings', authParent, async (req, res) => {
+router.get('/parent/my-meetings', authParent, parentMeetingsCache.cache, async (req, res) => {
   try {
     const schoolId = req.schoolId || req.user?.schoolId || null;
     if (!schoolId) return res.status(400).json({ error: 'schoolId is required' });

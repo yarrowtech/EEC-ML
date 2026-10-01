@@ -115,35 +115,88 @@ const buildChildKey = (child) => (child?.id || child?._id
   : `name:${child?.name || ''}`);
 const getChildId = (child) => child?.id || child?._id || '';
 
+// Late fines are charged on the invoice as a whole, so payments are split here:
+// each payment first fills the open installment and any excess beyond it pays
+// the fine (the portal's payable is "installment remaining + fine"). That lets
+// paid installments show the fine that was paid alongside them.
+// Client-side cache: show the last children/invoice data instantly, then
+// refresh it in the background. Scoped to the logged-in token.
+const FEES_CACHE_PREFIX = 'parent_fees_cache_v1';
+const FEES_CACHE_TTL_MS = 5 * 60 * 1000;
+
+const feesCacheKey = (segment) => {
+  let scope = 'anonymous';
+  try {
+    scope = (localStorage.getItem('token') || '').split('.')[1] || 'anonymous';
+  } catch {
+    // ignore
+  }
+  return `${FEES_CACHE_PREFIX}:${segment}:${scope}`;
+};
+
+const readFeesCache = (segment) => {
+  try {
+    const parsed = JSON.parse(sessionStorage.getItem(feesCacheKey(segment)) || 'null');
+    if (!parsed || Date.now() - parsed.cachedAt > FEES_CACHE_TTL_MS) return null;
+    return parsed.data;
+  } catch {
+    return null;
+  }
+};
+
+const writeFeesCache = (segment, data) => {
+  try {
+    sessionStorage.setItem(feesCacheKey(segment), JSON.stringify({ cachedAt: Date.now(), data }));
+  } catch {
+    // Storage full/blocked — caching is best-effort.
+  }
+};
+
 const getInstallmentBreakdown = (invoice, paymentsAsc = []) => {
   const installments = Array.isArray(invoice?.installmentsSnapshot) ? invoice.installmentsSnapshot : [];
   if (!installments.length) return [];
 
-  let remainingPaid = getInvoicePaid(invoice);
-  let priorFullyPaid = true;
-  let cumulativeThreshold = 0;
-  let runningPaymentTotal = 0;
-  let paymentPtr = 0;
+  const amounts = installments.map((installment) => toAmount(installment?.amount));
+  const paidTowards = amounts.map(() => 0);
+  const finePaid = amounts.map(() => 0);
+  const receipts = amounts.map(() => null);
 
-  return installments.map((installment, index) => {
-    const amount = toAmount(installment?.amount);
-    const paidTowards = Math.max(0, Math.min(amount, remainingPaid));
-    const isPaid = amount > 0 && paidTowards >= amount;
-    const isLocked = !priorFullyPaid;
-    const progressPct = amount > 0 ? Math.round((paidTowards / amount) * 100) : 0;
+  let budget = getInvoicePaid(invoice);
+  let fineLeft = toAmount(invoice?.lateFeeAmountApplied);
+  let current = 0;
 
-    remainingPaid = Math.max(0, remainingPaid - amount);
-    priorFullyPaid = isPaid;
-    cumulativeThreshold += amount;
+  const recorded = paymentsAsc.reduce((sum, payment) => sum + toAmount(payment?.amount), 0);
+  const sources = paymentsAsc.map((payment) => ({ amount: toAmount(payment?.amount), payment }));
+  if (budget > recorded) sources.push({ amount: budget - recorded, payment: null });
 
-    let receiptPayment = null;
-    if (isPaid) {
-      while (paymentPtr < paymentsAsc.length && runningPaymentTotal < cumulativeThreshold) {
-        runningPaymentTotal += toAmount(paymentsAsc[paymentPtr]?.amount);
-        receiptPayment = paymentsAsc[paymentPtr];
-        paymentPtr += 1;
-      }
+  sources.forEach(({ amount, payment }) => {
+    let left = Math.min(amount, budget);
+    budget -= left;
+    while (left > 0 && current < amounts.length) {
+      const take = Math.min(left, amounts[current] - paidTowards[current]);
+      paidTowards[current] += take;
+      left -= take;
+      if (payment) receipts[current] = payment;
+      if (paidTowards[current] < amounts[current]) break;
+      const fine = Math.min(left, fineLeft);
+      finePaid[current] += fine;
+      fineLeft -= fine;
+      left -= fine;
+      current += 1;
     }
+    if (left > 0 && fineLeft > 0) {
+      const fine = Math.min(left, fineLeft);
+      finePaid[amounts.length - 1] += fine;
+      fineLeft -= fine;
+    }
+  });
+
+  let priorFullyPaid = true;
+  return installments.map((installment, index) => {
+    const amount = amounts[index];
+    const isPaid = amount > 0 && paidTowards[index] >= amount;
+    const isLocked = !priorFullyPaid;
+    priorFullyPaid = isPaid;
 
     return {
       id: installment?._id || `${invoice._id}-installment-${index}`,
@@ -151,11 +204,12 @@ const getInstallmentBreakdown = (invoice, paymentsAsc = []) => {
       label: installment?.label || `Installment ${index + 1}`,
       amount,
       dueDate: installment?.dueDate,
-      remaining: Math.max(0, amount - paidTowards),
+      remaining: Math.max(0, amount - paidTowards[index]),
+      finePaid: finePaid[index],
       isPaid,
       isLocked,
-      progressPct,
-      receiptPayment,
+      progressPct: amount > 0 ? Math.round((paidTowards[index] / amount) * 100) : 0,
+      receiptPayment: isPaid ? receipts[index] : null,
     };
   });
 };
@@ -229,8 +283,8 @@ const ChildAvatar = ({ child, index }) => {
 
 const FeesPayment = () => {
   const navigate = useNavigate();
-  const [children, setChildren] = useState([]);
-  const [loadingChildren, setLoadingChildren] = useState(true);
+  const [children, setChildren] = useState(() => readFeesCache('children') || []);
+  const [loadingChildren, setLoadingChildren] = useState(() => !readFeesCache('children'));
   const [loadingInvoices, setLoadingInvoices] = useState(false);
   const [error, setError] = useState('');
   const [invoices, setInvoices] = useState([]);
@@ -276,7 +330,8 @@ const FeesPayment = () => {
 
   const fetchChildren = async () => {
     const token = getStoredToken();
-    setLoadingChildren(true);
+    const cached = readFeesCache('children');
+    if (!cached) setLoadingChildren(true);
     setError('');
     setSuccessMessage('');
     try {
@@ -286,7 +341,9 @@ const FeesPayment = () => {
       if (!res.ok) throw new Error(data?.error || 'Failed to load children');
       const list = Array.isArray(data.children) ? data.children : [];
       setChildren(list);
+      writeFeesCache('children', list);
     } catch (err) {
+      if (cached) return;
       setChildren([]);
       showError(err.message || 'Unable to load children');
     } finally {
@@ -301,7 +358,15 @@ const FeesPayment = () => {
       return;
     }
     const token = getStoredToken();
-    setLoadingInvoices(true);
+    const applyInvoices = (list, payments) => {
+      setInvoices(list);
+      setPaymentsByInvoice(payments || {});
+      setAmounts(Object.fromEntries(list.map((invoice) => [invoice._id, getInvoiceBalance(invoice)])));
+    };
+    const cacheSegment = `invoices:${childId}`;
+    const cached = readFeesCache(cacheSegment);
+    if (cached) applyInvoices(cached.invoices, cached.paymentsByInvoice);
+    else setLoadingInvoices(true);
     setError('');
     setSuccessMessage('');
     try {
@@ -310,10 +375,10 @@ const FeesPayment = () => {
       const data = await res.json();
       if (!res.ok) throw new Error(data?.error || 'Failed to load invoices');
       const list = Array.isArray(data.invoices) ? data.invoices : [];
-      setInvoices(list);
-      setPaymentsByInvoice(data.paymentsByInvoice || {});
-      setAmounts(Object.fromEntries(list.map((invoice) => [invoice._id, getInvoiceBalance(invoice)])));
+      applyInvoices(list, data.paymentsByInvoice);
+      writeFeesCache(cacheSegment, { invoices: list, paymentsByInvoice: data.paymentsByInvoice || {} });
     } catch (err) {
+      if (cached) return;
       setInvoices([]);
       setPaymentsByInvoice({});
       showError(err.message || 'Unable to load invoices');
@@ -606,7 +671,7 @@ const FeesPayment = () => {
     const fineDue = Math.max(0, balance - installments.reduce((sum, item) => sum + item.remaining, 0));
     return installments.map((installment) => {
       const isOpen = !installment.isPaid && !installment.isLocked;
-      const fine = isOpen ? fineDue : 0;
+      const fine = isOpen ? fineDue : installment.finePaid;
       return {
         key: installment.id,
         invoice,

@@ -45,6 +45,7 @@ describe('FeesPayment', () => {
 
   beforeEach(() => {
     jest.clearAllMocks();
+    sessionStorage.clear();
 
     global.localStorage.getItem = jest.fn((key) => (key === 'token' ? 'test-token' : null));
 

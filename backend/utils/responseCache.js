@@ -50,4 +50,11 @@ const createResponseCache = ({ ttlMs = 30 * 1000, maxEntries = 1000 } = {}) => {
 // excuse letters). Writes to any of those routers clear it.
 const parentAttendanceCache = createResponseCache({ ttlMs: 30 * 1000 });
 
-module.exports = { createResponseCache, parentAttendanceCache };
+// Per-user notification/notice feed. Cleared by Notification model write hooks.
+const userNotificationsCache = createResponseCache({ ttlMs: 60 * 1000 });
+
+// Parent fees screen (children + invoices/payments). Cleared by FeeInvoice and
+// FeePayment model write hooks, so payments made anywhere show up at once.
+const parentFeesCache = createResponseCache({ ttlMs: 60 * 1000 });
+
+module.exports = { createResponseCache, parentAttendanceCache, userNotificationsCache, parentFeesCache };

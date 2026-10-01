@@ -34,6 +34,7 @@ const {
 } = require('../utils/paymentGatewayService');
 const { capturePayment } = require('../services/paymentLifecycleService');
 const { logStudentPortalEvent, logStudentPortalError } = require('../utils/studentPortalLogger');
+const { parentFeesCache } = require('../utils/responseCache');
 const { buildInvoiceSnapshotsForStudent } = require('../utils/feeHeadPolicy');
 const {
   recomputeInvoiceStatus,
@@ -43,6 +44,7 @@ const {
 } = require('../services/feeService');
 
 const router = express.Router();
+router.use(parentFeesCache.invalidateOnWrite);
 
 // Short-lived in-memory cache for /admin/summary — it's a heavy aggregation
 // (every active student, every invoice, a FeePayment aggregate, a 500-row
@@ -2457,7 +2459,7 @@ router.post('/admin/discount', adminAuth, async (req, res) => {
 });
 
 // Parent fees (view + pay)
-router.get('/parent/children', authParent, async (req, res) => {
+router.get('/parent/children', authParent, parentFeesCache.cache, async (req, res) => {
   // #swagger.tags = ['Fees']
   try {
     const parent = await ParentUser.findById(req.user.id)
@@ -2547,7 +2549,7 @@ router.get('/parent/summary', authParent, async (req, res) => {
   }
 });
 
-router.get('/parent/invoices', authParent, async (req, res) => {
+router.get('/parent/invoices', authParent, parentFeesCache.cache, async (req, res) => {
   // #swagger.tags = ['Fees']
   try {
     const parent = await ParentUser.findById(req.user.id)

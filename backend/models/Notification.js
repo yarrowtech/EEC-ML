@@ -1,6 +1,7 @@
 const mongoose = require('mongoose');
 const { sendPushForNotification } = require('../utils/webPushService');
 const socketRegistry = require('../utils/socketRegistry');
+const { userNotificationsCache } = require('../utils/responseCache');
 
 const notificationSchema = new mongoose.Schema(
   {
@@ -187,4 +188,7 @@ notificationSchema.post('insertMany', function (docs = []) {
 
 notificationSchema.add({ dedupeKey: { type: String } });
 notificationSchema.index({ dedupeKey: 1 }, { unique: true, sparse: true });
+// Any write to notifications (from any router) drops cached /notifications/user responses.
+const clearUserNotificationsCache = () => userNotificationsCache.clear();
+notificationSchema.post(['save', 'insertMany', 'deleteOne', 'deleteMany', 'findOneAndDelete', 'findOneAndUpdate', 'updateOne', 'updateMany'], clearUserNotificationsCache);
 module.exports = mongoose.model('Notification', notificationSchema);

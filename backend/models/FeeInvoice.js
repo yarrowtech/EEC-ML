@@ -1,4 +1,5 @@
 const mongoose = require('mongoose');
+const { parentFeesCache } = require('../utils/responseCache');
 
 const feeInvoiceSchema = new mongoose.Schema(
   {
@@ -48,4 +49,6 @@ const feeInvoiceSchema = new mongoose.Schema(
 feeInvoiceSchema.index({ schoolId: 1, createdAt: -1 });
 feeInvoiceSchema.index({ schoolId: 1, studentId: 1 });
 
+// Any write (from any router or the payment webhook) drops cached parent fee responses.
+feeInvoiceSchema.post(['save', 'insertMany', 'bulkWrite', 'deleteOne', 'deleteMany', 'findOneAndDelete', 'findOneAndUpdate', 'updateOne', 'updateMany'], () => parentFeesCache.clear());
 module.exports = mongoose.model('FeeInvoice', feeInvoiceSchema);
