@@ -23,6 +23,11 @@ const { isStrongPassword, passwordPolicyMessage } = require('../utils/passwordPo
 const { logAuthEvent } = require('../utils/authEventLogger');
 const { resolveParentChildren } = require('../utils/parentChildren');
 const Wellbeing = require('../models/Wellbeing');
+const { createResponseCache } = require('../utils/responseCache');
+
+// Child profiles change rarely (admin edits happen in other routers), so a
+// short TTL bounds staleness while making repeat visits instant.
+const childrenProfileCache = createResponseCache({ ttlMs: 60 * 1000 });
 
 const normalizeKey = (value) =>
   String(value || '')
@@ -547,7 +552,7 @@ router.get('/profile', authParent, async (req, res) => {
 
 // Read-only child profiles for the parent portal. Only non-sensitive fields —
 // no Aadhaar, caste/religion, enrolment documents or credentials.
-router.get('/children-profile', authParent, async (req, res) => {
+router.get('/children-profile', authParent, childrenProfileCache.cache, async (req, res) => {
   // #swagger.tags = ['Parents']
   try {
     if (req.userType !== 'parent') {
@@ -560,7 +565,7 @@ router.get('/children-profile', authParent, async (req, res) => {
     const ids = Array.isArray(parent.childrenIds) ? parent.childrenIds : [];
     const students = ids.length
       ? await StudentUser.find({ _id: { $in: ids } })
-        .select('schoolId name profilePic studentCode admissionNumber admissionDate grade section roll dob gender bloodGroup academicYear campusName fatherName fatherPhone motherName motherPhone guardianName guardianPhone guardianRelation address status isArchived')
+        .select('schoolId name username profilePic studentCodeadmissionNumber admissionDate grade section roll dob gender bloodGroup academicYear campusName fatherName fatherPhone motherName motherPhone guardianName guardianPhone guardianRelation address status isArchived')
         .lean()
       : [];
     // School cover photo (set by the school admin in Settings) for the
@@ -586,7 +591,7 @@ router.get('/children-profile', authParent, async (req, res) => {
         id: String(s._id),
         name: s.name || '',
         photo: s.profilePic || '',
-        studentCode: s.studentCode || '',
+        studentCode: s.studentCode || s.username || '',
         admissionNumber: s.admissionNumber || '',
         admissionDate: s.admissionDate || null,
         grade: s.grade || '',
@@ -606,6 +611,63 @@ router.get('/children-profile', authParent, async (req, res) => {
     });
   } catch (err) {
     res.status(500).json({ error: err.message || 'Unable to load child profile' });
+  }
+});
+
+// Documents the school uploaded for the parent's own children (enrolment
+// documents, student photo, achievement certificates). Every file here was
+// uploaded by the school, so the portal shows it as verified.
+router.get('/children-documents', authParent, childrenProfileCache.cache, async (req, res) => {
+  // #swagger.tags = ['Parents']
+  try {
+    if (req.userType !== 'parent') {
+      return res.status(403).json({ error: 'Forbidden - not a parent' });
+    }
+    const parent = await ParentUser.findById(req.user.id).select('childrenIds').lean();
+    if (!parent) return res.status(404).json({ error: 'Parent not found' });
+    const ids = Array.isArray(parent.childrenIds) ? parent.childrenIds : [];
+    const students = ids.length
+      ? await StudentUser.find({ _id: { $in: ids } })
+        .select('profilePic documents achievements createdAt')
+        .lean()
+      : [];
+
+    const DOC_LABELS = {
+      birth_certificate: 'Birth Certificate',
+      transfer_certificate: 'Transfer Certificate',
+      aadhar_card: 'Aadhaar Card',
+    };
+    const CATEGORY = {
+      birth_certificate: 'identity',
+      aadhar_card: 'identity',
+      transfer_certificate: 'academic',
+    };
+
+    res.json({
+      children: students.map((s) => {
+        const docs = [];
+        if (s.profilePic) {
+          docs.push({ name: 'Student Photo', category: 'identity', url: s.profilePic, uploadedAt: s.createdAt || null });
+        }
+        (Array.isArray(s.documents) ? s.documents : []).forEach((d) => {
+          if (!d?.url) return;
+          docs.push({
+            name: d.label || DOC_LABELS[d.type] || d.fileName || 'Document',
+            category: CATEGORY[d.type] || 'other',
+            url: d.url,
+            fileName: d.fileName || '',
+            uploadedAt: d.uploadedAt || null,
+          });
+        });
+        (Array.isArray(s.achievements) ? s.achievements : []).forEach((a) => {
+          if (!a?.certificateUrl) return;
+          docs.push({ name: `${a.title} Certificate`, category: 'academic', url: a.certificateUrl, uploadedAt: a.date || null });
+        });
+        return { studentId: String(s._id), documents: docs.map((d) => ({ ...d, verified: true })) };
+      }),
+    });
+  } catch (err) {
+    res.status(500).json({ error: err.message || 'Unable to load documents' });
   }
 });
 
@@ -963,7 +1025,7 @@ router.post('/reset-first-password', rateLimit({ windowMs: 60 * 1000, max: 20, k
   }
 });
 
-router.get('/achievements', authParent, async (req, res) => {
+router.get('/achievements', authParent, childrenProfileCache.cache, async (req, res) => {
   try {
     const parent = await ParentUser.findById(req.user.id)
       .select('name schoolId campusId childrenIds children')
@@ -990,7 +1052,7 @@ router.get('/achievements', authParent, async (req, res) => {
         ...studentFilter,
         _id: { $in: parent.childrenIds },
       })
-        .select('name grade section studentCode roll admissionNumber username achievements')
+        .select('name grade section studentCode roll admissionNumber username profilePic achievements')
         .lean();
     }
 
@@ -1002,7 +1064,7 @@ router.get('/achievements', authParent, async (req, res) => {
           ...studentFilter,
           name: { $in: validNames },
         })
-          .select('name grade section studentCode roll admissionNumber username achievements')
+          .select('name grade section studentCode roll admissionNumber username profilePic achievements')
           .lean();
       }
     }
@@ -1017,7 +1079,7 @@ router.get('/achievements', authParent, async (req, res) => {
           { guardianName: parent.name }
         ]
       })
-        .select('name grade section studentCode roll admissionNumber username achievements')
+        .select('name grade section studentCode roll admissionNumber username profilePic achievements')
         .lean();
     }
 
@@ -1040,11 +1102,20 @@ router.get('/achievements', authParent, async (req, res) => {
         roll: student.roll || null,
         grade: student.grade || '',
         section: student.section || '',
+        classTeacher: teacherName,
         achievements,
       };
     }));
 
+    // School name/logo for the auto-generated certificate (when no file was uploaded).
+    const School = require('../models/School');
+    const schoolDoc = await School.findById(schoolId).select('name logo').lean();
+    const logo = schoolDoc?.logo;
     res.json({
+      school: {
+        name: schoolDoc?.name || '',
+        logo: logo?.secure_url || logo?.url || (typeof logo === 'string' ? logo : ''),
+      },
       children: childrenAchievements,
       meta: { childCount: childrenAchievements.length }
     });

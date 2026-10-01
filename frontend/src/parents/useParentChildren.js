@@ -3,45 +3,61 @@ import { parentApiJson } from './parentApi';
 import { useSharedChildSelection } from './ChildSwitcher';
 
 // One fetch of the parent's linked children (read-only profile data), shared by
-// the Homework, Calendar, Child Profile and Documents screens for this session.
-// Also mirrored to sessionStorage (per token) so a page reload paints at once.
-const CACHE_MS = 5 * 60 * 1000;
+// the Homework, Calendar, Child Profile and Documents screens.
+// Stale-while-revalidate: the last response is kept in localStorage (per token)
+// so every screen paints instantly; anything older than FRESH_MS is refreshed
+// in the background without showing a loader.
+const FRESH_MS = 60 * 1000;
+const MAX_AGE_MS = 24 * 60 * 60 * 1000;
 const storageKey = () => {
   let t = '';
   try { t = localStorage.getItem('token') || ''; } catch { /* ignore */ }
-  return `parent:children:v1:${t.slice(-16)}`;
+  return `parent:children:v2:${t.slice(-16)}`;
 };
 const readStored = () => {
   try {
     const key = storageKey();
-    const entry = JSON.parse(sessionStorage.getItem(key) || 'null');
-    return entry && Date.now() - entry.at < CACHE_MS ? { ...entry, key } : null;
+    const entry = JSON.parse(localStorage.getItem(key) || 'null');
+    return entry && Date.now() - entry.at < MAX_AGE_MS ? { ...entry, key } : null;
   } catch { return null; }
 };
-let cache = readStored(); // { at, data }
+let cache = readStored(); // { key, at, data }
+let inflight = null;
+
+const currentCache = () => {
+  // A different login in this tab must never see the previous parent's data.
+  if (!cache || cache.key !== storageKey()) cache = readStored();
+  return cache;
+};
 
 export const fetchParentChildren = async ({ force = false } = {}) => {
-  // A different login in this tab must never see the previous parent's data.
-  if (cache && cache.key !== storageKey()) cache = readStored();
-  if (!force && cache && Date.now() - cache.at < CACHE_MS) return cache.data;
-  const data = await parentApiJson('/api/parent/auth/children-profile');
-  cache = { key: storageKey(), at: Date.now(), data };
-  try { sessionStorage.setItem(storageKey(), JSON.stringify(cache)); } catch { /* quota / private mode */ }
-  return data;
+  const c = currentCache();
+  if (!force && c && Date.now() - c.at < FRESH_MS) return c.data;
+  if (!inflight) {
+    inflight = parentApiJson('/api/parent/auth/children-profile')
+      .then((data) => {
+        cache = { key: storageKey(), at: Date.now(), data };
+        try { localStorage.setItem(cache.key, JSON.stringify({ at: cache.at, data })); } catch { /* quota / private mode */ }
+        return data;
+      })
+      .finally(() => { inflight = null; });
+  }
+  return inflight;
 };
 
 /**
- * @returns {{ parent, children, options, childKey, setChildKey, selected, loading, error, reload }}
+ * @returns {{ parent, school, children, options, childKey, setChildKey, selected, loading, error, reload }}
  * `selected` is the full child profile for the child picked in the shared
  * switcher (the choice follows the parent across every screen).
  */
 const useParentChildren = () => {
-  const [data, setData] = useState(() => (cache && cache.key === storageKey() ? cache.data : null));
-  const [loading, setLoading] = useState(!(cache && cache.key === storageKey()));
+  const [data, setData] = useState(() => currentCache()?.data || null);
+  const [loading, setLoading] = useState(() => !currentCache());
   const [error, setError] = useState('');
 
   const load = useCallback(async (force = false) => {
-    setLoading(true);
+    // Only show a loader when there is nothing cached to display.
+    if (!currentCache()) setLoading(true);
     setError('');
     try {
       setData(await fetchParentChildren({ force }));

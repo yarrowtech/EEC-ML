@@ -704,7 +704,7 @@ const FeesPayment = () => {
     return value.length <= 4 ? value.toUpperCase() : value.charAt(0).toUpperCase() + value.slice(1);
   };
 
-  const cardClass = 'rounded-2xl border border-slate-200/70 bg-white shadow-[0_1px_3px_rgba(15,23,42,0.04)]';
+  const cardClass = 'rounded-2xl border border-slate-200/70 bg-white shadow-[0_1px_3px_rgba(15,23,42,0.04)] self-start';
 
   return (
     <div className="fees-dashboard-page w-full bg-[#f5f7fb] px-4 py-4 pb-6 md:px-6">
@@ -810,7 +810,14 @@ const FeesPayment = () => {
             <div className="min-w-0 flex-1">
               <div className="flex items-start justify-between gap-2">
                 <p className="text-xs font-medium text-red-600">Total Pending</p>
-                <span className="rounded-full bg-red-100 px-2.5 py-1 text-xs font-semibold text-red-600">{pendingInvoices.length ? `${pendingInvoices.length} due` : 'All clear'}</span>
+                <span
+                  className={`rounded-full px-2.5 py-1 text-xs font-semibold ${pendingInvoices.length
+                    ? 'bg-red-100 text-red-600'
+                    : 'bg-green-100 text-green-600'
+                    }`}
+                >
+                  {pendingInvoices.length ? `${pendingInvoices.length} due` : 'All clear'}
+                </span>
               </div>
               <p className="text-xl font-extrabold tracking-tight text-red-600">{formatCurrency(totals.balance)}</p>
               <p className="text-xs text-slate-500">
@@ -824,7 +831,14 @@ const FeesPayment = () => {
             <span className="min-w-0 flex-1">
               <span className="block text-xs font-medium text-slate-600">Upcoming Due</span>
               <span className="block text-xl font-bold tracking-tight text-slate-900">{nearestDueDate ? formatDate(nearestDueDate) : 'No upcoming dues'}</span>
-              <span className="block text-xs text-slate-500">{getRelativeDueLabel(nearestDueDate)}</span>
+              <span
+                className={`block text-xs ${pendingInvoices.length ? 'text-slate-500' : 'text-green-600'
+                  }`}
+              >
+                {pendingInvoices.length
+                  ? getRelativeDueLabel(nearestDueDate)
+                  : 'All settled'}
+              </span>
             </span>
             <ChevronRight className="h-5 w-5 shrink-0 text-slate-600" />
           </button>
@@ -875,12 +889,12 @@ const FeesPayment = () => {
                     : 'border-slate-200 bg-slate-50/60';
                 return (
                   <React.Fragment key={row.key}>
-                    {index > 0 && <span className="hidden h-px w-6 shrink-0 bg-slate-200 lg:block" />}
+                    {index > 0 && <span className="hidden h-px w-6 shrink-0 bg-slate-300 lg:block" />}
                     <div className={`min-w-0 flex-1 rounded-xl border p-3 ${tone}`}>
                       <div className="flex items-start justify-between gap-3">
                         <div className="min-w-0">
                           <p className="truncate text-sm font-semibold text-slate-800">{installment.label}</p>
-                          {isOpen && <p className="truncate text-sm text-slate-600">{row.subLabel}</p>}
+                          {/* {isOpen && <p className="truncate text-sm text-slate-600">{row.subLabel}</p>} */}
                           <p className="mt-0.5 text-lg font-bold text-slate-900">{formatCurrency(installment.amount)}</p>
                         </div>
                         {installment.isPaid ? (
@@ -950,7 +964,7 @@ const FeesPayment = () => {
                     type="button"
                     onClick={() => setStatusFilter(value)}
                     aria-pressed={statusFilter === value}
-                    className={`rounded-lg border px-3 py-1.5 text-xs font-medium transition ${statusFilter === value ? 'border-violet-600 bg-violet-600 text-white' : 'border-slate-200 bg-white text-slate-700 hover:bg-slate-50'}`}
+                    className={`rounded-full border px-3 py-1.5 text-xs font-medium transition ${statusFilter === value ? 'border-violet-600 bg-violet-600 text-white' : 'border-slate-200 bg-white text-slate-700 hover:bg-slate-50'}`}
                   >
                     {value === 'all' ? 'All' : STATUS_LABEL[value]}
                   </button>
@@ -962,8 +976,8 @@ const FeesPayment = () => {
               <table className="w-full min-w-[640px] text-left text-xs text-slate-700">
                 <thead className="border-b border-slate-100 text-xs font-medium text-slate-600">
                   <tr>
-                    {['#', 'Amount', 'Fine', 'Total', 'Status', 'Payment Method', 'Invoice', 'Action'].map((head) => (
-                      <th key={head} className={`px-3 py-2 font-medium ${['Status', 'Action'].includes(head) ? 'text-center' : ''}`}>{head}</th>
+                    {['#', 'Amount', 'Fine', 'Total', 'Status', 'Method', 'Invoice', 'Action'].map((head) => (
+                      <th key={head} className={`px-3 py-2 font-medium bg-gray-200 ${['Status', 'Action'].includes(head) ? 'text-center' : ''}`}>{head}</th>
                     ))}
                   </tr>
                 </thead>
@@ -1001,7 +1015,7 @@ const FeesPayment = () => {
                               title={row.payment.receiptNumber ? `Receipt ${row.payment.receiptNumber}` : 'Download receipt'}
                               className="inline-flex items-center gap-1.5 rounded-lg border border-violet-100 bg-violet-50/60 px-3 py-1.5 text-xs font-medium text-violet-600 transition hover:bg-violet-100 disabled:opacity-60"
                             >
-                              {downloadingReceiptId === row.payment._id ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Eye className="h-3.5 w-3.5" />} View
+                              {downloadingReceiptId === row.payment._id ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Download className="h-3.5 w-3.5" />} Download
                             </button>
                           ) : <span className="text-xs text-slate-400">—</span>
                         ) : row.isLocked ? (
@@ -1070,10 +1084,10 @@ const FeesPayment = () => {
               </div>
             )}
 
-            <p className="mt-4 flex items-start gap-3 rounded-xl bg-slate-50 p-3 text-xs text-slate-600">
+            {/* <p className="mt-4 flex items-start gap-3 rounded-xl bg-slate-50 p-3 text-xs text-slate-600">
               <span className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-blue-600 text-white"><Info className="h-3.5 w-3.5" /></span>
               Late fine is applicable as per school policy for delayed payments.
-            </p>
+            </p> */}
           </aside>
         </div>
       </div>
