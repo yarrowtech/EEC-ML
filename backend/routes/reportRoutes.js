@@ -115,7 +115,8 @@ const resolveTemplate = async ({ schoolId, campusId }) => {
   const schoolContactLine =
     template?.schoolContactLine ||
     [school?.contactPhone, campusContactPhone, school?.contactEmail, school?.officialEmail]
-      .filter(Boolean)
+      .map((value) => String(value || '').trim())
+      .filter((value, index, all) => value && all.findIndex((v) => v.toLowerCase() === value.toLowerCase()) === index)
       .join(' | ');
   const logoUrl = template?.logoUrlOverride || school?.logo?.secure_url || school?.logo?.url || '';
 
@@ -892,7 +893,44 @@ router.get('/report-cards/parent', authParent, parentReportCache.cache, async (r
       }),
     ]);
 
-    res.json({ template, reportCards });
+    // Grade-card signatories: the child's class teacher (TeacherAllocation,
+    // falling back to the teacher's "class teacher of" field) and the principal.
+    const classKey = (value) => normalizeKey(String(value || '').replace(/^class\s*/i, '')).replace(/[^a-z0-9]/g, '');
+    const legacyClassTeachers = await TeacherUser.find({ schoolId, classTeacherOf: { $nin: [null, ''] } })
+      .select('name classTeacherOf')
+      .lean();
+    const studentById = new Map(students.map((s) => [String(s._id), s]));
+    const enriched = await Promise.all(reportCards.map(async (card) => {
+      const student = studentById.get(String(card.studentId)) || {};
+      const className = String(student.grade || '').trim();
+      const sectionName = String(student.section || '').trim();
+      const classDoc = className
+        ? await ClassModel.findOne({ schoolId, ...(campusId ? { campusId } : {}), name: className })
+          .sort({ createdAt: -1 })
+          .select('_id')
+          .lean()
+        : null;
+      const sectionDoc = classDoc?._id && sectionName
+        ? await Section.findOne({ schoolId, ...(campusId ? { campusId } : {}), classId: classDoc._id, name: sectionName })
+          .select('_id')
+          .lean()
+        : null;
+      const { classTeacherName, principalName } = await resolveSignatories({
+        schoolId,
+        campusId,
+        classId: classDoc?._id || null,
+        sectionId: sectionDoc?._id || null,
+      });
+      const key = classKey(`${className}${sectionName}`);
+      const legacy = key ? legacyClassTeachers.find((t) => classKey(t.classTeacherOf) === key) : null;
+      return {
+        ...card,
+        classTeacherName: classTeacherName || String(legacy?.name || '').trim(),
+        principalName,
+      };
+    }));
+
+    res.json({ template, reportCards: enriched });
   } catch (err) {
     res.status(500).json({ error: err.message });
   }

@@ -2483,6 +2483,7 @@ router.get('/parent/children', authParent, async (req, res) => {
       admissionNumber: student.admissionNumber || '',
       grade: student.grade || '',
       section: student.section || '',
+      photo: student.profilePic || '',
       linked: true,
     }));
 

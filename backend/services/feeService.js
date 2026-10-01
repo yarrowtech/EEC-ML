@@ -59,7 +59,7 @@ const resolveParentStudents = async ({ parent, schoolId, campusId }) => {
       ...filter,
       _id: { $in: parent.childrenIds },
     })
-      .select('name grade section studentCode roll admissionNumber username')
+      .select('name grade section studentCode roll admissionNumber username profilePic')
       .lean();
   }
 
@@ -72,7 +72,7 @@ const resolveParentStudents = async ({ parent, schoolId, campusId }) => {
     ...filter,
     name: { $in: names },
   })
-    .select('name grade section studentCode roll admissionNumber username')
+    .select('name grade section studentCode roll admissionNumber username profilePic')
     .lean();
 };
 
