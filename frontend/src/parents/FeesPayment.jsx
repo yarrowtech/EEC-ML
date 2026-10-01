@@ -1,14 +1,25 @@
-import React, { useCallback, useEffect, useMemo, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { createPortal } from 'react-dom';
 import { useNavigate } from 'react-router-dom';
 import {
   AlertCircle,
+  CalendarCheck,
+  Check,
   CheckCircle2,
+  ChevronDown,
+  ChevronRight,
+  Clock,
+  Coins,
+  CreditCard,
   Download,
-  DownloadIcon,
+  Eye,
   FileText,
+  Info,
   Loader2,
   Lock,
+  Receipt,
   RefreshCw,
+  Wallet,
   X,
 } from 'lucide-react';
 import toast from 'react-hot-toast';
@@ -62,13 +73,6 @@ const formatDate = (value) => {
   const parsed = new Date(value);
   if (Number.isNaN(parsed.getTime())) return '—';
   return parsed.toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' });
-};
-
-const formatShortDate = (value) => {
-  if (!value) return '—';
-  const parsed = new Date(value);
-  if (Number.isNaN(parsed.getTime())) return '—';
-  return parsed.toLocaleDateString('en-IN', { day: 'numeric', month: 'short' });
 };
 
 const isPastDue = (value) => {
@@ -204,11 +208,24 @@ const getStoredToken = () => {
   return '';
 };
 
-const ChildAvatar = ({ child, index }) => (
-  <span className={`inline-flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-gradient-to-br text-sm font-semibold ${AVATAR_STYLES[index % AVATAR_STYLES.length]}`}>
-    {getInitials(child?.name)}
-  </span>
-);
+const STATUS_PILL = {
+  paid: 'bg-green-50 text-green-600 font-bold',
+  due: 'bg-amber-50 text-amber-600',
+  overdue: 'bg-red-50 text-red-600',
+};
+const STATUS_LABEL = { paid: 'Paid', due: 'Due', overdue: 'Overdue' };
+
+const ChildAvatar = ({ child, index }) => {
+  const photo = child?.profilePic || child?.photo || '';
+  if (photo) {
+    return <img src={photo} alt="" className="h-10 w-10 shrink-0 rounded-full object-cover" />;
+  }
+  return (
+    <span className={`inline-flex h-10 w-10 shrink-0 items-center justify-center rounded-lg bg-gradient-to-br text-sm font-semibold ${AVATAR_STYLES[index % AVATAR_STYLES.length]}`}>
+      {getInitials(child?.name)}
+    </span>
+  );
+};
 
 const FeesPayment = () => {
   const navigate = useNavigate();
@@ -554,212 +571,590 @@ const FeesPayment = () => {
   const selectedBalance = getInvoiceBalance(selectedInvoice);
   const isProcessingSelected = selectedInvoice && processingInvoiceId === selectedInvoice._id;
 
+  // One table row per installment (or per invoice when it has no plan). Late
+  // fines are added to the invoice total by the server, so whatever balance is
+  // left after the installments' own remainders is the outstanding fine — it is
+  // charged on the installment that is currently open.
+  const transactionRows = useMemo(() => sessionInvoices.flatMap((invoice) => {
+    const payments = paymentsByInvoice[invoice._id] || [];
+    const latestPayment = payments[0] || null;
+    const balance = getInvoiceBalance(invoice);
+    const installments = getInstallmentBreakdown(invoice, [...payments].reverse());
+    const invoiceRef = `INV-${String(invoice._id || '').slice(-6).toUpperCase()}`;
+
+    if (!installments.length) {
+      const fine = toAmount(invoice.lateFeeAmountApplied);
+      const total = getInvoiceTotal(invoice);
+      const isPaid = balance <= 0;
+      return [{
+        key: invoice._id,
+        invoice,
+        date: invoice.dueDate || invoice.createdAt,
+        label: getInvoiceTitle(invoice),
+        subLabel: '',
+        amount: Math.max(0, total - fine),
+        fine,
+        total,
+        payable: balance,
+        status: isPaid ? 'paid' : isPastDue(invoice.dueDate) ? 'overdue' : 'due',
+        isLocked: false,
+        payment: latestPayment,
+        reference: latestPayment?.receiptNumber || invoiceRef,
+      }];
+    }
+
+    const fineDue = Math.max(0, balance - installments.reduce((sum, item) => sum + item.remaining, 0));
+    return installments.map((installment) => {
+      const isOpen = !installment.isPaid && !installment.isLocked;
+      const fine = isOpen ? fineDue : 0;
+      return {
+        key: installment.id,
+        invoice,
+        installment,
+        date: installment.dueDate || invoice.dueDate || invoice.createdAt,
+        label: installment.label,
+        subLabel: getInvoiceTitle(invoice),
+        amount: installment.amount,
+        fine,
+        total: installment.amount + fine,
+        payable: Math.min(balance, installment.remaining + fine),
+        status: installment.isPaid ? 'paid' : isPastDue(installment.dueDate || invoice.dueDate) ? 'overdue' : 'due',
+        isLocked: installment.isLocked,
+        payment: installment.isPaid ? installment.receiptPayment || latestPayment : null,
+        reference: (installment.isPaid && installment.receiptPayment?.receiptNumber) || `${invoiceRef}-${installment.index + 1}`,
+      };
+    });
+  }), [sessionInvoices, paymentsByInvoice]);
+
+  const [statusFilter, setStatusFilter] = useState('all');
+  const visibleRows = statusFilter === 'all'
+    ? transactionRows
+    : transactionRows.filter((row) => row.status === statusFilter);
+
+  const fineDueTotal = useMemo(() => sessionInvoices.reduce((sum, invoice) => {
+    const balance = getInvoiceBalance(invoice);
+    const installments = getInstallmentBreakdown(invoice);
+    if (!installments.length) return sum + Math.min(toAmount(invoice.lateFeeAmountApplied), balance);
+    return sum + Math.max(0, balance - installments.reduce((acc, item) => acc + item.remaining, 0));
+  }, 0), [sessionInvoices]);
+  // Per-invoice breakdown for the Late Fine (i) popover. The server charges
+  // `lateFeeRuleSnapshot.amount` per overdue day and accumulates it into
+  // `lateFeeAmountApplied`, so days charged = applied ÷ daily rate.
+  const lateFineDetails = useMemo(() => sessionInvoices
+    .filter((invoice) => toAmount(invoice.lateFeeAmountApplied) > 0)
+    .map((invoice) => {
+      const balance = getInvoiceBalance(invoice);
+      const installments = getInstallmentBreakdown(invoice);
+      const openInstallment = installments.find((item) => !item.isPaid);
+      const applied = toAmount(invoice.lateFeeAmountApplied);
+      const rate = toAmount(invoice.lateFeeRuleSnapshot?.amount);
+      const outstanding = installments.length
+        ? Math.max(0, balance - installments.reduce((acc, item) => acc + item.remaining, 0))
+        : Math.min(applied, balance);
+      return {
+        id: invoice._id,
+        label: openInstallment ? `${getInvoiceTitle(invoice)} · ${openInstallment.label}` : getInvoiceTitle(invoice),
+        dueDate: openInstallment?.dueDate || invoice.dueDate,
+        rate,
+        days: rate > 0 ? Math.round(applied / rate) : 0,
+        applied,
+        outstanding,
+        appliedAt: invoice.lateFeeAppliedAt,
+        excludeSundays: Boolean(invoice.lateFeeRuleSnapshot?.excludeSundays),
+        excludeHolidays: Boolean(invoice.lateFeeRuleSnapshot?.excludeHolidays),
+      };
+    }), [sessionInvoices]);
+
+  const [lateFineOpen, setLateFineOpen] = useState(false);
+  const lateFineDialogRef = useDialog(lateFineOpen, () => setLateFineOpen(false));
+
+  const fineAppliedTotal = sessionInvoices.reduce((sum, invoice) => sum + toAmount(invoice.lateFeeAmountApplied), 0);
+  const feesDue = Math.max(0, totals.balance - fineDueTotal);
+
+  const planRows = transactionRows.filter((row) => row.installment && row.invoice._id === selectedInvoiceId);
+  const invoicesWithPlans = sessionInvoices.filter((invoice) => (invoice.installmentsSnapshot || []).length > 0);
+  const activePlanRow = planRows.find((row) => !row.installment.isPaid && !row.isLocked);
+  const mobilePayAmount = activePlanRow?.payable || activeInstallment?.remaining || selectedBalance;
+
+  const [childMenuOpen, setChildMenuOpen] = useState(false);
+  const childMenuRef = useRef(null);
+  useEffect(() => {
+    if (!childMenuOpen) return undefined;
+    const close = (event) => {
+      if (!childMenuRef.current?.contains(event.target)) setChildMenuOpen(false);
+    };
+    const onKey = (event) => { if (event.key === 'Escape') setChildMenuOpen(false); };
+    document.addEventListener('mousedown', close);
+    document.addEventListener('keydown', onKey);
+    return () => {
+      document.removeEventListener('mousedown', close);
+      document.removeEventListener('keydown', onKey);
+    };
+  }, [childMenuOpen]);
+
+  const selectedChildIndex = Math.max(0, children.findIndex((child) => buildChildKey(child) === selectedChildId));
+  const childSubtitle = (child) => {
+    const childClass = getChildClass(child);
+    return childClass ? `Class ${childClass}${child.section ? ` · Section ${child.section}` : ''}` : 'Not linked to a class';
+  };
+
+  const formatMethod = (method) => {
+    const value = String(method || '').trim();
+    if (!value) return 'Online';
+    return value.length <= 4 ? value.toUpperCase() : value.charAt(0).toUpperCase() + value.slice(1);
+  };
+
+  const cardClass = 'rounded-2xl border border-slate-200/70 bg-white shadow-[0_1px_3px_rgba(15,23,42,0.04)]';
+
   return (
-    <div className="fees-dashboard-page w-full px-4 py-4 pb-6 md:p-30">
-      <section className="fees-glass-card mx-auto w-full max-w-6xl p-5 sm:p-6 md:p-8" aria-labelledby="fees-dashboard-title">
-        <header className="mb-6 flex flex-wrap items-start justify-between gap-4">
-          <div>
-            <h1 id="fees-dashboard-title" className="text-2xl font-bold tracking-tight text-slate-800">
-              Fee Dashboard <span className="sr-only">Fees Payment</span>
-            </h1>
-            <p className="mt-0.5 text-sm text-slate-500">Overview of your children&apos;s fee status and payment history</p>
+    <div className="fees-dashboard-page w-full bg-[#f5f7fb] px-4 py-4 pb-6 md:px-6">
+      <div className="mx-auto w-full max-w-6xl space-y-4" aria-labelledby="fees-dashboard-title">
+        {/* Header — title on the left, child picker + refresh on the right.
+            The session is picked automatically (active session first). */}
+        <header className="flex flex-wrap items-center justify-between gap-3">
+          <div className="flex items-center gap-3">
+            <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-violet-100 text-violet-600">
+              <Wallet className="h-5 w-5" />
+            </span>
+            <div>
+              <h1 id="fees-dashboard-title" className="text-xl font-bold tracking-tight text-slate-900">
+                Fees &amp; Payments <span className="sr-only">Fees Payment</span>
+              </h1>
+              <p className="text-xs text-slate-500">
+                Overview of your children&apos;s fee status and payment history
+                {sessionFilter ? <> · <span className="font-medium text-slate-700">Session {sessionFilter}</span></> : null}
+              </p>
+            </div>
           </div>
-          {sessionOptions.length > 0 && (
-            <label className="flex items-center gap-2 text-xs font-semibold text-slate-500" htmlFor="fees-session-filter">
-              Session
-              <select
-                id="fees-session-filter"
-                value={sessionFilter}
-                onChange={(event) => setSessionFilter(event.target.value)}
-                className="rounded-full border border-white/70 bg-white/60 px-3 py-1.5 text-xs font-semibold text-slate-700 outline-none transition focus:border-purple-300 focus:ring-2 focus:ring-purple-100"
-              >
-                {sessionOptions.map((option) => (
-                  <option key={option.label} value={option.label}>
-                    {option.label}{option.isActive ? ' (Active)' : ''}
-                  </option>
-                ))}
-              </select>
-            </label>
-          )}
+
+          <div className="flex w-full items-center gap-2 sm:w-auto">
+            <div className="relative min-w-0 flex-1 sm:w-64 sm:flex-none" ref={childMenuRef}>
+              {loadingChildren && children.length === 0 ? (
+                <div className="flex h-11 items-center gap-2 rounded-xl border border-slate-200 bg-white px-3 text-xs text-slate-500"><Loader2 className="h-4 w-4 animate-spin text-blue-500" /> Loading children…</div>
+              ) : children.length === 0 ? (
+                <div className="flex h-11 items-center rounded-xl border border-slate-200 bg-white px-3 text-xs text-slate-500">No students found.</div>
+              ) : (
+                <>
+                  <button
+                    type="button"
+                    onClick={() => setChildMenuOpen((open) => !open)}
+                    aria-haspopup="listbox"
+                    aria-expanded={childMenuOpen}
+                    aria-label="Select child"
+                    className="flex h-11 w-full items-center gap-2.5 rounded-xl border border-slate-200 bg-white px-1.5 text-left shadow-sm transition hover:border-slate-300 focus:outline-none focus:ring-2 focus:ring-blue-100"
+                  >
+                    <ChildAvatar child={selectedChild} index={selectedChildIndex} />
+                    <span className="min-w-0 flex-1 leading-tight">
+                      <span className="block truncate text-sm font-semibold text-slate-900">{selectedChild?.name || 'Select a child'}</span>
+                      <span className="block truncate text-[11px] text-slate-500">{selectedChild ? childSubtitle(selectedChild) : ''}</span>
+                    </span>
+                    <ChevronDown className={`mr-1 h-4 w-4 text-slate-500 transition ${childMenuOpen ? 'rotate-180' : ''}`} />
+                  </button>
+                  {childMenuOpen && (
+                    <ul role="listbox" aria-label="Children" className="absolute right-0 z-30 mt-1.5 max-h-72 w-full min-w-60 overflow-auto rounded-xl border border-slate-200 bg-white p-1 shadow-lg">
+                      {children.map((child, index) => {
+                        const childKey = buildChildKey(child);
+                        const isActive = childKey === selectedChildId;
+                        return (
+                          <li key={childKey}>
+                            <button
+                              type="button"
+                              role="option"
+                              aria-selected={isActive}
+                              onClick={() => { pickChild(child); setChildMenuOpen(false); }}
+                              className={`flex w-full items-center gap-2.5 rounded-lg px-1.5 py-1.5 text-left transition ${isActive ? 'bg-blue-50' : 'hover:bg-slate-50'}`}
+                            >
+                              <ChildAvatar child={child} index={index} />
+                              <span className="min-w-0 flex-1 leading-tight">
+                                <span className="block truncate text-sm font-semibold text-slate-800">{child.name || 'Child'}</span>
+                                <span className="block truncate text-[11px] text-slate-500">{childSubtitle(child)}</span>
+                              </span>
+                              {isActive && <CheckCircle2 className="h-4 w-4 text-blue-600" />}
+                            </button>
+                          </li>
+                        );
+                      })}
+                    </ul>
+                  )}
+                </>
+              )}
+            </div>
+            <button
+              type="button"
+              onClick={handleRefresh}
+              disabled={loadingChildren || loadingInvoices}
+              aria-label="Refresh"
+              title="Refresh"
+              className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl border border-slate-200 bg-white text-blue-600 shadow-sm transition hover:bg-blue-50 disabled:cursor-not-allowed disabled:opacity-60"
+            >
+              <RefreshCw className={`h-4 w-4 ${loadingChildren || loadingInvoices ? 'animate-spin' : ''}`} />
+            </button>
+          </div>
         </header>
 
-        <div className="grid grid-cols-1 gap-6 lg:grid-cols-3">
-          <div className="space-y-4 lg:col-span-1">
-            <div>
-              <div className="mb-3 flex items-center justify-between">
-                <span className="text-sm font-semibold text-slate-700">Select Child</span>
-                <button type="button" onClick={handleRefresh} disabled={loadingChildren || loadingInvoices} className="flex items-center gap-1.5 rounded-full border border-purple-100/60 bg-purple-50/80 px-3 py-1.5 text-xs font-medium text-purple-700 transition hover:bg-purple-100 disabled:cursor-not-allowed disabled:opacity-60">
-                  <RefreshCw className={`h-3.5 w-3.5 ${loadingChildren || loadingInvoices ? 'animate-spin' : ''}`} /> Refresh
-                </button>
-              </div>
+        {selectedChild && !getChildId(selectedChild) && <p className="rounded-xl border border-amber-100 bg-amber-50 p-3 text-xs text-amber-700">This child is not linked to a student record. Please contact the school office.</p>}
+        {razorpayState === 'unreachable' && (
+          <p className="flex flex-wrap items-start gap-2 rounded-xl border border-amber-200 bg-amber-50 p-3 text-xs text-amber-800" role="status">
+            <AlertCircle className="mt-0.5 h-4 w-4 shrink-0" />
+            <span className="min-w-0 flex-1">{paymentUnreachableMessage}</span>
+            <button type="button" onClick={() => warmRazorpay(true)} className="font-semibold text-amber-900 underline underline-offset-2">Retry</button>
+          </p>
+        )}
+        {error && <p className="flex items-start gap-2 rounded-xl border border-red-100 bg-red-50 p-3 text-xs text-red-600" role="alert"><AlertCircle className="mt-0.5 h-4 w-4 shrink-0" /> {error}</p>}
+        {successMessage && <p className="flex items-start gap-2 rounded-xl border border-emerald-100 bg-emerald-50 p-3 text-xs text-emerald-700" role="status"><CheckCircle2 className="mt-0.5 h-4 w-4 shrink-0" /> {successMessage}</p>}
 
-              <div className="fees-child-list -mx-4 flex snap-x snap-mandatory gap-3 overflow-x-auto px-4 pb-2 lg:mx-0 lg:block lg:space-y-2 lg:px-0 lg:pb-0" role={children.length ? 'listbox' : undefined} aria-label="Children">
-                {loadingChildren && children.length === 0 ? (
-                  <div className="fees-child-card flex w-full items-center gap-3 rounded-xl p-3 text-sm text-slate-500"><Loader2 className="h-5 w-5 animate-spin text-purple-500" /> Loading children…</div>
-                ) : children.length === 0 ? (
-                  <div className="fees-child-card w-full rounded-xl p-4 text-center text-sm text-slate-500">No students found.</div>
-                ) : children.map((child, index) => {
-                  const childKey = buildChildKey(child);
-                  const isActive = childKey === selectedChildId;
-                  const childClass = getChildClass(child);
-                  return (
-                    <button key={childKey} type="button" role="option" aria-selected={isActive} onClick={() => pickChild(child)} className={`fees-child-card flex w-[min(280px,calc(100vw-3.5rem))] shrink-0 snap-start items-center gap-3 rounded-xl p-4 text-left lg:w-full lg:p-3 ${isActive ? 'is-active' : ''}`}>
-                      <ChildAvatar child={child} index={index} />
-                      <span className="min-w-0 flex-1">
-                        <span className="block truncate text-sm font-semibold text-slate-800">{child.name || 'Child'}</span>
-                        <span className="block truncate text-xs text-slate-400">{childClass ? `Class ${childClass}${child.section ? ` · Section ${child.section}` : ''}` : 'Not linked to a class'}</span>
-                      </span>
-                      {isActive && <span className="h-2 w-2 shrink-0 rounded-full bg-purple-600" />}
-                    </button>
-                  );
-                })}
+        {/* Stat cards */}
+        <section className="grid gap-3 md:grid-cols-3" aria-label="Fee summary">
+          <div className="flex items-center gap-3 rounded-xl border border-red-100 bg-red-50 p-3.5">
+            <span className="flex h-12 w-12 shrink-0 items-center justify-center rounded-xl bg-red-200/65 text-red-500"><Wallet className="h-6 w-6" /></span>
+            <div className="min-w-0 flex-1">
+              <div className="flex items-start justify-between gap-2">
+                <p className="text-xs font-medium text-red-600">Total Pending</p>
+                <span className="rounded-full bg-red-100 px-2.5 py-1 text-xs font-semibold text-red-600">{pendingInvoices.length ? `${pendingInvoices.length} due` : 'All clear'}</span>
               </div>
-              <p className="mt-2 text-center text-xs text-slate-400 lg:mt-3 lg:text-left">Select a child to view their fee details</p>
-            </div>
-
-            {selectedChild && !getChildId(selectedChild) && <p className="rounded-xl border border-amber-100 bg-amber-50/70 p-3 text-xs text-amber-700">This child is not linked to a student record. Please contact the school office.</p>}
-            {razorpayState === 'unreachable' && (
-              <p className="flex flex-wrap items-start gap-2 rounded-xl border border-amber-200 bg-amber-50/70 p-3 text-xs text-amber-800" role="status">
-                <AlertCircle className="mt-0.5 h-4 w-4 shrink-0" />
-                <span className="min-w-0 flex-1">{paymentUnreachableMessage}</span>
-                <button type="button" onClick={() => warmRazorpay(true)} className="font-semibold text-amber-900 underline underline-offset-2">Retry</button>
+              <p className="text-xl font-extrabold tracking-tight text-red-600">{formatCurrency(totals.balance)}</p>
+              <p className="text-xs text-slate-500">
+                {fineDueTotal > 0 ? `${formatCurrency(feesDue)} fees + ${formatCurrency(fineDueTotal)} fine` : 'No late fine'}
               </p>
-            )}
-            {error && <p className="flex items-start gap-2 rounded-xl border border-red-100 bg-red-50/70 p-3 text-xs text-red-600" role="alert"><AlertCircle className="mt-0.5 h-4 w-4 shrink-0" /> {error}</p>}
-            {successMessage && <p className="flex items-start gap-2 rounded-xl border border-emerald-100 bg-emerald-50/70 p-3 text-xs text-emerald-700" role="status"><CheckCircle2 className="mt-0.5 h-4 w-4 shrink-0" /> {successMessage}</p>}
-
-            <div className="grid grid-cols-2 gap-3 lg:grid-cols-1 lg:gap-2" aria-label="Fee summary">
-              <div className="fees-stat-glass col-span-2 flex items-end justify-between rounded-xl p-4 lg:col-span-1 lg:items-center lg:p-3">
-                <div><p className="text-xs font-medium uppercase tracking-wider text-slate-500">Total Pending</p><p className="text-xl font-bold text-slate-800">{formatCurrency(totals.balance)}</p></div>
-                <span className="rounded-md bg-amber-50 px-2 py-1 text-xs font-medium text-amber-600">{pendingInvoices.length ? `${pendingInvoices.length} due` : 'All clear'}</span>
-              </div>
-              <div className="fees-stat-glass col-span-1 flex min-h-[104px] flex-col justify-between rounded-xl p-4 lg:min-h-0 lg:flex-row lg:items-center lg:p-3">
-                <div><p className="text-xs font-medium uppercase tracking-wider text-slate-500">Upcoming Due</p><p className="text-sm font-semibold text-amber-600">{nearestDueDate ? formatDate(nearestDueDate) : 'No upcoming dues'}</p></div>
-                <span className="self-end text-xs text-slate-400">{getRelativeDueLabel(nearestDueDate)}</span>
-              </div>
-              <div className="fees-stat-glass col-span-1 flex min-h-[104px] flex-col justify-between rounded-xl p-4 lg:min-h-0 lg:flex-row lg:items-center lg:p-3">
-                <div><p className="text-xs font-medium uppercase tracking-wider text-slate-500">Total Paid</p><p className="text-xl font-bold text-slate-800">{formatCurrency(totals.paid)}</p></div>
-                <span className="self-end text-xs font-medium text-emerald-600">This session</span>
-              </div>
             </div>
           </div>
 
-          <div className="min-w-0 lg:col-span-2">
-            <div className="mb-4">
-              <div><h2 className="text-base font-semibold text-slate-700 lg:text-sm">Transaction History &amp; Dues</h2><p className="mt-0.5 text-xs text-slate-400">All invoices for the selected academic session</p></div>
-              <div className="mt-3 flex items-center justify-end gap-3 text-xs text-slate-400 lg:mt-2 lg:gap-1.5" aria-label="Status legend">
-                <span className="flex items-center gap-1"><span className="h-2 w-2 rounded-full bg-emerald-500" /> Paid</span>
-                <span className="flex items-center gap-1"><span className="h-2 w-2 rounded-full bg-amber-500" /> Due</span>
-                <span className="flex items-center gap-1"><span className="h-2 w-2 rounded-full bg-red-500" /> Overdue</span>
+          <button type="button" onClick={() => setStatusFilter('due')} className="flex items-center gap-3 rounded-xl border border-amber-200 bg-amber-100/50 p-3.5 text-left transition hover:shadow-sm">
+            <span className="flex h-12 w-12 shrink-0 items-center justify-center rounded-xl bg-amber-200/65 text-amber-500"><CalendarCheck className="h-6 w-6" /></span>
+            <span className="min-w-0 flex-1">
+              <span className="block text-xs font-medium text-slate-600">Upcoming Due</span>
+              <span className="block text-xl font-bold tracking-tight text-slate-900">{nearestDueDate ? formatDate(nearestDueDate) : 'No upcoming dues'}</span>
+              <span className="block text-xs text-slate-500">{getRelativeDueLabel(nearestDueDate)}</span>
+            </span>
+            <ChevronRight className="h-5 w-5 shrink-0 text-slate-600" />
+          </button>
+
+          <button type="button" onClick={() => setStatusFilter('paid')} className="flex items-center gap-3 rounded-xl border border-green-200 bg-green-100/50 p-3.5 text-left transition hover:shadow-sm">
+            <span className="flex h-12 w-12 shrink-0 items-center justify-center rounded-xl bg-green-200/65"><span className="flex h-7 w-7 items-center justify-center rounded-full bg-green-500 text-white"><Check className="h-4 w-4" strokeWidth={3} /></span></span>
+            <span className="min-w-0 flex-1">
+              <span className="block text-xs font-medium text-slate-600">Total Paid</span>
+              <span className="block text-xl font-bold tracking-tight text-slate-900">{formatCurrency(totals.paid)}</span>
+              <span className="block text-xs text-slate-500">This session</span>
+            </span>
+            <ChevronRight className="h-5 w-5 shrink-0 text-slate-600" />
+          </button>
+        </section>
+
+        {/* Installment plan */}
+        {planRows.length > 0 && (
+          <section className={`${cardClass} p-4`} aria-label="Installment breakdown">
+            <div className="mb-3 flex flex-wrap items-center justify-between gap-3">
+              <div className="flex items-center gap-3">
+                <span className="flex h-10 w-10 items-center justify-center rounded-xl bg-violet-100 text-violet-600"><Coins className="h-5 w-5" /></span>
+                <div>
+                  <h2 className="text-base font-bold text-slate-900">Installment Plan</h2>
+                  <p className="text-xs text-slate-500">Installments unlock in payment order</p>
+                </div>
               </div>
+              {invoicesWithPlans.length > 1 && (
+                <select
+                  value={selectedInvoiceId}
+                  onChange={(event) => setSelectedInvoiceId(event.target.value)}
+                  aria-label="Select fee plan"
+                  className="h-10 rounded-xl border border-slate-200 bg-white px-3 text-sm font-medium text-slate-700 outline-none focus:ring-2 focus:ring-blue-100"
+                >
+                  {invoicesWithPlans.map((invoice) => <option key={invoice._id} value={invoice._id}>{getInvoiceTitle(invoice)}</option>)}
+                </select>
+              )}
             </div>
 
-            <div className="fees-scrollable max-h-[480px] space-y-2 overflow-y-auto pr-1">
-              {loadingInvoices ? (
-                <div className="fees-invoice-item flex min-h-28 items-center justify-center gap-2 rounded-xl p-4 text-sm text-slate-500"><Loader2 className="h-5 w-5 animate-spin text-purple-500" /> Loading fees…</div>
-              ) : !selectedChild ? (
-                <div className="fees-invoice-item flex min-h-28 items-center justify-center rounded-xl p-4 text-center text-sm text-slate-500">Select a child to view fee details.</div>
-              ) : sessionInvoices.length === 0 ? (
-                <div className="fees-invoice-item flex min-h-28 flex-col items-center justify-center rounded-xl p-4 text-center text-sm text-slate-500"><FileText className="mb-2 h-7 w-7 text-slate-300" />{invoices.length === 0 ? 'No invoices found for this student.' : 'No fees found for this session.'}</div>
-              ) : sessionInvoices.map((invoice, index) => {
-                const balance = getInvoiceBalance(invoice);
-                const isPaid = balance <= 0;
-                const isPartial = balance > 0 && getInvoicePaid(invoice) > 0;
-                const isOverdue = balance > 0 && isPastDue(invoice.dueDate);
-                const latestPayment = (paymentsByInvoice[invoice._id] || [])[0] || null;
-                const isSelected = selectedInvoiceId === invoice._id;
-                const status = isPaid ? 'Paid' : isOverdue ? 'Overdue' : isPartial ? 'Partial' : 'Due';
-                const statusClass = isPaid ? 'is-paid' : isOverdue ? 'is-overdue' : 'is-due';
+            <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:gap-0">
+              {planRows.map((row, index) => {
+                const { installment } = row;
+                const isOpen = row === activePlanRow;
+                const overdue = isOpen && row.status === 'overdue';
+                const tone = installment.isPaid
+                  ? 'border-green-200 bg-green-100'
+                  : isOpen
+                    ? overdue ? 'border-red-200 bg-red-50/60' : 'border-red-200 bg-red-100'
+                    : 'border-slate-200 bg-slate-50/60';
                 return (
-                  <article key={invoice._id} className={`fees-invoice-item fees-stagger ${statusClass} rounded-xl p-4 ${isSelected ? 'is-selected' : ''}`} style={{ animationDelay: `${Math.min(index, 7) * 50 + 50}ms` }}>
-                    <button type="button" onClick={() => setSelectedInvoiceId(invoice._id)} className="fees-invoice-summary w-full text-left" aria-expanded={isSelected}>
-                      <span className="fees-invoice-identity min-w-0">
-                        <span className="block text-sm font-semibold text-slate-800">{getInvoiceTitle(invoice)}</span>
-                        <span className="block text-xs text-slate-400">{selectedChild?.name || 'Student'}{getChildClass(selectedChild) ? ` · Class ${getChildClass(selectedChild)}` : ''}</span>
-                      </span>
-                      <span className="fees-invoice-amount text-sm font-semibold text-slate-800">{formatCurrency(isPaid ? getInvoiceTotal(invoice) : balance)}</span>
-                      <span className={`fees-status-pill fees-invoice-status ${statusClass}`}>{status}</span>
-                      {isPaid && <span className="fees-invoice-date text-xs text-slate-400">Paid: {formatShortDate(latestPayment?.paidOn || latestPayment?.createdAt || invoice.updatedAt)}</span>}
-                    </button>
-
-                    {isSelected && (
-                      <div className="mt-3 flex flex-wrap items-center gap-2 border-t border-white/70 pt-3">
-                        {Array.isArray(invoice.feeHeadsSnapshot) && invoice.feeHeadsSnapshot.length > 0 && <button type="button" onClick={() => setShowFeeBreakdown(true)} className="fees-secondary-action">View breakdown</button>}
-                        <button type="button" onClick={() => handleDownloadFeesCard(invoice)} disabled={downloadingFeesCardId === invoice._id} className="fees-secondary-action">
-                          {downloadingFeesCardId === invoice._id ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <DownloadIcon className="h-3.5 w-3.5" />} Fees card
-                        </button>
-                        {/* Every payment (incl. partial / installment payments recorded by the school) has a receipt. */}
-                        {latestPayment && (
-                          <button type="button" onClick={() => handleDownloadReceipt(latestPayment, invoice)} disabled={downloadingReceiptId === latestPayment._id} className="fees-secondary-action fees-receipt-action" title={latestPayment.receiptNumber ? `Receipt ${latestPayment.receiptNumber}` : 'Download receipt'}>
-                            {downloadingReceiptId === latestPayment._id ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Download className="h-3.5 w-3.5" />} Receipt{latestPayment.receiptNumber ? ` · ${latestPayment.receiptNumber}` : ''}
-                          </button>
-                        )}
-                        {balance > 0 && (
-                          <button type="button" onClick={() => handlePayNow(invoice, activeInstallment?.remaining || balance)} disabled={isProcessingSelected} className="ml-auto hidden items-center gap-1.5 rounded-full bg-purple-600 px-3.5 py-1.5 text-xs font-semibold text-white shadow-sm transition hover:bg-purple-700 disabled:cursor-not-allowed disabled:opacity-60 md:inline-flex">
-                            {isProcessingSelected ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Lock className="h-3.5 w-3.5" />} Pay now
-                          </button>
+                  <React.Fragment key={row.key}>
+                    {index > 0 && <span className="hidden h-px w-6 shrink-0 bg-slate-200 lg:block" />}
+                    <div className={`min-w-0 flex-1 rounded-xl border p-3 ${tone}`}>
+                      <div className="flex items-start justify-between gap-3">
+                        <div className="min-w-0">
+                          <p className="truncate text-sm font-semibold text-slate-800">{installment.label}</p>
+                          {isOpen && <p className="truncate text-sm text-slate-600">{row.subLabel}</p>}
+                          <p className="mt-0.5 text-lg font-bold text-slate-900">{formatCurrency(installment.amount)}</p>
+                        </div>
+                        {installment.isPaid ? (
+                          <span className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-green-600 text-white"><Check className="h-3.5 w-3.5" strokeWidth={3} /></span>
+                        ) : isOpen ? (
+                          <div className="text-right">
+                            <Clock className={`ml-auto h-5 w-5 ${overdue ? 'text-red-500' : 'text-amber-500'}`} />
+                            <p className="mt-1 whitespace-nowrap text-xs text-slate-600">Due {formatDate(installment.dueDate)}</p>
+                          </div>
+                        ) : (
+                          <span className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-slate-200 text-slate-500"><Lock className="h-4 w-4" /></span>
                         )}
                       </div>
-                    )}
-                  </article>
+
+                      <div className="mt-3 flex items-center gap-3">
+                        <div className="h-2 flex-1 overflow-hidden rounded-full bg-white">
+                          <div className={`h-full rounded-full ${installment.isPaid ? 'bg-green-600' : overdue ? 'bg-red-400' : 'bg-amber-400'}`} style={{ width: `${installment.progressPct}%` }} />
+                        </div>
+                        <span className={`text-sm font-bold ${installment.isPaid ? 'text-green-600' : 'text-slate-700'}`}>{installment.progressPct}%</span>
+                      </div>
+
+                      {installment.isPaid ? (
+                        <p className="mt-2 text-xs text-slate-500">
+                          {row.payment ? `Paid on ${formatDate(row.payment.paidOn || row.payment.createdAt)}` : 'Paid'}
+                        </p>
+                      ) : isOpen ? (
+                        <div className="mt-3 flex flex-wrap items-end justify-between gap-3">
+                          <div className="min-w-[160px] flex-1 space-y-0.5 text-xs">
+                            <div className="flex justify-between gap-4 text-slate-600"><span>Late Fine</span><span>{formatCurrency(row.fine)}</span></div>
+                            <div className="flex justify-between gap-4 font-bold text-slate-900"><span>Total Payable</span><span className="text-red-500">{formatCurrency(row.payable)}</span></div>
+                          </div>
+                          <button
+                            type="button"
+                            onClick={() => handlePayNow(row.invoice, row.payable)}
+                            disabled={processingInvoiceId === row.invoice._id}
+                            className="hidden items-center gap-2 rounded-lg bg-red-500 px-4 py-2 text-xs font-semibold text-white shadow-sm transition hover:bg-red-600 disabled:cursor-not-allowed disabled:opacity-60 md:inline-flex"
+                          >
+                            {processingInvoiceId === row.invoice._id ? <Loader2 className="h-4 w-4 animate-spin" /> : <CreditCard className="h-4 w-4" />} Pay Now
+                          </button>
+                        </div>
+                      ) : (
+                        <p className="mt-2 text-xs text-slate-500">Unlocks after the previous installment · Due {formatDate(installment.dueDate)}</p>
+                      )}
+                    </div>
+                  </React.Fragment>
                 );
               })}
             </div>
+          </section>
+        )}
 
-            {selectedInvoice && installmentBreakdown.length > 0 && (
-              <section className="mt-3 rounded-xl border border-white/70 bg-white/35 p-4" aria-label="Installment breakdown">
-                <div className="mb-3 flex items-center justify-between gap-3">
-                  <div><h3 className="text-xs font-semibold text-slate-700">Installment plan</h3><p className="text-[11px] text-slate-400">Installments unlock in payment order</p></div>
-                  <span className="text-sm font-bold text-slate-800">{formatCurrency(selectedBalance)}</span>
+        {/* Transactions + summary */}
+        <div className="grid gap-4 xl:grid-cols-[minmax(0,1fr)_300px] self-start">
+          <section className={`${cardClass} min-w-0 p-4`}>
+            <div className="mb-3 flex flex-wrap items-center justify-between gap-3">
+              <div className="flex items-center gap-3">
+                <span className="flex h-10 w-10 items-center justify-center rounded-xl bg-violet-100 text-violet-600"><FileText className="h-5 w-5" /></span>
+                <div>
+                  <h2 className="text-base font-bold text-slate-900">Transaction History &amp; Dues</h2>
+                  <p className="text-xs text-slate-500">All invoices for the selected academic session.</p>
                 </div>
-                <div className="grid gap-2 sm:grid-cols-2">
-                  {installmentBreakdown.map((installment) => (
-                    <div key={installment.id} className={`rounded-lg border p-3 ${installment.isPaid ? 'border-emerald-100 bg-emerald-50/60' : installment.isLocked ? 'border-slate-100 bg-white/40' : 'border-purple-100 bg-purple-50/60'}`}>
-                      <div className="flex items-center justify-between gap-2"><span className="truncate text-xs font-semibold text-slate-700">{installment.label}</span><span className="text-xs font-bold text-slate-800">{formatCurrency(installment.amount)}</span></div>
-                      <div className="mt-2 h-1.5 overflow-hidden rounded-full bg-white"><div className={`h-full rounded-full ${installment.isPaid ? 'bg-emerald-500' : 'bg-purple-500'}`} style={{ width: `${installment.progressPct}%` }} /></div>
-                      <div className="mt-1.5 flex items-center justify-between text-[10px] text-slate-400"><span>{installment.isPaid ? 'Paid' : installment.isLocked ? 'Locked' : `Due ${formatShortDate(installment.dueDate)}`}</span><span>{installment.progressPct}%</span></div>
-                    </div>
+              </div>
+              <div className="flex gap-2" role="group" aria-label="Filter by status">
+                {['all', 'paid', 'due', 'overdue'].map((value) => (
+                  <button
+                    key={value}
+                    type="button"
+                    onClick={() => setStatusFilter(value)}
+                    aria-pressed={statusFilter === value}
+                    className={`rounded-lg border px-3 py-1.5 text-xs font-medium transition ${statusFilter === value ? 'border-violet-600 bg-violet-600 text-white' : 'border-slate-200 bg-white text-slate-700 hover:bg-slate-50'}`}
+                  >
+                    {value === 'all' ? 'All' : STATUS_LABEL[value]}
+                  </button>
+                ))}
+              </div>
+            </div>
+
+            <div className="overflow-x-auto rounded-xl border border-slate-100">
+              <table className="w-full min-w-[640px] text-left text-xs text-slate-700">
+                <thead className="border-b border-slate-100 text-xs font-medium text-slate-600">
+                  <tr>
+                    {['#', 'Amount', 'Fine', 'Total', 'Status', 'Payment Method', 'Invoice', 'Action'].map((head) => (
+                      <th key={head} className={`px-3 py-2 font-medium ${['Status', 'Action'].includes(head) ? 'text-center' : ''}`}>{head}</th>
+                    ))}
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-slate-100">
+                  {loadingInvoices ? (
+                    <tr><td colSpan={8} className="px-3 py-10 text-center text-sm text-slate-500"><Loader2 className="mr-2 inline h-5 w-5 animate-spin text-blue-500" /> Loading fees…</td></tr>
+                  ) : !selectedChild ? (
+                    <tr><td colSpan={8} className="px-3 py-10 text-center text-sm text-slate-500">Select a child to view fee details.</td></tr>
+                  ) : visibleRows.length === 0 ? (
+                    <tr><td colSpan={8} className="px-3 py-10 text-center text-sm text-slate-500">
+                      <FileText className="mx-auto mb-2 h-7 w-7 text-slate-300" />
+                      {invoices.length === 0 ? 'No invoices found for this student.' : sessionInvoices.length === 0 ? 'No fees found for this session.' : `No ${STATUS_LABEL[statusFilter]?.toLowerCase()} fees.`}
+                    </td></tr>
+                  ) : visibleRows.map((row, index) => (
+                    <tr
+                      key={row.key}
+                      title={row.subLabel ? `${row.label} · ${row.subLabel}` : row.label}
+                      onClick={() => setSelectedInvoiceId(row.invoice._id)}
+                      className={`cursor-pointer transition hover:bg-slate-50 ${row.invoice._id === selectedInvoiceId && invoicesWithPlans.length > 1 ? 'bg-blue-50/40' : ''}`}
+                    >
+                      <td className="px-3 py-2.5">{index + 1}</td>
+                      <td className="px-3 py-2.5">{formatCurrency(row.amount)}</td>
+                      <td className="px-3 py-2.5">{formatCurrency(row.fine)}</td>
+                      <td className="px-3 py-2.5">{formatCurrency(row.total)}</td>
+                      <td className="px-3 py-2.5 text-center"><span className={`inline-block rounded-full px-3 py-1 text-xs font-medium ${STATUS_PILL[row.status]}`}>{STATUS_LABEL[row.status]}</span></td>
+                      <td className="px-3 py-2.5">{row.payment ? formatMethod(row.payment.method) : '-'}</td>
+                      <td className="whitespace-nowrap px-3 py-2.5">{row.status === 'paid' ? row.reference : '-'}</td>
+                      <td className="px-3 py-2.5 text-center" onClick={(event) => event.stopPropagation()}>
+                        {row.status === 'paid' ? (
+                          row.payment ? (
+                            <button
+                              type="button"
+                              onClick={() => handleDownloadReceipt(row.payment, row.invoice)}
+                              disabled={downloadingReceiptId === row.payment._id}
+                              title={row.payment.receiptNumber ? `Receipt ${row.payment.receiptNumber}` : 'Download receipt'}
+                              className="inline-flex items-center gap-1.5 rounded-lg border border-violet-100 bg-violet-50/60 px-3 py-1.5 text-xs font-medium text-violet-600 transition hover:bg-violet-100 disabled:opacity-60"
+                            >
+                              {downloadingReceiptId === row.payment._id ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Eye className="h-3.5 w-3.5" />} View
+                            </button>
+                          ) : <span className="text-xs text-slate-400">—</span>
+                        ) : row.isLocked ? (
+                          <span className="inline-flex items-center gap-1 text-xs text-slate-400"><Lock className="h-3.5 w-3.5" /> Locked</span>
+                        ) : (
+                          <button
+                            type="button"
+                            onClick={() => handlePayNow(row.invoice, row.payable)}
+                            disabled={processingInvoiceId === row.invoice._id}
+                            className="inline-flex items-center gap-1.5 whitespace-nowrap rounded-lg bg-violet-600 px-3 py-2 text-xs font-semibold text-white shadow-sm transition hover:bg-violet-700 disabled:cursor-not-allowed disabled:opacity-60"
+                          >
+                            {processingInvoiceId === row.invoice._id ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <CreditCard className="h-3.5 w-3.5" />} Pay Now
+                          </button>
+                        )}
+                      </td>
+                    </tr>
                   ))}
-                </div>
-              </section>
+                </tbody>
+              </table>
+            </div>
+          </section>
+
+          <aside className={`${cardClass} h-fit p-4`} aria-label="Fee summary details">
+            <div className="mb-3 flex items-center gap-3">
+              <span className="flex h-10 w-10 items-center justify-center rounded-xl bg-blue-50 text-blue-600"><Receipt className="h-5 w-5" /></span>
+              <div>
+                <h2 className="text-base font-bold text-slate-900">Fee Summary</h2>
+                <p className="text-xs text-slate-500">Summary for session {sessionFilter || '—'}</p>
+              </div>
+            </div>
+            <dl className="divide-y divide-slate-100 text-xs">
+              <div className="flex justify-between py-1.5"><dt className="text-slate-600">Total Tuition Fees</dt><dd className="font-bold text-slate-900">{formatCurrency(Math.max(0, totals.total - fineAppliedTotal))}</dd></div>
+              <div className="flex justify-between py-1.5"><dt className="text-slate-600">Total Paid</dt><dd className="font-bold text-emerald-500">{formatCurrency(totals.paid)}</dd></div>
+              <div className="flex justify-between py-1.5"><dt className="text-slate-600">Remaining Fees</dt><dd className="font-bold text-slate-900">{formatCurrency(feesDue)}</dd></div>
+              <div className="flex justify-between py-1.5">
+                <dt className="flex items-center gap-1.5 text-slate-600">
+                  Late Fine
+                  <button
+                    type="button"
+                    onClick={() => setLateFineOpen((open) => !open)}
+                    aria-expanded={lateFineOpen}
+                    aria-label="Show late fine details"
+                    className={`rounded-full p-0.5 transition ${lateFineOpen ? 'bg-blue-50 text-blue-600' : 'text-slate-500 hover:text-blue-600'}`}
+                  >
+                    <Info className="h-4 w-4" />
+                  </button>
+                </dt>
+                <dd className="font-bold text-red-500">{formatCurrency(fineDueTotal)}</dd>
+              </div>
+            </dl>
+            <div className="mt-2 flex items-center justify-between rounded-lg bg-red-50 px-3 py-2">
+              <span className="text-sm font-semibold text-red-500">Total Amount Due</span>
+              <span className="text-base font-bold text-red-500">{formatCurrency(totals.balance)}</span>
+            </div>
+
+            {selectedInvoice && (
+              <div className="mt-4 flex flex-wrap gap-2">
+                {Array.isArray(selectedInvoice.feeHeadsSnapshot) && selectedInvoice.feeHeadsSnapshot.length > 0 && (
+                  <button type="button" onClick={() => setShowFeeBreakdown(true)} className="inline-flex items-center gap-1.5 rounded-lg border border-slate-200 px-3 py-1.5 text-xs font-medium text-slate-700 transition hover:bg-slate-50">
+                    <FileText className="h-3.5 w-3.5" /> View breakdown
+                  </button>
+                )}
+                <button type="button" onClick={() => handleDownloadFeesCard(selectedInvoice)} disabled={downloadingFeesCardId === selectedInvoice._id} className="inline-flex items-center gap-1.5 rounded-lg border border-slate-200 px-3 py-1.5 text-xs font-medium text-slate-700 transition hover:bg-slate-50 disabled:opacity-60">
+                  {downloadingFeesCardId === selectedInvoice._id ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Download className="h-3.5 w-3.5" />} Fees card
+                </button>
+              </div>
             )}
-          </div>
+
+            <p className="mt-4 flex items-start gap-3 rounded-xl bg-slate-50 p-3 text-xs text-slate-600">
+              <span className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-blue-600 text-white"><Info className="h-3.5 w-3.5" /></span>
+              Late fine is applicable as per school policy for delayed payments.
+            </p>
+          </aside>
         </div>
-      </section>
+      </div>
 
       {selectedInvoice && selectedBalance > 0 && (
-        <div className="fees-mobile-pay sticky bottom-0 z-20 -mx-4 mt-4 bg-gradient-to-t from-[#fef7ff] via-[#fef7ff]/95 to-transparent px-4 pb-4 pt-8 md:hidden">
+        <div className="fees-mobile-pay sticky bottom-0 z-20 -mx-4 mt-4 bg-gradient-to-t from-[#f5f7fb] via-[#f5f7fb]/95 to-transparent px-4 pb-4 pt-8 md:hidden">
           <button
             type="button"
-            onClick={() => handlePayNow(selectedInvoice, activeInstallment?.remaining || selectedBalance)}
+            onClick={() => handlePayNow(selectedInvoice, mobilePayAmount)}
             disabled={isProcessingSelected}
-            className="mx-auto flex w-full max-w-md items-center justify-between rounded-xl bg-purple-700 px-6 py-4 text-base font-bold text-white shadow-[0_10px_30px_rgba(99,14,212,0.28)] transition active:scale-[0.98] disabled:cursor-not-allowed disabled:opacity-60"
+            className="mx-auto flex w-full max-w-md items-center justify-between rounded-xl bg-blue-600 px-6 py-4 text-base font-bold text-white shadow-[0_10px_30px_rgba(37,99,235,0.28)] transition active:scale-[0.98] disabled:cursor-not-allowed disabled:opacity-60"
           >
             <span className="flex items-center gap-2">
               {isProcessingSelected ? <Loader2 className="h-5 w-5 animate-spin" /> : <Lock className="h-4 w-4" />}
               Pay Now
             </span>
-            <span>{formatCurrency(activeInstallment?.remaining || selectedBalance)}</span>
+            <span>{formatCurrency(mobilePayAmount)}</span>
           </button>
         </div>
       )}
 
-      {showFeeBreakdown && selectedInvoice && Array.isArray(selectedInvoice.feeHeadsSnapshot) && selectedInvoice.feeHeadsSnapshot.length > 0 && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
+      {showFeeBreakdown && selectedInvoice && Array.isArray(selectedInvoice.feeHeadsSnapshot) && selectedInvoice.feeHeadsSnapshot.length > 0 && createPortal(
+        // Portalled to <body> so the backdrop covers the whole viewport
+        // (sidebar + top bar), not just the portal's content area.
+        <div className="fixed inset-0 z-[9999] flex h-dvh w-screen items-center justify-center p-4">
           <button type="button" className="absolute inset-0 bg-slate-900/40 backdrop-blur-sm" onClick={() => setShowFeeBreakdown(false)} aria-label="Close breakdown" />
-          <div ref={breakdownDialogRef} tabIndex={-1} role="dialog" aria-modal="true" aria-labelledby="fees-breakdown-title" className="relative w-full max-w-md rounded-2xl border border-white/80 bg-white/95 p-5 shadow-2xl">
+          <div ref={breakdownDialogRef} tabIndex={-1} role="dialog" aria-modal="true" aria-labelledby="fees-breakdown-title" className="relative w-full max-w-md rounded-2xl border border-white/80 bg-white p-5 shadow-2xl">
             <div className="flex items-start justify-between gap-3">
               <div><h3 id="fees-breakdown-title" className="text-base font-bold text-slate-800">Fees Breakdown</h3><p className="mt-0.5 text-xs text-slate-500">{getInvoiceTitle(selectedInvoice)}</p></div>
               <button type="button" onClick={() => setShowFeeBreakdown(false)} className="rounded-lg p-1 text-slate-400 transition hover:bg-slate-50 hover:text-slate-600" aria-label="Close"><X className="h-4 w-4" /></button>
             </div>
             <div className="mt-4 space-y-1.5">
               {selectedInvoice.feeHeadsSnapshot.map((head, index) => (
-                <div key={`${head.label}-${index}`} className="flex items-center justify-between rounded-lg bg-slate-50/80 px-3 py-2 text-sm text-slate-600"><span>{head.label}</span><span className="font-semibold text-slate-800">{formatCurrency(head.amount)}</span></div>
+                <div key={`${head.label}-${index}`} className="flex items-center justify-between rounded-lg bg-slate-50 px-3 py-2 text-sm text-slate-600"><span>{head.label}</span><span className="font-semibold text-slate-800">{formatCurrency(head.amount)}</span></div>
               ))}
             </div>
             <div className="mt-3 flex items-center justify-between border-t border-slate-100 pt-3"><span className="text-sm font-semibold text-slate-700">Total</span><span className="text-base font-bold text-slate-900">{formatCurrency(getInvoiceTotal(selectedInvoice))}</span></div>
           </div>
-        </div>
+        </div>,
+        document.body,
+      )}
+      {lateFineOpen && createPortal(
+        <div className="fixed inset-0 z-[9999] flex h-dvh w-screen items-center justify-center p-4">
+          <button type="button" className="absolute inset-0 bg-slate-900/40 backdrop-blur-sm" onClick={() => setLateFineOpen(false)} aria-label="Close late fine details" />
+          <div ref={lateFineDialogRef} tabIndex={-1} role="dialog" aria-modal="true" aria-labelledby="fees-late-fine-title" className="relative max-h-[85vh] w-full max-w-md overflow-y-auto rounded-2xl border border-white/80 bg-white p-5 text-sm shadow-2xl">
+            <div className="mb-4 flex items-start justify-between gap-3">
+              <div>
+                <h3 id="fees-late-fine-title" className="text-base font-bold text-slate-800">Late Fine Details</h3>
+                <p className="mt-0.5 text-xs text-slate-500">Session {sessionFilter || '—'} · Outstanding {formatCurrency(fineDueTotal)}</p>
+              </div>
+              <button type="button" onClick={() => setLateFineOpen(false)} className="rounded-lg p-1 text-slate-400 transition hover:bg-slate-50 hover:text-slate-600" aria-label="Close"><X className="h-4 w-4" /></button>
+            </div>
+            {lateFineDetails.length === 0 ? (
+              <p className="text-slate-500">No late fine has been charged for this session.</p>
+            ) : (
+              <div className="space-y-2.5">
+                {lateFineDetails.map((item) => (
+                  <div key={item.id} className="space-y-1.5 rounded-xl border border-slate-100 bg-slate-50 p-3 text-xs">
+                    <p className="font-semibold text-slate-700">{item.label}</p>
+                    {item.dueDate && <div className="flex justify-between text-slate-600"><span>Due date</span><span>{formatDate(item.dueDate)}</span></div>}
+                    {item.rate > 0 && <div className="flex justify-between text-slate-600"><span>Fine per day</span><span>{formatCurrency(item.rate)}</span></div>}
+                    {item.days > 0 && <div className="flex justify-between text-slate-600"><span>Days charged</span><span>{item.days} day{item.days === 1 ? '' : 's'}</span></div>}
+                    <div className="flex justify-between text-slate-600"><span>Fine charged</span><span>{formatCurrency(item.applied)}</span></div>
+                    <div className="flex justify-between font-semibold text-red-500"><span>Fine outstanding</span><span>{formatCurrency(item.outstanding)}</span></div>
+                    {item.appliedAt && <p className="text-[11px] text-slate-400">Last updated {formatDate(item.appliedAt)}</p>}
+                    {(item.excludeSundays || item.excludeHolidays) && (
+                      <p className="text-[11px] text-slate-400">
+                        Not charged on {[item.excludeSundays && 'Sundays', item.excludeHolidays && 'school holidays'].filter(Boolean).join(' or ')}.
+                      </p>
+                    )}
+                  </div>
+                ))}
+              </div>
+            )}
+            <p className="mt-4 flex items-start gap-2 rounded-lg bg-slate-50 p-3 text-xs text-slate-600">
+              <Info className="mt-0.5 h-4 w-4 shrink-0 text-blue-600" />
+              Late fine is applicable as per school policy for delayed payments.
+            </p>
+          </div>
+        </div>,
+        document.body,
       )}
     </div>
   );

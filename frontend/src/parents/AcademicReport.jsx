@@ -22,11 +22,16 @@ import {
   Palette,
   Languages,
   GraduationCap,
+  MousePointerClick,
+  ClipboardCheck,
+  TrendingUp,
+  AlertTriangle,
 } from 'lucide-react';
 
 import toast from 'react-hot-toast';
+import { motion } from 'framer-motion';
 
-import { downloadSingleReportCardPdf } from '../utils/reportCardPdf';
+import { downloadGradeCardPdf } from '../utils/gradeCardPdf';
 import { normalizeReportCard } from './reportCardShape';
 import { parentApiJson } from './parentApi';
 
@@ -35,6 +40,7 @@ import ChildSwitcher, {
 } from './ChildSwitcher';
 
 import Loading from './Loading';
+import useParentChildren from './useParentChildren';
 import { EmptyState, ErrorState } from './StateBlock';
 
 /* ========================================================================= */
@@ -309,6 +315,10 @@ const buildExamGroups = (report) => {
   const groups = new Map();
 
   exams.forEach((exam, index) => {
+    // Show only results the school has published.
+    if (exam?.published === false || exam?.isPublished === false) return;
+    if (/^(draft|pending|unpublished)$/i.test(String(exam?.status || ''))) return;
+
     const examName =
       String(
         exam?.examName ||
@@ -396,6 +406,8 @@ const buildExamGroups = (report) => {
         grade,
       };
     })
+    .filter((group) => group.totalMarks > 0)
+    // Latest exam first.
     .sort((a, b) => {
       const dateA = a.date
         ? new Date(a.date).getTime()
@@ -405,7 +417,7 @@ const buildExamGroups = (report) => {
         ? new Date(b.date).getTime()
         : 0;
 
-      return dateA - dateB;
+      return dateB - dateA;
     });
 };
 
@@ -413,17 +425,38 @@ const buildExamGroups = (report) => {
 /* Main component                                                            */
 /* ========================================================================= */
 
+// Client cache (memory + sessionStorage, per login) → instant repeat visits.
+const REPORT_CACHE_MAX_AGE = 10 * 60 * 1000;
+const reportCacheKey = () => {
+  let t = '';
+  try { t = localStorage.getItem('token') || ''; } catch { /* ignore */ }
+  return `parent:report-cards:v1:${t.slice(-16)}`;
+};
+let reportMemCache = null;
+const readReportCache = () => {
+  const key = reportCacheKey();
+  let entry = reportMemCache?.key === key ? reportMemCache : null;
+  if (!entry) { try { entry = JSON.parse(sessionStorage.getItem(key) || 'null'); } catch { entry = null; } }
+  return entry && Date.now() - entry.at < REPORT_CACHE_MAX_AGE ? entry.data : null;
+};
+const writeReportCache = (data) => {
+  reportMemCache = { key: reportCacheKey(), at: Date.now(), data };
+  try { sessionStorage.setItem(reportMemCache.key, JSON.stringify(reportMemCache)); } catch { /* quota */ }
+};
+
+const RISE = { hidden: { opacity: 0, y: 14 }, show: { opacity: 1, y: 0, transition: { duration: 0.4, ease: [0.22, 1, 0.36, 1] } } };
+
 const AcademicReport = () => {
   const navigate = useNavigate();
 
   const [reportCards, setReportCards] =
-    useState([]);
+    useState(() => (readReportCache()?.reportCards || []).map(normalizeReportCard));
 
   const [template, setTemplate] =
-    useState(null);
+    useState(() => readReportCache()?.template || null);
 
   const [loading, setLoading] =
-    useState(true);
+    useState(() => !readReportCache());
 
   const [error, setError] =
     useState('');
@@ -463,6 +496,9 @@ const AcademicReport = () => {
   const selectedStudentId =
     selectedOption?.id || '';
 
+  // Photo from the child's profile (report cards don't always carry it).
+  const { children: profileChildren, parent: profileParent } = useParentChildren();
+
   /* ----------------------------------------------------------------------- */
   /* Fetch data                                                              */
   /* ----------------------------------------------------------------------- */
@@ -478,7 +514,8 @@ const AcademicReport = () => {
         return;
       }
 
-      setLoading(true);
+      const cached = readReportCache();
+      if (!cached) setLoading(true);
       setError('');
 
       try {
@@ -501,8 +538,9 @@ const AcademicReport = () => {
         setTemplate(
           data?.template || null
         );
+        writeReportCache({ reportCards: data?.reportCards || [], template: data?.template || null });
       } catch (err) {
-        setError(
+        if (!cached) setError(
           err?.message ||
             'Unable to load academic report'
         );
@@ -532,6 +570,11 @@ const AcademicReport = () => {
     ]
   );
 
+  const childPhoto =
+    selectedReport?.profilePic ||
+    profileChildren.find((c) => String(c.id) === String(selectedReport?.studentId))?.photo ||
+    '';
+
   /* ----------------------------------------------------------------------- */
   /* Exam groups                                                             */
   /* ----------------------------------------------------------------------- */
@@ -558,10 +601,7 @@ const AcademicReport = () => {
      * Open the latest published report first.
      */
 
-    const latest =
-      examGroups[
-        examGroups.length - 1
-      ];
+    const latest = examGroups[0];
 
     setSelectedExamId(
       latest?.id || ''
@@ -584,9 +624,7 @@ const AcademicReport = () => {
           exam.id ===
           selectedExamId
       ) ||
-      examGroups[
-        examGroups.length - 1
-      ] ||
+      examGroups[0] ||
       null,
 
     [
@@ -675,6 +713,21 @@ const AcademicReport = () => {
     selectedReport,
   ]);
 
+  const subjectHighlights = useMemo(() => {
+    const rows = (selectedExam?.subjects || [])
+      .map((s) => ({
+        name: s?.subject || 'Subject',
+        pct: Math.round(calculatePercentage(s?.obtainedMarks, s?.totalMarks)),
+        total: safeNumber(s?.totalMarks),
+      }))
+      .filter((s) => s.total > 0)
+      .sort((a, b) => b.pct - a.pct);
+    if (!rows.length) return { best: null, focus: null };
+    const best = rows[0];
+    const focus = rows.length > 1 && rows[rows.length - 1].pct < 60 ? rows[rows.length - 1] : null;
+    return { best, focus };
+  }, [selectedExam]);
+
   /* ----------------------------------------------------------------------- */
   /* Teacher remarks                                                         */
   /* ----------------------------------------------------------------------- */
@@ -741,8 +794,36 @@ const AcademicReport = () => {
     setIsExporting(true);
 
     try {
+      // The PDF prints reportCard.subjects / totals / term. Give it just the
+      // selected exam's subjects (skipping blank or zero-mark rows) instead of
+      // the all-exam aggregate, which produced rows like "Subject 290 0 0% F".
+      const pdfSubjects = (selectedExam?.subjects || [])
+        .filter((s) => String(s?.subject || '').trim() && safeNumber(s?.totalMarks) > 0)
+        .map((s) => {
+          const obtainedMarks = safeNumber(s.obtainedMarks);
+          const totalMarks = safeNumber(s.totalMarks);
+          const percentage = calculatePercentage(obtainedMarks, totalMarks);
+          return {
+            name: String(s.subject).trim(),
+            obtainedMarks,
+            totalMarks,
+            percentage,
+            grade: s.grade || getGradeFromPercentage(percentage),
+          };
+        });
+
       const reportForPdf = {
         ...selectedReport,
+
+        term: selectedExam?.examName || selectedReport.term,
+        subjects: pdfSubjects,
+        totals: {
+          ...(selectedReport.totals || {}),
+          obtainedMarks: examSummary.obtained,
+          totalMarks: examSummary.total,
+          percentage: Math.round(examSummary.percentage * 10) / 10,
+          grade: examSummary.grade,
+        },
 
         selectedExam:
           selectedExam || null,
@@ -782,10 +863,19 @@ const AcademicReport = () => {
         '.pdf';
 
       const success =
-        await downloadSingleReportCardPdf({
+        await downloadGradeCardPdf({
           template,
-          reportCard:
-            reportForPdf,
+          reportCard: {
+            ...reportForPdf,
+            overallRemark: teacherRemarks || '',
+            classTeacherName:
+              selectedReport.classTeacherName ||
+              (teacherName !== 'Class Teacher' ? teacherName : ''),
+          },
+          profile:
+            profileChildren.find((c) => String(c.id) === String(selectedReport.studentId)) || {},
+          parentName: profileParent?.name || '',
+          photoUrl: childPhoto,
           fileName,
         });
 
@@ -836,8 +926,8 @@ const AcademicReport = () => {
       <div className="space-y-5">
         <EmptyState
           icon={FileText}
-          title="No report card available"
-          hint="The school hasn't published any examination results for your child yet."
+          title="No results published yet"
+          hint="Results appear here as soon as the school publishes them. You'll also get a notification."
         />
       </div>
     );
@@ -878,71 +968,34 @@ const AcademicReport = () => {
           </div>
         </div>
 
-        {/* Right - Parent / Child */}
-        <div className="w-full lg:w-[278px]">
-
-          {selectedReport && (
-            <div className="relative">
-
-              {selectedReport.profilePic ? (
-                <img
-                  src={
-                    selectedReport.profilePic
-                  }
-                  alt={
-                    selectedReport.studentName ||
-                    'Student'
-                  }
-                  className="absolute left-3 top-1/2 z-10 h-10 w-10 -translate-y-1/2 rounded-xl border border-slate-200 object-cover"
-                />
+        {/* Right — the child's name and photo */}
+        {selectedReport && (
+          <motion.div
+            initial={{ opacity: 0, x: 12 }}
+            animate={{ opacity: 1, x: 0 }}
+            className="flex w-full flex-col items-stretch gap-2 lg:w-auto lg:items-end"
+          >
+            <div className="flex items-center gap-3 rounded-2xl border border-slate-200 bg-white px-3 py-2.5 pr-5 shadow-sm">
+              {childPhoto ? (
+                <img src={childPhoto} alt={selectedReport.studentName || 'Student'} className="h-11 w-11 rounded-xl object-cover" />
               ) : (
-                <User
-                  className="absolute left-4 top-1/2 z-10 h-7 w-7 -translate-y-1/2 text-slate-400"
-                />
+                <span className="flex h-11 w-11 items-center justify-center rounded-xl bg-violet-100 text-sm font-bold text-violet-700">
+                  {String(selectedReport.studentName || 'S').trim().split(/\s+/).slice(0, 2).map((w) => w[0]).join('').toUpperCase()}
+                </span>
               )}
-
-              <div className="rounded-xl border border-slate-200 bg-white py-2.5 pl-16 pr-10 shadow-sm">
-
-                <p className="text-sm font-bold text-slate-800">
-                  {selectedReport.studentName ||
-                    'Student'}
-                </p>
-
-                <p className="text-xs text-slate-500">
-                  {selectedReport.grade
-                    ? `Class ${selectedReport.grade}`
-                    : 'Class —'}
-
-                  {selectedReport.section
-                    ? ` - Section ${selectedReport.section}`
-                    : ''}
+              <div className="min-w-0">
+                <p className="truncate text-sm font-bold text-slate-900">{selectedReport.studentName || 'Student'}</p>
+                <p className="truncate text-xs text-slate-500">
+                  {selectedReport.grade ? `Class ${selectedReport.grade}` : 'Class —'}
+                  {selectedReport.section ? ` - Section ${selectedReport.section}` : ''}
                 </p>
               </div>
-
-              {childOptions.length > 1 && (
-                <>
-                  <div className="absolute right-3 top-1/2 -translate-y-1/2 pointer-events-none">
-                    <ChevronDown className="h-4 w-4 text-slate-500" />
-                  </div>
-
-                  <div className="absolute inset-0 opacity-0">
-                    <ChildSwitcher
-                      options={
-                        childOptions
-                      }
-                      value={childKey}
-                      onChange={
-                        setChildKey
-                      }
-                      label="Child"
-                    />
-                  </div>
-                </>
-              )}
             </div>
-          )}
-        </div>
-      </div>
+            {childOptions.length > 1 && (
+              <ChildSwitcher options={childOptions} value={childKey} onChange={setChildKey} label="Child" />
+            )}
+          </motion.div>
+        )}      </div>
 
       {/* ================================================================== */}
       {/* ERROR                                                              */}
@@ -955,12 +1008,51 @@ const AcademicReport = () => {
       )}
 
       {/* ================================================================== */}
+      {/* HOW IT WORKS — 3 simple steps for parents                          */}
+      {/* ================================================================== */}
+
+      {!error && examGroups.length > 0 && (
+        <motion.ol
+          initial="hidden"
+          animate="show"
+          variants={{ hidden: {}, show: { transition: { staggerChildren: 0.08 } } }}
+          className="grid grid-cols-1 gap-2 sm:grid-cols-3"
+        >
+          {[
+            { n: 1, Icon: MousePointerClick, title: 'Choose an exam', text: 'Tap any published exam below.' },
+            { n: 2, Icon: ClipboardCheck, title: 'See the result', text: 'Marks, grade and remarks for every subject.' },
+            { n: 3, Icon: Download, title: 'Download', text: 'Save or print the official report card.' },
+          ].map((s) => (
+            <motion.li key={s.n} variants={RISE} className="flex items-start gap-3 rounded-xl border border-slate-200 bg-white px-3.5 py-3 shadow-sm">
+              <span className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-violet-600 text-xs font-bold text-white">{s.n}</span>
+              <span className="min-w-0">
+                <span className="flex items-center gap-1.5 text-sm font-semibold text-slate-900"><s.Icon className="h-4 w-4 text-violet-500" /> {s.title}</span>
+                <span className="block text-xs text-slate-500">{s.text}</span>
+              </span>
+            </motion.li>
+          ))}
+        </motion.ol>
+      )}
+
+      {!error && examGroups.length > 0 && (
+        <div className="flex items-center justify-between gap-3">
+          <h2 className="text-sm font-bold uppercase tracking-wide text-slate-500">Published exams ({examGroups.length})</h2>
+          <span className="text-xs text-slate-400">Latest first</span>
+        </div>
+      )}
+
+      {/* ================================================================== */}
       {/* EXAM SELECTOR                                                      */}
       {/* ================================================================== */}
 
       {!error &&
         examGroups.length > 0 && (
-          <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-4">
+          <motion.div
+            initial="hidden"
+            animate="show"
+            variants={{ hidden: {}, show: { transition: { staggerChildren: 0.06 } } }}
+            className="grid grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-4"
+          >
 
             {examGroups.map(
               (exam, index) => {
@@ -1009,8 +1101,12 @@ const AcademicReport = () => {
                       };
 
                 return (
-                  <button
+                  <motion.button
+                    variants={RISE}
+                    whileHover={{ y: -3 }}
+                    whileTap={{ scale: 0.98 }}
                     type="button"
+                    aria-pressed={isSelected}
                     key={exam.id}
                     onClick={() =>
                       setSelectedExamId(
@@ -1077,22 +1173,27 @@ const AcademicReport = () => {
 
                     <div className="relative mt-3 flex items-center justify-between">
 
-                      <span className="inline-flex items-center rounded-full border border-emerald-100 bg-emerald-50 px-2.5 py-1 text-[10px] font-bold text-emerald-600">
-                        Published
+                      <span className="flex items-center gap-1.5">
+                        <span className="inline-flex items-center rounded-full border border-emerald-100 bg-emerald-50 px-2.5 py-1 text-[10px] font-bold text-emerald-600">
+                          Published
+                        </span>
+                        {index === 0 && (
+                          <span className="inline-flex items-center rounded-full bg-violet-600 px-2 py-1 text-[10px] font-bold text-white">
+                            Latest
+                          </span>
+                        )}
                       </span>
 
-                      {isSelected && (
-                        <span className="text-[10px] font-bold text-violet-600">
-                          Selected
-                        </span>
-                      )}
+                      <span className={`text-[11px] font-semibold ${isSelected ? 'text-violet-600' : 'text-slate-400 group-hover:text-slate-600'}`}>
+                        {isSelected ? 'Viewing ✓' : 'View result →'}
+                      </span>
 
                     </div>
-                  </button>
+                  </motion.button>
                 );
               }
             )}
-          </div>
+          </motion.div>
         )}
 
       {/* ================================================================== */}
@@ -1102,7 +1203,13 @@ const AcademicReport = () => {
       {!error &&
         selectedReport &&
         selectedExam && (
-          <section className="overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm">
+          <motion.section
+            key={selectedExam.id}
+            initial={{ opacity: 0, y: 12 }}
+            animate={{ opacity: 1, y: 0 }}
+            transition={{ duration: 0.35 }}
+            className="overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm"
+          >
 
             {/* ------------------------------------------------------------ */}
             {/* Report Header                                                 */}
@@ -1141,7 +1248,7 @@ const AcademicReport = () => {
                       <span className="text-slate-700">
                         {selectedReport.academicYear ||
                           selectedReport.academicSession ||
-                          '2026 - 2027'}
+                          '—'}
                       </span>
 
                       <span className="mx-2 text-slate-300">
@@ -1209,10 +1316,36 @@ const AcademicReport = () => {
             </div>
 
             {/* ------------------------------------------------------------ */}
+            {/* In one line — what this result means                         */}
+            {/* ------------------------------------------------------------ */}
+
+            <div className="mx-5 mt-4 rounded-xl border border-violet-100 bg-violet-50/60 px-4 py-3 text-sm text-slate-700 sm:mx-6">
+              <span className="font-semibold text-slate-900">{selectedReport.studentName || 'Your child'}</span>
+              {' '}scored{' '}
+              <span className="font-semibold text-slate-900">{examSummary.obtained} out of {examSummary.total}</span>
+              {' '}({Math.round(examSummary.percentage)}%) in{' '}
+              <span className="font-semibold text-slate-900">{selectedExam.examName}</span>
+              {' '}— Grade <span className="font-semibold text-slate-900">{examSummary.grade}</span>
+              {' '}({getGradeDescription(examSummary.grade)}).
+              {subjectHighlights.best && (
+                <span className="mt-2 flex flex-wrap gap-2">
+                  <span className="inline-flex items-center gap-1 rounded-full bg-green-100 px-2.5 py-1 text-xs font-semibold text-green-700">
+                    <TrendingUp className="h-3.5 w-3.5" /> Best: {subjectHighlights.best.name} ({subjectHighlights.best.pct}%)
+                  </span>
+                  {subjectHighlights.focus && (
+                    <span className="inline-flex items-center gap-1 rounded-full bg-amber-100 px-2.5 py-1 text-xs font-semibold text-amber-700">
+                      <AlertTriangle className="h-3.5 w-3.5" /> Needs practice: {subjectHighlights.focus.name} ({subjectHighlights.focus.pct}%)
+                    </span>
+                  )}
+                </span>
+              )}
+            </div>
+
+            {/* ------------------------------------------------------------ */}
             {/* Summary Stats                                                 */}
             {/* ------------------------------------------------------------ */}
 
-            <div className="grid grid-cols-1 gap-3 px-5 py-4 sm:grid-cols-2 lg:grid-cols-4 sm:px-6">
+            <div className={`grid grid-cols-1 gap-3 px-5 py-4 sm:grid-cols-2 sm:px-6 ${examSummary.rank !== '—' ? 'lg:grid-cols-4' : 'lg:grid-cols-3'}`}>
 
               {/* Percentage */}
               <div className="flex items-center gap-3 rounded-xl border border-amber-100 bg-gradient-to-br from-amber-50 to-white p-3.5">
@@ -1286,7 +1419,8 @@ const AcademicReport = () => {
 
               </div>
 
-              {/* Rank */}
+              {/* Rank (only when the school publishes one) */}
+              {examSummary.rank !== '—' && (
               <div className="flex items-center gap-3 rounded-xl border border-rose-100 bg-gradient-to-br from-rose-50 to-white p-3.5">
 
                 <div className="flex h-12 w-12 shrink-0 items-center justify-center rounded-xl bg-rose-50 text-rose-500">
@@ -1307,6 +1441,7 @@ const AcademicReport = () => {
                 </div>
 
               </div>
+              )}
 
             </div>
 
@@ -1524,7 +1659,7 @@ const AcademicReport = () => {
 
             </div>
 
-          </section>
+          </motion.section>
         )}
 
       {/* ================================================================== */}
@@ -1588,8 +1723,9 @@ const AcademicReport = () => {
 
                     <p className="text-sm leading-6 text-slate-700">
 
-                      {teacherRemarks ||
-                        `${selectedReport.studentName || 'The student'} has shown consistent effort in the examination. Keep up the good work!`}
+                      {teacherRemarks || (
+                        <span className="italic text-slate-500">The class teacher hasn&apos;t added remarks for this exam yet.</span>
+                      )}
 
                     </p>
 

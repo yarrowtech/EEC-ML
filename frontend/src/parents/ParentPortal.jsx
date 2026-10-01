@@ -18,7 +18,7 @@ import {
   Video,
   Clock,
   ChevronLeft,
-  MoreHorizontal,
+  Menu,
   ChevronRight,
   ChevronDown,
   CheckCheck,
@@ -179,7 +179,7 @@ const NAV_GROUPS = [
   // 5. SCHOOL COMMUNICATION
   // ─────────────────────────────────────────────
   {
-    heading: 'School Communication',
+    heading: 'Annocements',
     items: [
       {
         icon: Megaphone,
@@ -212,7 +212,7 @@ const NAV_GROUPS = [
   // 6. PARENT–SCHOOL CONNECT
   // ─────────────────────────────────────────────
   {
-    heading: 'Parent–School Connect',
+    heading: 'Communication',
     items: [
       {
         icon: Video,
@@ -243,7 +243,7 @@ const NAV_GROUPS = [
     items: [
       {
         icon: FileText,
-        label: 'Leave / Excuse Letters',
+        label: 'Leave Letters',
         description: 'Submit absence requests',
         path: '/parents/excuse-letters',
       },
@@ -307,6 +307,7 @@ const ParentPortal = () => {
   const [notifError, setNotifError] = useState('');
   const [showLogoutConfirm, setShowLogoutConfirm] = useState(false);
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
+  const [mobileSearchOpen, setMobileSearchOpen] = useState(false);
   const [openGroups, setOpenGroups] = useState(() => (
     Object.fromEntries(
       NAV_GROUPS
@@ -489,6 +490,12 @@ const ParentPortal = () => {
     ? `${nameParts[0][0]}${nameParts[nameParts.length - 1][0]}`
     : (nameParts[0]?.[0] || 'P')
   ).toUpperCase();
+  const parentAvatar = parentProfile?.profileImage
+    || parentProfile?.profilePhoto
+    || parentProfile?.photo
+    || parentProfile?.avatar
+    || parentProfile?.image
+    || '';
   const unreadCount = useMemo(
     () => notifications.filter((item) => !item?.isRead).length,
     [notifications]
@@ -730,9 +737,20 @@ const ParentPortal = () => {
       )}
       {/* Desktop sidebar only — same layout as the school admin sidebar, in the
           parent portal's violet. On mobile the app bar + bottom nav take over. */}
+      {sidebarOpen && (
+        <button
+          type="button"
+          aria-label="Close sidebar"
+          onClick={() => setSidebarOpen(false)}
+          className="fixed inset-0 z-40 bg-slate-950/35 backdrop-blur-[2px] lg:hidden"
+        />
+      )}
+
       <aside
-        className={`parent-sidebar hidden lg:flex sticky top-0 h-dvh shrink-0 flex-col border-r border-gray-100 bg-white shadow-lg z-30 transition-all duration-300 ease-in-out
-          ${sidebarOpen ? 'w-64' : 'w-[72px]'}`}
+        className={`parent-sidebar fixed inset-y-0 left-0 z-50 flex h-dvh shrink-0 flex-col border-r border-gray-100 bg-white shadow-2xl transition-all duration-300 ease-in-out lg:sticky lg:top-0 lg:z-30 lg:shadow-lg
+          ${sidebarOpen
+            ? 'translate-x-0 w-72 lg:w-64'
+            : '-translate-x-full lg:translate-x-0 lg:w-[72px]'}`}
         aria-label="Sidebar navigation"
       >
         {/* ── Brand header ── */}
@@ -1093,40 +1111,155 @@ const ParentPortal = () => {
           </div>
         </div>
 
-        {/* Mobile app bar */}
-        <header className="lg:hidden sticky top-0 z-40 shrink-0 bg-violet-600 px-4 py-4 text-white shadow-md">
-          <div className="flex items-center justify-between gap-3">
-            <div className="flex min-w-0 items-center gap-3">
-              <div className="relative shrink-0">
-                <div className="flex h-10 w-10 items-center justify-center rounded-full border border-white/40 bg-white/20 text-sm font-semibold shadow-inner">
-                  {initials}
+        {/* Mobile / tablet app bar */}
+        <header className="lg:hidden sticky top-0 z-40 shrink-0 border-b border-slate-200/80 bg-white/95 px-3 py-2.5 text-slate-900 shadow-[0_6px_24px_rgba(15,23,42,0.06)] backdrop-blur-xl">
+          <div className="flex min-h-11 items-center gap-2">
+            <button
+              type="button"
+              aria-label={sidebarOpen ? 'Close sidebar' : 'Open sidebar'}
+              aria-expanded={sidebarOpen}
+              onClick={() => {
+                setSidebarOpen((open) => !open);
+                setMobileMenuOpen(false);
+                setShowNotifications(false);
+              }}
+              className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl text-slate-600 transition hover:bg-violet-50 hover:text-violet-600 active:scale-95"
+            >
+              <Menu className="h-5 w-5" />
+            </button>
+
+            {!mobileSearchOpen ? (
+              <div className="flex w-full items-center justify-center gap-2.5">
+                <div className="flex h-9 w-9 shrink-0 items-center justify-end overflow-hidden rounded-full">
+                  {schoolBrand.logo ? (
+                    <img
+                      src={schoolBrand.logo}
+                      alt={schoolBrand.name || 'School logo'}
+                      className="h-full w-full object-cover"
+                    />
+                  ) : (
+                    <Users className="h-4.5 w-4.5 text-violet-600" />
+                  )}
                 </div>
-                <span className="absolute right-0 top-0 h-3 w-3 rounded-full border-2 border-violet-600 bg-emerald-400" aria-hidden="true" />
+                <div className="w-full flex flex-col gap-0.5 justify-center items-center">
+                  <p className="truncate text-[15px] font-bold leading-tight text-slate-900">Parent Portal</p>
+                  <p className="truncate text-[10px] font-semibold tracking-wide text-violet-500">
+                    {schoolInitials || schoolBrand.name || 'Your school'}
+                  </p>
+                </div>
               </div>
-              <div className="min-w-0">
-                <p className="truncate text-base font-bold leading-tight tracking-tight">{parentName}</p>
-                <p className="text-xs font-medium text-violet-200">
-                  {childrenCount ? `${childrenCount} ${childrenCount === 1 ? 'child' : 'children'} enrolled` : 'Parent account'}
-                </p>
+            ) : (
+              <div className="relative min-w-0 flex-1" ref={headerSearchRef}>
+                <form
+                  className="flex h-10 w-full items-center gap-2 rounded-xl border border-violet-200 bg-violet-50/70 px-3 shadow-sm focus-within:border-violet-400 focus-within:bg-white"
+                  onSubmit={(e) => {
+                    e.preventDefault();
+                    if (searchMatches[0]) {
+                      goTo(searchMatches[0].path);
+                      setHeaderSearch('');
+                      setShowSearchResults(false);
+                      setMobileSearchOpen(false);
+                    }
+                  }}
+                >
+                  <Search className="h-4 w-4 shrink-0 text-violet-500" />
+                  <input
+                    autoFocus
+                    type="text"
+                    value={headerSearch}
+                    onChange={(e) => {
+                      setHeaderSearch(e.target.value);
+                      setShowSearchResults(true);
+                    }}
+                    onFocus={() => setShowSearchResults(true)}
+                    placeholder="Search modules…"
+                    aria-label="Search modules"
+                    className="w-full min-w-0 border-none bg-transparent text-sm font-medium text-slate-900 outline-none placeholder:font-normal placeholder:text-slate-400"
+                  />
+                </form>
+
+                {showSearchResults && headerSearch.trim() && (
+                  <div className="absolute left-0 right-0 top-[calc(100%+6px)] z-[80] max-h-72 overflow-y-auto rounded-2xl border border-violet-100 bg-white shadow-2xl">
+                    {searchMatches.length === 0 ? (
+                      <p className="px-4 py-3 text-sm text-slate-400">No results</p>
+                    ) : (
+                      <ul className="divide-y divide-slate-50">
+                        {searchMatches.map((item) => (
+                          <li key={item.path}>
+                            <button
+                              type="button"
+                              onMouseDown={(e) => e.preventDefault()}
+                              onClick={() => {
+                                goTo(item.path);
+                                setHeaderSearch('');
+                                setShowSearchResults(false);
+                                setMobileSearchOpen(false);
+                              }}
+                              className="flex w-full items-center gap-3 px-4 py-3 text-left transition hover:bg-violet-50/70"
+                            >
+                              <item.icon size={16} className="shrink-0 text-violet-500" />
+                              <span className="min-w-0">
+                                <span className="block truncate text-sm font-semibold text-slate-800">{item.label}</span>
+                                <span className="block truncate text-[11px] text-slate-400">{item.description}</span>
+                              </span>
+                            </button>
+                          </li>
+                        ))}
+                      </ul>
+                    )}
+                  </div>
+                )}
               </div>
-            </div>
-            <div className="flex shrink-0 items-center gap-2">
+            )}
+
+            <div className="flex shrink-0 items-center gap-1">
+              {mobileSearchOpen ? (
+                <button
+                  type="button"
+                  aria-label="Close search"
+                  onClick={() => {
+                    setMobileSearchOpen(false);
+                    setHeaderSearch('');
+                    setShowSearchResults(false);
+                  }}
+                  className="flex h-10 w-10 items-center justify-center rounded-xl text-slate-500 transition hover:bg-slate-100 hover:text-slate-800 active:scale-95"
+                >
+                  <X className="h-5 w-5" />
+                </button>
+              ) : (
+                <button
+                  type="button"
+                  aria-label="Search"
+                  onClick={() => {
+                    setMobileSearchOpen(true);
+                    setShowNotifications(false);
+                    setMobileMenuOpen(false);
+                  }}
+                  className="flex h-10 w-10 items-center justify-center rounded-xl text-slate-500 transition hover:bg-violet-50 hover:text-violet-600 active:scale-95"
+                >
+                  <Search className="h-5 w-5" />
+                </button>
+              )}
+
               <button
                 type="button"
                 aria-label="Notifications"
-                onClick={() => { setShowNotifications((v) => !v); setMobileMenuOpen(false); }}
-                className="relative rounded-full bg-white/10 p-2 transition hover:bg-white/20 active:scale-95"
+                aria-expanded={showNotifications}
+                onClick={() => {
+                  setShowNotifications((v) => !v);
+                  setMobileMenuOpen(false);
+                  setMobileSearchOpen(false);
+                  setHeaderSearch('');
+                  setShowSearchResults(false);
+                }}
+                className="relative flex h-10 w-10 items-center justify-center rounded-xl text-slate-500 transition hover:bg-violet-50 hover:text-violet-600 active:scale-95"
               >
                 <Bell className="h-5 w-5" />
-                {unreadCount > 0 && <span className="absolute right-1.5 top-1.5 h-2 w-2 rounded-full bg-pink-400" />}
-              </button>
-              <button
-                type="button"
-                aria-label="Account and menu"
-                onClick={() => { setMobileMenuOpen(true); setShowNotifications(false); }}
-                className="rounded-full bg-white/10 p-2 transition hover:bg-white/20 active:scale-95"
-              >
-                <ChevronRight className="h-5 w-5" />
+                {unreadCount > 0 && (
+                  <span className="absolute right-1.5 top-1.5 flex h-4 min-w-4 items-center justify-center rounded-full bg-red-500 px-1 text-[9px] font-bold text-white ring-2 ring-white">
+                    {unreadCount > 9 ? '9+' : unreadCount}
+                  </span>
+                )}
               </button>
             </div>
           </div>
@@ -1188,7 +1321,7 @@ const ParentPortal = () => {
                   onClick={() => goTo(path)}
                   className={`flex flex-col items-center rounded-xl px-3 py-1 transition active:scale-95 ${active ? 'font-semibold text-violet-600' : 'font-medium text-slate-400'}`}
                 >
-                  <span className={`relative mb-0.5 flex h-8 w-8 items-center justify-center rounded-full ${active ? 'bg-violet-100' : ''}`}>
+                  <span className={`relative mb-0.5 flex h-8 w-8 items-center justify-center rounded-full ${active ? 'bg-violet-600 text-white' : ''}`}>
                     <Icon className="h-5 w-5" />
                     {badgeCount > 0 && (
                       <span className="absolute -right-1 -top-1 flex h-4 min-w-[1rem] items-center justify-center rounded-full bg-violet-600 px-1 text-[10px] font-bold text-white">
@@ -1202,15 +1335,21 @@ const ParentPortal = () => {
             })}
             <button
               type="button"
-              aria-label="More"
-              aria-expanded={mobileMenuOpen}
-              onClick={() => { setMobileMenuOpen(true); setShowNotifications(false); }}
-              className={`flex flex-col items-center rounded-xl px-3 py-1 transition active:scale-95 ${mobileMenuOpen ? 'font-semibold text-violet-600' : 'font-medium text-slate-400'}`}
+              aria-label="Profile"
+              aria-current={isNavActive('/parents/profile') ? 'page' : undefined}
+              onClick={() => goTo('/parents/profile')}
+              className={`flex flex-col items-center rounded-xl px-3 py-1 transition active:scale-95 ${isNavActive('/parents/profile') ? 'font-semibold text-violet-600' : 'font-medium text-slate-400'}`}
             >
-              <span className={`mb-0.5 flex h-8 w-8 items-center justify-center rounded-full ${mobileMenuOpen ? 'bg-violet-100' : ''}`}>
-                <MoreHorizontal className="h-5 w-5" />
+              <span className={`relative mb-0.5 flex h-8 w-8 items-center justify-center overflow-hidden rounded-full ${isNavActive('/parents/profile') ? 'bg-violet-100 ring-2 ring-violet-200' : 'bg-slate-100'}`}>
+                {parentAvatar ? (
+                  <img src={parentAvatar} alt="" className="h-full w-full object-cover" />
+                ) : (
+                  <span className={`text-[11px] font-bold ${isNavActive('/parents/profile') ? 'text-violet-600' : 'text-slate-500'}`}>
+                    {initials}
+                  </span>
+                )}
               </span>
-              <span className="text-[10px]">More</span>
+              <span className="text-[10px]">Profile</span>
             </button>
           </div>
         </nav>
