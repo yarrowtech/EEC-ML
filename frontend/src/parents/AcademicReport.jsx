@@ -110,7 +110,7 @@ const getGradeClass = (grade) => {
     normalized === 'B+' ||
     normalized === 'B'
   ) {
-    return 'border-blue-100 bg-blue-50 text-blue-600';
+    return 'border-violet-100 bg-violet-50 text-violet-600';
   }
 
   if (normalized === 'C') {
