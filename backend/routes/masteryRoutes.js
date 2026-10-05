@@ -72,24 +72,8 @@ const sendMasteryNudge = async (studentId, schoolId, subject, topicTitle, score)
 };
 
 // ── POST /api/mastery/update ─────────────────────────────────────────────────
-router.post('/update', authStudent, async (req, res) => {
-  try {
-    const studentId = req.user?.id;
-    const schoolId  = req.schoolId;
-    if (!studentId || !schoolId) return res.status(401).json({ error: 'Unauthorized' });
-
-    const { subject, topicId, topicTitle = '', chapterTitle = '', score } = req.body || {};
-    if (!subject || !topicId) return res.status(400).json({ error: 'subject and topicId are required' });
-
-    const { applyAssessment } = require('../services/masteryEventService');
-    const doc = await applyAssessment({ studentId, schoolId, subject, topicId, topicTitle, chapterTitle,
-      source: 'tutor', assessmentScore: score, eventId: req.body.eventId,
-      metadata: { provenance: 'student_reported' } });
-
-    return res.json({ success: true, data: doc });
-  } catch (err) {
-    return res.status(500).json({ error: err.message });
-  }
+router.post('/update', authStudent, (req, res) => {
+  return res.status(403).json({ error: 'Mastery requires a server-verified assessment; browser scores are not accepted' });
 });
 
 // ── GET /api/mastery/student ─────────────────────────────────────────────────
@@ -203,22 +187,16 @@ router.get('/suggested-difficulty', authStudent, async (req, res) => {
 
 // ── POST /api/mastery/lesson-complete ────────────────────────────────────────
 // Called when a student finishes a lesson/content block.
-// Updates mastery, fires all workflow triggers, returns next action.
+// Returns existing evidence and next action; self-ratings cannot update mastery.
 router.post('/lesson-complete', authStudent, async (req, res) => {
   try {
     const studentId = req.user?.id;
     const schoolId  = req.schoolId;
     if (!studentId || !schoolId) return res.status(401).json({ error: 'Unauthorized' });
 
-    const { subject, topicId, topicTitle = '', chapterTitle = '', selfRating } = req.body || {};
+    const { subject, topicId } = req.body || {};
     if (!subject || !topicId) return res.status(400).json({ error: 'subject and topicId are required' });
-
-    // selfRating: 1-5 (1=very confused, 5=fully understood) — convert to 0-100 score
-    const ratingScore = selfRating ? Math.min(100, Math.round((Number(selfRating) / 5) * 100)) : 60;
-
-    const { applyAssessment } = require('../services/masteryEventService');
-    const doc = await applyAssessment({ studentId, schoolId, subject, topicId, topicTitle, chapterTitle,
-      source: 'self-report', assessmentScore: ratingScore, metadata: { provenance: 'self_rating' } });
+    const doc = await MasteryScore.findOne({ studentId, schoolId, subject, topicId }).lean();
 
     const nextAction = await getNextAction(studentId, subject, topicId);
     return res.json({ success: true, data: { mastery: doc, nextAction } });

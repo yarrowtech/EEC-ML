@@ -4136,21 +4136,6 @@ function AiTutorPanel({ onGeneratedStudyItem = () => {} }) {
     }
   };
 
-  const handleQuizComplete = async (scorePct, subject, topic) => {
-    if (!subject && !topic) return;
-    try {
-      const token = localStorage.getItem('token');
-      const topicId = topic ? topic.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/(^-|-$)/g, '') : 'general';
-      await fetch(`${API_BASE}/api/mastery/update`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
-        body: JSON.stringify({ subject, topicId, topicTitle: topic, score: scorePct }),
-      });
-    } catch {
-      // silently ignore — mastery update is non-critical
-    }
-  };
-
   const handleMisconception = (questionText, wrongAnswer, correctAnswer) => {
     handleSend({
       mode: 'misconception',
@@ -4434,7 +4419,7 @@ function AiTutorPanel({ onGeneratedStudyItem = () => {} }) {
                                           </div>
                                         )
                                         : <TutorMessageContent text={msg.text} />)
-                                    : <TutorResponseRenderer text={msg.text} mode={msg.mode} onMisconception={handleMisconception} onQuizComplete={handleQuizComplete} subject={msg.subject} topic={msg.topic} isLatest={i === messages.length - 1} />
+                                    : <TutorResponseRenderer text={msg.text} mode={msg.mode} onMisconception={handleMisconception} subject={msg.subject} topic={msg.topic} isLatest={i === messages.length - 1} />
                                   }
                                   {!msg.streaming && <TutorGeneratedVisuals visuals={msg.visuals} />}
                                   {!msg.streaming && <TutorVisualSources citations={msg.citations} />}

@@ -10,7 +10,8 @@ _call_llm() with the same Ollama-first / OpenRouter-fallback pattern.
 import random
 
 from langchain_core.output_parsers import StrOutputParser
-from langchain_core.runnables import Runnable
+from langchain_core.runnables import Runnable, RunnableLambda
+from app.core.privacy import redact_model_input
 from langchain_ollama import ChatOllama
 
 from app.core.config import settings
@@ -87,6 +88,8 @@ def create_chain(
             api_key=settings.openrouter_api_key,
             model=settings.openrouter_model,
             temperature=temperature,
+            timeout=60,
+            max_retries=1,
             max_tokens=(
                 settings.ollama_num_predict_extended
                 if mode in LONG_OUTPUT_MODES
@@ -108,4 +111,6 @@ def create_chain(
             seed=random.randint(1, 2**31 - 1),
         )
 
+    if settings.openrouter_api_key:
+        return RunnableLambda(redact_model_input) | llm | StrOutputParser()
     return llm | StrOutputParser()

@@ -1,6 +1,7 @@
 import asyncio
 import logging
 import os
+import secrets
 from contextlib import asynccontextmanager
 
 from dotenv import load_dotenv
@@ -69,30 +70,21 @@ app.add_middleware(
     allow_headers=["Content-Type", "X-Internal-Key"],
 )
 
-_UNAUTHENTICATED_PATHS = {"/health", "/docs", "/openapi.json", "/redoc"}
+_UNAUTHENTICATED_PATHS = {"/health"}
 
 
 @app.middleware("http")
 async def enforce_internal_key(request: Request, call_next):
-    """Require the shared X-Internal-Key secret on every request from the Node backend.
-
-    Without AI_SERVICE_INTERNAL_KEY configured, every endpoint here (ingest, generate,
-    vision, speech, ...) is reachable by anyone who can route to this service. If the
-    key isn't configured, fail open only for local dev (empty settings) but log loudly.
-    """
+    """Fail closed unless the backend supplies the configured service secret."""
     if request.url.path in _UNAUTHENTICATED_PATHS:
         return await call_next(request)
 
     expected = settings.ai_service_internal_key
     if not expected:
-        logger.warning(
-            "AI_SERVICE_INTERNAL_KEY is not set — running with no request authentication. "
-            "Set it in .env before exposing this service beyond localhost."
-        )
-        return await call_next(request)
+        return JSONResponse(status_code=503, content={"detail": "AI service authentication is not configured"})
 
     provided = request.headers.get("x-internal-key", "")
-    if provided != expected:
+    if not secrets.compare_digest(provided.encode(), expected.encode()):
         return JSONResponse(status_code=401, content={"detail": "Missing or invalid X-Internal-Key"})
 
     return await call_next(request)
@@ -114,12 +106,4 @@ app.include_router(video_router)
 
 @app.get("/health")
 async def health() -> dict:
-    return {
-        "status": "ok",
-        "message": "AI service is running",
-        "ollama_url": settings.ollama_url,
-        "ollama_model": settings.ollama_model,
-        "embed_model": settings.ollama_embed_model,
-        "vision_model": settings.ollama_vision_model,
-        "vision_enabled": settings.ollama_vision_enabled,
-    }
+    return {"status": "ok"}

@@ -5,7 +5,7 @@ from app.main import app
 import app.modules.chat.service as chat_service
 from app.modules.chat.service import NOT_FOUND_MESSAGE
 
-client = TestClient(app)
+client = TestClient(app, headers={"X-Internal-Key": "test-service-key"})
 
 PAYLOAD = {
     "mode": "explain",

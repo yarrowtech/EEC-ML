@@ -194,7 +194,7 @@ const WelcomeCard = () => {
         transition={{ delay: 0.18, duration: 0.35 }}
         className="inline-flex items-center gap-2 rounded-full bg-gray-100 px-5 py-2 mb-1"
       >
-        <CalendarIcon />
+       
         <span className="text-[17px] font-semibold text-[#4f46e5]">{formatDate()}</span>
       </Motion.div>
 
@@ -214,7 +214,7 @@ const WelcomeCard = () => {
           </p>
         )}
         <div className="inline-flex items-center gap-2 rounded-full bg-[#eef2ff] px-5 py-2">
-          <HandIcon />
+         
           <span className="text-[18px] font-medium text-[#4f46e5]">{getGreeting()}</span>
         </div>
       </Motion.div>
@@ -246,14 +246,12 @@ const WelcomeCard = () => {
         {/* Left: label + counter */}
         <div className="flex items-center gap-3.5 shrink-0">
           <div className="flex items-center gap-2">
-            <BoltIcon />
+           
             <span className="text-[16px] font-semibold text-[#4b5563] tracking-[0.4px] whitespace-nowrap uppercase">
               Daily Boost
             </span>
           </div>
-          <span className="rounded-full border border-gray-200 bg-white px-3 py-1 text-[14px] font-semibold text-[#4f46e5] whitespace-nowrap">
-            {current + 1}/{QUOTES.length}
-          </span>
+          
         </div>
 
         {/* Middle: quote */}
@@ -326,10 +324,6 @@ const WelcomeCard = () => {
               />
             ))}
           </div>
-
-          <span className="text-[13px] text-[#9ca3af] whitespace-nowrap">
-            {playing ? 'Auto' : 'Paused'}
-          </span>
         </div>
       </Motion.div>
 

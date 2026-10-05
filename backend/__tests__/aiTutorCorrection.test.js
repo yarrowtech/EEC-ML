@@ -51,7 +51,7 @@ describe('AI tutor answer correction', () => {
       return { ...actual, buildTeacherAllocationScope: jest.fn(() => Promise.resolve([{ normalizedClass: '5', normalizedSection: 'a' }])) };
     });
 
-    jest.doMock('../models/TutorConversation', () => ({ findOne: jest.fn(() => queryLean(mocks.conversation)) }));
+    jest.doMock('../models/TutorConversation', () => ({ findOne: jest.fn(() => queryLean(mocks.conversation)), find: jest.fn(() => queryLean([mocks.conversation])) }));
     jest.doMock('../models/StudentUser', () => ({
       findOne: jest.fn(() => queryLean(mocks.scopeInclusive ? mocks.student : { ...mocks.student, grade: '9', section: 'Z' })),
       find: jest.fn(() => queryLean([mocks.student])),
@@ -70,6 +70,29 @@ describe('AI tutor answer correction', () => {
     app = express();
     app.use(express.json());
     app.use('/api/ai-tutor', require('../routes/aiTutorRoutes'));
+  });
+
+  test('conversation reads record actor, learner and school before returning data', async () => {
+    const result = await request(app).get('/api/ai-tutor/teacher/student-sessions/507f1f77bcf86cd799439011');
+    expect(result.status).toBe(200);
+    expect(require('../models/AuditLog').create).toHaveBeenCalledWith(expect.objectContaining({
+      action: 'ai_conversation.read', schoolId: 'school1', actorId: 'teacher1',
+      entityId: '507f1f77bcf86cd799439011', meta: { conversationCount: 1 },
+    }));
+  });
+
+  test('conversation reads fail closed when audit persistence fails', async () => {
+    require('../models/AuditLog').create.mockRejectedValueOnce(new Error('audit unavailable'));
+    const result = await request(app).get('/api/ai-tutor/teacher/student-sessions/507f1f77bcf86cd799439011');
+    expect(result.status).toBe(500);
+    expect(result.body.data).toBeUndefined();
+  });
+
+  test('unallocated teachers cannot read conversations', async () => {
+    mocks.scopeInclusive = false;
+    const result = await request(app).get('/api/ai-tutor/teacher/student-sessions/507f1f77bcf86cd799439011');
+    expect(result.status).toBe(403);
+    expect(require('../models/TutorConversation').find).not.toHaveBeenCalled();
   });
 
   test('rejects an empty correctedText', async () => {

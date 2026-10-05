@@ -1,16 +1,20 @@
+const mockSend = jest.fn().mockResolvedValue({});
+
 jest.mock('@aws-sdk/client-s3', () => ({
+  DeleteObjectCommand: jest.fn((input) => ({ input })),
   GetObjectCommand: jest.fn((input) => ({ input })),
   PutObjectCommand: jest.fn((input) => ({ input })),
-  S3Client: jest.fn(() => ({ send: jest.fn().mockResolvedValue({}) })),
+  S3Client: jest.fn(() => ({ send: mockSend })),
 }));
 
 jest.mock('@aws-sdk/s3-request-presigner', () => ({
   getSignedUrl: jest.fn().mockResolvedValue('https://signed.example/material.pdf'),
 }));
 
-const { PutObjectCommand } = require('@aws-sdk/client-s3');
+const { DeleteObjectCommand, PutObjectCommand } = require('@aws-sdk/client-s3');
 const { getSignedUrl } = require('@aws-sdk/s3-request-presigner');
 const {
+  deleteS3Object,
   getAttachmentDownloadUrl,
   parseS3Uri,
   uploadStudyMaterial,
@@ -69,5 +73,39 @@ describe('s3Storage', () => {
       bucket: 'bucket',
       key: 'schools/school-123/material.pdf',
     });
+  });
+
+  test('deletes an S3 object using its stored bucket/key', async () => {
+    const deleted = await deleteS3Object({
+      storageProvider: 's3',
+      s3Key: 'schools/school-123/study-materials/material.pdf',
+      s3Bucket: 'eec-study-materials',
+      s3Region: 'ap-south-1',
+      url: 's3://eec-study-materials/schools/school-123/study-materials/material.pdf',
+    });
+
+    expect(deleted).toBe(true);
+    expect(DeleteObjectCommand).toHaveBeenCalledWith({
+      Bucket: 'eec-study-materials',
+      Key: 'schools/school-123/study-materials/material.pdf',
+    });
+  });
+
+  test('falls back to parsing the s3:// URI when bucket/key fields are missing', async () => {
+    const deleted = await deleteS3Object({
+      url: 's3://eec-study-materials/schools/school-123/study-materials/legacy.pdf',
+    });
+
+    expect(deleted).toBe(true);
+    expect(DeleteObjectCommand).toHaveBeenCalledWith({
+      Bucket: 'eec-study-materials',
+      Key: 'schools/school-123/study-materials/legacy.pdf',
+    });
+  });
+
+  test('skips deletion when the attachment has no identifiable S3 location', async () => {
+    const deleted = await deleteS3Object({ url: 'https://res.cloudinary.com/demo/image/upload/v1/sample.jpg' });
+    expect(deleted).toBe(false);
+    expect(DeleteObjectCommand).not.toHaveBeenCalled();
   });
 });

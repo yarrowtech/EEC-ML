@@ -242,6 +242,7 @@ const studentUserSchema = new mongoose.Schema({
   documents: [enrolmentDocumentSchema],
   // DPDP Act 2023 compliance — parental consent for minor data processing
   parentConsentGivenAt: { type: Date, default: null },
+  parentConsentWithdrawnAt: { type: Date, default: null },
   parentConsentGivenBy: { type: String, default: '' }, // name of consenting parent/guardian
   dataRetentionExpiresAt: { type: Date, default: null }, // set on student graduation/exit
   lastLoginAt: { type: Date, default: null },

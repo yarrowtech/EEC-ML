@@ -16,7 +16,8 @@ const Subject = require('../models/Subject');
 const CurriculumMap = require('../models/CurriculumMap');
 const authTeacher = require('../middleware/authTeacher');
 const { logger } = require('../utils/logger');
-const { getAttachmentDownloadUrl } = require('../utils/s3Storage');
+const { getAttachmentDownloadUrl, deleteS3Object } = require('../utils/s3Storage');
+const { deleteCloudinaryAsset } = require('../utils/cloudinaryUpload');
 
 const AI_SERVICE_URL = process.env.AI_SERVICE_URL || 'http://localhost:8000';
 
@@ -40,6 +41,31 @@ const deleteMaterialVectors = (materialId) =>
   axios.delete(`${AI_SERVICE_URL}/ingest/material/${encodeURIComponent(String(materialId))}`, {
     timeout: 60_000,
   });
+
+// Deletes every stored file for a material (current attachments plus any
+// version-history snapshots) from whichever provider it lives on. Each file
+// is attempted independently and failures are logged rather than thrown, so
+// one bad attachment can't block the rest of cleanup or the delete response.
+const cleanupMaterialFiles = async (material) => {
+  const attachmentSets = [material.attachments || []];
+  (material.versions || []).forEach((version) => attachmentSets.push(version.attachments || []));
+  const attachments = attachmentSets.flat().filter((attachment) => attachment?.url);
+
+  const results = await Promise.allSettled(attachments.map((attachment) => (
+    attachment.storageProvider === 's3' || attachment.s3Key
+      ? deleteS3Object(attachment)
+      : deleteCloudinaryAsset(attachment)
+  )));
+
+  results.forEach((result, index) => {
+    if (result.status === 'rejected') {
+      logger.error(
+        '[material cleanup] failed to delete attachment file for material',
+        String(material._id), attachments[index]?.name || attachments[index]?.url, result.reason?.message
+      );
+    }
+  });
+};
 
 const buildSourceId = (material, attachment, index) => {
   const stableAttachmentId = attachment.cloudinaryPublicId || attachment.url || attachment.name || index;
@@ -538,10 +564,11 @@ router.delete('/:id', async (req, res, next) => {
       });
     }
 
-    // TODO: Delete files from Cloudinary if needed
-    // For now, files remain in Cloudinary (can be cleaned up later)
     deleteMaterialVectors(material._id).catch((err) =>
       logger.error('[material ingest] failed to delete vectors for material', String(material._id), err.message)
+    );
+    cleanupMaterialFiles(material).catch((err) =>
+      logger.error('[material cleanup] failed to clean up files for material', String(material._id), err.message)
     );
 
     res.json({
@@ -716,10 +743,25 @@ router.post('/bulk/delete', async (req, res, next) => {
       });
     }
 
-    const result = await TeachingMaterial.deleteMany({
+    const filter = {
       _id: { $in: ids.map(id => new mongoose.Types.ObjectId(id)) },
       teacherId: req.userId,
       schoolId: req.schoolId
+    };
+
+    // Fetched before deletion so vectors and attachment files can be cleaned
+    // up — deleteMany alone would leave both behind, same gap as the
+    // single-material delete route.
+    const materials = await TeachingMaterial.find(filter).lean();
+    const result = await TeachingMaterial.deleteMany(filter);
+
+    materials.forEach((material) => {
+      deleteMaterialVectors(material._id).catch((err) =>
+        logger.error('[material ingest] failed to delete vectors for material', String(material._id), err.message)
+      );
+      cleanupMaterialFiles(material).catch((err) =>
+        logger.error('[material cleanup] failed to clean up files for material', String(material._id), err.message)
+      );
     });
 
     res.json({

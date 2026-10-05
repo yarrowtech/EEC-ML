@@ -27,6 +27,11 @@ import {
   Users,
 } from 'lucide-react';
 
+<<<<<<< HEAD
+=======
+import ChildSwitcher from './ChildSwitcher';
+import ParentAiConsent from '../features/ai-consent/ParentAiConsent';
+>>>>>>> 2a59b9a5 (added the remaining work)
 import Loading from './Loading';
 import { EmptyState, ErrorState } from './StateBlock';
 import useParentChildren from './useParentChildren';
@@ -563,7 +568,13 @@ const ChildProfile = () => {
             INFORMATION GRID
         ====================================================== */}
 
+<<<<<<< HEAD
         <motion.div variants={PAGE} className="grid items-stretch gap-3 md:grid-cols-2 lg:min-h-0 lg:flex-1 lg:grid-cols-4">
+=======
+        <div className="min-h-0 space-y-3 lg:flex-1 lg:overflow-y-auto">
+        <ParentAiConsent key={c.id} studentId={c.id} childName={c.name} />
+        <div className="grid items-stretch gap-3 md:grid-cols-2 lg:grid-cols-4">
+>>>>>>> 2a59b9a5 (added the remaining work)
           {/* Quick Info */}
           <Card
             title="Quick Info"
@@ -757,7 +768,12 @@ const ChildProfile = () => {
           <span>
             Student profile information is maintained by the school.
           </span>
+<<<<<<< HEAD
         </motion.div>
+=======
+        </div>
+        </div>
+>>>>>>> 2a59b9a5 (added the remaining work)
       </div>
     </motion.div>
   );

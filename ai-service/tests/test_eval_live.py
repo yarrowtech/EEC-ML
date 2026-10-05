@@ -42,7 +42,7 @@ def client():
 
     from app.main import app
 
-    return TestClient(app)
+    return TestClient(app, headers={"X-Internal-Key": "test-service-key"})
 
 
 def _request(case):

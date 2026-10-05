@@ -43,6 +43,7 @@ const readCachedReport = async ({ req, type }) => {
   const existing = await ParentDashboardReport.findOne({
     parentId: req.user.id,
     studentId: req.params.studentId,
+    schoolId: req.schoolId,
     type,
   }).lean();
   if (existing && Date.now() - new Date(existing.generatedAt).getTime() < REPORT_TTL[type]) {
@@ -54,7 +55,7 @@ const readCachedReport = async ({ req, type }) => {
 const writeCachedReport = async ({ req, type, content }) => {
   const generatedAt = new Date();
   await ParentDashboardReport.findOneAndUpdate(
-    { parentId: req.user.id, studentId: req.params.studentId, type },
+    { parentId: req.user.id, studentId: req.params.studentId, schoolId: req.schoolId, type },
     { content, generatedAt, schoolId: req.schoolId },
     { upsert: true, new: true },
   );
@@ -140,6 +141,14 @@ router.get('/home-support/:studentId', authParent, async (req, res) => {
       return res.status(403).json({ error: 'Not authorized for this student' });
     }
 
+    const consent = await require('../services/aiConsentService').personalisationAllowed({
+      studentId: req.params.studentId, schoolId: req.schoolId,
+    });
+    if (!consent.allowed) return res.status(403).json({
+      error: 'AI personalisation is off. Manage consent in Child Profile to enable personalised reports.',
+      code: 'AI_CONSENT_REQUIRED',
+    });
+
     const cached = await readCachedReport({ req, type: 'home_support' });
     if (cached) return res.json({ success: true, data: cached });
 
@@ -176,6 +185,14 @@ router.get('/weekly-digest/:studentId', authParent, async (req, res) => {
     if (!ownsStudent(childIds, req.params.studentId)) {
       return res.status(403).json({ error: 'Not authorized for this student' });
     }
+
+    const consent = await require('../services/aiConsentService').personalisationAllowed({
+      studentId: req.params.studentId, schoolId: req.schoolId,
+    });
+    if (!consent.allowed) return res.status(403).json({
+      error: 'AI personalisation is off. Manage consent in Child Profile to enable personalised reports.',
+      code: 'AI_CONSENT_REQUIRED',
+    });
 
     const cached = await readCachedReport({ req, type: 'weekly_digest' });
     if (cached) return res.json({ success: true, data: cached });
@@ -217,6 +234,14 @@ router.get('/monthly-report/:studentId', authParent, async (req, res) => {
     if (!ownsStudent(childIds, req.params.studentId)) {
       return res.status(403).json({ error: 'Not authorized for this student' });
     }
+
+    const consent = await require('../services/aiConsentService').personalisationAllowed({
+      studentId: req.params.studentId, schoolId: req.schoolId,
+    });
+    if (!consent.allowed) return res.status(403).json({
+      error: 'AI personalisation is off. Manage consent in Child Profile to enable personalised reports.',
+      code: 'AI_CONSENT_REQUIRED',
+    });
 
     const cached = await readCachedReport({ req, type: 'monthly_report' });
     if (cached) return res.json({ success: true, data: cached });

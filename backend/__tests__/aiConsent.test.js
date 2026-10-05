@@ -1,63 +1,72 @@
-/**
- * AI personalisation consent gate — feeding a student's personal learning data
- * into an LLM prompt requires recorded parental consent (per-org overridable).
- */
-const mockStudentUser = { findOne: jest.fn(), findOneAndUpdate: jest.fn() };
+const mockStudent = { findOne: jest.fn(), findOneAndUpdate: jest.fn() };
 const mockOrg = { findOne: jest.fn() };
-jest.mock('../models/StudentUser', () => mockStudentUser);
+const mockSchool = { findOne: jest.fn() };
+const mockAudit = { create: jest.fn() };
+const mockSession = { withTransaction: jest.fn(async (fn) => fn()), endSession: jest.fn() };
+jest.mock('../models/StudentUser', () => mockStudent);
 jest.mock('../models/Organization', () => mockOrg);
-jest.mock('../models/AuditLog', () => ({ create: jest.fn(() => Promise.resolve({})) }));
-
-const { personalisationAllowed, recordConsent, orgRequiresConsent } = require('../services/aiConsentService');
-
-const sel = (v) => ({ select: () => ({ lean: () => Promise.resolve(v) }) });
-
+jest.mock('../models/School', () => mockSchool);
+jest.mock('../models/AuditLog', () => mockAudit);
+jest.mock('mongoose', () => ({ startSession: jest.fn(async () => mockSession) }));
+const { personalisationAllowed, recordConsent, withdrawConsent, orgRequiresConsent } = require('../services/aiConsentService');
+const sel = (value) => ({ select: () => ({ lean: async () => value }) });
+const scope = { studentId: 'student', schoolId: 'school' };
+const actor = { id: 'parent', type: 'parent' };
 beforeEach(() => {
   jest.clearAllMocks();
-  mockOrg.findOne.mockReturnValue(sel(null)); // default policy
+  mockAudit.create.mockResolvedValue([]);
+  mockSchool.findOne.mockReturnValue(sel({ organizationId: 'org' }));
+  mockOrg.findOne.mockReturnValue(sel(null));
+  mockStudent.findOne.mockReturnValue(sel({}));
 });
-
-describe('personalisationAllowed', () => {
-  test('blocked when consent is required and not on file', async () => {
-    mockStudentUser.findOne.mockReturnValue(sel({ parentConsentGivenAt: null }));
-    const r = await personalisationAllowed({ studentId: 's1', schoolId: 'sch1' });
-    expect(r).toMatchObject({ allowed: false, requiresConsent: true, reason: 'consent_missing' });
-  });
-
-  test('allowed when consent is on file', async () => {
-    mockStudentUser.findOne.mockReturnValue(sel({ parentConsentGivenAt: new Date('2026-01-01') }));
-    const r = await personalisationAllowed({ studentId: 's1', schoolId: 'sch1' });
-    expect(r).toMatchObject({ allowed: true, reason: 'consent_on_file' });
-  });
-
-  test('allowed when the org has opted out of the consent requirement', async () => {
-    mockOrg.findOne.mockReturnValue(sel({ settings: { ai: { personalisationRequiresConsent: false } } }));
-    mockStudentUser.findOne.mockReturnValue(sel({ parentConsentGivenAt: null }));
-    const r = await personalisationAllowed({ studentId: 's1', schoolId: 'sch1' });
-    expect(r).toMatchObject({ allowed: true, requiresConsent: false });
-  });
-
-  test('fails safe (consent required) if the org lookup throws', async () => {
-    mockOrg.findOne.mockImplementation(() => { throw new Error('db'); });
-    expect(await orgRequiresConsent('sch1')).toBe(true);
-  });
+test('missing consent blocks personalisation', async () => {
+  expect(await personalisationAllowed(scope)).toMatchObject({ allowed: false, reason: 'consent_missing' });
+  expect(mockStudent.findOne).toHaveBeenCalledWith({ _id: 'student', schoolId: 'school' });
 });
-
-describe('recordConsent', () => {
-  test('stamps the consent fields and writes an audit entry', async () => {
-    mockStudentUser.findOneAndUpdate.mockReturnValue(sel({ name: 'Ada', parentConsentGivenAt: new Date(), parentConsentGivenBy: 'Parent A' }));
-    const r = await recordConsent({ studentId: 's1', schoolId: 'sch1', givenBy: 'Parent A', actor: { id: 'a1', type: 'admin' } });
-    expect(r.student.parentConsentGivenBy).toBe('Parent A');
-    const set = mockStudentUser.findOneAndUpdate.mock.calls[0][1].$set;
-    expect(set.parentConsentGivenAt).toBeInstanceOf(Date);
-    expect(require('../models/AuditLog').create).toHaveBeenCalledWith(
-      expect.objectContaining({ action: 'ai_personalisation.consent_recorded' })
-    );
-  });
-
-  test('returns notFound for an unknown student', async () => {
-    mockStudentUser.findOneAndUpdate.mockReturnValue(sel(null));
-    const r = await recordConsent({ studentId: 'x', schoolId: 'sch1', givenBy: 'P' });
-    expect(r.notFound).toBe(true);
-  });
+test('recorded consent permits personalisation', async () => {
+  mockStudent.findOne.mockReturnValue(sel({ parentConsentGivenAt: new Date() }));
+  expect(await personalisationAllowed(scope)).toMatchObject({ allowed: true, reason: 'consent_on_file' });
+});
+test('resolves policy using the school organization, never a school ID as organization ID', async () => {
+  mockOrg.findOne.mockReturnValue(sel({ settings: { ai: { personalisationRequiresConsent: false } } }));
+  expect(await personalisationAllowed(scope)).toMatchObject({ allowed: true, requiresConsent: false });
+  expect(mockOrg.findOne).toHaveBeenCalledWith({ _id: 'org' });
+});
+test('withdrawal overrides permissive organisation policy', async () => {
+  mockOrg.findOne.mockReturnValue(sel({ settings: { ai: { personalisationRequiresConsent: false } } }));
+  mockStudent.findOne.mockReturnValue(sel({ parentConsentWithdrawnAt: new Date() }));
+  expect(await personalisationAllowed(scope)).toMatchObject({ allowed: false, reason: 'consent_withdrawn' });
+});
+test('unknown students cannot use permissive organisation policy', async () => {
+  mockOrg.findOne.mockReturnValue(sel({ settings: { ai: { personalisationRequiresConsent: false } } }));
+  mockStudent.findOne.mockReturnValue(sel(null));
+  expect(await personalisationAllowed(scope)).toMatchObject({ allowed: false, reason: 'student_not_found' });
+});
+test('policy lookup failure requires consent', async () => {
+  mockSchool.findOne.mockImplementation(() => { throw new Error('database'); });
+  expect(await orgRequiresConsent('school')).toBe(true);
+});
+test('grant clears withdrawal and shares transaction with audit', async () => {
+  mockStudent.findOneAndUpdate.mockReturnValue(sel({ parentConsentGivenAt: new Date() }));
+  await recordConsent({ ...scope, givenBy: 'Guardian', actor });
+  expect(mockStudent.findOneAndUpdate).toHaveBeenCalledWith(expect.objectContaining({ schoolId: 'school' }),
+    { $set: expect.objectContaining({ parentConsentWithdrawnAt: null, parentConsentGivenBy: 'Guardian' }) },
+    expect.objectContaining({ session: mockSession }));
+  expect(mockAudit.create).toHaveBeenCalledWith([expect.objectContaining({ action: 'ai_personalisation.consent_recorded', actorId: 'parent' })], { session: mockSession });
+});
+test('withdrawal clears consent and records actor', async () => {
+  mockStudent.findOneAndUpdate.mockReturnValue(sel({ parentConsentWithdrawnAt: new Date() }));
+  await withdrawConsent({ ...scope, actor });
+  expect(mockStudent.findOneAndUpdate.mock.calls[0][1].$set).toMatchObject({ parentConsentGivenAt: null, parentConsentGivenBy: '', parentConsentWithdrawnAt: expect.any(Date) });
+});
+test('audit failure propagates through transaction and session is closed', async () => {
+  mockStudent.findOneAndUpdate.mockReturnValue(sel({}));
+  mockAudit.create.mockRejectedValue(new Error('audit failed'));
+  await expect(recordConsent({ ...scope, givenBy: 'Guardian', actor })).rejects.toThrow('audit failed');
+  expect(mockSession.endSession).toHaveBeenCalled();
+});
+test('missing student returns notFound without an audit entry', async () => {
+  mockStudent.findOneAndUpdate.mockReturnValue(sel(null));
+  expect(await withdrawConsent({ ...scope, actor })).toEqual({ notFound: true });
+  expect(mockAudit.create).not.toHaveBeenCalled();
 });

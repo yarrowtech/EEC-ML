@@ -16,6 +16,7 @@ from difflib import SequenceMatcher
 import httpx
 
 from app.core.config import settings
+from app.core.privacy import redact_text
 
 logger = logging.getLogger(__name__)
 
@@ -56,16 +57,16 @@ def _call_openrouter(prompt: str, system: str, temperature: float = 0.3) -> str:
         "X-Title": "EEC AI Assessment",
     }
     payload = {
-        "model": "anthropic/claude-sonnet-4",
+        "model": settings.openrouter_model,
         "messages": [
-            {"role": "system", "content": system},
-            {"role": "user", "content": prompt},
+            {"role": "system", "content": redact_text(system)},
+            {"role": "user", "content": redact_text(prompt)},
         ],
         "temperature": temperature,
         "max_tokens": 2048,
     }
     resp = httpx.post(
-        "https://openrouter.ai/api/v1/chat/completions",
+        f"{settings.openrouter_base_url.rstrip('/')}/chat/completions",
         json=payload,
         headers=headers,
         timeout=120,
@@ -79,7 +80,7 @@ def _call_llm(prompt: str, system: str, temperature: float = 0.3) -> str:
     try:
         return _call_ollama(prompt, system, temperature)
     except Exception as ollama_err:
-        logger.warning("Ollama assess failed (%s), trying OpenRouter", ollama_err)
+        logger.warning("Ollama assessment failed (%s), trying configured fallback", type(ollama_err).__name__)
         if settings.openrouter_api_key:
             return _call_openrouter(prompt, system, temperature)
         raise

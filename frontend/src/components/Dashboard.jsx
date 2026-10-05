@@ -38,6 +38,7 @@ const ErrorAnalysisView = lazy(() => import('./ErrorAnalysisView'));
 const StudentHealthReport = lazy(() => import('./StudentHealthReport'));
 const StudentComplaints = lazy(() => import('./StudentComplaints'));
 const StudentMeetings = lazy(() => import('./StudentMeetings'));
+const LongAnswerAssessment = lazy(() => import('./LongAnswerAssessment'));
 
 // Per-route tab titles. The school name is appended automatically, so
 // `/student/attendance` shows "Attendance · <School>". Falls back to "Student".
@@ -51,6 +52,7 @@ const VIEW_TITLES = {
   'smart-learning-tutor': 'AI Tutor',
   academics: 'Assignments',
   assignments: 'Assignments',
+  'long-answer': 'Long Answer',
   'assignments-journal': 'Journal',
   'assignments-academic-alcove': 'Academic Alcove',
   'study-materials': 'Study Materials',
@@ -207,6 +209,7 @@ const Dashboard = () => {
     holidays: HolidayListView,
     'lesson-plan-status': LessonPlanStatusView,
     assignments: (props) => <AssignmentView {...props} defaultType="school" />,
+    'long-answer': LongAnswerAssessment,
     'assignments-journal': (props) => <AssignmentView {...props} ref={journalRef} defaultType="journal" />,
     'assignments-academic-alcove': (props) => <AcademicAlcove {...props} />,
     'study-materials': LearningHub,

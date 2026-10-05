@@ -1,60 +1,64 @@
-/**
- * aiConsentService.js
- * Gates AI *personalisation* (feeding a student's mastery / gaps / memory /
- * development profile into an LLM prompt) on recorded parental consent.
- *
- * The tutor itself still works without consent — it just answers from the
- * retrieved course material only, with no personal data in the prompt.
- */
+/** Personal learning context requires consent; explicit withdrawal always wins. */
+const mongoose = require('mongoose');
 const DEFAULT_REQUIRES_CONSENT = true;
 
 async function orgRequiresConsent(schoolId) {
   try {
-    const Organization = require('../models/Organization');
-    const org = await Organization.findOne({ $or: [{ _id: schoolId }, { schoolId }] })
-      .select('settings').lean();
-    const v = org?.settings?.ai?.personalisationRequiresConsent;
-    return v === undefined ? DEFAULT_REQUIRES_CONSENT : Boolean(v);
+    const school = await require('../models/School').findOne({ _id: schoolId }).select('organizationId').lean();
+    if (!school?.organizationId) return DEFAULT_REQUIRES_CONSENT;
+    const org = await require('../models/Organization').findOne({ _id: school.organizationId }).select('settings').lean();
+    return org?.settings?.ai?.personalisationRequiresConsent !== false;
   } catch (_) {
     return DEFAULT_REQUIRES_CONSENT;
   }
 }
 
-// { allowed: boolean, reason: string, requiresConsent: boolean, consentGivenAt }
 async function personalisationAllowed({ studentId, schoolId }) {
-  const StudentUser = require('../models/StudentUser');
   const [requiresConsent, student] = await Promise.all([
     orgRequiresConsent(schoolId),
-    StudentUser.findOne({ _id: studentId, schoolId }).select('parentConsentGivenAt parentConsentGivenBy').lean(),
+    require('../models/StudentUser').findOne({ _id: studentId, schoolId })
+      .select('parentConsentGivenAt parentConsentWithdrawnAt').lean(),
   ]);
-
-  if (!requiresConsent) {
-    return { allowed: true, requiresConsent: false, reason: 'org_policy_no_consent_required', consentGivenAt: student?.parentConsentGivenAt || null };
-  }
-  if (student?.parentConsentGivenAt) {
-    return { allowed: true, requiresConsent: true, reason: 'consent_on_file', consentGivenAt: student.parentConsentGivenAt };
-  }
-  return { allowed: false, requiresConsent: true, reason: 'consent_missing', consentGivenAt: null };
+  const status = { allowed: false, requiresConsent, consentGivenAt: student?.parentConsentGivenAt || null,
+    withdrawnAt: student?.parentConsentWithdrawnAt || null };
+  if (!student) return { ...status, reason: 'student_not_found' };
+  if (student.parentConsentWithdrawnAt) return { ...status, reason: 'consent_withdrawn' };
+  if (student.parentConsentGivenAt) return { ...status, allowed: true, reason: 'consent_on_file' };
+  if (!requiresConsent) return { ...status, allowed: true, reason: 'org_policy_no_consent_required' };
+  return { ...status, reason: 'consent_missing' };
 }
 
-async function recordConsent({ studentId, schoolId, givenBy, actor }) {
-  const StudentUser = require('../models/StudentUser');
-  const now = new Date();
-  const updated = await StudentUser.findOneAndUpdate(
-    { _id: studentId, schoolId },
-    { $set: { parentConsentGivenAt: now, parentConsentGivenBy: String(givenBy || '') } },
-    { new: true },
-  ).select('name parentConsentGivenAt parentConsentGivenBy').lean();
-  if (!updated) return { notFound: true };
-
+// The consent change and audit record commit together on the project's replica set.
+async function changeConsent({ studentId, schoolId, givenBy, actor, granted }) {
+  if (!studentId || !schoolId || !actor?.id) throw new Error('Consent scope and actor are required');
+  if (granted && !String(givenBy || '').trim()) throw new Error('Consenting guardian is required');
+  const session = await mongoose.startSession();
+  let result;
   try {
-    await require('../models/AuditLog').create({
-      schoolId, actorId: actor?.id || null, actorType: actor?.type || 'admin', actorName: actor?.name || '',
-      action: 'ai_personalisation.consent_recorded', entity: 'StudentUser', entityId: studentId,
-      meta: { givenBy: String(givenBy || '') },
+    await session.withTransaction(async () => {
+      const now = new Date();
+      const updated = await require('../models/StudentUser').findOneAndUpdate(
+        { _id: studentId, schoolId },
+        { $set: {
+          parentConsentGivenAt: granted ? now : null,
+          parentConsentGivenBy: granted ? String(givenBy).trim().slice(0, 200) : '',
+          parentConsentWithdrawnAt: granted ? null : now,
+        } },
+        { new: true, session, runValidators: true },
+      ).select('parentConsentGivenAt parentConsentWithdrawnAt').lean();
+      if (!updated) { result = { notFound: true }; return; }
+      await require('../models/AuditLog').create([{
+        schoolId, actorId: actor.id, actorType: actor.type, actorName: actor.name || '',
+        action: granted ? 'ai_personalisation.consent_recorded' : 'ai_personalisation.consent_withdrawn',
+        entity: 'StudentUser', entityId: studentId,
+        meta: { policyVersion: 'ai-personalisation-v1' },
+      }], { session });
+      result = { student: updated };
     });
-  } catch (_) { /* audit must not block */ }
-  return { student: updated };
+    return result;
+  } finally { await session.endSession(); }
 }
 
-module.exports = { personalisationAllowed, recordConsent, orgRequiresConsent };
+const recordConsent = (input) => changeConsent({ ...input, granted: true });
+const withdrawConsent = (input) => changeConsent({ ...input, granted: false });
+module.exports = { personalisationAllowed, recordConsent, withdrawConsent, orgRequiresConsent };

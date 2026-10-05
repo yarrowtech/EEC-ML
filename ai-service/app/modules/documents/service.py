@@ -116,33 +116,57 @@ def _assert_public_host(url: str) -> None:
     service runs on.
     """
     parsed = urlparse(url)
-    if parsed.scheme not in ("http", "https"):
-        raise HTTPException(status_code=400, detail="Material URL must be http(s)")
+    try:
+        port = parsed.port
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail="Invalid material URL port") from exc
+    if parsed.scheme != "https" or parsed.username or parsed.password or port not in (None, 443):
+        raise HTTPException(status_code=400, detail="Material URL must use HTTPS without credentials on port 443")
     host = parsed.hostname
     if not host:
         raise HTTPException(status_code=400, detail="Material URL is missing a host")
+    allowed = {h.strip().lower() for h in settings.download_allowed_hosts.split(",") if h.strip()}
+    if host.lower() not in allowed:
+        raise HTTPException(status_code=400, detail="Material URL host is not approved")
     try:
         addrs = {info[4][0] for info in socket.getaddrinfo(host, None)}
     except socket.gaierror as exc:
         raise HTTPException(status_code=400, detail=f"Could not resolve material URL host: {exc}") from exc
     for addr in addrs:
         ip = ipaddress.ip_address(addr)
-        if ip.is_private or ip.is_loopback or ip.is_link_local or ip.is_reserved or ip.is_multicast:
+        if not ip.is_global:
             raise HTTPException(status_code=400, detail="Material URL resolves to a disallowed address")
 
 
 def download_to_temp(url: str, extension: str) -> Path:
     _assert_public_host(url)
+    path = None
     try:
-        resp = requests.get(url, timeout=settings.download_timeout, stream=True)
-        resp.raise_for_status()
-    except requests.RequestException as exc:
-        raise HTTPException(status_code=400, detail=f"Could not download material: {exc}") from exc
-
-    with tempfile.NamedTemporaryFile(delete=False, suffix=extension) as tmp:
-        for chunk in resp.iter_content(chunk_size=256 * 1024):
-            tmp.write(chunk)
-        return Path(tmp.name)
+        with requests.get(url, timeout=settings.download_timeout, stream=True, allow_redirects=False) as resp:
+            if 300 <= resp.status_code < 400:
+                raise HTTPException(status_code=400, detail="Material redirects are not allowed")
+            resp.raise_for_status()
+            limit = settings.download_max_bytes
+            if limit <= 0:
+                raise HTTPException(status_code=503, detail="Invalid download limit")
+            length = resp.headers.get("Content-Length")
+            if length and (not length.isdigit() or int(length) > limit):
+                raise HTTPException(status_code=413, detail="Material exceeds download limit")
+            with tempfile.NamedTemporaryFile(delete=False, suffix=extension) as tmp:
+                path = Path(tmp.name)
+                size = 0
+                for chunk in resp.iter_content(chunk_size=256 * 1024):
+                    size += len(chunk)
+                    if size > limit:
+                        raise HTTPException(status_code=413, detail="Material exceeds download limit")
+                    tmp.write(chunk)
+            return path
+    except Exception as exc:
+        if path:
+            path.unlink(missing_ok=True)
+        if isinstance(exc, requests.RequestException):
+            raise HTTPException(status_code=400, detail="Could not download material") from exc
+        raise
 
 
 @lru_cache(maxsize=64)

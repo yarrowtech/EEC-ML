@@ -8,44 +8,9 @@
 const { MASTERY, ENGAGEMENT, BADGE } = require('../config/workflowThresholds');
 const NotificationService = require('../utils/notificationService');
 
-// ── Knowledge decay ───────────────────────────────────────────────────────────
-// Daily decay rate: mastery decays toward a floor of 30% if not practised.
-// Applied when the student's SpacedRepetitionSchedule.nextReviewDate is past due.
-const DECAY_RATE_PER_DAY = 0.5;  // percentage points per day past due
-const DECAY_FLOOR = 30;           // mastery never drops below this
-
-async function applyKnowledgeDecay(studentId, schoolId) {
-  try {
-    const MasteryScore             = require('../models/MasteryScore');
-    const SpacedRepetitionSchedule = require('../models/SpacedRepetitionSchedule');
-    const now = new Date();
-    const overdue = await SpacedRepetitionSchedule.find({
-      studentId, schoolId,
-      nextReviewDate: { $lt: now },
-    }).lean();
-    if (!overdue.length) return;
-
-    for (const item of overdue) {
-      const daysLate = Math.max(0, (now - new Date(item.nextReviewDate)) / 86400000);
-      if (daysLate < 1) continue;
-      const decay = Math.round(daysLate * DECAY_RATE_PER_DAY);
-      if (decay <= 0) continue;
-      const doc = await MasteryScore.findOne({
-        studentId, schoolId, subject: item.subject,
-        topicTitle: { $regex: new RegExp(`^${item.topicTitle.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}$`, 'i') },
-      });
-      if (!doc) continue;
-      const newScore = Math.max(DECAY_FLOOR, doc.score - decay);
-      if (newScore < doc.score) {
-        await require('./masteryEventService').applyAssessment({
-          studentId, schoolId, subject: doc.subject, topicId: doc.topicId, topicTitle: doc.topicTitle,
-          chapterTitle: doc.chapterTitle, source: 'decay', assessmentScore: newScore,
-          eventId: now.toISOString().slice(0, 10),
-        });
-      }
-    }
-  } catch (_) { /* non-critical */ }
-}
+// Inactivity schedules review; it is not evidence of lost knowledge.
+// Keep the scheduler API compatible without mutating assessment-derived scores.
+async function applyKnowledgeDecay() {}
 
 // ── Badge award ───────────────────────────────────────────────────────────────
 async function awardBadgeIfEarned(studentId, schoolId, subject, topicTitle, score) {

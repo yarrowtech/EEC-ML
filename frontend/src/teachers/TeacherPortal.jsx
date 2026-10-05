@@ -67,6 +67,7 @@ import LanguagePracticeManager from './LanguagePracticeManager';
 import TeacherFeedbackPortal from './TeacherFeedbackPortal';
 import ExcuseLetters from './ExcuseLetters';
 import ExamResultPortal from './ExamResultPortal';
+import LongAnswerAssessment from './LongAnswerAssessment';
 import LiveExamMonitor from './LiveExamMonitor';
 import HolidayList from './HolidayList';
 import TeacherAchievements from './TeacherAchievements';
@@ -135,6 +136,7 @@ const teachingSectionLinks = [
 
 const assessmentSectionLinks = [
   { label: 'Exam', to: 'exam' },
+  { label: 'Long Answer', to: 'long-answer' },
 ];
 
 const communicationSectionLinks = [
@@ -2351,6 +2353,7 @@ const TeacherPortalShell = () => {
                     }
                   />
                   <Route path="assessments/exam" element={<ExamResultPortal />} />
+                  <Route path="assessments/long-answer" element={<LongAnswerAssessment />} />
                   <Route
                     path="communication"
                     element={
@@ -2417,6 +2420,7 @@ const TeacherPortalShell = () => {
                 <Route path="exams" element={<Navigate to={buildClassPath('current', 'assessments/exam')} replace />} />
                 <Route path="result-management" element={<Navigate to={buildClassPath('current', 'assessments/exam')} replace />} />
                 <Route path="results" element={<Navigate to={buildClassPath('current', 'assessments/exam')} replace />} />
+                <Route path="long-answer" element={<Navigate to={buildClassPath('current', 'assessments/long-answer')} replace />} />
                 <Route path="excuse-letters" element={<Navigate to={buildClassPath('current', 'communication/excuse-letters')} replace />} />
                 <Route path="feedback" element={<Navigate to={buildClassPath('current', 'communication/feedback')} replace />} />
               </Routes>

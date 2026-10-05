@@ -539,7 +539,7 @@ router.post('/evaluate-answer', authStudent, async (req, res) => {
     const {
       questionText, correctAnswer, studentAnswer,
       subject, topicTitle, chapterTitle, gradeLevel,
-      questionType = 'mcq', context = '', topicId,
+      questionType = 'mcq', context = '',
       examAttemptId, answerIndex, assignmentSubmissionId,
     } = req.body || {};
 
@@ -601,17 +601,6 @@ router.post('/evaluate-answer', authStudent, async (req, res) => {
           chapterTitle:  normalizeString(chapterTitle),
         }],
       }).catch(() => {});
-    }
-
-    if (studentId && schoolId && subject && topicTitle) {
-      await require('../services/masteryEventService').applyAssessment({
-        studentId, schoolId, subject: normalizeString(subject),
-        topicId: topicId || `${normalizeString(subject)}::${normalizeString(topicTitle)}`,
-        topicTitle: normalizeString(topicTitle), chapterTitle: normalizeString(chapterTitle),
-        source: 'tutor', assessmentScore: result.score * 100,
-        metadata: { errorType: result.errorType, missingConcepts: result.missingConcepts,
-          confidenceScore: result.confidenceScore, bloomLevel: result.bloomLevel, provenance: 'student_reported' },
-      });
     }
 
     return res.json({ success: true, data: result });
@@ -696,13 +685,16 @@ router.get('/teacher/student-sessions/:studentId', authTeacher, async (req, res)
   try {
     const TutorConversation = require('../models/TutorConversation');
     const { studentId } = req.params;
-    const { limit = 10 } = req.query;
+    const limit = Number(req.query.limit ?? 10);
+    if (!mongoose.Types.ObjectId.isValid(studentId) || !Number.isInteger(limit) || limit < 1 || limit > 50) {
+      return res.status(400).json({ error: 'Valid studentId and limit between 1 and 50 are required' });
+    }
 
     // Verify student belongs to this school
     const student = await StudentUser.findOne({
       _id: studentId,
       schoolId: req.schoolId,
-    }).select('name roll className sectionName').lean();
+    }).select('name roll grade section className sectionName campusId').lean();
     if (!student) return res.status(404).json({ error: 'Student not found in this school' });
 
     const scope = await buildTeacherAllocationScope({
@@ -724,6 +716,12 @@ router.get('/teacher/student-sessions/:studentId', authTeacher, async (req, res)
 
     await require('../services/tutorCorrectionService').attachCorrections(conversations, req.schoolId);
 
+    // Do not release confidential conversations if the access audit cannot persist.
+    await require('../models/AuditLog').create({
+      schoolId: req.schoolId, actorId: req.user?.id || req.teacher?.id, actorType: 'teacher',
+      action: 'ai_conversation.read', entity: 'StudentUser', entityId: studentId,
+      meta: { conversationCount: conversations.length },
+    });
     return res.json({ success: true, data: { student, conversations } });
   } catch (err) {
     return res.status(500).json({ error: err.message });
@@ -731,33 +729,16 @@ router.get('/teacher/student-sessions/:studentId', authTeacher, async (req, res)
 });
 
 // ── POST /api/ai-tutor/flashcard-rating ──────────────────────────────────────
-// Student rates a flashcard as "got_it" or "still_learning" — feeds mastery engine
-// and updates spaced-repetition schedule for the card's topic.
+// Student rates a flashcard as "got_it" or "still_learning" for practice feedback.
+// Self-ratings do not update mastery or assessment-driven schedules.
 router.post('/flashcard-rating', authStudent, async (req, res) => {
   try {
-    const { topicTitle, chapterTitle, subject, rating } = req.body;
+    const { topicTitle, subject, rating } = req.body;
     if (!topicTitle || !subject || !['got_it', 'still_learning'].includes(rating)) {
       return res.status(400).json({ error: 'topicTitle, subject, and rating ("got_it"|"still_learning") are required' });
     }
-    const MasteryScore = require('../models/MasteryScore');
-    const { runWorkflowTriggers } = require('../services/masteryEngine');
-    const studentId = String(req.userId);
-    const schoolId = String(req.schoolId);
-
-    // Convert rating to a mastery delta: "got_it" nudges score up, "still_learning" nudges down
-    const delta = rating === 'got_it' ? 5 : -5;
-    const existing = await MasteryScore.findOne({ studentId, schoolId, subject, topicTitle });
-    const currentScore = existing?.score ?? 50;
-    const newScore = Math.min(100, Math.max(0, currentScore + delta));
-    const attemptCount = (existing?.attemptCount ?? 0) + 1;
-
-    await require('../services/masteryEventService').applyAssessment({
-      studentId, schoolId, subject, topicId: existing?.topicId || `${subject}::${topicTitle}`,
-      topicTitle, chapterTitle: chapterTitle || '', source: 'self-report',
-      assessmentScore: rating === 'got_it' ? 100 : 0, metadata: { rating },
-    });
-
-    return res.json({ success: true, data: { newScore, rating, topicTitle } });
+    // A flashcard self-rating is practice feedback, not assessment evidence.
+    return res.json({ success: true, data: { rating, topicTitle, masteryUpdated: false } });
   } catch (err) {
     return res.status(500).json({ error: err.message });
   }

@@ -5,6 +5,30 @@
 **Method:** Static code trace from UI action → API → authorization → structured record/vector payload → decision logic → LLM → persisted outcome. Filenames and comments did not receive credit without executable behavior. No application code or production configuration was changed.  
 **Status legend:** `[x] ✅ PRESENT` · `[~] ⚠️ PARTIAL` · `[ ] ❌ MISSING` · `[!] 🔴 CRITICAL`
 
+## Remediation update — 5 October 2026
+
+The original audit below is a historical snapshot, not a current release certification. Current code already contains mastery event history, assessment adapters, citation handling, teacher allocation helpers, and restrictive CORS absent from the August snapshot. This pass fixed these verified residual defects:
+
+| Finding | Implemented change |
+|---|---|
+| AI authentication failed open with no configured key | All endpoints except minimal health require a service key; missing configuration returns 503, invalid credentials return 401; constant-time comparison |
+| Backend credential destination used a URL prefix | Match the exact parsed origin, handle absolute URLs with baseURL correctly, and disable redirects on credential-bearing requests |
+| Downloads followed redirects and had no byte limit | Exact configured storage-host allowlist, HTTPS/443 without embedded credentials, public DNS addresses, no redirects, streamed byte cap, response closure and partial-file cleanup |
+| Browser quizzes and self-ratings mutated mastery | Reject browser score writes; lesson completion reads existing mastery; tutor evaluator and flashcard ratings no longer write scores; browser quiz no longer posts scores |
+| Inactivity was treated as lost-knowledge evidence | Preserve scheduler API without modifying scores; reject tutor, self-report and decay sources at the shared mastery mutation service |
+
+**Deployment configuration:** Set the same nonempty random `AI_SERVICE_INTERNAL_KEY` in backend and AI service environments before restart. `DOWNLOAD_ALLOWED_HOSTS` is a comma-separated list of exact trusted storage hostnames, defaulting to `res.cloudinary.com`. Add the actual S3/CDN host if used. `DOWNLOAD_MAX_BYTES` defaults to 26,214,400 bytes (25 MiB). Redirecting storage URLs must be replaced with direct approved HTTPS URLs. Environment secret values were not read or changed.
+
+**Validation:** Backend focused Jest suites: 4 tests passed. Python security, chat-router and document-ingestion suites: 20 tests passed (outside the sandbox after stream restrictions stalled TestClient). Frontend production build passed with large-chunk warnings. Production services, migrations, full test suites and the production attack suite were not run.
+
+**Still open:** This does not complete Phase 0 or the full roadmap. Shared-key authentication is not signed per-capability authorization. Network egress restrictions/DNS pinning remain necessary defense in depth against download DNS rebinding. Historical mastery scores/events and derived badges/path state have not been rebuilt, invalidated or calibrated; remaining assessment adapters require a full provenance/idempotency review. Full tenant/year vector isolation, erasure coverage, safeguarding ownership/workflows, validated curriculum/concept models, recommendation governance, and research validity remain unverified or unfinished. Self-ratings are feedback only; this pass does not introduce a persistent reflection model. The original numerical score has not been recalculated.
+
+Manual checks after deployment:
+1. Verify health is minimal and available, unauthenticated generation/docs fail, and an authenticated backend tutor request succeeds.
+2. Ingest a direct document from each approved storage host; confirm oversized files, redirects, private addresses and unapproved hosts fail.
+3. Complete a generated quiz, flashcard and self-rating; verify mastery, badges and path progress do not change.
+4. Submit a legitimate server-graded assessment and verify its existing evidence path still records the outcome.
+
 ## 1. Executive Summary
 
 - EEC is **not currently an evidence-based adaptive learning system**. It is a broad LMS with useful AI/RAG, assessment, analytics, and intervention fragments, but it lacks a trustworthy evidence → diagnosis → strategy → activity → reassessment → model-update loop.

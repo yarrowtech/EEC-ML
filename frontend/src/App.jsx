@@ -56,6 +56,7 @@ const studentSections = [
   "smart-learning-tutor",
   "academics",
   "assignments",
+  "long-answer",
   "assignments-journal",
   "assignments-academic-alcove",
   "results",
