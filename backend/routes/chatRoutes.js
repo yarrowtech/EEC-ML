@@ -13,6 +13,7 @@ const Section = require('../models/Section');
 const AcademicYear = require('../models/AcademicYear');
 const TeacherAllocation = require('../models/TeacherAllocation');
 const ChatKey = require('../models/ChatKey');
+const { sendChatMessagePush } = require('../utils/webPushService');
 const {
   getPresenceSnapshot,
   markUserOffline,
@@ -641,6 +642,8 @@ const emitChatMessageEvents = (io, { threadId, thread, message, senderId }) => {
       message: payload,
     });
   }
+
+  sendChatMessagePush({ io, thread, message: payload, senderId }).catch(() => {});
 };
 
 const markThreadMessagesSeen = async ({ threadId, schoolId, campusId, userId }) => {
@@ -1277,9 +1280,9 @@ router.get('/threads', async (req, res) => {
       const latestMessages = await ChatMessage.aggregate([
         {
           $match: {
-            threadId: { $in: threadIds },
-            schoolId,
-            ...(campusId !== null ? { campusId } : {}),
+            // aggregate() skips schema casting, so a string schoolId/campusId
+            // from the JWT never matched. Threads are already user-scoped.
+            threadId: { $in: threadIds.map((id) => new mongoose.Types.ObjectId(String(id))) },
           },
         },
         { $sort: { threadId: 1, createdAt: -1 } },

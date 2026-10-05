@@ -8,6 +8,7 @@ const { createAdapter } = require('@socket.io/redis-adapter');
 const jwt = require('jsonwebtoken');
 const { runWithTenant } = require('../utils/tenantContext');
 const { logger } = require('../utils/logger');
+const { sendChatMessagePush } = require('../utils/webPushService');
 const {
   getPresenceSnapshot,
   markUserOnline,
@@ -147,7 +148,9 @@ const registerSocketEvents = (io, socket, ensureChatAccess) => {
     socket.leave(`thread:${threadId}`);
   });
 
-  socket.on('send-message', async ({ threadId, text, encrypted }) => {
+  socket.on('send-message', async ({ threadId, text, encrypted } = {}, ack) => {
+    // Optional ack lets the sender mark the message failed instead of hanging.
+    const reply = typeof ack === 'function' ? ack : () => {};
     try {
       const plainText = String(text || '').trim();
       const hasEncrypted =
@@ -155,7 +158,7 @@ const registerSocketEvents = (io, socket, ensureChatAccess) => {
         String(encrypted.ciphertext || '').trim() &&
         String(encrypted.iv || '').trim() &&
         Array.isArray(encrypted.keys) && encrypted.keys.length > 0;
-      if (!plainText && !hasEncrypted) return;
+      if (!plainText && !hasEncrypted) return reply({ ok: false, error: 'Empty message' });
 
       const thread = await ChatThread.findOne({
         _id: threadId,
@@ -163,9 +166,10 @@ const registerSocketEvents = (io, socket, ensureChatAccess) => {
         ...(user.campusId ? { campusId: user.campusId } : {}),
         'participants.userId': userId,
       }).lean();
-      if (!thread) return;
+      if (!thread) return reply({ ok: false, error: 'Conversation not found' });
       if (!(await ensureChatAccess({ user, schoolId: user.schoolId, campusId: user.campusId }, thread))) {
         socket.emit('error', { message: 'Access denied' });
+        reply({ ok: false, error: 'Access denied' });
         return;
       }
 
@@ -210,6 +214,7 @@ const registerSocketEvents = (io, socket, ensureChatAccess) => {
 
       const payload = msg.toObject();
       socket.emit('message-sent', payload);
+      reply({ ok: true, message: payload });
       io.to(`thread:${threadId}`).emit('new-message', payload);
       for (const p of thread.participants) {
         if (p.userId?.toString() === userId) continue;
@@ -218,8 +223,11 @@ const registerSocketEvents = (io, socket, ensureChatAccess) => {
           lastMessageAt: msg.createdAt, message: payload,
         });
       }
+      sendChatMessagePush({ io, thread, message: payload, senderId: userId })
+        .catch((pushErr) => logger.warn({ err: pushErr }, 'chat push failed'));
     } catch (err) {
       socket.emit('error', { message: err.message });
+      reply({ ok: false, error: 'Message could not be sent' });
     }
   });
 

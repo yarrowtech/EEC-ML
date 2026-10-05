@@ -1,6 +1,8 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { motion } from 'framer-motion';
-import { useNavigate } from 'react-router-dom';
+import { useLocation, useNavigate } from 'react-router-dom';
+import toast from 'react-hot-toast';
+import { createPortal } from 'react-dom';
 import { io } from 'socket.io-client';
 import {
   MessageSquare, Send, Search, ChevronLeft,
@@ -27,6 +29,7 @@ const THREADS_CACHE_TTL_MS = 15 * 60 * 1000;
 const MESSAGES_CACHE_TTL_MS = 15 * 60 * 1000;
 const CONTACTS_CACHE_TTL_MS = 5 * 60 * 1000;
 const LAST_PARENT_CHAT_ME_KEY = 'parent_chat_me_id_v1';
+const SEND_ACK_TIMEOUT_MS = 15000;
 
 const formatTime = (ts) => {
   if (!ts) return '';
@@ -44,6 +47,30 @@ const formatMessageTime = (ts) => {
   if (!ts) return '';
   const d = new Date(ts);
   return d.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+};
+
+// Decrypted threads/messages live only in memory (survives in-app navigation,
+// gone on reload/logout) so E2EE plaintext never lands in localStorage.
+const memoryCache = new Map();
+const readMemoryCache = (key, maxAgeMs) => {
+  const entry = memoryCache.get(key);
+  if (!entry || Date.now() - entry.ts > maxAgeMs) return null;
+  return entry.data;
+};
+const writeMemoryCache = (key, data) => { memoryCache.set(key, { ts: Date.now(), data }); };
+const clearMemoryCache = () => memoryCache.clear();
+
+// Remove plaintext thread/message caches written by older builds.
+const purgePersistedPlaintext = (userId) => {
+  if (!userId) return;
+  try {
+    const threadsKey = chatCacheKeys.threads(userId);
+    const messagesPrefix = `${chatCacheKeys.messages(userId, 'x').slice(0, -1)}`;
+    for (let i = localStorage.length - 1; i >= 0; i -= 1) {
+      const key = localStorage.key(i);
+      if (key === threadsKey || key?.startsWith(messagesPrefix)) localStorage.removeItem(key);
+    }
+  } catch { /* storage unavailable */ }
 };
 
 const isThreadCacheUsable = (items) =>
@@ -329,8 +356,8 @@ const TeacherModal = ({ teacher, onClose, theme }) => {
   const grade = teacher.grade || teacher.class || null;
   const bio = teacher.bio || teacher.about || null;
 
-  return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/50 backdrop-blur-sm" onClick={onClose}>
+  return createPortal(
+    <div className="fixed inset-0 z-[9999] flex items-center justify-center p-4 bg-black/80 backdrop-blur-sm" onClick={onClose}>
       <div
         ref={dialogRef}
         tabIndex={-1}
@@ -391,7 +418,7 @@ const TeacherModal = ({ teacher, onClose, theme }) => {
         )}
       </div>
     </div>
-  );
+  , document.body);
 };
 
 // ── ChatMessage ────────────────────────────────────────────────────────────────
@@ -399,7 +426,7 @@ const isSeenByOther = (msg, myId) =>
   Array.isArray(msg?.seenBy) &&
   msg.seenBy.some((entry) => String(entry?.userId) !== String(myId));
 
-const ChatMessage = ({ msg, isMine, myId, theme }) => {
+const ChatMessage = ({ msg, isMine, myId, theme, onRetry }) => {
   const t = theme || THEMES.green;
   const isSystem = String(msg?.senderType || '').toLowerCase() === 'system';
   if (isSystem) {
@@ -412,7 +439,8 @@ const ChatMessage = ({ msg, isMine, myId, theme }) => {
     );
   }
   const optimistic = Boolean(msg?._optimistic);
-  const delivered = isMine && !optimistic;
+  const failed = Boolean(msg?._failed);
+  const delivered = isMine && !optimistic && !failed;
   const seen = isMine && isSeenByOther(msg, myId);
   const LONG_MESSAGE_LIMIT = 260;
   const fullText = String(msg?.text || '');
@@ -450,7 +478,16 @@ const ChatMessage = ({ msg, isMine, myId, theme }) => {
         )}
         <div className="mt-1.5 flex items-center justify-end gap-1 text-[11px] leading-none text-slate-400">
           <span>{formatMessageTime(msg.createdAt || msg.ts)}</span>
-          {isMine && (
+          {isMine && failed && (
+            <button
+              type="button"
+              onClick={() => onRetry?.(msg)}
+              className="inline-flex items-center gap-1 font-semibold text-red-500 hover:underline"
+            >
+              Not sent · Retry
+            </button>
+          )}
+          {isMine && !failed && (
             <span style={{ color: seen ? t.color : '#94a3b8' }} className="inline-flex items-center">
               {seen || delivered ? <CheckCheck className="h-3.5 w-3.5" /> : <Check className="h-3.5 w-3.5" />}
             </span>
@@ -529,9 +566,22 @@ const ContactItem = ({ contact, onClick, theme }) => {
 // ── Main ParentChat ────────────────────────────────────────────────────────────
 const ParentChat = () => {
   const navigate = useNavigate();
+  const location = useLocation();
   const [me, setMe]                             = useState(null);
   const [threads, setThreads]                   = useState([]);
   const [activeThreadId, setActiveThreadId]     = useState(null);
+
+  // Keep the sidebar "Messages" badge in sync with this screen's unread counts.
+  useEffect(() => {
+    const total = threads.reduce((sum, t) => sum + (Number(t?.unreadCount) || 0), 0);
+    window.dispatchEvent(new CustomEvent('parent-chat-unread', { detail: { total } }));
+  }, [threads]);
+
+  // Lets the portal-wide message notifier skip the conversation already open.
+  useEffect(() => {
+    window.__parentActiveChatThreadId = activeThreadId ? String(activeThreadId) : null;
+    return () => { window.__parentActiveChatThreadId = null; };
+  }, [activeThreadId]);
   const [messages, setMessages]                 = useState([]);
   const [draft, setDraft]                       = useState('');
   const [query, setQuery]                       = useState('');
@@ -557,6 +607,7 @@ const ParentChat = () => {
   const isTyping          = useRef(false);
   const meRef             = useRef(null);
   const privateKeyRef     = useRef('');
+  const plaintextWarnedRef = useRef(new Set());
   const apiFetch = useCallback((path, options = {}) => parentApiJson(path, options, navigate), [navigate]);
 
   const activeThread = useMemo(
@@ -567,6 +618,7 @@ const ParentChat = () => {
   useEffect(() => {
     const disconnectSocket = () => {
       socketRef.current?.disconnect();
+      clearMemoryCache();
     };
     const handleStorage = (event) => {
       if (event.key === 'token' || event.key === null) {
@@ -615,14 +667,8 @@ const ParentChat = () => {
     }
     let mounted = true;
 
-    const hintedMeId = localStorage.getItem(LAST_PARENT_CHAT_ME_KEY);
-    if (hintedMeId) {
-      const hintedCachedThreads = readChatCache(chatCacheKeys.threads(hintedMeId), THREADS_CACHE_TTL_MS);
-      if (isThreadCacheUsable(hintedCachedThreads)) {
-        setThreads(hintedCachedThreads);
-        setLoadingThreads(false);
-      }
-    }
+    // No pre-auth cache here: on a shared browser it would flash the previous
+    // parent's conversations before /api/chat/me confirms who is signed in.
 
     const init = async () => {
       try {
@@ -633,11 +679,12 @@ const ParentChat = () => {
         meRef.current = meData;
         if (meData?.id) {
           localStorage.setItem(LAST_PARENT_CHAT_ME_KEY, String(meData.id));
+          purgePersistedPlaintext(meData.id);
         }
         const identity = await ensureE2EEIdentity({ userId: meData?.id, apiFetch });
         privateKeyRef.current = identity?.privateKey || '';
         const threadsCacheKey = chatCacheKeys.threads(meData?.id);
-        const cachedThreads = readChatCache(threadsCacheKey, THREADS_CACHE_TTL_MS);
+        const cachedThreads = readMemoryCache(threadsCacheKey, THREADS_CACHE_TTL_MS);
         if (isThreadCacheUsable(cachedThreads)) {
           setThreads(cachedThreads);
           if (mounted) setLoadingThreads(false);
@@ -648,7 +695,7 @@ const ParentChat = () => {
           (Array.isArray(threadsData) ? threadsData : []).map(t => decryptThreadPreview(t))
         );
         setThreads(hydratedThreads);
-        writeChatCache(threadsCacheKey, hydratedThreads);
+        writeMemoryCache(threadsCacheKey, hydratedThreads);
       } catch { /* ignore */ } finally {
         if (mounted) {
           setLoadingThreads(false);
@@ -701,7 +748,9 @@ const ParentChat = () => {
       });
       setThreads(prev => prev.map(t =>
         String(t._id) === threadId
-          ? { ...t, lastMessage: msg.text, lastMessageAt: msg.createdAt, unreadCount: activeThreadIdRef.current === threadId ? 0 : (t.unreadCount || 0) + 1 }
+          // Unread counting is owned by `thread-updated` (sent once per
+          // recipient); counting here too doubled it while still in the room.
+          ? { ...t, lastMessage: msg.text, lastMessageAt: msg.createdAt, ...(isActiveThread ? { unreadCount: 0 } : {}) }
           : t
       ));
       if (isActiveThread && isIncomingForMe) {
@@ -796,7 +845,7 @@ const ParentChat = () => {
         const freshMessages = await Promise.all((Array.isArray(rawMessages) ? rawMessages : []).map((msg) => decryptForUI(msg)));
         if (cancelled) return;
         setMessages((previous) => {
-          const optimistic = previous.filter((msg) => msg?._optimistic);
+          const optimistic = previous.filter((msg) => msg?._optimistic || msg?._failed);
           const merged = new Map(freshMessages.map((msg) => [String(msg?._id), msg]));
           optimistic.forEach((msg) => {
             if (!merged.has(String(msg?._id))) merged.set(String(msg?._id), msg);
@@ -831,16 +880,16 @@ const ParentChat = () => {
   useEffect(() => {
     const userId = me?.id;
     if (!userId) return;
-    writeChatCache(chatCacheKeys.threads(userId), threads);
+    writeMemoryCache(chatCacheKeys.threads(userId), threads);
   }, [threads, me?.id]);
 
   useEffect(() => {
     const userId = me?.id;
     if (!userId || !activeThreadId) return;
     const stableMessages = (Array.isArray(messages) ? messages : [])
-      .filter(m => !m?._optimistic)
+      .filter(m => !m?._optimistic && !m?._failed)
       .slice(-120);
-    writeChatCache(chatCacheKeys.messages(userId, activeThreadId), stableMessages);
+    writeMemoryCache(chatCacheKeys.messages(userId, activeThreadId), stableMessages);
   }, [messages, activeThreadId, me?.id]);
 
   useEffect(() => {
@@ -859,7 +908,7 @@ const ParentChat = () => {
     setActiveThreadId(threadId);
     const userId = meRef.current?.id || me?.id;
     const cachedMessages = userId
-      ? readChatCache(chatCacheKeys.messages(userId, threadId), MESSAGES_CACHE_TTL_MS)
+      ? readMemoryCache(chatCacheKeys.messages(userId, threadId), MESSAGES_CACHE_TTL_MS)
       : null;
     if (Array.isArray(cachedMessages)) {
       setMessages(cachedMessages);
@@ -871,6 +920,8 @@ const ParentChat = () => {
     setThreads(prev => prev.map(t => String(t._id) === threadId ? { ...t, unreadCount: 0 } : t));
     socket?.emit('join-thread', { threadId });
     socket?.emit('mark-seen', { threadId });
+    // Responses for a thread the user has already switched away from are dropped.
+    const isStale = () => activeThreadIdRef.current !== threadId;
     try {
       const presenceRes = await apiFetch(`/api/chat/threads/${threadId}/presence`);
       if (presenceRes?.presence && typeof presenceRes.presence === 'object') {
@@ -884,8 +935,10 @@ const ParentChat = () => {
       }
       const msgs = await apiFetch(`/api/chat/threads/${threadId}/messages`);
       const decrypted = await Promise.all((Array.isArray(msgs) ? msgs : []).map(m => decryptForUI(m)));
-      setMessages(decrypted);
-      if (userId) writeChatCache(chatCacheKeys.messages(userId, threadId), decrypted.slice(-120));
+      if (userId) writeMemoryCache(chatCacheKeys.messages(userId, threadId), decrypted.slice(-120));
+      if (isStale()) return;
+      // Keep any message the user sent while this request was in flight.
+      setMessages(prev => [...decrypted, ...prev.filter(m => m?._optimistic || m?._failed)]);
       const latest = decrypted[decrypted.length - 1];
       if (latest?.text) {
         setThreads(prev =>
@@ -897,11 +950,19 @@ const ParentChat = () => {
         );
       }
     } catch {
-      if (!Array.isArray(cachedMessages)) setMessages([]);
+      if (!isStale() && !Array.isArray(cachedMessages)) setMessages([]);
     } finally {
-      setLoadingMessages(false);
+      if (!isStale()) setLoadingMessages(false);
     }
   }, [apiFetch, decryptForUI, me?.id]);
+
+  // Open the conversation a message notification pointed at.
+  const requestedThreadId = location.state?.threadId ? String(location.state.threadId) : null;
+  useEffect(() => {
+    if (!requestedThreadId || !threads.some((t) => String(t._id) === requestedThreadId)) return;
+    if (activeThreadIdRef.current !== requestedThreadId) selectThread(requestedThreadId);
+    navigate(location.pathname, { replace: true, state: null });
+  }, [requestedThreadId, threads, selectThread, navigate, location.pathname]);
 
   const startConversation = useCallback(async (contact) => {
     setShowContacts(false);
@@ -938,12 +999,64 @@ const ParentChat = () => {
     setShowContacts(true);
   }, [apiFetch, contacts, me?.id]);
 
+  // Swap a pending bubble for the server copy (or drop it if the socket
+  // already delivered that copy), or mark it failed so it can be retried.
+  const settleOptimistic = useCallback((optimisticId, serverMsg) => {
+    setMessages(prev => {
+      if (!prev.some(m => m._id === optimisticId)) return prev;
+      if (!serverMsg) {
+        return prev.map(m => (m._id === optimisticId ? { ...m, _optimistic: false, _failed: true } : m));
+      }
+      if (prev.some(m => String(m._id) === String(serverMsg._id))) return prev.filter(m => m._id !== optimisticId);
+      return prev.map(m => (m._id === optimisticId ? serverMsg : m));
+    });
+  }, []);
+
+  const deliverMessage = useCallback(async ({ threadId, text, optimisticId }) => {
+    let encrypted = null;
+    try {
+      encrypted = await encryptChatMessage({ threadId, text, myId: meRef.current?.id, apiFetch });
+    } catch {
+      // Never fall back to plaintext because encryption broke.
+      settleOptimistic(optimisticId, null);
+      toast.error('Could not encrypt the message. Please try again.');
+      return;
+    }
+    if (!encrypted && !plaintextWarnedRef.current.has(threadId)) {
+      // null = the recipient has no E2EE key yet; plaintext is the only way through.
+      plaintextWarnedRef.current.add(threadId);
+      toast('This teacher has not set up secure chat yet, so messages are sent without end-to-end encryption.', { icon: '🔓', duration: 6000 });
+    }
+    const body = { threadId, text: encrypted ? '' : text, encrypted: encrypted || undefined };
+
+    const socket = socketRef.current;
+    if (socket?.connected) {
+      socket.timeout(SEND_ACK_TIMEOUT_MS).emit('send-message', body, async (err, res) => {
+        if (err || !res?.ok || !res.message) {
+          settleOptimistic(optimisticId, null);
+          return;
+        }
+        settleOptimistic(optimisticId, await decryptForUI(res.message));
+      });
+      return;
+    }
+    try {
+      const msg = await apiFetch(`/api/chat/threads/${threadId}/messages`, {
+        method: 'POST',
+        body: JSON.stringify({ text: body.text, encrypted: body.encrypted }),
+      });
+      settleOptimistic(optimisticId, await decryptForUI(msg));
+    } catch {
+      settleOptimistic(optimisticId, null);
+    }
+  }, [apiFetch, decryptForUI, settleOptimistic]);
+
   const sendMessage = useCallback(() => {
     const text = draft.trim();
     if (!text || !activeThreadId) return;
     setDraft('');
 
-    const optimisticId = `opt-${Date.now()}`;
+    const optimisticId = `opt-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`;
     const optimistic = {
       _id: optimisticId, threadId: activeThreadId,
       senderId: me?.id, senderType: 'parent',
@@ -953,35 +1066,7 @@ const ParentChat = () => {
       _optimistic: true,
     };
     setMessages(prev => [...prev, optimistic]);
-
-    const sendPayload = async () => {
-      const encrypted = await encryptChatMessage({ threadId: activeThreadId, text, myId: me?.id, apiFetch });
-      return encrypted;
-    };
-
-    if (socketRef.current?.connected) {
-      sendPayload().then(encrypted => {
-        socketRef.current.emit('send-message', {
-          threadId: activeThreadId,
-          text: encrypted ? '' : text,
-          encrypted: encrypted || undefined,
-        });
-      }).catch(() => {
-        socketRef.current.emit('send-message', { threadId: activeThreadId, text });
-      });
-    } else {
-      sendPayload().then(encrypted =>
-        apiFetch(`/api/chat/threads/${activeThreadId}/messages`, {
-          method: 'POST',
-          body: JSON.stringify({ text: encrypted ? '' : text, encrypted: encrypted || undefined }),
-        })
-      ).then(async msg => {
-        const decrypted = await decryptForUI(msg);
-        setMessages(prev => prev.map(m => m._id === optimisticId ? decrypted : m));
-      }).catch(() => {
-        setMessages(prev => prev.filter(m => m._id !== optimisticId));
-      });
-    }
+    deliverMessage({ threadId: activeThreadId, text, optimisticId });
 
     setThreads(prev => prev.map(t =>
       String(t._id) === activeThreadId
@@ -993,7 +1078,13 @@ const ParentChat = () => {
       isTyping.current = false;
       socketRef.current?.emit('typing-stop', { threadId: activeThreadId });
     }
-  }, [apiFetch, draft, activeThreadId, me, decryptForUI]);
+  }, [draft, activeThreadId, me, deliverMessage]);
+
+  const retryMessage = useCallback((failedMsg) => {
+    if (!failedMsg?._failed) return;
+    setMessages(prev => prev.map(m => (m._id === failedMsg._id ? { ...m, _failed: false, _optimistic: true } : m)));
+    deliverMessage({ threadId: String(failedMsg.threadId), text: failedMsg.text, optimisticId: failedMsg._id });
+  }, [deliverMessage]);
 
   const handleDraftChange = useCallback((val) => {
     setDraft(val);
@@ -1322,7 +1413,13 @@ const ParentChat = () => {
                 <div className="flex items-center gap-3">
                   {isMobileView && (
                     <button
-                      onClick={() => { setActiveThreadId(null); activeThreadIdRef.current = null; }}
+                      onClick={() => {
+                        if (activeThreadIdRef.current) {
+                          socketRef.current?.emit('leave-thread', { threadId: activeThreadIdRef.current });
+                        }
+                        setActiveThreadId(null);
+                        activeThreadIdRef.current = null;
+                      }}
                       className="h-8 w-8 rounded-lg hover:bg-gray-100 flex items-center justify-center"
                     >
                       <ChevronLeft className="h-5 w-5 text-gray-500" />
@@ -1393,6 +1490,7 @@ const ParentChat = () => {
                             isMine={String(msg.senderId) === String(me?.id)}
                             myId={me?.id}
                             theme={theme}
+                            onRetry={retryMessage}
                           />
                         </React.Fragment>
                       );

@@ -312,7 +312,93 @@ const sendPushForNotification = async (notificationInput) => {
   return { ok: true, sent };
 };
 
+const CHAT_PATH_BY_TYPE = {
+  Parent: '/parents/chat',
+  Student: '/student/chat',
+  Teacher: '/teacher/chat',
+};
+const CAPITALIZED_TYPES = { parent: 'Parent', student: 'Student', teacher: 'Teacher', principal: 'Principal', admin: 'Admin' };
+
+// Push for a new chat message to recipients with no live socket (portal tab
+// closed) — open tabs already get the in-app alert over Socket.IO. E2EE text
+// is never readable server-side, so encrypted messages get a generic body.
+const sendChatMessagePush = async ({ io, thread, message, senderId }) => {
+  if (!initializeWebPush() || !thread || !message) return { ok: false };
+  const msg = message?.toObject ? message.toObject() : message;
+  const recipients = (thread.participants || [])
+    .filter((p) => p?.userId && String(p.userId) !== String(senderId || ''))
+    .map((p) => ({ userId: String(p.userId), userType: CAPITALIZED_TYPES[String(p.userType || '').toLowerCase()] }))
+    .filter((r) => r.userType);
+  if (!recipients.length) return { ok: true, sent: 0 };
+
+  const offline = [];
+  for (const r of recipients) {
+    let online = false;
+    try {
+      online = io ? (await io.in(`user:${r.userId}`).fetchSockets()).length > 0 : false;
+    } catch (_err) {
+      online = false;
+    }
+    if (!online) offline.push(r);
+  }
+  if (!offline.length) return { ok: true, sent: 0 };
+
+  const subscriptions = await PushSubscription.find({
+    ...(thread.schoolId ? { schoolId: thread.schoolId } : {}),
+    userId: { $in: offline.map((r) => r.userId) },
+    disabled: false,
+  }).lean();
+  if (!subscriptions.length) return { ok: true, sent: 0 };
+
+  const typeById = new Map(offline.map((r) => [r.userId, r.userType]));
+  const isGroup = String(thread.threadType || '') === 'group';
+  const senderName = msg.senderName || 'New message';
+  const plain = String(msg.text || '').trim();
+  const preview = plain ? (plain.length > 140 ? `${plain.slice(0, 137)}...` : plain) : 'Sent you a message';
+  const schoolIcon = thread.schoolId ? await resolveSchoolIcon(thread.schoolId).catch(() => '') : '';
+
+  let sent = 0;
+  for (const sub of subscriptions) {
+    const userType = typeById.get(String(sub.userId));
+    if (!userType || sub.userType !== userType) continue;
+    const payload = JSON.stringify({
+      title: isGroup ? `${senderName} @ ${thread.groupName || 'Group'}` : senderName,
+      body: preview,
+      icon: schoolIcon || '',
+      badge: schoolIcon || '',
+      tag: `chat-${thread._id}`,
+      data: {
+        kind: 'chat',
+        threadId: String(thread._id),
+        path: CHAT_PATH_BY_TYPE[userType] || '/',
+        userType,
+      },
+    });
+    try {
+      await webpush.sendNotification(
+        {
+          endpoint: sub.endpoint,
+          expirationTime: sub.expirationTime || null,
+          keys: { p256dh: sub.keys?.p256dh, auth: sub.keys?.auth },
+        },
+        payload
+      );
+      sent += 1;
+      await markSuccessfulDelivery(sub);
+    } catch (err) {
+      const statusCode = Number(err?.statusCode || err?.status || 0);
+      if (statusCode === 404 || statusCode === 410 || statusCode === 403) {
+        await disableSubscription(sub);
+      } else {
+        await pruneFailedSubscription(sub);
+      }
+    }
+  }
+  return { ok: true, sent };
+};
+
 module.exports = {
   initializeWebPush,
   sendPushForNotification,
+  sendChatMessagePush,
 };

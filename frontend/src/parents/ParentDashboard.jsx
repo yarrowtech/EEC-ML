@@ -4,6 +4,14 @@ import { motion, useReducedMotion } from 'framer-motion';
 import {
   ArrowUp,
   ArrowDown,
+  ArrowRight,
+  Bell,
+  CalendarCheck,
+  Clock,
+  IndianRupee,
+  LayoutGrid,
+  ReceiptText,
+  Trophy,
   BarChart3,
   BookOpen,
   CalendarDays,
@@ -241,18 +249,20 @@ const SUBJECT_TONES = [
    Compact Card
 ────────────────────────────────────────────────────────────────────────── */
 
+const NAVY = 'text-[#0b1446]';
+
 const Card = ({
   className = '',
   children,
 }) => (
   <section
     className={`
-      rounded-xl
-      border border-slate-100
+      rounded-2xl
+      border border-white
       bg-white
-      p-3.5
-      shadow-[0_2px_10px_rgba(15,23,42,0.035)]
-      sm:p-4
+      p-3
+      shadow-[0_4px_18px_rgba(30,64,175,0.06)]
+      sm:p-3.5
       ${className}
     `}
   >
@@ -262,29 +272,25 @@ const Card = ({
 
 const CardHead = ({
   title,
+  icon: HeadIcon,
   to,
   linkLabel = 'View All',
   right,
 }) => (
   <div className="mb-2.5 flex items-center justify-between gap-3">
-    <h2 className="min-w-0 text-sm font-bold leading-tight text-slate-900 sm:text-[15px]">
-      {title}
+    <h2 className={`flex min-w-0 items-center gap-1.5 text-sm font-bold leading-tight ${NAVY}`}>
+      {HeadIcon ? <HeadIcon size={16} className="shrink-0 text-blue-600" /> : null}
+      <span className="truncate">{title}</span>
     </h2>
 
     {right ||
       (to ? (
         <Link
           to={to}
-          className="
-            shrink-0
-            whitespace-nowrap
-            text-xs
-            font-semibold
-            text-blue-600
-            hover:text-blue-700
-          "
+          className="inline-flex shrink-0 items-center gap-1 whitespace-nowrap text-xs font-semibold text-blue-600 hover:text-blue-700"
         >
           {linkLabel}
+          <ArrowRight size={13} />
         </Link>
       ) : null)}
   </div>
@@ -295,54 +301,31 @@ const CardHead = ({
 ────────────────────────────────────────────────────────────────────────── */
 
 const Delta = ({ value }) => {
-  if (
-    value === null ||
-    value === undefined ||
-    Number.isNaN(value) ||
-    value === 0
-  ) {
+  if (value === null || value === undefined || Number.isNaN(value) || value === 0) {
     return null;
   }
-
   const up = value > 0;
-
   return (
     <span
-      className={`
-        inline-flex
-        items-center
-        gap-0.5
-        rounded-full
-        px-1.5
-        py-0.5
-        text-[10px]
-        font-bold
-        ${
-          up
-            ? 'bg-green-50 text-green-600'
-            : 'bg-red-50 text-red-600'
-        }
-      `}
+      className={`inline-flex items-center gap-0.5 rounded-full px-1.5 py-0.5 text-[10px] font-bold ${
+        up ? 'bg-green-50 text-green-600' : 'bg-red-50 text-red-600'
+      }`}
     >
-      {up ? (
-        <ArrowUp size={10} strokeWidth={3} />
-      ) : (
-        <ArrowDown size={10} strokeWidth={3} />
-      )}
-
+      {up ? <ArrowUp size={10} strokeWidth={3} /> : <ArrowDown size={10} strokeWidth={3} />}
       {Math.abs(value)}%
     </span>
   );
 };
 
 /* ──────────────────────────────────────────────────────────────────────────
-   Compact Stat Card
+   Compact Stat Card — tinted card + soft icon tile (matches design mock)
 ────────────────────────────────────────────────────────────────────────── */
 
 const StatCard = ({
   to,
   Icon,
   tone,
+  bg,
   fillIcon = false,
   label,
   value,
@@ -355,8 +338,7 @@ const StatCard = ({
   const count = useCountUp(animatedValue ?? 0);
 
   const displayValue =
-    animatedValue === null ||
-    animatedValue === undefined
+    animatedValue === null || animatedValue === undefined
       ? value
       : formatter
         ? formatter(count)
@@ -365,79 +347,45 @@ const StatCard = ({
   return (
     <Link
       to={to}
-      className="
+      className={`
         group
         relative
         flex
-        min-h-[104px]
+        min-h-[92px]
         items-center
         gap-3
-        rounded-xl
-        border border-slate-100
-        bg-white
+        rounded-2xl
+        border border-white
         p-3
         pr-7
-        shadow-[0_2px_10px_rgba(15,23,42,0.035)]
+        shadow-[0_4px_18px_rgba(30,64,175,0.06)]
         transition
         hover:-translate-y-0.5
         hover:shadow-md
-      "
+        ${bg || 'bg-white'}
+      `}
     >
-      <span
-        className={`
-          flex
-          h-10
-          w-10
-          shrink-0
-          items-center
-          justify-center
-          rounded-xl
-          ${tone}
-        `}
-      >
-        <Icon
-          size={19}
-          fill={fillIcon ? 'currentColor' : 'none'}
-        />
+      <span className={`flex h-12 w-12 shrink-0 items-center justify-center rounded-2xl ${tone}`}>
+        <Icon size={22} fill={fillIcon ? 'currentColor' : 'none'} />
       </span>
 
       <div className="min-w-0 flex-1">
-        <p className="text-[11px] font-medium text-slate-600">
-          {label}
-        </p>
+        <p className="text-[11px] font-medium text-slate-600">{label}</p>
 
         <div className="mt-0.5 flex items-center gap-1.5">
-          <p className="truncate text-lg font-bold leading-tight text-slate-900 tabular-nums sm:text-xl">
+          <p className={`truncate text-lg font-extrabold leading-tight tabular-nums sm:text-xl ${NAVY}`}>
             {displayValue}
           </p>
-
           <Delta value={delta} />
         </div>
 
-        {sub ? (
-          <p className="mt-0.5 truncate text-[10px] text-slate-500">
-            {sub}
-          </p>
-        ) : null}
-
-        {sub2 ? (
-          <p className="mt-0.5 truncate text-[10px] font-semibold text-red-500">
-            {sub2}
-          </p>
-        ) : null}
+        {sub ? <p className="mt-0.5 truncate text-[11px] text-slate-500">{sub}</p> : null}
+        {sub2 ? <p className="mt-0.5 truncate text-[11px] font-semibold text-red-500">{sub2}</p> : null}
       </div>
 
       <ChevronRight
         size={15}
-        className="
-          absolute
-          right-2.5
-          top-3
-          text-slate-300
-          transition
-          group-hover:translate-x-0.5
-          group-hover:text-slate-500
-        "
+        className="absolute right-2.5 top-3 text-slate-400 transition group-hover:translate-x-0.5 group-hover:text-slate-600"
       />
     </Link>
   );
@@ -1295,6 +1243,8 @@ const ParentDashboard = ({
     )
   }${firstName ? `, ${firstName}` : ''}`;
 
+  const childFirstName = String(child?.name || '').trim().split(/s+/)[0] || '';
+
   const nextExam =
     upcomingExams[0];
 
@@ -1366,9 +1316,10 @@ const ParentDashboard = ({
         max-w-6xl
         flex-col
         gap-3
-        bg-slate-50
+        bg-gradient-to-b
+        from-[#eef3fc]
+        to-[#f5f8fe]
         p-3
-        sm:gap-3.5
         sm:p-4
         lg:p-5
       "
@@ -1378,206 +1329,100 @@ const ParentDashboard = ({
         hidden: {},
         show: {
           transition: {
-            staggerChildren:
-              reduceMotion ? 0 : 0.06,
+            staggerChildren: reduceMotion ? 0 : 0.06,
             delayChildren: 0.03,
           },
         },
       }}
     >
-      {/* ─────────────────────────────────────
-          Greeting
-      ───────────────────────────────────── */}
-
-      <motion.div
-        variants={RISE}
-        className="
-          flex
-          flex-col
-          gap-2
-          sm:flex-row
-          sm:items-center
-          sm:justify-between
-        "
-      >
-        <div>
-          <h1 className="text-lg font-bold text-slate-900 sm:text-xl">
-            {greeting}
-          </h1>
-
-          <p className="mt-0.5 text-xs text-slate-500 sm:text-sm">
-            Here&apos;s an overview of your
-            child&apos;s academic journey.
-          </p>
-        </div>
-
+      {/* Greeting */}
+      <motion.div variants={RISE}>
+        <h1 className={`text-xl font-extrabold sm:text-2xl ${NAVY}`}>
+          {greeting} 
+          {/* <span aria-hidden="true">👋</span> */}
+        </h1>
+        <p className="mt-0.5 text-xs text-slate-600 sm:text-sm">
+          Here&apos;s an overview of {childFirstName ? `${childFirstName}’s` : 'your child’s'} academic journey.
+        </p>
       </motion.div>
 
-      {/* ─────────────────────────────────────
-          Child Banner
-      ───────────────────────────────────── */}
-
+      {/* Child Banner */}
       <motion.section
         variants={RISE}
-        className="
-          relative
-          overflow-hidden
-          rounded-xl
-          border border-blue-100
-          bg-gradient-to-r
-          from-sky-50
-          via-blue-50
-          to-sky-100/70
-        "
+        className="relative overflow-hidden rounded-2xl border border-white bg-gradient-to-r from-[#eaf1fd] via-[#eef4fd] to-[#dfeafb] shadow-[0_4px_18px_rgba(30,64,175,0.06)]"
       >
         {coverImage ? (
-          <div
-            aria-hidden="true"
-            className="
-              pointer-events-none
-              absolute
-              inset-0
-              overflow-hidden
-            "
-          >
-            <div
-              className="
-                absolute
-                -inset-4
-                scale-105
-                bg-cover
-                bg-center
-                opacity-50
-                blur-[3px]
-              "
-              style={{
-                backgroundImage: `url(${coverImage})`,
-              }}
-            />
-
-            <div className="absolute inset-0 bg-gradient-to-r from-sky-50/95 via-sky-50/75 to-white/30" />
+          <div aria-hidden="true" className="pointer-events-none absolute inset-y-0 right-0 hidden w-3/5 overflow-hidden md:block">
+            <div className="absolute inset-0 bg-cover bg-center" style={{ backgroundImage: `url(${coverImage})` }} />
+            <div className="absolute inset-0 bg-gradient-to-r from-[#eef4fd] via-[#eef4fd]/40 to-transparent" />
           </div>
         ) : (
-          <div className="pointer-events-none absolute inset-y-0 right-16 hidden opacity-60 md:block lg:right-40">
+          <div className="pointer-events-none absolute inset-y-0 right-16 hidden opacity-70 md:block lg:right-40">
             <BannerBuilding />
           </div>
         )}
 
-        <div
-          className="
-            relative
-            flex
-            items-center
-            gap-3
-            px-3
-            py-3
-            sm:px-4
-            sm:py-3.5
-          "
-        >
+        <div className="relative flex items-center gap-3 px-3 py-3 sm:gap-4 sm:px-5 sm:py-3.5">
           {child ? (
-            <Avatar
-              size="h-14 w-14 sm:h-16 sm:w-16"
-              text="text-lg"
-            />
+            <span className="rounded-full bg-gradient-to-br from-violet-200 to-blue-200 p-1">
+              <Avatar size="h-14 w-14 sm:h-[72px] sm:w-[72px]" text="text-lg" />
+            </span>
           ) : (
             <span className="h-14 w-14 animate-pulse rounded-full bg-white/70" />
           )}
 
           <div className="min-w-0 flex-1">
-            <h2 className="truncate text-sm font-bold text-slate-900 sm:text-base">
-              {child?.name ||
-                (childLoading
-                  ? 'Loading…'
-                  : 'No child linked')}
+            <h2 className={`truncate text-base font-extrabold sm:text-xl ${NAVY}`}>
+              {child?.name || (childLoading ? 'Loading…' : 'No child linked')}
             </h2>
 
             {child && (
-              <p className="mt-0.5 text-xs font-semibold text-slate-700">
-                {classLine}
+              <p className="mt-1 flex flex-wrap items-center gap-x-3 gap-y-0.5 text-xs font-medium text-slate-700">
+                <span className="inline-flex items-center gap-1">
+                  <span className="h-2 w-2 rounded-full border-2 border-slate-400" />
+                  Class {child.grade || '—'}
+                </span>
+                {child.section ? (
+                  <span className="inline-flex items-center gap-1">
+                    <span className="h-2 w-2 rounded-full border-2 border-blue-400" />
+                    Section {child.section}
+                  </span>
+                ) : null}
+                <span className="inline-flex items-center gap-1">
+                  <span className="h-2 w-2 rounded-full border-2 border-blue-400" />
+                  Roll {child.roll !== '' && child.roll !== null && child.roll !== undefined ? child.roll : '—'}
+                </span>
               </p>
             )}
 
             {child && (
-              <div className="mt-1 flex flex-wrap items-center gap-2 text-[10px] text-slate-500">
-                <span>
-                  ID:{' '}
-                  <strong>
-                    {child.admissionNumber ||
-                      child.studentCode ||
-                      '—'}
-                  </strong>
-                </span>
-
-                <span className="text-slate-300">
-                  |
-                </span>
-
-                <span>
-                  Roll:{' '}
-                  <strong>
-                    {child.roll !== '' &&
-                    child.roll !== null &&
-                    child.roll !==
-                      undefined
-                      ? child.roll
-                      : '—'}
-                  </strong>
-                </span>
-
+              <p className="mt-1 flex flex-wrap items-center gap-x-2 text-[11px] text-slate-700">
+                <span>ID: {child.admissionNumber || child.studentCode || '—'}</span>
                 {attendance.sessionName ? (
                   <>
                     <span className="text-slate-300">|</span>
-                    <span>
-                      Session: <strong>{attendance.sessionName}</strong>
-                    </span>
+                    <span>Session: {attendance.sessionName}</span>
                   </>
                 ) : null}
-              </div>
+              </p>
             )}
           </div>
 
-          <p
-            className="
-              hidden
-              shrink-0
-              rotate-[-4deg]
-              text-right
-              font-[cursive]
-              text-sm
-              leading-snug
-              text-slate-600
-              lg:block
-          "
-          >
+          <p className="hidden shrink-0 rotate-[-4deg] rounded-xl bg-white/70 px-3 py-2 text-right font-[cursive] text-sm leading-snug text-slate-700 backdrop-blur-sm lg:block">
             “Keep learning,
             <br />
-            keep growing!”{' '}
-            <span className="text-amber-400">
-              ☀
-            </span>
+            keep growing!” <span className="text-amber-400">☀</span>
           </p>
         </div>
       </motion.section>
 
-      {/* ─────────────────────────────────────
-          Stat Cards
-      ───────────────────────────────────── */}
-
-      <motion.div
-        variants={RISE}
-        className="
-          grid
-          grid-cols-2
-          gap-2.5
-          xl:grid-cols-4
-        "
-      >
+      {/* Stat Cards */}
+      <motion.div variants={RISE} className="grid grid-cols-2 gap-2.5 xl:grid-cols-4">
         <StatCard
           to="/parents/attendance"
           Icon={UsersRound}
-          tone="bg-green-50 text-green-600"
-          fillIcon
+          tone="bg-gradient-to-br from-green-100 to-green-200/70 text-green-600"
+          bg="bg-gradient-to-br from-white to-green-50"
           label="Attendance"
           value={`${attendance.percent}%`}
           animatedValue={attendance.percent}
@@ -1589,28 +1434,16 @@ const ParentDashboard = ({
         <StatCard
           to="/parents/fees"
           Icon={Wallet}
-          tone="bg-red-50 text-red-500"
+          tone="bg-gradient-to-br from-rose-100 to-rose-200/70 text-rose-500"
+          bg="bg-gradient-to-br from-white to-rose-50"
           label="Fee Due"
-          value={
-            fees.fullyPaid
-              ? 'Fully Paid'
-              : inr(fees.due)
-          }
-          animatedValue={
-            fees.fullyPaid
-              ? undefined
-              : fees.due
-          }
+          value={fees.fullyPaid ? 'Fully Paid' : inr(fees.due)}
+          animatedValue={fees.fullyPaid ? undefined : fees.due}
           formatter={inr}
+          sub={fees.fullyPaid ? 'No pending fees' : ''}
           sub2={
-            !fees.fullyPaid &&
-            fees.focus &&
-            validDate(
-              fees.focus.dueDate
-            )
-              ? `Due: ${fmtDate(
-                  fees.focus.dueDate
-                )}`
+            !fees.fullyPaid && fees.focus && validDate(fees.focus.dueDate)
+              ? `Due: ${fmtDate(fees.focus.dueDate)}`
               : ''
           }
         />
@@ -1618,25 +1451,16 @@ const ParentDashboard = ({
         <StatCard
           to="/parents/academic"
           Icon={BarChart3}
-          tone="bg-violet-50 text-violet-600"
+          tone="bg-gradient-to-br from-violet-100 to-violet-200/70 text-violet-600"
+          bg="bg-gradient-to-br from-white to-violet-50"
           label="Average Marks"
-          value={
-            results.average === null
-              ? '—'
-              : `${results.average}%`
-          }
-          animatedValue={
-            results.average ?? null
-          }
+          value={results.average === null ? '—' : `${results.average}%`}
+          animatedValue={results.average ?? null}
           formatter={(n) => `${n}%`}
           delta={results.delta}
           sub={
             results.count
-              ? `Last ${results.count} Exam${
-                  results.count > 1
-                    ? 's'
-                    : ''
-                }`
+              ? `Last ${results.count} Exam${results.count > 1 ? 's' : ''}`
               : 'No results yet'
           }
         />
@@ -1644,771 +1468,316 @@ const ParentDashboard = ({
         <StatCard
           to="/parents/exam-routine"
           Icon={CalendarDays}
-          tone="bg-amber-50 text-amber-500"
+          tone="bg-gradient-to-br from-amber-100 to-orange-200/70 text-orange-500"
+          bg="bg-gradient-to-br from-white to-orange-50"
           label="Upcoming Exam"
-          value={
-            nextExam
-              ? nextExam.subject
-              : 'No Upcoming Exam'
-          }
+          value={nextExam ? nextExam.subject : 'No Upcoming Exam'}
           animatedValue={null}
           sub={
             nextExam
-              ? `${fmtDate(
-                  nextExam.date
-                )}${
-                  nextExam.time
-                    ? ` | ${nextExam.time}`
-                    : ''
-                }`
+              ? `${fmtDate(nextExam.date)}${nextExam.time ? ` | ${nextExam.time}` : ''}`
               : 'Check back later'
           }
         />
       </motion.div>
 
-      {/* ─────────────────────────────────────
-          Attendance / Fee / Events
-      ───────────────────────────────────── */}
-
-      <motion.div
-        variants={RISE}
-        className="
-          grid
-          grid-cols-1
-          gap-3
-          lg:grid-cols-3
-        "
-      >
+      {/* Attendance / Fee / Events */}
+      <motion.div variants={RISE} className="grid grid-cols-1 gap-3 lg:grid-cols-3">
         {/* Attendance */}
-
         <Card>
           <CardHead
             title="Today's Attendance"
-            right={
-              <span className="text-[10px] text-slate-400">
-                {todayLabel}
-              </span>
-            }
+            icon={CalendarCheck}
+            right={<span className="text-[11px] text-slate-500">{todayLabel}</span>}
           />
 
           <Link
             to="/parents/attendance"
-            className={`
-              flex
-              items-center
-              gap-2.5
-              rounded-lg
-              border
-              px-3
-              py-2.5
-              transition
-              hover:shadow-sm
-              ${
-                todayStatus ===
-                'present'
-                  ? 'border-green-200 bg-green-50'
-                  : todayStatus ===
-                      'absent'
-                    ? 'border-red-100 bg-red-50'
-                    : 'border-slate-100 bg-slate-50'
-              }
-            `}
+            className={`flex items-center gap-3 rounded-xl px-3 py-3 transition hover:shadow-sm ${
+              todayStatus === 'present'
+                ? 'bg-green-50'
+                : todayStatus === 'absent'
+                  ? 'bg-red-50'
+                  : 'bg-[#eef3fc]'
+            }`}
           >
             <span
-              className={`
-                flex
-                h-8
-                w-8
-                shrink-0
-                items-center
-                justify-center
-                rounded-full
-                text-white
-                ${
-                  todayStatus ===
-                  'present'
-                    ? 'bg-green-600'
-                    : todayStatus ===
-                        'absent'
-                      ? 'bg-red-500'
-                      : 'bg-slate-400'
-                }
-              `}
+              className={`flex h-10 w-10 shrink-0 items-center justify-center rounded-full text-white ${
+                todayStatus === 'present'
+                  ? 'bg-green-600'
+                  : todayStatus === 'absent'
+                    ? 'bg-red-500'
+                    : 'bg-[#34509a]'
+              }`}
             >
-              {todayStatus ===
-              'absent' ? (
-                <X
-                  size={17}
-                  strokeWidth={3}
-                />
-              ) : (
-                <Check
-                  size={17}
-                  strokeWidth={3}
-                />
-              )}
+              {todayStatus === 'absent' ? <X size={18} strokeWidth={3} /> : <Check size={18} strokeWidth={3} />}
             </span>
 
             <span className="min-w-0 flex-1">
               <span
-                className={`
-                  block
-                  text-sm
-                  font-bold
-                  leading-tight
-                  ${
-                    todayStatus ===
-                    'present'
-                      ? 'text-green-700'
-                      : todayStatus ===
-                          'absent'
-                        ? 'text-red-600'
-                        : 'text-slate-600'
-                  }
-                `}
+                className={`block text-sm font-bold leading-tight ${
+                  todayStatus === 'present'
+                    ? 'text-green-700'
+                    : todayStatus === 'absent'
+                      ? 'text-red-600'
+                      : NAVY
+                }`}
               >
-                {todayStatus ===
-                'present'
-                  ? 'Present'
-                  : todayStatus ===
-                      'absent'
-                    ? 'Absent'
-                    : 'Not marked yet'}
+                {todayStatus === 'present' ? 'Present' : todayStatus === 'absent' ? 'Absent' : 'Not marked yet'}
               </span>
-
-              <span className="mt-0.5 block truncate text-[10px] text-slate-500">
+              <span className="mt-0.5 block text-[11px] text-slate-600">
                 {todayStatus
-                  ? attendance
-                      .today
-                      ?.markedAt
-                    ? `Marked at ${new Date(
-                        attendance.today.markedAt
-                      ).toLocaleTimeString(
-                        'en-US',
-                        {
-                          hour: 'numeric',
-                          minute: '2-digit',
-                        }
-                      )}`
+                  ? attendance.today?.markedAt
+                    ? `Marked at ${new Date(attendance.today.markedAt).toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' })}`
                     : 'Marked for today'
-                  : 'Attendance will appear once marked'}
+                  : 'Attendance will appear once marked by the school.'}
               </span>
             </span>
 
-            <ChevronRight
-              size={15}
-              className="text-slate-400"
-            />
+            <ChevronRight size={15} className="text-slate-400" />
           </Link>
         </Card>
 
         {/* Fee */}
-
         <Card>
-          <CardHead
-            title="Fee Summary"
-            to="/parents/fees"
-            linkLabel="View Details"
-          />
+          <CardHead title="Fee Summary" to="/parents/fees" linkLabel="View Details" />
 
           {fees.focus ? (
             <>
-              <div className="mt-2 h-1.5 w-full overflow-hidden rounded-full bg-slate-200">
+              <div className="h-2 w-full overflow-hidden rounded-full bg-slate-100">
                 <div
                   className="h-full rounded-full bg-green-600"
                   style={{
-                    width: `${
-                      fees.total > 0
-                        ? Math.min(
-                            100,
-                            (fees.paid /
-                              fees.total) *
-                              100
-                          )
-                        : 0
-                    }%`,
+                    width: `${fees.total > 0 ? Math.min(100, (fees.paid / fees.total) * 100) : 0}%`,
                   }}
                 />
               </div>
 
-              <div className="mt-3 grid grid-cols-3 gap-2">
-                <div className="min-w-0 bg-green-100 px-2.5 py-1.5 text-center rounded-lg">
-                  <p className="text-[10px] text-slate-800 font-bold">
-                    Paid
-                  </p>
-
-                  <p
-                    className="truncate text-sm font-bold text-green-600"
-                    title={inr(
-                      fees.paid
-                    )}
-                  >
-                    {inr(fees.paid)}
-                  </p>
-                </div>
-
-                <div className="min-w-0 bg-red-100 px-2.5 py-1.5 text-center rounded-lg">
-                  <p className="text-[10px] text-slate-800 font-bold">
-                    Due
-                  </p>
-
-                  <p
-                    className="truncate text-sm font-bold text-red-600"
-                    title={inr(
-                      fees.balance
-                    )}
-                  >
-                    {inr(
-                      fees.balance
-                    )}
-                  </p>
-                </div>
-
-                <div className="min-w-0 bg-slate-100 px-2.5 py-1.5 text-center rounded-lg">
-                  <p className="text-[10px] text-slate-800 font-bold">
-                    Total
-                  </p>
-
-                  <p
-                    className="truncate text-sm font-bold text-slate-900"
-                    title={inr(
-                      fees.total
-                    )}
-                  >
-                    {inr(fees.total)}
-                  </p>
-                </div>
+              <div className="mt-2.5 grid grid-cols-3 gap-2">
+                {[
+                  { label: 'Paid', value: fees.paid, Icon: IndianRupee, box: 'bg-green-50', icon: 'text-green-600', val: 'text-slate-900' },
+                  { label: 'Due', value: fees.balance, Icon: Clock, box: 'bg-rose-50', icon: 'text-rose-500', val: 'text-rose-600' },
+                  { label: 'Total', value: fees.total, Icon: ReceiptText, box: 'bg-slate-50', icon: 'text-slate-600', val: 'text-slate-900' },
+                ].map(({ label, value, Icon: TileIcon, box, icon, val }) => (
+                  <div key={label} className={`flex min-w-0 flex-col items-center rounded-xl px-1.5 py-2 text-center ${box}`}>
+                    <TileIcon size={18} className={icon} />
+                    <p className="mt-1 text-[10px] text-slate-600">{label}</p>
+                    <p className={`max-w-full truncate text-sm font-bold ${val}`} title={inr(value)}>
+                      {inr(value)}
+                    </p>
+                  </div>
+                ))}
               </div>
 
               {fees.balance > 0 && (
                 <Link
                   to="/parents/fees"
-                  className="
-                    mt-3
-                    flex
-                    w-full
-                    items-center
-                    justify-center
-                    gap-1.5
-                    rounded-lg
-                    bg-violet-500
-                    px-3
-                    py-2
-                    text-xs
-                    font-semibold
-                    text-white
-                    shadow-sm
-                    hover:bg-violet-600
-                  "
+                  className="mt-2.5 flex w-full items-center justify-center gap-1.5 rounded-lg bg-blue-600 px-3 py-1.5 text-xs font-semibold text-white shadow-sm hover:bg-blue-700"
                 >
-                  <CreditCard
-                    size={15}
-                  />
+                  <CreditCard size={14} />
                   Pay Now
                 </Link>
               )}
             </>
           ) : (
-            <p className="rounded-lg bg-slate-50 py-5 text-center text-xs text-slate-500">
-              No fee invoices yet
-            </p>
+            <p className="rounded-lg bg-slate-50 py-5 text-center text-xs text-slate-500">No fee invoices yet</p>
           )}
         </Card>
 
         {/* Events */}
-
         <Card>
-          <CardHead
-            title="Upcoming Events"
-            to="/parents/calendar"
-          />
+          <CardHead title="Upcoming Events" icon={Bell} to="/parents/calendar" />
 
           {events.length === 0 ? (
-            <p className="rounded-lg bg-slate-50 py-5 text-center text-xs text-slate-500">
-              Nothing coming up
-            </p>
+            <p className="rounded-lg bg-slate-50 py-5 text-center text-xs text-slate-500">Nothing coming up</p>
           ) : (
-            <ul className="space-y-0.5">
-              {events.map(
-                (ev, i) => {
-                  const cfg =
-                    ev.kind === 'exam'
-                      ? {
-                          Icon: CalendarDays,
-                          cls: 'bg-blue-50 text-blue-600',
-                        }
-                      : ev.kind ===
-                          'ptm'
-                        ? {
-                            Icon: Users,
-                            cls: 'bg-red-50 text-red-500',
-                          }
-                        : {
-                            Icon: Leaf,
-                            cls: 'bg-green-50 text-green-600',
-                          };
+            <ul className="space-y-1.5">
+              {events.map((ev, i) => {
+                const cfg =
+                  ev.kind === 'exam'
+                    ? { Icon: CalendarDays, cls: 'bg-violet-100 text-violet-600' }
+                    : ev.kind === 'ptm'
+                      ? { Icon: Users, cls: 'bg-rose-100 text-rose-500' }
+                      : { Icon: Leaf, cls: 'bg-green-100 text-green-600' };
 
-                  return (
-                    <li
-                      key={i}
-                      className="flex items-center gap-2.5 py-1.5 px-1.5 bg-gray-200/65 rounded-lg"
+                return (
+                  <li key={i}>
+                    <Link
+                      to="/parents/calendar"
+                      className="flex items-center gap-2.5 rounded-xl bg-[#f3f6fc] px-2 py-1.5 transition hover:bg-[#e9effa]"
                     >
-                      <span
-                        className={`
-                          flex
-                          h-8
-                          w-8
-                          shrink-0
-                          items-center
-                          justify-center
-                          rounded-lg
-                          ${cfg.cls}
-                        `}
-                      >
-                        <cfg.Icon
-                          size={15}
-                        />
+                      <span className={`flex h-8 w-8 shrink-0 items-center justify-center rounded-lg ${cfg.cls}`}>
+                        <cfg.Icon size={15} />
                       </span>
-
-                      <span className="min-w-0">
-                        <span className="block truncate text-xs font-semibold text-slate-900">
-                          {ev.title}
-                        </span>
-
-                        <span className="block truncate text-[10px] text-slate-500">
-                          {ev.sub}
-                        </span>
+                      <span className="min-w-0 flex-1">
+                        <span className={`block truncate text-xs font-bold ${NAVY}`}>{ev.title}</span>
+                        <span className="block truncate text-[10px] text-slate-500">{ev.sub}</span>
                       </span>
-                    </li>
-                  );
-                }
-              )}
+                      <ChevronRight size={14} className="shrink-0 text-slate-400" />
+                    </Link>
+                  </li>
+                );
+              })}
             </ul>
           )}
         </Card>
       </motion.div>
 
-      {/* ─────────────────────────────────────
-          Homework / Notices
-      ───────────────────────────────────── */}
-
-      <motion.div
-        variants={RISE}
-        className="
-          grid
-          grid-cols-1
-          gap-3
-          lg:grid-cols-2
-        "
-      >
+      {/* Homework / Notices */}
+      <motion.div variants={RISE} className="grid grid-cols-1 gap-3 lg:grid-cols-2">
         {/* Homework */}
-
         <Card>
-          <CardHead
-            title="Recent Homework"
-            to="/parents/homework"
-          />
+          <CardHead title="Recent Homework" icon={CalendarDays} to="/parents/homework" />
 
-          {recentHomework.length ===
-          0 ? (
-            <p className="rounded-lg bg-slate-50 py-5 text-center text-xs text-slate-500">
-              No homework yet
-            </p>
+          {recentHomework.length === 0 ? (
+            <p className="rounded-lg bg-slate-50 py-5 text-center text-xs text-slate-500">No homework yet</p>
           ) : (
             <ul className="divide-y divide-slate-100">
-              {recentHomework.map(
-                (a, i) => {
-                  const pending =
-                    !a.submissionStatus ||
-                    a.submissionStatus ===
-                      'not_submitted';
+              {recentHomework.map((a, i) => {
+                const pending = !a.submissionStatus || a.submissionStatus === 'not_submitted';
+                const tone = SUBJECT_TONES[i % SUBJECT_TONES.length].icon;
 
-                  const tone =
-                    SUBJECT_TONES[
-                      i %
-                        SUBJECT_TONES.length
-                    ].icon;
-
-                  return (
-                    <li
-                      key={a._id}
-                      className="
-                        flex
-                        items-center
-                        gap-2.5
-                        py-2
-                        first:pt-0
-                        last:pb-0
-                      "
-                    >
-                      <span
-                        className={`
-                          flex
-                          h-9
-                          w-9
-                          shrink-0
-                          items-center
-                          justify-center
-                          rounded-lg
-                          ${tone}
-                        `}
-                      >
-                        <BookOpen
-                          size={17}
-                        />
+                return (
+                  <li key={a._id}>
+                    <Link to="/parents/homework" className="flex items-center gap-2.5 py-2 transition hover:bg-slate-50/60">
+                      <span className={`flex h-9 w-9 shrink-0 items-center justify-center rounded-lg ${tone}`}>
+                        <BookOpen size={17} />
                       </span>
 
                       <span className="min-w-0 flex-1">
-                        <span className="block truncate text-xs font-semibold text-slate-900">
-                          {subjectName(
-                            a
-                          ) ||
-                            'General'}
-                        </span>
-
-                        <span
-                          className="block truncate text-xs text-slate-600"
-                          title={a.title}
-                        >
-                          {a.title}
-                        </span>
-
-                        {validDate(
-                          a.dueDate
-                        ) && (
-                          <span className="mt-0.5 block text-[10px] text-slate-400">
-                            Due:{' '}
-                            {fmtDate(
-                              a.dueDate
-                            )}
-                          </span>
+                        <span className={`block truncate text-xs font-bold ${NAVY}`}>{subjectName(a) || 'General'}</span>
+                        <span className="block truncate text-[11px] text-slate-600" title={a.title}>{a.title}</span>
+                        {validDate(a.dueDate) && (
+                          <span className="block text-[10px] text-slate-500">Due: {fmtDate(a.dueDate)}</span>
                         )}
                       </span>
 
                       <span
-                        className={`
-                          shrink-0
-                          rounded-full
-                          px-2
-                          py-1
-                          text-[10px]
-                          font-semibold
-                          ${
-                            pending
-                              ? 'bg-orange-50 text-orange-500'
-                              : 'bg-green-50 text-green-600'
-                          }
-                        `}
+                        className={`shrink-0 rounded-full px-2.5 py-1 text-[10px] font-bold ${
+                          pending ? 'bg-orange-50 text-orange-500' : 'bg-green-100 text-green-700'
+                        }`}
                       >
-                        {pending
-                          ? 'Pending'
-                          : 'Submitted'}
+                        {pending ? 'Pending' : 'Submitted'}
                       </span>
-                    </li>
-                  );
-                }
-              )}
+                      <ChevronRight size={14} className="shrink-0 text-slate-400" />
+                    </Link>
+                  </li>
+                );
+              })}
             </ul>
           )}
         </Card>
 
         {/* Notices */}
-
         <Card>
-          <CardHead
-            title="Recent Notices"
-            to="/parents/notices"
-          />
+          <CardHead title="Recent Notices" icon={FileText} to="/parents/notices" />
 
-          {recentNotices.length ===
-          0 ? (
-            <p className="rounded-lg bg-slate-50 py-5 text-center text-xs text-slate-500">
-              No notices yet
-            </p>
+          {recentNotices.length === 0 ? (
+            <p className="rounded-lg bg-slate-50 py-5 text-center text-xs text-slate-500">No notices yet</p>
           ) : (
-            <ul className="divide-y divide-slate-100">
-              {recentNotices.map(
-                (n) => {
-                  const label =
-                    String(
-                      n.typeLabel ||
-                        n.title ||
-                        ''
-                    ).toLowerCase();
+            <ul className="space-y-1.5">
+              {recentNotices.map((n) => {
+                const label = String(n.typeLabel || n.title || '').toLowerCase();
+                const cfg = /holiday/.test(label)
+                  ? { Icon: Megaphone, cls: 'bg-rose-100 text-rose-500' }
+                  : /ptm|meeting|parent/.test(label)
+                    ? { Icon: Users, cls: 'bg-violet-100 text-violet-600' }
+                    : { Icon: FileText, cls: 'bg-blue-100 text-blue-600' };
 
-                  const cfg =
-                    /holiday/.test(
-                      label
-                    )
-                      ? {
-                          Icon: Megaphone,
-                          cls: 'bg-red-50 text-red-500',
-                        }
-                      : /ptm|meeting|parent/.test(
-                            label
-                          )
-                        ? {
-                            Icon: Users,
-                            cls: 'bg-violet-50 text-violet-600',
-                          }
-                        : {
-                            Icon: FileText,
-                            cls: 'bg-blue-50 text-blue-600',
-                          };
-
-                  return (
-                    <li
-                      key={n._id}
-                      className="py-1.5 first:pt-0 last:pb-0"
+                return (
+                  <li key={n._id}>
+                    <Link
+                      to="/parents/notices"
+                      state={{ openNoticeId: n._id }}
+                      className="flex items-center gap-2.5 rounded-xl px-2 py-2 transition hover:bg-[#f3f6fc]"
                     >
-                      <Link
-                        to="/parents/notices"
-                        state={{
-                          openNoticeId:
-                            n._id,
-                        }}
-                        className="
-                          -mx-1.5
-                          flex
-                          items-center
-                          gap-2.5
-                          rounded-lg
-                          px-1.5
-                          py-1.5
-                          transition
-                          hover:bg-slate-50
-                        "
-                      >
-                        <span
-                          className={`
-                            flex
-                            h-9
-                            w-9
-                            shrink-0
-                            items-center
-                            justify-center
-                            rounded-lg
-                            ${cfg.cls}
-                          `}
-                        >
-                          <cfg.Icon
-                            size={17}
-                          />
-                        </span>
+                      <span className={`flex h-9 w-9 shrink-0 items-center justify-center rounded-lg ${cfg.cls}`}>
+                        <cfg.Icon size={17} />
+                      </span>
 
-                        <span className="min-w-0 flex-1">
-                          <span className="block truncate text-xs font-semibold text-slate-900">
-                            {n.title}
-                          </span>
-
-                          {n.message ? (
-                            <span className="block truncate text-[10px] text-slate-500">
-                              {
-                                n.message
-                              }
-                            </span>
-                          ) : null}
+                      <span className="min-w-0 flex-1">
+                        <span className="flex items-start justify-between gap-2">
+                          <span className={`truncate text-xs font-bold ${NAVY}`}>{n.title}</span>
+                          <span className="shrink-0 text-[10px] text-slate-500">{fmtDate(n.createdAt)}</span>
                         </span>
-
-                        <span className="shrink-0 text-[10px] text-slate-400">
-                          {fmtDate(
-                            n.createdAt
-                          )}
-                        </span>
-                      </Link>
-                    </li>
-                  );
-                }
-              )}
+                        {n.message ? (
+                          <span className="block truncate text-[11px] text-slate-600">{n.message}</span>
+                        ) : null}
+                      </span>
+                      <ChevronRight size={14} className="shrink-0 text-slate-400" />
+                    </Link>
+                  </li>
+                );
+              })}
             </ul>
           )}
         </Card>
       </motion.div>
 
-      {/* ─────────────────────────────────────
-          Latest Result / Quick Actions
-      ───────────────────────────────────── */}
-
-      <motion.div
-        variants={RISE}
-        className="
-          grid
-          grid-cols-1
-          gap-3
-          lg:grid-cols-2
-        "
-      >
+      {/* Latest Result / Quick Actions */}
+      <motion.div variants={RISE} className="grid grid-cols-1 gap-3 lg:grid-cols-2">
         {/* Latest Result */}
-
         <Card>
-          <CardHead
-            title="Latest Exam Result"
-            to="/parents/academic"
-          />
+          <CardHead title="Latest Exam Result" icon={Trophy} to="/parents/academic" />
 
           {results.latest ? (
-            <div className="rounded-lg border border-slate-100 p-2.5">
-              <div className="mb-2.5 flex flex-wrap items-center gap-x-4 gap-y-1">
-                <span className="text-xs font-bold text-slate-900">
-                  {results.latest.name}
-                </span>
-
-                {validDate(
-                  results.latest.date
-                ) && (
-                  <span className="text-[10px] text-slate-400">
-                    {fmtDate(
-                      results.latest.date
-                    )}
-                  </span>
+            <div className="rounded-xl border border-slate-100 p-2.5">
+              <div className="mb-2 flex flex-wrap items-center gap-x-4 gap-y-1">
+                <span className={`text-xs font-bold ${NAVY}`}>{results.latest.name}</span>
+                {validDate(results.latest.date) && (
+                  <span className="text-[11px] text-slate-500">{fmtDate(results.latest.date)}</span>
                 )}
-
                 <Link
                   to="/parents/academic"
-                  className="
-                    ml-auto
-                    rounded-md
-                    bg-blue-50
-                    px-2
-                    py-1
-                    text-[10px]
-                    font-semibold
-                    text-blue-600
-                    hover:bg-blue-100
-                  "
+                  className="ml-auto rounded-lg bg-blue-50 px-2.5 py-1 text-[11px] font-semibold text-blue-600 hover:bg-blue-100"
                 >
                   View Report
                 </Link>
               </div>
 
-              <div className="grid grid-cols-2 gap-1.5 sm:grid-cols-3">
-                {results.latest.rows.map(
-                  (r, i) => (
-                    <div
-                      key={`${r.subject}-${i}`}
-                      className={`
-                        rounded-lg
-                        px-2.5
-                        py-2
-                        ${
-                          SUBJECT_TONES[
-                            i %
-                              SUBJECT_TONES.length
-                          ].tile
-                        }
-                      `}
-                    >
-                      <p className="truncate text-[10px] font-medium">
-                        {r.subject ||
-                          'Subject'}
-                      </p>
-
-                      <p className="text-sm font-bold">
-                        {Number(
-                          r.obtainedMarks ||
-                            0
-                        )}
-                        /
-                        {Number(
-                          r.totalMarks ||
-                            0
-                        )}
-                      </p>
-                    </div>
-                  )
-                )}
+              <div className="grid grid-cols-1 gap-1.5 sm:grid-cols-2">
+                {results.latest.rows.map((r, i) => (
+                  <div
+                    key={`${r.subject}-${i}`}
+                    className={`flex items-center gap-2.5 rounded-xl px-2.5 py-2 ${SUBJECT_TONES[i % SUBJECT_TONES.length].tile}`}
+                  >
+                    <BookOpen size={18} className="shrink-0 opacity-80" />
+                    <span className="min-w-0">
+                      <span className="block truncate text-[11px] font-medium text-slate-700">{r.subject || 'Subject'}</span>
+                      <span className={`block text-base font-extrabold ${NAVY}`}>
+                        {Number(r.obtainedMarks || 0)}/{Number(r.totalMarks || 0)}
+                      </span>
+                    </span>
+                  </div>
+                ))}
               </div>
             </div>
           ) : (
-            <p className="rounded-lg bg-slate-50 py-5 text-center text-xs text-slate-500">
-              No published results yet
-            </p>
+            <p className="rounded-lg bg-slate-50 py-5 text-center text-xs text-slate-500">No published results yet</p>
           )}
         </Card>
 
         {/* Quick Actions */}
-
         <Card>
-          <CardHead title="Quick Actions" />
+          <CardHead title="Quick Actions" icon={LayoutGrid} />
 
           <div className="grid grid-cols-5 gap-2">
             {[
-              {
-                to: '/parents/fees',
-                label: 'Pay Fees',
-                Icon: Wallet,
-                cls: 'bg-red-50 text-red-500',
-              },
-
-              {
-                to: '/parents/attendance',
-                label: 'Attendance',
-                Icon: Users,
-                cls: 'bg-green-50 text-green-600',
-              },
-
-              {
-                to: '/parents/academic',
-                label: 'Results',
-                Icon: BarChart3,
-                cls: 'bg-violet-50 text-violet-600',
-              },
-
-              {
-                to: '/parents/excuse-letters',
-                label: 'Apply Leave',
-                Icon: ClipboardList,
-                cls: 'bg-amber-50 text-amber-500',
-              },
-
-              {
-                to: '/parents/chat',
-                label: 'Message',
-                Icon: MessageSquare,
-                cls: 'bg-blue-50 text-blue-600',
-              },
-            ].map(
-              ({
-                to,
-                label,
-                Icon,
-                cls,
-              }) => (
-                <Link
-                  key={to}
-                  to={to}
-                  className="
-                    group
-                    flex
-                    min-w-0
-                    flex-col
-                    items-center
-                    gap-1.5
-                    text-center
-                  "
+              { to: '/parents/fees', label: 'Pay Fees', Icon: Wallet, cls: 'bg-rose-50 text-rose-500' },
+              { to: '/parents/attendance', label: 'Attendance', Icon: Users, cls: 'bg-green-50 text-green-600' },
+              { to: '/parents/academic', label: 'Results', Icon: BarChart3, cls: 'bg-violet-50 text-violet-600' },
+              { to: '/parents/excuse-letters', label: 'Apply Leave', Icon: ClipboardList, cls: 'bg-orange-50 text-orange-500' },
+              { to: '/parents/chat', label: 'Message', Icon: MessageSquare, cls: 'bg-blue-50 text-blue-600' },
+            ].map(({ to, label, Icon, cls }) => (
+              <Link key={to} to={to} className="group flex min-w-0 flex-col items-center gap-1.5 text-center">
+                <span
+                  className={`flex h-11 w-11 items-center justify-center rounded-2xl shadow-sm transition group-hover:-translate-y-0.5 sm:h-12 sm:w-12 ${cls}`}
                 >
-                  <span
-                    className={`
-                      flex
-                      h-10
-                      w-10
-                      items-center
-                      justify-center
-                      rounded-xl
-                      transition
-                      group-hover:-translate-y-0.5
-                      ${cls}
-                    `}
-                  >
-                    <Icon size={18} />
-                  </span>
-
-                  <span className="truncate text-[9px] font-medium text-slate-600 sm:text-[10px]">
-                    {label}
-                  </span>
-                </Link>
-              )
-            )}
+                  <Icon size={20} />
+                </span>
+                <span className={`max-w-full truncate text-[10px] font-semibold sm:text-[11px] ${NAVY}`}>{label}</span>
+              </Link>
+            ))}
           </div>
         </Card>
       </motion.div>
