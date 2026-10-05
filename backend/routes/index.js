@@ -81,6 +81,7 @@ module.exports = function registerRoutes(app, { generalApiLimiter, authApiLimite
   app.use('/api/student/materials', require('./studentMaterialRoutes'));
   app.use('/api/student', require('./student'));
   app.use('/api/student-dashboard', require('./studentDashboardRoutes'));
+  app.use('/api/ai-consent', require('./aiConsentRoutes'));
   app.use('/api/parent-dashboard', require('./parentDashboardRoutes'));
   app.use('/api/parent/teacher-feedback', require('./parentFeedbackRoutes'));
   app.use('/api/alcove', require('./alcoveRoute'));

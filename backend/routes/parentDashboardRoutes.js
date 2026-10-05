@@ -8,7 +8,6 @@ router.use(growthCache.invalidateOnWrite);
 const axios = require('axios');
 const authParent = require('../middleware/authParent');
 const StudentUser = require('../models/StudentUser');
-const { summarizeStudentAttendance } = require('../utils/sessionAttendance');
 const MasteryScore = require('../models/MasteryScore');
 const ExamResult = require('../models/ExamResult');
 const Exam = require('../models/Exam');
@@ -16,8 +15,6 @@ const StudentObservation = require('../models/StudentObservation');
 const ParentDashboardReport = require('../models/ParentDashboardReport');
 const StudentDevelopmentProfile = require('../models/StudentDevelopmentProfile');
 const { resolveParentChildren, parentOwnsStudent } = require('../utils/parentChildren');
-const AuditLog = require('../models/AuditLog');
-const { exportStudentAiData } = require('../services/aiDataExportService');
 
 const AI_SERVICE_URL = process.env.AI_SERVICE_URL || 'http://localhost:8000';
 const TIMEOUT = 120_000;
@@ -35,20 +32,6 @@ const getChildIds = async (parentId, schoolId) => {
 };
 
 const ownsStudent = parentOwnsStudent;
-
-// GET /api/parent-dashboard/ai-data-export/:studentId — parent access is
-// limited to children resolved from the authenticated parent and school.
-router.get('/ai-data-export/:studentId', authParent, async (req, res) => {
-  try {
-    const childIds = await getChildIds(req.user.id, req.schoolId);
-    if (!ownsStudent(childIds, req.params.studentId)) return res.status(403).json({ success: false, error: 'Not authorised for this student' });
-    const payload = await exportStudentAiData(req.params.studentId, req.schoolId);
-    await AuditLog.create({ schoolId: req.schoolId, actorId: req.user.id, actorType: 'parent', action: 'ai_data_export', entity: 'StudentUser', entityId: req.params.studentId, meta: { studentId: req.params.studentId } });
-    return res.json({ success: true, data: payload });
-  } catch (err) {
-    return res.status(500).json({ success: false, error: 'Unable to export AI data' });
-  }
-});
 
 const DAY = 24 * 60 * 60 * 1000;
 // How long a stored AI report stays fresh before the dashboard regenerates it.
@@ -158,6 +141,13 @@ router.get('/home-support/:studentId', authParent, async (req, res) => {
       return res.status(403).json({ error: 'Not authorized for this student' });
     }
 
+    const consent = await require('../services/aiConsentService').personalisationAllowed({
+      studentId: req.params.studentId, schoolId: req.schoolId,
+    });
+    if (!consent.allowed) return res.status(403).json({
+      error: 'AI personalisation is off. Manage consent in Child Profile to enable personalised reports.',
+      code: 'AI_CONSENT_REQUIRED',
+    });
 
     const cached = await readCachedReport({ req, type: 'home_support' });
     if (cached) return res.json({ success: true, data: cached });
@@ -196,6 +186,13 @@ router.get('/weekly-digest/:studentId', authParent, async (req, res) => {
       return res.status(403).json({ error: 'Not authorized for this student' });
     }
 
+    const consent = await require('../services/aiConsentService').personalisationAllowed({
+      studentId: req.params.studentId, schoolId: req.schoolId,
+    });
+    if (!consent.allowed) return res.status(403).json({
+      error: 'AI personalisation is off. Manage consent in Child Profile to enable personalised reports.',
+      code: 'AI_CONSENT_REQUIRED',
+    });
 
     const cached = await readCachedReport({ req, type: 'weekly_digest' });
     if (cached) return res.json({ success: true, data: cached });
@@ -238,6 +235,13 @@ router.get('/monthly-report/:studentId', authParent, async (req, res) => {
       return res.status(403).json({ error: 'Not authorized for this student' });
     }
 
+    const consent = await require('../services/aiConsentService').personalisationAllowed({
+      studentId: req.params.studentId, schoolId: req.schoolId,
+    });
+    if (!consent.allowed) return res.status(403).json({
+      error: 'AI personalisation is off. Manage consent in Child Profile to enable personalised reports.',
+      code: 'AI_CONSENT_REQUIRED',
+    });
 
     const cached = await readCachedReport({ req, type: 'monthly_report' });
     if (cached) return res.json({ success: true, data: cached });
@@ -294,7 +298,7 @@ router.get('/analytics/academic/:studentId', authParent, growthCache.cache, asyn
     const [masteryScores, examResults, student] = await Promise.all([
       MasteryScore.find({ studentId: sid, schoolId: req.schoolId }).lean(),
       ExamResult.find({ studentId: sid }).lean(),
-      StudentUser.findById(sid).select('name grade section attendance attendanceSummary').lean(),
+      StudentUser.findById(sid).select('name grade section attendance').lean(),
     ]);
     const examIndex = await buildExamIndex(examResults.map((r) => r.examId));
 
@@ -321,13 +325,9 @@ router.get('/analytics/academic/:studentId', authParent, growthCache.cache, asyn
 
     // Attendance summary from embedded array
     const attendance = Array.isArray(student?.attendance) ? student.attendance : [];
-    // Academic-year basis: present days ÷ school days of the active session.
-    const yearSummary = student
-      ? (await summarizeStudentAttendance([student], { schoolId: req.schoolId, campusId: req.campusId || null })).get(String(student._id)) || {}
-      : {};
-    const presentDays = yearSummary.presentDays || 0;
-    const totalDays = yearSummary.schoolDays || 0;
-    const attendancePct = yearSummary.percentage ?? null;
+    const presentDays = attendance.filter((a) => String(a.status).toLowerCase() === 'present').length;
+    const totalDays = attendance.length;
+    const attendancePct = totalDays > 0 ? Math.round((presentDays / totalDays) * 100) : null;
 
     // Monthly attendance trend (last 6 months)
     const monthlyAttendance = [];
@@ -466,7 +466,7 @@ router.get('/analytics/skills/:studentId', authParent, growthCache.cache, async 
     const [masteryScores, examResults, student, observations, devProfile] = await Promise.all([
       MasteryScore.find({ studentId: sid, schoolId: req.schoolId }).lean(),
       ExamResult.find({ studentId: sid }).lean(),
-      StudentUser.findById(sid).select('name grade section attendance attendanceSummary').lean(),
+      StudentUser.findById(sid).select('name grade section attendance').lean(),
       StudentObservation.find({ studentId: sid, schoolId: req.schoolId }).sort({ recordedAt: -1 }).limit(40).lean(),
       StudentDevelopmentProfile.findOne({ studentId: sid, schoolId: req.schoolId }).lean(),
     ]);
@@ -484,9 +484,8 @@ router.get('/analytics/skills/:studentId', authParent, growthCache.cache, async 
       : null;
 
     const attendance = Array.isArray(student?.attendance) ? student.attendance : [];
-    const attendancePct = student
-      ? ((await summarizeStudentAttendance([student], { schoolId: req.schoolId, campusId: req.campusId || null })).get(String(student._id))?.percentage ?? null)
-      : null;
+    const presentDays = attendance.filter((a) => String(a.status).toLowerCase() === 'present').length;
+    const attendancePct = attendance.length > 0 ? Math.round((presentDays / attendance.length) * 100) : null;
 
     const moodRatings = observations.filter((o) => o.moodRating != null).map((o) => o.moodRating);
     const moodScore = moodRatings.length

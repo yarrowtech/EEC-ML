@@ -34,6 +34,7 @@ const MENU_ITEMS = [
     children: [
       { id: 'learning', name: 'Learning Hub', icon: Brain },
       { id: 'assignments', name: 'Assignments', icon: FileText },
+      { id: 'long-answer', name: 'Long Answer', icon: ClipboardCheck },
       { id: 'assignments-journal', name: 'Journal', icon: NotebookPen },
       { id: 'assignments-academic-alcove', name: 'Class Wall', icon: Target },
       { id: 'results', name: 'Results', icon: BarChart3 },
