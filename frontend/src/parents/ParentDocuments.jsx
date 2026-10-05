@@ -18,7 +18,6 @@ import { parentApiJson } from './parentApi';
 import Loading from './Loading';
 import { EmptyState, ErrorState } from './StateBlock';
 import useParentChildren from './useParentChildren';
-import ChildPicker from './ChildPicker';
 import { FileBadge, PreviewModal, fileKind, fmt, kindLabel } from './DocPreview';
 
 // Every document the school holds for the selected child, grouped by category:
@@ -155,7 +154,7 @@ const DocCard = ({ doc, onPreview }) => {
 
 const ParentDocuments = () => {
   const navigate = useNavigate();
-  const { children, options, setChildKey, selected } = useParentChildren();
+  const { selected } = useParentChildren();
   const initial = readCache()?.data || null;
   const [raw, setRaw] = useState(initial);
   const [loading, setLoading] = useState(!initial);
@@ -191,10 +190,6 @@ const ParentDocuments = () => {
 
   useEffect(() => { load(); }, [load]);
 
-  const handleChildChange = (id) => {
-    const opt = options.find((o) => o.id === id);
-    if (opt) setChildKey(`${opt.id || ''}::${opt.name || ''}`);
-  };
 
   const grouped = useMemo(() => {
     const out = Object.fromEntries(CATEGORIES.map((c) => [c.key, []]));
@@ -229,7 +224,6 @@ const ParentDocuments = () => {
             <p className="text-xs text-slate-500 sm:text-sm">All important documents related to your child in one place.</p>
           </div>
         </div>
-        <ChildPicker kids={children} selected={selected} onChange={handleChildChange} />
       </div>
 
       {/* Tabs */}

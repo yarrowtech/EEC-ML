@@ -24,7 +24,7 @@ import toast from 'react-hot-toast';
 
 import { parentApiJson } from './parentApi';
 import { generateExamSchedulePdf } from '../utils/examRoutinePdf';
-import ChildSwitcher, { useSharedChildSelection } from './ChildSwitcher';
+import { useSharedChildSelection } from './ChildSwitcher';
 import Loading from './Loading';
 import { EmptyState, ErrorState } from './StateBlock';
 
@@ -840,8 +840,8 @@ const ExamRoutine = () => {
   );
 
   const [
-    childKey,
-    setChildKey,
+    ,
+    ,
     selectedOption,
   ] = useSharedChildSelection(
     childOptions
@@ -1083,20 +1083,6 @@ const ExamRoutine = () => {
                 </p>
               </div>
 
-              {childOptions.length > 1 && (
-                <div className="absolute inset-0">
-                  <ChildSwitcher
-                    options={childOptions}
-                    value={childKey}
-                    onChange={setChildKey}
-                    className="h-full w-full opacity-0"
-                  />
-
-                  <div className="pointer-events-none absolute right-3 top-1/2 -translate-y-1/2">
-                    <ChevronDown className="h-4 w-4 text-slate-500" />
-                  </div>
-                </div>
-              )}
             </div>
           </div>
         )}

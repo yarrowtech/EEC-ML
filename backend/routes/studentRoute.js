@@ -1,4 +1,5 @@
 const express = require('express');
+const { computeSessionAttendance } = require('../utils/sessionAttendance');
 const router = express.Router();
 const mongoose = require('mongoose');
 const StudentUser = require('../models/StudentUser');
@@ -1471,9 +1472,17 @@ router.get('/dashboard', authStudent, async (req, res) => {
       return res.status(404).json({ error: 'Student not found' });
     }
 
-    const totalAttendance = student.totalAttendance || 0;
-    const presentDays = student.presentDays || 0;
-    const attendancePercentage = totalAttendance > 0 ? Math.round((presentDays / totalAttendance) * 100) : 0;
+    // Attendance over the active session (school days, not just marked days) —
+    // same calculation the parent dashboard uses.
+    const attendanceDoc = await StudentUser.findById(req.user.id).select('attendance.date attendance.status').lean();
+    const sessionAttendance = await computeSessionAttendance({
+      attendance: attendanceDoc?.attendance || [],
+      schoolId: student.schoolId?._id || student.schoolId,
+      campusId: student.campusId || null,
+    });
+    const totalAttendance = sessionAttendance.schoolDays;
+    const presentDays = sessionAttendance.presentDays;
+    const attendancePercentage = sessionAttendance.percentage;
     const totalAchievements = student.totalAchievements || 0;
 
     const resolvedGrade = student.grade || '';
@@ -1531,6 +1540,7 @@ router.get('/dashboard', authStudent, async (req, res) => {
         totalClasses: totalAttendance,
         presentDays,
         absentDays: totalAttendance - presentDays,
+        attendanceSession: sessionAttendance,
         activeCourses: courseInfo ? 1 : 0,
         achievements: totalAchievements,
         studyHours: 0, // Can be enhanced later

@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useRef, useState } from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { motion } from 'framer-motion';
 import {
@@ -116,9 +116,7 @@ const RISE = { hidden: { opacity: 0, y: 14 }, show: { opacity: 1, y: 0, transiti
 /* ── page ────────────────────────────────────────────────────────────────── */
 const ChildGrowthAnalytics = () => {
   const navigate = useNavigate();
-  const { children, options, setChildKey, selected: child } = useParentChildren();
-  const [pickerOpen, setPickerOpen] = useState(false);
-  const pickerRef = useRef(null);
+  const { selected: child } = useParentChildren();
 
   const [reportCards, setReportCards] = useState(() => (readCache('shared')?.reportCards || []).map(normalizeReportCard));
   const [academic, setAcademic] = useState(null);
@@ -175,11 +173,6 @@ const ChildGrowthAnalytics = () => {
     return () => { off = true; };
   }, [child?.id, navigate]);
 
-  useEffect(() => {
-    const close = (e) => { if (pickerRef.current && !pickerRef.current.contains(e.target)) setPickerOpen(false); };
-    document.addEventListener('mousedown', close);
-    return () => document.removeEventListener('mousedown', close);
-  }, []);
 
   /* ── exams (published report card) ── */
   const exams = useMemo(() => {
@@ -253,7 +246,6 @@ const ChildGrowthAnalytics = () => {
 
   const remark = remarks.find((r) => !child?.id || String(r.studentId) === String(child.id));
   const latestExam = exams[0] || null;
-  const classLine = child ? `Class ${child.grade || '—'}${child.section ? ` - Section ${child.section}` : ''}` : '';
 
   const STATS = [
     { label: 'Overall Progress', value: overall, sub: 'Across academics, skills & wellbeing', Icon: BarChart3, tile: 'bg-green-100 text-green-600', bg: 'from-white to-green-50/60' },
@@ -281,36 +273,6 @@ const ChildGrowthAnalytics = () => {
               <CalendarDays size={16} className="text-slate-500" /> Academic Year {child.academicYear}
             </span>
           ) : null} */}
-          {child && (
-            <div className="relative" ref={pickerRef}>
-              <button
-                type="button"
-                onClick={() => options.length > 1 && setPickerOpen((o) => !o)}
-                className="flex w-full items-center gap-3 rounded-2xl border border-slate-200 bg-white px-3 py-2.5 pr-4 text-left shadow-sm sm:w-72"
-              >
-                {child.photo
-                  ? <img src={child.photo} alt={child.name} className="h-10 w-10 rounded-full object-cover" />
-                  : <span className="flex h-10 w-10 items-center justify-center rounded-full bg-violet-100 text-sm font-bold text-violet-700">{initials(child.name)}</span>}
-                <span className="min-w-0 flex-1">
-                  <span className="block truncate text-sm font-bold text-slate-900">{child.name}</span>
-                  <span className="block truncate text-xs text-slate-500">{classLine}</span>
-                </span>
-                {options.length > 1 && <ChevronDown size={17} className={`text-slate-500 transition ${pickerOpen ? 'rotate-180' : ''}`} />}
-              </button>
-              {pickerOpen && (
-                <ul className="absolute right-0 z-20 mt-2 w-full overflow-hidden rounded-2xl border border-slate-100 bg-white shadow-xl">
-                  {children.map((c, i) => (
-                    <li key={c.id}>
-                      <button type="button" onClick={() => { const o = options[i]; setChildKey(`${o.id || ''}::${o.name || ''}`); setPickerOpen(false); }} className={`flex w-full items-center gap-3 px-3 py-2.5 text-left hover:bg-slate-50 ${c.id === child.id ? 'bg-violet-50' : ''}`}>
-                        {c.photo ? <img src={c.photo} alt="" className="h-8 w-8 rounded-lg object-cover" /> : <span className="flex h-8 w-8 items-center justify-center rounded-lg bg-violet-100 text-xs font-bold text-violet-700">{initials(c.name)}</span>}
-                        <span className="text-sm font-semibold text-slate-800">{c.name}</span>
-                      </button>
-                    </li>
-                  ))}
-                </ul>
-              )}
-            </div>
-          )}
         </div>
       </motion.div>
 

@@ -1,4 +1,5 @@
 const express = require('express');
+const { computeSessionAttendance, resolveSessionWindow, loadHolidayKeys } = require('../utils/sessionAttendance');
 const router = express.Router();
 const { parentAttendanceCache } = require('../utils/responseCache');
 // Any write here clears the parent attendance screen's response cache.
@@ -1621,7 +1622,25 @@ router.get('/parent/children', authParent, parentAttendanceCache.cache, async (r
       students = students.filter((student) => String(student._id) === requestedStudentId);
     }
 
-    const children = students.map((student) => {
+    // Active-session window + holidays, loaded once for all children.
+    const sessionWindow = await resolveSessionWindow(schoolId);
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+    const holidayKeys = await loadHolidayKeys({
+      schoolId,
+      campusId,
+      start: sessionWindow.start,
+      end: sessionWindow.end < today ? sessionWindow.end : today,
+    });
+    const sessionSummaries = await Promise.all(students.map((student) => computeSessionAttendance({
+      attendance: Array.isArray(student.attendance) ? student.attendance : [],
+      schoolId,
+      campusId,
+      window: sessionWindow,
+      holidayKeys,
+    })));
+
+    const children = students.map((student, index) => {
       const attendance = Array.isArray(student.attendance) ? student.attendance : [];
       const monthAttendance = attendance
         .filter((item) => {
@@ -1646,6 +1665,7 @@ router.get('/parent/children', authParent, parentAttendanceCache.cache, async (r
         month: monthRange.key,
         summary: buildSummary(attendance),
         monthlySummary: buildSummary(monthAttendance),
+        sessionSummary: sessionSummaries[index],
         attendance: monthAttendance,
         // Full history (all months), for the overview/calendar/daily/weekly
         // views — date normalized to "YYYY-MM-DD" since those views key

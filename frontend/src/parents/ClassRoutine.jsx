@@ -1,11 +1,10 @@
-import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { AnimatePresence, motion } from 'framer-motion';
 import {
   BookOpen,
   BookOpenText,
   Calculator,
-  ChevronDown,
   Download,
   FlaskConical,
   Globe2,
@@ -23,7 +22,7 @@ import {
   Coffee,
 } from 'lucide-react';
 import { parentApiJson } from './parentApi';
-import { readSharedChild, writeSharedChild } from './ChildSwitcher';
+import { readSharedChild, subscribeSharedChild } from './ChildSwitcher';
 
 // Weekly class routine for the parent's child. The backend picks the active
 // academic year and the child's own class/section — no selectors here.
@@ -52,7 +51,6 @@ const splitTime = (entry) => {
   return [s || '', e || ''];
 };
 const slotLabel = (s, e) => (s ? `${fmt12(s)}${e ? ` – ${fmt12(e)}` : ''}` : '');
-const initials = (n) => String(n || 'S').trim().split(/\s+/).slice(0, 2).map((w) => w[0]).join('').toUpperCase();
 
 const startOfWeek = (d) => {
   const x = new Date(d.getFullYear(), d.getMonth(), d.getDate());
@@ -125,8 +123,6 @@ const ParentClassRoutine = () => {
   const [loading, setLoading] = useState(() => !readCache());
   const [error, setError] = useState('');
   const [childId, setChildId] = useState(() => String(readSharedChild()?.id || ''));
-  const [pickerOpen, setPickerOpen] = useState(false);
-  const pickerRef = useRef(null);
   const [tab, setTab] = useState('weekly');
   const weekStart = useMemo(() => startOfWeek(new Date()), []); // current week (dates under day names)
 
@@ -149,18 +145,12 @@ const ParentClassRoutine = () => {
   }, [navigate]);
 
   useEffect(() => { load(); }, [load]);
-  useEffect(() => {
-    const close = (e) => { if (pickerRef.current && !pickerRef.current.contains(e.target)) setPickerOpen(false); };
-    document.addEventListener('mousedown', close);
-    return () => document.removeEventListener('mousedown', close);
-  }, []);
+  // Follow the navbar child switcher.
+  useEffect(() => subscribeSharedChild((stored) => {
+    if (stored?.id) setChildId(String(stored.id));
+  }), []);
 
   const child = children.find((c) => String(c.studentId) === childId) || children[0] || null;
-  const pickChild = (c) => {
-    setChildId(String(c.studentId));
-    writeSharedChild({ id: String(c.studentId), name: c.studentName || '' });
-    setPickerOpen(false);
-  };
   const classLine = child
     ? `Class ${child.className || child.grade || '—'}${child.sectionName || child.section ? ` - Section ${child.sectionName || child.section}` : ''}`
     : '';
@@ -358,41 +348,6 @@ const ParentClassRoutine = () => {
           <h1 className="text-2xl font-bold text-slate-900">Class Routine</h1>
           <p className="mt-0.5 text-sm text-slate-600">View your child&apos;s weekly class routine, subject details and timings.</p>
         </div>
-        {child && (
-          <div className="relative" ref={pickerRef}>
-            <button
-              type="button"
-              onClick={() => children.length > 1 && setPickerOpen((o) => !o)}
-              className="flex w-full items-center gap-3 rounded-2xl border border-slate-200 bg-white px-3 py-2.5 pr-4 text-left shadow-sm sm:w-72"
-            >
-              {child.photo
-                ? <img src={child.photo} alt={child.studentName} className="h-11 w-11 rounded-full object-cover" />
-                : <span className="flex h-11 w-11 items-center justify-center rounded-full bg-violet-100 text-sm font-bold text-violet-700">{initials(child.studentName)}</span>}
-              <span className="min-w-0 flex-1">
-                <span className="block truncate text-sm font-bold text-slate-900">{child.studentName}</span>
-                <span className="block truncate text-xs text-slate-500">{classLine}</span>
-              </span>
-              {children.length > 1 && <ChevronDown size={17} className={`text-slate-500 transition ${pickerOpen ? 'rotate-180' : ''}`} />}
-            </button>
-            {pickerOpen && (
-              <ul className="absolute right-0 z-20 mt-2 w-full overflow-hidden rounded-2xl border border-slate-100 bg-white shadow-xl">
-                {children.map((c) => (
-                  <li key={c.studentId}>
-                    <button type="button" onClick={() => pickChild(c)} className={`flex w-full items-center gap-3 px-3 py-2.5 text-left hover:bg-slate-50 ${String(c.studentId) === String(child.studentId) ? 'bg-violet-50' : ''}`}>
-                      {c.photo
-                        ? <img src={c.photo} alt="" className="h-8 w-8 rounded-lg object-cover" />
-                        : <span className="flex h-8 w-8 items-center justify-center rounded-lg bg-violet-100 text-xs font-bold text-violet-700">{initials(c.studentName)}</span>}
-                      <span className="min-w-0">
-                        <span className="block truncate text-sm font-semibold text-slate-800">{c.studentName}</span>
-                        <span className="block text-xs text-slate-500">Class {c.className || c.grade}{c.sectionName || c.section ? ` - Section ${c.sectionName || c.section}` : ''}</span>
-                      </span>
-                    </button>
-                  </li>
-                ))}
-              </ul>
-            )}
-          </div>
-        )}
       </motion.div>
 
       {error ? <p role="alert" className="rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">{error}</p> : null}

@@ -4,12 +4,12 @@ import { createPortal } from 'react-dom';
 import { useNavigate } from 'react-router-dom';
 import { AnimatePresence, motion } from 'framer-motion';
 import {
-  BookOpenText, CheckCircle2, ChevronDown, ClipboardPlus, Droplet, HeartPulse, Info, Loader2, Lock, Pencil, Phone,
+  BookOpenText, CheckCircle2, ClipboardPlus, Droplet, HeartPulse, Info, Loader2, Lock, Pencil, Phone,
   ShieldPlus, Syringe, User, UserRound, Users, Wind, X,
 } from 'lucide-react';
 import toast from 'react-hot-toast';
 import { parentApiJson } from './parentApi';
-import { useSharedChildSelection, childOptionKey } from './ChildSwitcher';
+import { useSharedChildSelection } from './ChildSwitcher';
 import Loading from './Loading';
 import { EmptyState, ErrorState } from './StateBlock';
 import { useDialog } from './useDialog';
@@ -105,7 +105,7 @@ const HealthReport = () => {
     () => children.map((c) => ({ id: String(c.studentId || ''), name: c.name || 'Student' })),
     [children],
   );
-  const [childKey, setChildKey, selectedOption] = useSharedChildSelection(childOptions);
+  const [, selectedOption] = useSharedChildSelection(childOptions);
   const selectedId = selectedOption?.id || '';
 
   const load = useCallback(async () => {
@@ -186,32 +186,6 @@ const HealthReport = () => {
             <p className="text-xs text-slate-500 sm:text-sm">Medical details from enrolment plus counsellor wellbeing notes.</p>
           </div>
         </div>
-        {children.length > 0 && (
-          <div className={`${CARD} flex w-full items-center gap-3 px-3 py-2 sm:w-auto sm:min-w-[300px]`}>
-            <span className="shrink-0 text-xs font-semibold text-[#0b1446]">Child</span>
-            <div className="relative flex min-w-0 flex-1 items-center gap-2.5 rounded-lg border border-slate-200 px-2.5 py-1.5">
-              {child?.profilePic ? (
-                <img src={child.profilePic} alt="" className="h-8 w-8 shrink-0 rounded-md object-cover" />
-              ) : (
-                <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-md bg-blue-50 text-xs font-bold text-blue-600">
-                  {String(child?.name || 'C').charAt(0).toUpperCase()}
-                </span>
-              )}
-              <div className="min-w-0 flex-1">
-                <p className="truncate text-sm font-bold text-[#0b1446]">{child?.name}</p>
-                <p className="truncate text-[11px] text-slate-500">{classLine}{child?.roll ? ` • Roll ${child.roll}` : ''}</p>
-              </div>
-              {childOptions.length > 1 ? (
-                <>
-                  <ChevronDown size={16} className="shrink-0 text-slate-500" />
-                  <select aria-label="Select child" value={childKey} onChange={(e) => setChildKey(e.target.value)} className="absolute inset-0 cursor-pointer opacity-0">
-                    {childOptions.map((opt) => <option key={childOptionKey(opt)} value={childOptionKey(opt)}>{opt.name}</option>)}
-                  </select>
-                </>
-              ) : null}
-            </div>
-          </div>
-        )}
       </motion.header>
 
       {error && <ErrorState message={error} onRetry={load} />}

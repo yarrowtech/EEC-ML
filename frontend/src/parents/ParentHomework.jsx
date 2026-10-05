@@ -71,7 +71,6 @@ const openAttachmentInTab = async (url) => {
     if (tab) tab.location.href = url; else window.open(url, '_blank', 'noopener');
   }
 };
-const initials = (n) => String(n || 'S').trim().split(/\s+/).slice(0, 2).map((w) => w[0]).join('').toUpperCase();
 const startOfToday = () => new Date(new Date().toDateString());
 
 const STATUS = {
@@ -140,7 +139,7 @@ const RISE = { hidden: { opacity: 0, y: 14 }, show: { opacity: 1, y: 0, transiti
 /* ── page ────────────────────────────────────────────────────────────────── */
 const ParentHomework = () => {
   const navigate = useNavigate();
-  const { children, options, setChildKey, selected, error: childError } = useParentChildren();
+  const { selected, error: childError } = useParentChildren();
   const [items, setItems] = useState([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
@@ -148,8 +147,6 @@ const ParentHomework = () => {
   const [search, setSearch] = useState('');
   const [sort, setSort] = useState('due-desc');
   const [open, setOpen] = useState(null);
-  const [pickerOpen, setPickerOpen] = useState(false);
-  const pickerRef = useRef(null);
 
   const load = useCallback(async () => {
     if (!selected?.id) { setItems([]); return; }
@@ -171,11 +168,6 @@ const ParentHomework = () => {
 
   useEffect(() => { load(); }, [load]);
 
-  useEffect(() => {
-    const close = (e) => { if (pickerRef.current && !pickerRef.current.contains(e.target)) setPickerOpen(false); };
-    document.addEventListener('mousedown', close);
-    return () => document.removeEventListener('mousedown', close);
-  }, []);
 
   // Filter pill strip: arrows scroll it and dim at either end.
   const pillsRef = useRef(null);
@@ -249,7 +241,6 @@ const ParentHomework = () => {
   useEffect(() => { setPage(1); }, [filter, search, sort, selected?.id]);
   useEffect(() => { if (page > totalPages) setPage(totalPages); }, [page, totalPages]);
 
-  const classLine = selected ? `Class ${selected.grade || '—'}${selected.section ? ` - Section ${selected.section}` : ''}` : '';
 
   const STAT_CARDS = [
     { key: 'all', label: 'Total', value: counts.all, Icon: FileText, tile: 'bg-blue-100/70 text-blue-600', bg: 'from-white to-blue-50/40' },
@@ -271,40 +262,6 @@ const ParentHomework = () => {
           <h1 className="text-2xl font-bold text-slate-900">Homework</h1>
           <p className="mt-0.5 text-sm text-slate-600">Assignments given to your child, their due dates and status.</p>
         </div>
-        {selected && (
-          <div className="relative" ref={pickerRef}>
-            <button
-              type="button"
-              onClick={() => options.length > 1 && setPickerOpen((o) => !o)}
-              className="flex w-full items-center gap-3 rounded-2xl border border-slate-200 bg-white px-3 py-2.5 pr-4 text-left shadow-sm sm:w-72"
-            >
-              {selected.photo
-                ? <img src={selected.photo} alt={selected.name} className="h-11 w-11 rounded-full object-cover" />
-                : <span className="flex h-11 w-11 items-center justify-center rounded-xl bg-violet-100 text-sm font-bold text-violet-700">{initials(selected.name)}</span>}
-              <span className="min-w-0 flex-1">
-                <span className="block truncate text-sm font-bold text-slate-900">{selected.name}</span>
-                <span className="block truncate text-xs text-slate-500">{classLine}</span>
-              </span>
-              {options.length > 1 && <ChevronDown size={17} className={`text-slate-500 transition ${pickerOpen ? 'rotate-180' : ''}`} />}
-            </button>
-            {pickerOpen && (
-              <ul className="absolute right-0 z-20 mt-2 w-full overflow-hidden rounded-2xl border border-slate-100 bg-white shadow-xl">
-                {children.map((c, i) => (
-                  <li key={c.id}>
-                    <button
-                      type="button"
-                      onClick={() => { const o = options[i]; setChildKey(`${o.id || ''}::${o.name || ''}`); setPickerOpen(false); }}
-                      className={`flex w-full items-center gap-3 px-3 py-2.5 text-left hover:bg-slate-50 ${c.id === selected.id ? 'bg-violet-50' : ''}`}
-                    >
-                      <span className="flex h-8 w-8 items-center justify-center rounded-lg bg-violet-100 text-xs font-bold text-violet-700">{initials(c.name)}</span>
-                      <span className="text-sm font-semibold text-slate-800">{c.name}</span>
-                    </button>
-                  </li>
-                ))}
-              </ul>
-            )}
-          </div>
-        )}
       </motion.div>
 
       {childError ? <p role="alert" className="rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">{childError}</p> : null}

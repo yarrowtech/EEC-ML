@@ -27,7 +27,6 @@ import {
   Users,
 } from 'lucide-react';
 
-import ChildSwitcher from './ChildSwitcher';
 import Loading from './Loading';
 import { EmptyState, ErrorState } from './StateBlock';
 import useParentChildren from './useParentChildren';
@@ -224,9 +223,6 @@ const ContactCard = ({ title, person }) => {
 const ChildProfile = () => {
   const {
     parent,
-    options,
-    childKey,
-    setChildKey,
     selected: c,
     school,
     loading,
@@ -333,15 +329,6 @@ const ChildProfile = () => {
           </div>
 
           <div className="flex items-center gap-2">
-            {options?.length > 1 && (
-              <div className="w-[180px]">
-                <ChildSwitcher
-                  options={options}
-                  value={childKey}
-                  onChange={setChildKey}
-                />
-              </div>
-            )}
 
             {error && (
               <button

@@ -4,14 +4,13 @@ import { createPortal } from 'react-dom';
 import { useNavigate } from 'react-router-dom';
 import { AnimatePresence, motion } from 'framer-motion';
 import {
-  AlertCircle, CalendarCheck2, CalendarDays, Check, CheckCircle2, ChevronDown, Clock, Copy, ExternalLink,
+  AlertCircle, CalendarCheck2, CalendarDays, Check, CheckCircle2, Clock, Copy, ExternalLink,
   FileText, Hourglass, MapPin, Phone, ShieldCheck, Star, Users, UsersRound, Video, X,
 } from 'lucide-react';
 import { parentApiJson } from './parentApi';
 import Loading from './Loading';
 import { EmptyState, ErrorState } from './StateBlock';
 import { useDialog } from './useDialog';
-import { childOptionKey } from './ChildSwitcher';
 import useParentChildren from './useParentChildren';
 
 // Jitsi hash-config for a privacy-respecting room: show the prejoin screen,
@@ -129,7 +128,7 @@ const StatCard = ({ Icon, label, value, sub, tone }) => (
 
 const PTMPortal = () => {
   const navigate = useNavigate();
-  const { options, childKey, setChildKey, selected } = useParentChildren();
+  const { selected } = useParentChildren();
   const cached = readMeetingsCache();
   const [meetings, setMeetings] = useState(() => cached?.meetings || []);
   const [activeSession, setActiveSession] = useState(() => cached?.activeSession || null);
@@ -309,10 +308,6 @@ const PTMPortal = () => {
     },
   ].filter((g) => g.show);
 
-  const childPhoto = selected?.profileImage || selected?.photo || selected?.avatar || '';
-  const childMeta = [selected?.grade && `Class ${selected.grade}`, selected?.section && `Section ${selected.section}`]
-    .filter(Boolean)
-    .join(' · ');
 
   /* ── Pieces ────────────────────────────────────────────────────────────── */
   const statusPill = (meeting) => {
@@ -447,31 +442,6 @@ const PTMPortal = () => {
           </div>
         </div>
 
-        {/* Child selector */}
-        <div className={`${CARD} flex w-full items-center gap-3 px-3 py-2 sm:w-auto sm:min-w-[300px]`}>
-          <span className="shrink-0 text-xs text-slate-500">Viewing</span>
-          <div className="relative flex min-w-0 flex-1 items-center gap-2.5 rounded-lg border border-slate-200 px-2.5 py-1.5">
-            {childPhoto ? (
-              <img src={childPhoto} alt="" className="h-8 w-8 shrink-0 rounded-md object-cover" />
-            ) : (
-              <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-md bg-blue-50 text-xs font-bold text-blue-600">
-                {String(selected?.name || 'C').trim().charAt(0).toUpperCase()}
-              </span>
-            )}
-            <div className="min-w-0 flex-1">
-              <p className="truncate text-sm font-bold text-[#0b1446]">{selected?.name || 'Select child'}</p>
-              {childMeta ? <p className="truncate text-[11px] text-slate-500">{childMeta}</p> : null}
-            </div>
-            {options.length > 1 ? (
-              <>
-                <ChevronDown size={16} className="shrink-0 text-slate-500" />
-                <select aria-label="Select child" value={childKey} onChange={(e) => setChildKey(e.target.value)} className="absolute inset-0 cursor-pointer opacity-0">
-                  {options.map((opt) => <option key={childOptionKey(opt)} value={childOptionKey(opt)}>{opt.name}</option>)}
-                </select>
-              </>
-            ) : null}
-          </div>
-        </div>
       </motion.header>
 
       {/* Stats */}
