@@ -20,7 +20,7 @@ const PRIORITY_OPTIONS = [
 ];
 const CATEGORY_OPTIONS = ['Technical', 'Academic', 'Transport', 'Fees', 'Wellbeing', 'General', 'Other'];
 const CARD = 'rounded-xl border border-slate-100 bg-white shadow-[0_1px_3px_rgba(15,23,42,0.04)]';
-const INPUT = 'w-full rounded-lg border border-slate-200 px-2.5 py-2 text-xs outline-none transition focus:border-blue-300 focus:ring-2 focus:ring-blue-100';
+const INPUT = 'w-full rounded-lg border border-slate-200 px-2.5 py-2 text-xs outline-none transition focus:border-violet-300 focus:ring-2 focus:ring-violet-100';
 const DETAILS_MAX = 1000;
 
 const CATEGORY_ICONS = {
@@ -252,7 +252,7 @@ const ComplaintManagementSystem = () => {
       {/* Submit form */}
       <motion.form variants={RISE} onSubmit={handleFormSubmit} className={`${CARD} p-3`}>
         <div className="mb-3 flex items-center gap-2.5">
-          <span className="flex h-9 w-9 items-center justify-center rounded-lg bg-blue-600 text-white"><Plus size={18} /></span>
+          <span className="flex h-9 w-9 items-center justify-center rounded-lg bg-violet-600 text-white"><Plus size={18} /></span>
           <div>
             <h2 className="text-sm font-bold text-[#0b1446]">Submit new complaint</h2>
             <p className="text-[11px] text-slate-500">Tell us about the issue and we will get back to you.</p>
@@ -287,9 +287,9 @@ const ComplaintManagementSystem = () => {
                       role="radio"
                       aria-checked={active}
                       onClick={() => setForm((prev) => ({ ...prev, category: option }))}
-                      className={`inline-flex items-center gap-1.5 rounded-lg border px-2.5 py-1.5 text-xs font-medium transition ${active ? 'border-blue-500 bg-blue-50 text-blue-700 ring-1 ring-blue-200' : 'border-slate-200 bg-white text-[#0b1446] hover:bg-slate-50'}`}
+                      className={`inline-flex items-center gap-1.5 rounded-lg border px-2.5 py-1.5 text-xs font-medium transition ${active ? 'border-violet-500 bg-violet-50 text-violet-700 ring-1 ring-violet-200' : 'border-slate-200 bg-white text-[#0b1446] hover:bg-slate-50'}`}
                     >
-                      <Icon size={15} className="text-blue-600" /> {option}
+                      <Icon size={15} className="text-violet-600" /> {option}
                     </button>
                   );
                 })}
@@ -351,9 +351,9 @@ const ComplaintManagementSystem = () => {
                 </label>
                 <div className="relative flex items-center gap-2.5 rounded-lg border border-slate-200 px-2.5 py-1.5">
                   {selectedChild?.profilePic ? (
-                    <img src={selectedChild.profilePic} alt="" className="h-8 w-8 shrink-0 rounded-md object-cover" />
+                    <img src={selectedChild.profilePic} alt="" className="h-8 w-8 shrink-0 rounded-full object-cover" />
                   ) : (
-                    <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-md bg-blue-50 text-xs font-bold text-blue-600">
+                    <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-violet-50 text-xs font-bold text-violet-600">
                       {String(selectedChild?.name || 'C').charAt(0).toUpperCase()}
                     </span>
                   )}
@@ -399,7 +399,7 @@ const ComplaintManagementSystem = () => {
           type="submit"
           disabled={submitting}
           whileTap={{ scale: 0.99 }}
-          className="mt-3 flex w-full items-center justify-center gap-2 rounded-lg bg-blue-600 px-4 py-2.5 text-sm font-semibold text-white transition hover:bg-blue-700 disabled:opacity-60"
+          className="mt-3 flex w-full items-center justify-center gap-2 rounded-lg bg-violet-600 px-4 py-2.5 text-sm font-semibold text-white transition hover:bg-violet-700 disabled:opacity-60"
         >
           {submitting ? <Loader2 size={16} className="animate-spin" /> : <Send size={16} />}
           {submitting ? 'Submitting…' : 'Submit complaint'}
@@ -410,7 +410,7 @@ const ComplaintManagementSystem = () => {
       <motion.section variants={RISE} className={`${CARD} p-3`}>
         <div className="mb-3 flex flex-wrap items-center justify-between gap-3">
           <div className="flex items-center gap-2.5">
-            <span className="flex h-9 w-9 items-center justify-center rounded-lg bg-blue-50 text-blue-600"><ClipboardList size={18} /></span>
+            <span className="flex h-9 w-9 items-center justify-center rounded-lg bg-violet-50 text-violet-600"><ClipboardList size={18} /></span>
             <div>
               <h2 className="text-sm font-bold text-[#0b1446]">Complaint log</h2>
               <p className="text-[11px] text-slate-500">Tickets you have submitted to the support desk.</p>
@@ -436,7 +436,7 @@ const ComplaintManagementSystem = () => {
               type="button"
               aria-pressed={statusFilter === t.key}
               onClick={() => setStatusFilter(t.key)}
-              className={`rounded-lg border px-4 py-1.5 text-xs font-semibold transition ${statusFilter === t.key ? 'border-blue-600 bg-blue-600 text-white' : 'border-slate-200 bg-white text-[#0b1446] hover:bg-slate-50'}`}
+              className={`rounded-full border px-4 py-1.5 text-xs font-semibold transition ${statusFilter === t.key ? 'border-violet-600 bg-violet-600 text-white' : 'border-slate-200 bg-white text-[#0b1446] hover:bg-slate-50'}`}
             >
               {t.label}
             </button>
@@ -486,7 +486,7 @@ const ComplaintManagementSystem = () => {
                 <button
                   type="button"
                   onClick={() => setDetail(complaint)}
-                  className="inline-flex shrink-0 items-center justify-center gap-1.5 rounded-lg border border-blue-200 bg-white px-3 py-1.5 text-xs font-semibold text-blue-600 transition hover:bg-blue-50"
+                  className="inline-flex shrink-0 items-center justify-center gap-1.5 rounded-lg border border-violet-200 bg-white px-3 py-1.5 text-xs font-semibold text-violet-600 transition hover:bg-violet-50"
                 >
                   <FileText size={14} /> View Details <ChevronRight size={14} className="text-slate-500" />
                 </button>

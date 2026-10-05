@@ -340,11 +340,11 @@ const PTMPortal = () => {
     if (isPendingStatus(meeting.status)) {
       return (
         <>
-          <button type="button" disabled={busy} onClick={() => handleResponse(meeting, 'accept')} className="flex w-full items-center justify-center gap-1.5 rounded-lg border border-emerald-300 bg-white px-3 py-1.5 text-xs font-semibold text-emerald-600 transition hover:bg-emerald-50 disabled:opacity-50">
-            <Check size={14} /> Accept
+          <button type="button" disabled={busy} onClick={() => handleResponse(meeting, 'accept')} className="flex w-full items-center justify-center gap-1.5 rounded-full border bg-green-600 text-white p-1 text-xs font-semibold transition hover:bg-green-50 hover:text-green-500 disabled:opacity-50">
+            <Check size={14} />
           </button>
-          <button type="button" disabled={busy} onClick={() => handleResponse(meeting, 'decline')} className="flex w-full items-center justify-center gap-1.5 rounded-lg border border-rose-300 bg-white px-3 py-1.5 text-xs font-semibold text-rose-600 transition hover:bg-rose-50 disabled:opacity-50">
-            <X size={14} /> Decline
+          <button type="button" disabled={busy} onClick={() => handleResponse(meeting, 'decline')} className="flex w-full items-center justify-center gap-1.5 rounded-full border border-rose-300 bg-white px-3 py-1.5 text-xs font-semibold text-rose-600 transition hover:bg-rose-50 disabled:opacity-50">
+            <X size={14} />
           </button>
         </>
       );
@@ -425,7 +425,7 @@ const PTMPortal = () => {
           ) : null}
         </div>
 
-        <div className="flex shrink-0 gap-2 sm:w-36 sm:flex-col">{actions(meeting)}</div>
+        <div className="flex shrink-0 gap-2 sm:flex-row">{actions(meeting)}</div>
       </motion.article>
     );
   };
@@ -485,7 +485,7 @@ const PTMPortal = () => {
               type="button"
               aria-pressed={tab === t.key}
               onClick={() => setTab(t.key)}
-              className={`rounded-lg border px-4 py-1.5 text-xs font-semibold transition ${tab === t.key ? 'border-blue-600 bg-blue-600 text-white' : 'border-slate-200 bg-white text-[#0b1446] hover:bg-slate-50'}`}
+              className={`rounded-full border px-4 py-1.5 text-xs font-semibold transition ${tab === t.key ? 'border-violet-600 bg-blue-600 text-white' : 'border-slate-200 bg-white text-[#0b1446] hover:bg-slate-50'}`}
             >
               {t.label}
             </button>
