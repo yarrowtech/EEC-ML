@@ -786,64 +786,13 @@ const FeesPayment = () => {
                 Fees &amp; Payments <span className="sr-only">Fees Payment</span>
               </h1>
               <p className="text-xs text-slate-500">
-                Overview of your children&apos;s fee status and payment history
+                {selectedChild ? <span className="font-medium text-slate-700">{selectedChild.name}</span> : "Overview of your children's fee status and payment history"}
                 {sessionFilter ? <> · <span className="font-medium text-slate-700">Session {sessionFilter}</span></> : null}
               </p>
             </div>
           </div>
 
           <div className="flex w-full items-center gap-2 sm:w-auto">
-            <div className="relative min-w-0 flex-1 sm:w-64 sm:flex-none" ref={childMenuRef}>
-              {loadingChildren && children.length === 0 ? (
-                <div className="flex h-11 items-center gap-2 rounded-xl border border-slate-200 bg-white px-3 text-xs text-slate-500"><Loader2 className="h-4 w-4 animate-spin text-blue-500" /> Loading children…</div>
-              ) : children.length === 0 ? (
-                <div className="flex h-11 items-center rounded-xl border border-slate-200 bg-white px-3 text-xs text-slate-500">No students found.</div>
-              ) : (
-                <>
-                  <button
-                    type="button"
-                    onClick={() => setChildMenuOpen((open) => !open)}
-                    aria-haspopup="listbox"
-                    aria-expanded={childMenuOpen}
-                    aria-label="Select child"
-                    className="flex h-11 w-full items-center gap-2.5 rounded-xl border border-slate-200 bg-white px-1.5 text-left shadow-sm transition hover:border-slate-300 focus:outline-none focus:ring-2 focus:ring-blue-100"
-                  >
-                    <ChildAvatar child={selectedChild} index={selectedChildIndex} />
-                    <span className="min-w-0 flex-1 leading-tight">
-                      <span className="block truncate text-sm font-semibold text-slate-900">{selectedChild?.name || 'Select a child'}</span>
-                      <span className="block truncate text-[11px] text-slate-500">{selectedChild ? childSubtitle(selectedChild) : ''}</span>
-                    </span>
-                    <ChevronDown className={`mr-1 h-4 w-4 text-slate-500 transition ${childMenuOpen ? 'rotate-180' : ''}`} />
-                  </button>
-                  {childMenuOpen && (
-                    <ul role="listbox" aria-label="Children" className="absolute right-0 z-30 mt-1.5 max-h-72 w-full min-w-60 overflow-auto rounded-xl border border-slate-200 bg-white p-1 shadow-lg">
-                      {children.map((child, index) => {
-                        const childKey = buildChildKey(child);
-                        const isActive = childKey === selectedChildId;
-                        return (
-                          <li key={childKey}>
-                            <button
-                              type="button"
-                              role="option"
-                              aria-selected={isActive}
-                              onClick={() => { pickChild(child); setChildMenuOpen(false); }}
-                              className={`flex w-full items-center gap-2.5 rounded-lg px-1.5 py-1.5 text-left transition ${isActive ? 'bg-blue-50' : 'hover:bg-slate-50'}`}
-                            >
-                              <ChildAvatar child={child} index={index} />
-                              <span className="min-w-0 flex-1 leading-tight">
-                                <span className="block truncate text-sm font-semibold text-slate-800">{child.name || 'Child'}</span>
-                                <span className="block truncate text-[11px] text-slate-500">{childSubtitle(child)}</span>
-                              </span>
-                              {isActive && <CheckCircle2 className="h-4 w-4 text-blue-600" />}
-                            </button>
-                          </li>
-                        );
-                      })}
-                    </ul>
-                  )}
-                </>
-              )}
-            </div>
             <button
               type="button"
               onClick={handleRefresh}
@@ -857,6 +806,11 @@ const FeesPayment = () => {
           </div>
         </header>
 
+        {loadingChildren && children.length === 0 ? (
+          <p className="flex items-center gap-2 rounded-xl border border-slate-200 bg-white p-3 text-xs text-slate-500" role="status"><Loader2 className="h-4 w-4 animate-spin text-blue-500" /> Loading children…</p>
+        ) : !loadingChildren && children.length === 0 ? (
+          <p className="rounded-xl border border-slate-200 bg-white p-3 text-xs text-slate-500">No students found. Please contact the school office.</p>
+        ) : null}
         {selectedChild && !getChildId(selectedChild) && <p className="rounded-xl border border-amber-100 bg-amber-50 p-3 text-xs text-amber-700">This child is not linked to a student record. Please contact the school office.</p>}
         {razorpayState === 'unreachable' && (
           <p className="flex flex-wrap items-start gap-2 rounded-xl border border-amber-200 bg-amber-50 p-3 text-xs text-amber-800" role="status">

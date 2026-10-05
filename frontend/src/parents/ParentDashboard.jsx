@@ -8,7 +8,6 @@ import {
   BookOpen,
   CalendarDays,
   Check,
-  ChevronDown,
   ChevronRight,
   ClipboardList,
   CreditCard,
@@ -550,9 +549,6 @@ const ParentDashboard = ({
   const reduceMotion = useReducedMotion();
 
   const {
-    children,
-    options,
-    setChildKey,
     selected: child,
     loading: childLoading,
     school,
@@ -560,10 +556,6 @@ const ParentDashboard = ({
 
   const coverImage = school?.coverImage || '';
 
-  const [pickerOpen, setPickerOpen] =
-    useState(false);
-
-  const pickerRef = useRef(null);
 
   const cachedPortalData = useMemo(
     () => readDashboardCache('portal'),
@@ -795,31 +787,6 @@ const ParentDashboard = ({
     };
   }, [child?.id, navigate]);
 
-  /* ─────────────────────────────────────────────
-     Close picker
-  ───────────────────────────────────────────── */
-
-  useEffect(() => {
-    const close = (e) => {
-      if (
-        pickerRef.current &&
-        !pickerRef.current.contains(e.target)
-      ) {
-        setPickerOpen(false);
-      }
-    };
-
-    document.addEventListener(
-      'mousedown',
-      close
-    );
-
-    return () =>
-      document.removeEventListener(
-        'mousedown',
-        close
-      );
-  }, []);
 
   /* ─────────────────────────────────────────────
      Attendance
@@ -884,11 +851,14 @@ const ParentDashboard = ({
     const summary =
       entry?.monthlySummary || {};
 
-    // Overall attendance across all recorded days, not just this month.
-    const percent =
-      pct(records) ??
-      summary.attendancePercentage ??
-      0;
+    // Active-session attendance from the server: school days elapsed in
+    // the session (Sundays + holidays excluded) vs days marked present.
+    const session = entry?.sessionSummary || null;
+    const percent = session
+      ? session.percentage
+      : pct(records) ??
+        summary.attendancePercentage ??
+        0;
 
     const curPct = pct(cur);
     const lastPct = pct(last);
@@ -904,16 +874,21 @@ const ParentDashboard = ({
           ? null
           : curPct - lastPct,
 
-      present: records.length
-        ? records.filter(
-            (r) => r.status === 'present'
-          ).length
-        : summary.presentDays || 0,
+      present: session
+        ? session.presentDays
+        : records.length
+          ? records.filter(
+              (r) => r.status === 'present'
+            ).length
+          : summary.presentDays || 0,
 
-      total:
-        records.length ||
-        summary.totalClasses ||
-        0,
+      total: session
+        ? session.schoolDays
+        : records.length ||
+          summary.totalClasses ||
+          0,
+
+      sessionName: session?.sessionName || '',
 
       today,
     };
@@ -1108,13 +1083,28 @@ const ParentDashboard = ({
 
     const rows = [];
 
+    const now = new Date();
+    // A paper is over once its end (or start) time has passed today.
+    const paperOver = (s) => {
+      const d = new Date(s.date);
+      if (dayKey(d) !== dayKey(now)) return false;
+      const m = String(s.endTime || s.startTime || s.time || '').match(/^(\d{1,2}):(\d{2})/);
+      if (!m) return false;
+      const t = new Date(d);
+      t.setHours(Number(m[1]), Number(m[2]), 0, 0);
+      return t < now;
+    };
+
     (kid?.groups || []).forEach(
       (g) =>
+        // Completed exams (status Completed / last paper done) are not upcoming.
+        !(g.completed || g.examState === 'completed') &&
         (g.subjects || []).forEach(
           (s) => {
             if (
               validDate(s.date) &&
-              new Date(s.date) >= today
+              new Date(s.date) >= today &&
+              !paperOver(s)
             ) {
               rows.push({
                 date: new Date(s.date),
@@ -1421,178 +1411,6 @@ const ParentDashboard = ({
           </p>
         </div>
 
-        {child && (
-          <div
-            className="relative"
-            ref={pickerRef}
-          >
-            <button
-              type="button"
-              onClick={() =>
-                options.length > 1 &&
-                setPickerOpen(
-                  (o) => !o
-                )
-              }
-              className="
-                flex
-                w-full
-                items-center
-                gap-2.5
-                rounded-xl
-                border border-slate-200
-                bg-white
-                px-2.5
-                py-2
-                pr-3
-                text-left
-                shadow-sm
-                sm:w-64
-              "
-              aria-haspopup={
-                options.length > 1
-                  ? 'listbox'
-                  : undefined
-              }
-              aria-expanded={pickerOpen}
-            >
-              <Avatar
-                size="h-8 w-8"
-                text="text-xs"
-              />
-
-              <span className="min-w-0 flex-1">
-                <span className="block truncate text-xs font-bold text-slate-900">
-                  {child.name}
-                </span>
-
-                <span className="block truncate text-[10px] text-slate-500">
-                  {classLine}
-                </span>
-              </span>
-
-              {options.length > 1 && (
-                <ChevronDown
-                  size={15}
-                  className={`
-                    text-slate-400
-                    transition
-                    ${
-                      pickerOpen
-                        ? 'rotate-180'
-                        : ''
-                    }
-                  `}
-                />
-              )}
-            </button>
-
-            {pickerOpen && (
-              <ul
-                role="listbox"
-                className="
-                  absolute
-                  right-0
-                  z-20
-                  mt-1.5
-                  w-full
-                  overflow-hidden
-                  rounded-xl
-                  border border-slate-100
-                  bg-white
-                  shadow-xl
-                "
-              >
-                {children.map(
-                  (c, i) => (
-                    <li key={c.id}>
-                      <button
-                        type="button"
-                        onClick={() => {
-                          const o =
-                            options[i];
-
-                          setChildKey(
-                            `${
-                              o.id || ''
-                            }::${
-                              o.name || ''
-                            }`
-                          );
-
-                          setPickerOpen(
-                            false
-                          );
-                        }}
-                        className={`
-                          flex
-                          w-full
-                          items-center
-                          gap-2.5
-                          px-2.5
-                          py-2
-                          text-left
-                          hover:bg-slate-50
-                          ${
-                            c.id ===
-                            child.id
-                              ? 'bg-violet-50'
-                              : ''
-                          }
-                        `}
-                      >
-                        {c.photo ? (
-                          <img
-                            src={c.photo}
-                            alt=""
-                            className="
-                              h-7
-                              w-7
-                              rounded-full
-                              object-cover
-                            "
-                          />
-                        ) : (
-                          <span
-                            className="
-                              flex
-                              h-7
-                              w-7
-                              items-center
-                              justify-center
-                              rounded-full
-                              bg-violet-100
-                              text-[10px]
-                              font-bold
-                              text-violet-700
-                            "
-                          >
-                            {initialsOf(
-                              c.name
-                            )}
-                          </span>
-                        )}
-
-                        <span className="min-w-0">
-                          <span className="block truncate text-xs font-semibold text-slate-800">
-                            {c.name}
-                          </span>
-
-                          <span className="block text-[10px] text-slate-500">
-                            Class {c.grade}
-                            {c.section
-                              ? ` - Section ${c.section}`
-                              : ''}
-                          </span>
-                        </span>
-                      </button>
-                    </li>
-                  )
-                )}
-              </ul>
-            )}
-          </div>
-        )}
       </motion.div>
 
       {/* ─────────────────────────────────────
@@ -1706,6 +1524,15 @@ const ParentDashboard = ({
                       : '—'}
                   </strong>
                 </span>
+
+                {attendance.sessionName ? (
+                  <>
+                    <span className="text-slate-300">|</span>
+                    <span>
+                      Session: <strong>{attendance.sessionName}</strong>
+                    </span>
+                  </>
+                ) : null}
               </div>
             )}
           </div>
@@ -1756,7 +1583,7 @@ const ParentDashboard = ({
           animatedValue={attendance.percent}
           formatter={(n) => `${n}%`}
           delta={attendance.delta}
-          sub={`Present: ${attendance.present} / ${attendance.total}`}
+          sub={`Present: ${attendance.present} / ${attendance.total} days`}
         />
 
         <StatCard

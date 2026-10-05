@@ -92,9 +92,7 @@ const RISE = { hidden: { opacity: 0, y: 16 }, show: { opacity: 1, y: 0, transiti
 /* ── page ────────────────────────────────────────────────────────────────── */
 const AttendanceReport = () => {
   const navigate = useNavigate();
-  const { children, options, setChildKey, selected: child } = useParentChildren();
-  const [pickerOpen, setPickerOpen] = useState(false);
-  const pickerRef = useRef(null);
+  const { selected: child } = useParentChildren();
 
   const cachedPage = readPageCache();
   const [attendanceKids, setAttendanceKids] = useState(() => cachedPage?.attendanceKids || []);
@@ -142,11 +140,6 @@ const AttendanceReport = () => {
     return () => { off = true; };
   }, [navigate]);
 
-  useEffect(() => {
-    const close = (e) => { if (pickerRef.current && !pickerRef.current.contains(e.target)) setPickerOpen(false); };
-    document.addEventListener('mousedown', close);
-    return () => document.removeEventListener('mousedown', close);
-  }, []);
 
   /* ── per-day maps ── */
   const entry = useMemo(
@@ -273,8 +266,6 @@ const AttendanceReport = () => {
       .sort((a, b) => a.name.localeCompare(b.name)).slice(0, 6);
   }, [rawRecords]);
 
-  const classLine = child ? `Class ${child.grade || '—'}${child.section ? ` - Section ${child.section}` : ''}` : '';
-  const initials = (n) => String(n || 'S').trim().split(/\s+/).slice(0, 2).map((w) => w[0]).join('').toUpperCase();
 
   return (
     <motion.div
@@ -290,40 +281,6 @@ const AttendanceReport = () => {
           <h1 className="text-2xl font-bold text-slate-900">Attendance</h1>
           <p className="mt-0.5 text-sm text-slate-600">View your child&apos;s daily attendance, monthly summary and detailed records.</p>
         </div>
-        {child && (
-          <div className="relative" ref={pickerRef}>
-            <button
-              type="button"
-              onClick={() => options.length > 1 && setPickerOpen((o) => !o)}
-              className="flex w-full items-center gap-3 rounded-2xl border border-slate-200 bg-white px-3 py-2.5 pr-4 text-left shadow-sm sm:w-72"
-            >
-              {child.photo
-                ? <img src={child.photo} alt={child.name} className="h-10 w-10 rounded-full object-cover" />
-                : <span className="flex h-10 w-10 items-center justify-center rounded-xl bg-violet-100 text-sm font-bold text-violet-700">{initials(child.name)}</span>}
-              <span className="min-w-0 flex-1">
-                <span className="block truncate text-sm font-bold text-slate-900">{child.name}</span>
-                <span className="block truncate text-xs text-slate-500">{classLine}</span>
-              </span>
-              {options.length > 1 && <ChevronDown size={17} className={`text-slate-500 transition ${pickerOpen ? 'rotate-180' : ''}`} />}
-            </button>
-            {pickerOpen && (
-              <ul className="absolute right-0 z-20 mt-2 w-full overflow-hidden rounded-2xl border border-slate-100 bg-white shadow-xl">
-                {children.map((c, i) => (
-                  <li key={c.id}>
-                    <button
-                      type="button"
-                      onClick={() => { const o = options[i]; setChildKey(`${o.id || ''}::${o.name || ''}`); setPickerOpen(false); }}
-                      className={`flex w-full items-center gap-3 px-3 py-2.5 text-left hover:bg-slate-50 ${c.id === child.id ? 'bg-violet-50' : ''}`}
-                    >
-                      <span className="flex h-8 w-8 items-center justify-center rounded-lg bg-violet-100 text-xs font-bold text-violet-700">{initials(c.name)}</span>
-                      <span className="text-sm font-semibold text-slate-800">{c.name}</span>
-                    </button>
-                  </li>
-                ))}
-              </ul>
-            )}
-          </div>
-        )}
       </motion.div>
 
       {error ? <p role="alert" className="rounded-xl border border-rose-200 bg-rose-50 px-4 py-3 text-sm text-rose-700">{error}</p> : null}

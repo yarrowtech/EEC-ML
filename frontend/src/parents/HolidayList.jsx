@@ -6,8 +6,6 @@ import { CalendarCheck2, CalendarDays, ChevronDown, ChevronRight, ChevronUp, Dow
 import Loading from './Loading';
 import { EmptyState, ErrorState } from './StateBlock';
 import { parentApiFetch } from './parentApi';
-import { childOptionKey } from './ChildSwitcher';
-import useParentChildren from './useParentChildren';
 
 const CARD = 'rounded-xl border border-slate-100 bg-white shadow-[0_1px_3px_rgba(15,23,42,0.04)]';
 
@@ -133,7 +131,6 @@ const startOf = (item) => new Date(item.startDate || item.date).getTime() || 0;
 
 const HolidayList = () => {
   const navigate = useNavigate();
-  const { options, childKey, setChildKey, selected } = useParentChildren();
   const cached = readHolidaysCache();
   const [holidays, setHolidays] = useState(() => cached?.holidays || []);
   const [loading, setLoading] = useState(() => !cached);
@@ -360,10 +357,6 @@ const HolidayList = () => {
     { key: 'past', label: `Past (${past.length})` },
   ];
 
-  const childPhoto = selected?.profileImage || selected?.photo || selected?.avatar || '';
-  const childMeta = [selected?.grade && `Class ${selected.grade}`, selected?.section && `Section ${selected.section}`]
-    .filter(Boolean)
-    .join(' · ');
 
   const dateLabel = (item) => {
     const start = formatCompactDate(item.startDate || item.date);
@@ -400,33 +393,6 @@ const HolidayList = () => {
         </button>
       </motion.header>
 
-      {/* Viewing */}
-      <motion.section variants={RISE} className={`${CARD} flex items-center gap-3 px-3 py-2.5 sm:w-fit sm:min-w-[380px]`}>
-        <div className="flex min-w-0 flex-1 items-center gap-3">
-          <span className="shrink-0 text-xs text-slate-500">Viewing</span>
-          <div className="relative flex min-w-0 flex-1 items-center gap-2.5 rounded-lg border border-slate-200 px-2.5 py-1.5">
-            {childPhoto ? (
-              <img src={childPhoto} alt="" className="h-8 w-8 shrink-0 rounded-md object-cover" />
-            ) : (
-              <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-md bg-blue-50 text-xs font-bold text-blue-600">
-                {String(selected?.name || 'C').trim().charAt(0).toUpperCase()}
-              </span>
-            )}
-            <div className="min-w-0 flex-1">
-              <p className="truncate text-sm font-bold text-[#0b1446]">{selected?.name || 'Select child'}</p>
-              {childMeta ? <p className="truncate text-[11px] text-slate-500">{childMeta}</p> : null}
-            </div>
-            {options.length > 1 ? (
-              <>
-                <ChevronDown size={16} className="shrink-0 text-slate-500" />
-                <select aria-label="Select child" value={childKey} onChange={(e) => setChildKey(e.target.value)} className="absolute inset-0 cursor-pointer opacity-0">
-                  {options.map((opt) => <option key={childOptionKey(opt)} value={childOptionKey(opt)}>{opt.name}</option>)}
-                </select>
-              </>
-            ) : null}
-          </div>
-        </div>
-      </motion.section>
 
       {/* Stats */}
       <motion.div variants={RISE} className="grid gap-3 sm:grid-cols-2">

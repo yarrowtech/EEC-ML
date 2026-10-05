@@ -42,6 +42,7 @@ import { useDialog } from './useDialog';
 import './parentPortalDesign.css';
 import TenantContext from '../context/TenantContext';
 import { parentApiJson } from './parentApi';
+import NavChildSwitcher from './NavChildSwitcher';
 
 const ParentDashboard = lazy(() => import('./ParentDashboard'));
 const ChildGrowthAnalytics = lazy(() => import('./ChildGrowthAnalytics'));
@@ -999,6 +1000,9 @@ const ParentPortal = () => {
                 <span className="whitespace-nowrap tabular-nums">{headerNow.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</span>
                 <span className="text-slate-400">{headerNow.toLocaleDateString('en-IN', { day: 'numeric', month: 'short' })}</span>
               </div>
+
+              {/* Child switcher (only with 2+ children) */}
+              <NavChildSwitcher />
 
               {/* Notifications */}
               <div className="relative">

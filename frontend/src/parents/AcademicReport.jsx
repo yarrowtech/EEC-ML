@@ -35,9 +35,7 @@ import { downloadGradeCardPdf } from '../utils/gradeCardPdf';
 import { normalizeReportCard } from './reportCardShape';
 import { parentApiJson } from './parentApi';
 
-import ChildSwitcher, {
-  useSharedChildSelection,
-} from './ChildSwitcher';
+import { useSharedChildSelection } from './ChildSwitcher';
 
 import Loading from './Loading';
 import useParentChildren from './useParentChildren';
@@ -486,8 +484,8 @@ const AcademicReport = () => {
   );
 
   const [
-    childKey,
-    setChildKey,
+    ,
+    ,
     selectedOption,
   ] = useSharedChildSelection(
     childOptions
@@ -959,16 +957,6 @@ const AcademicReport = () => {
           </div>
         </div>
 
-        {selectedReport && (
-          <div className="w-full shrink-0 sm:w-[280px] lg:w-[300px]">
-            <ChildSwitcher
-              options={childOptions}
-              value={childKey}
-              onChange={setChildKey}
-              label="Select Child"
-            />
-          </div>
-        )}
       </div>
 
       {/* ================================================================== */}

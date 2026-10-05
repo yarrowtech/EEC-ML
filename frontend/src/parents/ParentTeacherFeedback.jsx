@@ -2,11 +2,11 @@ import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { motion } from 'framer-motion';
 import {
-  BookOpen, CalendarCheck2, CalendarDays, Check, ChevronDown, ChevronRight, Clock3, Lock, MessageSquareMore, RefreshCw,
+  BookOpen, CalendarCheck2, CalendarDays, Check, ChevronRight, Clock3, Lock, MessageSquareMore, RefreshCw,
 } from 'lucide-react';
 import Loading from './Loading';
 import { EmptyState, ErrorState } from './StateBlock';
-import { childOptionKey, useSharedChildSelection } from './ChildSwitcher';
+import { useSharedChildSelection } from './ChildSwitcher';
 import { parentApiFetch } from './parentApi';
 
 // View-only: parents don't rate teachers — they see instructions and whether
@@ -63,7 +63,7 @@ const ParentTeacherFeedback = () => {
     () => children.map((c) => ({ id: c.id, name: c.name, meta: [c.grade, c.section].filter(Boolean).join('-'), profileImage: c.profilePic || c.profileImage || c.photo || '' })),
     [children],
   );
-  const [childKey, setChildKey, selectedChild] = useSharedChildSelection(childOptions);
+  const [, selectedChild] = useSharedChildSelection(childOptions);
 
   useEffect(() => {
     let cancelled = false;
@@ -112,13 +112,6 @@ const ParentTeacherFeedback = () => {
   else if (win?.reason === 'feedback_not_started') banner = { tone: 'amber', Icon: Clock3, title: 'Feedback portal opens soon', text: win.message };
   else if (win) banner = { tone: 'slate', Icon: Lock, title: 'Feedback portal is closed', text: win.message || 'The school has not opened teacher feedback.' };
 
-  const viewingChild = selectedChild || childOptions[0] || null;
-  const viewingName = viewingChild?.name || data?.child?.name || '';
-  const childPhoto = viewingChild?.profileImage || data?.child?.profilePic || '';
-  const childMeta = (() => {
-    const c = children.find((x) => String(x.id) === String(viewingChild?.id));
-    return [c?.grade && `Class ${c.grade}`, c?.section && `Section ${c.section}`].filter(Boolean).join(' · ');
-  })();
 
   const tabs = [['all', `All (${total})`], ['pending', `Pending (${total - done})`], ['done', `Given (${done})`]];
 
@@ -137,30 +130,6 @@ const ParentTeacherFeedback = () => {
         </div>
 
         <div className="flex w-full items-center gap-2 sm:w-auto">
-          <div className={`${CARD} flex min-w-0 flex-1 items-center gap-3 px-3 py-2 sm:min-w-[300px]`}>
-            <span className="shrink-0 text-xs text-slate-500">Viewing</span>
-            <div className="relative flex min-w-0 flex-1 items-center gap-2.5 rounded-lg border border-slate-200 px-2.5 py-1.5">
-              {childPhoto ? (
-                <img src={childPhoto} alt="" className="h-8 w-8 shrink-0 rounded-md object-cover" />
-              ) : (
-                <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-md bg-blue-50 text-xs font-bold text-blue-600">
-                  {String(viewingName || 'C').trim().charAt(0).toUpperCase()}
-                </span>
-              )}
-              <div className="min-w-0 flex-1">
-                <p className="truncate text-sm font-bold text-[#0b1446]">{viewingName || 'Select child'}</p>
-                {childMeta ? <p className="truncate text-[11px] text-slate-500">{childMeta}</p> : null}
-              </div>
-              {childOptions.length > 1 ? (
-                <>
-                  <ChevronDown size={16} className="shrink-0 text-slate-500" />
-                  <select aria-label="Select child" value={childKey} onChange={(e) => setChildKey(e.target.value)} className="absolute inset-0 cursor-pointer opacity-0">
-                    {childOptions.map((opt) => <option key={childOptionKey(opt)} value={childOptionKey(opt)}>{opt.name}</option>)}
-                  </select>
-                </>
-              ) : null}
-            </div>
-          </div>
           <button
             type="button"
             onClick={load}

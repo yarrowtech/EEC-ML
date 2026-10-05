@@ -8,7 +8,7 @@ import {
 } from 'lucide-react';
 import toast from 'react-hot-toast';
 import { parentApiJson } from './parentApi';
-import { readSharedChild, writeSharedChild, isSameChild } from './ChildSwitcher';
+import { readSharedChild, writeSharedChild, isSameChild, subscribeSharedChild } from './ChildSwitcher';
 import { useDialog } from './useDialog';
 
 const POSITIVE_OPTIONS = ['Excellent', 'Good', 'Average', 'Needs Support'];
@@ -202,6 +202,12 @@ const ParentObservationNonAcademic = () => {
     };
     loadData();
   }, [navigate]);
+
+  // Follow the navbar child switcher.
+  useEffect(() => subscribeSharedChild((stored) => {
+    const match = stored && children.find((c) => isSameChild({ id: String(c.id || ''), name: c.name }, stored));
+    if (match) setStudentId(String(match.id));
+  }), [children]);
 
   const child = children.find((c) => String(c.id) === String(studentId)) || null;
 
@@ -425,30 +431,6 @@ const ParentObservationNonAcademic = () => {
         </div>
 
         <div className="flex w-full items-center gap-2 sm:w-auto">
-          <div className={`${CARD} flex min-w-0 flex-1 items-center gap-3 px-3 py-2 sm:min-w-[300px]`}>
-            <span className="shrink-0 text-xs text-slate-500">Viewing</span>
-            <div className="relative flex min-w-0 flex-1 items-center gap-2.5 rounded-lg border border-slate-200 px-2.5 py-1.5">
-              {child?.photo ? (
-                <img src={child.photo} alt="" className="h-8 w-8 shrink-0 rounded-md object-cover" />
-              ) : (
-                <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-md bg-blue-50 text-xs font-bold text-blue-600">
-                  {String(child?.name || 'C').trim().charAt(0).toUpperCase()}
-                </span>
-              )}
-              <div className="min-w-0 flex-1">
-                <p className="truncate text-sm font-bold text-[#0b1446]">{child?.name || (loading ? 'Loading…' : 'No child linked')}</p>
-                {child ? <p className="truncate text-[11px] text-slate-500">Class {child.className}{child.section ? ` · Section ${child.section}` : ''}{child.roll ? ` · Roll ${child.roll}` : ''}</p> : null}
-              </div>
-              {children.length > 1 ? (
-                <>
-                  <ChevronDown size={16} className="shrink-0 text-slate-500" />
-                  <select aria-label="Select child" value={studentId} onChange={(e) => setStudentId(e.target.value)} className="absolute inset-0 cursor-pointer opacity-0">
-                    {children.map((c) => <option key={c.id} value={c.id}>{c.name}{drafts[String(c.id)] ? ' (draft)' : ''}</option>)}
-                  </select>
-                </>
-              ) : null}
-            </div>
-          </div>
           <button
             type="button"
             onClick={() => setHistoryOpen(true)}
