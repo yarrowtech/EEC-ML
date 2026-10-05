@@ -126,6 +126,32 @@ const LoginForm = () => {
     if (resetNotice) setResetNotice('');
   };
 
+  // Mobile/tablet: the on-screen keyboard covers the lower half of the page.
+  // Track its height (visualViewport) so the page gets that much extra room,
+  // then scroll the focused field to the top so the next field and the
+  // submit button stay visible above the keyboard.
+  const [keyboardInset, setKeyboardInset] = useState(0);
+
+  useEffect(() => {
+    const vv = typeof window !== 'undefined' ? window.visualViewport : null;
+    if (!vv) return undefined;
+    const update = () => {
+      const inset = Math.max(0, window.innerHeight - vv.height - vv.offsetTop);
+      setKeyboardInset(inset > 80 ? inset : 0);
+    };
+    vv.addEventListener('resize', update);
+    return () => vv.removeEventListener('resize', update);
+  }, []);
+
+  const handleFieldFocus = (e) => {
+    if (typeof window === 'undefined' || window.matchMedia?.('(min-width: 1024px)').matches) return;
+    const field = e.currentTarget.closest('.relative') || e.currentTarget;
+    // Wait for the keyboard animation so the scroll lands in the visible area.
+    window.setTimeout(() => {
+      field.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    }, 300);
+  };
+
   const handleBlur = (e) => {
     const { name, value } = e.target;
     // Validate on blur — works in both login and reset mode (Fix #8)
@@ -494,8 +520,52 @@ const LoginForm = () => {
         </Motion.div>
       </div>
 
+      {/* ═══════════════════ MOBILE / TABLET HERO (below lg) ═══════════════════ */}
+      <div
+        className="lg:hidden relative h-[40svh] min-h-[260px] sm:h-[44svh] w-full overflow-hidden shrink-0"
+        style={{
+          background: `linear-gradient(160deg, ${colors.secondary || '#1E3A8A'} 0%, ${colors.primary || '#2563EB'} 60%, #3B82F6 100%)`,
+        }}
+      >
+        <Motion.img
+          src="/login-left-image.png"
+          alt=""
+          aria-hidden="true"
+          initial={{ opacity: 0, scale: 1.04 }}
+          animate={{ opacity: 1, scale: 1 }}
+          transition={{ duration: 0.6 }}
+          className="absolute inset-x-0 bottom-6 mx-auto h-[78%] max-w-[88%] object-contain select-none pointer-events-none"
+        />
+        {/* Darken the top so the title stays readable */}
+        <div className="absolute inset-0 bg-gradient-to-b from-black/45 via-black/10 to-black/35 pointer-events-none" />
+
+        <Motion.div
+          initial={{ opacity: 0, y: -8 }}
+          animate={{ opacity: 1, y: 0 }}
+          transition={{ duration: 0.5 }}
+          className="absolute left-6 top-8 sm:left-10 sm:top-10 flex items-center gap-3"
+        >
+          <div className="w-11 h-11 rounded-2xl bg-white/15 border border-white/25 backdrop-blur-sm flex items-center justify-center overflow-hidden shrink-0">
+            <img src={logo || '/logo_new.png'} alt="" className="w-8 h-8 object-contain" />
+          </div>
+          <div>
+            <div className="text-2xl sm:text-3xl font-black text-white leading-none drop-shadow">EEC</div>
+            <div className="text-xs sm:text-sm text-white/80 font-medium leading-none mt-1">School Portal</div>
+          </div>
+        </Motion.div>
+
+        <div className="absolute left-6 right-6 bottom-12 sm:left-10 sm:bottom-14">
+          <div className="text-lg sm:text-xl font-bold text-white drop-shadow">{organizationName || 'Electronic Educare'}</div>
+          <div className="text-xs sm:text-sm text-white/80">School Management ERP Platform</div>
+          <div className="mt-3 flex gap-1.5">
+            <span className="h-1.5 w-1.5 rounded-full bg-white/50" />
+            <span className="h-1.5 w-5 rounded-full bg-amber-300" />
+          </div>
+        </div>
+      </div>
+
       {/* ══════════════════════════ RIGHT / FORM PANEL ══════════════════════════ */}
-      <div className="relative flex-1 flex flex-col items-center justify-start lg:justify-center px-5 py-10 sm:px-10 sm:py-12 lg:px-10 lg:py-6 xl:px-16 bg-gradient-to-b from-[#fffaf3] via-[#fffaf3] to-[#fff3e2] lg:h-full lg:overflow-hidden lg:-ml-8 lg:rounded-tl-[40px] lg:rounded-bl-[40px] lg:z-10">
+      <div className="relative z-10 -mt-8 rounded-t-[32px] lg:mt-0 lg:rounded-t-none flex-1 flex flex-col items-center justify-start lg:justify-center px-5 pt-8 pb-10 sm:px-10 sm:pt-10 sm:pb-12 lg:px-10 lg:py-6 xl:px-16 bg-gradient-to-b from-[#fffaf3] via-[#fffaf3] to-[#fff3e2] lg:h-full lg:overflow-hidden lg:-ml-8 lg:rounded-tl-[40px] lg:rounded-bl-[40px] lg:z-10">
 
         {/* Background accent glow */}
         <div className="absolute top-0 right-0 w-80 h-80 rounded-full bg-amber-100/50 blur-3xl pointer-events-none" />
@@ -515,15 +585,15 @@ const LoginForm = () => {
             initial={{ opacity: 0, y: 12 }}
             animate={{ opacity: 1, y: 0 }}
             transition={{ duration: 0.5 }}
-            className="mb-7 lg:mb-4 mt-10 sm:mt-0 text-center lg:text-left"
+            className="mb-5 lg:mb-4 text-left"
           >
-            <div className="flex items-center justify-center lg:justify-start gap-2 mb-3 lg:mb-2">
+            <div className="hidden lg:flex items-center justify-start gap-2 mb-2">
               <div className="h-0.5 w-5 bg-amber-400 rounded-full" />
               <span className="text-[11px] font-bold text-amber-600 uppercase tracking-[0.14em]">
                 {resetMode ? 'Password Reset' : 'Portal Access'}
               </span>
             </div>
-            <h2 className="text-3xl sm:text-[2.25rem] lg:text-3xl font-black text-gray-900 leading-tight">
+            <h2 className="text-[1.75rem] sm:text-[2rem] lg:text-3xl font-black text-gray-900 leading-tight">
               {resetMode ? 'Reset your password' : 'Welcome back!'}
             </h2>
             <p className="mt-2 lg:mt-1 text-sm text-gray-400">
@@ -538,7 +608,7 @@ const LoginForm = () => {
             initial={{ opacity: 0, y: 16 }}
             animate={{ opacity: 1, y: 0 }}
             transition={{ duration: 0.5, delay: 0.1 }}
-            className="p-6 sm:p-10 lg:p-7"
+            className="p-0 sm:p-2 lg:p-7"
           >
             {/* Notices */}
             {resetNotice && (
@@ -562,7 +632,6 @@ const LoginForm = () => {
 
               {/* User ID */}
               <div className="space-y-1.5">
-                <label htmlFor="login-username" className="block text-xs font-bold text-gray-700 uppercase tracking-wider">User ID</label>
                 <div className="relative">
                   <div className="absolute left-4 top-1/2 -translate-y-1/2 w-7 h-7 rounded-lg bg-amber-50 flex items-center justify-center pointer-events-none">
                     <User className="w-3.5 h-3.5 text-amber-500" />
@@ -575,13 +644,16 @@ const LoginForm = () => {
                     value={formData.username}
                     onChange={handleInputChange}
                     onBlur={handleBlur}
-                    placeholder="Enter your User ID"
-                    className={`bg-gray-50 w-full h-14 lg:h-12 pl-14 pr-4 rounded-full border text-gray-900 placeholder-gray-400 text-sm font-medium transition-all focus:outline-none focus:border-amber-400 focus:ring-4 focus:ring-amber-50 focus:bg-white ${
+                    placeholder=" "
+                    className={`peer bg-gray-50 w-full h-14 lg:h-12 pl-14 pr-4 rounded-full border text-gray-900 placeholder-transparent text-sm font-medium transition-all focus:outline-none focus:border-amber-400 focus:ring-4 focus:ring-amber-50 focus:bg-white ${
                       errors.username
                         ? 'border-red-300 bg-red-50/30'
                         : 'border-gray-200 hover:border-amber-200'
                     }`}
                   />
+                  <label htmlFor="login-username" className="pointer-events-none absolute left-14 top-1/2 -translate-y-1/2 rounded px-1 text-sm text-gray-400 transition-all duration-200 peer-focus:top-0 peer-focus:left-5 peer-focus:bg-white peer-focus:text-[11px] peer-focus:font-semibold peer-focus:text-amber-600 peer-[:not(:placeholder-shown)]:top-0 peer-[:not(:placeholder-shown)]:left-5 peer-[:not(:placeholder-shown)]:bg-white peer-[:not(:placeholder-shown)]:text-[11px] peer-[:not(:placeholder-shown)]:font-semibold">
+                    User ID
+                  </label>
                 </div>
                 {errors.username && <p className="text-xs text-red-500 flex items-center gap-1 pl-1">⚠ {errors.username}</p>}
               </div>
@@ -589,25 +661,28 @@ const LoginForm = () => {
               {/* Password (login mode) */}
               {!resetMode && (
                 <div className="space-y-1.5">
-                  <label className="block text-xs font-bold text-gray-700 uppercase tracking-wider">Password</label>
                   <div className="relative">
                     <div className="absolute left-4 top-1/2 -translate-y-1/2 w-7 h-7 rounded-lg bg-amber-50 flex items-center justify-center pointer-events-none">
                       <Lock className="w-3.5 h-3.5 text-amber-500" />
                     </div>
                     <input
+                      id="login-password"
                       type={showPass ? 'text' : 'password'}
                       name="password"
                       aria-label="Password"
                       value={formData.password}
                       onChange={handleInputChange}
                       onBlur={handleBlur}
-                      placeholder="Enter your password"
-                      className={`bg-gray-50 w-full h-14 lg:h-12 pl-14 pr-12 rounded-full border text-gray-900 placeholder-gray-400 text-sm font-medium transition-all focus:outline-none focus:border-amber-400 focus:ring-4 focus:ring-amber-50 focus:bg-white ${
+                      placeholder=" "
+                      className={`peer bg-gray-50 w-full h-14 lg:h-12 pl-14 pr-12 rounded-full border text-gray-900 placeholder-transparent text-sm font-medium transition-all focus:outline-none focus:border-amber-400 focus:ring-4 focus:ring-amber-50 focus:bg-white ${
                         errors.password
                           ? 'border-red-300 bg-red-50/30'
                           : 'border-gray-200 hover:border-amber-200'
                       }`}
                     />
+                    <label htmlFor="login-password" className="pointer-events-none absolute left-14 top-1/2 -translate-y-1/2 rounded px-1 text-sm text-gray-400 transition-all duration-200 peer-focus:top-0 peer-focus:left-5 peer-focus:bg-white peer-focus:text-[11px] peer-focus:font-semibold peer-focus:text-amber-600 peer-[:not(:placeholder-shown)]:top-0 peer-[:not(:placeholder-shown)]:left-5 peer-[:not(:placeholder-shown)]:bg-white peer-[:not(:placeholder-shown)]:text-[11px] peer-[:not(:placeholder-shown)]:font-semibold">
+                      Password
+                    </label>
                     <button
                       type="button"
                       aria-label={showPass ? 'Hide password' : 'Show password'}
@@ -625,24 +700,27 @@ const LoginForm = () => {
               {resetMode && (
                 <>
                   <div className="space-y-1.5">
-                    <label className="block text-xs font-bold text-gray-700 uppercase tracking-wider">New Password</label>
                     <div className="relative">
                       <div className="absolute left-4 top-1/2 -translate-y-1/2 w-7 h-7 rounded-lg bg-amber-50 flex items-center justify-center pointer-events-none">
                         <Lock className="w-3.5 h-3.5 text-amber-500" />
                       </div>
                       <input
+                        id="login-new-password"
                         type={showPass ? 'text' : 'password'}
                         name="newPassword"
                         value={formData.newPassword}
                         onChange={handleInputChange}
                         onBlur={handleBlur}
-                        placeholder="Create a strong password"
-                        className={`bg-gray-50 w-full h-14 lg:h-12 pl-14 pr-12 rounded-full border text-gray-900 placeholder-gray-400 text-sm font-medium transition-all focus:outline-none focus:border-amber-400 focus:ring-4 focus:ring-amber-50 focus:bg-white ${
+                        placeholder=" "
+                        className={`peer bg-gray-50 w-full h-14 lg:h-12 pl-14 pr-12 rounded-full border text-gray-900 placeholder-transparent text-sm font-medium transition-all focus:outline-none focus:border-amber-400 focus:ring-4 focus:ring-amber-50 focus:bg-white ${
                           errors.newPassword
                             ? 'border-red-300 bg-red-50/30'
                             : 'border-gray-200 hover:border-amber-200'
                         }`}
                       />
+                      <label htmlFor="login-new-password" className="pointer-events-none absolute left-14 top-1/2 -translate-y-1/2 rounded px-1 text-sm text-gray-400 transition-all duration-200 peer-focus:top-0 peer-focus:left-5 peer-focus:bg-white peer-focus:text-[11px] peer-focus:font-semibold peer-focus:text-amber-600 peer-[:not(:placeholder-shown)]:top-0 peer-[:not(:placeholder-shown)]:left-5 peer-[:not(:placeholder-shown)]:bg-white peer-[:not(:placeholder-shown)]:text-[11px] peer-[:not(:placeholder-shown)]:font-semibold">
+                        New Password
+                      </label>
                       <button
                         type="button"
                         aria-label={showPass ? 'Hide password' : 'Show password'}
@@ -675,24 +753,27 @@ const LoginForm = () => {
                   </div>
 
                   <div className="space-y-1.5">
-                    <label className="block text-xs font-bold text-gray-700 uppercase tracking-wider">Confirm Password</label>
                     <div className="relative">
                       <div className="absolute left-4 top-1/2 -translate-y-1/2 w-7 h-7 rounded-lg bg-amber-50 flex items-center justify-center pointer-events-none">
                         <Lock className="w-3.5 h-3.5 text-amber-500" />
                       </div>
                       <input
+                        id="login-confirm-password"
                         type={showPass ? 'text' : 'password'}
                         name="confirmPassword"
                         value={formData.confirmPassword}
                         onChange={handleInputChange}
                         onBlur={handleBlur}
-                        placeholder="Re-enter your password"
-                        className={`bg-gray-50 w-full h-14 lg:h-12 pl-14 pr-4 rounded-full border text-gray-900 placeholder-gray-400 text-sm font-medium transition-all focus:outline-none focus:border-amber-400 focus:ring-4 focus:ring-amber-50 focus:bg-white ${
+                        placeholder=" "
+                        className={`peer bg-gray-50 w-full h-14 lg:h-12 pl-14 pr-4 rounded-full border text-gray-900 placeholder-transparent text-sm font-medium transition-all focus:outline-none focus:border-amber-400 focus:ring-4 focus:ring-amber-50 focus:bg-white ${
                           errors.confirmPassword
                             ? 'border-red-300 bg-red-50/30'
                             : 'border-gray-200 hover:border-amber-200'
                         }`}
                       />
+                      <label htmlFor="login-confirm-password" className="pointer-events-none absolute left-14 top-1/2 -translate-y-1/2 rounded px-1 text-sm text-gray-400 transition-all duration-200 peer-focus:top-0 peer-focus:left-5 peer-focus:bg-white peer-focus:text-[11px] peer-focus:font-semibold peer-focus:text-amber-600 peer-[:not(:placeholder-shown)]:top-0 peer-[:not(:placeholder-shown)]:left-5 peer-[:not(:placeholder-shown)]:bg-white peer-[:not(:placeholder-shown)]:text-[11px] peer-[:not(:placeholder-shown)]:font-semibold">
+                        Confirm Password
+                      </label>
                     </div>
                     {errors.confirmPassword && <p className="text-xs text-red-500 flex items-center gap-1 pl-1">⚠ {errors.confirmPassword}</p>}
                   </div>
@@ -740,7 +821,7 @@ const LoginForm = () => {
                 ) : (
                   <>
                     {/* <ArrowRight size={17} /> */}
-                    {resetMode ? 'Reset & Sign In' : 'Sign In'}
+                    {resetMode ? 'Reset & Log In' : 'Log In'}
                   </>
                 )}
               </Motion.button>
@@ -752,18 +833,18 @@ const LoginForm = () => {
             initial={{ opacity: 0, y: 12 }}
             animate={{ opacity: 1, y: 0 }}
             transition={{ duration: 0.5, delay: 0.2 }}
-            className="mt-5 lg:mt-3 bg-white/70 backdrop-blur-md border border-gray-100 rounded-2xl px-4 py-3.5 lg:py-2.5 flex items-center justify-around gap-2 shadow-sm"
+            className="mt-5 lg:mt-3 px-4 py-3.5 lg:py-2.5 flex items-center justify-around gap-2"
           >
             <div className="flex items-center gap-1.5 text-xs font-medium text-gray-500">
               <ShieldCheck className="w-3.5 h-3.5 text-emerald-500" />
               <span>Secure Login</span>
             </div>
-            <div className="w-1 h-1 rounded-full bg-gray-200 shrink-0" />
+            <div className="w-1 h-1 rounded-full bg-gray-400 shrink-0" />
             <div className="flex items-center gap-1.5 text-xs font-medium text-gray-500">
               <ShieldCheck className="w-3.5 h-3.5 text-amber-500" />
               <span>Data Protected</span>
             </div>
-            <div className="w-1 h-1 rounded-full bg-gray-200 shrink-0" />
+            <div className="w-1 h-1 rounded-full bg-gray-400 shrink-0" />
             <div className="flex items-center gap-1.5 text-xs font-medium text-gray-500">
               <Headphones className="w-3.5 h-3.5 text-blue-500" />
               <span>24/7 Support</span>

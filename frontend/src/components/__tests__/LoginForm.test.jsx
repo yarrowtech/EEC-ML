@@ -39,8 +39,8 @@ describe('LoginForm Component', () => {
       renderWithRouter(<LoginForm />);
 
       // Check for input fields
-      expect(screen.getByPlaceholderText(/Enter your User ID/i)).toBeInTheDocument();
-      expect(screen.getByPlaceholderText(/Enter your password/i)).toBeInTheDocument();
+      expect(screen.getByLabelText(/^User ID$/i)).toBeInTheDocument();
+      expect(screen.getByLabelText(/^Password$/i)).toBeInTheDocument();
 
       // Check for submit button
       expect(screen.getByRole('button', { name: /Sign In/i })).toBeInTheDocument();
@@ -70,7 +70,7 @@ describe('LoginForm Component', () => {
       const user = userEvent.setup();
       renderWithRouter(<LoginForm />);
 
-      const usernameInput = screen.getByPlaceholderText(/Enter your User ID/i);
+      const usernameInput = screen.getByLabelText(/^User ID$/i);
       await user.type(usernameInput, 'testuser123');
 
       expect(usernameInput).toHaveValue('testuser123');
@@ -80,7 +80,7 @@ describe('LoginForm Component', () => {
       const user = userEvent.setup();
       renderWithRouter(<LoginForm />);
 
-      const passwordInput = screen.getByPlaceholderText(/Enter your password/i);
+      const passwordInput = screen.getByLabelText(/^Password$/i);
       await user.type(passwordInput, 'password123');
 
       expect(passwordInput).toHaveValue('password123');
@@ -89,7 +89,7 @@ describe('LoginForm Component', () => {
     test('toggles password visibility when eye icon is clicked', async () => {
       renderWithRouter(<LoginForm />);
 
-      const passwordInput = screen.getByPlaceholderText(/Enter your password/i);
+      const passwordInput = screen.getByLabelText(/^Password$/i);
       expect(passwordInput).toHaveAttribute('type', 'password');
 
       // Find and click the toggle button (within the password field area)
@@ -136,7 +136,7 @@ describe('LoginForm Component', () => {
       const user = userEvent.setup();
       renderWithRouter(<LoginForm />);
 
-      const usernameInput = screen.getByPlaceholderText(/Enter your User ID/i);
+      const usernameInput = screen.getByLabelText(/^User ID$/i);
       await user.type(usernameInput, 'testuser');
 
       const submitButton = screen.getByRole('button', { name: /Sign In/i });
@@ -149,8 +149,8 @@ describe('LoginForm Component', () => {
       const user = userEvent.setup();
       renderWithRouter(<LoginForm />);
 
-      const usernameInput = screen.getByPlaceholderText(/Enter your User ID/i);
-      const passwordInput = screen.getByPlaceholderText(/Enter your password/i);
+      const usernameInput = screen.getByLabelText(/^User ID$/i);
+      const passwordInput = screen.getByLabelText(/^Password$/i);
 
       await user.type(usernameInput, 'testuser');
       await user.type(passwordInput, '12345'); // Less than 6 characters
@@ -172,7 +172,7 @@ describe('LoginForm Component', () => {
       expect(await screen.findByText(/User ID is required/i)).toBeInTheDocument();
 
       // Start typing to clear error
-      const usernameInput = screen.getByPlaceholderText(/Enter your User ID/i);
+      const usernameInput = screen.getByLabelText(/^User ID$/i);
       await user.type(usernameInput, 't');
 
       expect(screen.queryByText(/User ID is required/i)).not.toBeInTheDocument();
@@ -198,8 +198,8 @@ describe('LoginForm Component', () => {
       renderWithRouter(<LoginForm />);
 
       // Fill in form
-      const usernameInput = screen.getByPlaceholderText(/Enter your User ID/i);
-      const passwordInput = screen.getByPlaceholderText(/Enter your password/i);
+      const usernameInput = screen.getByLabelText(/^User ID$/i);
+      const passwordInput = screen.getByLabelText(/^Password$/i);
 
       await user.type(usernameInput, 'testuser');
       await user.type(passwordInput, 'password123');
@@ -249,8 +249,8 @@ describe('LoginForm Component', () => {
       renderWithRouter(<LoginForm />);
 
       // Fill in form
-      await user.type(screen.getByPlaceholderText(/Enter your User ID/i), 'testuser');
-      await user.type(screen.getByPlaceholderText(/Enter your password/i), 'wrongpassword');
+      await user.type(screen.getByLabelText(/^User ID$/i), 'testuser');
+      await user.type(screen.getByLabelText(/^Password$/i), 'wrongpassword');
 
       // Submit form
       const submitButton = screen.getByRole('button', { name: /Sign In/i });
@@ -270,8 +270,8 @@ describe('LoginForm Component', () => {
 
       renderWithRouter(<LoginForm />);
 
-      await user.type(screen.getByPlaceholderText(/Enter your User ID/i), 'testuser');
-      const passwordInput = screen.getByPlaceholderText(/Enter your password/i);
+      await user.type(screen.getByLabelText(/^User ID$/i), 'testuser');
+      const passwordInput = screen.getByLabelText(/^Password$/i);
       await user.type(passwordInput, 'wrongpassword');
 
       await user.click(screen.getByRole('button', { name: /Sign In/i }));
@@ -297,8 +297,8 @@ describe('LoginForm Component', () => {
 
       renderWithRouter(<LoginForm />);
 
-      await user.type(screen.getByPlaceholderText(/Enter your User ID/i), 'testuser');
-      await user.type(screen.getByPlaceholderText(/Enter your password/i), 'password123');
+      await user.type(screen.getByLabelText(/^User ID$/i), 'testuser');
+      await user.type(screen.getByLabelText(/^Password$/i), 'password123');
 
       const submitButton = screen.getByRole('button', { name: /Sign In/i });
       await user.click(submitButton);
@@ -318,8 +318,8 @@ describe('LoginForm Component', () => {
 
       renderWithRouter(<LoginForm />);
 
-      await user.type(screen.getByPlaceholderText(/Enter your User ID/i), '  spaceduser  ');
-      await user.type(screen.getByPlaceholderText(/Enter your password/i), 'password123');
+      await user.type(screen.getByLabelText(/^User ID$/i), '  spaceduser  ');
+      await user.type(screen.getByLabelText(/^Password$/i), 'password123');
       await user.click(screen.getByRole('button', { name: /Sign In/i }));
 
       await waitFor(() => {
@@ -341,8 +341,8 @@ describe('LoginForm Component', () => {
 
       renderWithRouter(<LoginForm />);
 
-      await user.type(screen.getByPlaceholderText(/Enter your User ID/i), 'teacher');
-      await user.type(screen.getByPlaceholderText(/Enter your password/i), 'password123');
+      await user.type(screen.getByLabelText(/^User ID$/i), 'teacher');
+      await user.type(screen.getByLabelText(/^Password$/i), 'password123');
       await user.click(screen.getByRole('button', { name: /Sign In/i }));
 
       await waitFor(() => {
@@ -360,8 +360,8 @@ describe('LoginForm Component', () => {
 
       renderWithRouter(<LoginForm />);
 
-      await user.type(screen.getByPlaceholderText(/Enter your User ID/i), 'admin');
-      await user.type(screen.getByPlaceholderText(/Enter your password/i), 'password123');
+      await user.type(screen.getByLabelText(/^User ID$/i), 'admin');
+      await user.type(screen.getByLabelText(/^Password$/i), 'password123');
       await user.click(screen.getByRole('button', { name: /Sign In/i }));
 
       await waitFor(() => {
@@ -388,15 +388,15 @@ describe('LoginForm Component', () => {
 
       renderWithRouter(<LoginForm />);
 
-      await user.type(screen.getByPlaceholderText(/Enter your User ID/i), 'testuser');
-      await user.type(screen.getByPlaceholderText(/Enter your password/i), 'password123');
+      await user.type(screen.getByLabelText(/^User ID$/i), 'testuser');
+      await user.type(screen.getByLabelText(/^Password$/i), 'password123');
       await user.click(screen.getByRole('button', { name: /Sign In/i }));
 
       // Wait for reset mode UI
       expect(await screen.findByRole('heading', { name: /Reset your password/i })).toBeInTheDocument();
       expect(await screen.findByText(/First login detected/i)).toBeInTheDocument();
-      expect(screen.getByPlaceholderText(/Create a strong password/i)).toBeInTheDocument();
-      expect(screen.getByPlaceholderText(/Re-enter your password/i)).toBeInTheDocument();
+      expect(screen.getByLabelText(/^New Password$/i)).toBeInTheDocument();
+      expect(screen.getByLabelText(/^Confirm Password$/i)).toBeInTheDocument();
     });
 
     test('completes password reset flow for student and logs in automatically', async () => {
@@ -422,14 +422,14 @@ describe('LoginForm Component', () => {
 
       renderWithRouter(<LoginForm />);
 
-      await user.type(screen.getByPlaceholderText(/Enter your User ID/i), 'student01');
-      await user.type(screen.getByPlaceholderText(/Enter your password/i), 'password123');
+      await user.type(screen.getByLabelText(/^User ID$/i), 'student01');
+      await user.type(screen.getByLabelText(/^Password$/i), 'password123');
       await user.click(screen.getByRole('button', { name: /Sign In/i }));
 
       expect(await screen.findByRole('heading', { name: /Reset your password/i })).toBeInTheDocument();
 
-      const newPasswordInput = screen.getByPlaceholderText(/Create a strong password/i);
-      const confirmPasswordInput = screen.getByPlaceholderText(/Re-enter your password/i);
+      const newPasswordInput = screen.getByLabelText(/^New Password$/i);
+      const confirmPasswordInput = screen.getByLabelText(/^Confirm Password$/i);
 
       await user.type(newPasswordInput, 'StrongPass1!');
       await user.type(confirmPasswordInput, 'StrongPass1!');
@@ -485,14 +485,14 @@ describe('LoginForm Component', () => {
 
       renderWithRouter(<LoginForm />);
 
-      await user.type(screen.getByPlaceholderText(/Enter your User ID/i), 'guestuser');
-      await user.type(screen.getByPlaceholderText(/Enter your password/i), 'password123');
+      await user.type(screen.getByLabelText(/^User ID$/i), 'guestuser');
+      await user.type(screen.getByLabelText(/^Password$/i), 'password123');
       await user.click(screen.getByRole('button', { name: /Sign In/i }));
 
       expect(await screen.findByRole('heading', { name: /Reset your password/i })).toBeInTheDocument();
 
-      await user.type(screen.getByPlaceholderText(/Create a strong password/i), 'StrongPass1!');
-      await user.type(screen.getByPlaceholderText(/Re-enter your password/i), 'StrongPass1!');
+      await user.type(screen.getByLabelText(/^New Password$/i), 'StrongPass1!');
+      await user.type(screen.getByLabelText(/^Confirm Password$/i), 'StrongPass1!');
 
       await user.click(screen.getByRole('button', { name: /Reset & Sign In/i }));
 
@@ -515,8 +515,8 @@ describe('LoginForm Component', () => {
 
       renderWithRouter(<LoginForm />);
 
-      await user.type(screen.getByPlaceholderText(/Enter your User ID/i), 'testuser');
-      await user.type(screen.getByPlaceholderText(/Enter your password/i), 'password123');
+      await user.type(screen.getByLabelText(/^User ID$/i), 'testuser');
+      await user.type(screen.getByLabelText(/^Password$/i), 'password123');
       await user.click(screen.getByRole('checkbox'));
       await user.click(screen.getByRole('button', { name: /Sign In/i }));
 
