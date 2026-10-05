@@ -37,6 +37,7 @@ import {
 } from 'lucide-react';
 import { useDesktopNotificationBridge } from '../hooks/useDesktopNotificationBridge';
 import DesktopNotificationPermissionModal from '../components/DesktopNotificationPermissionModal';
+import { useChatMessageNotifier } from './useChatMessageNotifier';
 import { AUTH_NOTICE, apiFetch, logoutAndRedirect } from '../utils/authSession';
 import { useDialog } from './useDialog';
 import './parentPortalDesign.css';
@@ -317,6 +318,7 @@ const ParentPortal = () => {
     )
   ));
   const navigate = useNavigate();
+  const chatUnread = useChatMessageNotifier({ navigate });
   const location = useLocation();
   const profileRef = useRef(null);
   const notificationsRef = useRef(null);
@@ -649,8 +651,12 @@ const ParentPortal = () => {
   }, [notifications, resolveNotifPath]);
 
   const badgeFor = useCallback(
-    (path) => sectionBadges[normalizePath(path)] || 0,
-    [sectionBadges],
+    (path) => {
+      const key = normalizePath(path);
+      const chat = key === '/parents/chat' ? chatUnread : 0;
+      return (sectionBadges[key] || 0) + chat;
+    },
+    [sectionBadges, chatUnread],
   );
 
   // Visiting a section clears its badge by marking those notifications read.
@@ -832,6 +838,8 @@ const ParentPortal = () => {
             }
 
             const GroupIcon = group.items[0]?.icon || FolderOpen;
+            const groupBadge = group.items.reduce((sum, item) => sum + badgeFor(item.path), 0);
+            const showGroupBadge = groupBadge > 0 && (!sidebarOpen || !isOpen);
 
             return (
               <div key={group.heading} className="space-y-1">
@@ -853,8 +861,13 @@ const ParentPortal = () => {
                   aria-expanded={sidebarOpen ? isOpen : undefined}
                   className={`group relative flex w-full items-center gap-3 rounded-full px-3 py-2.5 text-left transition-all duration-200 ${sidebarOpen ? '' : 'justify-center'} ${groupHasActiveItem ? 'bg-violet-50/70 text-violet-700' : 'text-gray-600 hover:bg-gray-50 hover:text-gray-900'}`}
                 >
-                  <span className={`flex shrink-0 rounded-full p-1.5 transition-colors ${groupHasActiveItem ? 'bg-violet-500 text-white' : 'bg-gray-100 text-gray-400 group-hover:bg-violet-50 group-hover:text-violet-500'}`}>
+                  <span className={`relative flex shrink-0 rounded-full p-1.5 transition-colors ${groupHasActiveItem ? 'bg-violet-500 text-white' : 'bg-gray-100 text-gray-400 group-hover:bg-violet-50 group-hover:text-violet-500'}`}>
                     <GroupIcon size={17} />
+                    {showGroupBadge && !sidebarOpen && (
+                      <span className="absolute -right-1.5 -top-1.5 flex h-3.5 min-w-3.5 items-center justify-center rounded-full bg-red-500 px-1 text-[9px] font-bold text-white">
+                        {groupBadge > 9 ? '9+' : groupBadge}
+                      </span>
+                    )}
                   </span>
 
                   {sidebarOpen && (
@@ -862,6 +875,11 @@ const ParentPortal = () => {
                       <span className={`flex-1 truncate text-sm ${groupHasActiveItem ? 'font-bold' : 'font-semibold'}`}>
                         {group.heading}
                       </span>
+                      {showGroupBadge && (
+                        <span className="flex h-5 min-w-5 items-center justify-center rounded-full bg-red-500 px-1.5 text-[10px] font-bold text-white">
+                          {groupBadge > 9 ? '9+' : groupBadge}
+                        </span>
+                      )}
                       <ChevronDown size={15} className={`shrink-0 text-gray-400 transition-transform duration-200 ${isOpen ? 'rotate-180 text-violet-500' : ''}`} />
                     </>
                   )}
@@ -1269,7 +1287,7 @@ const ParentPortal = () => {
           </div>
         </header>
 
-        <main id="parent-main-content" className="parent-route-canvas flex-1 overflow-y-auto bg-gradient-to-br from-slate-50 via-white to-violet-50/30 p-0 sm:p-3">
+        <main id="parent-main-content" className="parent-route-canvas flex-1 overflow-y-auto bg-gradient-to-br from-slate-50 via-white to-violet-50/30 p-0">
           <div className="h-full min-h-full sm:bg-white/40 sm:backdrop-blur-sm">
           <Suspense fallback={<PortalRouteFallback />}>
           <Routes>

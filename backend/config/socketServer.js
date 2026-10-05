@@ -16,9 +16,6 @@ const {
   notifyPresenceChange,
 } = require('../utils/chatPresence');
 const socketRegistry = require('../utils/socketRegistry');
-const StudentUser = require('../models/StudentUser');
-const TeacherUser = require('../models/TeacherUser');
-const ParentUser = require('../models/ParentUser');
 
 const resolveOrganizationForSocket = async (decoded, hostname, tenantResolver) => {
   const { getRootDomain, isMainHostname, resolveSlug } = tenantResolver;
@@ -151,9 +148,6 @@ const registerSocketEvents = (io, socket, ensureChatAccess) => {
     socket.leave(`thread:${threadId}`);
   });
 
-  // Threads this socket already passed the (slow, allocation-based) access check for.
-  const verifiedThreadIds = new Set();
-
   socket.on('send-message', async ({ threadId, text, encrypted } = {}, ack) => {
     // Optional ack lets the sender mark the message failed instead of hanging.
     const reply = typeof ack === 'function' ? ack : () => {};
@@ -173,13 +167,10 @@ const registerSocketEvents = (io, socket, ensureChatAccess) => {
         'participants.userId': userId,
       }).lean();
       if (!thread) return reply({ ok: false, error: 'Conversation not found' });
-      if (!verifiedThreadIds.has(String(threadId))) {
-        if (!(await ensureChatAccess({ user, schoolId: user.schoolId, campusId: user.campusId }, thread))) {
-          socket.emit('error', { message: 'Access denied' });
-          reply({ ok: false, error: 'Access denied' });
-          return;
-        }
-        verifiedThreadIds.add(String(threadId));
+      if (!(await ensureChatAccess({ user, schoolId: user.schoolId, campusId: user.campusId }, thread))) {
+        socket.emit('error', { message: 'Access denied' });
+        reply({ ok: false, error: 'Access denied' });
+        return;
       }
 
       const myParticipant = thread.participants?.find((p) => p.userId?.toString() === userId);
@@ -204,20 +195,6 @@ const registerSocketEvents = (io, socket, ensureChatAccess) => {
         seenBy: [{ userId, seenAt: new Date() }],
       });
 
-      // Deliver to everyone first; the thread summary/unread writes below can follow.
-      const payload = msg.toObject();
-      socket.emit('message-sent', payload);
-      reply({ ok: true, message: payload });
-      io.to(`thread:${threadId}`).emit('new-message', payload);
-      for (const p of thread.participants) {
-        if (p.userId?.toString() === userId) continue;
-        io.to(`user:${p.userId}`).emit('thread-updated', {
-          threadId, lastMessage: msg.text || '[Encrypted message]',
-          lastMessageAt: msg.createdAt, message: payload,
-        });
-      }
-      sendChatMessagePush({ io, thread, message: payload, senderId: userId })
-        .catch((pushErr) => logger.warn({ err: pushErr }, 'chat push failed'));
       const bulkOps = thread.participants
         .filter((p) => p.userId?.toString() !== userId)
         .map((p) => ({
@@ -235,6 +212,19 @@ const registerSocketEvents = (io, socket, ensureChatAccess) => {
         bulkOps.length ? ChatThread.bulkWrite(bulkOps) : Promise.resolve(),
       ]);
 
+      const payload = msg.toObject();
+      socket.emit('message-sent', payload);
+      reply({ ok: true, message: payload });
+      io.to(`thread:${threadId}`).emit('new-message', payload);
+      for (const p of thread.participants) {
+        if (p.userId?.toString() === userId) continue;
+        io.to(`user:${p.userId}`).emit('thread-updated', {
+          threadId, lastMessage: msg.text || '[Encrypted message]',
+          lastMessageAt: msg.createdAt, message: payload,
+        });
+      }
+      sendChatMessagePush({ io, thread, message: payload, senderId: userId })
+        .catch((pushErr) => logger.warn({ err: pushErr }, 'chat push failed'));
     } catch (err) {
       socket.emit('error', { message: err.message });
       reply({ ok: false, error: 'Message could not be sent' });
@@ -302,8 +292,6 @@ const registerSocketEvents = (io, socket, ensureChatAccess) => {
     const presenceOffline = markUserOffline(userId);
     if (presenceOffline.changed) {
       notifyPresenceChange(io, { user, targetUserId: userId, online: false, lastSeen: presenceOffline.lastSeen });
-      const UserModel = { student: StudentUser, teacher: TeacherUser, parent: ParentUser }[String(user.userType || '').toLowerCase()];
-      UserModel?.updateOne({ _id: userId }, { $set: { lastActiveAt: presenceOffline.lastSeen } }).catch(() => {});
     }
   });
 };

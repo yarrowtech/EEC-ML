@@ -178,19 +178,6 @@ const resolveNotificationPath = (notification, userType) => {
   const type = normalizeString(notification?.type || notification?.typeLabel || '');
   const content = normalizeString(`${notification?.title || ''} ${notification?.message || ''}`);
 
-  if (normalizeString(notification?.typeLabel).startsWith('excuse_letter')) {
-    if (userType === 'Teacher') return '/teacher/classes/current/communication/excuse-letters';
-    if (userType === 'Parent') return '/parents/excuse-letters';
-    if (userType === 'Student') return '/student/excuse-letter';
-  }
-  if (normalizeString(notification?.typeLabel) === 'teacher_leave_reviewed' && userType === 'Teacher') return '/teacher/settings?tab=leave';
-  // Parent-teacher meetings open the meetings page, whatever words the topic contains.
-  if (normalizeString(notification?.typeLabel) === 'parent_teacher_meeting') {
-    if (userType === 'Parent') return '/parents/ptm';
-    if (userType === 'Student') return '/student/meetings';
-    if (userType === 'Teacher') return '/teacher/ptm';
-  }
-
   if (userType === 'Student') {
     if (content.includes('attendance')) return '/student/attendance';
     if (content.includes('achievement')) return '/student/achievements';
@@ -383,114 +370,8 @@ const sendChatMessagePush = async ({ io, thread, message, senderId }) => {
       data: {
         kind: 'chat',
         threadId: String(thread._id),
-        path: `${CHAT_PATH_BY_TYPE[userType] || '/'}?thread=${thread._id}`,
+        path: CHAT_PATH_BY_TYPE[userType] || '/',
         userType,
-      },
-    });
-    try {
-      await webpush.sendNotification(
-        {
-          endpoint: sub.endpoint,
-          expirationTime: sub.expirationTime || null,
-          keys: { p256dh: sub.keys?.p256dh, auth: sub.keys?.auth },
-        },
-        payload
-      );
-      sent += 1;
-      await markSuccessfulDelivery(sub);
-    } catch (err) {
-      const statusCode = Number(err?.statusCode || err?.status || 0);
-      if (statusCode === 404 || statusCode === 410 || statusCode === 403) {
-        await disableSubscription(sub);
-      } else {
-        await pruneFailedSubscription(sub);
-      }
-    }
-  }
-  return { ok: true, sent };
-};
-
-const COMMUNITY_WALL_PATH_BY_TYPE = {
-  Teacher: '/teacher/community-wall',
-  Admin: '/admin/community-wall',
-  Student: '/student/assignments-academic-alcove',
-};
-
-// Push for a new Community Wall post. School-wide posts go to every teacher, school admin and
-// student of the school; class-only posts go to the students of the chosen class-sections.
-// The author never gets their own post. Delivered by the service worker, so it arrives even
-// when the site is closed (as long as the user allowed notifications on that device).
-const sendCommunityPostPush = async ({ post, authorName }) => {
-  if (!initializeWebPush() || !post?.schoolId) return { ok: false, reason: 'web_push_not_configured' };
-  const schoolId = post.schoolId;
-  const campusScope = buildCampusScopeFilter(post.campusId || null);
-  const targets = new Map(); // userType -> Set(userId)
-  const add = (type, docs) => {
-    if (!targets.has(type)) targets.set(type, new Set());
-    docs.forEach((doc) => targets.get(type).add(String(doc._id)));
-  };
-
-  if (post.audience === 'classes') {
-    const pairs = (post.audienceClasses || []).filter((entry) => entry.grade);
-    if (pairs.length) {
-      const students = await StudentUser.find({
-        schoolId,
-        isArchived: false,
-        $or: pairs.map((entry) => ({
-          grade: { $in: buildClassNameCandidates(entry.grade) },
-          ...(entry.section ? { section: entry.section } : {}),
-        })),
-      }).select('_id').lean();
-      add('Student', students);
-    }
-  } else {
-    const [teachers, admins, students] = await Promise.all([
-      TeacherUser.find({ schoolId, ...campusScope }).select('_id').lean(),
-      Admin.find({ schoolId, ...campusScope }).select('_id').lean(),
-      StudentUser.find({ schoolId, isArchived: false, ...campusScope }).select('_id').lean(),
-    ]);
-    add('Teacher', teachers);
-    add('Admin', admins);
-    add('Student', students);
-  }
-
-  const authorType = CAPITALIZED_TYPES[String(post.authorType || '').toLowerCase()];
-  if (authorType && targets.has(authorType)) targets.get(authorType).delete(String(post.authorUserId || ''));
-
-  const allIds = [...targets.values()].flatMap((set) => [...set]);
-  if (!allIds.length) return { ok: true, sent: 0 };
-
-  const subscriptions = await PushSubscription.find({
-    schoolId,
-    userId: { $in: allIds },
-    userType: { $in: [...targets.keys()] },
-    disabled: false,
-  }).lean();
-  if (!subscriptions.length) return { ok: true, sent: 0 };
-
-  const text = String(post.problemText || '').replace(/\s+/g, ' ').trim();
-  const body = text
-    ? (text.length > 140 ? `${text.slice(0, 137)}...` : text)
-    : post.poll?.question
-      ? `📊 Poll: ${post.poll.question}`
-      : (post.images?.length ? '📷 Shared a photo' : 'Shared a new post');
-  const schoolIcon = await resolveSchoolIcon(schoolId).catch(() => '');
-
-  let sent = 0;
-  for (const sub of subscriptions) {
-    if (!targets.get(sub.userType)?.has(String(sub.userId))) continue;
-    const payload = JSON.stringify({
-      title: `${authorName || 'Someone'} posted on Community Wall`,
-      body,
-      icon: schoolIcon || '',
-      badge: schoolIcon || '',
-      tag: `community-post-${post._id}`,
-      data: {
-        kind: 'community-post',
-        postId: String(post._id),
-        // Opens the wall with this post's details modal already open.
-        path: `${COMMUNITY_WALL_PATH_BY_TYPE[sub.userType] || '/'}?post=${post._id}`,
-        userType: sub.userType,
       },
     });
     try {
@@ -520,5 +401,4 @@ module.exports = {
   initializeWebPush,
   sendPushForNotification,
   sendChatMessagePush,
-  sendCommunityPostPush,
 };
