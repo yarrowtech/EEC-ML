@@ -1,4 +1,5 @@
 const express = require('express');
+const mongoose = require('mongoose');
 const router = express.Router();
 const authTeacher = require('../middleware/authTeacher');
 const authParent = require('../middleware/authParent');
@@ -8,6 +9,20 @@ const ParentUser = require('../models/ParentUser');
 const ClassModel = require('../models/Class');
 const Section = require('../models/Section');
 const TeacherAllocation = require('../models/TeacherAllocation');
+const AcademicYear = require('../models/AcademicYear');
+const ParentObservationDraft = require('../models/ParentObservationDraft');
+
+// Session label for a date: the school's academic year whose range contains
+// it, else an April → March fallback ("2026-2027"). Lets the parent history
+// group entries by session, so a promoted child's older entries stay apart.
+const sessionLabelFor = (date, years = []) => {
+  const d = new Date(date);
+  if (Number.isNaN(d.getTime())) return '';
+  const match = years.find((y) => y.startDate && y.endDate && d >= new Date(y.startDate) && d <= new Date(y.endDate));
+  if (match?.name) return match.name;
+  const start = d.getMonth() >= 3 ? d.getFullYear() : d.getFullYear() - 1;
+  return `${start}-${start + 1}`;
+};
 
 const scoreObservationMap = (entries = {}) => {
   const scores = Object.values(entries).map((value) => {
@@ -184,6 +199,82 @@ router.get('/teacher', authTeacher, async (req, res) => {
   }
 });
 
+/* ── Parent observation drafts (auto-saved, one per parent + child) ───────── */
+
+// Draft payloads are small keyed maps; cap them so a client can't store junk.
+const MAX_DRAFT_KEYS = 80;
+const MAX_DRAFT_VALUE = 1000;
+const cleanMap = (value) => {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) return {};
+  const out = {};
+  Object.entries(value).slice(0, MAX_DRAFT_KEYS).forEach(([k, v]) => {
+    if (typeof v === 'string') out[String(k).slice(0, 120)] = v.slice(0, MAX_DRAFT_VALUE);
+  });
+  return out;
+};
+
+const resolveParentChild = async (req, studentId) => {
+  if (!mongoose.isValidObjectId(studentId)) return { error: [400, 'Valid studentId is required'] };
+  const parent = await ParentUser.findById(req.user.id).select('childrenIds schoolId').lean();
+  if (!parent) return { error: [404, 'Parent not found'] };
+  const owns = (parent.childrenIds || []).some((id) => String(id) === String(studentId));
+  if (!owns) return { error: [403, 'Student is not linked to this parent account'] };
+  return { parent, schoolId: parent.schoolId || req.schoolId };
+};
+
+const formatDraft = (doc) => (doc ? {
+  studentId: String(doc.studentId),
+  ratings: doc.ratings || {},
+  remarks: doc.remarks || {},
+  openSection: doc.openSection || 0,
+  updatedAt: doc.updatedAt,
+} : null);
+
+// GET /parent/drafts — every saved draft for this parent's children.
+router.get('/parent/drafts', authParent, async (req, res) => {
+  try {
+    const drafts = await ParentObservationDraft.find({ parentId: req.user.id }).sort({ updatedAt: -1 }).lean();
+    return res.json({ drafts: drafts.map(formatDraft) });
+  } catch (err) {
+    return res.status(500).json({ error: err.message || 'Unable to load drafts' });
+  }
+});
+
+// PUT /parent/drafts/:studentId — create or replace the draft for a child.
+router.put('/parent/drafts/:studentId', authParent, async (req, res) => {
+  try {
+    const { studentId } = req.params;
+    const { parent, schoolId, error } = await resolveParentChild(req, studentId);
+    if (error) return res.status(error[0]).json({ error: error[1] });
+
+    const openSection = Math.max(0, Math.min(20, Number(req.body?.openSection) || 0));
+    const doc = await ParentObservationDraft.findOneAndUpdate(
+      { parentId: parent._id, studentId },
+      {
+        $set: { ratings: cleanMap(req.body?.ratings), remarks: cleanMap(req.body?.remarks), openSection },
+        $setOnInsert: { schoolId, parentId: parent._id, studentId },
+      },
+      { upsert: true, new: true, setDefaultsOnInsert: true }
+    ).lean();
+    return res.json({ draft: formatDraft(doc) });
+  } catch (err) {
+    return res.status(500).json({ error: err.message || 'Unable to save draft' });
+  }
+});
+
+// DELETE /parent/drafts/:studentId — discard (also called after submitting).
+router.delete('/parent/drafts/:studentId', authParent, async (req, res) => {
+  try {
+    const { studentId } = req.params;
+    const { parent, error } = await resolveParentChild(req, studentId);
+    if (error) return res.status(error[0]).json({ error: error[1] });
+    await ParentObservationDraft.deleteOne({ parentId: parent._id, studentId });
+    return res.json({ ok: true });
+  } catch (err) {
+    return res.status(500).json({ error: err.message || 'Unable to delete draft' });
+  }
+});
+
 router.post('/parent', authParent, async (req, res) => {
   try {
     const {
@@ -308,7 +399,11 @@ router.get('/parent', authParent, async (req, res) => {
       source: 'parent',
     })
       .sort({ recordedAt: -1 })
-      .limit(50)
+      .limit(200)
+      .lean();
+
+    const academicYears = await AcademicYear.find({ schoolId })
+      .select('name startDate endDate isActive')
       .lean();
 
     const urgent = formatted.filter((item) => item.urgencyLevel === 'urgent').length;
@@ -339,7 +434,11 @@ router.get('/parent', authParent, async (req, res) => {
       },
       observations: formatted,
       children: childSummaries,
-      parentEntries: parentEntriesDocs.map(formatObservation),
+      parentEntries: parentEntriesDocs.map((doc) => ({
+        ...formatObservation(doc),
+        sessionName: sessionLabelFor(doc.recordedAt || doc.createdAt, academicYears),
+      })),
+      activeSession: academicYears.find((y) => y.isActive)?.name || '',
     });
   } catch (err) {
     console.error('Parent observations fetch error:', err);

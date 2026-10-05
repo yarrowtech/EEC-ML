@@ -136,7 +136,8 @@ const SuperAdminAppInner = () => {
 
   const normalizeComplaintAsIssue = useCallback((complaint) => {
     if (!complaint) return null;
-    const impactLevel = complaint.requestDetails?.impactLevel || 'medium';
+    // Parent technical tickets carry a priority rather than an impact level.
+    const impactLevel = complaint.requestDetails?.impactLevel || complaint.priority || 'medium';
     const severityMap = {
       low: 'low',
       medium: 'medium',
@@ -154,7 +155,9 @@ const SuperAdminAppInner = () => {
         complaint.subject ||
         `Complaint • ${complaint.requestDetails?.topic || complaint.category || 'General'}`,
       severity: severityMap[impactLevel] || 'medium',
-      reportedBy: complaint.schoolName || 'Unknown school',
+      reportedBy: complaint.createdByRole === 'parent'
+        ? `${complaint.createdByName || 'Parent'} (Parent)`
+        : complaint.schoolName || 'Unknown school',
       schoolName: complaint.schoolName || 'Unknown school',
       schoolId: complaint.schoolId || null,
       reportedAt: complaint.createdAt || complaint.submittedAt || new Date().toISOString(),

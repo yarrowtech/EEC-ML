@@ -78,7 +78,7 @@
 }
 
 /* ---------- focus + interaction ---------- */
-.parent-route-canvas :where(button, a, input, select, textarea, [tabindex]):focus-visible {
+.parent-route-canvas :where(button, a, input[type="checkbox"], input[type="radio"], [tabindex]):focus-visible {
   outline: 3px solid color-mix(in srgb, var(--parent-accent) 32%, transparent);
   outline-offset: 2px;
 }
