@@ -63,7 +63,7 @@ const ParentTeacherFeedback = () => {
     () => children.map((c) => ({ id: c.id, name: c.name, meta: [c.grade, c.section].filter(Boolean).join('-'), profileImage: c.profilePic || c.profileImage || c.photo || '' })),
     [children],
   );
-  const [, selectedChild] = useSharedChildSelection(childOptions);
+  const [, , selectedChild] = useSharedChildSelection(childOptions);
 
   useEffect(() => {
     let cancelled = false;
@@ -217,7 +217,7 @@ const ParentTeacherFeedback = () => {
                     type="button"
                     aria-pressed={filter === key}
                     onClick={() => setFilter(key)}
-                    className={`rounded-lg border px-4 py-1.5 text-xs font-semibold transition ${filter === key ? 'border-blue-600 bg-blue-600 text-white' : 'border-slate-200 bg-white text-[#0b1446] hover:bg-slate-50'}`}
+                    className={`rounded-full border px-4 py-1.5 text-xs font-semibold transition ${filter === key ? 'border-violet-600 bg-violet-600 text-white' : 'border-slate-200 bg-white text-[#0b1446] hover:bg-slate-50'}`}
                   >
                     {label}
                   </button>
@@ -240,7 +240,7 @@ const ParentTeacherFeedback = () => {
                       className="flex items-center gap-3 rounded-lg border border-slate-100 bg-white px-3 py-2 transition hover:border-blue-100 hover:shadow-[0_4px_14px_rgba(15,23,42,0.05)]"
                     >
                       {t.teacherProfilePic
-                        ? <img src={t.teacherProfilePic} alt="" className="h-10 w-10 shrink-0 rounded-lg object-cover" />
+                        ? <img src={t.teacherProfilePic} alt="" className="h-10 w-10 shrink-0 rounded-full object-cover" />
                         : <span className={`flex h-10 w-10 shrink-0 items-center justify-center rounded-full text-base font-semibold ${avatarTone}`}>{String(t.teacherName || 'T').slice(0, 1).toUpperCase()}</span>}
                       <div className="min-w-0 flex-1">
                         <p className="truncate text-sm font-bold text-[#0b1446]">{t.teacherName}</p>
@@ -254,7 +254,7 @@ const ParentTeacherFeedback = () => {
                       ) : (
                         <span className="shrink-0 rounded-full bg-rose-50 px-3 py-0.5 text-[11px] font-medium text-rose-500">Pending</span>
                       )}
-                      <ChevronRight size={16} aria-hidden="true" className="shrink-0 text-slate-500" />
+                      {/* <ChevronRight size={16} aria-hidden="true" className="shrink-0 text-slate-500" /> */}
                     </motion.article>
                   );
                 })}

@@ -4,7 +4,7 @@ import { createPortal } from 'react-dom';
 import { useNavigate } from 'react-router-dom';
 import { AnimatePresence, motion } from 'framer-motion';
 import {
-  BookOpenText, CheckCircle2, ClipboardPlus, Droplet, HeartPulse, Info, Loader2, Lock, Pencil, Phone,
+  BookOpenText, CheckCircle2, ClipboardPlus, Droplet, Edit, HeartPulse, Info, Loader2, Lock, Pencil, Phone,
   ShieldPlus, Syringe, User, UserRound, Users, Wind, X,
 } from 'lucide-react';
 import toast from 'react-hot-toast';
@@ -70,9 +70,9 @@ const EditButton = ({ onClick, label }) => (
     type="button"
     onClick={onClick}
     aria-label={label}
-    className="inline-flex shrink-0 items-center gap-1.5 rounded-lg border border-blue-200 bg-white px-2.5 py-1 text-xs font-semibold text-blue-600 transition hover:bg-blue-50"
+    className="inline-flex shrink-0 items-center gap-1.5 rounded-lg border border-violet-200 bg-white px-2.5 py-1 text-xs font-semibold text-violet-600 transition hover:bg-violet-50"
   >
-    <Pencil size={13} /> Edit
+    <Edit size={13} /> Edit
   </button>
 );
 
@@ -208,7 +208,7 @@ const HealthReport = () => {
             )}
             <div className="relative flex flex-col gap-3 p-3 sm:flex-row sm:items-center">
               {child.profilePic ? (
-                <img src={child.profilePic} alt="" className="h-24 w-24 shrink-0 rounded-xl object-cover shadow-sm" />
+                <img src={child.profilePic} alt="" className="h-24 w-24 shrink-0 rounded-full object-cover shadow-sm" />
               ) : (
                 <span className="flex h-24 w-24 shrink-0 items-center justify-center rounded-xl bg-blue-100 text-3xl font-bold text-blue-600">
                   {String(child.name || 'C').charAt(0).toUpperCase()}
@@ -308,7 +308,7 @@ const HealthReport = () => {
                       <p className="truncate text-[11px] text-slate-500">{c.relation}</p>
                     </div>
                     {c.phone ? (
-                      <a href={`tel:${c.phone}`} className="inline-flex shrink-0 items-center gap-1.5 rounded-lg border border-blue-200 px-2.5 py-1 text-xs font-semibold text-blue-600 transition hover:bg-blue-50">
+                      <a href={`tel:${c.phone}`} className="inline-flex shrink-0 items-center gap-1.5 rounded-lg border border-violet-200 px-2.5 py-1 text-xs font-semibold text-violet-600 transition hover:bg-violet-50">
                         <Phone size={13} /> {c.phone}
                       </a>
                     ) : (
@@ -460,7 +460,7 @@ const HealthReport = () => {
 
                 <div className="flex justify-end gap-2 border-t border-slate-100 px-4 py-3">
                   <button type="button" onClick={() => setEditing(null)} className="rounded-lg border border-slate-200 px-3 py-1.5 text-xs font-semibold text-slate-600 hover:bg-slate-50">Cancel</button>
-                  <button type="button" onClick={save} disabled={saving} className="inline-flex items-center gap-1.5 rounded-lg bg-blue-600 px-3 py-1.5 text-xs font-semibold text-white hover:bg-blue-700 disabled:opacity-60">
+                  <button type="button" onClick={save} disabled={saving} className="inline-flex items-center gap-1.5 rounded-lg bg-violet-600 px-3 py-1.5 text-xs font-semibold text-white hover:bg-violet-700 disabled:opacity-60">
                     {saving ? <Loader2 size={14} className="animate-spin" /> : <CheckCircle2 size={14} />}
                     {saving ? 'Saving…' : 'Save changes'}
                   </button>

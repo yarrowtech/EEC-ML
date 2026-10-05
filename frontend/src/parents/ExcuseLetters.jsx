@@ -188,9 +188,9 @@ const ExcuseLetters = () => {
               <label htmlFor="excuse-student" className="mb-1 block text-xs font-medium text-[#0b1446]">Child <span className="text-rose-500">*</span></label>
               <div className="relative flex items-center gap-2.5 rounded-lg border border-slate-200 px-2.5 py-1.5">
                 {selectedChild?.profilePic ? (
-                  <img src={selectedChild.profilePic} alt="" className="h-8 w-8 shrink-0 rounded-md object-cover" />
+                  <img src={selectedChild.profilePic} alt="" className="h-8 w-8 shrink-0 rounded-full object-cover" />
                 ) : (
-                  <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-md bg-blue-50 text-xs font-bold text-blue-600">
+                  <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-blue-50 text-xs font-bold text-blue-600">
                     {String(selectedChild?.name || 'C').charAt(0).toUpperCase()}
                   </span>
                 )}
@@ -287,7 +287,7 @@ const ExcuseLetters = () => {
           type="submit"
           disabled={submitting || !children.length}
           whileTap={{ scale: 0.99 }}
-          className="mt-3 flex w-full items-center justify-center gap-2 rounded-lg bg-blue-600 px-4 py-2.5 text-sm font-semibold text-white transition hover:bg-blue-700 disabled:cursor-not-allowed disabled:opacity-60"
+          className="mt-3 flex w-full items-center justify-center gap-2 rounded-lg bg-violet-600 px-4 py-2.5 text-sm font-semibold text-white transition hover:bg-violet-700 disabled:cursor-not-allowed disabled:opacity-60"
         >
           {submitting ? <Loader2 size={16} className="animate-spin" /> : <Send size={16} />}
           {submitting ? 'Sending…' : 'Send excuse letter'}
@@ -317,7 +317,7 @@ const ExcuseLetters = () => {
               type="button"
               aria-pressed={statusFilter === t.key}
               onClick={() => setStatusFilter(t.key)}
-              className={`rounded-lg border px-4 py-1.5 text-xs font-semibold transition ${statusFilter === t.key ? 'border-blue-600 bg-blue-600 text-white' : 'border-slate-200 bg-white text-[#0b1446] hover:bg-slate-50'}`}
+              className={`rounded-full border px-4 py-1.5 text-xs font-semibold transition ${statusFilter === t.key ? 'border-blue-600 bg-blue-600 text-white' : 'border-slate-200 bg-white text-[#0b1446] hover:bg-slate-50'}`}
             >
               {t.label}
             </button>
