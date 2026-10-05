@@ -138,6 +138,43 @@ const Support = ({ setShowAdminHeader }) => {
   const [statusTab, setStatusTab] = useState('all');
   const [sortOrder, setSortOrder] = useState('newest');
   const [viewRequest, setViewRequest] = useState(null);
+
+  // Parent complaints routed to the school admin can be moved through
+  // open → in progress → resolved here; the parent is notified on each change.
+  const isAdminParentComplaint = (req) => req?.supportType === 'complaint' && req?.createdByRole === 'parent' && req?.targetRole === 'admin';
+  const [complaintStatus, setComplaintStatus] = useState('open');
+  const [complaintNote, setComplaintNote] = useState('');
+  const [complaintSaving, setComplaintSaving] = useState(false);
+  const [complaintError, setComplaintError] = useState('');
+
+  useEffect(() => {
+    if (!viewRequest) return;
+    setComplaintStatus(viewRequest.status || 'open');
+    setComplaintNote(viewRequest.resolutionNotes || '');
+    setComplaintError('');
+  }, [viewRequest]);
+
+  const saveComplaintStatus = async () => {
+    if (!viewRequest) return;
+    const token = window.localStorage.getItem('token');
+    setComplaintSaving(true);
+    setComplaintError('');
+    try {
+      const res = await fetch(`${API_BASE}/api/support/requests/${viewRequest.id || viewRequest._id}/complaint-status`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json', authorization: `Bearer ${token}` },
+        body: JSON.stringify({ status: complaintStatus, resolutionNotes: complaintNote }),
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(data?.error || 'Unable to update complaint');
+      setViewRequest(data);
+      setRecentRequests((prev) => prev.map((r) => ((r.id || r._id) === (data.id || data._id) ? data : r)));
+    } catch (err) {
+      setComplaintError(err.message || 'Unable to update complaint');
+    } finally {
+      setComplaintSaving(false);
+    }
+  };
   const [supportSettings, setSupportSettings] = useState({
     phoneNumber: '+91 90420 56789',
     email: 'support@eecschools.com',
@@ -815,7 +852,10 @@ const Support = ({ setShowAdminHeader }) => {
                       <tr key={req.id} className="transition hover:bg-gray-50/60">
                         <td className="whitespace-nowrap px-4 py-3.5 text-gray-600">{req.ticketNumber || '—'}</td>
                         <td className="px-4 py-3.5">
-                          <p className="max-w-xs truncate font-semibold text-gray-900">{req.subject || getTypeLabel(req.supportType)}</p>
+                          <p className="max-w-xs truncate font-semibold text-gray-900">
+                            {req.subject || getTypeLabel(req.supportType)}
+                            {req.createdByRole === 'parent' ? <span className="ml-2 rounded-full bg-violet-50 px-2 py-0.5 align-middle text-[10px] font-semibold text-violet-700">Parent</span> : null}
+                          </p>
                           {req.message ? <p className="max-w-xs truncate text-xs text-gray-500">{req.message}</p> : null}
                         </td>
                         <td className="px-4 py-3.5">
@@ -903,6 +943,58 @@ const Support = ({ setShowAdminHeader }) => {
                     <div className="rounded-xl border border-emerald-100 bg-emerald-50 p-4">
                       <p className="mb-1 text-xs font-semibold uppercase tracking-wider text-emerald-700">Response from support</p>
                       <p className="whitespace-pre-wrap text-sm text-emerald-900">{viewRequest.resolutionNotes}</p>
+                    </div>
+                  ) : null}
+                  {viewRequest.createdByRole === 'parent' ? (
+                    <div className="rounded-xl border border-gray-100 bg-gray-50 p-4 text-sm">
+                      <p className="mb-1 text-xs font-semibold uppercase tracking-wider text-gray-500">Raised by</p>
+                      <p className="text-gray-800">
+                        {viewRequest.requestDetails?.parentName || viewRequest.createdByName || 'Parent'}
+                        {viewRequest.requestDetails?.studentName ? ` · for ${viewRequest.requestDetails.studentName}${viewRequest.requestDetails.studentGrade ? ` (Class ${viewRequest.requestDetails.studentGrade}${viewRequest.requestDetails.studentSection ? `-${viewRequest.requestDetails.studentSection}` : ''})` : ''}` : ''}
+                      </p>
+                      <p className="text-xs text-gray-500">Assigned to {viewRequest.requestDetails?.assignedTo || viewRequest.owner || 'School Admin'}</p>
+                    </div>
+                  ) : null}
+                  {isAdminParentComplaint(viewRequest) ? (
+                    <div className="rounded-xl border border-blue-100 bg-blue-50/50 p-4">
+                      <p className="mb-2 text-xs font-semibold uppercase tracking-wider text-blue-700">Update status</p>
+                      <div className="mb-2 flex flex-wrap gap-2" role="radiogroup" aria-label="Complaint status">
+                        {[['open', 'Open'], ['in_progress', 'In Progress'], ['resolved', 'Resolved']].map(([value, label]) => (
+                          <button
+                            key={value}
+                            type="button"
+                            role="radio"
+                            aria-checked={complaintStatus === value}
+                            onClick={() => setComplaintStatus(value)}
+                            className={`rounded-lg border px-3 py-1.5 text-xs font-semibold transition ${complaintStatus === value ? 'border-blue-600 bg-blue-600 text-white' : 'border-gray-200 bg-white text-gray-700 hover:bg-gray-50'}`}
+                          >
+                            {label}
+                          </button>
+                        ))}
+                      </div>
+                      <label htmlFor="complaint-note" className="mb-1 block text-xs font-medium text-gray-600">Note to the parent (optional)</label>
+                      <textarea
+                        id="complaint-note"
+                        rows={3}
+                        maxLength={1000}
+                        value={complaintNote}
+                        onChange={(e) => setComplaintNote(e.target.value)}
+                        placeholder="Explain what was done or what happens next..."
+                        className="w-full resize-none rounded-lg border border-gray-200 bg-white px-3 py-2 text-sm outline-none focus:border-blue-300 focus:ring-2 focus:ring-blue-100"
+                      />
+                      {complaintError ? <p role="alert" className="mt-1 text-xs text-red-600">{complaintError}</p> : null}
+                      <div className="mt-2 flex items-center justify-between gap-2">
+                        <p className="text-[11px] text-gray-500">The parent gets a notification when you save.</p>
+                        <button
+                          type="button"
+                          onClick={saveComplaintStatus}
+                          disabled={complaintSaving}
+                          className="inline-flex items-center gap-1.5 rounded-lg bg-blue-600 px-4 py-2 text-xs font-semibold text-white hover:bg-blue-700 disabled:opacity-60"
+                        >
+                          {complaintSaving ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <CheckCircle className="h-3.5 w-3.5" />}
+                          {complaintSaving ? 'Saving…' : 'Save status'}
+                        </button>
+                      </div>
                     </div>
                   ) : null}
                   <div>

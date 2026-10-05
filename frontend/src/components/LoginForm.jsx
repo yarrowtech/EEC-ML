@@ -494,7 +494,7 @@ const LoginForm = () => {
           <Motion.img
             src="/login-left-image.png"
             alt="Students, teachers and parents using Electronic Educare"
-            className="relative w-[72%] sm:w-[62%] lg:w-auto lg:h-[26vh] lg:max-h-[100vh] xl:h-[100vh] xl:max-h-[50vh] max-w-full object-contain select-none pointer-events-none top-12"
+            className="relative w-[72%] sm:w-[62%] lg:w-auto lg:h-full lg:max-h-[52vh] max-w-full object-contain object-bottom select-none pointer-events-none top-12 lg:top-6"
             animate={{ y: [0, -12, 0] }}
             loading='lazy'
             // transition={{ duration: 5, repeat: Infinity, ease: 'easeInOut' }}

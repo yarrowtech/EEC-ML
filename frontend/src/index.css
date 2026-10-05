@@ -261,6 +261,19 @@ summary:focus-visible,
 }
 
 /*
+ * Text-entry fields match :focus-visible on every mouse click too, so the
+ * orange ring above showed up whenever a field was clicked. Fields already
+ * show focus with their own border/ring styles, so drop the outline for them
+ * (checkboxes, radios and range sliders keep it for keyboard users).
+ */
+input:not([type="checkbox"]):not([type="radio"]):not([type="range"]):focus-visible,
+select:focus-visible,
+textarea:focus-visible,
+[contenteditable]:focus-visible {
+  outline: none !important;
+}
+
+/*
  * Auto dark mode based on system preference is intentionally disabled:
  * most components hardcode light-only backgrounds (bg-white, bg-gray-50, etc.)
  * and there is no UI to opt out, so switching --foreground to white here made

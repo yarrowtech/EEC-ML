@@ -22,6 +22,7 @@ const rateLimit = require('../middleware/rateLimit');
 const { isStrongPassword, passwordPolicyMessage } = require('../utils/passwordPolicy');
 const { logAuthEvent } = require('../utils/authEventLogger');
 const { resolveParentChildren } = require('../utils/parentChildren');
+const { notifyComplaintCreated } = require('../utils/complaintNotifications');
 const Wellbeing = require('../models/Wellbeing');
 const { createResponseCache } = require('../utils/responseCache');
 
@@ -81,7 +82,7 @@ const fetchParentStudents = async ({ parent, schoolId }) => {
       ...baseFilter,
       _id: { $in: childIds },
     })
-      .select('name grade section studentCode username roll admissionNumber')
+      .select('name grade section studentCode username roll admissionNumber profilePic')
       .lean();
   }
 
@@ -839,6 +840,7 @@ router.get('/complaints', authParent, async (req, res) => {
         username: student.username || '',
         roll: student.roll || '',
         admissionNumber: student.admissionNumber || '',
+        profilePic: student.profilePic || '',
       })),
     });
   } catch (err) {
@@ -924,6 +926,11 @@ router.post('/complaints', authParent, async (req, res) => {
         targetPhone = adminContact?.phone || undefined;
         requestDetailsExtra = { assignedTo: 'School Admin' };
       }
+    } else if (isTechnical) {
+      // App/technical problems go to the platform support team (super admin).
+      ownerName = 'Super Admin';
+      targetRole = 'superadmin';
+      requestDetailsExtra = { assignedTo: 'Super Admin' };
     } else {
       const adminContact = await ensureAdminContact();
       ownerName = adminContact?.name || 'School Admin';
@@ -969,6 +976,7 @@ router.post('/complaints', authParent, async (req, res) => {
       ],
     });
 
+    notifyComplaintCreated(ticket);
     res.status(201).json(formatComplaintResponse(ticket));
   } catch (err) {
     console.error('Parent complaint creation error:', err);
@@ -1143,13 +1151,19 @@ router.get('/health', authParent, async (req, res) => {
       schoolId,
       campusId: req.campusId,
       select:
-        'name grade section roll studentCode username dob bloodGroup knownHealthIssues allergies '
+        'name grade section roll studentCode username profilePic dob bloodGroup knownHealthIssues allergies '
         + 'immunizationStatus learningDisabilities fatherName fatherPhone motherName motherPhone '
         + 'guardianName guardianPhone guardianRelation',
     });
 
+    // School cover photo (set by the school admin in Settings) for the child card.
+    const coverAdmin = schoolId
+      ? await Admin.findOne({ schoolId, role: 'admin', coverImage: { $nin: [null, ''] } }).select('coverImage').lean()
+      : null;
+    const school = { coverImage: coverAdmin?.coverImage || '' };
+
     if (!students.length) {
-      return res.json({ children: [] });
+      return res.json({ children: [], school });
     }
 
     const wellbeingByStudent = new Map();
@@ -1171,6 +1185,9 @@ router.get('/health', authParent, async (req, res) => {
         studentId: student._id,
         name: student.name || 'Student',
         className: [student.grade, student.section].filter(Boolean).join('-'),
+        grade: student.grade || '',
+        section: student.section || '',
+        profilePic: student.profilePic || '',
         roll: student.roll || null,
         age: parseAge(student.dob),
         bloodGroup: student.bloodGroup || '',
@@ -1179,12 +1196,15 @@ router.get('/health', authParent, async (req, res) => {
         immunizationStatus: student.immunizationStatus || '',
         learningDisabilities: listValue(student.learningDisabilities),
         emergencyContacts: [
-          student.fatherName && { name: student.fatherName, relation: 'Father', phone: student.fatherPhone || '' },
-          student.motherName && { name: student.motherName, relation: 'Mother', phone: student.motherPhone || '' },
+          student.fatherName && { key: 'father', name: student.fatherName, relation: 'Father', phone: student.fatherPhone || '', editable: true },
+          student.motherName && { key: 'mother', name: student.motherName, relation: 'Mother', phone: student.motherPhone || '', editable: true },
           student.guardianName && {
+            key: 'guardian',
             name: student.guardianName,
             relation: student.guardianRelation || 'Guardian',
             phone: student.guardianPhone || '',
+            // The guardian number is the parent's login mobile — school office only.
+            editable: false,
           },
         ].filter(Boolean),
         wellbeing: wellbeing
@@ -1200,10 +1220,64 @@ router.get('/health', authParent, async (req, res) => {
       };
     });
 
-    res.json({ children });
+    res.json({ children, school });
   } catch (err) {
     console.error('Fetch parent health report error:', err);
     res.status(500).json({ error: err.message || 'Unable to load health report' });
+  }
+});
+
+// PUT /health/:studentId — a parent updates their own child's medical details
+// and father/mother emergency contacts. The guardian contact is not editable
+// here: guardianPhone doubles as the parent's login mobile and is kept in sync
+// with the parent record by the school admin flows.
+const HEALTH_LIST_FIELDS = ['allergies', 'knownHealthIssues', 'learningDisabilities'];
+const PHONE_RE = /^\+?[0-9\s-]{7,15}$/;
+const cleanText = (value, max = 500) => String(value ?? '').replace(/[<>]/g, '').trim().slice(0, max);
+
+router.put('/health/:studentId', authParent, async (req, res) => {
+  try {
+    const schoolId = req.schoolId || req.user?.schoolId || null;
+    const { studentId } = req.params;
+    const { students } = await resolveParentChildren({
+      parentId: req.user.id,
+      schoolId,
+      campusId: req.campusId,
+      select: '_id',
+    });
+    if (!students.some((st) => String(st._id) === String(studentId))) {
+      return res.status(403).json({ error: 'Student is not linked to this parent account' });
+    }
+
+    const body = req.body || {};
+    const $set = {};
+    HEALTH_LIST_FIELDS.forEach((field) => {
+      if (body[field] === undefined) return;
+      const list = Array.isArray(body[field]) ? body[field] : String(body[field]).split(/[,;\n]/);
+      $set[field] = list.map((item) => cleanText(item, 120)).filter(Boolean).slice(0, 30).join(', ');
+    });
+    if (body.immunizationStatus !== undefined) $set.immunizationStatus = cleanText(body.immunizationStatus, 200);
+
+    const contacts = body.emergencyContacts && typeof body.emergencyContacts === 'object' ? body.emergencyContacts : {};
+    for (const key of ['father', 'mother']) {
+      const contact = contacts[key];
+      if (!contact || typeof contact !== 'object') continue;
+      if (contact.name !== undefined) $set[`${key}Name`] = cleanText(contact.name, 100);
+      if (contact.phone !== undefined) {
+        const phone = cleanText(contact.phone, 20);
+        if (phone && !PHONE_RE.test(phone)) {
+          return res.status(400).json({ error: `Enter a valid phone number for the ${key}.` });
+        }
+        $set[`${key}Phone`] = phone;
+      }
+    }
+
+    if (!Object.keys($set).length) return res.status(400).json({ error: 'Nothing to update' });
+    await StudentUser.updateOne({ _id: studentId }, { $set });
+    return res.json({ ok: true });
+  } catch (err) {
+    console.error('Update parent health report error:', err);
+    return res.status(500).json({ error: err.message || 'Unable to update health record' });
   }
 });
 

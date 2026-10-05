@@ -31,6 +31,7 @@ const Notification = require('../models/Notification');
 const ParentMeeting = require('../models/ParentMeeting');
 const TeacherTaskAcknowledgement = require('../models/TeacherTaskAcknowledgement');
 
+const { notifyParentComplaintStatus } = require('../utils/complaintNotifications');
 const router = express.Router();
 
 // Teacher check-in/out, leave and expense writes feed the admin HR screens —
@@ -2074,6 +2075,7 @@ router.put('/complaints/:id/status', authTeacher, async (req, res) => {
       return res.status(404).json({ error: 'Complaint not found' });
     }
 
+    const previousStatus = complaint.status;
     complaint.status = status;
     if (typeof resolutionNotes === 'string') {
       complaint.resolutionNotes = resolutionNotes;
@@ -2093,6 +2095,7 @@ router.put('/complaints/:id/status', authTeacher, async (req, res) => {
     }
 
     await complaint.save();
+    notifyParentComplaintStatus(complaint, { previousStatus, actorName: teacher.name || 'Class Teacher' });
 
     const guardianNames = await resolveComplaintGuardianNames([complaint], schoolId);
     res.json(formatTeacherComplaint(complaint, guardianNames.get(String(complaint._id))));

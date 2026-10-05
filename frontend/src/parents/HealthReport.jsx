@@ -4,12 +4,12 @@ import { createPortal } from 'react-dom';
 import { useNavigate } from 'react-router-dom';
 import { AnimatePresence, motion } from 'framer-motion';
 import {
-  BookOpenText, CheckCircle2, ClipboardPlus, Droplet, Edit, HeartPulse, Info, Loader2, Phone,
+  BookOpenText, CheckCircle2, ChevronDown, ClipboardPlus, Droplet, HeartPulse, Info, Loader2, Lock, Pencil, Phone,
   ShieldPlus, Syringe, User, UserRound, Users, Wind, X,
 } from 'lucide-react';
 import toast from 'react-hot-toast';
 import { parentApiJson } from './parentApi';
-import { useSharedChildSelection } from './ChildSwitcher';
+import { useSharedChildSelection, childOptionKey } from './ChildSwitcher';
 import Loading from './Loading';
 import { EmptyState, ErrorState } from './StateBlock';
 import { useDialog } from './useDialog';
@@ -62,6 +62,7 @@ const SECTIONS = [
 const CONTACT_TONE = {
   father: 'bg-violet-50 text-violet-600',
   mother: 'bg-rose-50 text-rose-500',
+  guardian: 'bg-emerald-50 text-emerald-600',
 };
 
 const EditButton = ({ onClick, label }) => (
@@ -69,9 +70,9 @@ const EditButton = ({ onClick, label }) => (
     type="button"
     onClick={onClick}
     aria-label={label}
-    className="inline-flex shrink-0 items-center gap-1.5 rounded-lg border border-violet-200 bg-white px-2.5 py-1 text-xs font-semibold text-violet-600 transition hover:bg-violet-50"
+    className="inline-flex shrink-0 items-center gap-1.5 rounded-lg border border-blue-200 bg-white px-2.5 py-1 text-xs font-semibold text-blue-600 transition hover:bg-blue-50"
   >
-    <Edit size={13} /> Edit
+    <Pencil size={13} /> Edit
   </button>
 );
 
@@ -104,7 +105,7 @@ const HealthReport = () => {
     () => children.map((c) => ({ id: String(c.studentId || ''), name: c.name || 'Student' })),
     [children],
   );
-  const [, selectedOption] = useSharedChildSelection(childOptions);
+  const [childKey, setChildKey, selectedOption] = useSharedChildSelection(childOptions);
   const selectedId = selectedOption?.id || '';
 
   const load = useCallback(async () => {
@@ -185,6 +186,32 @@ const HealthReport = () => {
             <p className="text-xs text-slate-500 sm:text-sm">Medical details from enrolment plus counsellor wellbeing notes.</p>
           </div>
         </div>
+        {children.length > 0 && (
+          <div className={`${CARD} flex w-full items-center gap-3 px-3 py-2 sm:w-auto sm:min-w-[300px]`}>
+            <span className="shrink-0 text-xs font-semibold text-[#0b1446]">Child</span>
+            <div className="relative flex min-w-0 flex-1 items-center gap-2.5 rounded-lg border border-slate-200 px-2.5 py-1.5">
+              {child?.profilePic ? (
+                <img src={child.profilePic} alt="" className="h-8 w-8 shrink-0 rounded-md object-cover" />
+              ) : (
+                <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-md bg-blue-50 text-xs font-bold text-blue-600">
+                  {String(child?.name || 'C').charAt(0).toUpperCase()}
+                </span>
+              )}
+              <div className="min-w-0 flex-1">
+                <p className="truncate text-sm font-bold text-[#0b1446]">{child?.name}</p>
+                <p className="truncate text-[11px] text-slate-500">{classLine}{child?.roll ? ` • Roll ${child.roll}` : ''}</p>
+              </div>
+              {childOptions.length > 1 ? (
+                <>
+                  <ChevronDown size={16} className="shrink-0 text-slate-500" />
+                  <select aria-label="Select child" value={childKey} onChange={(e) => setChildKey(e.target.value)} className="absolute inset-0 cursor-pointer opacity-0">
+                    {childOptions.map((opt) => <option key={childOptionKey(opt)} value={childOptionKey(opt)}>{opt.name}</option>)}
+                  </select>
+                </>
+              ) : null}
+            </div>
+          </div>
+        )}
       </motion.header>
 
       {error && <ErrorState message={error} onRetry={load} />}
@@ -207,7 +234,7 @@ const HealthReport = () => {
             )}
             <div className="relative flex flex-col gap-3 p-3 sm:flex-row sm:items-center">
               {child.profilePic ? (
-                <img src={child.profilePic} alt="" className="h-24 w-24 shrink-0 rounded-full object-cover shadow-sm" />
+                <img src={child.profilePic} alt="" className="h-24 w-24 shrink-0 rounded-xl object-cover shadow-sm" />
               ) : (
                 <span className="flex h-24 w-24 shrink-0 items-center justify-center rounded-xl bg-blue-100 text-3xl font-bold text-blue-600">
                   {String(child.name || 'C').charAt(0).toUpperCase()}
@@ -246,7 +273,7 @@ const HealthReport = () => {
 
           <div className="grid items-start gap-3 lg:grid-cols-[minmax(0,1.45fr)_minmax(0,1fr)]">
             {/* Medical sections */}
-            <div className="grid items-start gap-3 md:grid-cols-2 lg:grid-cols-1">
+            <div className="space-y-3">
               {SECTIONS.map((section) => {
                 const value = child[section.key];
                 const items = section.list ? (value || []) : (value ? [value] : []);
@@ -288,7 +315,7 @@ const HealthReport = () => {
             </div>
 
             {/* Right column */}
-            <div className="grid items-start gap-3 md:grid-cols-2 lg:grid-cols-1">
+            <div className="space-y-3">
               <motion.section variants={RISE} className={`${CARD} space-y-2 p-3`}>
                 <SectionHead
                   Icon={Phone}
@@ -297,9 +324,9 @@ const HealthReport = () => {
                   subtitle="People to contact in case of emergency."
                   action={<EditButton onClick={openContactsEdit} label="Edit emergency contacts" />}
                 />
-                {child.emergencyContacts.filter((c) => c.key !== 'guardian').length === 0 ? (
+                {child.emergencyContacts.length === 0 ? (
                   <p className="rounded-lg bg-slate-50 px-3 py-3 text-center text-[11px] text-slate-500">No emergency contacts on file.</p>
-                ) : child.emergencyContacts.filter((c) => c.key !== 'guardian').map((c, i) => (
+                ) : child.emergencyContacts.map((c, i) => (
                   <div key={`${c.name}-${i}`} className="flex items-center gap-3 rounded-lg border border-slate-100 px-2.5 py-2">
                     <span className={`flex h-9 w-9 shrink-0 items-center justify-center rounded-lg ${CONTACT_TONE[c.key] || 'bg-slate-100 text-slate-600'}`}><UserRound size={18} /></span>
                     <div className="min-w-0 flex-1">
@@ -307,7 +334,7 @@ const HealthReport = () => {
                       <p className="truncate text-[11px] text-slate-500">{c.relation}</p>
                     </div>
                     {c.phone ? (
-                      <a href={`tel:${c.phone}`} className="inline-flex shrink-0 items-center gap-1.5 rounded-lg border border-violet-200 px-2.5 py-1 text-xs font-semibold text-violet-600 transition hover:bg-violet-50">
+                      <a href={`tel:${c.phone}`} className="inline-flex shrink-0 items-center gap-1.5 rounded-lg border border-blue-200 px-2.5 py-1 text-xs font-semibold text-blue-600 transition hover:bg-blue-50">
                         <Phone size={13} /> {c.phone}
                       </a>
                     ) : (
@@ -360,6 +387,7 @@ const HealthReport = () => {
                   <li>The information shown here is based on school records.</li>
                   <li>Changes you save here update your child&apos;s record for the school.</li>
                   <li>Keep emergency contact numbers updated at all times.</li>
+                  <li>To change the guardian contact, please contact the school office.</li>
                 </ul>
               </motion.section>
             </div>
@@ -448,6 +476,9 @@ const HealthReport = () => {
                           />
                         </fieldset>
                       ))}
+                      <p className="flex items-start gap-1.5 rounded-lg bg-slate-50 px-2.5 py-2 text-[11px] text-slate-500">
+                        <Lock size={13} className="mt-0.5 shrink-0" /> The guardian contact is linked to your login, so it can only be changed by the school office.
+                      </p>
                     </>
                   )}
                   {saveError ? <p role="alert" className="text-xs text-rose-600">{saveError}</p> : null}
@@ -455,7 +486,7 @@ const HealthReport = () => {
 
                 <div className="flex justify-end gap-2 border-t border-slate-100 px-4 py-3">
                   <button type="button" onClick={() => setEditing(null)} className="rounded-lg border border-slate-200 px-3 py-1.5 text-xs font-semibold text-slate-600 hover:bg-slate-50">Cancel</button>
-                  <button type="button" onClick={save} disabled={saving} className="inline-flex items-center gap-1.5 rounded-lg bg-violet-600 px-3 py-1.5 text-xs font-semibold text-white hover:bg-violet-700 disabled:opacity-60">
+                  <button type="button" onClick={save} disabled={saving} className="inline-flex items-center gap-1.5 rounded-lg bg-blue-600 px-3 py-1.5 text-xs font-semibold text-white hover:bg-blue-700 disabled:opacity-60">
                     {saving ? <Loader2 size={14} className="animate-spin" /> : <CheckCircle2 size={14} />}
                     {saving ? 'Saving…' : 'Save changes'}
                   </button>
