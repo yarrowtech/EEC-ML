@@ -1316,9 +1316,6 @@ const ParentDashboard = ({
         max-w-6xl
         flex-col
         gap-3
-        bg-gradient-to-b
-        from-[#eef3fc]
-        to-[#f5f8fe]
         p-3
         sm:p-4
         lg:p-5
@@ -1379,7 +1376,7 @@ const ParentDashboard = ({
             {child && (
               <p className="mt-1 flex flex-wrap items-center gap-x-3 gap-y-0.5 text-xs font-medium text-slate-700">
                 <span className="inline-flex items-center gap-1">
-                  <span className="h-2 w-2 rounded-full border-2 border-slate-400" />
+                  <span className="h-2 w-2 rounded-full border-2 border-blue-400" />
                   Class {child.grade || '—'}
                 </span>
                 {child.section ? (
@@ -1397,11 +1394,11 @@ const ParentDashboard = ({
 
             {child && (
               <p className="mt-1 flex flex-wrap items-center gap-x-2 text-[11px] text-slate-700">
-                <span>ID: {child.admissionNumber || child.studentCode || '—'}</span>
+                <span> <strong> ID:</strong> {child.admissionNumber || child.studentCode || '—'}</span>
                 {attendance.sessionName ? (
                   <>
                     <span className="text-slate-300">|</span>
-                    <span>Session: {attendance.sessionName}</span>
+                    <span> <strong>Session:</strong> {attendance.sessionName}</span>
                   </>
                 ) : null}
               </p>
