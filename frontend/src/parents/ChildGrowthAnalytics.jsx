@@ -76,11 +76,11 @@ const Delta = ({ value }) => {
 };
 
 const Card = ({ className = '', children }) => (
-  <section className={`flex h-[230px] flex-col rounded-2xl border border-slate-100 bg-white p-3 shadow-[0_2px_12px_rgba(15,23,42,0.04)] sm:p-4 ${className}`}>{children}</section>
+  <section className={`flex min-h-[230px] min-w-0 flex-col rounded-2xl border border-slate-100 bg-white p-3 shadow-[0_2px_12px_rgba(15,23,42,0.04)] sm:p-4 ${className}`}>{children}</section>
 );
 const CardHead = ({ Icon, iconCls, title, subtitle, right }) => (
-  <div className="mb-3 flex items-start justify-between gap-3">
-    <div className="flex items-start gap-3">
+  <div className="mb-3 flex flex-wrap items-start justify-between gap-2">
+    <div className="flex min-w-0 items-start gap-3">
       <span className={`flex h-9 w-9 shrink-0 items-center justify-center rounded-xl ${iconCls}`}><Icon size={18} /></span>
       <div>
         <h2 className="text-[15px] font-bold leading-tight text-slate-900">{title}</h2>
@@ -256,7 +256,7 @@ const ChildGrowthAnalytics = () => {
 
   return (
     <motion.div
-      className="mx-auto flex min-h-screen max-w-7xl flex-col gap-4 bg-slate-50 p-3 sm:p-4 lg:p-6"
+      className="mx-auto flex min-h-screen max-w-7xl flex-col gap-4 bg-slate-50 p-3 sm:p-4 lg:p-6 [&>*]:shrink-0"
       initial="hidden"
       animate="show"
       variants={{ hidden: {}, show: { transition: { staggerChildren: 0.07 } } }}
@@ -277,10 +277,10 @@ const ChildGrowthAnalytics = () => {
       </motion.div>
 
       {/* ── Stat cards ── */}
-      <motion.div variants={RISE} className="grid grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-4">
+      <motion.div variants={RISE} className="grid grid-cols-2 gap-2.5 sm:gap-3 xl:grid-cols-4">
         {STATS.map((s) => (
-          <motion.div key={s.label} whileHover={{ y: -3 }} className={`flex h-full items-center gap-3 rounded-2xl border border-slate-100 bg-linear-to-br ${s.bg} px-4 py-3 shadow-[0_2px_12px_rgba(15,23,42,0.04)]`}>
-            <span className={`flex h-11 w-11 shrink-0 items-center justify-center rounded-xl ${s.tile}`}><s.Icon size={20} /></span>
+          <motion.div key={s.label} whileHover={{ y: -3 }} className={`flex h-full min-w-0 items-center gap-2.5 rounded-2xl border border-slate-100 bg-linear-to-br ${s.bg} px-3 py-3 sm:gap-3 sm:px-4 shadow-[0_2px_12px_rgba(15,23,42,0.04)]`}>
+            <span className={`flex h-9 w-9 shrink-0 sm:h-11 sm:w-11 items-center justify-center rounded-xl ${s.tile}`}><s.Icon size={20} /></span>
             <div className="min-w-0">
               <p className="text-xs font-semibold text-slate-800">{s.label}</p>
               <div className="mt-0.5 flex items-center gap-2">
@@ -294,7 +294,7 @@ const ChildGrowthAnalytics = () => {
       </motion.div>
 
       {/* ── Academic performance + skills ── */}
-      <motion.div variants={RISE} className="grid grid-cols-1 gap-4 xl:grid-cols-[minmax(0,1.28fr)_minmax(0,1fr)]">
+      <motion.div variants={RISE} className="grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-[minmax(0,1.28fr)_minmax(0,1fr)]">
         <Card>
           <CardHead
             Icon={BookOpen}
@@ -315,7 +315,7 @@ const ChildGrowthAnalytics = () => {
           {subjectBars.length === 0 ? (
             <p className="rounded-xl bg-slate-50 py-10 text-center text-sm text-slate-500">Results will appear once the school publishes marks.</p>
           ) : (
-            <div className="h-32 min-h-0 flex-1">
+            <div className="h-44 min-h-0 flex-1">
               <ResponsiveContainer width="100%" height="100%">
                 <BarChart data={subjectBars} margin={{ top: 18, right: 8, left: -18, bottom: 0 }}>
                   <CartesianGrid vertical={false} stroke="#f1f5f9" />
@@ -338,7 +338,7 @@ const ChildGrowthAnalytics = () => {
             {skillRows.map((s, i) => (
               <li key={s.label} className="flex items-center gap-3">
                 <span className={`flex h-7 w-7 shrink-0 items-center justify-center rounded-lg ${s.tile}`}><s.Icon size={14} /></span>
-                <span className="w-32 shrink-0 text-sm text-slate-800">{s.label}</span>
+                <span className="w-24 shrink-0 truncate text-xs text-slate-800 sm:w-32 sm:text-sm md:w-24 lg:w-32">{s.label}</span>
                 <span className="h-2 flex-1 overflow-hidden rounded-full bg-slate-100">
                   <motion.span initial={{ width: 0 }} animate={{ width: `${s.value ?? 0}%` }} transition={{ duration: 0.8, delay: i * 0.08 }} className="block h-full rounded-full" style={{ background: s.color }} />
                 </span>
@@ -350,7 +350,7 @@ const ChildGrowthAnalytics = () => {
       </motion.div>
 
       {/* ── Recent exams + attendance trend ── */}
-      <motion.div variants={RISE} className="grid grid-cols-1 gap-4 xl:grid-cols-[minmax(0,1.28fr)_minmax(0,1fr)]">
+      <motion.div variants={RISE} className="grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-[minmax(0,1.28fr)_minmax(0,1fr)]">
         <Card>
           <CardHead Icon={FileText} iconCls="bg-violet-50 text-violet-600" title="Recent Exam Performance" subtitle={latestExam ? `Marks obtained in ${latestExam.name}.` : 'Marks obtained in latest exams.'} right={<ViewAll to="/parents/academic" />} />
           {!latestExam ? (
@@ -360,9 +360,9 @@ const ChildGrowthAnalytics = () => {
               {latestExam.rows.slice(0, 4).map((r, i) => {
                 const t = EXAM_TILES[i % EXAM_TILES.length];
                 return (
-                  <motion.div key={`${r.subject}-${i}`} whileHover={{ y: -3 }} className={`min-w-28 flex-auto rounded-xl px-4 py-4 ${t.bg}`}>
+                  <motion.div key={`${r.subject}-${i}`} whileHover={{ y: -3 }} className={`min-w-28 flex-auto rounded-xl px-3 py-3 sm:px-4 sm:py-4 ${t.bg}`}>
                     <FileText size={20} className={t.icon} />
-                    <p className="mt-3 whitespace-nowrap text-sm font-medium text-slate-800">{r.subject}</p>
+                    <p className="mt-2 truncate text-sm font-medium text-slate-800">{r.subject}</p>
                     <p className={`mt-0.5 text-2xl font-bold ${t.value}`}>{Number(r.obtainedMarks || 0)}<span className="text-base font-semibold">/{Number(r.totalMarks || 0)}</span></p>
                   </motion.div>
                 );
@@ -376,7 +376,7 @@ const ChildGrowthAnalytics = () => {
           {attendanceTrend.every((m) => m.pct === null) ? (
             <p className="rounded-xl bg-slate-50 py-10 text-center text-sm text-slate-500">No attendance recorded yet.</p>
           ) : (
-            <div className="h-40 min-h-0 flex-1">
+            <div className="h-44 min-h-0 flex-1">
               <ResponsiveContainer width="100%" height="100%">
                 <ComposedChart data={attendanceTrend} margin={{ top: 22, right: 12, left: -22, bottom: 0 }}>
                   <defs>
@@ -401,10 +401,10 @@ const ChildGrowthAnalytics = () => {
       </motion.div>
 
       {/* ── Holistic + teacher remarks ── */}
-      <motion.div variants={RISE} className="grid grid-cols-1 gap-4 xl:grid-cols-[minmax(0,1.28fr)_minmax(0,1fr)]">
+      <motion.div variants={RISE} className="grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-[minmax(0,1.28fr)_minmax(0,1fr)]">
         <Card>
           <CardHead Icon={Sprout} iconCls="bg-green-50 text-green-600" title="Holistic Development" subtitle="Overall growth beyond academics." right={<ViewAll to="/parents/parent-observation" label="View Details" />} />
-          <div className="grid flex-1 grid-cols-2 gap-3 md:grid-cols-4">
+          <div className="grid flex-1 grid-cols-2 gap-3 sm:grid-cols-4 md:grid-cols-2 xl:grid-cols-4">
             {holistic.map((h) => (
               <motion.div key={h.label} whileHover={{ y: -3 }} className={`flex h-full flex-col rounded-xl px-4 py-3.5 ${h.bg}`}>
                 <span className="flex h-9 w-9 items-center justify-center rounded-lg bg-white/80 shadow-sm">
@@ -423,10 +423,10 @@ const ChildGrowthAnalytics = () => {
           {!remark ? (
             <p className="rounded-xl bg-slate-50 py-10 text-center text-sm text-slate-500">No remarks from teachers yet.</p>
           ) : (
-            <div className="flex flex-1 gap-4 rounded-xl border border-slate-100 p-4">
+            <div className="flex flex-1 gap-3 rounded-xl border border-slate-100 p-3 sm:gap-4 sm:p-4">
               {remark.teacherId?.profilePic
-                ? <img src={remark.teacherId.profilePic} alt="" className="h-16 w-16 shrink-0 rounded-xl object-cover" />
-                : <span className="flex h-16 w-16 shrink-0 items-center justify-center rounded-xl bg-violet-100 text-lg font-bold text-violet-700">{initials(remark.teacherId?.name || 'T')}</span>}
+                ? <img src={remark.teacherId.profilePic} alt="" className="h-12 w-12 shrink-0 rounded-xl object-cover sm:h-16 sm:w-16" />
+                : <span className="flex h-12 w-12 shrink-0 items-center sm:h-16 sm:w-16 justify-center rounded-xl bg-violet-100 text-lg font-bold text-violet-700">{initials(remark.teacherId?.name || 'T')}</span>}
               <div className="min-w-0 flex-1">
                 <p className="text-sm leading-relaxed text-slate-700">&ldquo;{remark.observationText}&rdquo;</p>
                 <div className="mt-2 flex items-end justify-between gap-2">
