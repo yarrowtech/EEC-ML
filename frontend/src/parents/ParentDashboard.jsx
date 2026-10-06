@@ -77,6 +77,37 @@ const dayKey = (d) => {
   )}-${String(x.getDate()).padStart(2, '0')}`;
 };
 
+const startOfDay = (value = new Date()) => {
+  const d = new Date(value);
+  d.setHours(0, 0, 0, 0);
+  return d;
+};
+
+const combineDateAndTime = (dateValue, timeValue) => {
+  if (!validDate(dateValue)) return null;
+
+  const date = new Date(dateValue);
+  const m = String(timeValue || '').match(/^(\d{1,2}):(\d{2})/);
+
+  if (m) {
+    date.setHours(Number(m[1]), Number(m[2]), 0, 0);
+  } else {
+    date.setHours(23, 59, 59, 999);
+  }
+
+  return date;
+};
+
+const CLOSED_MEETING_STATUSES = new Set([
+  'attended',
+  'cancelled',
+  'canceled',
+  'complete',
+  'completed',
+  'declined',
+  'done',
+  'finished',
+]);
 const to12h = (t) => {
   const m = String(t || '').match(/^(\d{1,2}):(\d{2})/);
 
@@ -883,23 +914,38 @@ const ParentDashboard = ({
         )[0] ||
       null;
 
-    const total =
-      Number(focus?.totalAmount || 0) -
-      Number(focus?.discountAmount || 0);
+    const totals = invoices.reduce(
+      (acc, invoice) => {
+        const fine = Number(
+          invoice.lateFeeAmountApplied || 0
+        );
+        const invoiceTotal = Number(
+          invoice.totalAmount ?? invoice.amount ?? 0
+        );
 
-    const paid =
-      Number(focus?.paidAmount || 0);
+        acc.fine += fine;
+        acc.total += Math.max(
+          0,
+          invoiceTotal - fine
+        );
+        acc.payable += Math.max(0, invoiceTotal);
+        acc.paid += Number(invoice.paidAmount || 0);
+
+        return acc;
+      },
+      { total: 0, payable: 0, paid: 0, fine: 0 }
+    );
 
     return {
       due,
       fullyPaid:
         invoices.length > 0 && due <= 0,
       focus,
-      total: Math.max(total, 0),
-      paid,
-      balance: Number(
-        focus?.balanceAmount || 0
-      ),
+      total: totals.total,
+      totalPayable: totals.payable,
+      paid: totals.paid,
+      finePaid: totals.fine,
+      balance: due,
     };
   }, [invoices]);
 
@@ -1085,9 +1131,8 @@ const ParentDashboard = ({
   ───────────────────────────────────────────── */
 
   const events = useMemo(() => {
-    const today = new Date(
-      new Date().toDateString()
-    );
+    const now = new Date();
+    const today = startOfDay(now);
 
     const list = [];
 
@@ -1105,9 +1150,16 @@ const ParentDashboard = ({
       );
 
     meetings.forEach((m) => {
+      const status = String(m.status || '').toLowerCase();
+      const meetingAt = combineDateAndTime(
+        m.meetingDate,
+        m.meetingTime
+      );
+
       if (
-        !validDate(m.meetingDate) ||
-        new Date(m.meetingDate) < today
+        CLOSED_MEETING_STATUSES.has(status) ||
+        !meetingAt ||
+        meetingAt < now
       ) {
         return;
       }
@@ -1125,9 +1177,7 @@ const ParentDashboard = ({
 
       list.push({
         kind: 'ptm',
-        date: new Date(
-          m.meetingDate
-        ),
+        date: meetingAt,
         title:
           m.title ||
           'Parent Teacher Meeting',
@@ -1468,7 +1518,7 @@ const ParentDashboard = ({
           tone="bg-gradient-to-br from-amber-100 to-orange-200/70 text-orange-500"
           bg="bg-gradient-to-br from-white to-orange-50"
           label="Upcoming Exam"
-          value={nextExam ? nextExam.subject : 'No Upcoming Exam'}
+          value={nextExam ? nextExam.subject : 'N/A'}
           animatedValue={null}
           sub={
             nextExam
@@ -1522,14 +1572,14 @@ const ParentDashboard = ({
                       : NAVY
                 }`}
               >
-                {todayStatus === 'present' ? 'Present' : todayStatus === 'absent' ? 'Absent' : 'Not marked yet'}
+                {todayStatus === 'present' ? 'Present' : todayStatus === 'absent' ? 'Absent' : 'Attendance not marked'}
               </span>
               <span className="mt-0.5 block text-[11px] text-slate-600">
                 {todayStatus
                   ? attendance.today?.markedAt
                     ? `Marked at ${new Date(attendance.today.markedAt).toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' })}`
                     : 'Marked for today'
-                  : 'Attendance will appear once marked by the school.'}
+                  : 'School attendance will appear here once marked.'}
               </span>
             </span>
 
@@ -1547,7 +1597,7 @@ const ParentDashboard = ({
                 <div
                   className="h-full rounded-full bg-green-600"
                   style={{
-                    width: `${fees.total > 0 ? Math.min(100, (fees.paid / fees.total) * 100) : 0}%`,
+                    width: `${fees.totalPayable > 0 ? Math.min(100, (fees.paid / fees.totalPayable) * 100) : 0}%`,
                   }}
                 />
               </div>
@@ -1568,6 +1618,11 @@ const ParentDashboard = ({
                 ))}
               </div>
 
+              {fees.fullyPaid && fees.finePaid > 0 ? (
+                <p className="mt-2.5 truncate rounded-lg bg-green-50 px-3 py-1.5 text-center text-xs font-semibold text-green-700" title={`Paid fully including fine: ${inr(fees.totalPayable)} (Fine ${inr(fees.finePaid)})`}>
+                  Paid fully including fine: {inr(fees.totalPayable)} (Fine {inr(fees.finePaid)})
+                </p>
+              ) : null}
               {fees.balance > 0 && (
                 <Link
                   to="/parents/fees"
@@ -1649,7 +1704,7 @@ const ParentDashboard = ({
 
                       <span
                         className={`shrink-0 rounded-full px-2.5 py-1 text-[10px] font-bold ${
-                          pending ? 'bg-orange-50 text-orange-500' : 'bg-green-100 text-green-700'
+                          pending ? 'text-white bg-yellow-600' : 'text-white bg-green-600'
                         }`}
                       >
                         {pending ? 'Pending' : 'Submitted'}
