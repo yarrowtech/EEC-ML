@@ -2,16 +2,15 @@ import React, { useState, useEffect, useMemo } from 'react';
 import {
   BookOpen, Loader, NotebookPen,
   Mic, PenLine, ListChecks, Puzzle, ChevronRight, ChevronDown,
-  ToggleLeft, Shuffle, FileEdit, Rocket, ArrowLeft, RotateCcw,
+  ToggleLeft, Shuffle, FileEdit, ArrowLeft, RotateCcw,
 } from 'lucide-react';
-import { motion as Motion } from 'framer-motion';
 import ReadingPracticePage from './ReadingPracticePage';
 import WritingPracticePage from './WritingPracticePage';
 import QuickPracticeRunner from './QuickPracticeRunner';
 import AILearningTryoutSection from './AILearningTryoutSection';
 
 // Order the launch queue is always run in, regardless of check order.
-const QUEUE_ORDER = ['mcq', 'blank', 'tryout'];
+const QUEUE_ORDER = ['mcq', 'blank', 'true_false', 'matching', 'tryout'];
 
 // Inter, matching the type family already applied to the Learning hub and
 // Smart Learning subject cards — this page previously fell back to the
@@ -45,12 +44,12 @@ const FORMAT_DEFS = [
     shortLabel: 'Writing',
   },
   {
-    key: 'true_false', name: 'True or False', icon: ToggleLeft, tone: 'slate', comingSoon: true,
-    description: 'Fast conceptual checks — coming soon.',
+    key: 'true_false', name: 'True or False', icon: ToggleLeft, tone: 'indigo', queueable: true, shortLabel: 'True/False',
+    description: 'Decide whether each statement is true or false.',
   },
   {
-    key: 'matching', name: 'Match the Following', icon: Shuffle, tone: 'slate', comingSoon: true,
-    description: 'Pair related terms and concepts — coming soon.',
+    key: 'matching', name: 'Match the Following', icon: Shuffle, tone: 'violet', queueable: true, shortLabel: 'Matching',
+    description: 'Pair each term with its matching concept.',
   },
 ];
 
@@ -138,7 +137,7 @@ const PracticePapersPortal = () => {
 
         const metaSubjects = Array.isArray(metaData?.subjects) ? metaData.subjects : [];
         setSubjects(metaSubjects);
-        const questionRequests = metaSubjects.flatMap((subject) => ['mcq', 'blank'].map(async (type) => {
+        const questionRequests = metaSubjects.flatMap((subject) => ['mcq', 'blank', 'true_false', 'matching'].map(async (type) => {
           const params = new URLSearchParams({ subjectId: String(subject.id), type });
           const response = await fetch(`${API_BASE}/api/practice/student/questions?${params}`, {
             headers: authHeaders,
@@ -259,7 +258,12 @@ const PracticePapersPortal = () => {
     [writingPrompts, chapterFilter, selectedChapterTitle, selectedSubjectName]
   );
 
+  const trueFalseActivity = practiceActivities.find((a) => a.type === 'true_false' && String(a.id) === subjectFilter);
+  const matchingActivity = practiceActivities.find((a) => a.type === 'matching' && String(a.id) === subjectFilter);
+
   const formatAvailability = {
+    true_false: Boolean(trueFalseActivity),
+    matching: Boolean(matchingActivity),
     mcq: Boolean(mcqActivity),
     blank: Boolean(blankActivity),
     tryout: Boolean(tryoutActivity),
@@ -267,13 +271,17 @@ const PracticePapersPortal = () => {
     writing: Boolean(writingActivity),
   };
   const formatCounts = {
+    true_false: trueFalseActivity?.count || 0,
+    matching: matchingActivity?.count || 0,
     mcq: mcqActivity?.count || 0,
     blank: blankActivity?.count || 0,
     tryout: tryoutActivity?.count || 0,
   };
 
   const launchFormat = (key) => {
-    if (key === 'mcq' && mcqActivity) setQuickPractice(mcqActivity);
+    if (key === 'true_false' && trueFalseActivity) setQuickPractice(trueFalseActivity);
+    else if (key === 'matching' && matchingActivity) setQuickPractice(matchingActivity);
+    else if (key === 'mcq' && mcqActivity) setQuickPractice(mcqActivity);
     else if (key === 'blank' && blankActivity) setQuickPractice(blankActivity);
     else if (key === 'tryout' && tryoutActivity) setSelectedTryout({ subjectName: selectedSubjectName, topicName: selectedTopicTitle });
     else if (key === 'reading' && readingActivity) setActiveFormatView('reading');
@@ -317,7 +325,7 @@ const PracticePapersPortal = () => {
   };
 
   if (quickPractice) {
-    return <QuickPracticeRunner subject={quickPractice} initialType={quickPractice.type} onBack={handleRunnerBack} />;
+    return <QuickPracticeRunner key={`${quickPractice.id}-${quickPractice.type}`} subject={quickPractice} initialType={quickPractice.type} onBack={handleRunnerBack} />;
   }
 
   if (selectedTryout) {
@@ -490,6 +498,7 @@ const PracticePapersPortal = () => {
                       <label className="flex items-center p-1" onClick={(e) => e.stopPropagation()}>
                         <input
                           type="checkbox"
+                          aria-label={`Include ${fmt.name}`}
                           checked={checked}
                           disabled={!available}
                           onChange={() => toggleFormatSelection(fmt.key)}
@@ -506,7 +515,9 @@ const PracticePapersPortal = () => {
         </section>
       </div>
 
-      {/* ── Sticky bottom dock: custom multi-format launcher ── */}
+      {selectedQueueableCount > 0 && <div className="sticky bottom-3 rounded-xl bg-white p-4 shadow-lg">
+        <button type="button" onClick={launchQueue} className="rounded-lg bg-indigo-700 px-4 py-2 text-white">Start selected formats ({selectedQueueableCount})</button>
+      </div>}
     </div>
   );
 };

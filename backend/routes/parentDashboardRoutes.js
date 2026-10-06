@@ -141,13 +141,6 @@ router.get('/home-support/:studentId', authParent, async (req, res) => {
       return res.status(403).json({ error: 'Not authorized for this student' });
     }
 
-    const consent = await require('../services/aiConsentService').personalisationAllowed({
-      studentId: req.params.studentId, schoolId: req.schoolId,
-    });
-    if (!consent.allowed) return res.status(403).json({
-      error: 'AI personalisation is off. Manage consent in Child Profile to enable personalised reports.',
-      code: 'AI_CONSENT_REQUIRED',
-    });
 
     const cached = await readCachedReport({ req, type: 'home_support' });
     if (cached) return res.json({ success: true, data: cached });
@@ -186,13 +179,6 @@ router.get('/weekly-digest/:studentId', authParent, async (req, res) => {
       return res.status(403).json({ error: 'Not authorized for this student' });
     }
 
-    const consent = await require('../services/aiConsentService').personalisationAllowed({
-      studentId: req.params.studentId, schoolId: req.schoolId,
-    });
-    if (!consent.allowed) return res.status(403).json({
-      error: 'AI personalisation is off. Manage consent in Child Profile to enable personalised reports.',
-      code: 'AI_CONSENT_REQUIRED',
-    });
 
     const cached = await readCachedReport({ req, type: 'weekly_digest' });
     if (cached) return res.json({ success: true, data: cached });
@@ -235,13 +221,6 @@ router.get('/monthly-report/:studentId', authParent, async (req, res) => {
       return res.status(403).json({ error: 'Not authorized for this student' });
     }
 
-    const consent = await require('../services/aiConsentService').personalisationAllowed({
-      studentId: req.params.studentId, schoolId: req.schoolId,
-    });
-    if (!consent.allowed) return res.status(403).json({
-      error: 'AI personalisation is off. Manage consent in Child Profile to enable personalised reports.',
-      code: 'AI_CONSENT_REQUIRED',
-    });
 
     const cached = await readCachedReport({ req, type: 'monthly_report' });
     if (cached) return res.json({ success: true, data: cached });

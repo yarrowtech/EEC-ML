@@ -1,3 +1,4 @@
+const { normalizeFlashcards } = require('../utils/assignmentFlashcards');
 const express = require('express');
 const mongoose = require('mongoose');
 const { logger } = require('../utils/logger');
@@ -377,6 +378,7 @@ router.post("/teacher/create", authTeacher, async (req, res) => {
         const {
             title,
             description,
+            flashcards,
             subject,
             classId,
             sectionId,
@@ -442,6 +444,7 @@ router.post("/teacher/create", authTeacher, async (req, res) => {
             teacherId,
             title,
             description: description || '',
+            flashcards: normalizeFlashcards(flashcards),
             subject,
             topic: topic || '',
             type: type || 'Assignment',
@@ -594,13 +597,14 @@ router.put("/teacher/update/:id", authTeacher, async (req, res) => {
         const wasActive = assignment.status === 'active';
 
         const {
-            title, description, subject, topic, marks, dueDate, status, attachments,
+            title, description, flashcards, subject, topic, marks, dueDate, status, attachments,
             submissionFormat, classId, sectionId, type, difficulty, isEssay, rubric,
             sourceLessonPlanId, chapterId, chapterTitle, topicTitle, subTopicTitle
         } = req.body;
 
         if (title) assignment.title = title;
         if (description !== undefined) assignment.description = description;
+        if (flashcards !== undefined) assignment.flashcards = normalizeFlashcards(flashcards);
         if (subject) assignment.subject = subject;
         if (topic !== undefined) assignment.topic = topic || '';
         if (type !== undefined) assignment.type = type || 'Assignment';

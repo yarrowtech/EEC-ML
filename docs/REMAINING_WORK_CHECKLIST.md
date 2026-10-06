@@ -19,9 +19,7 @@ First cross-layer privacy batch implemented. The original estimates below have n
 - [x] **AI:** shared external generation and assessment fallback redact common contact details, labelled names/identifiers and supported structured fields. Assessment fallback uses the configured provider/model. Shared external generation has a 60-second timeout and at most one retry. Raw learning-path output is no longer written to parse-error logs.
 - [x] **Focused verification:** 27 backend tests, 4 frontend tests and 5 Python privacy tests passed. New UI component lint and frontend production build passed; large-bundle warnings remain.
 
-Details, API contracts, manual acceptance checks and limitations: [AI consent and external-provider privacy](ai-consent-and-external-privacy.md).
-
-This batch does **not** complete all consent coverage, full personal-data anonymisation, training-data redaction, replica-set integration verification or production acceptance. It does not erase historical data or cancel in-flight AI requests. Other teacher-report/assessment paths, student status UI and an admin consent screen remain to be reviewed/completed.
+AI consent/personalisation gating was subsequently reverted on 6 October (see below) — the tutor and parent AI reports no longer require consent.
 
 ## Implementation progress — 5 October 2026 (later batch)
 
@@ -49,7 +47,7 @@ The overall estimate reflects current product scope. It excludes optional roadma
 ### P1 — Complete existing backend workflows
 
 - [x] **Long-answer assessment UI (2026-10-05):** student assigned-question list, answer editor and result view added at `frontend/src/components/LongAnswerAssessment.jsx`; teacher create/publish/close and submission review/override screen added at `frontend/src/teachers/LongAnswerAssessment.jsx`. Wired into both portals' routing/sidebar. Student submission history (`/student/submissions`) is not yet surfaced in the UI. Not run against a live backend/browser session — verify end-to-end before counting this as production-accepted. [Backend contract](../backend/routes/longAnswerAssessmentRoutes.js)
-- [ ] **Partial — AI consent controls:** expose consent status and a clear administration/parent workflow, including withdrawal behavior and the effect on personalisation. Parent controls are now implemented in Child Profile; student status UI and the admin screen remain. [Consent routes](../backend/routes/aiTutorRoutes.js), [consent service](../backend/services/aiConsentService.js)
+- [x] **Reverted (2026-10-06):** AI consent/personalisation gating was removed. The tutor and parent AI reports no longer require or check parental consent.
 - [ ] **Partial — Safeguarding/escalation screens:** provide restricted case creation, acknowledgement, action notes and resolution, with a confidential disclosure workflow. Escalation APIs exist; no `escalations` integration was found in the frontend source scan. [Routes](../backend/routes/escalationRoutes.js), [existing scope notes](../AI_UNTOUCHED_FEATURES_CHECKLIST.md)
 - [ ] **Verify — All portal journeys:** check student, teacher, parent, school-admin, principal and super-admin flows with the correct roles and school/class/section/year context. Cover empty data, expired login, forbidden actions, slow responses and failed saves. Reproduce old audit issues before reopening them. [Portal API maps](student-portal-api-map.md), [teacher QA findings](Teacher_Portal_QA_Findings.md)
 - [ ] **Verify — Phone/tablet usability:** test sidebars, forms, tables, timetable, homework, admit cards, tutor diagrams/citations and long content on real devices. Check keyboard access, focus, labels and horizontal overflow. [STEM checkpoint](STEM_RAG_RESUME_CHECKPOINT.md), [tryout checks](tryout-ux-checklist.md)

@@ -11,6 +11,7 @@ const Analytics = lazy(() => import('./Analytics'));
 const ActivityLog = lazy(() => import('./pages/ActivityLog'));
 const Teachers = lazy(() => import('./Teachers'));
 const Students = lazy(() => import('./Students'));
+const AiOperations = lazy(() => import('../features/ai-operations/AiOperations'));
 const Wellbeing = lazy(() => import('./pages/Wellbeing'));
 const SchoolsManagement = lazy(() => import('./pages/SchoolsManagement'));
 const SchoolAdminsManagement = lazy(() => import('./pages/SchoolAdminsManagement'));
@@ -38,7 +39,6 @@ const StudentPromotion = lazy(() => import('./pages/StudentPromotion'));
 const LeftStudents = lazy(() => import('./pages/LeftStudents'));
 const ReportCardManagement = lazy(() => import('./pages/ReportCardManagement'));
 const HolidayList = lazy(() => import('./pages/HolidayList'));
-const CommunityWall = lazy(() => import('../components/CommunityWall'));
 const TeacherFeedbackOverview = lazy(() => import('./pages/TeacherFeedbackOverview'));
 import { useNavigate } from 'react-router-dom';
 import { ADMIN_MENU_ITEMS, ADMIN_MENU_SECTIONS } from './adminConstants';
@@ -370,7 +370,7 @@ const AdminApp = () => {
           <Route path="notices/view" element={<NoticeManagement setShowAdminHeader={setShowAdminHeader} viewMode="view" />} />
           <Route path="notices/view/:noticeId" element={<NoticeDetail setShowAdminHeader={setShowAdminHeader} />} />
           <Route path="holidays" element={<HolidayList setShowAdminHeader={setShowAdminHeader} />} />
-          <Route path="community-wall" element={<CommunityWall role="admin" />} />
+          <Route path="ai-operations" element={<AiOperations />} />
           <Route path="settings" element={<AdminSettings setShowAdminHeader={setShowAdminHeader} onSettingsUpdated={handleSettingsUpdated} />} />
           <Route path="settings/payment-gateway" element={<PaymentGatewaySettings setShowAdminHeader={setShowAdminHeader} />} />
           <Route path="promotion" element={<StudentPromotion setShowAdminHeader={setShowAdminHeader} />} />
