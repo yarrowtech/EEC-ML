@@ -18,6 +18,7 @@ const authTeacher = require('../middleware/authTeacher');
 const { logger } = require('../utils/logger');
 const { getAttachmentDownloadUrl, deleteS3Object } = require('../utils/s3Storage');
 const { deleteCloudinaryAsset } = require('../utils/cloudinaryUpload');
+const { queueVectorDeletion } = require('../services/vectorDeletionService');
 
 const AI_SERVICE_URL = process.env.AI_SERVICE_URL || 'http://localhost:8000';
 
@@ -37,10 +38,14 @@ const getAttachmentExtension = (attachment) => {
 const isVectorIngestible = (attachment) =>
   Boolean(attachment?.url) && SUPPORTED_VECTOR_EXTENSIONS.has(getAttachmentExtension(attachment));
 
-const deleteMaterialVectors = (materialId) =>
-  axios.delete(`${AI_SERVICE_URL}/ingest/material/${encodeURIComponent(String(materialId))}`, {
-    timeout: 60_000,
-  });
+const deleteMaterialVectors = async (materialId, schoolId = null) => {
+  try {
+    return await axios.delete(`${AI_SERVICE_URL}/ingest/material/${encodeURIComponent(String(materialId))}`, { timeout: 60_000 });
+  } catch (err) {
+    await queueVectorDeletion(materialId, schoolId, err).catch((queueErr) => logger.error('[material cleanup] failed to queue vector deletion', String(materialId), queueErr.message));
+    throw err;
+  }
+};
 
 // Deletes every stored file for a material (current attachments plus any
 // version-history snapshots) from whichever provider it lives on. Each file

@@ -178,7 +178,7 @@ router.post('/student/evaluate', authStudent, async (req, res) => {
     try {
       const memoryResp = await axios.post(
         `${AI_SERVICE_URL}/memory/retrieve`,
-        { student_id: String(req.userId), mode: 'writing', limit: 3 },
+        { student_id: String(req.userId), school_id: String(req.schoolId), mode: 'writing', limit: 3 },
         { timeout: 10_000 }
       );
       previousHistory = memoryResp.data?.results || [];
@@ -226,6 +226,24 @@ router.post('/student/evaluate', authStudent, async (req, res) => {
       },
       { new: true }
     );
+
+    try {
+      const { applyAssessment } = require('../services/masteryEventService');
+      await applyAssessment({
+        studentId: req.userId,
+        schoolId: req.schoolId,
+        subject: prompt.subject || 'Language',
+        topicId: `writing:${String(prompt._id)}`,
+        topicTitle: prompt.title,
+        chapterTitle: prompt.chapter || '',
+        source: 'writing',
+        assessmentScore: Number(result.overall || 0),
+        eventId: String(assessment._id),
+        metadata: { assessmentId: String(assessment._id), promptId: String(prompt._id) },
+      });
+    } catch (masteryError) {
+      console.warn('[WritingAssessment] mastery update deferred:', masteryError.message);
+    }
 
     // Store embedding (fire-and-forget)
     axios

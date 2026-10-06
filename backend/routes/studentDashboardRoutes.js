@@ -10,6 +10,22 @@ const ExamResult = require('../models/ExamResult');
 const FlashcardResult = require('../models/FlashcardResult');
 const SpacedRepetition = require('../models/SpacedRepetition');
 const { updateDevelopmentProfile } = require('../services/developmentProfileService');
+const AuditLog = require('../models/AuditLog');
+const { exportStudentAiData } = require('../services/aiDataExportService');
+
+// GET /api/student-dashboard/ai-data-export — DPDP data portability for the
+// authenticated student. The school scope is taken from the auth context.
+router.get('/ai-data-export', authStudent, async (req, res) => {
+  try {
+    const studentId = req.user.id;
+    const schoolId = req.schoolId;
+    const payload = await exportStudentAiData(studentId, schoolId);
+    await AuditLog.create({ schoolId, actorId: studentId, actorType: 'student', action: 'ai_data_export', entity: 'StudentUser', entityId: studentId });
+    return res.json({ success: true, data: payload });
+  } catch (err) {
+    return res.status(500).json({ success: false, error: 'Unable to export AI data' });
+  }
+});
 
 // SM-2 algorithm — updates interval/easeFactor/repetitions in place and returns nextReview Date.
 function applySpacedRepetition(record, gotIt) {

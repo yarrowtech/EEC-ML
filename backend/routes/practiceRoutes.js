@@ -64,21 +64,34 @@ const ensureTeacherAllocation = async ({ schoolId, campusId, teacherId, classId,
 };
 
 const resolveStudentClassSection = async ({ schoolId, campusId, student }) => {
-  const classDoc = await ClassModel.findOne({
-    schoolId,
-    ...(campusId ? { campusId } : {}),
-    name: String(student.grade || '').trim(),
-  }).lean();
+  const classDoc = student.classId
+    ? await ClassModel.findOne({
+      _id: student.classId,
+      schoolId,
+      ...(campusId ? { campusId } : {}),
+    }).lean()
+    : await ClassModel.findOne({
+      schoolId,
+      ...(campusId ? { campusId } : {}),
+      name: String(student.grade || '').trim(),
+    }).lean();
   if (!classDoc) {
     return { error: 'Class not found for student grade' };
   }
 
-  const sectionDoc = await Section.findOne({
-    schoolId,
-    ...(campusId ? { campusId } : {}),
-    classId: classDoc._id,
-    name: String(student.section || '').trim(),
-  }).lean();
+  const sectionDoc = student.sectionId
+    ? await Section.findOne({
+      _id: student.sectionId,
+      schoolId,
+      ...(campusId ? { campusId } : {}),
+      classId: classDoc._id,
+    }).lean()
+    : await Section.findOne({
+      schoolId,
+      ...(campusId ? { campusId } : {}),
+      classId: classDoc._id,
+      name: String(student.section || '').trim(),
+    }).lean();
   if (!sectionDoc) {
     return { error: 'Section not found for student section' };
   }

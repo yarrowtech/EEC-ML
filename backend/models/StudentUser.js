@@ -171,6 +171,11 @@ const studentUserSchema = new mongoose.Schema({
   username: { type: String, required: true },
   password: { type: String, required: true },
   schoolId: { type: mongoose.Schema.Types.ObjectId, ref: 'School', default: null },
+  // Durable class/section references used for tenant-safe learning-content and
+  // AI retrieval filters. Keep grade/section strings below for legacy imports
+  // and display compatibility while new writes should populate these IDs.
+  classId: { type: mongoose.Schema.Types.ObjectId, ref: 'Class', default: null, index: true },
+  sectionId: { type: mongoose.Schema.Types.ObjectId, ref: 'Section', default: null, index: true },
   campusId: { type: String, default: null },
   campusName: { type: String, default: null },
   campusType: { type: String, default: null },

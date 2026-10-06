@@ -29,6 +29,7 @@ const { logStudentPortalEvent, logStudentPortalError } = require('../utils/stude
 const TryoutResult = require('../models/TryoutResult');
 const { getAttachmentDownloadUrl, signAttachmentUrls, parseS3Uri } = require('../utils/s3Storage');
 const { buildCloudinaryAttachmentUrl } = require('../utils/cloudinaryUpload');
+const { queueVectorDeletion } = require('../services/vectorDeletionService');
 
 const AI_SERVICE_URL = process.env.AI_SERVICE_URL || 'http://localhost:8000';
 const SUPPORTED_VECTOR_EXTENSIONS = new Set(['pdf', 'docx', 'pptx']);
@@ -203,10 +204,14 @@ const buildVectorSourceId = (material, attachment, index) => {
   return `${String(material._id)}:${String(stableAttachmentId)}`;
 };
 
-const deleteMaterialVectors = (materialId) =>
-  axios.delete(`${AI_SERVICE_URL}/ingest/material/${encodeURIComponent(String(materialId))}`, {
-    timeout: 60_000,
-  });
+const deleteMaterialVectors = async (materialId, schoolId = null) => {
+  try {
+    return await axios.delete(`${AI_SERVICE_URL}/ingest/material/${encodeURIComponent(String(materialId))}`, { timeout: 60_000 });
+  } catch (err) {
+    await queueVectorDeletion(materialId, schoolId, err).catch((queueErr) => console.error('[Smart Learning ingest] failed to queue vector deletion', queueErr.message));
+    throw err;
+  }
+};
 
 const ingestPublishedMaterialAttachments = async (material) => {
   const attachments = Array.isArray(material.attachments) ? material.attachments.filter(isVectorIngestible) : [];

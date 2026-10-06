@@ -110,6 +110,17 @@ async function runRetentionSweep() {
   }
 }
 
+async function runVectorDeletionSweep() {
+  try {
+    const result = await require('../services/vectorDeletionService').processPendingVectorDeletions();
+    console.log('[vector-deletion cron]', JSON.stringify(result));
+    return result;
+  } catch (err) {
+    console.error('[vector-deletion cron] error:', err.message);
+    return { error: err.message };
+  }
+}
+
 // ── 30-day class improvement report ──────────────────────────────────────────
 async function run30DayReport() {
   try {
@@ -182,6 +193,7 @@ function startSchedulers() {
   cron.schedule('*/15 * * * *', async () => {
     await require('../services/assessmentSyncService').reconcileAssessments();
     await require('../services/interventionFollowUpService').measureFollowUps();
+    await runVectorDeletionSweep();
   }, { noOverlap: true });
   // Daily at midnight — SR nudges + engagement sweep
   cron.schedule('0 0 * * *', async () => {
@@ -200,4 +212,4 @@ function startSchedulers() {
   console.log('[schedulers] SR, engagement, and 30-day report crons scheduled');
 }
 
-module.exports = { startSchedulers, runSpacedRepetitionNudges, runEngagementSweep, runAtRiskSweep, runRecommendationImpactSweep, runRetentionSweep, run30DayReport };
+module.exports = { startSchedulers, runSpacedRepetitionNudges, runEngagementSweep, runAtRiskSweep, runRecommendationImpactSweep, runRetentionSweep, runVectorDeletionSweep, run30DayReport };

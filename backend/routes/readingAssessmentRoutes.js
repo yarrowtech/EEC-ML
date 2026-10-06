@@ -210,7 +210,7 @@ router.post('/student/evaluate', authStudent, upload.single('audio'), async (req
     try {
       const memoryResp = await axios.post(
         `${AI_SERVICE_URL}/memory/retrieve`,
-        { student_id: String(req.userId), mode: 'reading', limit: 3 },
+        { student_id: String(req.userId), school_id: String(req.schoolId), mode: 'reading', limit: 3 },
         { timeout: 3_000 }
       );
       previousHistory = memoryResp.data?.results || [];
@@ -263,6 +263,27 @@ router.post('/student/evaluate', authStudent, upload.single('audio'), async (req
       },
       { new: true }
     );
+
+    // Feed verified reading performance into the same append-only mastery
+    // stream used by exams and practice. Failure is non-fatal to assessment
+    // delivery, but is logged for operational reconciliation.
+    try {
+      const { applyAssessment } = require('../services/masteryEventService');
+      await applyAssessment({
+        studentId: req.userId,
+        schoolId: req.schoolId,
+        subject: material.subject || 'Language',
+        topicId: `reading:${String(material._id)}`,
+        topicTitle: material.title,
+        chapterTitle: material.chapter || '',
+        source: 'reading',
+        assessmentScore: Number(result.overall || 0),
+        eventId: String(assessment._id),
+        metadata: { assessmentId: String(assessment._id), materialId: String(material._id) },
+      });
+    } catch (masteryError) {
+      console.warn('[ReadingAssessment] mastery update deferred:', masteryError.message);
+    }
 
     // Store embedding in Qdrant for adaptive memory (fire-and-forget)
     axios

@@ -22,6 +22,12 @@ const STUDENT_AI_COLLECTIONS = [
   { model: 'AiInteractionLog', field: 'userId' },
   { model: 'ReadingAssessment', field: 'studentId' },
   { model: 'WritingAssessment', field: 'studentId' },
+  { model: 'MasteryEvent', field: 'studentId' },
+  { model: 'PracticeAttempt', field: 'studentId' },
+  { model: 'StudentInsight', field: 'studentId' },
+  { model: 'SpacedRepetitionSchedule', field: 'studentId' },
+  { model: 'WeeklyStudyPlan', field: 'studentId' },
+  { model: 'StudentProgress', field: 'studentId' },
 ];
 
 async function purgeStudentAiData(studentId, schoolId) {

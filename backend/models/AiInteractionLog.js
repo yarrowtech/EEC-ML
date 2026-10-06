@@ -30,6 +30,13 @@ const aiInteractionLogSchema = new mongoose.Schema({
   errorType:     { type: String, default: '' },
   latencyMs:     { type: Number, default: null },
   outputChars:   { type: Number, default: null },
+  // Provider-reported usage. These remain null for local providers that do not
+  // expose token accounting; callers must not mistake character estimates for
+  // billed usage.
+  inputTokens:   { type: Number, default: null },
+  outputTokens:  { type: Number, default: null },
+  totalTokens:   { type: Number, default: null },
+  costUsd:       { type: Number, default: null },
   citationCount: { type: Number, default: 0 },
   score:         { type: Number, default: null },     // for evaluations (0..1)
   confidenceScore:{ type: Number, default: null },

@@ -75,8 +75,8 @@ describe('PracticePapersPortal', () => {
     await screen.findByRole('option', { name: 'Mathematics' });
     await user.selectOptions(screen.getByRole('combobox', { name: 'Select Subject' }), 'subject-1');
 
-    // MCQ and Fill in the Blanks both report a count of 1 from the mocked question bank.
-    expect(await screen.findAllByText('1 question available')).toHaveLength(2);
+    // MCQ, blanks, True/False and Matching each report a count of 1 from the mocked question bank.
+    expect(await screen.findAllByText('1 question available')).toHaveLength(4);
     expect(screen.getByRole('button', { name: 'Start MCQ' })).toBeInTheDocument();
     expect(screen.getByRole('button', { name: 'Start Blanks' })).toBeInTheDocument();
   });

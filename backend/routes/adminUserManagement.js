@@ -2524,14 +2524,16 @@ router.delete('/students/:id/all-data', adminAuth, async (req, res) => {
         const TutorConversation = require('../models/TutorConversation');
         const ReadingAssessment = require('../models/ReadingAssessment');
         const WritingAssessment = require('../models/WritingAssessment');
+        const { purgeStudentAiData } = require('../services/dataRetentionService');
 
         const [progress, mastery, convos, reading, writing] = await Promise.all([
             StudentProgress.deleteMany({ studentId }),
             MasteryScore.deleteMany({ studentId }),
             TutorConversation.deleteMany({ studentId }).catch(() => ({ deletedCount: 0 })),
             ReadingAssessment.deleteMany({ studentId }).catch(() => ({ deletedCount: 0 })),
-            WritingAssessment.deleteMany({ studentId }).catch(() => ({ deletedCount: 0 })),
+          WritingAssessment.deleteMany({ studentId }).catch(() => ({ deletedCount: 0 })),
         ]);
+        const extendedAiPurge = await purgeStudentAiData(studentId, schoolId);
 
         // Anonymize PII on StudentUser rather than hard-delete to preserve referential integrity
         await StudentUser.findByIdAndUpdate(studentId, {
@@ -2565,6 +2567,7 @@ router.delete('/students/:id/all-data', adminAuth, async (req, res) => {
                 conversationsDeleted: convos.deletedCount,
                 readingDeleted: reading.deletedCount,
                 writingDeleted: writing.deletedCount,
+                extendedAiPurge,
                 reason: req.body?.reason || 'Right to erasure request (DPDP Act 2023)',
             },
         }).catch(() => {});
