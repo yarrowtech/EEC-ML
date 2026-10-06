@@ -1882,7 +1882,12 @@ router.post("/results", adminOrTeacherAuth, async (req, res) => {
             const context = `Student: ${student.name} | Subject: ${exam.subject || 'General'} | Score: ${pct}% (${scoreResult.score}/${exam?.marks || 100}) | Exam: ${exam.title || exam.subject || 'Exam'}`;
             const aiRes = await fetch(`${AI_URL}/generate/teacher`, {
               method: 'POST',
-              headers: { 'Content-Type': 'application/json' },
+              headers: {
+                'Content-Type': 'application/json',
+                ...(process.env.AI_SERVICE_INTERNAL_KEY
+                  ? { 'X-Internal-Key': process.env.AI_SERVICE_INTERNAL_KEY }
+                  : {}),
+              },
               body: JSON.stringify({ mode: 'exam_feedback', subject: exam.subject || 'General', topic: exam.title || 'Exam', context }),
             });
             if (aiRes.ok) {
@@ -3371,6 +3376,5 @@ router.post('/groups/generate-routine', adminAuth, async (req, res) => {
 });
 
 module.exports = router;
-
 
 

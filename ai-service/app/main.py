@@ -3,10 +3,11 @@ import logging
 import os
 import secrets
 from contextlib import asynccontextmanager
+from pathlib import Path
 
 from dotenv import load_dotenv
 
-load_dotenv()
+load_dotenv(Path(__file__).resolve().parents[1] / ".env")
 
 # hf_xet binary wheel is not compatible with Python 3.14; force HTTP fallback
 os.environ.setdefault("HF_HUB_DISABLE_XET", "1")
@@ -54,8 +55,9 @@ def _warmup_models():
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     # Run model loading in a thread so it doesn't block the event loop
-    loop = asyncio.get_event_loop()
-    await loop.run_in_executor(None, _warmup_models)
+    if os.getenv("AI_WARMUP_MODELS", "true").lower() not in {"0", "false", "no", "off"}:
+        loop = asyncio.get_event_loop()
+        await loop.run_in_executor(None, _warmup_models)
     yield
 
 
