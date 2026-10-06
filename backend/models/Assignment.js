@@ -6,6 +6,7 @@ const assignmentSchema = new mongoose.Schema({
   teacherId: { type: mongoose.Schema.Types.ObjectId, ref: 'TeacherUser', required: true },
   title: { type: String, required: true },
   description: { type: String, default: '' },
+  flashcards: [{ front: { type: String, required: true, maxlength: 2000 }, back: { type: String, required: true, maxlength: 2000 } }],
   subject: String,
   topic: { type: String, default: '' },
   type: { type: String, default: 'Assignment' },

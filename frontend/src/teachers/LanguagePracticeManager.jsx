@@ -1,3 +1,5 @@
+import ReadingScoreCard from '../components/ReadingScoreCard';
+import WritingScoreCard from '../components/WritingScoreCard';
 /**
  * Teacher portal for managing reading materials and writing prompts,
  * and reviewing student language assessment results.
@@ -280,13 +282,12 @@ const WritingPromptForm = ({ initial, onSave, onCancel }) => {
 
 // ─── Assessment result viewer ─────────────────────────────────────────────────
 
-const AssessmentDetailModal = ({ assessment, mode, onClose }) => {
+export const AssessmentDetailModal = ({ assessment, mode, onClose }) => {
   if (!assessment) return null;
-  const { scores = {}, suggestions = [], transcript, submission } = assessment;
   const student = assessment.studentId || {};
 
   return (
-    <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4" onClick={onClose}>
+    <div role="dialog" aria-modal="true" aria-label="Assessment detail" className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4" onClick={onClose} onKeyDown={(event) => { if (event.key === 'Escape') onClose(); }}>
       <Motion.div
         initial={{ opacity: 0, scale: 0.95 }}
         animate={{ opacity: 1, scale: 1 }}
@@ -296,61 +297,17 @@ const AssessmentDetailModal = ({ assessment, mode, onClose }) => {
         <div className="sticky top-0 bg-white border-b border-gray-100 px-6 py-4 flex items-center justify-between">
           <div>
             <h3 className="font-bold text-gray-900">Assessment Detail</h3>
-            <p className="text-sm text-gray-500">{student.firstName} {student.lastName} — {new Date(assessment.createdAt).toLocaleDateString()}</p>
+            <p className="text-sm text-gray-500">{student.name || [student.firstName, student.lastName].filter(Boolean).join(' ') || 'Student'} — {new Date(assessment.createdAt).toLocaleDateString()}</p>
           </div>
-          <button onClick={onClose} className="w-8 h-8 flex items-center justify-center rounded-xl hover:bg-gray-100 transition-colors">
+          <button autoFocus aria-label="Close assessment detail" onClick={onClose} className="w-8 h-8 flex items-center justify-center rounded-xl hover:bg-gray-100 transition-colors">
             <XCircle className="w-5 h-5 text-gray-400" />
           </button>
         </div>
         <div className="p-6 space-y-5">
-          {/* Scores grid */}
-          <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
-            {Object.entries(scores).map(([key, val]) => (
-              <div key={key} className="bg-gray-50 rounded-xl p-3 text-center">
-                <p className="text-xs text-gray-500 capitalize mb-1">{key.replace('_', ' ')}</p>
-                <ScoreBadge score={val || 0} />
-              </div>
-            ))}
-          </div>
+          {mode === 'reading'
+            ? <ReadingScoreCard assessment={assessment} material={assessment.materialId} />
+            : <><p className="whitespace-pre-wrap rounded border p-4">{assessment.submission}</p><WritingScoreCard assessment={assessment} prompt={assessment.promptId} /></>}
 
-          {/* Suggestions */}
-          {suggestions.length > 0 && (
-            <div className="bg-indigo-50 rounded-xl p-4">
-              <p className="text-xs font-semibold text-indigo-600 uppercase tracking-wide mb-2">AI Suggestions</p>
-              <ul className="space-y-1.5">
-                {suggestions.map((s, i) => <li key={i} className="text-sm text-indigo-700">• {s}</li>)}
-              </ul>
-            </div>
-          )}
-
-          {/* Reading transcript */}
-          {mode === 'reading' && transcript && (
-            <div>
-              <p className="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-2">Transcript</p>
-              <p className="text-sm text-gray-700 bg-gray-50 rounded-xl p-4 leading-relaxed">{transcript}</p>
-            </div>
-          )}
-
-          {/* Writing submission + improved */}
-          {mode === 'writing' && (
-            <>
-              {assessment.submission && (
-                <div>
-                  <p className="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-2">Student's Submission</p>
-                  <p className="text-sm text-gray-700 bg-gray-50 rounded-xl p-4 leading-relaxed whitespace-pre-wrap">{assessment.submission}</p>
-                </div>
-              )}
-              {assessment.improvedVersion && (
-                <div>
-                  <p className="text-xs font-semibold text-emerald-600 uppercase tracking-wide mb-2">AI-Improved Version</p>
-                  <p className="text-sm text-gray-700 bg-emerald-50 rounded-xl p-4 leading-relaxed whitespace-pre-wrap border border-emerald-100">{assessment.improvedVersion}</p>
-                </div>
-              )}
-              {assessment.cefrLevel && (
-                <p className="text-sm font-semibold">CEFR Level: <span className="text-indigo-700">{assessment.cefrLevel}</span></p>
-              )}
-            </>
-          )}
         </div>
       </Motion.div>
     </div>
@@ -398,6 +355,7 @@ const LanguagePracticeManager = () => {
         : `${API_BASE}/api/writing-assessment/teacher/assessments/${id}?sort=${sort}`;
       const resp = await fetch(url, { headers: { Authorization: `Bearer ${token()}` } });
       const data = await resp.json();
+      if (!resp.ok) throw new Error(data.message || 'Failed to load assessments');
       setAssessments(data.data || []);
     } catch {
       toast.error('Failed to load assessments');
@@ -568,7 +526,7 @@ const LanguagePracticeManager = () => {
                       {a.scores?.overall || 0}
                     </div>
                     <div className="flex-1 min-w-0">
-                      <p className="font-semibold text-gray-900 text-sm">{student.firstName} {student.lastName}</p>
+                      <p className="font-semibold text-gray-900 text-sm">{student.name || [student.firstName, student.lastName].filter(Boolean).join(' ') || 'Student'}</p>
                       <div className="flex flex-wrap gap-2 mt-0.5 text-xs text-gray-400">
                         <span>{new Date(a.createdAt).toLocaleDateString()}</span>
                         {isReading && <span>{a.scores?.reading_speed || 0} WPM</span>}

@@ -7,8 +7,10 @@ import { motion as Motion } from 'framer-motion';
 
 const API_BASE = (import.meta.env.VITE_API_URL || 'http://localhost:5000').replace(/\/$/, '');
 
+const TYPE_LABELS = { mcq: 'Multiple-choice practice', blank: 'Fill in the blanks', true_false: 'True/False', matching: 'Matching' };
+
 const QuickPracticeRunner = ({ subject, initialType = 'mcq', onBack }) => {
-  const [type, setType] = useState(initialType === 'blank' ? 'blank' : 'mcq');
+  const [type, setType] = useState(TYPE_LABELS[initialType] ? initialType : 'mcq');
   const [questions, setQuestions] = useState([]);
   const [answers, setAnswers] = useState({});
   const [results, setResults] = useState(null);
@@ -17,11 +19,14 @@ const QuickPracticeRunner = ({ subject, initialType = 'mcq', onBack }) => {
   const [error, setError] = useState('');
   const [confidenceRating, setConfidenceRating] = useState(null);
   const [calibration, setCalibration] = useState(null);
+  const [reload, setReload] = useState(0);
 
   const subjectId = String(subject?.id || subject?._id || '');
   const subjectName = subject?.name || 'Practice activity';
   const token = localStorage.getItem('token');
-  const answeredCount = questions.filter((question) => String(answers[question.id] || '').trim()).length;
+  const answeredCount = questions.filter((question) => question.type === 'matching'
+    ? (question.matchingLeft || []).length > 0 && question.matchingLeft.every((_, index) => answers[question.id]?.[index])
+    : String(answers[question.id] || '').trim()).length;
   const correctCount = results
     ? Object.values(results).filter((result) => result?.isCorrect).length
     : 0;
@@ -44,6 +49,9 @@ const QuickPracticeRunner = ({ subject, initialType = 'mcq', onBack }) => {
       }
       setLoading(true);
       setError('');
+      setQuestions([]);
+      setConfidenceRating(null);
+      setCalibration(null);
       setAnswers({});
       setResults(null);
       try {
@@ -54,6 +62,7 @@ const QuickPracticeRunner = ({ subject, initialType = 'mcq', onBack }) => {
         });
         const data = await response.json().catch(() => ({}));
         if (!response.ok) throw new Error(data?.error || 'Unable to load this activity');
+        if (controller.signal.aborted) return;
         setQuestions(Array.isArray(data?.questions) ? data.questions : []);
       } catch (loadError) {
         if (loadError.name !== 'AbortError') setError(loadError.message || 'Unable to load this activity');
@@ -63,7 +72,7 @@ const QuickPracticeRunner = ({ subject, initialType = 'mcq', onBack }) => {
     };
     loadQuestions();
     return () => controller.abort();
-  }, [authHeaders, subjectId, type]);
+  }, [authHeaders, subjectId, type, reload]);
 
   const submitAnswers = async () => {
     if (!questions.length || answeredCount !== questions.length) return;
@@ -76,7 +85,7 @@ const QuickPracticeRunner = ({ subject, initialType = 'mcq', onBack }) => {
         body: JSON.stringify({
           answers: questions.map((question) => ({
             questionId: question.id,
-            answer: answers[question.id] || '',
+            answer: question.type === 'matching' ? JSON.stringify(question.matchingLeft.map((_, index) => answers[question.id]?.[index] || '')) : answers[question.id] || '',
           })),
         }),
       });
@@ -126,15 +135,17 @@ const QuickPracticeRunner = ({ subject, initialType = 'mcq', onBack }) => {
               <div>
                 <p className="text-[10px] font-bold uppercase tracking-[0.18em] text-indigo-500">Teacher activity</p>
                 <h1 className="text-xl font-bold text-slate-950 sm:text-2xl">{subjectName}</h1>
-                <p className="text-xs text-slate-500">{type === 'mcq' ? 'Multiple-choice practice' : 'Fill in the blanks'}</p>
+                <p className="text-xs text-slate-500">{TYPE_LABELS[type]}</p>
               </div>
             </div>
-            <div className="flex rounded-full border border-slate-200 bg-slate-100/80 p-1">
+            <div className="flex flex-wrap rounded-full border border-slate-200 bg-slate-100/80 p-1">
               {[
                 { key: 'mcq', label: 'MCQ' },
                 { key: 'blank', label: 'Fill blanks' },
+                { key: 'true_false', label: 'True/False' },
+                { key: 'matching', label: 'Matching' },
               ].map((option) => (
-                <button key={option.key} type="button" onClick={() => setType(option.key)} className={`rounded-full px-4 py-2 text-xs font-semibold transition ${type === option.key ? 'bg-white text-indigo-700 shadow-sm' : 'text-slate-500 hover:text-slate-800'}`}>
+                <button key={option.key} type="button" disabled={submitting} onClick={() => setType(option.key)} className={`rounded-full px-4 py-2 text-xs font-semibold transition ${type === option.key ? 'bg-white text-indigo-700 shadow-sm' : 'text-slate-500 hover:text-slate-800'}`}>
                   {option.label}
                 </button>
               ))}
@@ -154,14 +165,14 @@ const QuickPracticeRunner = ({ subject, initialType = 'mcq', onBack }) => {
           )}
         </section>
 
-        {error && <div className="flex items-center gap-2 rounded-2xl border border-rose-200 bg-rose-50 px-4 py-3 text-sm font-medium text-rose-700"><CircleAlert size={17} /> {error}</div>}
+        {error && <div role="alert" className="flex items-center gap-2 rounded-2xl border border-rose-200 bg-rose-50 px-4 py-3 text-sm font-medium text-rose-700"><CircleAlert size={17} /> {error} <button type="button" onClick={() => setReload((value) => value + 1)}>Reload questions</button></div>}
 
         {loading ? (
           <div className="flex items-center justify-center gap-2 rounded-3xl border border-white bg-white/70 py-16 text-sm text-slate-500 backdrop-blur-xl"><Loader2 className="animate-spin text-indigo-500" size={20} /> Loading activity…</div>
         ) : questions.length === 0 ? (
           <div className="rounded-3xl border border-dashed border-slate-200 bg-white/70 px-6 py-14 text-center backdrop-blur-xl">
             <CheckCircle2 className="mx-auto mb-3 text-slate-300" size={34} />
-            <h2 className="font-bold text-slate-700">No {type === 'mcq' ? 'MCQ' : 'fill-blank'} questions yet</h2>
+            <h2 className="font-bold text-slate-700">No {TYPE_LABELS[type]} questions yet</h2>
             <p className="mt-1 text-sm text-slate-500">Your teacher has not published this activity for {subjectName}.</p>
           </div>
         ) : (
@@ -178,7 +189,7 @@ const QuickPracticeRunner = ({ subject, initialType = 'mcq', onBack }) => {
                         <h2 className="font-semibold leading-6 text-slate-900">{question.question}</h2>
                         {result && <span className={`shrink-0 rounded-full px-2.5 py-1 text-[10px] font-bold ${result.isCorrect ? 'bg-emerald-100 text-emerald-700' : 'bg-rose-100 text-rose-700'}`}>{result.isCorrect ? 'Correct' : 'Review'}</span>}
                       </div>
-                      {question.type === 'mcq' ? (
+                      {['mcq', 'true_false'].includes(question.type) ? (
                         <div className="mt-4 grid gap-2 sm:grid-cols-2">
                           {(question.options || []).map((option, optionIndex) => {
                             const selected = answers[id] === option;
@@ -187,19 +198,30 @@ const QuickPracticeRunner = ({ subject, initialType = 'mcq', onBack }) => {
                               ? correct ? 'border-emerald-300 bg-emerald-50 text-emerald-800' : selected ? 'border-rose-300 bg-rose-50 text-rose-700' : 'border-slate-200 bg-white text-slate-500'
                               : selected ? 'border-indigo-400 bg-indigo-50 text-indigo-800' : 'border-slate-200 bg-white text-slate-600 hover:border-indigo-200 hover:bg-indigo-50/40';
                             return (
-                              <button key={`${option}-${optionIndex}`} type="button" disabled={Boolean(results)} onClick={() => setAnswers((previous) => ({ ...previous, [id]: option }))} className={`flex items-center gap-3 rounded-xl border px-3 py-2.5 text-left text-sm transition ${stateClass}`}>
+                              <button key={`${option}-${optionIndex}`} type="button" aria-pressed={selected} disabled={Boolean(results) || submitting} onClick={() => setAnswers((previous) => ({ ...previous, [id]: option }))} className={`flex items-center gap-3 rounded-xl border px-3 py-2.5 text-left text-sm transition ${stateClass}`}>
                                 <span className="flex size-6 shrink-0 items-center justify-center rounded-lg bg-white/80 text-[10px] font-bold">{String.fromCharCode(65 + optionIndex)}</span>
                                 {option}
                               </button>
                             );
                           })}
                         </div>
+                      ) : question.type === 'matching' ? (
+                        <div className="mt-4 space-y-3">
+                          {(question.matchingLeft || []).map((left, pairIndex) => <label key={left} className="block">
+                            {left}
+                            <select aria-label={`Match ${left}`} className="ml-3 max-w-full rounded border p-2" disabled={Boolean(results) || submitting} value={answers[id]?.[pairIndex] || ''} onChange={(event) => setAnswers((previous) => ({ ...previous, [id]: { ...previous[id], [pairIndex]: event.target.value } }))}>
+                              <option value="">Choose a match</option>
+                              {(question.options || []).map((right) => <option key={right} value={right} disabled={Object.entries(answers[id] || {}).some(([key, value]) => Number(key) !== pairIndex && value === right)}>{right}</option>)}
+                            </select>
+                          </label>)}
+                          <p className="text-xs text-slate-500">Each answer can be used once. All pairs must be correct to earn the question’s point.</p>
+                        </div>
                       ) : (
-                        <input type="text" value={answers[id] || ''} disabled={Boolean(results)} onChange={(event) => setAnswers((previous) => ({ ...previous, [id]: event.target.value }))} placeholder="Type your answer" className="mt-4 w-full rounded-xl border border-slate-200 bg-white px-4 py-3 text-sm outline-none transition focus:border-indigo-300 focus:ring-4 focus:ring-indigo-100 disabled:bg-slate-50" />
+                        <input aria-label={`Answer ${index + 1}`} type="text" value={answers[id] || ''} disabled={Boolean(results) || submitting} onChange={(event) => setAnswers((previous) => ({ ...previous, [id]: event.target.value }))} placeholder="Type your answer" className="mt-4 w-full rounded-xl border border-slate-200 bg-white px-4 py-3 text-sm outline-none transition focus:border-indigo-300 focus:ring-4 focus:ring-indigo-100 disabled:bg-slate-50" />
                       )}
                       {result && (
                         <div className={`mt-4 rounded-xl border px-4 py-3 text-sm ${result.isCorrect ? 'border-emerald-200 bg-emerald-50 text-emerald-800' : 'border-rose-200 bg-rose-50 text-rose-800'}`}>
-                          {!result.isCorrect && <p><span className="font-semibold">Correct answer:</span> {result.correctAnswer}</p>}
+                          {!result.isCorrect && <p><span className="font-semibold">Correct answer:</span> {question.type === 'matching' ? question.matchingLeft.map((left, pairIndex) => `${left} → ${JSON.parse(result.correctAnswer)[pairIndex]}`).join('; ') : result.correctAnswer}</p>}
                           {result.explanation && <p className="mt-1 text-slate-600">{result.explanation}</p>}
                         </div>
                       )}

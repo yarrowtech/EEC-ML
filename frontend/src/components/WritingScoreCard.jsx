@@ -1,3 +1,5 @@
+import PropTypes from 'prop-types';
+import AssessmentExplanation from '../features/language-review/AssessmentExplanation';
 import React, { useState } from 'react';
 import { motion as Motion, AnimatePresence } from 'framer-motion';
 import {
@@ -92,6 +94,8 @@ const WritingScoreCard = ({ assessment, prompt, onRetry, onBack }) => {
   const overall = scores.overall || 0;
   const ringColor = overall >= 80 ? '#22c55e' : overall >= 60 ? '#f59e0b' : '#ef4444';
 
+  if (assessment.status && assessment.status !== 'completed') return <div role="status" className="rounded-xl border p-4">Assessment {assessment.status}. Scores are not available yet.{onBack && <button onClick={onBack}>Back</button>}</div>;
+
   const handleDownload = () => {
     const lines = [
       `Writing Assessment Report`,
@@ -132,6 +136,7 @@ const WritingScoreCard = ({ assessment, prompt, onRetry, onBack }) => {
     a.href = URL.createObjectURL(blob);
     a.download = `writing-report-${Date.now()}.txt`;
     a.click();
+    setTimeout(() => URL.revokeObjectURL(a.href), 0);
   };
 
   return (
@@ -140,8 +145,9 @@ const WritingScoreCard = ({ assessment, prompt, onRetry, onBack }) => {
       animate={{ opacity: 1, y: 0 }}
       className="max-w-3xl mx-auto space-y-6 pb-10"
     >
+      <AssessmentExplanation assessment={assessment} mode="writing" />
       {/* Header */}
-      <div className="flex items-center justify-between gap-4">
+      <div className="flex flex-wrap items-center justify-between gap-4">
         <div>
           <h2 className="text-2xl font-bold text-gray-900">Writing Report</h2>
           <p className="text-sm text-gray-500 mt-0.5">{prompt?.title}</p>
@@ -279,4 +285,8 @@ const WritingScoreCard = ({ assessment, prompt, onRetry, onBack }) => {
   );
 };
 
+ScoreRing.propTypes = { score: PropTypes.number, size: PropTypes.number, strokeWidth: PropTypes.number };
+MetricBar.propTypes = { label: PropTypes.string, value: PropTypes.number, color: PropTypes.string };
+CorrectionCard.propTypes = { correction: PropTypes.object, idx: PropTypes.number };
+WritingScoreCard.propTypes = { assessment: PropTypes.object.isRequired, prompt: PropTypes.object, onRetry: PropTypes.func, onBack: PropTypes.func };
 export default WritingScoreCard;

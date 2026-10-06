@@ -1,3 +1,4 @@
+const mongoose = require('mongoose');
 const express = require('express');
 const router = express.Router();
 const axios = require('axios');
@@ -76,6 +77,10 @@ router.delete('/teacher/prompts/:id', authTeacher, async (req, res) => {
 // Teacher: view all submissions for a prompt
 router.get('/teacher/assessments/:promptId', authTeacher, async (req, res) => {
   try {
+    if (!req.schoolId || !req.user?.id) return res.status(401).json({ success: false, message: 'Unauthorized' });
+    if (!mongoose.isValidObjectId(req.params.promptId)) return res.status(400).json({ success: false, message: 'Invalid content ID' });
+    const content = await WritingPrompt.findOne({ _id: req.params.promptId, schoolId: req.schoolId, teacherId: req.user.id }).lean();
+    if (!content) return res.status(404).json({ success: false, message: 'Content not found' });
     const { sort = 'latest' } = req.query;
     const sortMap = {
       latest: { createdAt: -1 },
@@ -87,7 +92,7 @@ router.get('/teacher/assessments/:promptId', authTeacher, async (req, res) => {
       promptId: req.params.promptId,
       schoolId: req.schoolId,
     })
-      .populate('studentId', 'firstName lastName rollNumber')
+      .populate('studentId', 'name firstName lastName rollNumber')
       .populate('promptId', 'title promptType difficulty')
       .sort(sortMap[sort] || sortMap.latest)
       .lean();
@@ -106,11 +111,14 @@ router.get('/teacher/all-assessments', authTeacher, async (req, res) => {
       highest: { 'scores.overall': -1 },
       lowest: { 'scores.overall': 1 },
     };
-    const filter = { schoolId: req.schoolId };
-    if (promptId) filter.promptId = promptId;
+    if (!req.schoolId || !req.user?.id) return res.status(401).json({ success: false, message: 'Unauthorized' });
+    if (promptId && !mongoose.isValidObjectId(promptId)) return res.status(400).json({ success: false, message: 'Invalid content ID' });
+    const owned = await WritingPrompt.find({ schoolId: req.schoolId, teacherId: req.user.id }).select('_id').lean();
+    if (promptId && !owned.some((item) => String(item._id) === promptId)) return res.status(404).json({ success: false, message: 'Content not found' });
+    const filter = { schoolId: req.schoolId, promptId: promptId || { $in: owned.map((item) => item._id) } };
 
     const assessments = await WritingAssessment.find(filter)
-      .populate('studentId', 'firstName lastName rollNumber classId sectionId')
+      .populate('studentId', 'name firstName lastName rollNumber classId sectionId')
       .populate('promptId', 'title promptType difficulty subject chapter')
       .sort(sortMap[sort] || sortMap.latest)
       .limit(200)
@@ -268,6 +276,7 @@ router.get('/student/history', authStudent, async (req, res) => {
   try {
     const assessments = await WritingAssessment.find({
       studentId: req.userId,
+      schoolId: req.schoolId,
       status: 'completed',
     })
       .populate('promptId', 'title promptType difficulty subject chapter')
@@ -285,6 +294,7 @@ router.get('/student/assessments/:id', authStudent, async (req, res) => {
     const assessment = await WritingAssessment.findOne({
       _id: req.params.id,
       studentId: req.userId,
+      schoolId: req.schoolId,
     })
       .populate('promptId')
       .lean();

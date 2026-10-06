@@ -1,3 +1,4 @@
+import PropTypes from 'prop-types';
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import { BookOpen, Trash2, Edit3, Loader2, X, Plus, CheckCircle, HelpCircle, Sparkles, Brain } from 'lucide-react';
 import { useSearchParams, useNavigate } from 'react-router-dom';
@@ -8,6 +9,8 @@ const API_BASE = (import.meta.env.VITE_API_URL || 'http://localhost:5000').repla
 const QUESTION_TYPES = [
   { value: 'mcq', label: 'Multiple Choice' },
   { value: 'blank', label: 'Fill in the Blank' },
+  { value: 'true_false', label: 'True/False' },
+  { value: 'matching', label: 'Match the Following' },
 ];
 
 const emptyOptions = ['', '', '', ''];
@@ -19,9 +22,10 @@ const PracticeQuestions = ({ initialType = '' }) => {
   const requestedType = initialType || searchParams.get('type');
   const [allocations, setAllocations] = useState([]);
   const [selectedAllocationId, setSelectedAllocationId] = useState('');
-  const [questionType, setQuestionType] = useState(requestedType === 'blank' ? 'blank' : 'mcq');
+  const [questionType, setQuestionType] = useState(QUESTION_TYPES.some((type) => type.value === requestedType) ? requestedType : 'mcq');
   const [questionText, setQuestionText] = useState('');
   const [options, setOptions] = useState(emptyOptions);
+  const [pairs, setPairs] = useState([{ left: '', right: '' }, { left: '', right: '' }]);
   const [correctAnswer, setCorrectAnswer] = useState('');
   const [explanation, setExplanation] = useState('');
   const [loadingAllocations, setLoadingAllocations] = useState(false);
@@ -125,6 +129,7 @@ const PracticeQuestions = ({ initialType = '' }) => {
     setQuestionText('');
     setOptions(emptyOptions);
     setCorrectAnswer('');
+    setPairs([{ left: '', right: '' }, { left: '', right: '' }]);
     setExplanation('');
     setEditingId('');
   };
@@ -144,7 +149,8 @@ const PracticeQuestions = ({ initialType = '' }) => {
         type: questionType,
         question: questionText.trim(),
         options: questionType === 'mcq' ? options.map((o) => o.trim()) : [],
-        correctAnswer: correctAnswer.trim(),
+        correctAnswer: questionType === 'matching' ? JSON.stringify(pairs.map((pair) => pair.right.trim())) : correctAnswer.trim(),
+        matchingLeft: questionType === 'matching' ? pairs.map((pair) => pair.left.trim()) : [],
         explanation: explanation.trim(),
       };
       const res = await apiFetch(
@@ -250,6 +256,10 @@ const PracticeQuestions = ({ initialType = '' }) => {
     setQuestionText(q.question || '');
     setOptions(q.options && q.options.length ? [...q.options, '', '', '', ''].slice(0, 4) : emptyOptions);
     setCorrectAnswer(q.correctAnswer || '');
+    if (q.type === 'matching') {
+      const right = JSON.parse(q.correctAnswer);
+      setPairs(q.matchingLeft.map((left, index) => ({ left, right: right[index] })));
+    }
     setExplanation(q.explanation || '');
     if (q.classId && q.sectionId && q.subjectId) {
       const match = allocations.find(
@@ -336,7 +346,7 @@ const PracticeQuestions = ({ initialType = '' }) => {
                 <select
                   id="practice-question-type"
                   value={questionType}
-                  onChange={(e) => setQuestionType(e.target.value)}
+                  onChange={(e) => { setQuestionType(e.target.value); setCorrectAnswer(''); }}
                   className={inputClass}
                 >
                   {QUESTION_TYPES.map((item) => (
@@ -405,6 +415,20 @@ const PracticeQuestions = ({ initialType = '' }) => {
               </div>
             )}
 
+            {questionType === 'true_false' && <label className="block text-sm">Correct answer
+              <select aria-label="Correct True/False answer" className={inputClass} value={correctAnswer} onChange={(event) => setCorrectAnswer(event.target.value)}>
+                <option value="">Select answer</option><option>True</option><option>False</option>
+              </select>
+            </label>}
+            {questionType === 'matching' && <fieldset className="space-y-2">
+              <legend>Matching pairs (2–12)</legend>
+              <p className="text-xs">Enter the correct pairs. Students see the answers in a separate order.</p>
+              {pairs.map((pair, index) => <div key={index} className="flex flex-wrap gap-2">
+                {['left', 'right'].map((side) => <input key={side} aria-label={`Pair ${index + 1} ${side}`} className={inputClass} value={pair[side]} onChange={(event) => setPairs((previous) => previous.map((item, i) => i === index ? { ...item, [side]: event.target.value } : item))} />)}
+                <button type="button" disabled={pairs.length <= 2} onClick={() => setPairs((previous) => previous.filter((_, i) => i !== index))}>Remove pair {index + 1}</button>
+              </div>)}
+              <button type="button" disabled={pairs.length >= 12} onClick={() => setPairs((previous) => [...previous, { left: '', right: '' }])}>Add pair</button>
+            </fieldset>}
             {questionType === 'blank' && (
               <div>
                 <label htmlFor="practice-blank-answer" className="block text-xs font-semibold text-gray-600 mb-1.5">Correct Answer</label>
@@ -505,7 +529,7 @@ const PracticeQuestions = ({ initialType = '' }) => {
                               ? 'bg-indigo-50 text-indigo-600 border-indigo-100'
                               : 'bg-amber-50 text-amber-600 border-amber-100'
                           }`}>
-                            {q.type === 'mcq' ? 'MCQ' : 'Fill in Blank'}
+                            {QUESTION_TYPES.find((type) => type.value === q.type)?.label || q.type}
                           </span>
                           <span className="inline-flex items-center px-2 py-0.5 rounded-md text-[11px] font-medium bg-gray-50 text-gray-500 border border-gray-200">
                             {(q.classId?.name || 'Class')} - {(q.sectionId?.name || 'Sec')}
@@ -579,4 +603,5 @@ const PracticeQuestions = ({ initialType = '' }) => {
   );
 };
 
+PracticeQuestions.propTypes = { initialType: PropTypes.string };
 export default PracticeQuestions;

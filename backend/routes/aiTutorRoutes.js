@@ -310,18 +310,11 @@ router.post('/generate', authStudent, async (req, res) => {
     const academicYearId = selectedMaterial?.academicYearId || materials[0]?.academicYearId || null;
 
     // Build student context for personalised LLM response — fire and forget on error.
-    // Personalisation (mastery/gaps/memory/development profile in the prompt)
-    // requires recorded parental consent; without it the tutor answers from the
-    // retrieved course material only.
     let studentContext = '';
     let conversationHistory = clientHistory;
     let masteryBasedDifficulty = normalizeString(difficulty) || null;
     let masteryBasedBloomLevel = null;
-    const consent = await require('../services/aiConsentService')
-      .personalisationAllowed({ studentId, schoolId })
-      .catch(() => ({ allowed: false, reason: 'consent_check_failed' }));
     try {
-      if (!consent.allowed) throw new Error('personalisation_not_consented');
       const ctx = await buildStudentContext({
         studentId,
         schoolId,
@@ -430,8 +423,7 @@ router.post('/generate', authStudent, async (req, res) => {
         indexedAttachmentCount,
         ragSource: 'qdrant',
         resolvedChapterTitle,
-        personalisationApplied: Boolean(consent.allowed && studentContext),
-        personalisationBlockedReason: consent.allowed ? null : consent.reason,
+        personalisationApplied: Boolean(studentContext),
       },
     });
   } catch (err) {
@@ -1056,13 +1048,25 @@ router.get('/teacher/corrections', authTeacher, async (req, res) => {
 router.get('/admin/interaction-logs', adminAuth, async (req, res) => {
   try {
     const AiInteractionLog = require('../models/AiInteractionLog');
-    const { feature, status, userId, from, to } = req.query;
-    const limit = Math.min(parseInt(req.query.limit, 10) || 100, 500);
-
-    const filter = { schoolId: req.schoolId };
+    if (!mongoose.Types.ObjectId.isValid(req.schoolId)) return res.status(400).json({ error: 'Valid school scope is required' });
+    const { feature, status, userId, from, to, grounded, needsReview } = req.query;
+    const limit = req.query.limit === undefined ? 100 : Number(req.query.limit);
+    if (!Number.isInteger(limit) || limit < 1 || limit > 500) return res.status(400).json({ error: 'limit must be between 1 and 500' });
+    if (status && !['success', 'error'].includes(status)) return res.status(400).json({ error: 'Invalid status' });
+    if (feature && (typeof feature !== 'string' || feature.length > 100)) return res.status(400).json({ error: 'Invalid feature' });
+    if (userId && !mongoose.Types.ObjectId.isValid(userId)) return res.status(400).json({ error: 'Invalid userId' });
+    for (const value of [grounded, needsReview]) {
+      if (value !== undefined && !['true', 'false'].includes(value)) return res.status(400).json({ error: 'Flag filters must be true or false' });
+    }
+    if ([from, to].some((value) => value !== undefined && (typeof value !== 'string' || !value || !Number.isFinite(Date.parse(value))))) return res.status(400).json({ error: 'Invalid date range' });
+    if (from && to && new Date(from) > new Date(to)) return res.status(400).json({ error: 'From date must precede to date' });
+    // Aggregation does not apply Mongoose's automatic ObjectId casting.
+    const filter = { schoolId: new mongoose.Types.ObjectId(req.schoolId) };
     if (feature) filter.feature = feature;
     if (status) filter.status = status;
-    if (userId && mongoose.Types.ObjectId.isValid(userId)) filter.userId = userId;
+    if (userId) filter.userId = new mongoose.Types.ObjectId(userId);
+    if (grounded !== undefined) filter.grounded = grounded === 'true';
+    if (needsReview !== undefined) filter.needsReview = needsReview === 'true';
     if (from || to) {
       filter.createdAt = {};
       if (from) filter.createdAt.$gte = new Date(from);
@@ -1084,41 +1088,6 @@ router.get('/admin/interaction-logs', adminAuth, async (req, res) => {
       ]),
     ]);
     return res.json({ success: true, data: logs, summary });
-  } catch (err) {
-    return res.status(500).json({ error: err.message });
-  }
-});
-
-// ── GET /api/ai-tutor/consent-status ─────────────────────────────────────────
-// The calling student's AI-personalisation consent status.
-router.get('/consent-status', authStudent, async (req, res) => {
-  try {
-    const studentId = req.user?.id;
-    const schoolId  = req.schoolId;
-    if (!studentId || !schoolId) return res.status(401).json({ error: 'Unauthorized' });
-    const status = await require('../services/aiConsentService').personalisationAllowed({ studentId, schoolId });
-    return res.json({ success: true, data: status });
-  } catch (err) {
-    return res.status(500).json({ error: err.message });
-  }
-});
-
-// ── POST /api/ai-tutor/admin/consent/:studentId ──────────────────────────────
-// Record parental consent for AI personalisation (admin, audited).
-router.post('/admin/consent/:studentId', adminAuth, async (req, res) => {
-  try {
-    if (!mongoose.Types.ObjectId.isValid(req.params.studentId)) {
-      return res.status(400).json({ error: 'Invalid studentId' });
-    }
-    const { givenBy } = req.body || {};
-    if (!String(givenBy || '').trim()) return res.status(400).json({ error: 'givenBy (consenting parent/guardian name) is required' });
-
-    const result = await require('../services/aiConsentService').recordConsent({
-      studentId: req.params.studentId, schoolId: req.schoolId,
-      givenBy, actor: { id: req.user?.id, type: 'admin', name: req.user?.name },
-    });
-    if (result.notFound) return res.status(404).json({ error: 'Student not found in this school' });
-    return res.json({ success: true, data: result.student });
   } catch (err) {
     return res.status(500).json({ error: err.message });
   }

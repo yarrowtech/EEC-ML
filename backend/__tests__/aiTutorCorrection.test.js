@@ -35,6 +35,8 @@ describe('AI tutor answer correction', () => {
       correctionUpsert: null,
     };
 
+    jest.doMock('../middleware/adminAuth', () => (req, _res, next) => { req.schoolId = mocks.adminSchoolId || 'school1'; req.admin = { id: 'admin1', name: 'Admin' }; next(); });
+    jest.doMock('../models/AiInteractionLog', () => ({ find: jest.fn(() => queryLean([])), aggregate: jest.fn().mockResolvedValue([]) }));
     jest.doMock('axios', () => ({ post: jest.fn(), get: jest.fn() }));
     jest.doMock('../middleware/authStudent', () => (req, _res, next) => { req.schoolId = 'school1'; req.user = { id: 'stud1' }; next(); });
     jest.doMock('../middleware/authTeacher', () => (req, _res, next) => {
@@ -70,6 +72,26 @@ describe('AI tutor answer correction', () => {
     app = express();
     app.use(express.json());
     app.use('/api/ai-tutor', require('../routes/aiTutorRoutes'));
+  });
+
+  test('operations aggregates cast school IDs and apply review filters consistently', async () => {
+    mocks.adminSchoolId = CONV_ID;
+    const response = await request(app).get('/api/ai-tutor/admin/interaction-logs?needsReview=true&grounded=false&status=error');
+    expect(response.status).toBe(200);
+    const log = require('../models/AiInteractionLog');
+    const filter = log.aggregate.mock.calls[0][0][0].$match;
+    expect(String(filter.schoolId)).toBe(CONV_ID);
+    expect(filter.schoolId.constructor.name).toBe('ObjectId');
+    expect(filter).toEqual(expect.objectContaining({ needsReview: true, grounded: false, status: 'error' }));
+    expect(log.find).toHaveBeenCalledWith(filter);
+  });
+
+  test('operations rejects invalid filters instead of broadening the query', async () => {
+    mocks.adminSchoolId = CONV_ID;
+    for (const query of ['limit=-1', 'limit=501', 'from=bad', 'status=unknown', 'needsReview=maybe', 'from=2026-10-06&to=2026-10-01']) {
+      expect((await request(app).get(`/api/ai-tutor/admin/interaction-logs?${query}`)).status).toBe(400);
+    }
+    expect(require('../models/AiInteractionLog').find).not.toHaveBeenCalled();
   });
 
   test('conversation reads record actor, learner and school before returning data', async () => {

@@ -1,4 +1,3 @@
-import FlashcardEditor from '../features/assignment-flashcards/FlashcardEditor';
 import React, { useState, useEffect, useMemo } from 'react';
 import {
   FileText, Calendar, Search, Plus, Clock, AlertCircle, X,
@@ -546,7 +545,6 @@ const AssignmentPortal = ({ view = 'manage', notificationCount = 0, siblingNotif
       subject: assignment?.subject || '',
       topic: assignment?.topic || '',
       description: assignment?.description || '',
-      flashcards: assignment?.flashcards || [],
       classId: resolveIdValue(assignment?.classId),
       sectionId: resolveIdValue(assignment?.sectionId),
       dueDate: toDateInputValue(assignment?.dueDate),
@@ -578,7 +576,6 @@ const AssignmentPortal = ({ view = 'manage', notificationCount = 0, siblingNotif
         subject: detailDraft.subject,
         topic: detailDraft.topic,
         description: detailDraft.description,
-        flashcards: detailDraft.flashcards || [],
         classId: detailDraft.classId,
         sectionId: detailDraft.sectionId,
         dueDate: detailDraft.dueDate,
@@ -796,7 +793,6 @@ const AssignmentPortal = ({ view = 'manage', notificationCount = 0, siblingNotif
           classId: "",
           sectionId: "",
           description: "",
-          flashcards: [],
           dueDate: "",
           marks: 100,
           status: "draft",
@@ -2562,7 +2558,6 @@ const CreateAssignmentModal = ({
           </div>
         </div>
 
-        <div className="col-span-full"><FlashcardEditor cards={newAssignment.flashcards || []} onChange={(flashcards) => setNewAssignment((previous) => ({ ...previous, flashcards }))} /></div>
         {/* ── Description (full width) ── */}
         <div className="mb-5">
           <label className={FL}>Instructions / Description</label>
@@ -2652,7 +2647,7 @@ const CreateAssignmentModal = ({
           <button
             type="button"
             onClick={() => setNewAssignment(prev => ({
-              ...prev, title: '', topic: '', description: '', flashcards: [], dueDate: '', marks: 100,
+              ...prev, title: '', topic: '', description: '', dueDate: '', marks: 100,
               status: 'draft', timeLimit: '', publishDate: '',
               lateSubmissions: false, lateSubmissionCutoff: '',
               groups: '', rubric: '', isEssay: false, attachments: []
@@ -3028,7 +3023,7 @@ const CreateWorksheetForm = ({
         {/* Actions */}
         <div className="flex items-center justify-between gap-3">
           <button type="button"
-            onClick={() => setNewAssignment(prev => ({ ...prev, title: '', topic: '', description: '', flashcards: [], dueDate: '', marks: 100, status: 'draft', timeLimit: '', publishDate: '', lateSubmissions: false, lateSubmissionCutoff: '', groups: '', attachments: [] }))}
+            onClick={() => setNewAssignment(prev => ({ ...prev, title: '', topic: '', description: '', dueDate: '', marks: 100, status: 'draft', timeLimit: '', publishDate: '', lateSubmissions: false, lateSubmissionCutoff: '', groups: '', attachments: [] }))}
             className="px-5 py-2.5 text-[13px] font-semibold rounded-[60px] border transition-all hover:bg-black/5 disabled:opacity-50"
             style={{ color: '#7a92a8', borderColor: 'rgba(180,198,215,0.4)', background: 'rgba(255,255,255,0.7)' }}
             disabled={loading}>
@@ -3355,7 +3350,6 @@ const AssignmentDetailModal = ({
                         <option value="Hard">Hard</option>
                       </select>
                     </div>
-                    <FlashcardEditor cards={detailDraft.flashcards || []} onChange={(cards) => handleDetailDraftChange('flashcards', cards)} />
                     <textarea
                       value={detailDraft.description}
                       onChange={(e) => handleDetailDraftChange('description', e.target.value)}
