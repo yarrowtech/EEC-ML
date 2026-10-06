@@ -1478,10 +1478,12 @@ const ParentDashboard = ({
         />
       </motion.div>
 
-      {/* Attendance / Fee / Events */}
-      <motion.div variants={RISE} className="grid grid-cols-1 gap-3 lg:grid-cols-3">
+      {/* Cards — one grid so tablet (md) and desktop (lg) can order them differently:
+          tablet: Attendance+Fee, Latest Result+Events, Homework+Quick Actions, Notices.
+          desktop: Attendance+Fee+Events, Homework+Notices, Latest Result+Quick Actions. */}
+      <motion.div variants={RISE} className="grid grid-cols-1 gap-3 md:grid-cols-2 lg:grid-cols-6">
         {/* Attendance */}
-        <Card>
+        <Card className="md:order-1 lg:order-1 lg:col-span-2">
           <CardHead
             title="Today's Attendance"
             icon={CalendarCheck}
@@ -1536,7 +1538,7 @@ const ParentDashboard = ({
         </Card>
 
         {/* Fee */}
-        <Card>
+        <Card className="md:order-2 lg:order-2 lg:col-span-2">
           <CardHead title="Fee Summary" to="/parents/fees" linkLabel="View Details" />
 
           {fees.focus ? (
@@ -1582,7 +1584,7 @@ const ParentDashboard = ({
         </Card>
 
         {/* Events */}
-        <Card>
+        <Card className="md:order-4 lg:order-3 lg:col-span-2">
           <CardHead title="Upcoming Events" icon={Bell} to="/parents/calendar" />
 
           {events.length === 0 ? (
@@ -1618,12 +1620,8 @@ const ParentDashboard = ({
             </ul>
           )}
         </Card>
-      </motion.div>
-
-      {/* Homework / Notices */}
-      <motion.div variants={RISE} className="grid grid-cols-1 gap-3 lg:grid-cols-2">
         {/* Homework */}
-        <Card>
+        <Card className="md:order-5 lg:order-4 lg:col-span-3">
           <CardHead title="Recent Homework" icon={CalendarDays} to="/parents/homework" />
 
           {recentHomework.length === 0 ? (
@@ -1666,7 +1664,7 @@ const ParentDashboard = ({
         </Card>
 
         {/* Notices */}
-        <Card>
+        <Card className="md:order-7 md:col-span-2 lg:order-5 lg:col-span-3">
           <CardHead title="Recent Notices" icon={FileText} to="/parents/notices" />
 
           {recentNotices.length === 0 ? (
@@ -1709,12 +1707,8 @@ const ParentDashboard = ({
             </ul>
           )}
         </Card>
-      </motion.div>
-
-      {/* Latest Result / Quick Actions */}
-      <motion.div variants={RISE} className="grid grid-cols-1 gap-3 lg:grid-cols-2">
         {/* Latest Result */}
-        <Card>
+        <Card className="md:order-3 lg:order-6 lg:col-span-3">
           <CardHead title="Latest Exam Result" icon={Trophy} to="/parents/academic" />
 
           {results.latest ? (
@@ -1755,10 +1749,10 @@ const ParentDashboard = ({
         </Card>
 
         {/* Quick Actions */}
-        <Card>
+        <Card className="md:order-6 lg:order-7 lg:col-span-3">
           <CardHead title="Quick Actions" icon={LayoutGrid} />
 
-          <div className="grid grid-cols-5 gap-2">
+          <div className="grid grid-cols-5 gap-2 md:flex md:flex-wrap md:justify-center md:gap-x-4 md:gap-y-3 lg:grid lg:gap-2">
             {[
               { to: '/parents/fees', label: 'Pay Fees', Icon: Wallet, cls: 'bg-rose-50 text-rose-500' },
               { to: '/parents/attendance', label: 'Attendance', Icon: Users, cls: 'bg-green-50 text-green-600' },
@@ -1766,7 +1760,7 @@ const ParentDashboard = ({
               { to: '/parents/excuse-letters', label: 'Apply Leave', Icon: ClipboardList, cls: 'bg-orange-50 text-orange-500' },
               { to: '/parents/chat', label: 'Message', Icon: MessageSquare, cls: 'bg-blue-50 text-blue-600' },
             ].map(({ to, label, Icon, cls }) => (
-              <Link key={to} to={to} className="group flex min-w-0 flex-col items-center gap-1.5 text-center">
+              <Link key={to} to={to} className="group flex min-w-0 flex-col items-center gap-1.5 text-center md:w-[76px] lg:w-auto">
                 <span
                   className={`flex h-11 w-11 items-center justify-center rounded-2xl shadow-sm transition group-hover:-translate-y-0.5 sm:h-12 sm:w-12 ${cls}`}
                 >

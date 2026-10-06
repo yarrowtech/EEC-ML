@@ -296,10 +296,10 @@ const BOTTOM_NAV = [
 const ParentPortal = () => {
   const prefersReducedMotion = useReducedMotion();
   const [sidebarOpen, setSidebarOpen] = useState(() => (
-    typeof window === 'undefined' ? true : window.innerWidth >= 1024
+    typeof window === 'undefined' ? true : window.innerWidth >= 1280
   ));
   const [isDesktop, setIsDesktop] = useState(() => (
-    typeof window === 'undefined' ? true : window.matchMedia('(min-width: 1024px)').matches
+    typeof window === 'undefined' ? true : window.matchMedia('(min-width: 1280px)').matches
   ));
   const [parentProfile, setParentProfile] = useState(null);
   const [profileOpen, setProfileOpen] = useState(false);
@@ -398,7 +398,7 @@ const ParentPortal = () => {
   useEffect(() => {
     const handleClickOutside = (event) => {
       if (typeof window === 'undefined') return;
-      if (window.innerWidth >= 1024) return;
+      if (window.innerWidth >= 1280) return;
       if (!sidebarOpen) return;
       if (event.target.closest('.parent-sidebar')) return;
       setSidebarOpen(false);
@@ -409,7 +409,7 @@ const ParentPortal = () => {
   }, [sidebarOpen]);
 
   useEffect(() => {
-    const desktopQuery = window.matchMedia('(min-width: 1024px)');
+    const desktopQuery = window.matchMedia('(min-width: 1280px)');
     const handleBreakpointChange = (event) => {
       setSidebarOpen(event.matches);
       setIsDesktop(event.matches);
@@ -479,7 +479,7 @@ const ParentPortal = () => {
     setProfileOpen(false);
   };
   const handleMenuClick = () => {
-    if (typeof window !== 'undefined' && window.innerWidth < 1024) {
+    if (typeof window !== 'undefined' && window.innerWidth < 1280) {
       setSidebarOpen(false);
     }
   };
@@ -659,6 +659,14 @@ const ParentPortal = () => {
     [sectionBadges, chatUnread],
   );
 
+  // Unread items for pages only reachable from the drawer (not the footer bar).
+  const moreBadgeCount = useMemo(() => {
+    const footerPaths = new Set(BOTTOM_NAV.map(({ path }) => normalizePath(path)));
+    return NAV_GROUPS.flatMap((group) => group.items)
+      .filter((item) => !footerPaths.has(normalizePath(item.path)))
+      .reduce((sum, item) => sum + badgeFor(item.path), 0);
+  }, [badgeFor]);
+
   // Visiting a section clears its badge by marking those notifications read.
   useEffect(() => {
     if (currentPath === '/parents') return;
@@ -698,7 +706,7 @@ const ParentPortal = () => {
 
   return (
     <>
-    <div className="min-h-screen bg-gray-100 flex relative">
+    <div className="min-h-dvh bg-gray-100 flex relative">
       {showLogoutConfirm && (
         <div className="fixed inset-0 z-[200] flex items-center justify-center bg-black/40 backdrop-blur-sm p-4">
           <button
@@ -743,21 +751,13 @@ const ParentPortal = () => {
         </div>
       )}
       {/* Desktop sidebar only — same layout as the school admin sidebar, in the
-          parent portal's violet. On mobile the app bar + bottom nav take over. */}
-      {sidebarOpen && (
-        <button
-          type="button"
-          aria-label="Close sidebar"
-          onClick={() => setSidebarOpen(false)}
-          className="fixed inset-0 z-40 bg-slate-950/35 backdrop-blur-[2px] lg:hidden"
-        />
-      )}
-
+          parent portal's violet. Below lg (mobile + tablet) it is hidden and the
+          app bar + bottom footer menu + "More" sheet take over. */}
       <aside
-        className={`parent-sidebar fixed inset-y-0 left-0 z-50 flex h-dvh shrink-0 flex-col border-r border-gray-100 bg-white shadow-2xl transition-all duration-300 ease-in-out lg:sticky lg:top-0 lg:z-30 lg:shadow-lg
+        className={`parent-sidebar fixed inset-y-0 left-0 z-50 hidden h-dvh xl:flex shrink-0 flex-col border-r border-gray-100 bg-white shadow-2xl transition-all duration-300 ease-in-out xl:sticky xl:top-0 xl:z-30 xl:shadow-lg
           ${sidebarOpen
-            ? 'translate-x-0 w-72 lg:w-64'
-            : '-translate-x-full lg:translate-x-0 lg:w-[72px]'}`}
+            ? 'translate-x-0 w-72 xl:w-64'
+            : '-translate-x-full xl:translate-x-0 xl:w-[72px]'}`}
         aria-label="Sidebar navigation"
       >
         {/* ── Brand header ── */}
@@ -953,10 +953,10 @@ const ParentPortal = () => {
         </div>
       </aside>
 
-      <div className="flex-1 min-w-0 flex flex-col h-screen bg-slate-50">
+      <div className="flex-1 min-w-0 flex flex-col h-dvh bg-slate-50">
         {/* Desktop header — same layout as the school admin header (module
             search, clock, notifications, profile), in the parent violet. */}
-        <div className="sticky top-0 z-30 hidden shrink-0 lg:block">
+        <div className="sticky top-0 z-30 hidden shrink-0 xl:block">
           <div className="flex items-center gap-3 border-b border-white/70 bg-violet-50 px-5 py-2 shadow-[0_16px_44px_-12px_rgba(15,23,42,0.10),0_4px_12px_rgba(15,23,42,0.04)] backdrop-blur-xl">
             {/* Module search */}
             <div className="relative max-w-md flex-1" ref={headerSearchRef}>
@@ -1134,21 +1134,27 @@ const ParentPortal = () => {
         </div>
 
         {/* Mobile / tablet app bar */}
-        <header className="lg:hidden sticky top-0 z-40 shrink-0 border-b border-slate-200/80 bg-white/95 px-3 py-2.5 text-slate-900 shadow-[0_6px_24px_rgba(15,23,42,0.06)] backdrop-blur-xl">
+        <header className="xl:hidden sticky top-0 z-40 shrink-0 border-b border-slate-200/80 bg-white/95 px-3 py-2.5 text-slate-900 shadow-[0_6px_24px_rgba(15,23,42,0.06)] backdrop-blur-xl">
           <div className="flex min-h-11 items-center gap-2">
+            {!mobileSearchOpen && (
             <button
               type="button"
-              aria-label={sidebarOpen ? 'Close sidebar' : 'Open sidebar'}
-              aria-expanded={sidebarOpen}
+              aria-label={mobileMenuOpen ? 'Close menu' : 'Open menu'}
+              aria-expanded={mobileMenuOpen}
               onClick={() => {
-                setSidebarOpen((open) => !open);
-                setMobileMenuOpen(false);
+                setMobileMenuOpen((open) => !open);
                 setShowNotifications(false);
               }}
-              className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl text-slate-600 transition hover:bg-violet-50 hover:text-violet-600 active:scale-95"
+              className="relative flex h-10 w-10 shrink-0 items-center justify-center rounded-xl text-slate-600 transition hover:bg-violet-50 hover:text-violet-600 active:scale-95"
             >
               <Menu className="h-5 w-5" />
+              {moreBadgeCount > 0 && (
+                <span className="absolute right-1 top-1 flex h-4 min-w-4 items-center justify-center rounded-full bg-red-500 px-1 text-[9px] font-bold text-white ring-2 ring-white">
+                  {moreBadgeCount > 9 ? '9+' : moreBadgeCount}
+                </span>
+              )}
             </button>
+            )}
 
             {!mobileSearchOpen ? (
               <div className="flex w-full items-center justify-center gap-2.5">
@@ -1173,7 +1179,7 @@ const ParentPortal = () => {
             ) : (
               <div className="relative min-w-0 flex-1" ref={headerSearchRef}>
                 <form
-                  className="flex h-10 w-full items-center gap-2 rounded-xl border border-violet-200 bg-violet-50/70 px-3 shadow-sm focus-within:border-violet-400 focus-within:bg-white"
+                  className="flex h-10 w-full items-center gap-2 rounded-full border border-violet-200 bg-violet-50/70 px-3 shadow-sm focus-within:border-violet-400 focus-within:bg-white"
                   onSubmit={(e) => {
                     e.preventDefault();
                     if (searchMatches[0]) {
@@ -1263,6 +1269,7 @@ const ParentPortal = () => {
                 </button>
               )}
 
+              {!mobileSearchOpen && (
               <button
                 type="button"
                 aria-label="Notifications"
@@ -1283,11 +1290,12 @@ const ParentPortal = () => {
                   </span>
                 )}
               </button>
+              )}
             </div>
           </div>
         </header>
 
-        <main id="parent-main-content" className="parent-route-canvas flex-1 overflow-y-auto p-0">
+        <main id="parent-main-content" className="parent-route-canvas min-h-0 flex-1 overflow-y-auto p-0">
           <div className="h-full min-h-full sm:bg-white/40 sm:backdrop-blur-sm">
           <Suspense fallback={<PortalRouteFallback />}>
           <Routes>
@@ -1330,7 +1338,7 @@ const ParentPortal = () => {
         </main>
 
         {/* Mobile bottom navigation */}
-        <nav aria-label="Primary" className="lg:hidden shrink-0 border-t border-slate-200/80 bg-white/95 px-2 py-1.5 shadow-[0_-4px_20px_rgba(0,0,0,0.04)] backdrop-blur-md">
+        <nav aria-label="Primary" className="xl:hidden shrink-0 border-t border-slate-200/80 bg-white/95 px-2 pt-1.5 pb-[max(0.375rem,env(safe-area-inset-bottom))] shadow-[0_-4px_20px_rgba(0,0,0,0.04)] backdrop-blur-md">
           <div className="mx-auto flex max-w-md items-center justify-around">
             {BOTTOM_NAV.map(({ icon: Icon, label, path }) => {
               const active = isNavActive(path);
@@ -1376,9 +1384,9 @@ const ParentPortal = () => {
           </div>
         </nav>
 
-        {/* Mobile menu sheet — full navigation + account + logout */}
+        {/* Mobile / tablet drawer — slides in from the left: full navigation + account + logout */}
         {mobileMenuOpen && (
-          <div className="lg:hidden fixed inset-0 z-[120]">
+          <div className="xl:hidden fixed inset-0 z-[120]">
             <motion.button
               type="button"
               aria-label="Close menu"
@@ -1394,13 +1402,12 @@ const ParentPortal = () => {
               aria-modal="true"
               aria-label="Menu"
               tabIndex={-1}
-              className="absolute inset-x-0 bottom-0 flex max-h-[88dvh] flex-col rounded-t-3xl bg-white pb-[env(safe-area-inset-bottom)] shadow-2xl outline-none"
-              initial={{ y: prefersReducedMotion ? 0 : '100%' }}
-              animate={{ y: 0 }}
-              exit={{ y: '100%' }}
+              className="absolute inset-y-0 left-0 flex h-dvh w-[85vw] max-w-xs flex-col rounded-r-3xl bg-white pb-[env(safe-area-inset-bottom)] shadow-2xl outline-none"
+              initial={{ x: prefersReducedMotion ? 0 : '-100%' }}
+              animate={{ x: 0 }}
+              exit={{ x: '-100%' }}
               transition={{ type: 'spring', stiffness: 380, damping: 34 }}
             >
-              <div className="mx-auto mt-2 h-1 w-9 shrink-0 rounded-full bg-slate-200" aria-hidden="true" />
               <div className="flex items-center justify-between gap-3 border-b border-slate-100 px-5 py-4">
                 <div className="flex min-w-0 items-center gap-3">
                   <div className="flex h-11 w-11 items-center justify-center rounded-full bg-gradient-to-br from-violet-600 to-violet-400 text-sm font-bold text-white">{initials}</div>
@@ -1477,7 +1484,7 @@ const ParentPortal = () => {
 
         {/* Mobile notifications sheet */}
         {showNotifications && !isDesktop && (
-          <div className="lg:hidden fixed inset-0 z-[130]">
+          <div className="xl:hidden fixed inset-0 z-[130]">
             <motion.button
               type="button"
               aria-label="Close notifications"
