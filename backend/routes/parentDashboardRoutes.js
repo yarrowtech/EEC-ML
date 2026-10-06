@@ -15,6 +15,8 @@ const StudentObservation = require('../models/StudentObservation');
 const ParentDashboardReport = require('../models/ParentDashboardReport');
 const StudentDevelopmentProfile = require('../models/StudentDevelopmentProfile');
 const { resolveParentChildren, parentOwnsStudent } = require('../utils/parentChildren');
+const AuditLog = require('../models/AuditLog');
+const { exportStudentAiData } = require('../services/aiDataExportService');
 
 const AI_SERVICE_URL = process.env.AI_SERVICE_URL || 'http://localhost:8000';
 const TIMEOUT = 120_000;
@@ -32,6 +34,20 @@ const getChildIds = async (parentId, schoolId) => {
 };
 
 const ownsStudent = parentOwnsStudent;
+
+// GET /api/parent-dashboard/ai-data-export/:studentId — parent access is
+// limited to children resolved from the authenticated parent and school.
+router.get('/ai-data-export/:studentId', authParent, async (req, res) => {
+  try {
+    const childIds = await getChildIds(req.user.id, req.schoolId);
+    if (!ownsStudent(childIds, req.params.studentId)) return res.status(403).json({ success: false, error: 'Not authorised for this student' });
+    const payload = await exportStudentAiData(req.params.studentId, req.schoolId);
+    await AuditLog.create({ schoolId: req.schoolId, actorId: req.user.id, actorType: 'parent', action: 'ai_data_export', entity: 'StudentUser', entityId: req.params.studentId, meta: { studentId: req.params.studentId } });
+    return res.json({ success: true, data: payload });
+  } catch (err) {
+    return res.status(500).json({ success: false, error: 'Unable to export AI data' });
+  }
+});
 
 const DAY = 24 * 60 * 60 * 1000;
 // How long a stored AI report stays fresh before the dashboard regenerates it.
