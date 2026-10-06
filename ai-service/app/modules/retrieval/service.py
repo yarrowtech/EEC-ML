@@ -300,17 +300,24 @@ def _search_chunks_with_legacy_subject_fallback(
         )
 
     # ── Keyword (BM25-style) retrieval — runs even when semantic succeeds ──────
-    keyword_hits = keyword_search_chunks(
-        query_text=query_text,
-        school_id=school_id,
-        class_id=class_id,
-        section_id=section_id,
-        academic_year_id=academic_year_id,
-        subject_id=subject_id,
-        subject_name=subject_name,
-        limit=limit // 2,
-        bloom_level=bloom_level,
-    )
+    try:
+        keyword_hits = keyword_search_chunks(
+            query_text=query_text,
+            school_id=school_id,
+            class_id=class_id,
+            section_id=section_id,
+            academic_year_id=academic_year_id,
+            subject_id=subject_id,
+            subject_name=subject_name,
+            limit=limit // 2,
+            bloom_level=bloom_level,
+        )
+    except Exception as exc:
+        # BM25 is an enhancement, not a reason to discard a valid semantic
+        # result. This also keeps retrieval available during a Qdrant index
+        # outage or while the keyword index is being created.
+        logger.warning("Keyword retrieval unavailable; using semantic hits only: %s", exc)
+        keyword_hits = []
 
     if not keyword_hits and not semantic_hits:
         if bloom_level:
