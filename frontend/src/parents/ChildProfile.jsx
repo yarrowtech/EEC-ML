@@ -27,7 +27,7 @@ import {
   Users,
 } from 'lucide-react';
 
-import ChildSwitcher from './ChildSwitcher';
+// import ParentAiConsent from '../features/ai-consent/ParentAiConsent';
 import Loading from './Loading';
 import { EmptyState, ErrorState } from './StateBlock';
 import useParentChildren from './useParentChildren';
@@ -35,19 +35,19 @@ import useParentChildren from './useParentChildren';
 const fmt = (d) =>
   d
     ? new Date(d).toLocaleDateString('en-GB', {
-        day: '2-digit',
-        month: 'short',
-        year: 'numeric',
-      })
+      day: '2-digit',
+      month: 'short',
+      year: 'numeric',
+    })
     : '—';
 
 const fullDate = (d) =>
   d
     ? new Date(d).toLocaleDateString('en-GB', {
-        day: 'numeric',
-        month: 'long',
-        year: 'numeric',
-      })
+      day: 'numeric',
+      month: 'long',
+      year: 'numeric',
+    })
     : '—';
 
 const valueOrDash = (value) =>
@@ -101,11 +101,10 @@ const InfoItem = ({
       <p className="text-[11px] font-medium text-slate-600">{label}</p>
 
       <p
-        className={`text-sm font-semibold text-slate-800 ${
-          nowrap
+        className={`text-sm font-semibold text-slate-800 ${nowrap
             ? 'break-all lg:whitespace-nowrap lg:break-normal'
             : 'break-words'
-        }`}
+          }`}
       >
         {valueOrDash(value)}
       </p>
@@ -173,11 +172,10 @@ const TabButton = ({ icon: Icon, label, active, onClick }) => (
   <button
     type="button"
     onClick={onClick}
-    className={`flex shrink-0 items-center gap-2 border-b-2 px-4 py-3 text-xs font-semibold transition ${
-      active
+    className={`flex shrink-0 items-center gap-2 border-b-2 px-4 py-3 text-xs font-semibold transition ${active
         ? 'border-blue-600 text-slate-900'
         : 'border-transparent text-slate-500 hover:border-slate-200 hover:text-slate-800'
-    }`}
+      }`}
   >
     <Icon size={15} />
     {label}
@@ -418,11 +416,10 @@ const ChildProfile = () => {
                   </h2>
 
                   <span
-                    className={`inline-flex items-center gap-1 rounded-full px-2.5 py-1 text-[10px] font-bold ${
-                      c.status === 'Active'
+                    className={`inline-flex items-center gap-1 rounded-full px-2.5 py-1 text-[10px] font-bold ${c.status === 'Active'
                         ? 'bg-emerald-50 text-emerald-600'
                         : 'bg-slate-100 text-slate-600'
-                    }`}
+                      }`}
                   >
                     <span className="h-1.5 w-1.5 rounded-full bg-current" />
                     {c.status || 'Active'}
@@ -469,7 +466,7 @@ const ChildProfile = () => {
                     value={
                       c.gender
                         ? c.gender.charAt(0).toUpperCase() +
-                          c.gender.slice(1)
+                        c.gender.slice(1)
                         : '—'
                     }
                   />
@@ -516,7 +513,7 @@ const ChildProfile = () => {
                 value={
                   c.gender
                     ? c.gender.charAt(0).toUpperCase() +
-                      c.gender.slice(1)
+                    c.gender.slice(1)
                     : '—'
                 }
               />
@@ -534,74 +531,13 @@ const ChildProfile = () => {
         </motion.section>
 
         {/* =====================================================
-            TABS
-        ====================================================== */}
-
-        {/*
-        <div className="overflow-x-auto rounded-xl border border-slate-100 bg-white shadow-[0_2px_12px_rgba(15,23,42,0.03)]">
-          <div className="flex min-w-max px-1">
-            <TabButton
-              icon={Home}
-              label="Overview"
-              active={activeTab === 'Overview'}
-              onClick={() => handleTab('Overview')}
-            />
-
-            <TabButton
-              icon={User}
-              label="Personal Information"
-              active={activeTab === 'Personal Information'}
-              onClick={() => handleTab('Personal Information')}
-            />
-
-            <TabButton
-              icon={GraduationCap}
-              label="Academic Information"
-              active={activeTab === 'Academic Information'}
-              onClick={() => handleTab('Academic Information')}
-            />
-
-            <TabButton
-              icon={Users}
-              label="Parent / Guardian"
-              active={activeTab === 'Parent / Guardian'}
-              onClick={() => handleTab('Parent / Guardian')}
-            />
-
-            <TabButton
-              icon={FileText}
-              label="Documents"
-              active={activeTab === 'Documents'}
-              onClick={() => handleTab('Documents')}
-            />
-
-            <TabButton
-              icon={Trophy}
-              label="Achievements"
-              active={activeTab === 'Achievements'}
-              onClick={() => handleTab('Achievements')}
-            />
-
-            <TabButton
-              icon={Heart}
-              label="Medical Information"
-              active={activeTab === 'Medical Information'}
-              onClick={() => handleTab('Medical Information')}
-            />
-          </div>
-        </div>
-        */}
-
-        {/* =====================================================
             INFORMATION GRID
         ====================================================== */}
 
         <div className="min-h-0 space-y-3 lg:flex-1 lg:overflow-y-auto">
+          {/* <ParentAiConsent key={c.id} studentId={c.id} childName={c.name} /> */}
           <div className="grid items-stretch gap-3 md:grid-cols-2 lg:grid-cols-4">
-            {/* =====================================================
-                QUICK INFO
-            ====================================================== */}
-
+            {/* Quick Info */}
             <Card
               title="Quick Info"
               icon={ClipboardList}
@@ -610,14 +546,11 @@ const ChildProfile = () => {
               iconColor="text-rose-500"
             >
               <div className="grid grid-cols-2 gap-2.5">
-                {/* Class */}
-
                 <div className="rounded-lg border border-slate-100 bg-slate-50/50 p-3">
                   <div className="flex items-center gap-2">
                     <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-blue-50">
                       <BookOpen size={16} className="text-blue-600" />
                     </div>
-
                     <div>
                       <p className="text-[10px] text-slate-400">
                         Class
@@ -629,9 +562,7 @@ const ChildProfile = () => {
                     </div>
                   </div>
                 </div>
-
                 {/* Section */}
-
                 <div className="rounded-lg border border-slate-100 bg-slate-50/50 p-3">
                   <div className="flex items-center gap-2">
                     <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-purple-50">
@@ -649,9 +580,7 @@ const ChildProfile = () => {
                     </div>
                   </div>
                 </div>
-
                 {/* Roll No. */}
-
                 <div className="rounded-lg border border-slate-100 bg-slate-50/50 p-3">
                   <div className="flex items-center gap-2">
                     <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-violet-50">
@@ -671,9 +600,7 @@ const ChildProfile = () => {
                     </div>
                   </div>
                 </div>
-
                 {/* Academic Year */}
-
                 <div className="rounded-lg border border-slate-100 bg-slate-50/50 p-3">
                   <div className="flex items-center gap-2">
                     <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-indigo-50">
@@ -682,7 +609,6 @@ const ChildProfile = () => {
                         className="text-indigo-600"
                       />
                     </div>
-
                     <div>
                       <p className="text-[10px] text-slate-400">
                         Academic Year
@@ -696,16 +622,14 @@ const ChildProfile = () => {
                 </div>
               </div>
             </Card>
-
             {/* =====================================================
                 PERSONAL INFORMATION
             ====================================================== */}
-
             <Card
               title="Personal Information"
               className="h-full"
               icon={User}
-              // action={<EditButton />}
+            // action={<EditButton />}
             >
               <div id="profile-personal-information">
                 <DetailRow
@@ -743,7 +667,7 @@ const ChildProfile = () => {
               title="Academic Information"
               className="h-full"
               icon={GraduationCap}
-              // action={<EditButton />}
+            // action={<EditButton />}
             >
               <div id="profile-academic-information">
                 <DetailRow
@@ -811,7 +735,7 @@ const ChildProfile = () => {
               title="Parent / Guardian Information"
               className="h-full"
               icon={Users}
-              // action={<EditButton />}
+            // action={<EditButton />}
             >
               <div
                 id="profile-parent-/-guardian"
@@ -826,41 +750,6 @@ const ChildProfile = () => {
                   title="Mother"
                   person={mother}
                 />
-
-                {/*
-                <ContactCard
-                  title="Guardian"
-                  person={guardian}
-                />
-                */}
-
-                {/*
-                {parent && (
-                  <ContactCard
-                    title="Portal Account"
-                    person={{
-                      name: parent.name || parent.username,
-                      phone: parent.phone,
-                      email: parent.email,
-                    }}
-                  />
-                )}
-                */}
-
-                {/*
-                {c.address && (
-                  <div className="flex items-start gap-2 rounded-lg bg-slate-50 p-2.5">
-                    <MapPin
-                      size={14}
-                      className="mt-0.5 shrink-0 text-blue-600"
-                    />
-
-                    <p className="text-[11px] leading-5 text-slate-600">
-                      {c.address}
-                    </p>
-                  </div>
-                )}
-                */}
               </div>
             </Card>
           </div>
@@ -869,18 +758,14 @@ const ChildProfile = () => {
               FOOTER NOTE
           ====================================================== */}
 
-          <motion.div
-            variants={RISE}
-            className="flex items-center justify-center gap-2 py-2 text-[10px] text-slate-400 lg:shrink-0 lg:py-0"
-          >
+          <motion.div variants={RISE} className="flex items-center justify-center gap-2 py-2 text-[10px] text-slate-400 lg:shrink-0 lg:py-0">
             <School size={12} />
-
             <span>
               Student profile information is maintained by the school.
             </span>
           </motion.div>
         </div>
-      </div>
+        </div>
     </motion.div>
   );
 };

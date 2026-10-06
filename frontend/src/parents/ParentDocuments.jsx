@@ -110,13 +110,13 @@ const writeCache = (data) => {
 const DocCard = ({ doc, onPreview }) => {
   const kind = fileKind(doc);
   return (
-    <div className="flex items-center gap-2.5 rounded-xl border border-slate-100 bg-white p-2.5 shadow-[0_1px_4px_rgba(15,23,42,0.04)]">
+    <div className="flex items-center gap-2.5 rounded-2xl border border-slate-100 bg-white p-2.5 shadow-[0_1px_4px_rgba(15,23,42,0.04)]">
       <FileBadge kind={kind} />
       <div className="min-w-0 flex-1">
         <p className="truncate text-[13px] font-semibold text-slate-900" title={doc.name}>{doc.name}</p>
         <p className="truncate text-xs text-slate-500">{kindLabel(kind)}</p>
         <div className="mt-0.5 flex flex-wrap items-center gap-x-2 gap-y-0.5">
-          {doc.date && <span className="text-xs text-slate-500">Uploaded: {fmt(doc.date)}</span>}
+          {doc.date && <span className="text-xs text-slate-500"><strong> Uploaded:</strong> {fmt(doc.date)}</span>}
           {doc.verified && (
             <span className="inline-flex items-center gap-0.5 rounded-full bg-emerald-50 px-1.5 py-0.5 text-[10px] font-semibold text-emerald-600">
               <CheckCircle2 size={10} /> Verified
@@ -130,7 +130,7 @@ const DocCard = ({ doc, onPreview }) => {
           onClick={() => onPreview(doc)}
           title="Preview"
           aria-label={`Preview ${doc.name}`}
-          className="flex h-8 w-8 items-center justify-center rounded-lg border border-slate-200 text-violet-600 transition hover:bg-blue-50"
+          className="flex h-8 w-8 items-center justify-center rounded-full border border-slate-200 text-violet-600 transition hover:bg-blue-50"
         >
           <Eye size={16} />
         </button>
@@ -253,9 +253,10 @@ const ParentDocuments = () => {
         <EmptyState title="No documents yet" hint="Documents the school uploads for your child will appear here." icon={FileText} />
       ) : (
         <div className="space-y-3">
-          {visible.map((c) => {
+          {visible.map((c, idx) => {
             const list = grouped[c.key];
-            const isOpen = !collapsed[c.key];
+            // Only the first section starts open; the rest stay closed until toggled.
+            const isOpen = c.key in collapsed ? !collapsed[c.key] : idx === 0;
             return (
               <section key={c.key} className="overflow-hidden rounded-2xl border border-slate-100 bg-white shadow-[0_2px_12px_rgba(15,23,42,0.04)]">
                 <button
@@ -264,7 +265,7 @@ const ParentDocuments = () => {
                   className={`flex w-full items-center gap-3 px-3 py-2 text-left ${c.headBg}`}
                   aria-expanded={isOpen}
                 >
-                  <span className={`flex h-9 w-9 shrink-0 items-center justify-center rounded-lg ${c.iconBg}`}>
+                  <span className={`flex h-9 w-9 shrink-0 items-center justify-center rounded-full ${c.iconBg}`}>
                     <c.Icon size={17} />
                   </span>
                   <div className="min-w-0 flex-1">

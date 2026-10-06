@@ -242,7 +242,7 @@ router.post('/parent', authParent, async (req, res) => {
     if (!parent) return res.status(404).json({ error: 'Parent not found' });
     const schoolId = parent.schoolId || req.schoolId || null;
     const campusId = parent.campusId || req.campusId || null;
-    const { studentId, dateFrom, dateTo, reason, reasonType, additionalNotes, emergencyContact } = req.body || {};
+    const { studentId, dateFrom, dateTo, reason, reasonType, customReasonType, additionalNotes, emergencyContact } = req.body || {};
     if (!schoolId || !studentId || !dateFrom || !dateTo || !String(reason || '').trim()) {
       return res.status(400).json({ error: 'studentId, dateFrom, dateTo and reason are required' });
     }
@@ -273,7 +273,9 @@ router.post('/parent', authParent, async (req, res) => {
       className: classDoc.name || '', sectionName: sectionDoc.name || '',
       parentName: parent.name || parent.username || '', parentEmail: parent.email || '', parentPhone: parent.mobile || '',
       dateFrom: new Date(dateFrom), dateTo: new Date(dateTo), reason: String(reason).trim(),
-      reasonType: String(reasonType || 'other'), additionalNotes: String(additionalNotes || ''), emergencyContact: String(emergencyContact || ''), status: 'pending',
+      reasonType: String(reasonType || 'other'),
+      customReasonType: String(reasonType || 'other') === 'other' ? String(customReasonType || '').trim().slice(0, 60) : '',
+      additionalNotes: String(additionalNotes || ''), emergencyContact: String(emergencyContact || ''), status: 'pending',
     });
     return res.status(201).json(created);
   } catch (err) {

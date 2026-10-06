@@ -4,7 +4,7 @@ import { createPortal } from 'react-dom';
 import { useNavigate } from 'react-router-dom';
 import { AnimatePresence, motion } from 'framer-motion';
 import {
-  BookOpenText, CheckCircle2, ClipboardPlus, Droplet, Edit, HeartPulse, Info, Loader2, Lock, Pencil, Phone,
+  BookOpenText, CheckCircle2, ClipboardPlus, Droplet, Edit, HeartPulse, Info, Loader2, Phone,
   ShieldPlus, Syringe, User, UserRound, Users, Wind, X,
 } from 'lucide-react';
 import toast from 'react-hot-toast';
@@ -62,7 +62,6 @@ const SECTIONS = [
 const CONTACT_TONE = {
   father: 'bg-violet-50 text-violet-600',
   mother: 'bg-rose-50 text-rose-500',
-  guardian: 'bg-emerald-50 text-emerald-600',
 };
 
 const EditButton = ({ onClick, label }) => (
@@ -247,7 +246,7 @@ const HealthReport = () => {
 
           <div className="grid items-start gap-3 lg:grid-cols-[minmax(0,1.45fr)_minmax(0,1fr)]">
             {/* Medical sections */}
-            <div className="space-y-3">
+            <div className="grid items-start gap-3 md:grid-cols-2 lg:grid-cols-1">
               {SECTIONS.map((section) => {
                 const value = child[section.key];
                 const items = section.list ? (value || []) : (value ? [value] : []);
@@ -289,7 +288,7 @@ const HealthReport = () => {
             </div>
 
             {/* Right column */}
-            <div className="space-y-3">
+            <div className="grid items-start gap-3 md:grid-cols-2 lg:grid-cols-1">
               <motion.section variants={RISE} className={`${CARD} space-y-2 p-3`}>
                 <SectionHead
                   Icon={Phone}
@@ -298,9 +297,9 @@ const HealthReport = () => {
                   subtitle="People to contact in case of emergency."
                   action={<EditButton onClick={openContactsEdit} label="Edit emergency contacts" />}
                 />
-                {child.emergencyContacts.length === 0 ? (
+                {child.emergencyContacts.filter((c) => c.key !== 'guardian').length === 0 ? (
                   <p className="rounded-lg bg-slate-50 px-3 py-3 text-center text-[11px] text-slate-500">No emergency contacts on file.</p>
-                ) : child.emergencyContacts.map((c, i) => (
+                ) : child.emergencyContacts.filter((c) => c.key !== 'guardian').map((c, i) => (
                   <div key={`${c.name}-${i}`} className="flex items-center gap-3 rounded-lg border border-slate-100 px-2.5 py-2">
                     <span className={`flex h-9 w-9 shrink-0 items-center justify-center rounded-lg ${CONTACT_TONE[c.key] || 'bg-slate-100 text-slate-600'}`}><UserRound size={18} /></span>
                     <div className="min-w-0 flex-1">
@@ -361,7 +360,6 @@ const HealthReport = () => {
                   <li>The information shown here is based on school records.</li>
                   <li>Changes you save here update your child&apos;s record for the school.</li>
                   <li>Keep emergency contact numbers updated at all times.</li>
-                  <li>To change the guardian contact, please contact the school office.</li>
                 </ul>
               </motion.section>
             </div>
@@ -450,9 +448,6 @@ const HealthReport = () => {
                           />
                         </fieldset>
                       ))}
-                      <p className="flex items-start gap-1.5 rounded-lg bg-slate-50 px-2.5 py-2 text-[11px] text-slate-500">
-                        <Lock size={13} className="mt-0.5 shrink-0" /> The guardian contact is linked to your login, so it can only be changed by the school office.
-                      </p>
                     </>
                   )}
                   {saveError ? <p role="alert" className="text-xs text-rose-600">{saveError}</p> : null}
