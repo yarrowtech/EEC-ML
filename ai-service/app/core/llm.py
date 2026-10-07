@@ -69,6 +69,7 @@ def create_chain(
     mode: str = "",
     temperature: float | None = None,
     model: str | None = None,
+    force_provider: str | None = None,
 ) -> Runnable:
     """
     Build a LangChain chain (LLM | StrOutputParser) for the given mode.
@@ -77,11 +78,19 @@ def create_chain(
     falls back to local Ollama (with a per-mode model override where configured).
     An explicit ``model`` overrides both the mode default and the per-mode override
     (Ollama only; ignored when OpenRouter is active).
+    ``force_provider`` ("openrouter" | "ollama") overrides the normal provider
+    selection — used by :func:`invoke_with_fallback` to retry on the other
+    provider after the primary one fails.
     """
     if temperature is None:
         temperature = MODE_TEMPERATURE.get(mode, DEFAULT_TEMPERATURE)
 
-    if settings.openrouter_api_key:
+    if force_provider == "ollama":
+        use_openrouter = False
+    else:
+        use_openrouter = bool(settings.openrouter_api_key)
+
+    if use_openrouter:
         from langchain_openai import ChatOpenAI
         llm = ChatOpenAI(
             base_url=settings.openrouter_base_url,
@@ -109,8 +118,17 @@ def create_chain(
             num_predict=num_predict,
             temperature=temperature,
             seed=random.randint(1, 2**31 - 1),
+            # Bounded client-side timeout so a stalled local Ollama call fails fast
+            # instead of hanging the request indefinitely (OpenRouter already has
+            # its own `timeout=60` above).
+            client_kwargs={"timeout": 60.0},
+            async_client_kwargs={"timeout": 60.0},
         )
 
-    if settings.openrouter_api_key:
+    # One bounded retry on either provider so a single dropped connection or
+    # transient 5xx doesn't surface as a hard failure to the caller.
+    llm = llm.with_retry(stop_after_attempt=2)
+
+    if use_openrouter:
         return RunnableLambda(redact_model_input) | llm | StrOutputParser()
     return llm | StrOutputParser()

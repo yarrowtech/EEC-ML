@@ -1923,6 +1923,8 @@ const EvaluateSubmissions = ({
     { key: 'assignment', label: 'Assignments', icon: FileText },
     { key: 'worksheet', label: 'Worksheets', icon: FileText },
     { key: 'tryout', label: 'Tryouts', icon: Activity },
+    { key: 'mcq', label: 'MCQ', icon: ListChecks },
+    { key: 'fill', label: 'Fill in the blanks', icon: ListChecks },
     { key: 'writing', label: 'Writing', icon: Edit3 },
   ];
   const visibleSubmissions = typeFilter === 'all'

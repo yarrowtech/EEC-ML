@@ -231,6 +231,7 @@ const ExcuseLetters = () => {
                 onClick={() => setFilterOpen((v) => !v)}
                 aria-haspopup="menu"
                 aria-expanded={filterOpen}
+                aria-label="Filter excuse letters"
                 className={`inline-flex items-center gap-1.5 rounded-full border px-3 py-2 text-xs font-semibold transition ${statusFilter !== 'all' ? 'border-violet-600 bg-blue-50 text-violet-700' : 'border-slate-200 bg-white text-[#0b1446] hover:bg-slate-50'}`}
               >
                 <Filter size={14} />
