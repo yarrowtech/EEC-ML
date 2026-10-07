@@ -163,3 +163,20 @@ export const apiFetch = async (url, options = {}, navigate = null) => {
   }
   return res;
 };
+
+// Swap the current session for a linked account (teacher ↔ principal) and do a
+// full navigation so every portal re-reads the new token from scratch.
+export const switchAccount = async ({ endpoint, redirectTo }) => {
+  const res = await fetch(`${import.meta.env.VITE_API_URL}${endpoint}`, {
+    method: 'POST',
+    headers: { authorization: `Bearer ${localStorage.getItem('token')}` },
+  });
+  const data = await res.json().catch(() => ({}));
+  if (!res.ok || !data.token) {
+    throw new Error(data.error || 'Unable to switch account');
+  }
+  purgeStaleSessionCaches();
+  localStorage.setItem('token', data.token);
+  localStorage.setItem('userType', data.userType);
+  window.location.assign(redirectTo);
+};
