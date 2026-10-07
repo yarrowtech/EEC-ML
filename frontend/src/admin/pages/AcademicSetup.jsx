@@ -1412,6 +1412,82 @@ const AcademicSetup = ({ setShowAdminHeader }) => {
   const deleteSection = (id) => handleDelete("/api/academic/sections", id, "section", loadAcademicData);
   const deleteSubject = (id) => handleDelete("/api/academic/subjects", id, "subject", loadAcademicData);
 
+  /* Full-screen, non-dismissable progress overlay for "Move to Next Session".
+     The percentage comes from the server (GET .../copy-setup-progress/:jobId) —
+     this just renders whatever the backend last reported, polled on an interval. */
+  const showMoveSessionProgressModal = () => {
+    Swal.fire({
+      title: "Moving to Next Session",
+      html: `
+        <div style="padding:4px 8px;max-width:360px;margin:0 auto;">
+          <p id="move-session-step" style="color:#6b7280;font-size:13px;margin-bottom:16px;">Starting…</p>
+          <div style="width:100%;height:10px;background:#e5e7eb;border-radius:9999px;overflow:hidden;">
+            <div id="move-session-bar" style="height:100%;width:0%;background:linear-gradient(90deg,#f59e0b,#d97706);transition:width .35s ease;"></div>
+          </div>
+          <p id="move-session-pct" style="margin-top:12px;font-weight:700;font-size:28px;color:#111827;">0%</p>
+          <p style="color:#9ca3af;font-size:12px;margin-top:4px;">Please don't close or refresh this page.</p>
+        </div>
+      `,
+      allowOutsideClick: false,
+      allowEscapeKey: false,
+      allowEnterKey: false,
+      showConfirmButton: false,
+      showCloseButton: false,
+      didOpen: (popup) => {
+        Object.assign(popup.style, {
+          width: "100vw",
+          maxWidth: "100vw",
+          height: "100vh",
+          maxHeight: "100vh",
+          borderRadius: "0",
+          display: "flex",
+          flexDirection: "column",
+          alignItems: "center",
+          justifyContent: "center",
+        });
+      },
+    });
+  };
+
+  const updateMoveSessionProgressModal = (percentage, step) => {
+    const bar = document.getElementById("move-session-bar");
+    const pct = document.getElementById("move-session-pct");
+    const stepEl = document.getElementById("move-session-step");
+    const clamped = Math.max(0, Math.min(100, Number(percentage) || 0));
+    if (bar) bar.style.width = `${clamped}%`;
+    if (pct) pct.textContent = `${clamped}%`;
+    if (stepEl && step) stepEl.textContent = step;
+  };
+
+  const MOVE_SESSION_POLL_MS = 700;
+  const pollMoveSessionProgress = (jobId) => new Promise((resolve, reject) => {
+    const poll = async () => {
+      try {
+        const res = await fetch(`${API_BASE}/api/academic/years/copy-setup-progress/${jobId}`, {
+          headers: authHeaders,
+        });
+        const data = await res.json().catch(() => ({}));
+        if (!res.ok) {
+          reject(new Error(data.error || "Unable to check progress"));
+          return;
+        }
+        updateMoveSessionProgressModal(data.percentage, data.step);
+        if (data.status === "done") {
+          resolve(data.result);
+          return;
+        }
+        if (data.status === "error") {
+          reject(new Error(data.error || "Move to next session failed"));
+          return;
+        }
+        setTimeout(poll, MOVE_SESSION_POLL_MS);
+      } catch (err) {
+        reject(err);
+      }
+    };
+    poll();
+  });
+
   const copyYearSetup = async (sourceYear) => {
     const sourceYearId = sourceYear?._id;
     if (!sourceYearId) return;
@@ -1419,7 +1495,7 @@ const AcademicSetup = ({ setShowAdminHeader }) => {
     if (!targetCandidates.length) {
       Swal.fire({
         title: "No Target Year",
-        text: "Create another academic year first, then copy setup.",
+        text: "Create another academic year first, then move to next session.",
         icon: "warning",
       });
       return;
@@ -1449,11 +1525,11 @@ const AcademicSetup = ({ setShowAdminHeader }) => {
     if (!targetYear) return;
 
     const confirm = await Swal.fire({
-      title: "Copy Setup",
+      title: "Move to Next Session",
       html: `This will copy <b>classes, sections, subjects, and class teachers</b> from <b>${sourceYear?.name || "source year"}</b> to <b>${targetYear?.name || "target year"}</b>.`,
       icon: "question",
       showCancelButton: true,
-      confirmButtonText: "Yes, Copy",
+      confirmButtonText: "Yes, Move",
       cancelButtonText: "Cancel",
       confirmButtonColor: "#f59e0b",
     });
@@ -1467,27 +1543,33 @@ const AcademicSetup = ({ setShowAdminHeader }) => {
         body: JSON.stringify({ sourceYearId }),
       });
       const data = await res.json().catch(() => ({}));
-      if (!res.ok) throw new Error(data.error || "Unable to copy setup");
+      if (!res.ok) throw new Error(data.error || "Unable to start move to next session");
+      if (!data.jobId) throw new Error("Move to next session did not return a job id");
+
+      showMoveSessionProgressModal();
+      const result = await pollMoveSessionProgress(data.jobId);
+      Swal.close();
 
       await Promise.all([loadAcademicData(), loadClassTeachers()]);
 
       await Swal.fire({
-        title: "Copy Completed",
+        title: "Move to Next Session Completed",
         icon: "success",
         html: `
           <div style="text-align:left">
-            <p><b>Source:</b> ${data?.sourceYear?.name || "Previous Year"}</p>
-            <p><b>Target:</b> ${data?.targetYear?.name || targetYear?.name || ""}</p>
+            <p><b>Source:</b> ${result?.sourceYear?.name || "Previous Year"}</p>
+            <p><b>Target:</b> ${result?.targetYear?.name || targetYear?.name || ""}</p>
             <hr style="margin:10px 0" />
-            <p><b>Classes:</b> ${data?.classes?.created || 0} created, ${data?.classes?.skipped || 0} skipped</p>
-            <p><b>Sections:</b> ${data?.sections?.created || 0} created, ${data?.sections?.skipped || 0} skipped</p>
-            <p><b>Subjects:</b> ${data?.subjects?.created || 0} created, ${data?.subjects?.skipped || 0} skipped</p>
-            <p><b>Class Teachers:</b> ${data?.classTeachers?.created || 0} created, ${data?.classTeachers?.skipped || 0} skipped</p>
+            <p><b>Classes:</b> ${result?.classes?.created || 0} created, ${result?.classes?.skipped || 0} skipped</p>
+            <p><b>Sections:</b> ${result?.sections?.created || 0} created, ${result?.sections?.skipped || 0} skipped</p>
+            <p><b>Subjects:</b> ${result?.subjects?.created || 0} created, ${result?.subjects?.skipped || 0} skipped</p>
+            <p><b>Class Teachers:</b> ${result?.classTeachers?.created || 0} created, ${result?.classTeachers?.skipped || 0} skipped</p>
           </div>
         `,
       });
     } catch (err) {
-      Swal.fire({ title: "Error", text: err.message || "Failed to copy setup", icon: "error" });
+      Swal.close();
+      Swal.fire({ title: "Error", text: err.message || "Failed to move to next session", icon: "error" });
     } finally {
       setDeletingId(null);
     }
@@ -2391,7 +2473,7 @@ const AcademicSetup = ({ setShowAdminHeader }) => {
                                   disabled={deletingId === year._id}
                                   className="flex w-full items-center gap-2 px-3 py-2 text-left text-sm transition hover:bg-emerald-50 hover:text-emerald-600 disabled:opacity-50"
                                 >
-                                  <Copy className="h-3.5 w-3.5" /> Copy
+                                  <Copy className="h-3.5 w-3.5" /> Move to Next Session
                                 </button>
                                 <button
                                   type="button"
@@ -2530,7 +2612,7 @@ const AcademicSetup = ({ setShowAdminHeader }) => {
                                   onClick={() => copyYearSetup(year)}
                                   disabled={deletingId === year._id}
                                   className="rounded-md p-1.5 text-gray-400 transition hover:bg-emerald-50 hover:text-emerald-600 disabled:opacity-50"
-                                  title="Copy this year's classes, sections, subjects and class teachers to another year"
+                                  title="Move to Next Session — copies this year's classes, sections, subjects and class teachers to another year"
                                 >
                                   <Copy className="h-4 w-4" />
                                 </button>

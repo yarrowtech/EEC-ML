@@ -29,7 +29,6 @@ import {
 } from 'lucide-react';
 
 export const ADMIN_MENU_ITEMS = [
-  { icon: BarChart3, label: 'AI Operations', path: '/admin/ai-operations', scope: 'school' },
   {
     icon: Home,
     label: 'Dashboard',
@@ -201,7 +200,7 @@ export const ADMIN_MENU_ITEMS = [
 // Labels resolve against ADMIN_MENU_ITEMS (top-level items and submenu children).
 export const ADMIN_MENU_SECTIONS = [
   { items: ['Dashboard'] },
-  { section: 'OVERVIEW', items: ['Analytics', 'AI Operations'] },
+  { section: 'OVERVIEW', items: ['Analytics'] },
   {
     section: 'ACADEMIC MANAGEMENT',
     items: ['Academic Setup', 'Teachers Management', 'Teacher Feedback', 'Routine Management', 'Exam Management', 'Admit Cards', 'Result Management', 'Report Cards'],

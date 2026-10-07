@@ -446,8 +446,19 @@ const NoticeManagement = ({ setShowAdminHeader, viewMode = 'view' }) => {
 
   const formatDate = (iso) => {
     if (!iso) return null;
-    return new Date(iso).toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' });
+    return new Date(iso).toLocaleString('en-IN', {
+      day: 'numeric', month: 'short', year: 'numeric', hour: 'numeric', minute: '2-digit',
+    });
   };
+
+  // "Posted on" (createdAt) never changes when a notice is edited — by design,
+  // so the original publish date stays accurate. A notice edited after its
+  // initial save has updatedAt meaningfully later than createdAt (more than a
+  // minute, to ignore the sub-second gap from the insert itself); show that
+  // separately so an edit-today doesn't look like a stuck/wrong post date.
+  const wasEditedAfterPosting = (notice) =>
+    notice?.updatedAt && notice?.createdAt &&
+    new Date(notice.updatedAt).getTime() - new Date(notice.createdAt).getTime() > 60000;
 
   const inputCls = 'w-full rounded-xl border border-gray-200 bg-gray-50 px-3 py-2.5 text-sm text-slate-800 placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-indigo-500/30 focus:border-indigo-400 transition';
   const labelCls = 'block text-xs font-semibold text-slate-500 uppercase tracking-wide mb-1.5';
@@ -627,6 +638,12 @@ const NoticeManagement = ({ setShowAdminHeader, viewMode = 'view' }) => {
                                   <Calendar className="h-3 w-3" />
                                   {formatDate(notice.createdAt)}
                                 </span>
+                                {wasEditedAfterPosting(notice) && (
+                                  <span className="flex items-center gap-1" title={`Edited after posting — last updated ${formatDate(notice.updatedAt)}`}>
+                                    <Edit2 className="h-3 w-3" />
+                                    Updated {formatDate(notice.updatedAt)}
+                                  </span>
+                                )}
                                 <span className="flex items-center gap-1">
                                   <User className="h-3 w-3" />
                                   {creator}
@@ -777,6 +794,12 @@ const NoticeManagement = ({ setShowAdminHeader, viewMode = 'view' }) => {
                                 <Calendar className="h-3.5 w-3.5" />
                                 {formatDate(notice.createdAt)}
                               </span>
+                              {wasEditedAfterPosting(notice) && (
+                                <span className="flex items-center gap-1" title={`Edited after posting — last updated ${formatDate(notice.updatedAt)}`}>
+                                  <Edit2 className="h-3.5 w-3.5" />
+                                  Updated {formatDate(notice.updatedAt)}
+                                </span>
+                              )}
                               <span className="flex items-center gap-1">
                                 <User className="h-3.5 w-3.5" />
                                 {creator}
@@ -884,6 +907,12 @@ const NoticeManagement = ({ setShowAdminHeader, viewMode = 'view' }) => {
                                   <Calendar className="h-3 w-3" />
                                   {formatDate(notice.createdAt)}
                                 </span>
+                                {wasEditedAfterPosting(notice) && (
+                                  <span className="flex items-center gap-1" title={`Edited after posting — last updated ${formatDate(notice.updatedAt)}`}>
+                                    <Edit2 className="h-3 w-3" />
+                                    Updated {formatDate(notice.updatedAt)}
+                                  </span>
+                                )}
                                 <span className="flex items-center gap-1">
                                   <User className="h-3 w-3" />
                                   {creator}
