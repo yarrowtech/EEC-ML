@@ -313,9 +313,9 @@ const AttendanceReport = () => {
             <p className="text-sm font-medium text-slate-700">Overall Attendance</p>
             <div className="mt-0.5 flex items-center gap-2"><p className="text-2xl font-bold text-slate-900">{stats.overall}%</p><Delta value={stats.delta} /></div>
             <p className="mt-1 text-xs text-slate-500">Present: {stats.present + stats.late} / {stats.total} days</p>
-            {stats.sessionName ? (
+            {/* {stats.sessionName ? (
               <p className="mt-0.5 text-[11px] text-slate-400">Session: {stats.sessionName}</p>
-            ) : null}
+            ) : null} */}
           </div>
         </div>
         {[

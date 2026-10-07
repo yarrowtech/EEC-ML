@@ -38,6 +38,7 @@ import {
   Activity,
   Sparkles,
   CircleUser,
+  ArrowLeftRight,
 } from 'lucide-react';
 import { Button } from '../components/ui/button';
 import { useTenant } from '../context/TenantContext';
@@ -77,7 +78,7 @@ import { useDesktopNotificationBridge } from '../hooks/useDesktopNotificationBri
 import DesktopNotificationPermissionModal from '../components/DesktopNotificationPermissionModal';
 import NotificationPopover from '../components/NotificationPopover';
 import ExamRoutineTable from '../components/ExamRoutineTable';
-import { AUTH_NOTICE, apiFetch, logoutAndRedirect } from '../utils/authSession';
+import { AUTH_NOTICE, apiFetch, logoutAndRedirect, switchAccount } from '../utils/authSession';
 import { notificationId, readModuleSeenState, writeModuleSeenState } from '../utils/moduleNotificationUtils';
 
 const PORTAL_BASE = '/teacher';
@@ -1558,6 +1559,33 @@ const TeacherPortalShell = () => {
     loadProfile();
   }, []);
 
+  // Teachers who are also the principal can switch to the principal portal.
+  const [hasPrincipalAccess, setHasPrincipalAccess] = useState(false);
+  const [switchingAccount, setSwitchingAccount] = useState(false);
+  useEffect(() => {
+    const token = localStorage.getItem('token');
+    if (!token) return;
+    fetch(`${import.meta.env.VITE_API_URL}/api/teacher/auth/principal-access`, {
+      headers: { authorization: `Bearer ${token}` },
+    })
+      .then((res) => (res.ok ? res.json() : {}))
+      .then((data) => setHasPrincipalAccess(Boolean(data?.isPrincipal)))
+      .catch(() => {});
+  }, []);
+
+  const handleSwitchToPrincipal = async () => {
+    if (switchingAccount) return;
+    setSwitchingAccount(true);
+    setProfileOpen(false);
+    setShowMobileProfileMenu(false);
+    try {
+      await switchAccount({ endpoint: '/api/teacher/auth/switch-to-principal', redirectTo: '/principal' });
+    } catch (err) {
+      setSwitchingAccount(false);
+      window.alert(err.message);
+    }
+  };
+
   // Close profile dropdown on outside click
   useEffect(() => {
     const handler = (e) => {
@@ -2197,6 +2225,21 @@ const TeacherPortalShell = () => {
                           </div>
                         </div>
 
+                        {hasPrincipalAccess && (
+                          <Motion.button
+                            type="button"
+                            role="menuitem"
+                            whileHover={{ y: -2 }}
+                            whileTap={{ scale: 0.97 }}
+                            disabled={switchingAccount}
+                            onClick={handleSwitchToPrincipal}
+                            className="mb-3 flex w-full items-center justify-center gap-2 rounded-full border border-indigo-200 bg-indigo-50 px-3.5 py-2 text-xs font-semibold text-indigo-700 transition-colors hover:bg-indigo-100 disabled:opacity-60"
+                          >
+                            <ArrowLeftRight size={15} strokeWidth={1.9} />
+                            {switchingAccount ? 'Switching…' : 'Switch to Principal'}
+                          </Motion.button>
+                        )}
+
                         <div className="flex items-center justify-between gap-2 border-t border-slate-100 pt-3">
                           <Motion.button
                             type="button"
@@ -2476,6 +2519,17 @@ const TeacherPortalShell = () => {
                             >
                               <CircleUser size={16} className="text-slate-400" /> My Profile
                             </button>
+                            {hasPrincipalAccess && (
+                              <button
+                                type="button"
+                                role="menuitem"
+                                disabled={switchingAccount}
+                                onClick={handleSwitchToPrincipal}
+                                className="flex w-full items-center gap-2.5 rounded-xl px-3 py-2.5 text-left text-sm font-medium text-indigo-700 transition hover:bg-indigo-50 disabled:opacity-60"
+                              >
+                                <ArrowLeftRight size={16} /> Switch to Principal
+                              </button>
+                            )}
                             <button
                               type="button"
                               role="menuitem"

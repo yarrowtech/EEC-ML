@@ -16,6 +16,7 @@ const { sendTeacherCredentialsEmail } = require('../utils/mailer');
 const authTeacher = require('../middleware/authTeacher');
 const { logAuthEvent } = require('../utils/authEventLogger');
 const { invalidateTeacherDirectoryCaches } = require('../utils/teacherDirectoryCache');
+const { findLinkedPrincipal, signPrincipalToken } = require('../utils/roleSwitch');
 
 const normalizeGender = (value) => {
   const normalized = String(value || '').trim().toLowerCase();
@@ -506,6 +507,43 @@ router.delete('/enrollment-drafts/:id', adminAuth, async (req, res) => {
     return res.json({ success: true });
   } catch (err) {
     return res.status(400).json({ error: err.message });
+  }
+});
+
+// A teacher who is also the school's principal can switch to the principal portal.
+router.get('/principal-access', authTeacher, async (req, res) => {
+  // #swagger.tags = ['Teachers']
+  try {
+    if (req.user?.userType !== 'teacher') return res.json({ isPrincipal: false });
+    const principal = await findLinkedPrincipal(req.user.id);
+    res.json({ isPrincipal: Boolean(principal) });
+  } catch (err) {
+    res.status(400).json({ error: err.message });
+  }
+});
+
+router.post('/switch-to-principal', authTeacher, async (req, res) => {
+  // #swagger.tags = ['Teachers']
+  try {
+    if (req.user?.userType !== 'teacher') {
+      return res.status(403).json({ error: 'Forbidden - not a teacher' });
+    }
+    const principal = await findLinkedPrincipal(req.user.id);
+    if (!principal) {
+      return res.status(403).json({ error: 'This account does not have principal access' });
+    }
+    logAuthEvent(req, {
+      action: 'switch_account',
+      outcome: 'success',
+      userType: 'principal',
+      identifier: principal.email || principal.username,
+      userId: principal._id,
+      schoolId: principal.schoolId,
+      campusId: principal.campusId,
+    });
+    res.json({ token: signPrincipalToken(principal), userType: 'Principal' });
+  } catch (err) {
+    res.status(400).json({ error: err.message });
   }
 });
 
