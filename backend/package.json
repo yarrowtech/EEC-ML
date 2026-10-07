@@ -20,6 +20,7 @@
     "notifications:migrate-kinds": "node scripts/migrateNotificationKinds.js",
     "usage:backfill": "node scripts/backfillLastActive.js",
     "usage:backfill:apply": "node scripts/backfillLastActive.js --apply",
+    "ai:reconcile-index": "node scripts/reconcileAiIndex.js",
     "start": "node index.js",
     "dev": "nodemon index.js"
   },

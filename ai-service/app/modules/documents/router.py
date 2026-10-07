@@ -2,7 +2,7 @@ import logging
 
 from fastapi import APIRouter, HTTPException, Response
 
-from app.modules.documents.repository import delete_material_chunks, get_material_source
+from app.modules.documents.repository import audit_index_health, delete_material_chunks, get_material_source
 from app.modules.documents.schemas import (
     DeleteMaterialResponse,
     IngestMaterialRequest,
@@ -35,6 +35,17 @@ async def render_material_page(req: MaterialPageRequest) -> Response:
         media_type="image/png",
         headers={"Cache-Control": "private, max-age=300"},
     )
+
+
+@router.get("/index-audit")
+async def index_audit() -> dict:
+    """
+    Per-material Qdrant index health: chunk count, distinct school IDs, and
+    required payload fields missing on any chunk. Has no concept of which
+    materials are currently "published" — that comparison happens on the
+    Node side, which owns the TeachingMaterial collection.
+    """
+    return {"materials": audit_index_health()}
 
 
 @router.delete("/material/{material_id}", response_model=DeleteMaterialResponse)

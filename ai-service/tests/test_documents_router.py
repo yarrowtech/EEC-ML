@@ -46,3 +46,15 @@ def test_material_page_rejects_source_outside_scope(monkeypatch):
         assert exc.status_code == 404
     else:
         raise AssertionError("Expected a missing scoped source to return 404")
+
+
+def test_index_audit_returns_repository_summary(monkeypatch):
+    fake_summary = {
+        "material-1": {"chunkCount": 12, "schoolIds": ["school-1"], "missingFields": []},
+        "material-2": {"chunkCount": 3, "schoolIds": ["school-2"], "missingFields": ["subject_name"]},
+    }
+    monkeypatch.setattr(router, "audit_index_health", lambda: fake_summary)
+
+    result = asyncio.run(router.index_audit())
+
+    assert result == {"materials": fake_summary}

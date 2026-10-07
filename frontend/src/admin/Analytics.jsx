@@ -1272,7 +1272,7 @@ const Analytics = ({ setShowAdminHeader }) => {
             ) : (
             <>
             {/* Key Metrics */}
-            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
+            <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-4 gap-4">
               {keyMetrics.map((metric, idx) => {
                 const Icon = metric.icon;
                 const colors = getColorClasses(metric.color);
@@ -1418,7 +1418,7 @@ const Analytics = ({ setShowAdminHeader }) => {
             </div>
 
             {/* Charts Row 2 */}
-            <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
+            <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4">
               <div className="bg-white rounded-2xl border border-gray-100 shadow-sm p-6">
                 <div className="flex items-start justify-between mb-5">
                   <div>
@@ -1498,7 +1498,7 @@ const Analytics = ({ setShowAdminHeader }) => {
                 </div>
               </div>
 
-              <div className="bg-white rounded-2xl border border-gray-100 shadow-sm p-6">
+              <div className="bg-white rounded-2xl border border-gray-100 shadow-sm p-6 md:col-span-2 xl:col-span-1">
                 <h2 className="text-base font-semibold text-gray-900 mb-0.5">Grade Distribution</h2>
                 <p className="text-xs text-gray-400 mb-5">Latest performance snapshot</p>
                 {gradeDistributionData.length ? (

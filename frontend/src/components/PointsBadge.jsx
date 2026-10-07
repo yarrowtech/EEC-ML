@@ -1,15 +1,28 @@
-import React, { useEffect, useState } from 'react';
+import React, { useLayoutEffect, useState } from 'react';
 import { Coins } from 'lucide-react';
 import { getPoints } from '../utils/points';
+
+const pointSubscribers = new Set();
+if (typeof window !== 'undefined' && !window.__eecPointsBadgeListener) {
+  window.__eecPointsBadgeListener = true;
+  window.addEventListener('points:update', (event) => {
+    const value = event?.detail?.total;
+    pointSubscribers.forEach((subscriber) => subscriber(value ?? getPoints()));
+  });
+}
 
 const PointsBadge = ({ className = '' }) => {
   const [points, setPoints] = useState(0);
 
-  useEffect(() => {
+  // Register during render as well as layout effect. This keeps the badge
+  // responsive to synchronous points:update events emitted immediately after
+  // mount by portal navigation and by the test/runtime event bridge.
+  pointSubscribers.add(setPoints);
+
+  useLayoutEffect(() => {
     setPoints(getPoints());
-    const onUpdate = (e) => setPoints(e?.detail?.total ?? getPoints());
-    window.addEventListener('points:update', onUpdate);
-    return () => window.removeEventListener('points:update', onUpdate);
+    pointSubscribers.add(setPoints);
+    return () => pointSubscribers.delete(setPoints);
   }, []);
 
   return (
@@ -22,4 +35,3 @@ const PointsBadge = ({ className = '' }) => {
 };
 
 export default PointsBadge;
-

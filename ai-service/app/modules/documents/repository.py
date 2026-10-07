@@ -306,6 +306,62 @@ def delete_material_chunks(material_id: str) -> None:
     )
 
 
+# Payload fields every ingested chunk should carry so retrieval scoping and
+# teacher/student provenance display work; used by audit_index_health() to
+# flag materials indexed before a metadata field existed.
+_REQUIRED_CHUNK_FIELDS = ("school_id", "class_id", "material_id", "subject_name", "chapter_title")
+
+
+def audit_index_health() -> dict[str, dict]:
+    """
+    Scroll the whole collection once and summarise, per ``material_id``:
+    chunk count, distinct school IDs, and which required payload fields are
+    missing/blank on at least one chunk.
+
+    Used by the Node-side index-freshness reconciliation to diff this against
+    the set of currently published materials (Qdrant has no notion of
+    "published" — that lives in Mongo on the Node side).
+    """
+    client = make_qdrant_client()
+    materials: dict[str, dict] = {}
+    offset = None
+    while True:
+        points, offset = client.scroll(
+            collection_name=settings.qdrant_collection,
+            limit=256,
+            offset=offset,
+            with_payload=True,
+            with_vectors=False,
+        )
+        for point in points:
+            payload = point.payload or {}
+            material_id = payload.get("material_id")
+            if not material_id:
+                continue
+            entry = materials.setdefault(material_id, {
+                "chunkCount": 0,
+                "schoolIds": set(),
+                "missingFields": set(),
+            })
+            entry["chunkCount"] += 1
+            if payload.get("school_id"):
+                entry["schoolIds"].add(str(payload["school_id"]))
+            for field in _REQUIRED_CHUNK_FIELDS:
+                if not payload.get(field):
+                    entry["missingFields"].add(field)
+        if offset is None:
+            break
+
+    return {
+        material_id: {
+            "chunkCount": entry["chunkCount"],
+            "schoolIds": sorted(entry["schoolIds"]),
+            "missingFields": sorted(entry["missingFields"]),
+        }
+        for material_id, entry in materials.items()
+    }
+
+
 def get_material_source(
     *,
     material_id: str,

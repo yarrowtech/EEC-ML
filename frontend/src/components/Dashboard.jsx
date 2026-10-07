@@ -34,7 +34,7 @@ const StudentNotificationCenter = lazy(() => import('./StudentNotificationCenter
 const StudentOnboarding = lazy(() => import('./StudentOnboarding'));
 const LearningPathMapView = lazy(() => import('./LearningPathMapView'));
 const MasteryView = lazy(() => import('./MasteryView'));
-const ErrorAnalysisView = lazy(() => import('./ErrorAnalysisView'));
+//const ErrorAnalysisView = lazy(() => import('./ErrorAnalysisView'));
 const StudentHealthReport = lazy(() => import('./StudentHealthReport'));
 const StudentComplaints = lazy(() => import('./StudentComplaints'));
 const StudentMeetings = lazy(() => import('./StudentMeetings'));
@@ -80,7 +80,7 @@ const VIEW_TITLES = {
   notifications: 'Notifications',
   'learning-path-map': 'Learning Path',
   mastery: 'Mastery Progress',
-  'error-analysis': 'Error Analysis',
+  //'error-analysis': 'Error Analysis',
   profile: 'Profile',
   themecustomizer: 'Appearance',
 };
@@ -231,7 +231,7 @@ const Dashboard = () => {
     notifications: StudentNotificationCenter,
     'learning-path-map': LearningPathMapView,
     mastery: MasteryView,
-    'error-analysis': ErrorAnalysisView,
+    //'error-analysis': ErrorAnalysisView,
     profile: ProfileUpdate,
     themecustomizer: ThemeCustomizer,
   };

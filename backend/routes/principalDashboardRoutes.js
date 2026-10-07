@@ -605,6 +605,47 @@ router.get('/academic/analytics', principalAuth, async (req, res) => {
       color: grade.startsWith('A') ? 'emerald' : grade.startsWith('B') ? 'blue' : grade.startsWith('C') ? 'yellow' : 'red',
     })).sort((a, b) => b.count - a.count);
 
+    // Exam-based subject trend — compares each subject's earliest vs latest
+    // dated exam average rather than a static placeholder value.
+    const examIds = exams.map((e) => e._id);
+    const examResultsForTrend = examIds.length && studentIds.length
+      ? await ExamResult.find({ schoolId: req.schoolId, examId: { $in: examIds }, studentId: { $in: studentIds } })
+          .select('examId marks')
+          .lean()
+          .catch(() => [])
+      : [];
+    const examById = new Map(exams.map((e) => [String(e._id), e]));
+    const examRowsBySubject = new Map();
+    examResultsForTrend.forEach((r) => {
+      const exam = examById.get(String(r.examId));
+      const subjectName = exam?.subjectId?.name || exam?.subject;
+      if (!subjectName || !exam?.date) return;
+      if (!examRowsBySubject.has(subjectName)) examRowsBySubject.set(subjectName, []);
+      examRowsBySubject.get(subjectName).push({ date: exam.date, marks: r.marks });
+    });
+    const subjectTrendMap = new Map();
+    examRowsBySubject.forEach((rows, subjectName) => {
+      const byDate = rows.reduce((acc, row) => {
+        const key = String(row.date);
+        if (!acc[key]) acc[key] = { sum: 0, count: 0 };
+        acc[key].sum += row.marks;
+        acc[key].count += 1;
+        return acc;
+      }, {});
+      const dated = Object.entries(byDate)
+        .map(([date, v]) => ({ date, avg: v.sum / v.count }))
+        .sort((a, b) => new Date(a.date) - new Date(b.date));
+      if (dated.length < 2) {
+        subjectTrendMap.set(subjectName, { improvement: 0, trend: 'flat' });
+        return;
+      }
+      const improvement = Number((dated[dated.length - 1].avg - dated[0].avg).toFixed(1));
+      subjectTrendMap.set(subjectName, {
+        improvement,
+        trend: improvement > 0.5 ? 'up' : improvement < -0.5 ? 'down' : 'flat',
+      });
+    });
+
     // Subject Performance
     const subjectMap = new Map();
     studentProgressList.forEach((progress) => {
@@ -625,14 +666,17 @@ router.get('/academic/analytics', principalAuth, async (req, res) => {
       });
     });
 
-    const subjectPerformance = Array.from(subjectMap.entries()).map(([subject, data]) => ({
-      subject,
-      avgScore: Number((data.totalScore / (data.count || 1)).toFixed(1)),
-      improvement: 0, // Mocked for now
-      studentsAbove80: data.above80,
-      totalStudents: data.count,
-      trend: 'up',
-    })).sort((a, b) => b.avgScore - a.avgScore);
+    const subjectPerformance = Array.from(subjectMap.entries()).map(([subject, data]) => {
+      const trendInfo = subjectTrendMap.get(subject) || { improvement: 0, trend: 'flat' };
+      return {
+        subject,
+        avgScore: Number((data.totalScore / (data.count || 1)).toFixed(1)),
+        improvement: trendInfo.improvement,
+        studentsAbove80: data.above80,
+        totalStudents: data.count,
+        trend: trendInfo.trend,
+      };
+    }).sort((a, b) => b.avgScore - a.avgScore);
 
     // Class Analytics
     const classAnalyticsMap = new Map();
@@ -695,7 +739,9 @@ router.get('/academic/analytics', principalAuth, async (req, res) => {
       averageGPA: `${Number((totalGPA / (studentProgressList.length || 1)).toFixed(1))}%`,
       passRate: Number(((studentProgressList.filter(p => p.overallGrade !== 'F').length / (studentProgressList.length || 1)) * 100).toFixed(1)),
       honorsStudents: studentProgressList.filter(p => ['A+', 'A'].includes(p.overallGrade)).length,
-      improvementRate: 0,
+      improvementRate: subjectTrendMap.size
+        ? Number((Array.from(subjectTrendMap.values()).reduce((acc, t) => acc + t.improvement, 0) / subjectTrendMap.size).toFixed(1))
+        : 0,
       attendanceRate: 0,
       homeworkCompletion: 0,
     };

@@ -90,7 +90,7 @@ const CardHead = ({ Icon, iconCls, title, subtitle, right }) => (
     {right}
   </div>
 );
-const ViewAll = ({ to, label = '' }) => (
+const ViewAll = ({ to, label = 'View All' }) => (
   <Link to={to} className="inline-flex shrink-0 items-center gap-0.5 text-sm font-semibold text-blue-600 hover:text-blue-700">{label}{label !== '' ? <ChevronRight size={15} /> : null}</Link>
 );
 
@@ -303,7 +303,7 @@ const ChildGrowthAnalytics = () => {
             subtitle="Subject-wise performance based on recent assessments."
             right={(
               <div className="relative">
-                <select value={examWindow} onChange={(e) => setExamWindow(Number(e.target.value))} className="appearance-none rounded-lg border border-slate-200 bg-white py-2 pl-3 pr-9 text-sm font-medium text-slate-800 outline-none focus:border-violet-300">
+                <select aria-label="Exam window" value={examWindow} onChange={(e) => setExamWindow(Number(e.target.value))} className="appearance-none rounded-lg border border-slate-200 bg-white py-2 pl-3 pr-9 text-sm font-medium text-slate-800 outline-none focus:border-violet-300">
                   <option value={1}>Latest Exam</option>
                   <option value={3}>Last 3 Exams</option>
                   <option value={99}>All Exams</option>

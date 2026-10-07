@@ -39,7 +39,7 @@ const MENU_ITEMS = [
       { id: 'assignments-academic-alcove', name: 'Class Wall', icon: Target },
       { id: 'results', name: 'Results', icon: BarChart3 },
       { id: 'mastery', name: 'Mastery Progress', icon: Zap },
-      { id: 'error-analysis', name: 'Error Analysis', icon: ClipboardCheck },
+      //{ id: 'error-analysis', name: 'Error Analysis', icon: ClipboardCheck },
     ],
   },
   {

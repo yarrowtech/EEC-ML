@@ -397,13 +397,13 @@ const AttendanceReport = () => {
             <h2 className="text-base font-bold text-slate-900">Attendance Records</h2>
             <div className="flex gap-2">
               <div className="relative">
-                <select value={tableMonth} onChange={(e) => setTableMonth(e.target.value)} className="appearance-none rounded-lg border border-slate-200 bg-white py-2 pl-3 pr-9 text-sm font-medium text-slate-800 outline-none focus:border-violet-300">
+                <select aria-label="Attendance month" value={tableMonth} onChange={(e) => setTableMonth(e.target.value)} className="appearance-none rounded-lg border border-slate-200 bg-white py-2 pl-3 pr-9 text-sm font-medium text-slate-800 outline-none focus:border-violet-300">
                   {monthOptions.map((m) => <option key={monthKeyOf(m)} value={monthKeyOf(m)}>{monthLabel(m)}</option>)}
                 </select>
                 <ChevronDown size={15} className="pointer-events-none absolute right-3 top-1/2 -translate-y-1/2 text-slate-500" />
               </div>
               <div className="relative">
-                <select value={statusFilter} onChange={(e) => setStatusFilter(e.target.value)} className="appearance-none rounded-lg border border-slate-200 bg-white py-2 pl-3 pr-9 text-sm font-medium text-slate-800 outline-none focus:border-violet-300">
+                <select aria-label="Attendance status" value={statusFilter} onChange={(e) => setStatusFilter(e.target.value)} className="appearance-none rounded-lg border border-slate-200 bg-white py-2 pl-3 pr-9 text-sm font-medium text-slate-800 outline-none focus:border-violet-300">
                   <option value="all">All Status</option>
                   <option value="present">Present</option>
                   <option value="absent">Absent</option>

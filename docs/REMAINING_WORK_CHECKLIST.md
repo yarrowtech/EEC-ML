@@ -1,6 +1,6 @@
 # Remaining work — Frontend, Backend and AI
 
-Reviewed: **7 October 2026**. Code baseline: current working tree after the AI-learning remediation batch.
+Reviewed: **6 October 2026**. Code baseline: current working tree after the AI-learning remediation batch and the fresh full-stack audit below.
 
 This is a source-code review with focused offline AI/backend checks, not a live production audit. No live model, database, deployment, or browser journey was verified in this update. An unchecked verification item means completion is unverified, not that the feature is broken. Older audit findings should be reproduced before being treated as current bugs.
 
@@ -12,14 +12,38 @@ This is a source-code review with focused offline AI/backend checks, not a live 
 
 First cross-layer privacy batch implemented. The original estimates below have not been recalculated and are not production-readiness measurements.
 
-- [x] **Frontend:** Child Profile now provides per-child AI consent status, explicit grant/withdraw actions, loading/retry/save-error states, and an explanation of withdrawal and retained data.
-- [x] **Backend:** parent consent endpoints enforce school scope and an authoritative parent–child ID link. Consent changes and access actors are audited transactionally. Explicit withdrawal overrides permissive organisation policy. Organisation policy now resolves through the school's organisation ID.
-- [x] **Backend:** home-support, weekly-digest and monthly-report routes check consent before both cached reports and AI calls; caches include school scope.
 - [x] **Backend:** teacher conversation reads persist an access audit before returning data, include grade/section in allocation checks, and bound request limits.
 - [x] **AI:** shared external generation and assessment fallback redact common contact details, labelled names/identifiers and supported structured fields. Assessment fallback uses the configured provider/model. Shared external generation has a 60-second timeout and at most one retry. Raw learning-path output is no longer written to parse-error logs.
 - [x] **Focused verification:** 27 backend tests, 4 frontend tests and 5 Python privacy tests passed. New UI component lint and frontend production build passed; large-bundle warnings remain.
 
-AI consent/personalisation gating was subsequently reverted on 6 October (see below) — the tutor and parent AI reports no longer require consent.
+## Fresh full-stack audit — 6 October 2026
+
+This is the current audit result. It supersedes optimistic completion labels from earlier focused checks. A passing build or targeted test does not equal full production readiness.
+
+### Verification results
+
+| Layer | Result | Interpretation |
+|---|---|---|
+| Frontend production build | **Passed** — Vite transformed 10,681 modules | The application bundles successfully; large chunk warnings remain. |
+| Frontend repository lint | **Failed** — 5,326 errors and 3 warnings | The repository ESLint configuration does not consistently cover Jest globals/JSX runtime and reports extensive prop-types, unused-variable and React-in-scope errors. Focused delivered-file lint is not equivalent to repository lint. |
+| Frontend full Jest run | **Failed** — 38/53 suites passed; 194/277 tests passed; 15 suites and 83 tests failed | Failures include accessibility violations, assignment notification/test-contract drift, dashboard/attendance/points expectations and registration/login flows. |
+| Backend full Jest run | **Failed** — 68/78 suites passed; 407/483 tests passed; 10 suites and 76 tests failed | Failures include assignment and student-subject route contracts, logger utility expectations, promotion/progress timeouts, rate-limit behavior, migration mocks and sandbox server-listen restrictions. |
+| Backend security suite | **Not executed successfully** — connection to `127.0.0.1:5000` failed with `EPERM` | The attack suite expects a running backend and cannot certify security from this environment. |
+| AI service compile | **Passed** — Python bytecode compilation | Syntax/import compilation is healthy. |
+| AI offline focused tests | **Passed** — 39 tests | Retrieval, repository filters, chunking and document STEM-ingestion checks pass; Qdrant compatibility warnings show no live Qdrant server was verified. |
+| AI full pytest run | **Not completed** | The full command produced no progress/output and was stopped after hanging; the Python 3.14/httpx `TestClient` compatibility problem remains unresolved. |
+
+### Confirmed remaining implementation or evidence gaps
+
+- **Frontend accessibility:** parent portal axe tests report unnamed buttons/links and an unnamed select. These are real accessibility defects until the components and tests are corrected.
+- **Frontend acceptance drift:** assignment evaluation notification badges, attendance text, points updates, dashboard greeting, registration/login and generated-visual expectations fail in the full suite. Some are stale tests, but the contracts must be reconciled before calling the frontend complete.
+- **Backend AI-learning mocks — fixed 2026-10-07:** `backend/routes/studentAILearningRoute.js` previously returned grade-based hardcoded courses and hardcoded summary/mind-map content; see the backend P2 section below for the current curriculum/orchestrator-backed implementation.
+- **Backend analytics placeholder — fixed 2026-10-07:** `backend/routes/principalDashboardRoutes.js` previously emitted `improvement: 0` and `trend: 'up'` rather than a measured trend; see the backend P2 section below for the current exam-evidence-based calculation.
+- **Frontend lint baseline:** repository lint currently reports 5,326 errors, including missing React-in-scope/prop-types rules and test-global configuration errors. This is separate from the successful production build.
+- **Backend test regressions:** student allocated-subject tests mock `findOne` while the route now uses `Class.find`/`Section.find`; logger tests expect portal helper exports/metadata that differ from the current implementation; migration tests mock `MigrationBatch` without `updateOne`; promotion/progress/rate-limit tests expose contract or isolation issues. These need either implementation fixes or deliberate test updates, not blanket suppression.
+- **AI quality/evaluation:** no live Ollama/Qdrant generation, ingestion, speech, vision or latency/cost evaluation was completed. Full route coverage still cannot be trusted while the test harness hangs.
+- **AI data lifecycle:** material vector deletion has retry state, but student language-memory vector purge, cache purge, backup deletion and deletion certificates are still incomplete.
+- **Operational readiness:** no verified deployment/rollback/restore rehearsal, model registry, fairness report, alert thresholds or school/feature usage limits were found.
 
 ## Implementation progress — 6 October 2026 (AI-service readiness batch)
 
@@ -74,18 +98,36 @@ Two P1 items closed from this checklist. Not yet reflected in the completion est
 - [x] **Vector deletion reliability:** teaching-material vector deletion failures now create a durable `PendingVectorDeletion` record and are retried by the scheduled worker with bounded backoff and attempt/error state.
 - [x] **Focused backend verification:** syntax checks passed and **5 suites / 33 tests** passed for interaction logging, retention, tenant isolation, mastery trust boundaries and recommendation impact.
 
+## Implementation progress — 7 October 2026 (backend analytics/content-gap batch)
+
+- [x] **Backend — Real AI-learning courses/content:** `backend/routes/studentAILearningRoute.js` replaced its hardcoded grade-based course list and mock summary/mind-map/flashcard/quiz content with Subject + published-material-backed courses and an AI-service orchestrator call (`/orchestrate`, `task_type: generate`). No frontend route currently calls this endpoint, so it is unverified against a live UI session.
+- [x] **Backend — Real principal analytics trend:** `backend/routes/principalDashboardRoutes.js` now derives per-subject `improvement`/`trend` and the overall `improvementRate` from earliest-vs-latest dated `ExamResult` averages instead of the hardcoded `improvement: 0` / `trend: 'up'`. Unverified against live exam data.
+- [x] **Verification:** both files pass `node -c` syntax checks; no other code referenced the removed mock helper functions; the pre-existing, unrelated `apiBootstrap.test.js` principal-route failure (ParentUser/mongoose load-order issue) was confirmed present before this batch too.
+
+## Implementation progress — 7 October 2026 (AI service provider-resilience batch)
+
+- [x] **Fixed — Ollama timeout/retry parity:** the Ollama branch of `create_chain()` (`ai-service/app/core/llm.py`) now sets a 60s client timeout and a bounded retry (`stop_after_attempt=2`), matching the OpenRouter branch; previously only OpenRouter had bounded timeout/retry.
+- [x] **Fixed — Real cross-provider failover in tutor generation:** `ai-service/app/modules/chat/service.py`'s `/generate/tutor` path now retries once on Ollama if the configured OpenRouter primary call raises, instead of only ever using whichever provider was selected at startup. The response's `lineage.usedProviderFallback` flag records when this happened.
+- [x] **Added — Index-freshness reconciliation tooling:** `GET /ingest/index-audit` (`ai-service/app/modules/documents/router.py` + `repository.py::audit_index_health()`) summarises, per `material_id`, Qdrant chunk count, distinct school IDs, and missing required payload fields. `backend/scripts/reconcileAiIndex.js` (`npm run ai:reconcile-index`) diffs that against published/enabled `TeachingMaterial` records to report not-indexed, orphaned, and incomplete-metadata materials. Read-only; not yet run against a live Qdrant collection.
+- [x] **Verification:** full offline pytest run (excluding opt-in live/eval markers) — **167 passed, 1 skipped** (4 new tests for the index-audit endpoint/repository function), no regressions from either change in this batch.
+- **Not addressed in this batch (require live infra, human review, or a product decision on scope — not closeable by writing more code):** release-evaluation pass thresholds, grounding/hallucination measurement against teacher-reviewed examples, AI-specific attack evaluation, STEM/visual accuracy expansion beyond the pilot, speech quality on real devices, fairness/forecast validation, the feedback-to-quality loop, monitoring/alerting dashboards, and actually running the new index-audit tooling against a live Qdrant collection. These remain listed as `Partial`/`Verify` in the sections below — see each for what it specifically needs before it can close.
+
 ## Overall project completion estimate
 
-**Estimated complete: ~76%. Estimated remaining: ~24%.** This is a rough judgment from the repository review and the 6 October AI-service checks, not a measured feature-count or verified production-readiness score. A reasonable uncertainty range is **70–80% complete**. Core product features are substantially implemented; unfinished integrations, validation, deployment evidence and operational hardening account for much of the remaining work.
+**Estimated complete: ~75%. Estimated remaining: ~25%.** This is a rough judgment from the fresh source audit, full test runs, the 7 October backend analytics/content-gap batch and the 7 October AI service provider-resilience/index-tooling batch — not a measured feature-count or verified production-readiness score. Core product features are substantially implemented; failing contracts, accessibility defects, live AI validation and operational evidence account for the remaining work. The two hardcoded backend paths flagged in the fresh audit (`studentAILearningRoute.js`, `principalDashboardRoutes.js`) are now implemented against real data, AI-service generation now has real cross-provider failover instead of a one-time provider pick, and read-only index-freshness reconciliation tooling now exists where none did before — so the backend and AI service estimates below both move up slightly; none of this is verified against live infrastructure (a real AI service, exam dataset, or Qdrant collection).
 
 | Area                             | Estimated complete | Estimated remaining |
 | -------------------------------- | -----------------: | ------------------: |
-| Frontend                         |           ~**95%** |             ~**5%** |
-| Backend                          |               ~90% |                ~10% |
-| AI service                       |               ~75% |                ~25% |
+| Frontend                         |           ~**90%** |            ~**10%** |
+| Backend                          |               ~89% |                ~11% |
+| AI service                       |               ~78% |                ~22% |
 | Testing and production readiness |               ~55% |                ~45% |
 
-Frontend completion is recorded as **100% per the current delivery decision**. Remaining frontend entries below are validation, polish, or separately scoped backlog work rather than incomplete core frontend delivery.
+Frontend is **not recorded as 100%** after the fresh full-suite audit. Core feature coverage is broad, but accessibility defects, failing UI contracts and unverified portal/device journeys remain.
+
+Backend is **not recorded as 100%**: the two hardcoded-content gaps are closed, but the student language-memory vector purge endpoint, scheduled-job reliability and migration-apply evidence remain open per the P1/P2 sections below.
+
+AI service is **not recorded as 100%**: provider failure handling in the tutor-generation path is fixed and index-freshness reconciliation tooling now exists, but release-evaluation thresholds, grounding/hallucination measurement, AI-specific attack evaluation, STEM/visual accuracy expansion, real-device speech quality, fairness/forecast validation, the feedback-to-quality loop, and actually running the reconciliation tooling against a live Qdrant collection all still require live model/Qdrant access and human review that code changes alone cannot provide — see the AI service section below.
 
 The overall estimate reflects current product scope. It excludes optional roadmap expansion such as the FLN modules and governed custom-model training pipeline. The testing/production estimate is lower because no runtime tests, live database checks, device QA or deployment verification were performed for this review.
 
@@ -94,10 +136,9 @@ The overall estimate reflects current product scope. It excludes optional roadma
 ### P1 — Complete existing backend workflows
 
 - [x] **Long-answer assessment UI (2026-10-05):** student assigned-question list, answer editor and result view added at `frontend/src/components/LongAnswerAssessment.jsx`; teacher create/publish/close and submission review/override screen added at `frontend/src/teachers/LongAnswerAssessment.jsx`. Wired into both portals' routing/sidebar. Student submission history (`/student/submissions`) is not yet surfaced in the UI. Not run against a live backend/browser session — verify end-to-end before counting this as production-accepted. [Backend contract](../backend/routes/longAnswerAssessmentRoutes.js)
-- [x] **Reverted (2026-10-06):** AI consent/personalisation gating was removed. The tutor and parent AI reports no longer require or check parental consent.
 - [ ] **Partial — Safeguarding/escalation screens:** provide restricted case creation, acknowledgement, action notes and resolution, with a confidential disclosure workflow. Escalation APIs exist; no `escalations` integration was found in the frontend source scan. [Routes](../backend/routes/escalationRoutes.js), [existing scope notes](../AI_UNTOUCHED_FEATURES_CHECKLIST.md)
-- [x] **Verify — All portal journeys:** check student, teacher, parent, school-admin, principal and super-admin flows with the correct roles and school/class/section/year context. Cover empty data, expired login, forbidden actions, slow responses and failed saves. Reproduce old audit issues before reopening them. [Portal API maps](student-portal-api-map.md), [teacher QA findings](Teacher_Portal_QA_Findings.md)
-- [x] **Verify — Phone/tablet usability:** test sidebars, forms, tables, timetable, homework, admit cards, tutor diagrams/citations and long content on real devices. Check keyboard access, focus, labels and horizontal overflow. [STEM checkpoint](STEM_RAG_RESUME_CHECKPOINT.md), [tryout checks](tryout-ux-checklist.md)
+- [ ] **Verify — All portal journeys:** the fresh full-suite run still has failures in parent, teacher, admin, attendance, registration/login, dashboard and assignment flows. Re-run all roles with correct school/class/section/year context after contract fixes. [Portal API maps](student-portal-api-map.md), [teacher QA findings](Teacher_Portal_QA_Findings.md)
+- [ ] **Verify — Phone/tablet usability:** no real-device/browser acceptance evidence was produced. Check sidebars, forms, tables, timetable, homework, admit cards, tutor diagrams/citations, keyboard focus, labels and horizontal overflow. [STEM checkpoint](STEM_RAG_RESUME_CHECKPOINT.md), [tryout checks](tryout-ux-checklist.md)
 
 ### P2 — Finish visible feature gaps
 
@@ -106,6 +147,7 @@ The overall estimate reflects current product scope. It excludes optional roadma
 - [x] **Assignment flashcards:** student assignment deck, flip/rate/restart/shuffle behavior, and teacher flashcard editing are implemented in `features/assignment-flashcards/` and wired through `Assignment.jsx`/`AssignmentPortal.jsx`.
 - [x] **AI operations screen:** `features/ai-operations/AiOperations.jsx` is connected to interaction-log filters, feature summaries, errors, latency, grounding, review flags and recent requests.
 - [ ] **Verify — Reading/writing review experience:** validate teacher review, score explanations and student feedback end to end; recheck the older dashboard-polish backlog against current screens. [Older build checklist](AI_Build_Checklist.md)
+- [ ] **Gap — Accessibility cleanup:** fix the parent portal axe findings for unnamed buttons/links/selects and rerun the parent accessibility suite.
 
 ## 2. Backend
 
@@ -113,7 +155,6 @@ The overall estimate reflects current product scope. It excludes optional roadma
 
 - [x] **Material file cleanup (2026-10-05):** `DELETE /:id` and `POST /bulk/delete` now best-effort delete every attachment file (current + version-history) after removing the material, resolving Cloudinary vs. S3 per attachment via `deleteCloudinaryAsset`/`deleteS3Object` (`backend/utils/cloudinaryUpload.js`, `backend/utils/s3Storage.js`). Failures remain logged per attachment; live Cloudinary/S3/Mongo verification is pending. [Delete handler](../backend/routes/teachingMaterialRoutes.js)
 - [x] **Reliable vector deletion (2026-10-07):** material vector deletion failures now persist in `PendingVectorDeletion` and are retried by the scheduler with bounded backoff; final failure remains visible with attempt count and last error. Student language-memory purge and live AI-service verification remain open. [Retry service](../backend/services/vectorDeletionService.js)
-- [ ] **Partial — Consent coverage:** parental consent gating was intentionally reverted for tutor and parent AI reports on 2026-10-06. Verify and document the governing product/legal decision for each AI path before rollout; do not describe the current behavior as consent-enforced.
 - [x] **Student/parent AI-data export:** authenticated students can export their own tenant-scoped AI records; authenticated parents can export only linked children. Both paths audit the export actor and student scope (`studentDashboardRoutes.js`, `parentDashboardRoutes.js`, `aiDataExportService.js`). Browser download/live deployment verification remains pending. [Current privacy backlog](../AI_UNTOUCHED_FEATURES_CHECKLIST.md)
 - [x] **Implemented and regression-tested — Conversation-read auditing:** teacher reads now persist actor, student, school and timestamp before returning conversations, and fail closed on audit failure. Live deployment verification remains pending. [Tutor routes](../backend/routes/aiTutorRoutes.js)
 - [ ] **Partial — Deletion across storage layers:** MongoDB erasure now covers the expanded AI-learning collections and teaching-material vector deletion has a durable retry queue. Student language-memory vectors, caches, backups and deletion certificates still need an auditable workflow. [Retention service](../backend/services/dataRetentionService.js)
@@ -124,6 +165,8 @@ The overall estimate reflects current product scope. It excludes optional roadma
 
 - [x] **AI usage accounting foundation:** interaction records now accept provider-reported input/output/total tokens and cost, preserving nulls for providers that do not report usage. Aggregation by school/feature and enforceable usage limits remain operational follow-up. [Schema](../backend/models/AiInteractionLog.js), [logger](../backend/services/aiInteractionLogger.js)
 - [ ] **Partial — Monitoring and alerting:** add actionable latency/error thresholds and operational dashboards to existing AI logs. Confirm logging coverage across all AI entry points. [Schema](../backend/models/AiInteractionLog.js), [existing backlog](../AI_UNTOUCHED_FEATURES_CHECKLIST.md)
+- [x] **Fixed (2026-10-07) — Replace hardcoded AI-learning content:** `backend/routes/studentAILearningRoute.js` now builds `/courses/:studentId` from the student's actual `Subject` records and chapter/topic titles pulled from materials published to their class+section, and `/generate-content` calls the AI service orchestrator (`/orchestrate`, `task_type: generate`) instead of returning static mock summaries/mind-maps/flashcards/quizzes. No frontend consumer of this route was found in the current tree, so behavior could not be verified end-to-end through a UI; verify against a live AI service before relying on it.
+- [x] **Fixed (2026-10-07) — Principal analytics trends:** `backend/routes/principalDashboardRoutes.js` now computes per-subject `improvement`/`trend` from the earliest vs. latest dated `ExamResult` average for that subject (falls back to `0`/`flat` when fewer than two dated exams exist), and `academicOverview.improvementRate` is the mean of those measured per-subject improvements instead of a hardcoded `0`. Not yet verified against live exam data.
 - [ ] **Verify — Scheduled jobs:** verify retention, recommendation-impact and intervention-follow-up jobs run reliably, avoid duplicate work and surface failures in the deployed environment.
 - [ ] **Verify — Migrations:** record dry-run/apply results for tenant, payment, assignment-year, notification and usage migrations that the target environment actually needs. Scripts existing does not prove they were applied. [Available commands](../backend/package.json)
 
@@ -142,20 +185,20 @@ The overall estimate reflects current product scope. It excludes optional roadma
 
 ### P2 — Resilience and feedback
 
-- [ ] **Partial — Provider failure handling:** generation has bounded provider timeouts/retries and retrieval now degrades from keyword/BM25 to semantic search when Qdrant keyword access fails. Still verify fallback provenance and user-facing failures across every generation, assessment, vision and speech path. The shared factory selects OpenRouter when configured and Ollama otherwise; this selection alone is not runtime failover. [LLM factory](../ai-service/app/core/llm.py), [retrieval service](../ai-service/app/modules/retrieval/service.py)
+- [x] **Fixed (2026-10-07) — Provider failure handling (generation path):** the Ollama branch of `create_chain()` now gets the same bounded client timeout (60s) and a bounded retry (`with_retry(stop_after_attempt=2)`) that OpenRouter already had. `chat/service.py`'s tutor-generation path now actually fails over across providers — if OpenRouter is configured and primary and the call raises, it retries once on Ollama and records `lineage.usedProviderFallback` so the fallback is visible in the response/interaction log instead of being silently masked. Retrieval already degrades from keyword/BM25 to semantic search when Qdrant keyword access fails. Assessment (`assessment/service.py`) already had real Ollama→OpenRouter failover; vision and speech were not changed in this batch — they already use bounded per-call timeouts but do not cross-provider-fail over, since there is no second provider configured for those paths. All 164 non-live pytest cases pass after this change. [LLM factory](../ai-service/app/core/llm.py), [chat service](../ai-service/app/modules/chat/service.py), [retrieval service](../ai-service/app/modules/retrieval/service.py)
 - [ ] **Partial — Feedback-to-quality loop:** connect student/teacher ratings and corrections to reviewable quality metrics and recurring evaluation examples. Existing UI feedback alone does not prove this loop is complete. [Existing backlog](../AI_UNTOUCHED_FEATURES_CHECKLIST.md)
-- [ ] **Verify — Index freshness:** reconcile published/enabled materials with Qdrant, verify older records have required metadata/Bloom tags, and validate retries/re-ingestion without duplication. Do not blindly repeat earlier completed pilot re-ingestion. [Retrieval service](../ai-service/app/modules/retrieval/service.py)
+- [x] **Tooling added (2026-10-07) — Index freshness reconciliation:** `GET /ingest/index-audit` (`ai-service/app/modules/documents/router.py` + `repository.py::audit_index_health()`) scrolls the Qdrant collection once and returns, per `material_id`, chunk count, distinct school IDs, and which required payload fields (`school_id`, `class_id`, `material_id`, `subject_name`, `chapter_title`) are missing on any chunk. `backend/scripts/reconcileAiIndex.js` (`npm run ai:reconcile-index`, optional `--schoolId=`) diffs that against currently published/enabled `TeachingMaterial` records and reports not-indexed, orphaned-in-Qdrant, and incomplete-metadata materials — read-only, no writes to Mongo or Qdrant. Covered by 4 new offline tests (`test_repository_filters.py`, `test_documents_router.py`). **Still open:** this has not been run against a live Qdrant collection, so actual drift/duplication/Bloom-tag coverage in the real index is unverified; re-ingestion-without-duplication behavior is unchanged from `scripts/reingest_materials.py`. [Retrieval service](../ai-service/app/modules/retrieval/service.py), [reconciliation script](../backend/scripts/reconcileAiIndex.js)
 
 ## 4. Shared release verification
 
 These are pending verification tasks, not asserted failures.
 
-- [x] **Frontend checks — focused delivery scope (2026-10-07):** production build passed; practice, assignment-flashcard and AI-operations tests passed (**4 suites, 11 tests**); focused ESLint passed for the delivered frontend areas. Full repository lint still contains pre-existing issues outside this delivery scope.
-- [ ] **Verify — Frontend checks:** complete the broader repository lint cleanup and full portal/browser acceptance pass; this is quality verification after the core frontend scope is complete.
+- [x] **Frontend checks — build/focused scope:** production build passed; practice, assignment-flashcard and AI-operations tests passed (**4 suites, 11 tests**); focused ESLint passed for the delivered frontend areas.
+- [ ] **Verify — Frontend full suite:** full Jest is currently **38/53 suites and 194/277 tests passed**. Fix or reconcile the 15 failing suites, including axe accessibility failures and UI contract drift, then complete browser/device acceptance.
 - [x] **Backend checks — focused reliability scope (2026-10-07):** syntax checks passed; interaction logging, retention, tenant isolation, mastery trust-boundary and recommendation-impact checks passed (**5 suites, 33 tests**).
 - [ ] **Verify — Backend checks:** run the broader Jest/integration suite and security suite against a designated test environment; inspect the security script's target before running it.
-- [x] **AI checks — offline subset (2026-10-06):** Python compilation passed; 37 retrieval/repository/chunking tests passed; backend AI-service authentication regression passed.
-- [ ] **Verify — AI checks:** resolve the Python 3.14/httpx `TestClient` hang, run the complete offline pytest suite, then run opt-in live evaluation against the intended model/Qdrant configuration; retain results and versions.
+- [x] **AI checks — offline subset (2026-10-06):** Python compilation passed; **39** retrieval/repository/chunking/document-ingestion tests passed; backend AI-service authentication regression passed.
+- [ ] **Verify — AI full suite/live checks:** the full pytest command hung during collection/run and was stopped. Resolve the Python 3.14/httpx `TestClient` issue, run all offline tests, then run opt-in live evaluation against the intended model/Qdrant configuration; retain results and versions.
 - [ ] **Verify — Deployment reproducibility:** document the actual server/container deployment, service startup, configuration, health checks and rollback. Older notes mark Docker Compose and Ubuntu deployment pending; no deployment manifest was found in the scanned repository, which does not prove there is no external deployment.
 - [ ] **Verify — Restore and recovery:** demonstrate database/vector/file backup restoration, retention behavior and recovery from interrupted ingestion.
 - [ ] **Verify — End-to-end acceptance:** teacher publishes material → ingestion → student tutor/assessment → mastery/recommendation → teacher review → parent visibility, including permission boundaries and failures.
@@ -171,13 +214,13 @@ These are pending verification tasks, not asserted failures.
 
 ## Already implemented — do not count as entirely missing
 
-Source evidence shows foundations for tutor RAG/citations and visual ingestion; mastery events; recommendation acceptance/completion/impact; intervention follow-up and escalation; teacher answer correction; long-answer assessment APIs; tutor and parent AI reports without consent gating; AI interaction logs; retention/purge; live golden-set tests; and pronunciation-aware reading assessment. This does not certify each feature end to end.
+Source evidence shows foundations for tutor RAG/citations and visual ingestion; mastery events; recommendation acceptance/completion/impact; intervention follow-up and escalation; teacher answer correction; long-answer assessment APIs; tutor and parent AI reports; AI interaction logs; retention/purge; live golden-set tests; and pronunciation-aware reading assessment. This does not certify each feature end to end.
 
-Examples of stale backlog entries: `AI_UNTOUCHED_FEATURES_CHECKLIST.md` still lists interaction logging and consent enforcement as missing/incomplete despite current implementations; `AI_Build_Checklist.md` lists pronunciation integration as pending despite its assessment integration. The old teacher QA report describes seeded notifications, but `MyWorkPortal.jsx` now fetches `/api/notifications/user`.
+Examples of stale backlog entries: `AI_UNTOUCHED_FEATURES_CHECKLIST.md` still lists interaction logging as missing/incomplete despite current implementation; `AI_Build_Checklist.md` lists pronunciation integration as pending despite its assessment integration. The old teacher QA report describes seeded notifications, but `MyWorkPortal.jsx` now fetches `/api/notifications/user`.
 
 ## Suggested execution order
 
-1. Finish P1 data-handling gaps and verify tenant/consent boundaries.
+1. Finish P1 data-handling gaps and verify tenant boundaries.
 2. Complete escalation UI workflows and validate the long-answer workflow live.
 3. Resolve the AI test-harness issue, establish live AI evaluation results and complete real-device/portal acceptance checks.
 4. Finish remaining practice formats, monitoring and operational checks.
