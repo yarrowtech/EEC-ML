@@ -1,5 +1,6 @@
 import React, { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import { motion as Motion, AnimatePresence } from 'framer-motion';
+import { createPortal } from 'react-dom';
 import { useNavigate, useParams } from 'react-router-dom';
 import { io } from 'socket.io-client';
 import {
@@ -8,7 +9,7 @@ import {
   X, RefreshCcw, AlertTriangle, Brain, BookOpen, Clock, Filter,
   Play, CheckCircle, XCircle, ArrowRight, ArrowUp, Lightbulb, Star,
   Activity, TrendingUp as TrendingUpIcon, Gauge, HandHelping, Heart, Sparkle,
-  GraduationCap as GraduationCapIcon
+  GraduationCap as GraduationCapIcon, Download, Flag, ArrowUpDown, MoreHorizontal, BarChart2, Trash2,
 } from 'lucide-react';
 import { cachedFetch, invalidateTeacherAnalytics } from '../utils/teacherAnalyticsCache';
 
@@ -214,6 +215,7 @@ const StudentAnalyticsPortal = () => {
   // ─────────────────────────────────────────────────────────────────────────
   const [classGaps, setClassGaps] = useState([]);
   const [loadingGaps, setLoadingGaps] = useState(false);
+  const [classGapsHealthy, setClassGapsHealthy] = useState(0);
   const [gapFilters, setGapFilters] = useState({ subject: '' });
 
   // ─────────────────────────────────────────────────────────────────────────
@@ -369,6 +371,7 @@ const StudentAnalyticsPortal = () => {
           riskLevel: interventionModal.riskLevel,
           reason: (interventionModal.weakAreas || []).join(', ') || 'At-risk composite score',
           ...interventionForm,
+          scheduledDate: interventionForm.scheduledDate ? new Date(interventionForm.scheduledDate).toISOString() : '',
         }),
       });
       if (!response.ok) throw new Error('Unable to save intervention');
@@ -379,6 +382,19 @@ const StudentAnalyticsPortal = () => {
     } catch { /* silent */ } finally {
       setSavingIntervention(false);
     }
+  };
+
+  const deleteIntervention = async (interventionId) => {
+    if (!interventionId || !window.confirm('Delete this intervention? This cannot be undone.')) return;
+    try {
+      const response = await fetch(`${API_BASE}/api/teacher-analytics/interventions/${interventionId}`, {
+        method: 'DELETE',
+        headers: authHeaders(),
+      });
+      if (!response.ok) throw new Error('Unable to delete intervention');
+      invalidateTeacherAnalytics();
+      setInterventionLogs((logs) => logs.filter((log) => log._id !== interventionId));
+    } catch { /* silent */ }
   };
 
   const recordOutcome = async () => {
@@ -501,7 +517,7 @@ const StudentAnalyticsPortal = () => {
       if (ctxSection) params.set('section', ctxSection);
       if (gapFilters.subject) params.set('subject', gapFilters.subject);
       const res = await cachedFetch(`${API_BASE}/api/teacher-analytics/class-gaps?${params}`, { headers: authHeaders() });
-      if (res.ok) { const d = await res.json(); setClassGaps(d.data || []); }
+      if (res.ok) { const d = await res.json(); setClassGaps(d.data || []); setClassGapsHealthy(Number(d.healthyTopics) || 0); }
     } catch { /* silent */ } finally { setLoadingGaps(false); }
   }, [gapFilters]);
 
@@ -800,6 +816,8 @@ const StudentAnalyticsPortal = () => {
                 outcomeForm={outcomeForm}
                 setOutcomeForm={setOutcomeForm}
                 recordOutcome={recordOutcome}
+                deleteIntervention={deleteIntervention}
+                setActiveTab={setActiveTab}
               />
             )}
             {activeTab === 'misconceptions' && (
@@ -818,9 +836,9 @@ const StudentAnalyticsPortal = () => {
               <ClassGapsTab
                 data={classGaps}
                 loading={loadingGaps}
-                filters={gapFilters}
-                setFilters={setGapFilters}
                 onFetch={fetchClassGaps}
+                healthyTopics={classGapsHealthy}
+                classLabel={classLabel}
               />
             )}
             {activeTab === 'forecast' && (
@@ -1511,159 +1529,340 @@ const InterventionTab = ({
   generateLearningPath, navigate, classLabel,
   interventionModal, setInterventionModal, interventionForm, setInterventionForm,
   savingIntervention, logIntervention, interventionLogs,
-  outcomeModal, setOutcomeModal, outcomeForm, setOutcomeForm, recordOutcome,
+  outcomeModal, setOutcomeModal, outcomeForm, setOutcomeForm, recordOutcome, deleteIntervention,
+  setActiveTab,
 }) => {
-  const priorityStats = [
-    { key: 'critical', label: 'Critical Students', icon: AlertTriangle, iconClass: 'bg-[#fce8e8] text-[#b13a3a]' },
-    { key: 'high', label: 'High Priority', icon: ArrowUp, iconClass: 'bg-[#f5ede4] text-[#b57a3a]' },
-    { key: 'medium', label: 'Medium Priority', icon: Minus, iconClass: 'bg-[#e4edf2] text-[#3a7a94]' },
-    { key: 'ai', label: 'With AI Paths', icon: Brain, iconClass: 'bg-[#ede8f5] text-[#6b5bb5]' },
+  const PAGE_SIZE = 10;
+  const [page, setPage] = useState(1);
+  const [sortBy, setSortBy] = useState('priority-desc');
+  const [menuFor, setMenuFor] = useState(null);
+  const [filtersOpen, setFiltersOpen] = useState(false);
+  const activeFilterCount = [interventionFilters.subject, interventionFilters.interventionLevel].filter(Boolean).length;
+
+  const LEVEL_RANK = { critical: 3, high: 2, medium: 1, low: 0 };
+  const levelOf = (student) => student.level || student.riskLevel || 'medium';
+  const countLevel = (key) => filteredWeakStudents.filter((student) => levelOf(student) === key).length;
+
+  const statCards = [
+    { label: 'Critical Students', value: countLevel('critical'), helper: 'Need immediate support', icon: AlertTriangle, iconClass: 'bg-red-50 text-red-500' },
+    { label: 'High Priority', value: countLevel('high'), helper: 'Significant improvement needed', icon: BarChart2, iconClass: 'bg-amber-50 text-amber-500' },
+    { label: 'Medium Priority', value: countLevel('medium'), helper: 'Need moderate support', icon: Users, iconClass: 'bg-violet-50 text-violet-600' },
+    { label: 'With AI Paths', value: filteredWeakStudents.filter((student) => student.hasAIPath).length, helper: 'Personalized learning paths', icon: BookOpen, iconClass: 'bg-emerald-50 text-emerald-600' },
   ];
 
+  const sorted = useMemo(() => {
+    const list = [...filteredWeakStudents];
+    const num = (v, fallback) => (v == null ? fallback : Number(v));
+    const sorters = {
+      'priority-desc': (a, b) => LEVEL_RANK[levelOf(b)] - LEVEL_RANK[levelOf(a)] || num(a.avgScore, 101) - num(b.avgScore, 101),
+      'priority-asc': (a, b) => LEVEL_RANK[levelOf(a)] - LEVEL_RANK[levelOf(b)],
+      'score-asc': (a, b) => num(a.avgScore, 101) - num(b.avgScore, 101),
+      'attendance-asc': (a, b) => num(a.attPct, 101) - num(b.attPct, 101),
+      'name': (a, b) => String(a.name || a.studentName || '').localeCompare(String(b.name || b.studentName || '')),
+    };
+    return list.sort(sorters[sortBy] || sorters['priority-desc']);
+  }, [filteredWeakStudents, sortBy]);
+
+  const pageCount = Math.max(1, Math.ceil(sorted.length / PAGE_SIZE));
+  const currentPage = Math.min(page, pageCount);
+  const pageRows = sorted.slice((currentPage - 1) * PAGE_SIZE, currentPage * PAGE_SIZE);
+  useEffect(() => { setPage(1); }, [interventionSearch, interventionFilters, sortBy]);
+
   const updateFilter = (key, value) => setInterventionFilters((previous) => ({ ...previous, [key]: value }));
-  const selectClass = 'rounded-full border border-[#e2e8ee] bg-white px-3 py-1.5 text-xs text-[#3a5a6e] outline-none transition focus:border-[#b0c8d8] focus:ring-2 focus:ring-[#3a7a94]/10';
-  const actionClass = 'inline-flex items-center gap-1.5 rounded-full border-0 bg-[#f0f4f8] px-3 py-1.5 text-[11px] font-medium text-[#3a5a6e] transition hover:bg-[#e4eaf0] disabled:opacity-50';
+
+  const exportCsv = () => {
+    const header = ['#', 'Student', 'Grade', 'Section', 'Priority', 'Attendance %', 'Avg Score %', 'Trend'];
+    const rows = sorted.map((student, i) => [
+      i + 1, student.name || student.studentName || '', student.grade || '', student.section || '',
+      levelOf(student), student.attPct ?? '', student.avgScore ?? '', student.scoreTrend ?? '',
+    ]);
+    const csv = [header, ...rows].map((r) => r.map((v) => `"${String(v).replace(/"/g, '""')}"`).join(',')).join('\n');
+    const url = URL.createObjectURL(new Blob([csv], { type: 'text/csv' }));
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `intervention-${classLabel}.csv`;
+    a.click();
+    URL.revokeObjectURL(url);
+  };
+
+  const PRIORITY_PILL = {
+    critical: 'bg-red-50 text-red-600',
+    high: 'bg-red-50 text-red-500',
+    medium: 'bg-amber-50 text-amber-600',
+    low: 'bg-blue-50 text-blue-600',
+  };
+  const AVATAR_TONES = ['bg-blue-50 text-blue-600', 'bg-rose-50 text-rose-500', 'bg-amber-50 text-amber-600', 'bg-violet-50 text-violet-600', 'bg-emerald-50 text-emerald-600'];
+
+  // Small progress ring used for attendance (green) and score (red).
+  const Ring = ({ value, color }) => {
+    const pct = Math.max(0, Math.min(100, Number(value) || 0));
+    const r = 14;
+    const c = 2 * Math.PI * r;
+    return (
+      <svg viewBox="0 0 36 36" className="size-6 -rotate-90 shrink-0">
+        <circle cx="18" cy="18" r={r} fill="none" stroke="#eef1f4" strokeWidth="4" />
+        <circle cx="18" cy="18" r={r} fill="none" stroke={color} strokeWidth="4" strokeLinecap="round" strokeDasharray={`${(pct / 100) * c} ${c}`} />
+      </svg>
+    );
+  };
+
+  const pageNumbers = (() => {
+    if (pageCount <= 7) return Array.from({ length: pageCount }, (_, i) => i + 1);
+    const set = new Set([1, pageCount, currentPage - 1, currentPage, currentPage + 1]);
+    const list = [...set].filter((n) => n >= 1 && n <= pageCount).sort((a, b) => a - b);
+    return list.flatMap((n, i) => (i > 0 && n - list[i - 1] > 1 ? ['…', n] : [n]));
+  })();
 
   return (
-    <div className="space-y-6 rounded-[2rem] border border-[#eaedf0] bg-white p-5 shadow-[0_4px_20px_rgba(0,20,30,0.06)] sm:p-8">
-      <header className="flex flex-wrap items-center justify-between gap-3">
-        <div>
-          <h2 className="flex items-center gap-2 text-xl font-semibold tracking-[-0.01em] text-[#1a2e3f]">
-            <span className="flex size-8 items-center justify-center rounded-full bg-[#e4edf2] text-[#3a7a94]"><AlertTriangle className="size-4" /></span>
+    <div className="space-y-3">
+      {/* Header */}
+      <header className="flex items-center justify-center gap-3">
+        <div className='w-full flex flex-col justify-center items-center'>
+          <h2 className="flex items-center gap-1.5 text-lg font-bold tracking-tight text-slate-900">
+            {/* <Flag className="size-4 fill-rose-500 text-rose-500" />  */}
             Intervention
           </h2>
-          <span className="mt-1 inline-flex items-center rounded-full bg-[#f0f4f8] px-3 py-1 text-xs font-medium text-[#5a7a8e]">⚑ {classLabel} · Full class performance</span>
+          <p className="text-[12.5px] text-slate-500">{classLabel} <span className="mx-1">·</span> Full class performance</p>
         </div>
-        <div className="flex items-center gap-2 rounded-full border border-[#e2e8ee] bg-[#f0f4f8] p-1">
-          <span className="rounded-full bg-white px-3 py-1.5 text-xs font-medium text-[#1a2e3f] shadow-sm"><Users className="mr-1 inline size-3.5" /> Students</span>
-          <button type="button" onClick={() => window.scrollTo({ top: 0, behavior: 'smooth' })} className="rounded-full px-3 py-1.5 text-xs font-medium text-[#4a6a7e] hover:bg-white/70"><BarChart3 className="mr-1 inline size-3.5" /> Analytics</button>
-        </div>
+        <button type="button" onClick={exportCsv} disabled={!sorted.length} className="inline-flex h-9 items-center gap-1.5 rounded-full border border-slate-200 text-white px-3.5 text-[13px] font-semibold bg-blue-500 shadow-sm transition hover:bg-blue-50 disabled:opacity-50">
+          <Download className="size-4" /> Export
+        </button>
       </header>
 
+      {/* Stat cards */}
       <div className="grid grid-cols-2 gap-2.5 lg:grid-cols-4">
-        {priorityStats.map((stat, index) => {
-          const Icon = stat.icon;
-          const count = stat.key === 'ai'
-            ? filteredWeakStudents.filter((student) => student.hasAIPath).length
-            : filteredWeakStudents.filter((student) => (student.level || student.riskLevel) === stat.key).length;
-          return (
-            <Motion.div
-              key={stat.key}
-              initial={{ opacity: 0, y: 8 }}
-              animate={{ opacity: 1, y: 0 }}
-              transition={{ delay: index * 0.06 }}
-              className="flex items-center gap-3 rounded-[1.2rem] border border-[#eaedf0] bg-[#f8fafc] p-3 transition hover:border-[#dce2e8] hover:bg-[#f4f7fa] sm:p-4"
-            >
-              <div className={`flex size-9 shrink-0 items-center justify-center rounded-full ${stat.iconClass}`}><Icon className="size-4" /></div>
-              <div>
-                <p className="text-xl font-semibold leading-tight text-[#1a2e3f]">{count}</p>
-                <p className="text-[10px] font-medium uppercase tracking-[0.04em] text-[#5a7a8e]">{stat.label}</p>
-              </div>
-            </Motion.div>
-          );
-        })}
+        {statCards.map((stat, index) => (
+          <Motion.div
+            key={stat.label}
+            initial={{ opacity: 0, y: 8 }}
+            animate={{ opacity: 1, y: 0 }}
+            transition={{ delay: index * 0.05 }}
+            className="flex items-center gap-2.5 rounded-xl border border-slate-100 bg-white p-3 shadow-sm"
+          >
+            <div className={`flex size-9 shrink-0 items-center justify-center rounded-lg ${stat.iconClass}`}><stat.icon className="size-[18px]" /></div>
+            <div className="min-w-0">
+              <p className="text-[11.5px] text-slate-600">{stat.label}</p>
+              <p className="text-lg font-bold leading-tight text-slate-900">{loadingWeak ? '—' : stat.value}</p>
+              <p className="truncate text-[10.5px] text-slate-500">{stat.helper}</p>
+            </div>
+          </Motion.div>
+        ))}
       </div>
 
-      <div className="flex flex-wrap items-center gap-2 rounded-full border border-[#eaedf0] bg-[#f8fafc] px-3 py-2">
-        <div className="flex min-w-[180px] flex-1 items-center rounded-full border border-[#e2e8ee] bg-white px-3 py-1.5 focus-within:border-[#b0c8d8] focus-within:ring-2 focus-within:ring-[#3a7a94]/10">
-          <Search className="size-3.5 text-[#5a7a8e]/60" />
-          <input value={interventionSearch} onChange={(event) => setInterventionSearch(event.target.value)} placeholder="Search students..." className="w-full bg-transparent px-2 text-xs text-[#1a2e3f] outline-none placeholder:text-[#8aa8ba]" />
+      <div className="overflow-hidden rounded-xl border border-slate-100 bg-white shadow-sm">
+        {/* Toolbar — subject / level filters live behind the filter toggle */}
+        <div className="flex flex-wrap items-center gap-2 border-b border-slate-100 p-3">
+          <div className="flex min-w-[180px] flex-1 items-center gap-2 rounded-full border border-slate-200 bg-white px-2.5 py-1.5 focus-within:border-blue-300">
+            <Search className="size-3.5 text-slate-400" />
+            <input value={interventionSearch} onChange={(event) => setInterventionSearch(event.target.value)} placeholder="Search students..." className="w-full bg-transparent text-[13px] text-slate-800 outline-none placeholder:text-slate-400" />
+          </div>
+          <button
+            type="button"
+            onClick={() => setFiltersOpen((v) => !v)}
+            aria-label={filtersOpen ? 'Close filters' : 'Open filters'}
+            aria-expanded={filtersOpen}
+            className={`relative flex size-8 items-center justify-center rounded-full border transition ${filtersOpen ? 'border-blue-200 bg-blue-50 text-blue-600' : 'border-slate-200 text-slate-600 hover:bg-slate-50'}`}
+          >
+            {filtersOpen ? <X className="size-4" /> : <Filter className="size-4" />}
+            {!filtersOpen && activeFilterCount > 0 && (
+              <span className="absolute -right-1 -top-1 flex size-4 items-center justify-center rounded-full bg-blue-600 text-[9px] font-bold text-white">{activeFilterCount}</span>
+            )}
+          </button>
+          <AnimatePresence initial={false}>
+            {filtersOpen && (
+              <Motion.div
+                initial={{ opacity: 0, x: -6 }}
+                animate={{ opacity: 1, x: 0 }}
+                exit={{ opacity: 0, x: -6 }}
+                transition={{ duration: 0.15 }}
+                className="flex flex-wrap items-center gap-2"
+              >
+                <label className="relative flex items-center">
+                  <BookOpen className="pointer-events-none absolute left-2.5 size-3.5 text-slate-500" />
+                  <select value={interventionFilters.subject} onChange={(event) => updateFilter('subject', event.target.value)} className="h-8 appearance-none rounded-lg border border-slate-200 bg-white pl-8 pr-7 text-[12.5px] text-slate-800 outline-none focus:border-blue-300">
+                    <option value="">All Subjects</option><option value="Mathematics">Mathematics</option><option value="Physics">Physics</option><option value="Chemistry">Chemistry</option><option value="Biology">Biology</option><option value="English">English</option>
+                  </select>
+                  <ChevronDown className="pointer-events-none absolute right-2 size-3.5 text-slate-500" />
+                </label>
+                <label className="relative flex items-center">
+                  <BarChart2 className="pointer-events-none absolute left-2.5 size-3.5 text-slate-500" />
+                  <select value={interventionFilters.interventionLevel} onChange={(event) => updateFilter('interventionLevel', event.target.value)} className="h-8 appearance-none rounded-lg border border-slate-200 bg-white pl-8 pr-7 text-[12.5px] text-slate-800 outline-none focus:border-blue-300">
+                    <option value="">All Levels</option><option value="critical">Critical</option><option value="high">High</option><option value="medium">Medium</option><option value="low">Low</option>
+                  </select>
+                  <ChevronDown className="pointer-events-none absolute right-2 size-3.5 text-slate-500" />
+                </label>
+              </Motion.div>
+            )}
+          </AnimatePresence>
+          {/* <span className="px-1 text-[12.5px] text-slate-600">{sorted.length} students</span> */}
+          <label className="relative ml-auto flex items-center">
+            <ArrowUpDown className="pointer-events-none absolute left-2.5 size-3.5 text-slate-500" />
+            <select value={sortBy} onChange={(event) => setSortBy(event.target.value)} aria-label="Sort by" className="h-8 appearance-none rounded-lg border border-slate-200 bg-white pl-8 pr-7 text-[12.5px] text-slate-800 outline-none focus:border-blue-300">
+              <option value="priority-desc">Priority (High to Low)</option>
+              <option value="priority-asc">Priority (Low to High)</option>
+              <option value="score-asc">Avg Score (Low to High)</option>
+              <option value="attendance-asc">Attendance (Low to High)</option>
+              <option value="name">Name (A–Z)</option>
+            </select>
+            <ChevronDown className="pointer-events-none absolute right-2 size-3.5 text-slate-500" />
+          </label>
         </div>
-        <select value={interventionFilters.subject} onChange={(event) => updateFilter('subject', event.target.value)} className={selectClass}>
-          <option value="">All Subjects</option><option value="Mathematics">Mathematics</option><option value="Physics">Physics</option><option value="Chemistry">Chemistry</option><option value="Biology">Biology</option><option value="English">English</option>
-        </select>
-        <select value={interventionFilters.interventionLevel} onChange={(event) => updateFilter('interventionLevel', event.target.value)} className={selectClass}>
-          <option value="">All Levels</option><option value="critical">Critical</option><option value="high">High</option><option value="medium">Medium</option><option value="low">Low</option>
-        </select>
-        <span className="rounded-full bg-[#f0f4f8] px-3 py-1.5 text-xs font-medium text-[#3a5a6e]">{filteredWeakStudents.length} students</span>
-      </div>
 
       {loadingWeak ? (
-        <div className="flex min-h-[280px] flex-col items-center justify-center gap-2 text-sm text-[#5a7a8e]">
-          <Loader2 className="size-7 animate-spin text-[#3a7a94]" /> Analyzing weak students...
+        <div className="flex min-h-[280px] flex-col items-center justify-center gap-2 text-sm text-slate-500">
+          <Loader2 className="size-7 animate-spin text-blue-600" /> Analyzing weak students...
         </div>
-      ) : filteredWeakStudents.length === 0 ? (
-        <div className="flex min-h-[280px] flex-col items-center justify-center rounded-[1.4rem] bg-[#f8fafc] text-center">
+      ) : sorted.length === 0 ? (
+        <div className="flex min-h-[280px] flex-col items-center justify-center text-center">
           <CheckCircle className="mb-2 size-10 text-emerald-600" />
-          <h3 className="text-base font-semibold text-[#1a2e3f]">Great News!</h3>
-          <p className="mt-1 text-sm text-[#5a7a8e]">No students currently need immediate intervention.</p>
+          <h3 className="text-base font-semibold text-slate-900">Great News!</h3>
+          <p className="mt-1 text-sm text-slate-500">No students currently need immediate intervention.</p>
         </div>
       ) : (
         <>
-        <div className="grid gap-4 md:grid-cols-2">
-          {filteredWeakStudents.map((student, index) => {
-            const level = student.level || student.riskLevel || 'medium';
-            const priorityClass = level === 'critical'
-              ? 'bg-[#fce8e8] text-[#b13a3a]'
-              : level === 'high'
-                ? 'bg-[#f5ede4] text-[#b57a3a]'
-                : 'bg-[#e4edf2] text-[#3a7a94]';
-            const studentId = student.studentId;
-            const studentName = student.name || student.studentName || 'Unknown';
-            const trend = student.scoreTrend;
-            return (
-              <Motion.article
-                key={student.studentId || index}
-                initial={{ opacity: 0, y: 10 }}
-                animate={{ opacity: 1, y: 0 }}
-                transition={{ delay: index * 0.045 }}
-                whileHover={{ y: -2 }}
-                className="rounded-[1.4rem] border border-[#eaedf0] bg-[#fafbfc] p-4 transition hover:border-[#d0d8e0] hover:bg-white hover:shadow-[0_2px_12px_rgba(0,20,30,0.04)] sm:p-5"
-              >
-                <div className="mb-2 flex items-start justify-between gap-3">
-                  <div>
-                    <p className="text-sm font-semibold text-[#1a2e3f]">{studentName}</p>
-                    <span className="mt-1 inline-flex rounded-full bg-[#f0f4f8] px-2.5 py-0.5 text-[10px] text-[#5a7a8e]">
-                      {student.grade ? `Grade ${student.grade}` : classLabel}
-                      {student.section ? ` · ${student.section}` : ''}
-                    </span>
-                  </div>
-                  <span className={`rounded-full px-2.5 py-1 text-[10px] font-semibold uppercase tracking-[0.04em] ${priorityClass}`}>
-                    <span className="mr-1">●</span>{level}
-                  </span>
-                </div>
-
-                <div className="my-2 flex flex-wrap gap-x-5 gap-y-2 border-y border-[#eaedf0] py-2">
-                  <div>
-                    <p className="text-[9px] font-medium uppercase tracking-[0.04em] text-[#5a7a8e]">Attendance</p>
-                    <p className="text-sm font-semibold text-[#b13a3a]">{student.attPct != null ? `${student.attPct}%` : '—'}</p>
-                  </div>
-                  <div>
-                    <p className="text-[9px] font-medium uppercase tracking-[0.04em] text-[#5a7a8e]">Avg Score</p>
-                    <p className="text-sm font-semibold text-[#1a2e3f]">{student.avgScore != null ? `${student.avgScore}%` : '—'}</p>
-                  </div>
-                  {student.scoreTrend != null && (
-                    <div>
-                      <p className="text-[9px] font-medium uppercase tracking-[0.04em] text-[#5a7a8e]">Trend</p>
-                      <p className={`text-sm font-semibold ${student.scoreTrend > 0 ? 'text-emerald-600' : student.scoreTrend < 0 ? 'text-red-600' : 'text-gray-500'}`}>
-                        {student.scoreTrend > 0 ? `+${student.scoreTrend}` : student.scoreTrend}
-                      </p>
-                    </div>
-                  )}
-                </div>
-
-                <div className="mt-3 flex flex-wrap gap-1.5">
-                  <button
-                    type="button"
-                    onClick={() => setInterventionModal({ studentId, studentName, riskLevel: level, attPct: student.attPct, avgScore: student.avgScore, scoreTrend: student.scoreTrend })}
-                    className={`${actionClass} bg-[#e4edf2] text-[#2a5a72] hover:bg-[#d4e0e8]`}
-                  >
-                    <ArrowRight className="size-3" /> Log Intervention
-                  </button>
-                  {studentId && (
-                    <button type="button" onClick={() => generateLearningPath(studentId, 'General', [], 'basic')} disabled={!studentId} className={`${actionClass} bg-[#ede8f5] text-[#6b5bb5] hover:bg-[#e4dcee]`}>
-                      <Brain className="size-3" /> AI Path
-                    </button>
-                  )}
-                </div>
-              </Motion.article>
-            );
-          })}
+        <div className="overflow-x-auto">
+          <table className="w-full min-w-[860px] text-left">
+            <thead>
+              <tr className="border-b border-slate-100 bg-slate-50/60 text-[11.5px] text-slate-500">
+                <th className="w-14 px-3 py-2 text-center font-medium">#</th>
+                <th className="px-3 py-2 font-medium">Student</th>
+                <th className="px-3 py-2 font-medium">Priority</th>
+                <th className="px-3 py-2 font-medium">Attendance</th>
+                <th className="px-3 py-2 font-medium">Avg Score</th>
+                <th className="px-3 py-2 font-medium">Trend</th>
+                <th className="px-3 py-2 font-medium">Actions</th>
+              </tr>
+            </thead>
+            <tbody>
+              {pageRows.map((student, index) => {
+                const level = levelOf(student);
+                const studentId = student.studentId;
+                const studentName = student.name || student.studentName || 'Unknown';
+                const rowNumber = (currentPage - 1) * PAGE_SIZE + index + 1;
+                const trend = student.scoreTrend;
+                return (
+                  <tr key={studentId || rowNumber} className="border-b border-slate-100 last:border-0 hover:bg-slate-50/60">
+                    <td className="px-3 py-1.5 text-center text-xs text-slate-500">{rowNumber}</td>
+                    <td className="px-3 py-1.5">
+                      <div className="flex items-center gap-3">
+                        {photoUrlOf(student) ? (
+                          <StudentPhoto student={{ name: studentName, profilePic: student.profilePic }} className="size-8 text-xs" />
+                        ) : (
+                          <span className={`flex size-8 shrink-0 items-center justify-center rounded-full text-xs font-semibold ${AVATAR_TONES[rowNumber % AVATAR_TONES.length]}`}>
+                            {studentName.charAt(0).toUpperCase()}
+                          </span>
+                        )}
+                        <div className="min-w-0">
+                          <p className="truncate text-[13px] font-medium text-slate-900">{studentName}</p>
+                          <p className="text-[11px] text-slate-500">
+                            {student.grade ? `Grade ${student.grade}` : classLabel}{student.section ? ` · ${student.section}` : ''}
+                          </p>
+                        </div>
+                      </div>
+                    </td>
+                    <td className="px-3 py-1.5">
+                      <span className={`inline-flex items-center gap-2 rounded-full px-2.5 py-1 text-[11px] font-medium capitalize ${PRIORITY_PILL[level] || PRIORITY_PILL.medium}`}>
+                        <span className="size-1.5 rounded-full bg-current" /> {level}
+                      </span>
+                    </td>
+                    <td className="px-3 py-1.5">
+                      <div className="flex items-center gap-2">
+                        <Ring value={student.attPct} color={student.attPct != null && student.attPct < 75 ? '#ef4444' : '#16a34a'} />
+                        <div
+                          className="leading-tight"
+                          title={student.attendanceDays
+                            ? `${student.attendanceDays.sessionName || 'Academic year'}: ${student.attendanceDays.present} present, ${student.attendanceDays.absent} absent, ${student.attendanceDays.notMarked} not marked of ${student.attendanceDays.schoolDays} school days`
+                            : undefined}
+                        >
+                          <span className="text-[12.5px] font-semibold text-slate-900">{student.attPct != null ? `${student.attPct}%` : '—'}</span>
+                          {student.attendanceDays && (
+                            <p className="text-[10.5px] text-slate-500">{student.attendanceDays.present}/{student.attendanceDays.schoolDays} days</p>
+                          )}
+                        </div>
+                      </div>
+                    </td>
+                    <td className="px-3 py-1.5">
+                      <div className="flex items-center gap-2">
+                        <Ring value={student.avgScore} color="#ef4444" />
+                        <span className="text-[12.5px] font-semibold text-slate-900">{student.avgScore != null ? `${student.avgScore}%` : '—'}</span>
+                      </div>
+                    </td>
+                    <td className="px-3 py-1.5">
+                      {trend == null ? <span className="text-xs text-slate-400">—</span> : (
+                        <span className={`inline-flex min-w-[56px] items-center justify-center gap-1 rounded-md px-2 py-1 text-xs font-semibold ${trend < 0 ? 'bg-red-50 text-red-600' : trend > 0 ? 'bg-emerald-50 text-emerald-600' : 'bg-slate-100 text-slate-500'}`}>
+                          {trend < 0 ? <TrendingDown className="size-3.5" /> : trend > 0 ? <TrendingUp className="size-3.5" /> : <Minus className="size-3.5" />}
+                          {trend > 0 ? `+${trend}` : trend}
+                        </span>
+                      )}
+                    </td>
+                    <td className="px-3 py-1.5">
+                      <div className="flex items-center gap-2">
+                        <button
+                          type="button"
+                          onClick={() => setInterventionModal({ studentId, studentName, riskLevel: level, attPct: student.attPct, avgScore: student.avgScore, scoreTrend: student.scoreTrend })}
+                          className="inline-flex items-center gap-1.5 whitespace-nowrap rounded-md bg-blue-50 px-2.5 py-1.5 text-[11px] font-medium text-blue-700 transition hover:bg-blue-100"
+                        >
+                          <FileText className="size-3.5" /> Log Intervention
+                        </button>
+                        {studentId && (
+                          <button type="button" onClick={() => generateLearningPath(studentId, 'General', [], 'basic')} className="inline-flex items-center gap-1.5 whitespace-nowrap rounded-md bg-violet-50 px-2.5 py-1.5 text-[11px] font-medium text-violet-700 transition hover:bg-violet-100">
+                            <Sparkle className="size-3.5" /> AI Path
+                          </button>
+                        )}
+                        <div className="relative">
+                          <button type="button" aria-label="More actions" onClick={() => setMenuFor(menuFor === rowNumber ? null : rowNumber)} className="flex size-7 items-center justify-center rounded-md text-slate-600 transition hover:bg-slate-100">
+                            <MoreHorizontal className="size-5" />
+                          </button>
+                          {menuFor === rowNumber && (
+                            <div className={`absolute right-0 z-20 w-44 rounded-xl border border-slate-100 bg-white p-1 shadow-lg ${index >= pageRows.length - 2 && pageRows.length > 2 ? 'bottom-full mb-1' : 'top-full mt-1'}`} onMouseLeave={() => setMenuFor(null)}>
+                              <button type="button" disabled={!studentId || analyzing} onClick={() => { setMenuFor(null); analyzeStudentWeakness(studentId); }} className="flex w-full items-center gap-2 rounded-lg px-3 py-2 text-left text-xs text-slate-700 hover:bg-slate-50 disabled:opacity-50">
+                                <Brain className="size-4 text-violet-600" /> Analyze weakness
+                              </button>
+                              <button type="button" onClick={() => { setMenuFor(null); setSelectedWeakStudent(student); }} className="flex w-full items-center gap-2 rounded-lg px-3 py-2 text-left text-xs text-slate-700 hover:bg-slate-50">
+                                <Eye className="size-4 text-blue-600" /> View details
+                              </button>
+                            </div>
+                          )}
+                        </div>
+                      </div>
+                    </td>
+                  </tr>
+                );
+              })}
+            </tbody>
+          </table>
         </div>
 
+        {/* Pagination */}
+        <div className="flex flex-wrap items-center justify-between gap-3 border-t border-slate-100 px-4 py-3">
+          <p className="text-xs text-slate-500">
+            Showing {(currentPage - 1) * PAGE_SIZE + 1}–{Math.min(currentPage * PAGE_SIZE, sorted.length)} of {sorted.length} students
+          </p>
+          <div className="flex items-center gap-1">
+            <button type="button" onClick={() => setPage(currentPage - 1)} disabled={currentPage === 1} aria-label="Previous page" className="flex size-8 items-center justify-center rounded-lg border border-slate-200 text-slate-600 transition hover:bg-slate-50 disabled:opacity-40">
+              <ChevronLeft className="size-4" />
+            </button>
+            {pageNumbers.map((n, i) => (n === '…' ? (
+              <span key={`gap-${i}`} className="px-1.5 text-xs text-slate-400">…</span>
+            ) : (
+              <button
+                key={n}
+                type="button"
+                onClick={() => setPage(n)}
+                aria-current={n === currentPage ? 'page' : undefined}
+                className={`flex size-8 items-center justify-center rounded-lg text-xs font-semibold transition ${n === currentPage ? 'bg-blue-600 text-white' : 'border border-slate-200 text-slate-700 hover:bg-slate-50'}`}
+              >
+                {n}
+              </button>
+            )))}
+            <button type="button" onClick={() => setPage(currentPage + 1)} disabled={currentPage === pageCount} aria-label="Next page" className="flex size-8 items-center justify-center rounded-lg border border-slate-200 text-slate-600 transition hover:bg-slate-50 disabled:opacity-40">
+              <ChevronRight className="size-4" />
+            </button>
+          </div>
+        </div>
         {/* Intervention logs */}
         {interventionLogs.length > 0 && (
-          <div className="mt-6">
+          <div className="border-t border-slate-100 p-4">
             <h3 className="text-sm font-bold text-[#1a2e3f] mb-3">Recent Interventions</h3>
             <div className="space-y-2">
               {interventionLogs.slice(0, 6).map((log) => (
@@ -1686,6 +1885,10 @@ const InterventionTab = ({
                         Record Outcome
                       </button>
                     )}
+                    <button type="button" onClick={() => deleteIntervention(log._id)} aria-label="Delete intervention"
+                      className="rounded-md p-1 text-slate-400 transition hover:bg-red-50 hover:text-red-600">
+                      <Trash2 className="size-3.5" />
+                    </button>
                   </div>
                 </div>
               ))}
@@ -1718,8 +1921,8 @@ const InterventionTab = ({
                       className="mt-1 w-full rounded-xl border border-gray-200 px-3 py-2 text-sm focus:border-indigo-400 focus:outline-none resize-none" />
                   </div>
                   <div>
-                    <label className="text-xs font-semibold text-gray-500 uppercase tracking-wide">Scheduled Date</label>
-                    <input type="date" value={interventionForm.scheduledDate} onChange={(e) => setInterventionForm((f) => ({ ...f, scheduledDate: e.target.value }))}
+                    <label className="text-xs font-semibold text-gray-500 uppercase tracking-wide">Scheduled Date &amp; Time</label>
+                    <input type="datetime-local" value={interventionForm.scheduledDate} onChange={(e) => setInterventionForm((f) => ({ ...f, scheduledDate: e.target.value }))}
                       className="mt-1 w-full rounded-xl border border-gray-200 px-3 py-2 text-sm focus:border-indigo-400 focus:outline-none" />
                   </div>
                 </div>
@@ -1775,6 +1978,7 @@ const InterventionTab = ({
           generateLearningPath={generateLearningPath}
         />
       )}
+      </div>
     </div>
   );
 };
@@ -2101,120 +2305,262 @@ const StudentPhoto = ({ student, className = 'size-9 text-sm' }) => {
 // ═════════════════════════════════════════════════════════════════════════════
 // WEAK STUDENT DETAIL MODAL
 // ═════════════════════════════════════════════════════════════════════════════
-const WeakStudentDetailModal = ({ student, onClose, generateLearningPath }) => (
-  <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-4 z-50" onClick={onClose}>
-    <div className="bg-white rounded-2xl max-w-4xl w-full max-h-[90vh] overflow-y-auto border-[2.5px] border-purple-300" onClick={(e) => e.stopPropagation()}>
-      <div className="p-6 border-b border-purple-200">
-        <div className="flex items-center justify-between">
-          <div className="flex items-center space-x-4">
-            <div className="w-16 h-16 rounded-xl bg-gradient-to-r from-red-500 to-orange-500 flex items-center justify-center text-white text-xl font-semibold">
-              {(student.name || 'S').charAt(0)}
-            </div>
-            <div>
-              <h2 className="text-2xl font-bold text-gray-800">{student.name || 'Unknown'}</h2>
-              <p className="text-gray-600">Grade {student.grade} {student.section ? `· ${student.section}` : ''} • Roll {student.roll || '—'}</p>
-              <div className={`inline-flex items-center space-x-2 px-3 py-1 rounded-full text-sm font-medium mt-2 border ${getInterventionColor(student.level || student.riskLevel)}`}>
-                {getInterventionIcon(student.level || student.riskLevel)}
-                <span className="capitalize">{student.level || student.riskLevel || 'medium'} Intervention Needed</span>
-              </div>
-            </div>
-          </div>
-          <button
-            onClick={onClose}
-            className="text-gray-500 hover:text-gray-700 p-2 hover:bg-gray-100 rounded-lg transition-colors"
-          >
-            <X size={20} />
-          </button>
-        </div>
-      </div>
+// Student detail for the Intervention table. Pulls everything for the student
+// (academic-year attendance, exams, submissions, per-subject scores and this
+// teacher's intervention history) and renders in a portal so it always sits
+// above the page, on a soft dark backdrop.
+const WeakStudentDetailModal = ({ student, onClose, generateLearningPath }) => {
+  const studentId = student?.studentId;
+  const [detail, setDetail] = useState(null);
+  const [logs, setLogs] = useState([]);
+  const [loading, setLoading] = useState(true);
 
-      <div className="p-6">
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-          <div>
-            <h3 className="text-lg font-semibold text-gray-800 mb-4 flex items-center">
-              <AlertTriangle className="w-5 h-5 mr-2 text-red-600" />
-              Weakness Analysis
-            </h3>
-            <div className="space-y-4">
-              <div className="bg-red-50 rounded-xl p-4 border-[2px] border-red-200">
-                <h4 className="font-medium text-red-800 mb-2">Consistency Score</h4>
-                <div className="flex items-center space-x-3">
-                  <div className="flex-1 bg-red-200 rounded-full h-3">
-                    <div
-                      className="bg-red-600 h-3 rounded-full"
-                      style={{ width: `${student.consistencyScore || 0}%` }}
-                    ></div>
-                  </div>
-                  <span className="font-bold text-red-800">{student.consistencyScore || 0}%</span>
-                </div>
-              </div>
+  useEffect(() => {
+    if (!studentId) { setLoading(false); return undefined; }
+    let cancelled = false;
+    setLoading(true);
+    Promise.all([
+      cachedFetch(`${API_BASE}/api/progress/student/${studentId}/overview`, { headers: authHeaders() })
+        .then((r) => (r.ok ? r.json() : null)).catch(() => null),
+      cachedFetch(`${API_BASE}/api/teacher-analytics/interventions?studentId=${studentId}`, { headers: authHeaders() })
+        .then((r) => (r.ok ? r.json() : null)).catch(() => null),
+    ]).then(([overview, interventions]) => {
+      if (cancelled) return;
+      setDetail(overview);
+      setLogs(interventions?.data || []);
+      setLoading(false);
+    });
+    return () => { cancelled = true; };
+  }, [studentId]);
 
+  useEffect(() => {
+    const onKey = (e) => { if (e.key === 'Escape') onClose(); };
+    window.addEventListener('keydown', onKey);
+    const prevOverflow = document.body.style.overflow;
+    document.body.style.overflow = 'hidden';
+    return () => { window.removeEventListener('keydown', onKey); document.body.style.overflow = prevOverflow; };
+  }, [onClose]);
+
+  const level = student.level || student.riskLevel || 'medium';
+  const name = detail?.student?.name || student.name || 'Unknown';
+  const photo = detail?.student?.profilePic || student.profilePic || null;
+  const att = detail?.attendance;
+  const subjects = detail?.subjects || [];
+  const weakSubjects = subjects.filter((s) => s.score != null && s.score < 60);
+  const exams = (detail?.exams || []).slice(0, 5);
+  const totals = detail?.totals || {};
+  const trend = student.scoreTrend;
+  const pctTone = (v) => (v == null ? 'text-slate-400' : v >= 75 ? 'text-emerald-600' : v >= 50 ? 'text-amber-600' : 'text-red-600');
+  const LEVEL_TONE = {
+    critical: 'bg-red-50 text-red-600 ring-red-100',
+    high: 'bg-orange-50 text-orange-600 ring-orange-100',
+    medium: 'bg-amber-50 text-amber-600 ring-amber-100',
+    low: 'bg-blue-50 text-blue-600 ring-blue-100',
+  };
+  const STATUS_TONE = {
+    completed: 'bg-emerald-50 text-emerald-700',
+    in_progress: 'bg-amber-50 text-amber-700',
+    planned: 'bg-blue-50 text-blue-700',
+  };
+
+  const stats = [
+    { label: 'Attendance', value: att?.schoolDays ? `${att.percentage}%` : '—', sub: att?.schoolDays ? `${att.presentDays}/${att.schoolDays} days` : 'Not taken yet', cls: pctTone(att?.schoolDays ? att.percentage : null), icon: Calendar, bg: 'bg-sky-50 text-sky-600' },
+    { label: 'Overall Score', value: detail?.overallScore != null ? `${detail.overallScore}%` : '—', sub: 'Exams + graded work', cls: pctTone(detail?.overallScore ?? null), icon: BarChart3, bg: 'bg-blue-50 text-blue-600' },
+    { label: 'Exam Avg (recent)', value: student.avgScore != null ? `${student.avgScore}%` : '—', sub: trend ? `Trend ${trend > 0 ? '+' : ''}${trend}` : 'No trend yet', cls: pctTone(student.avgScore ?? null), icon: Target, bg: 'bg-rose-50 text-rose-600' },
+    { label: 'Submissions', value: totals.submissions ?? '—', sub: `${totals.graded ?? 0} graded · ${totals.late ?? 0} late`, cls: 'text-slate-900', icon: FileText, bg: 'bg-orange-50 text-orange-600' },
+  ];
+
+  return createPortal(
+    <AnimatePresence>
+      <Motion.div
+        className="fixed inset-0 z-[100] flex items-center justify-center bg-slate-900/40 p-4 backdrop-blur-[2px]"
+        initial={{ opacity: 0 }}
+        animate={{ opacity: 1 }}
+        exit={{ opacity: 0 }}
+        transition={{ duration: 0.2 }}
+        onClick={onClose}
+      >
+        <Motion.div
+          role="dialog"
+          aria-modal="true"
+          aria-label={`${name} details`}
+          initial={{ opacity: 0, y: 16, scale: 0.97 }}
+          animate={{ opacity: 1, y: 0, scale: 1 }}
+          exit={{ opacity: 0, y: 16, scale: 0.97 }}
+          transition={{ type: 'spring', stiffness: 320, damping: 30 }}
+          className="max-h-[90vh] w-full max-w-3xl overflow-y-auto rounded-2xl bg-white shadow-2xl"
+          onClick={(e) => e.stopPropagation()}
+        >
+          {/* Header */}
+          <div className="sticky top-0 z-10 flex items-start justify-between gap-3 border-b border-slate-100 bg-white/95 px-5 py-4 backdrop-blur">
+            <div className="flex items-center gap-3">
+              <StudentPhoto student={{ name, profilePic: photo }} className="size-14 text-lg" />
               <div>
-                <h4 className="font-medium text-gray-800 mb-2">Weak Areas</h4>
-                <div className="flex flex-wrap gap-2">
-                  {(student.weakAreas || []).map((area, index) => (
-                    <span key={index} className="px-3 py-1 bg-red-100 text-red-700 rounded-full text-sm font-medium">
-                      {area}
-                    </span>
-                  ))}
-                </div>
-              </div>
-
-              <div>
-                <h4 className="font-medium text-gray-800 mb-2">Recommended Topics</h4>
-                <div className="space-y-2">
-                  {(student.recommendedTopics || []).map((topic, index) => (
-                    <div key={index} className="flex items-center space-x-2 text-sm text-gray-700">
-                      <Lightbulb className="w-4 h-4 text-yellow-500" />
-                      <span>{topic}</span>
-                    </div>
-                  ))}
-                </div>
-              </div>
-            </div>
-          </div>
-
-          <div>
-            <h3 className="text-lg font-semibold text-gray-800 mb-4 flex items-center">
-              <Brain className="w-5 h-5 mr-2 text-blue-600" />
-              AI Learning Path
-            </h3>
-            {student.hasAIPath ? (
-              <div className="bg-blue-50 rounded-xl p-4 border-[2px] border-blue-200">
-                <div className="flex items-center justify-between mb-3">
-                  <span className="text-blue-800 font-medium">Learning Path Active</span>
-                  <CheckCircle className="w-5 h-5 text-green-500" />
-                </div>
-                <p className="text-sm text-blue-700 mb-3">
-                  Personalized learning path has been generated based on weakness analysis.
+                <h2 className="text-lg font-bold text-slate-900">{name}</h2>
+                <p className="text-[12.5px] text-slate-500">
+                  Grade {detail?.student?.grade || student.grade || '—'}{(detail?.student?.section || student.section) ? ` · ${detail?.student?.section || student.section}` : ''} • Roll {detail?.student?.roll || student.roll || '—'}
                 </p>
-                <button className="w-full bg-blue-600 text-white py-2 rounded-xl hover:bg-blue-700 transition-colors font-semibold">
-                  View Learning Path
-                </button>
+                <span className={`mt-1.5 inline-flex items-center gap-1.5 rounded-full px-2.5 py-0.5 text-[11px] font-semibold capitalize ring-1 ${LEVEL_TONE[level] || LEVEL_TONE.medium}`}>
+                  <span className="size-1.5 rounded-full bg-current" /> {level} priority{student.risk != null ? ` · risk ${student.risk}/100` : ''}
+                </span>
               </div>
-            ) : (
-              <div className="bg-purple-50 rounded-xl p-4 text-center border-[2px] border-purple-200">
-                <Brain className="w-12 h-12 text-purple-500 mx-auto mb-3" />
-                <p className="text-gray-600 mb-3">No AI learning path generated yet</p>
-                <button
-                  onClick={() => generateLearningPath(
-                    student.studentId,
-                    student.focusSubject || 'Mathematics',
-                    student.weakAreas || [],
-                    'basic'
-                  )}
-                  className="bg-purple-600 text-white px-4 py-2 rounded-xl hover:bg-purple-700 transition-colors font-semibold"
-                >
-                  Generate AI Learning Path
-                </button>
-              </div>
-            )}
+            </div>
+            <button type="button" onClick={onClose} aria-label="Close" className="rounded-lg p-1.5 text-slate-500 transition hover:bg-slate-100 hover:text-slate-800">
+              <X className="size-5" />
+            </button>
           </div>
-        </div>
-      </div>
-    </div>
-  </div>
-);
+
+          {loading ? (
+            <div className="flex min-h-[260px] flex-col items-center justify-center gap-2 text-sm text-slate-500">
+              <Loader2 className="size-6 animate-spin text-blue-600" /> Loading student data...
+            </div>
+          ) : (
+            <div className="space-y-5 p-5">
+              {/* Stats */}
+              <div className="grid grid-cols-2 gap-2.5 md:grid-cols-4">
+                {stats.map((s) => (
+                  <div key={s.label} className="rounded-xl border border-slate-100 p-3">
+                    <div className="mb-1.5 flex items-center gap-2">
+                      <span className={`flex size-7 items-center justify-center rounded-lg ${s.bg}`}><s.icon className="size-3.5" /></span>
+                      <span className="text-[11.5px] text-slate-500">{s.label}</span>
+                    </div>
+                    <p className={`text-lg font-bold leading-tight ${s.cls}`}>{s.value}</p>
+                    <p className="text-[10.5px] text-slate-500">{s.sub}</p>
+                  </div>
+                ))}
+              </div>
+
+              {/* Attendance breakdown */}
+              {att?.schoolDays > 0 && (
+                <div className="rounded-xl bg-slate-50 p-3">
+                  <p className="mb-2 text-[12px] font-semibold text-slate-700">Attendance — {att.sessionName || 'Academic year'}</p>
+                  <div className="flex h-2 overflow-hidden rounded-full bg-slate-200">
+                    <div className="bg-emerald-500" style={{ width: `${(att.presentDays / att.schoolDays) * 100}%` }} />
+                    <div className="bg-red-400" style={{ width: `${(att.absentDays / att.schoolDays) * 100}%` }} />
+                  </div>
+                  <div className="mt-1.5 flex flex-wrap gap-x-4 text-[11px] text-slate-600">
+                    <span><span className="mr-1 inline-block size-2 rounded-full bg-emerald-500" />{att.presentDays} present</span>
+                    <span><span className="mr-1 inline-block size-2 rounded-full bg-red-400" />{att.absentDays} absent</span>
+                    <span><span className="mr-1 inline-block size-2 rounded-full bg-slate-300" />{Math.max(0, att.schoolDays - att.markedDays)} not marked</span>
+                  </div>
+                </div>
+              )}
+
+              <div className="grid gap-5 md:grid-cols-2">
+                {/* Subjects */}
+                <section>
+                  <h3 className="mb-2 flex items-center gap-1.5 text-[13px] font-semibold text-slate-800"><BookOpen className="size-4 text-blue-600" /> Subject Performance</h3>
+                  {subjects.length === 0 ? (
+                    <p className="rounded-xl bg-slate-50 p-3 text-xs text-slate-500">No marks recorded yet.</p>
+                  ) : (
+                    <div className="space-y-2">
+                      {subjects.map((s) => (
+                        <div key={s.subject}>
+                          <div className="mb-1 flex justify-between text-[12px]">
+                            <span className="text-slate-700">{s.subject}</span>
+                            <span className={`font-semibold ${pctTone(s.score)}`}>{s.score != null ? `${s.score}%` : '—'}</span>
+                          </div>
+                          <div className="h-1.5 overflow-hidden rounded-full bg-slate-100">
+                            <div className={`h-full rounded-full ${s.score == null ? '' : s.score >= 75 ? 'bg-emerald-500' : s.score >= 50 ? 'bg-amber-500' : 'bg-red-500'}`} style={{ width: `${s.score ?? 0}%` }} />
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </section>
+
+                {/* Weak areas + exams */}
+                <section className="space-y-4">
+                  <div>
+                    <h3 className="mb-2 flex items-center gap-1.5 text-[13px] font-semibold text-slate-800"><AlertTriangle className="size-4 text-red-500" /> Weak Areas</h3>
+                    {weakSubjects.length === 0 && !(student.weakAreas || []).length ? (
+                      <p className="text-xs text-slate-500">No subject below 60%.</p>
+                    ) : (
+                      <div className="flex flex-wrap gap-1.5">
+                        {[...new Set([...weakSubjects.map((s) => s.subject), ...(student.weakAreas || [])])].map((area) => (
+                          <span key={area} className="rounded-full bg-red-50 px-2.5 py-1 text-[11px] font-medium text-red-600">{area}</span>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+                  <div>
+                    <h3 className="mb-2 flex items-center gap-1.5 text-[13px] font-semibold text-slate-800"><GraduationCapIcon className="size-4 text-violet-600" /> Recent Exams</h3>
+                    {exams.length === 0 ? (
+                      <p className="text-xs text-slate-500">No exam results yet.</p>
+                    ) : (
+                      <div className="divide-y divide-slate-100 rounded-xl border border-slate-100">
+                        {exams.map((e) => (
+                          <div key={e.id} className="flex items-center justify-between gap-2 px-3 py-2 text-[12px]">
+                            <div className="min-w-0">
+                              <p className="truncate font-medium text-slate-800">{e.title}</p>
+                              <p className="text-[10.5px] text-slate-500">{e.subject}</p>
+                            </div>
+                            <span className={`shrink-0 font-semibold ${pctTone(e.percentage)}`}>
+                              {e.percentage != null ? `${e.marks}/${e.maxMarks} · ${e.percentage}%` : 'Absent'}
+                            </span>
+                          </div>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+                </section>
+              </div>
+
+              {/* Intervention history */}
+              <section>
+                <h3 className="mb-2 flex items-center gap-1.5 text-[13px] font-semibold text-slate-800"><Flag className="size-4 text-rose-500" /> Your Interventions</h3>
+                {logs.length === 0 ? (
+                  <p className="rounded-xl bg-slate-50 p-3 text-xs text-slate-500">No interventions logged for this student yet.</p>
+                ) : (
+                  <div className="space-y-1.5">
+                    {logs.slice(0, 5).map((log) => (
+                      <div key={log._id} className="flex items-center justify-between gap-3 rounded-xl border border-slate-100 px-3 py-2">
+                        <div className="min-w-0">
+                          <p className="truncate text-[12.5px] font-medium text-slate-800">{log.action}</p>
+                          <p className="text-[10.5px] text-slate-500">
+                            {new Date(log.createdAt).toLocaleDateString('en-GB', { day: 'numeric', month: 'short' })}
+                            {log.improvement != null ? ` · improvement ${log.improvement > 0 ? '+' : ''}${log.improvement}` : ''}
+                          </p>
+                        </div>
+                        <span className={`shrink-0 rounded-full px-2 py-0.5 text-[10px] font-semibold capitalize ${STATUS_TONE[log.status] || 'bg-slate-100 text-slate-600'}`}>
+                          {String(log.status || '').replace('_', ' ')}
+                        </span>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </section>
+
+              {/* AI path */}
+              <div className="flex flex-wrap items-center justify-between gap-3 rounded-xl bg-violet-50 p-3">
+                <div className="flex items-center gap-2.5">
+                  <Brain className="size-5 text-violet-600" />
+                  <p className="text-[12.5px] text-violet-900">
+                    {student.hasAIPath ? 'A personalised learning path is active.' : 'Generate a personalised learning path from the weak areas.'}
+                  </p>
+                </div>
+                <button
+                  type="button"
+                  disabled={!studentId}
+                  onClick={() => generateLearningPath(
+                    studentId,
+                    weakSubjects[0]?.subject || student.focusSubject || 'General',
+                    weakSubjects.map((s) => s.subject),
+                    'basic',
+                  )}
+                  className="inline-flex items-center gap-1.5 rounded-lg bg-violet-600 px-3.5 py-2 text-[12px] font-semibold text-white transition hover:bg-violet-700 disabled:opacity-50"
+                >
+                  <Sparkle className="size-3.5" /> {student.hasAIPath ? 'Regenerate AI Path' : 'Generate AI Path'}
+                </button>
+              </div>
+            </div>
+          )}
+        </Motion.div>
+      </Motion.div>
+    </AnimatePresence>,
+    document.body,
+  );
+};
 
 // ═════════════════════════════════════════════════════════════════════════════
 // MISCONCEPTIONS TAB
@@ -2309,96 +2655,261 @@ const MisconceptionsTab = ({ data, loading, filters, setFilters, onFetch, aiRepo
 // ═════════════════════════════════════════════════════════════════════════════
 // CLASS GAPS TAB
 // ═════════════════════════════════════════════════════════════════════════════
-const ClassGapsTab = ({ data, loading, filters, setFilters, onFetch }) => {
-  const selectClass = 'rounded-full border border-[#e2e8ee] bg-white px-3 py-1.5 text-xs text-[#3a5a6e] outline-none transition focus:border-[#b0c8d8] focus:ring-2 focus:ring-[#3a7a94]/10';
-  const severityBar  = (s) => s === 'critical' ? 'bg-red-500'    : s === 'high' ? 'bg-orange-400'  : 'bg-amber-300';
-  const severityBg   = (s) => s === 'critical' ? 'border-red-200 bg-red-50'    : s === 'high' ? 'border-orange-200 bg-orange-50'  : 'border-amber-200 bg-amber-50';
-  const severityBadge= (s) => s === 'critical' ? 'bg-red-100 text-red-700'     : s === 'high' ? 'bg-orange-100 text-orange-700' : 'bg-amber-100 text-amber-700';
+const GAP_LEVELS = {
+  critical: { label: 'Critical', range: '< 40% mastery', dot: 'bg-red-500', pill: 'bg-red-50 text-red-600', bar: 'bg-red-500', text: 'text-red-600', color: '#ef4444' },
+  high: { label: 'High', range: '40% – 60% mastery', dot: 'bg-orange-500', pill: 'bg-orange-50 text-orange-600', bar: 'bg-orange-500', text: 'text-orange-600', color: '#f97316' },
+  medium: { label: 'Medium', range: '60% – 75% mastery', dot: 'bg-amber-400', pill: 'bg-amber-50 text-amber-600', bar: 'bg-amber-400', text: 'text-amber-600', color: '#fbbf24' },
+};
 
-  const criticalCount = data.filter((g) => g.gapSeverity === 'critical').length;
-  const highCount     = data.filter((g) => g.gapSeverity === 'high').length;
-  const mediumCount   = data.filter((g) => g.gapSeverity === 'medium').length;
+const ClassGapsTab = ({ data, loading, onFetch, healthyTopics = 0, classLabel }) => {
+  const [search, setSearch] = useState('');
+  const [subject, setSubject] = useState('');
+  const [level, setLevel] = useState('');
+  const [detail, setDetail] = useState(null);
+
+  const subjects = useMemo(() => [...new Set(data.map((g) => g.subject).filter(Boolean))].sort(), [data]);
+  const rows = data.filter((g) => (!subject || g.subject === subject)
+    && (!level || g.gapSeverity === level)
+    && (!search.trim() || `${g.topicTitle} ${g.subject} ${g.chapterTitle || ''}`.toLowerCase().includes(search.trim().toLowerCase())));
+  const count = (key) => data.filter((g) => g.gapSeverity === key).length;
+  const totalTopics = data.length + healthyTopics;
+
+  const statCards = [
+    { label: 'Gaps Detected', helper: 'Topics below 75% mastery', value: data.length, icon: AlertCircle, tile: 'bg-red-50 text-red-500' },
+    { label: 'Critical', helper: GAP_LEVELS.critical.range, value: count('critical'), icon: BarChart2, tile: 'bg-red-50 text-red-500' },
+    { label: 'High', helper: GAP_LEVELS.high.range, value: count('high'), icon: AlertTriangle, tile: 'bg-amber-50 text-amber-500' },
+    { label: 'Medium', helper: GAP_LEVELS.medium.range, value: count('medium'), icon: BarChart2, tile: 'bg-blue-50 text-blue-600' },
+  ];
+
+  // Donut segments: critical / high / medium / good (≥75%).
+  const segments = [
+    { key: 'critical', label: 'Critical (< 40%)', value: count('critical'), color: GAP_LEVELS.critical.color },
+    { key: 'high', label: 'High (40% – 60%)', value: count('high'), color: GAP_LEVELS.high.color },
+    { key: 'medium', label: 'Medium (60% – 75%)', value: count('medium'), color: GAP_LEVELS.medium.color },
+    { key: 'good', label: 'Good (≥ 75%)', value: healthyTopics, color: '#22c55e' },
+  ];
+  const R = 15.9155; // circumference 100
+  let offset = 25;
+
+  const selectCls = 'h-8 appearance-none rounded-lg border border-slate-200 bg-white pl-8 pr-7 text-[12.5px] text-slate-800 outline-none focus:border-blue-300';
 
   return (
-    <div className="space-y-6 rounded-[2rem] border border-[#eaedf0] bg-white p-5 shadow-[0_4px_20px_rgba(0,20,30,0.06)] sm:p-8">
-      <header className="flex flex-wrap items-center justify-between gap-3">
+    <div className="space-y-3">
+      {/* Header */}
+      <header className="flex flex-wrap items-center justify-between gap-2">
         <div>
-          <h2 className="flex items-center gap-2 text-xl font-semibold tracking-[-0.01em] text-[#1a2e3f]">
-            <span className="flex size-8 items-center justify-center rounded-full bg-amber-100 text-amber-600"><AlertCircle className="size-4" /></span>
-            Class Gaps
-          </h2>
-          <p className="mt-1 text-xs text-[#5a7a8e]">Topics where the class average mastery falls below 75% — sorted by severity.</p>
+          <h2 className="text-lg font-bold tracking-tight text-slate-900">Class Gaps</h2>
+          <p className="text-[12.5px] text-slate-500">Topics where the class average mastery falls below 75% — sorted by severity.</p>
         </div>
-        <div className="flex items-center gap-2 rounded-full border border-[#e2e8ee] bg-[#f8fafc] p-1">
-          <span className="rounded-full bg-white px-3 py-1.5 text-xs font-medium text-[#1a2e3f] shadow-sm">{data.length} gap{data.length !== 1 ? 's' : ''} detected</span>
-        </div>
+        {classLabel && (
+          <span className="inline-flex items-center gap-1.5 rounded-lg border border-slate-200 bg-white px-3 py-1.5 text-[12px] font-medium text-slate-700 shadow-sm">
+            <Calendar className="size-3.5 text-slate-500" /> {classLabel}
+          </span>
+        )}
       </header>
 
-      {/* Severity summary */}
-      {!loading && data.length > 0 && (
-        <div className="grid grid-cols-3 gap-3">
-          {[
-            { label: 'Critical', count: criticalCount, cls: 'bg-red-50 border-red-200 text-red-700' },
-            { label: 'High',     count: highCount,     cls: 'bg-orange-50 border-orange-200 text-orange-700' },
-            { label: 'Medium',   count: mediumCount,   cls: 'bg-amber-50 border-amber-200 text-amber-700' },
-          ].map((stat) => (
-            <div key={stat.label} className={`rounded-[1.2rem] border p-3 text-center ${stat.cls}`}>
-              <p className="text-2xl font-bold">{stat.count}</p>
-              <p className="text-[10px] font-semibold uppercase tracking-wide opacity-80 mt-0.5">{stat.label}</p>
+      {/* Stat cards */}
+      <div className="grid grid-cols-2 gap-2.5 lg:grid-cols-4">
+        {statCards.map((s, i) => (
+          <Motion.div key={s.label} initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: i * 0.05 }}
+            className="flex items-center gap-2.5 rounded-xl border border-slate-100 bg-white p-3 shadow-sm">
+            <span className={`flex size-9 shrink-0 items-center justify-center rounded-lg ${s.tile}`}><s.icon className="size-[18px]" /></span>
+            <div className="min-w-0">
+              <p className="text-lg font-bold leading-tight text-slate-900">{loading ? '—' : s.value}</p>
+              <p className="text-[12px] font-medium text-slate-700">{s.label}</p>
+              <p className="truncate text-[10.5px] text-slate-500">{s.helper}</p>
             </div>
-          ))}
-        </div>
-      )}
+          </Motion.div>
+        ))}
+      </div>
 
-      {/* Filter bar — subject only; class+section come from the URL */}
-      <div className="flex flex-wrap items-center gap-2 rounded-full border border-[#eaedf0] bg-[#f8fafc] px-3 py-2">
-        <input className={`${selectClass} flex-1 min-w-[140px]`} placeholder="Filter by subject (optional)" value={filters.subject} onChange={(e) => setFilters((f) => ({ ...f, subject: e.target.value }))} />
-        <button onClick={onFetch} disabled={loading} className="inline-flex items-center gap-1.5 rounded-full bg-[#3a7a94] px-4 py-1.5 text-xs font-semibold text-white disabled:opacity-50 hover:bg-[#2d6278]">
-          {loading ? <Loader2 className="w-3 h-3 animate-spin" /> : <RefreshCcw className="w-3 h-3" />} Refresh
+      {/* Toolbar */}
+      <div className="flex flex-wrap items-center gap-2 rounded-xl border border-slate-100 bg-white p-2.5 shadow-sm">
+        <div className="flex min-w-[180px] flex-1 items-center gap-2 rounded-lg border border-slate-200 px-2.5 py-1.5 focus-within:border-blue-300">
+          <Search className="size-3.5 text-slate-400" />
+          <input value={search} onChange={(e) => setSearch(e.target.value)} placeholder="Search topics..." className="w-full bg-transparent text-[13px] outline-none placeholder:text-slate-400" />
+        </div>
+        <label className="relative flex items-center">
+          <BookOpen className="pointer-events-none absolute left-2.5 size-3.5 text-slate-500" />
+          <select value={subject} onChange={(e) => setSubject(e.target.value)} className={selectCls} aria-label="Subject">
+            <option value="">All Subjects</option>
+            {subjects.map((s) => <option key={s} value={s}>{s}</option>)}
+          </select>
+          <ChevronDown className="pointer-events-none absolute right-2 size-3.5 text-slate-500" />
+        </label>
+        <label className="relative flex items-center">
+          <BarChart2 className="pointer-events-none absolute left-2.5 size-3.5 text-slate-500" />
+          <select value={level} onChange={(e) => setLevel(e.target.value)} className={selectCls} aria-label="Level">
+            <option value="">All Levels</option><option value="critical">Critical</option><option value="high">High</option><option value="medium">Medium</option>
+          </select>
+          <ChevronDown className="pointer-events-none absolute right-2 size-3.5 text-slate-500" />
+        </label>
+        <button type="button" onClick={onFetch} disabled={loading} className="ml-auto inline-flex h-8 items-center gap-1.5 rounded-lg border border-blue-100 bg-blue-50/60 px-3 text-[12.5px] font-semibold text-blue-600 transition hover:bg-blue-50 disabled:opacity-50">
+          <RefreshCcw className={`size-3.5 ${loading ? 'animate-spin' : ''}`} /> Refresh
         </button>
       </div>
 
-      {loading ? (
-        <div className="flex min-h-[280px] flex-col items-center justify-center gap-2 text-sm text-[#5a7a8e]">
-          <Loader2 className="size-7 animate-spin text-[#3a7a94]" /> Loading gap data…
+      {/* Table */}
+      <section className="overflow-hidden rounded-xl border border-slate-100 bg-white shadow-sm">
+        <div className="px-4 pt-3">
+          <h3 className="text-[14px] font-bold text-slate-900">Topics with Learning Gaps</h3>
+          <p className="text-[11.5px] text-slate-500">Sorted by lowest class average mastery.</p>
         </div>
-      ) : data.length === 0 ? (
-        <div className="flex min-h-[280px] flex-col items-center justify-center rounded-[1.4rem] bg-[#f8fafc] text-center">
-          <CheckCircle className="mb-2 size-10 text-emerald-500" />
-          <h3 className="text-base font-semibold text-[#1a2e3f]">No significant gaps</h3>
-          <p className="mt-1 text-sm text-[#5a7a8e]">Students must attempt practice questions for gap data to appear.</p>
-        </div>
-      ) : (
-        <div className="grid gap-3 sm:grid-cols-2">
-          {data.map((gap, i) => (
-            <Motion.div
-              key={i}
-              initial={{ opacity: 0, y: 8 }}
-              animate={{ opacity: 1, y: 0 }}
-              transition={{ delay: i * 0.04 }}
-              className={`rounded-[1.2rem] border p-4 ${severityBg(gap.gapSeverity)}`}
-            >
-              <div className="flex items-start justify-between gap-2 mb-3">
-                <div className="min-w-0 flex-1">
-                  <p className="text-[10px] text-slate-500 truncate">{gap.subject}{gap.chapterTitle ? ` · ${gap.chapterTitle}` : ''}</p>
-                  <p className="font-semibold text-slate-800 text-sm mt-0.5 leading-snug">{gap.topicTitle}</p>
+        {loading ? (
+          <div className="flex min-h-[180px] items-center justify-center gap-2 text-[13px] text-slate-500"><Loader2 className="size-5 animate-spin text-blue-600" /> Loading gap data…</div>
+        ) : rows.length === 0 ? (
+          <div className="flex min-h-[180px] flex-col items-center justify-center text-center">
+            <CheckCircle className="mb-1.5 size-8 text-emerald-500" />
+            <p className="text-[13px] font-semibold text-slate-800">{data.length ? 'No topics match these filters' : 'No significant gaps'}</p>
+            {!data.length && <p className="text-[11.5px] text-slate-500">Students must attempt practice questions for gap data to appear.</p>}
+          </div>
+        ) : (
+          <div className="overflow-x-auto p-3">
+            <table className="w-full min-w-[760px] text-left">
+              <thead>
+                <tr className="bg-slate-50 text-[11.5px] text-slate-500">
+                  <th className="w-10 rounded-l-lg px-3 py-2 text-center font-medium">#</th>
+                  <th className="px-3 py-2 font-medium">Subject</th>
+                  <th className="px-3 py-2 font-medium">Topic</th>
+                  <th className="px-3 py-2 font-medium">Class Avg Mastery</th>
+                  <th className="px-3 py-2 font-medium">Status</th>
+                  <th className="px-3 py-2 font-medium">Students</th>
+                  <th className="rounded-r-lg px-3 py-2 font-medium">Action</th>
+                </tr>
+              </thead>
+              <tbody>
+                {rows.map((g, i) => {
+                  const lv = GAP_LEVELS[g.gapSeverity] || GAP_LEVELS.medium;
+                  return (
+                    <tr key={`${g.subject}-${g.topicTitle}-${i}`} className="border-b border-slate-100 last:border-0">
+                      <td className="px-3 py-2 text-center text-[12px] text-slate-500">{i + 1}</td>
+                      <td className="px-3 py-2">
+                        <span className="inline-flex items-center gap-1.5 rounded-lg bg-blue-50 px-2.5 py-1 text-[12px] font-medium text-blue-700"><BookOpen className="size-3.5" /> {g.subject || '—'}</span>
+                      </td>
+                      <td className="px-3 py-2">
+                        <p className="text-[12.5px] font-semibold text-slate-900">{g.topicTitle}</p>
+                        {g.chapterTitle && <p className="text-[10.5px] text-slate-500">{g.chapterTitle}</p>}
+                      </td>
+                      <td className="px-3 py-2">
+                        <div className="flex items-center gap-2">
+                          <div className="h-1.5 w-24 overflow-hidden rounded-full bg-slate-100">
+                            <div className={`h-full rounded-full ${lv.bar}`} style={{ width: `${Math.max(g.avgMastery, 4)}%` }} />
+                          </div>
+                          <span className={`text-[12.5px] font-semibold ${lv.text}`}>{g.avgMastery}%</span>
+                        </div>
+                      </td>
+                      <td className="px-3 py-2">
+                        <span className={`inline-flex items-center gap-1.5 rounded-full px-2.5 py-1 text-[11px] font-medium ${lv.pill}`}><span className={`size-1.5 rounded-full ${lv.dot}`} /> {lv.label}</span>
+                      </td>
+                      <td className="px-3 py-2">
+                        <p className="text-[12px] font-medium text-slate-800">{g.studentCount} student{g.studentCount === 1 ? '' : 's'} tracked</p>
+                        <p className={`text-[11px] ${g.studentsBelow50 ? 'text-red-500' : 'text-slate-500'}`}>{g.studentsBelow50} below 50%</p>
+                      </td>
+                      <td className="px-3 py-2">
+                        <button type="button" onClick={() => setDetail(g)} className="inline-flex items-center gap-1 rounded-lg border border-blue-100 px-2.5 py-1.5 text-[11.5px] font-semibold text-blue-600 transition hover:bg-blue-50">
+                          View Details <ArrowRight className="size-3.5" />
+                        </button>
+                      </td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          </div>
+        )}
+      </section>
+
+      <div className="grid gap-3 lg:grid-cols-2">
+        {/* Mastery donut */}
+        <section className="rounded-xl border border-slate-100 bg-white p-4 shadow-sm">
+          <h3 className="text-[14px] font-bold text-slate-900">Class Mastery Overview</h3>
+          <p className="text-[11.5px] text-slate-500">Distribution of topics by mastery level.</p>
+          <div className="mt-3 flex flex-wrap items-center gap-6">
+            <div className="relative size-32 shrink-0">
+              <svg viewBox="0 0 42 42" className="size-full">
+                <circle cx="21" cy="21" r={R} fill="none" stroke="#f1f5f9" strokeWidth="5" />
+                {totalTopics > 0 && segments.filter((s) => s.value > 0).map((s) => {
+                  const pct = (s.value / totalTopics) * 100;
+                  const el = (
+                    <circle key={s.key} cx="21" cy="21" r={R} fill="none" stroke={s.color} strokeWidth="5"
+                      strokeDasharray={`${pct} ${100 - pct}`} strokeDashoffset={offset} />
+                  );
+                  offset -= pct;
+                  return el;
+                })}
+              </svg>
+              <div className="absolute inset-0 flex flex-col items-center justify-center">
+                <p className="text-xl font-bold leading-none text-slate-900">{totalTopics}</p>
+                <p className="mt-0.5 text-[10.5px] text-slate-500">Total Topics</p>
+              </div>
+            </div>
+            <ul className="min-w-[180px] flex-1 space-y-2">
+              {segments.map((s) => (
+                <li key={s.key} className="flex items-center justify-between text-[12px] text-slate-700">
+                  <span className="flex items-center gap-2"><span className="size-2.5 rounded-full" style={{ background: s.color }} /> {s.label}</span>
+                  <span className="font-semibold text-slate-900">{s.value}</span>
+                </li>
+              ))}
+            </ul>
+          </div>
+        </section>
+
+        {/* Next steps */}
+        <section className="rounded-xl border border-slate-100 bg-white p-4 shadow-sm">
+          <h3 className="flex items-center gap-1.5 text-[14px] font-bold text-slate-900"><Lightbulb className="size-4 text-amber-400" /> What to do next?</h3>
+          <ol className="mt-3 space-y-3">
+            {[
+              ['Review the weak topic(s)', 'Check the detailed analysis and identify student-wise gaps.'],
+              ['Take action', 'Assign practice, create a worksheet, or use the AI learning path.'],
+              ['Track improvement', 'Revisit this page after some time to see progress.'],
+            ].map(([title, text], i, arr) => (
+              <li key={title} className="relative flex gap-3">
+                {i < arr.length - 1 && <span aria-hidden="true" className="absolute left-[13px] top-7 h-[calc(100%-12px)] border-l border-dashed border-blue-200" />}
+                <span className="flex size-7 shrink-0 items-center justify-center rounded-full bg-blue-50 text-[12px] font-bold text-blue-600">{i + 1}</span>
+                <div>
+                  <p className="text-[12.5px] font-semibold text-slate-900">{title}</p>
+                  <p className="text-[11.5px] text-slate-500">{text}</p>
                 </div>
-                <div className="text-right shrink-0">
-                  <p className="text-xl font-bold text-slate-800">{gap.avgMastery}%</p>
-                  <span className={`rounded-full px-2 py-0.5 text-[10px] font-bold uppercase ${severityBadge(gap.gapSeverity)}`}>{gap.gapSeverity}</span>
+              </li>
+            ))}
+          </ol>
+        </section>
+      </div>
+
+      {/* Topic detail */}
+      <ModalShell open={Boolean(detail)} onClose={() => setDetail(null)} label="Gap details" width="max-w-md">
+        {detail && (() => {
+          const lv = GAP_LEVELS[detail.gapSeverity] || GAP_LEVELS.medium;
+          return (
+            <>
+              <div className="flex items-start justify-between gap-3 border-b border-slate-100 px-5 py-4">
+                <div>
+                  <p className="text-[11px] text-slate-500">{detail.subject}{detail.chapterTitle ? ` · ${detail.chapterTitle}` : ''}</p>
+                  <h3 className="text-[15px] font-bold text-slate-900">{detail.topicTitle}</h3>
+                  <span className={`mt-1 inline-flex items-center gap-1.5 rounded-full px-2.5 py-0.5 text-[11px] font-medium ${lv.pill}`}><span className={`size-1.5 rounded-full ${lv.dot}`} /> {lv.label} gap</span>
                 </div>
+                <button type="button" onClick={() => setDetail(null)} aria-label="Close" className="rounded-lg p-1.5 text-slate-400 hover:bg-slate-100 hover:text-slate-700"><X className="size-4" /></button>
               </div>
-              <div className="h-2 rounded-full bg-white/70 overflow-hidden mb-2">
-                <div className={`h-full rounded-full ${severityBar(gap.gapSeverity)}`} style={{ width: `${gap.avgMastery}%` }} />
+              <div className="grid grid-cols-2 gap-2.5 p-5">
+                {[
+                  ['Class avg mastery', `${detail.avgMastery}%`],
+                  ['Students tracked', detail.studentCount],
+                  ['Below 50%', detail.studentsBelow50],
+                  ['Class coverage', detail.coverage != null ? `${detail.coverage}%` : '—'],
+                ].map(([k, v]) => (
+                  <div key={k} className="rounded-lg bg-slate-50 px-3 py-2.5">
+                    <p className="text-[11px] text-slate-500">{k}</p>
+                    <p className="text-[15px] font-bold text-slate-900">{v}</p>
+                  </div>
+                ))}
+                <p className="col-span-2 text-[11.5px] text-slate-500">
+                  Coverage is the share of the class that has attempted practice on this topic. Low coverage means the average is based on only a few students.
+                </p>
               </div>
-              <div className="flex items-center justify-between text-xs text-slate-500">
-                <span>{gap.studentCount} students tracked</span>
-                <span>{gap.studentsBelow50} below 50%</span>
-              </div>
-            </Motion.div>
-          ))}
-        </div>
-      )}
+            </>
+          );
+        })()}
+      </ModalShell>
     </div>
   );
 };
