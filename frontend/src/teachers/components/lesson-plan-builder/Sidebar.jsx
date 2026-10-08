@@ -59,26 +59,24 @@ const Sidebar = ({
       animate={collapsed ? 'collapsed' : 'expanded'}
       variants={sidebarVariants}
       transition={{ type: 'spring', stiffness: 260, damping: 30 }}
-      className={`relative h-80 min-h-0 shrink-0 overflow-hidden rounded-[22px] border border-[#e9edf2] bg-[#f8fafc] shadow-none backdrop-blur-xl transition-[width] sm:h-96 sm:rounded-[28px] lg:h-full ${collapsed ? 'w-[58px]' : 'w-full lg:w-64'} dark:border-slate-700 dark:bg-slate-950/90 dark:shadow-black/20`}
+      className={`relative h-80 min-h-0 shrink-0 overflow-hidden rounded-2xl border border-slate-200/80 bg-slate-50 shadow-sm transition-[width] sm:h-96 sm:rounded-2xl lg:h-full ${collapsed ? 'w-[58px]' : 'w-full lg:w-72'} dark:border-slate-700 dark:bg-slate-950/90 dark:shadow-black/20`}
       aria-label="Lesson chapters sidebar"
     >
       <div className="pointer-events-none absolute inset-x-0 top-0 h-20 bg-linear-to-b from-[#eef2ff] to-transparent dark:from-blue-950/20" />
 
-      <div className="relative flex h-full min-h-0 flex-col p-2.5">
+      <div className="relative flex h-full min-h-0 flex-col">
         {/* Header */}
-        <div className="mb-2.5">
+        <div className="shrink-0 border-b border-slate-200/70 bg-white/95 px-3 py-3 backdrop-blur-md dark:border-slate-700 dark:bg-slate-900/95">
           <div className={`flex items-start ${collapsed ? 'justify-center' : 'justify-between'} gap-2`}>
             {!collapsed && (
               <div className="min-w-0 flex items-center gap-1.5">
-                <div className="flex size-9 shrink-0 items-center justify-center rounded-2xl bg-[#2563eb] text-white shadow-sm">
+                <div className="flex size-8 shrink-0 items-center justify-center rounded-xl bg-gradient-to-tr from-indigo-600 via-indigo-600 to-violet-600 text-white shadow-sm shadow-indigo-500/25">
                   <Layers className="size-3.5" />
                 </div>
                 <div className="min-w-0">
-                  <div className="flex items-center gap-1">
-                    <h2 className="truncate text-sm font-semibold text-[#1e293b] dark:text-slate-50">Your Chapters</h2>
-                  </div>
-                  <p className="mt-0.5 text-[11px] text-[#64748b] dark:text-slate-400">
-                    {chapters.length === 0 ? 'No chapters yet' : `${chapters.length} chapter${chapters.length === 1 ? '' : 's'}`}
+                  <h2 className="truncate text-sm font-bold tracking-tight text-slate-900 dark:text-slate-50">Your Chapters</h2>
+                  <p className="mt-0.5 flex items-center gap-1.5 text-[10px] font-medium leading-tight text-slate-500 dark:text-slate-400">
+                    <span>{chapters.length} chapter{chapters.length === 1 ? '' : 's'}</span><span className="size-1 rounded-full bg-slate-300" /><span className="font-semibold text-emerald-600">{chapters.filter((chapter) => chapter.status === 'published' && chapter.isDraft === false).length} published</span>
                   </p>
                 </div>
               </div>
@@ -92,7 +90,7 @@ const Sidebar = ({
                     disabled={addDisabled}
                     title="Create chapter"
                     aria-label="Create chapter"
-                    className="rounded-full bg-[#eef2ff] text-[#2563eb] hover:bg-[#dbe7fe] disabled:opacity-50"
+                    className="size-7 rounded-lg bg-indigo-50 text-indigo-600 hover:bg-indigo-100 disabled:opacity-50"
                   >
                     <Plus className="size-4" />
                   </Button>
@@ -103,13 +101,13 @@ const Sidebar = ({
                   onClick={onToggleCollapse}
                   title={collapsed ? 'Expand sidebar' : 'Collapse sidebar'}
                   aria-label={collapsed ? 'Expand sidebar' : 'Collapse sidebar'}
-                  className="rounded-xl hover:bg-slate-100 dark:hover:bg-slate-800"
+                  className="size-7 rounded-lg text-slate-400 hover:bg-slate-100 hover:text-slate-700 dark:hover:bg-slate-800"
                 >
                   {collapsed ? <PanelLeftOpen className="size-3.5" /> : <PanelLeftClose className="size-3.5" />}
                 </Button>
               </div>
           </div>
-          {!collapsed && <Separator className="mt-2.5 bg-slate-200 dark:bg-slate-800" />}
+          {!collapsed && <Separator className="mt-3 bg-slate-200 dark:bg-slate-800" />}
         </div>
 
         <AnimatePresence initial={false} mode="wait">
@@ -123,14 +121,14 @@ const Sidebar = ({
               className="flex min-h-0 flex-1 flex-col"
             >
               {/* Search */}
-              <Motion.div variants={itemVariants} className="mb-2.5">
+              <Motion.div variants={itemVariants} className="mb-2 px-0.5">
                 <div className="relative">
                   <Search className="pointer-events-none absolute left-3 top-1/2 size-3.5 -translate-y-1/2 text-slate-400" />
                   <Input
                     value={query}
                     onChange={(event) => onQueryChange(event.target.value)}
                     placeholder="Search chapters..."
-                    className="h-9 rounded-full border-[#dce2ea] bg-white pl-8 text-xs focus-visible:ring-2 focus-visible:ring-blue-200 dark:bg-slate-900"
+                    className="h-8 rounded-lg border-slate-200/80 bg-slate-100/90 pl-8 text-xs focus-visible:bg-white focus-visible:ring-1 focus-visible:ring-indigo-500 dark:bg-slate-800"
                     style={{ color: '#0f172a', caretColor: '#0f172a' }}
                     aria-label="Search chapters"
                   />
@@ -143,14 +141,14 @@ const Sidebar = ({
               </Motion.div>
 
               {/* Hint */}
-              <Motion.div variants={itemVariants} className="mb-1.5 px-1">
+              <Motion.div variants={itemVariants} className="mb-1 px-1">
                 <p className="text-[10px] font-medium text-slate-400 dark:text-slate-500">
-                  Click a chapter to open it, or use + to create one
+                  Select a chapter to continue
                 </p>
               </Motion.div>
 
               {/* Chapter list */}
-              <div className="min-h-0 flex-1 touch-pan-y space-y-1.5 overflow-y-scroll overscroll-contain pb-14 pr-1 [scrollbar-gutter:stable] [&::-webkit-scrollbar]:w-1.5 [&::-webkit-scrollbar-thumb]:rounded-full [&::-webkit-scrollbar-thumb]:bg-blue-300 hover:[&::-webkit-scrollbar-thumb]:bg-blue-400 dark:[&::-webkit-scrollbar-thumb]:bg-slate-600 [&::-webkit-scrollbar-track]:bg-blue-50/70 dark:[&::-webkit-scrollbar-track]:bg-slate-900/40">
+              <div className="min-h-0 flex-1 touch-pan-y space-y-2 overflow-y-auto overscroll-contain px-3 pb-16 [scrollbar-gutter:stable] [&::-webkit-scrollbar]:w-1 [&::-webkit-scrollbar-thumb]:rounded-full [&::-webkit-scrollbar-thumb]:bg-slate-300 hover:[&::-webkit-scrollbar-thumb]:bg-slate-400 dark:[&::-webkit-scrollbar-thumb]:bg-slate-600 [&::-webkit-scrollbar-track]:bg-transparent">
                 <AnimatePresence initial={false}>
                   {chapters.map((chapter, index) => (
                     <Motion.div

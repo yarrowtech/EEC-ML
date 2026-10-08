@@ -1196,12 +1196,12 @@ const AIPoweredTeaching = () => {
   const activeChapter = openChapters[openChapters.length - 1] || null;
 
   return (
-    <div className="min-h-full overflow-y-auto bg-[#f4f7fb] p-2 sm:p-4 lg:h-full lg:min-h-0 lg:overflow-hidden dark:bg-slate-950">
+    <div className="min-h-full overflow-y-auto bg-[#f4f7fb] p-0 lg:h-full lg:min-h-0 lg:overflow-hidden dark:bg-slate-950">
       <Motion.div
         initial={{ opacity: 0, y: 10 }}
         animate={{ opacity: 1, y: 0 }}
         transition={{ duration: 0.25, ease: 'easeOut' }}
-        className="mx-auto flex min-h-full w-full max-w-[1440px] min-w-0 flex-col overflow-hidden rounded-[22px] bg-white shadow-[0_25px_50px_-12px_rgba(0,0,0,0.15)] sm:rounded-[32px] lg:h-full lg:min-h-0 lg:rounded-[40px]"
+        className="flex min-h-full w-full min-w-0 flex-col overflow-hidden bg-white shadow-none lg:h-full lg:min-h-0"
       >
         <HeaderActions
           autosaveStatus={publishing ? 'Publishing...' : autosaveStatus}
@@ -1251,7 +1251,7 @@ const AIPoweredTeaching = () => {
           })}
         />
 
-        <div className="flex min-w-0 flex-1 flex-col gap-2.5 p-2 sm:p-3 lg:min-h-0 lg:flex-row">
+        <div className="flex min-w-0 flex-1 flex-col gap-2.5 p-2 sm:p-3 lg:h-full lg:min-h-0 lg:flex-row">
           <Sidebar
             chapters={filteredChapters}
             activeChapterId={openChapterIds[openChapterIds.length - 1] || null}
