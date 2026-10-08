@@ -180,10 +180,10 @@ const TeacherDashboard = () => {
           const activeYearPayload = activeYearRes?.ok ? await activeYearRes.json().catch(() => null) : null;
           const activeYearId = String(
             activeYearPayload?._id ||
-              activeYearPayload?.id ||
-              activeYearPayload?.data?._id ||
-              activeYearPayload?.data?.id ||
-              ''
+            activeYearPayload?.id ||
+            activeYearPayload?.data?._id ||
+            activeYearPayload?.data?.id ||
+            ''
           ).trim();
           const classTeacherOnly = allocationPayload
             .filter((item) => Boolean(item?.isClassTeacher))
@@ -237,12 +237,12 @@ const TeacherDashboard = () => {
   const teacherName = dashboardData?.teacher?.name || 'Teacher';
   const classTeacherLabel = classTeacherAllocations.length
     ? classTeacherAllocations
-        .map((item) => {
-          const className = item?.classId?.name || item?.className || 'Class';
-          const sectionName = item?.sectionId?.name || item?.sectionName || 'Section';
-          return `${className}-${sectionName}`;
-        })
-        .join(', ')
+      .map((item) => {
+        const className = item?.classId?.name || item?.className || 'Class';
+        const sectionName = item?.sectionId?.name || item?.sectionName || 'Section';
+        return `${className}-${sectionName}`;
+      })
+      .join(', ')
     : 'No class teacher allocation';
 
   const todaysClasses = Array.isArray(dashboardData?.todaysClasses) ? dashboardData.todaysClasses : [];
@@ -280,10 +280,10 @@ const TeacherDashboard = () => {
   const attendancePercent = attendanceTotal ? (attendance.present / attendanceTotal) * 100 : 0;
 
   const statCards = [
-    { label: 'My Classes Today', value: todaysClasses.length, helper: 'View Schedule →', icon: BookOpen, iconBg: 'bg-blue-100', iconColor: 'text-blue-600', to: '/teacher/timetable' },
-    { label: 'Total Students', value: stats.totalStudents ?? 0, helper: 'Across my classes', icon: Users, iconBg: 'bg-emerald-100', iconColor: 'text-emerald-600', to: '/teacher/classes' },
-    { label: 'Attendance', value: `${completedClasses} / ${todaysClasses.length}`, helper: 'Classes completed', icon: CheckCircle2, iconBg: 'bg-rose-100', iconColor: 'text-rose-500', to: '/teacher/classes/current/students/attendance' },
-    { label: 'Pending Work', value: pendingTasks, helper: 'Homework / Assignments', icon: ClipboardList, iconBg: 'bg-orange-100', iconColor: 'text-orange-500', to: '/teacher/classes/current/assignments' },
+    { label: 'My Classes Today', value: todaysClasses.length, helper: 'View Schedule →', icon: BookOpen, iconBg: 'bg-blue-500', iconColor: 'text-white', to: '/teacher/timetable' },
+    { label: 'Total Students', value: stats.totalStudents ?? 0, helper: 'Across my classes', icon: Users, iconBg: 'bg-emerald-500', iconColor: 'text-white', to: '/teacher/classes' },
+    { label: 'Attendance', value: `${completedClasses} / ${todaysClasses.length}`, helper: 'Classes completed', icon: CheckCircle2, iconBg: 'bg-rose-500', iconColor: 'text-white', to: '/teacher/classes/current/students/attendance' },
+    { label: 'Pending Work', value: pendingTasks, helper: 'Homework / Assignments', icon: ClipboardList, iconBg: 'bg-orange-500', iconColor: 'text-white', to: '/teacher/classes/current/assignments' },
   ];
 
   const WEEK = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday'];
@@ -306,19 +306,19 @@ const TeacherDashboard = () => {
 
   const lowSubject = performanceMetrics.find((m) => Number(m.average) < 50);
   const studentAlerts = [
-    attendance.absent > 0 && { title: `${attendance.absent} student${attendance.absent === 1 ? '' : 's'} absent today`, sub: 'Need attention', icon: Users, cls: 'bg-rose-50 text-rose-500', to: '/teacher/classes/current/students/attendance' },
-    pendingTasks > 0 && { title: `${pendingTasks} submission${pendingTasks === 1 ? '' : 's'} awaiting review`, sub: 'Homework / assignments', icon: FileText, cls: 'bg-orange-50 text-orange-500', to: '/teacher/classes/current/assignments' },
-    lowSubject && { title: `${lowSubject.subject} average is ${lowSubject.average}%`, sub: 'Recent tests', icon: Star, cls: 'bg-amber-50 text-amber-500', to: '/teacher/classes/current/students/analytics' },
+    attendance.absent > 0 && { title: `${attendance.absent} student${attendance.absent === 1 ? '' : 's'} absent today`, sub: 'Need attention', icon: Users, cls: 'bg-red-400 text-white', to: '/teacher/classes/current/students/attendance' },
+    pendingTasks > 0 && { title: `${pendingTasks} submission${pendingTasks === 1 ? '' : 's'} awaiting review`, sub: 'Homework / assignments', icon: FileText, cls: 'bg-orange-400 text-white', to: '/teacher/classes/current/assignments' },
+    lowSubject && { title: `${lowSubject.subject} average is ${lowSubject.average}%`, sub: 'Recent tests', icon: Star, cls: 'bg-amber-500 text-white', to: '/teacher/classes/current/students/analytics' },
   ].filter(Boolean);
 
   const mobileClassLabel = classTeacherAllocations.length
     ? classTeacherAllocations
-        .map((item) => {
-          const className = item?.classId?.name || item?.className || 'Class';
-          const sectionName = item?.sectionId?.name || item?.sectionName || '';
-          return `${className}${sectionName ? ` ${sectionName}` : ''}`;
-        })
-        .join(' • ')
+      .map((item) => {
+        const className = item?.classId?.name || item?.className || 'Class';
+        const sectionName = item?.sectionId?.name || item?.sectionName || '';
+        return `${className}${sectionName ? ` ${sectionName}` : ''}`;
+      })
+      .join(' • ')
     : 'No class assigned';
 
   return (
@@ -467,34 +467,38 @@ const TeacherDashboard = () => {
             <Link to="/teacher/classes" className="shrink-0 text-xs font-semibold text-[#8b5cf6]">View modules</Link>
           </div>
           <div className="md:grid md:grid-cols-2 md:gap-x-6">
-          {[
-            { title: 'Core Actions', items: [
-              { title: 'Open Classes', description: 'Jump into roster and class context.', icon: Users, path: '/teacher/classes' },
-              { title: 'Attendance', description: 'Mark today and review exceptions.', icon: ClipboardCheck, path: '/teacher/classes/current/students/attendance' },
-            ] },
-            { title: 'Support', items: [
-              { title: 'Teaching', description: 'Lesson materials and notes.', icon: BookOpen, path: '/teacher/classes/current/teaching' },
-              { title: 'AI Center', description: 'Get class insights and teaching support.', icon: Sparkles, path: '/teacher/lesson-plan' },
-            ] },
-          ].map((group) => (
-            <div key={group.title} className="mt-4">
-              <p className="mb-2.5 text-[10px] font-bold uppercase tracking-wider text-[#94a3b8]">{group.title}</p>
-              <div className="grid grid-cols-1 gap-2.5 sm:grid-cols-2 md:grid-cols-1">
-                {group.items.map((item) => {
-                  const Icon = item.icon;
-                  return (
-                    <Link key={item.title} to={item.path} className="flex items-start gap-3 rounded-2xl border border-white/60 bg-white/50 p-3 transition active:scale-[.99] hover:bg-white/80">
-                      <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg border border-white/70 bg-white text-[#64748b] shadow-sm"><Icon size={16} /></div>
-                      <div className="min-w-0">
-                        <h4 className="text-xs font-bold text-[#0f172a]">{item.title}</h4>
-                        <p className="mt-0.5 text-[11px] leading-snug text-[#64748b]">{item.description}</p>
-                      </div>
-                    </Link>
-                  );
-                })}
+            {[
+              {
+                title: 'Core Actions', items: [
+                  { title: 'Open Classes', description: 'Jump into roster and class context.', icon: Users, path: '/teacher/classes' },
+                  { title: 'Attendance', description: 'Mark today and review exceptions.', icon: ClipboardCheck, path: '/teacher/classes/current/students/attendance' },
+                ]
+              },
+              {
+                title: 'Support', items: [
+                  { title: 'Teaching', description: 'Lesson materials and notes.', icon: BookOpen, path: '/teacher/classes/current/teaching' },
+                  { title: 'AI Center', description: 'Get class insights and teaching support.', icon: Sparkles, path: '/teacher/lesson-plan' },
+                ]
+              },
+            ].map((group) => (
+              <div key={group.title} className="mt-4">
+                <p className="mb-2.5 text-[10px] font-bold uppercase tracking-wider text-[#94a3b8]">{group.title}</p>
+                <div className="grid grid-cols-1 gap-2.5 sm:grid-cols-2 md:grid-cols-1">
+                  {group.items.map((item) => {
+                    const Icon = item.icon;
+                    return (
+                      <Link key={item.title} to={item.path} className="flex items-start gap-3 rounded-2xl border border-white/60 bg-white/50 p-3 transition active:scale-[.99] hover:bg-white/80">
+                        <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg border border-white/70 bg-white text-[#64748b] shadow-sm"><Icon size={16} /></div>
+                        <div className="min-w-0">
+                          <h4 className="text-xs font-bold text-[#0f172a]">{item.title}</h4>
+                          <p className="mt-0.5 text-[11px] leading-snug text-[#64748b]">{item.description}</p>
+                        </div>
+                      </Link>
+                    );
+                  })}
+                </div>
               </div>
-            </div>
-          ))}
+            ))}
           </div>
         </section>
       </div>
@@ -521,7 +525,8 @@ const TeacherDashboard = () => {
             )}
             <div className="relative z-10">
               <h1 className="text-[26px] font-bold tracking-tight text-slate-900">
-                {getGreeting()}, {teacherName} <span aria-hidden="true">👋</span>
+                {getGreeting()}, {teacherName} 
+                {/* <span aria-hidden="true">👋</span> */}
               </h1>
               <p className="mt-1 text-[15px] text-slate-600">
                 {dateStr} <span className="mx-1.5 text-slate-300">|</span> Have a great day of teaching!
@@ -533,7 +538,7 @@ const TeacherDashboard = () => {
           <MotionSection variants={itemVariants} className="grid grid-cols-2 gap-4 xl:grid-cols-4">
             {statCards.map((card) => (
               <Link key={card.label} to={card.to} className="flex items-center gap-4 rounded-2xl border border-slate-100 bg-white p-4 shadow-sm transition hover:-translate-y-0.5 hover:shadow-md">
-                <div className={cx('flex h-14 w-14 shrink-0 items-center justify-center rounded-2xl', card.iconBg)}>
+                <div className={cx('flex h-14 w-14 shrink-0 items-center justify-center rounded-full', card.iconBg)}>
                   {React.createElement(card.icon, { size: 26, className: card.iconColor })}
                 </div>
                 <div className="min-w-0">
@@ -584,7 +589,7 @@ const TeacherDashboard = () => {
               )}
             </Panel>
 
-            <Panel icon={Users} iconColor="text-blue-600" title="Today's Attendance" link={{ to: '/teacher/classes/current/students/attendance', label: 'View Details' }}>
+            <Panel icon={Users} iconColor="text-blue-600" title="Today's Attendance" link={{ to: '/teacher/classes/current/students/attendance', label: 'Details' }}>
               <div className="flex items-center gap-5 px-1">
                 <Donut percent={attendancePercent} />
                 <div>
@@ -605,15 +610,36 @@ const TeacherDashboard = () => {
                   </div>
                 ))}
               </div>
-              <Link to="/teacher/classes/current/students/attendance" className="mt-4 block rounded-xl bg-blue-100/70 py-2.5 text-center text-sm font-semibold text-blue-700 hover:bg-blue-100">Take Attendance</Link>
+              <Link to="/teacher/classes/current/students/attendance" className="mt-4 block rounded-full text-white py-2.5 text-center text-sm font-semibold bg-blue-500 hover:bg-blue-700">Take Attendance</Link>
             </Panel>
 
             <Panel icon={Zap} iconColor="text-amber-500" title="Quick Actions">
               <div className="grid grid-cols-2 gap-2.5">
                 {QUICK_ACTIONS.map((a) => (
-                  <Link key={a.label} to={a.to} className={cx('flex h-[76px] flex-col items-center justify-center gap-1 rounded-xl border px-2 text-center text-xs font-medium leading-tight transition hover:-translate-y-0.5', a.cls)}>
-                    {React.createElement(a.icon, { size: 20 })}
-                    {a.label}
+                  <Link
+                    key={a.label}
+                    to={a.to}
+                    className={cx(
+                      'flex h-[76px] flex-col items-center justify-center gap-2 rounded-xl border px-2 text-center text-xs font-medium leading-tight text-gray-700 transition-all duration-200 hover:-translate-y-0.5 hover:shadow-lg',
+                      a.cls
+                    )}
+                  >
+                    {/* Icon background */}
+                    <div
+                      className={cx(
+                        'flex h-9 w-9 items-center justify-center rounded-full',
+                        a.iconBg
+                      )}
+                    >
+                      {React.createElement(a.icon, {
+                        size: 18,
+                        strokeWidth: 2.2,
+                        className: 'text-white',
+                      })}
+                    </div>
+
+                    {/* Label */}
+                    <span className="text-[10px] font-medium text-gray-700">{a.label}</span>
                   </Link>
                 ))}
               </div>
@@ -685,7 +711,7 @@ const TeacherDashboard = () => {
                   <div className="space-y-2">
                     {studentAlerts.map((a) => (
                       <Link key={a.title} to={a.to} className="flex items-center gap-3 rounded-lg p-1 hover:bg-slate-50">
-                        <div className={cx('flex h-9 w-9 shrink-0 items-center justify-center rounded-lg', a.cls)}>{React.createElement(a.icon, { size: 16 })}</div>
+                        <div className={cx('flex h-9 w-9 shrink-0 items-center justify-center rounded-full', a.cls)}>{React.createElement(a.icon, { size: 16 })}</div>
                         <div className="min-w-0">
                           <p className="truncate text-[13px] font-medium text-slate-900">{a.title}</p>
                           <p className="text-[11px] text-slate-500">{a.sub}</p>
@@ -720,12 +746,48 @@ const TeacherDashboard = () => {
 };
 
 const QUICK_ACTIONS = [
-  { label: 'Create Homework', icon: FileText, to: '/teacher/classes/current/assignments/manage', cls: 'border-blue-100 bg-blue-50 text-blue-700' },
-  { label: 'Create Assignment', icon: PenLine, to: '/teacher/classes/current/assignments/manage', cls: 'border-emerald-100 bg-emerald-50 text-emerald-700' },
-  { label: 'Upload Study Material', icon: BookOpen, to: '/teacher/classes/current/teaching/study-materials', cls: 'border-violet-100 bg-violet-50 text-violet-700' },
-  { label: 'Create Exam', icon: ClipboardList, to: '/teacher/classes/current/assessments/exam', cls: 'border-orange-100 bg-orange-50 text-orange-600' },
-  { label: 'Enter Marks', icon: BarChart3, to: '/teacher/classes/current/assessments/exam', cls: 'border-rose-100 bg-rose-50 text-rose-600' },
-  { label: 'Post Notice', icon: Megaphone, to: '/teacher/notifications', cls: 'border-cyan-100 bg-cyan-50 text-cyan-700' },
+  {
+    label: 'Create Homework',
+    icon: FileText,
+    to: '/teacher/classes/current/assignments/manage',
+    cls: 'bg-white shadow-md border-gray-100',
+    iconBg: 'bg-blue-600',
+  },
+  {
+    label: 'Create Assignment',
+    icon: PenLine,
+    to: '/teacher/classes/current/assignments/manage',
+    cls: 'bg-white shadow-md border-gray-100',
+    iconBg: 'bg-emerald-600',
+  },
+  {
+    label: 'Upload Study Material',
+    icon: BookOpen,
+    to: '/teacher/classes/current/teaching/study-materials',
+    cls: 'bg-white shadow-md border-gray-100',
+    iconBg: 'bg-violet-600',
+  },
+  {
+    label: 'Create Exam',
+    icon: ClipboardList,
+    to: '/teacher/classes/current/assessments/exam',
+    cls: 'bg-white shadow-md border-gray-100',
+    iconBg: 'bg-orange-500',
+  },
+  {
+    label: 'Enter Marks',
+    icon: BarChart3,
+    to: '/teacher/classes/current/assessments/exam',
+    cls: 'bg-white shadow-md border-gray-100',
+    iconBg: 'bg-rose-500',
+  },
+  {
+    label: 'Post Notice',
+    icon: Megaphone,
+    to: '/teacher/notifications',
+    cls: 'bg-white shadow-md border-gray-100',
+    iconBg: 'bg-cyan-600',
+  },
 ];
 
 const formatClock = (hhmm) => {

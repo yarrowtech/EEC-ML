@@ -109,7 +109,7 @@ const SelectPill = ({ icon: Icon, value, onChange, options }) => (
     <select
       value={value}
       onChange={(e) => onChange(e.target.value)}
-      className="h-9 appearance-none rounded-xl border border-slate-200 bg-white pl-9 pr-8 text-[13px] text-slate-800 shadow-sm outline-none focus:border-blue-300"
+      className="h-9 appearance-none rounded-full border border-slate-200 bg-white pl-9 pr-8 text-[13px] text-slate-800 shadow-sm outline-none focus:border-blue-300"
     >
       {options.map((o) => <option key={o.value} value={o.value}>{o.label}</option>)}
     </select>
@@ -340,9 +340,9 @@ const ClassAttendanceOverview = () => {
     if (c.key === todayKey) return 'bg-blue-500 text-white font-semibold';
     if (c.holiday) return 'bg-slate-100 text-slate-400';
     if (c.info) {
-      if (c.info.rate >= 90) return 'bg-emerald-100 text-slate-800';
-      if (c.info.rate >= 75) return 'bg-amber-100 text-slate-800';
-      return 'bg-red-100 text-red-600';
+      if (c.info.rate >= 90) return 'bg-green-600 text-white font-semibold';
+      if (c.info.rate >= 75) return 'bg-amber-400 text-white font-semibold';
+      return 'bg-red-500 text-white font-semibold';
     }
     return 'text-slate-700';
   };
@@ -409,9 +409,9 @@ const ClassAttendanceOverview = () => {
           icon={BarChart3}
           title="Attendance Trend"
           action={(
-            <div className="flex rounded-xl border border-slate-200 bg-slate-50 p-0.5">
+            <div className="flex rounded-full border border-slate-200 bg-slate-50 p-0.5">
               {['daily', 'weekly', 'monthly'].map((m) => (
-                <button key={m} type="button" onClick={() => setTrendMode(m)} className={`rounded-lg px-3 py-1 text-xs font-medium capitalize transition ${trendMode === m ? 'border border-blue-200 bg-blue-100 text-blue-700' : 'text-slate-600 hover:text-slate-900'}`}>
+                <button key={m} type="button" onClick={() => setTrendMode(m)} className={`rounded-full px-3 py-1 text-xs font-medium capitalize transition ${trendMode === m ? 'border border-blue-200 text-white bg-blue-500' : 'text-slate-600 hover:text-slate-900'}`}>
                   {m}
                 </button>
               ))}
@@ -500,10 +500,10 @@ const ClassAttendanceOverview = () => {
           <div className="mb-3 flex gap-2">
             <div className="relative flex-1">
               <Search className="pointer-events-none absolute left-3 top-1/2 size-4 -translate-y-1/2 text-slate-400" />
-              <input value={search} onChange={(e) => setSearch(e.target.value)} placeholder="Search by name or roll number..." className="h-9 w-full rounded-xl border border-slate-200 pl-9 pr-3 text-[13px] outline-none focus:border-blue-300" />
+              <input value={search} onChange={(e) => setSearch(e.target.value)} placeholder="Search by name or roll number..." className="h-9 w-full rounded-full border border-slate-200 pl-9 pr-3 text-[13px] outline-none focus:border-blue-300" />
             </div>
             <div className="relative">
-              <select value={statusFilter} onChange={(e) => setStatusFilter(e.target.value)} className="h-9 w-36 appearance-none rounded-xl border border-slate-200 bg-white px-3 pr-8 text-[13px] outline-none">
+              <select value={statusFilter} onChange={(e) => setStatusFilter(e.target.value)} className="h-9 w-36 appearance-none rounded-full border border-slate-200 bg-white px-3 pr-8 text-[13px] outline-none">
                 <option value="all">All Status</option>
                 <option value="present">Present today</option>
                 <option value="absent">Absent today</option>
@@ -515,7 +515,7 @@ const ClassAttendanceOverview = () => {
           <div className="max-h-[260px] overflow-auto rounded-xl border border-slate-100">
             <table className="w-full text-left text-[12.5px]">
               <thead className="sticky top-0 bg-slate-50 text-slate-600">
-                <tr>{['#', 'Student Name', 'Roll No.', 'Working Days', 'Present Days', 'Absent Days', 'Attendance %', 'Today'].map((h) => <th key={h} className="whitespace-nowrap px-2.5 py-2 font-medium">{h}</th>)}</tr>
+                <tr>{['#', 'Student Name', 'Roll No.', 'Total Days', 'Present Days', 'Absent Days', 'Attendance %', 'Today'].map((h) => <th key={h} className="whitespace-nowrap px-2.5 py-2 font-medium">{h}</th>)}</tr>
               </thead>
               <tbody className="divide-y divide-slate-100">
                 {filteredRows.length === 0 ? (
@@ -530,7 +530,7 @@ const ClassAttendanceOverview = () => {
                     <td className={`px-2.5 py-2 text-center ${r.absent ? 'text-red-500' : ''}`}>{r.absent}</td>
                     <td className="px-2.5 py-2 text-center font-medium">{r.schoolDays || r.present + r.absent ? `${r.rate}%` : '—'}</td>
                     <td className="px-2.5 py-2">
-                      <span className={`inline-block w-20 rounded-md py-0.5 text-center text-xs font-medium ${r.todayStatus === 'present' ? 'bg-emerald-50 text-emerald-600' : r.todayStatus === 'absent' ? 'bg-red-50 text-red-500' : 'bg-slate-100 text-slate-500'}`}>
+                      <span className={`inline-block w-20 rounded-full py-0.5 text-center text-xs font-medium ${r.todayStatus === 'present' ? 'text-white bg-green-600' : r.todayStatus === 'absent' ? 'text-white bg-red-500' : 'bg-slate-100 text-slate-500'}`}>
                         {r.todayStatus === 'present' ? 'Present' : r.todayStatus === 'absent' ? 'Absent' : 'Not Marked'}
                       </span>
                     </td>
@@ -553,14 +553,14 @@ const ClassAttendanceOverview = () => {
               <span
                 key={c.key || `m${i}`}
                 title={c.info ? `${c.info.present} present · ${c.info.absent} absent (${c.info.rate}%)` : c.holiday ? 'Holiday' : undefined}
-                className={`flex h-7 items-center justify-center rounded-lg text-[12px] ${dayCellCls(c)}`}
+                className={`flex h-7 items-center justify-center rounded-full text-[12px] ${dayCellCls(c)}`}
               >
                 {c.label}
               </span>
             ))}
           </div>
           <div className="mt-3 flex flex-wrap justify-center gap-3 text-[11px] text-slate-600">
-            {[['bg-emerald-400', 'Good (≥90%)'], ['bg-amber-400', '75–89%'], ['bg-red-400', 'Low (<75%)'], ['bg-slate-300', 'Holiday']].map(([c, l]) => (
+            {[['bg-green-500', 'Good (≥90%)'], ['bg-amber-400', '75–89%'], ['bg-red-400', 'Low (<75%)'], ['bg-slate-300', 'Holiday']].map(([c, l]) => (
               <span key={l} className="flex items-center gap-1.5"><span className={`size-2.5 rounded-full ${c}`} />{l}</span>
             ))}
           </div>
@@ -576,11 +576,11 @@ const ClassAttendanceOverview = () => {
                   <div key={r.key} className="grid grid-cols-[4.8rem_1fr_1fr_2.5rem] items-center gap-1.5">
                     <span className="text-slate-600">{shortDay(r.key)}</span>
                     {r.holiday ? (
-                      <><span className="rounded-md bg-slate-100 px-2 py-0.5 text-slate-600">Holiday</span><span className="text-slate-400">-</span><span className="text-right text-slate-400">-</span></>
+                      <><span className="rounded-full bg-slate-100 px-2 py-0.5 text-slate-600">Holiday</span><span className="text-slate-400">-</span><span className="text-right text-slate-400">-</span></>
                     ) : (
                       <>
-                        <span className="rounded-md bg-emerald-50 px-2 py-0.5 text-emerald-600">{r.present} Present</span>
-                        <span className="rounded-md bg-red-50 px-2 py-0.5 text-red-500">{r.absent} Absent</span>
+                        <span className="rounded-full bg-green-600 px-2 py-0.5 text-white text-center">{r.present} Present</span>
+                        <span className="rounded-full bg-red-500 px-2 py-0.5 text-white text-center">{r.absent} Absent</span>
                         <span className="text-right font-semibold text-slate-800">{r.rate}%</span>
                       </>
                     )}
@@ -609,7 +609,7 @@ const ClassAttendanceOverview = () => {
                     <Avatar name={r.name} index={r.idx} src={r.profilePic} />
                     <span className="flex-1 truncate text-slate-800">{r.name}</span>
                     <span className={`w-10 text-right font-semibold ${r.rate < 90 ? 'text-red-500' : 'text-slate-800'}`}>{r.rate}%</span>
-                    <button type="button" onClick={() => setLowModal({ focusId: String(r._id) })} className="rounded-md border border-slate-200 px-3 py-0.5 text-xs text-blue-600 hover:bg-blue-50">View</button>
+                    <button type="button" onClick={() => setLowModal({ focusId: String(r._id) })} className="rounded-full border border-slate-200 px-3 py-0.5 text-xs bg-blue-600 hover:bg-blue-700 text-white">View</button>
                   </div>
                 ))}
               </div>
@@ -650,7 +650,7 @@ const ClassAttendanceOverview = () => {
               <div className="min-h-0 flex-1 overflow-y-auto p-4">
                 <table className="w-full text-left text-[12.5px]">
                   <thead className="sticky top-0 z-10 bg-slate-50 text-slate-600">
-                    <tr>{['#', 'Student Name', 'Roll No.', 'Working Days', 'Present', 'Absent', 'Attendance %'].map((h) => <th key={h} className="whitespace-nowrap px-2.5 py-2 font-medium">{h}</th>)}</tr>
+                    <tr>{['#', 'Student Name', 'Roll No.', 'Total Days', 'Present', 'Absent', 'Attendance %'].map((h) => <th key={h} className="whitespace-nowrap px-2.5 py-2 font-medium">{h}</th>)}</tr>
                   </thead>
                   <tbody className="divide-y divide-slate-100">
                     {lowAll.map((r, i) => (
