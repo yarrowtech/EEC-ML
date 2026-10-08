@@ -2409,7 +2409,7 @@ const TeacherPortalShell = () => {
                 ? 'h-full min-h-0'
                 : isAttendanceRoute
                   ? 'h-full min-h-0 overflow-y-auto overscroll-contain p-3 sm:p-6'
-                  : `min-h-full ${isDashboardRoute ? 'p-0 lg:pt-2' : 'p-3 sm:p-6'}`}>
+                  : `min-h-full ${isDashboardRoute ? 'p-0' : 'p-3 sm:p-6'}`}>
               <Routes>
                 <Route index element={<Navigate to="/teacher/dashboard" replace />} />
                 <Route path="dashboard" element={<TeacherDashboard />} />
