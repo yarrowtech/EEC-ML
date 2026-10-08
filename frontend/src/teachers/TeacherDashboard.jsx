@@ -281,8 +281,8 @@ const TeacherDashboard = () => {
 
   const statCards = [
     { label: 'My Classes Today', value: todaysClasses.length, helper: 'View Schedule →', icon: BookOpen, iconBg: 'bg-blue-500', iconColor: 'text-white', to: '/teacher/timetable' },
-    { label: 'Total Students', value: stats.totalStudents ?? 0, helper: 'Across my classes', icon: Users, iconBg: 'bg-emerald-500', iconColor: 'text-white', to: '/teacher/classes' },
-    { label: 'Attendance', value: `${completedClasses} / ${todaysClasses.length}`, helper: 'Classes completed', icon: CheckCircle2, iconBg: 'bg-rose-500', iconColor: 'text-white', to: '/teacher/classes/current/students/attendance' },
+    { label: 'Total Students', value: stats.totalStudents ?? 0, helper: 'Across my classes', icon: Users, iconBg: 'bg-green-500', iconColor: 'text-white', to: '/teacher/classes' },
+    { label: 'Attendance', value: `${completedClasses} / ${todaysClasses.length}`, helper: 'Classes completed', icon: CheckCircle2, iconBg: 'bg-red-500', iconColor: 'text-white', to: '/teacher/classes/current/students/attendance' },
     { label: 'Pending Work', value: pendingTasks, helper: 'Homework / Assignments', icon: ClipboardList, iconBg: 'bg-orange-500', iconColor: 'text-white', to: '/teacher/classes/current/assignments' },
   ];
 
