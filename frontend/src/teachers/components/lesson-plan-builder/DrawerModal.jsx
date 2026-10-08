@@ -41,8 +41,6 @@ import { Progress, ProgressLabel, ProgressValue } from '@/components/ui/progress
 import { Textarea } from '@/components/ui/textarea';
 import RichTextEditor from './RichTextEditor';
 import UploadDropzone from './UploadDropzone';
-import FileUploadCard from './FileUploadCard';
-import AssessmentCard from './AssessmentCard';
 import { InlineTryoutBuilder } from './TryoutBuilder';
 import RichTextMaterialEditor from '../RichTextMaterialEditor';
 import { API_BASE } from '@/config/api';
@@ -60,10 +58,10 @@ const STEPS = [
   { key: 'materials',  label: 'Materials',          icon: BookOpen,       color: 'purple'  },
   { key: 'intro',      label: 'Introduction',       icon: Lightbulb,      color: 'amber'   },
   { key: 'content',    label: 'Content',            icon: ListChecks,     color: 'green'   },
-  { key: 'assessment', label: 'Assessment',         icon: ClipboardList,  color: 'rose'    },
+  { key: 'assessment', label: 'Worksheet',          icon: ClipboardList,  color: 'rose'    },
   { key: 'language',   label: 'Language Practice',  icon: Mic,            color: 'indigo'  },
   { key: 'tryout',     label: 'Tryout',             icon: Play,           color: 'pink'    },
-  { key: 'publish',    label: 'Publish', icon: Send,           color: 'emerald' },
+  { key: 'publish',    label: 'Review and Publish', icon: Send,  color: 'emerald' },
 ];
 
 const EVAL_TAGS = ['Excellent', 'Good', 'Needs Improvement'];
@@ -865,29 +863,14 @@ const DrawerModal = ({
               </div>
             </Card>
 
-            {/* Reference / Worksheet link */}
+            {/* Reference link */}
             <Card>
               <SectionTitle icon={FlaskConical} iconColor="text-purple-500">Article Reference</SectionTitle>
-              <div className="flex flex-col gap-2 sm:flex-row">
-                <Input
-                  type="file"
-                  accept=".pdf,.doc,.docx,application/pdf,application/msword,application/vnd.openxmlformats-officedocument.wordprocessingml.document"
-                  onChange={(e) => onAddWorksheetFile(e.target.files?.[0] || null)}
-                  className="cursor-pointer"
-                />
-                <Input
-                  value={chapter.worksheetLink}
-                  onChange={(e) => onUpdate({ ...chapter, worksheetLink: e.target.value })}
-                  placeholder="Or paste a Article URL…"
-                />
-              </div>
-              {(chapter.worksheetFiles || []).length > 0 && (
-                <div className="mt-3 space-y-2">
-                  {chapter.worksheetFiles.map((file) => (
-                    <FileUploadCard key={file.id} file={file} onRemove={onRemoveWorksheetFile} />
-                  ))}
-                </div>
-              )}
+              <Input
+                value={chapter.worksheetLink}
+                onChange={(e) => onUpdate({ ...chapter, worksheetLink: e.target.value })}
+                placeholder="Paste an article or reference URL…"
+              />
             </Card>
 
             {/* Report uploads */}
@@ -913,38 +896,24 @@ const DrawerModal = ({
           </div>
         );
 
-      /* ─── ASSESSMENT ──────────────────────────────────────────── */
+      /* ─── WORKSHEET ───────────────────────────────────────────── */
       case 'assessment':
         return (
           <div className="space-y-4">
-            
-            {/* Practice Papers */}
+
             <Card>
               <div className="mb-3 flex items-center justify-between">
-                <SectionTitle icon={ClipboardList} iconColor="text-rose-500">Practice Papers</SectionTitle>
-                
+                <SectionTitle icon={ClipboardList} iconColor="text-rose-500">Worksheet</SectionTitle>
               </div>
-              <div className="grid gap-3 sm:grid-cols-3">
-                {[
-                  { label: 'Basic',        bucket: 'Practice Papers Basic'        },
-                  { label: 'Intermediate', bucket: 'Practice Papers Intermediate'  },
-                  { label: 'Advanced',     bucket: 'Practice Papers Advanced'      },
-                ].map(({ label, bucket }) => (
-                  <div key={bucket} className="rounded-xl border border-slate-200 bg-slate-50 p-3 dark:border-slate-700 dark:bg-slate-800/40">
-                    <p className="mb-2 text-xs font-semibold text-slate-600 dark:text-slate-300">{label}</p>
-                    <UploadDropzone
-                      title={label}
-                      accept=".pdf,.doc,.docx,.xls,.xlsx"
-                      files={chapter.contentUploads?.[bucket] || []}
-                      onAddFile={(file) => onAddContentFile(file, bucket)}
-                      onRemoveFile={(fileId) => onRemoveContentFile(fileId, bucket)}
-                    />
-                  </div>
-                ))}
-              </div>
+              <p className="mb-3 text-xs text-slate-500 dark:text-slate-400">Upload one worksheet for this chapter. Accepted files: PDF and DOCX.</p>
+              <UploadDropzone
+                title="Upload Worksheet"
+                accept=".pdf,.doc,.docx,application/pdf,application/msword,application/vnd.openxmlformats-officedocument.wordprocessingml.document"
+                files={chapter.worksheetFiles || []}
+                onAddFile={onAddWorksheetFile}
+                onRemoveFile={onRemoveWorksheetFile}
+              />
             </Card>
-
-            {/* Worksheets */}        
 
           </div>
         );
@@ -1051,12 +1020,8 @@ const DrawerModal = ({
 
         return (
           <div className="space-y-4">
-            <p className={`rounded-lg px-3 py-2 text-sm font-medium ${accent.banner}`}>
-              Add reading passages students will read aloud, or writing prompts they will respond to. Both are published instantly to the student portal.
-            </p>
-
             {/* Sub-tab toggle */}
-            <div className="flex gap-1 rounded-xl border border-slate-200 bg-slate-50 p-1 dark:border-slate-700 dark:bg-slate-800/60 w-fit">
+            <div className="mx-auto flex w-fit gap-1 rounded-xl border border-slate-200 bg-slate-50 p-1 dark:border-slate-700 dark:bg-slate-800/60">
               {[
                 { key: 'reading', label: 'Reading', icon: Mic },
                 { key: 'writing', label: 'Writing', icon: PenLine },
@@ -1135,14 +1100,16 @@ const DrawerModal = ({
                     />
                   </div>
 
-                  <button
-                    type="button"
-                    onClick={saveReading}
-                    disabled={langSaving}
-                    className="flex items-center gap-2 rounded-xl bg-indigo-600 px-5 py-2.5 text-sm font-semibold text-white hover:bg-indigo-700 disabled:opacity-50 transition-colors"
-                  >
-                    {langSaving ? 'Saving…' : <><Plus className="size-4" /> Save & Publish Passage</>}
-                  </button>
+                  <div className="flex justify-end">
+                    <button
+                      type="button"
+                      onClick={saveReading}
+                      disabled={langSaving}
+                      className="flex items-center gap-2 rounded-xl bg-indigo-600 px-5 py-2.5 text-sm font-semibold text-white transition-colors hover:bg-indigo-700 disabled:opacity-50"
+                    >
+                      {langSaving ? 'Saving…' : 'Save'}
+                    </button>
+                  </div>
                 </div>
 
                 {/* Existing passages for this chapter */}
@@ -1180,7 +1147,7 @@ const DrawerModal = ({
             {/* ── WRITING form ── */}
             {langTab === 'writing' && (
               <Card>
-                <SectionTitle icon={PenLine} iconColor="text-emerald-500">New Writing Prompt</SectionTitle>
+                <SectionTitle icon={PenLine} iconColor="text-emerald-500">Create Writing</SectionTitle>
                 <div className="space-y-3">
                   <div>
                     <label className="mb-1 block text-xs font-semibold uppercase tracking-wide text-slate-500">Title *</label>
@@ -1253,14 +1220,16 @@ const DrawerModal = ({
                     />
                   </div>
 
-                  <button
-                    type="button"
-                    onClick={saveWriting}
-                    disabled={langSaving}
-                    className="flex items-center gap-2 rounded-xl bg-emerald-600 px-5 py-2.5 text-sm font-semibold text-white hover:bg-emerald-700 disabled:opacity-50 transition-colors"
-                  >
-                    {langSaving ? 'Saving…' : <><Plus className="size-4" /> Save & Publish </>}
-                  </button>
+                  <div className="flex justify-end">
+                    <button
+                      type="button"
+                      onClick={saveWriting}
+                      disabled={langSaving}
+                      className="flex items-center gap-2 rounded-xl bg-emerald-600 px-5 py-2.5 text-sm font-semibold text-white transition-colors hover:bg-emerald-700 disabled:opacity-50"
+                    >
+                      {langSaving ? 'Saving…' : 'Save'}
+                    </button>
+                  </div>
                 </div>
 
                 {/* Existing prompts for this chapter */}
@@ -1314,24 +1283,90 @@ const DrawerModal = ({
         );
 
       /* ─── EVALUATE & PUBLISH ──────────────────────────────────── */
-      case 'publish':
+      case 'publish': {
+        const reviewMaterials = Object.entries(chapter.contentUploads || {})
+          .flatMap(([bucket, files]) => (Array.isArray(files) ? files : []).map((file) => ({ ...file, bucket })))
+          .filter((file) => file?.name || file?.url);
+        const reviewObjectives = Array.isArray(chapter.learningObjectives)
+          ? chapter.learningObjectives.filter(Boolean)
+          : [];
+        const reviewFlow = Array.isArray(chapter.instructionalFlow)
+          ? chapter.instructionalFlow.filter((step) => step?.description || step?.phase)
+          : [];
+        const reviewTryouts = Array.isArray(chapter.tryouts) ? chapter.tryouts : [];
+        const reviewPracticeItems = Array.isArray(chapter.assessments) ? chapter.assessments.filter((item) => item?.title) : [];
+        const reviewDueDate = chapter.lessonDate || new Date().toISOString().slice(0, 10);
         return (
           <div className="space-y-4">
-            
+
+            <Card className="border-emerald-200 bg-emerald-50/50 dark:border-emerald-900 dark:bg-emerald-950/20">
+              <div className="flex items-start gap-3">
+                <div className="flex size-9 shrink-0 items-center justify-center rounded-xl bg-emerald-100 text-emerald-700 dark:bg-emerald-900/50 dark:text-emerald-300"><CheckCircle2 className="size-5" /></div>
+                <div>
+                  <p className="text-sm font-bold text-emerald-900 dark:text-emerald-200">Review before publishing</p>
+                  <p className="mt-1 text-xs leading-relaxed text-emerald-800 dark:text-emerald-300">This complete chapter package will become visible immediately to students in the selected class and section. Publishing again replaces the currently published version.</p>
+                </div>
+              </div>
+            </Card>
 
             <Card>
-              <p className="mb-2 text-sm font-semibold text-slate-800 dark:text-slate-100">
-                Teacher Notes{' '}
-                <span className="text-xs font-normal text-slate-400 dark:text-slate-500">(private — not shown to students)</span>
-              </p>
-              <Textarea
-                rows={3}
-                value={chapter.teacherNotes}
-                onChange={(e) => onUpdate({ ...chapter, teacherNotes: e.target.value })}
-                placeholder="Personal observations, follow-up actions, reminders…"
-                className="resize-none"
-                style={{ color: '#0f172a', caretColor: '#0f172a' }}
-              />
+              <SectionTitle icon={BookOpen} iconColor="text-blue-500">Chapter information</SectionTitle>
+              <div className="grid gap-3 text-sm sm:grid-cols-2">
+                <div><p className="text-[10px] font-bold uppercase tracking-wide text-slate-400">Title</p><p className="mt-1 font-semibold text-slate-800 dark:text-slate-100">{chapter.title || 'Untitled Chapter'}</p></div>
+                <div><p className="text-[10px] font-bold uppercase tracking-wide text-slate-400">Class and subject</p><p className="mt-1 font-semibold text-slate-800 dark:text-slate-100">{[classDisplayName, subjectName].filter(Boolean).join(' · ') || 'Selected class and subject'}</p></div>
+                <div><p className="text-[10px] font-bold uppercase tracking-wide text-slate-400">Lesson date</p><p className="mt-1 font-semibold text-slate-800 dark:text-slate-100">{chapter.lessonDate || 'Not set'}</p></div>
+                <div><p className="text-[10px] font-bold uppercase tracking-wide text-slate-400">Duration</p><p className="mt-1 font-semibold text-slate-800 dark:text-slate-100">{chapter.duration || 'Not set'}</p></div>
+              </div>
+            </Card>
+
+            <Card>
+              <SectionTitle icon={FileText} iconColor="text-violet-500">Materials</SectionTitle>
+              {reviewMaterials.length > 0 || chapter.worksheetLink ? (
+                <div className="space-y-2">
+                  {reviewMaterials.map((file) => (
+                    <div key={`${file.bucket}-${file.id || file.name}`} className="flex items-center justify-between gap-3 rounded-lg border border-slate-200 bg-slate-50 px-3 py-2 dark:border-slate-700 dark:bg-slate-800/50">
+                      <div className="min-w-0"><p className="truncate text-sm font-medium text-slate-700 dark:text-slate-200">{file.name || 'Uploaded material'}</p><p className="text-[10px] text-slate-400">{file.bucket}</p></div>
+                      {file.url && <a href={file.url} target="_blank" rel="noreferrer" className="shrink-0 text-xs font-semibold text-blue-600 hover:underline">Preview</a>}
+                    </div>
+                  ))}
+                  {chapter.worksheetLink && <a href={chapter.worksheetLink} target="_blank" rel="noreferrer" className="block truncate text-xs font-semibold text-blue-600 hover:underline">Reference link: {chapter.worksheetLink}</a>}
+                </div>
+              ) : <p className="text-sm text-slate-500">No additional materials added.</p>}
+            </Card>
+
+            <Card>
+              <SectionTitle icon={Lightbulb} iconColor="text-amber-500">Introduction</SectionTitle>
+              <p className="whitespace-pre-wrap text-sm leading-relaxed text-slate-600 dark:text-slate-300">{chapter.introductionText?.trim() || 'No introduction added.'}</p>
+            </Card>
+
+            <Card>
+              <SectionTitle icon={ListChecks} iconColor="text-green-500">Content</SectionTitle>
+              {reviewObjectives.length > 0 && <div className="mb-3"><p className="mb-1 text-[10px] font-bold uppercase tracking-wide text-slate-400">Learning objectives</p><ul className="list-disc space-y-1 pl-5 text-sm text-slate-600 dark:text-slate-300">{reviewObjectives.map((item, index) => <li key={`${item}-${index}`}>{item}</li>)}</ul></div>}
+              <p className="whitespace-pre-wrap text-sm leading-relaxed text-slate-600 dark:text-slate-300">{chapter.explanation?.trim() || 'No lesson content added.'}</p>
+              {chapter.recap?.trim() && <div className="mt-3 rounded-lg bg-slate-50 p-3 text-sm text-slate-600 dark:bg-slate-800/50 dark:text-slate-300"><span className="font-semibold">Recap: </span>{chapter.recap}</div>}
+              {chapter.didYouKnow?.trim() && <div className="mt-3 rounded-lg bg-amber-50 p-3 text-sm text-amber-900 dark:bg-amber-900/20 dark:text-amber-200"><span className="font-semibold">Did you know? </span>{chapter.didYouKnow}</div>}
+              {reviewFlow.length > 0 && <div className="mt-3 flex flex-wrap gap-2">{reviewFlow.map((step, index) => <span key={`${step.id || step.phase || index}`} className="rounded-full bg-blue-50 px-2.5 py-1 text-[11px] font-semibold text-blue-700 dark:bg-blue-900/30 dark:text-blue-300">{step.phase || `Step ${index + 1}`}</span>)}</div>}
+            </Card>
+
+            <Card>
+              <SectionTitle icon={ClipboardList} iconColor="text-rose-500">Worksheet</SectionTitle>
+              {chapter.worksheetFiles?.length > 0 ? (
+                <div className="space-y-2">
+                  <p className="text-xs text-slate-500">Students can preview/download this file, complete it, and submit their work once.</p>
+                  {chapter.worksheetFiles.map((file) => <div key={file.id || file.name} className="flex items-center justify-between gap-3 rounded-lg border border-amber-200 bg-amber-50/60 px-3 py-2"><span className="truncate text-sm font-semibold text-slate-700 dark:text-slate-200">{file.name || 'Worksheet file'}</span>{file.url && <a href={file.url} target="_blank" rel="noreferrer" className="shrink-0 text-xs font-semibold text-amber-700 hover:underline">Preview</a>}</div>)}
+                  <div className="grid gap-2 pt-1 text-xs sm:grid-cols-2"><p className="rounded-lg bg-slate-50 px-3 py-2 text-slate-600 dark:bg-slate-800/50 dark:text-slate-300"><span className="font-semibold">Due date:</span> {reviewDueDate}</p><p className="rounded-lg bg-slate-50 px-3 py-2 text-slate-600 dark:bg-slate-800/50 dark:text-slate-300"><span className="font-semibold">Submission:</span> One student submission</p></div>
+                </div>
+              ) : <p className="text-sm text-slate-500">No worksheet uploaded. Students will not receive a worksheet until one is added.</p>}
+            </Card>
+
+            <Card>
+              <SectionTitle icon={ClipboardList} iconColor="text-indigo-500">Practice</SectionTitle>
+              {reviewPracticeItems.length > 0 ? <div className="space-y-2">{reviewPracticeItems.map((item) => <div key={item.id || item.title} className="rounded-lg border border-slate-200 px-3 py-2 text-sm text-slate-700 dark:border-slate-700 dark:text-slate-200">{item.title}</div>)}</div> : <p className="text-sm text-slate-500">No additional practice paper added in this chapter.</p>}
+            </Card>
+
+            <Card>
+              <SectionTitle icon={Play} iconColor="text-pink-500">Tryout</SectionTitle>
+              {reviewTryouts.length > 0 ? <div className="space-y-2">{reviewTryouts.map((item, index) => <div key={item.id || item.title || index} className="rounded-lg border border-slate-200 px-3 py-2 text-sm text-slate-700 dark:border-slate-700 dark:text-slate-200">{item.title || item.name || `Tryout ${index + 1}`}</div>)}</div> : <p className="text-sm text-slate-500">No tryout added in this chapter.</p>}
             </Card>
 
             {!!chapter.history?.length && (
@@ -1368,6 +1403,7 @@ const DrawerModal = ({
             </div>
           </div>
         );
+      }
 
       default:
         return null;
