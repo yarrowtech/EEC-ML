@@ -632,7 +632,7 @@ const StudentAnalyticsPortal = () => {
   // RENDER
   // ─────────────────────────────────────────────────────────────────────────
   return (
-    <div className="pt-1">
+    <div className="">
       {/* ML Intervention Alert Toast */}
       <AnimatePresence>
         {alertToast && (
