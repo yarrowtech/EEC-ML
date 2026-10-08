@@ -68,7 +68,7 @@ const STEPS = [
   { id: "subtopic", label: "Sub-topic", icon: FileText },
   { id: "path", label: "Learning path", icon: Map },
   { id: "materials", label: "Materials", icon: GraduationCap },
-  { id: "assess", label: "Assessments", icon: ClipboardCheck },
+  { id: "assess", label: "Worksheets", icon: ClipboardCheck },
 ];
 
 function toggle(arr, val) {
@@ -133,7 +133,7 @@ function PreviewPane({ plan }) {
           )}
           {plan.assessments?.length > 0 && (
             <div>
-              <p className="mb-1 text-xs uppercase tracking-wide text-muted-foreground">Assessments</p>
+              <p className="mb-1 text-xs uppercase tracking-wide text-muted-foreground">Worksheets</p>
               <div className="flex flex-wrap gap-1">
                 {plan.assessments.map((a) => (
                   <Badge key={a} variant="outline" className="text-xs">{a}</Badge>
@@ -310,7 +310,7 @@ function StepAssessments({ plan, update }) {
   const selected = plan.assessments || [];
   return (
     <div className="space-y-3">
-      <Label className="mb-2 block">Assessment methods</Label>
+      <Label className="mb-2 block">Worksheet options</Label>
       <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
         {ASSESSMENT_TYPES.map((a) => {
           const checked = selected.includes(a);
@@ -379,7 +379,7 @@ function CompletionView({ plan, onReset }) {
         {plan.assessments?.length > 0 && (
           <Card>
             <CardContent className="pb-3 pt-4">
-              <p className="mb-2 text-xs uppercase tracking-wide text-muted-foreground">Assessments</p>
+              <p className="mb-2 text-xs uppercase tracking-wide text-muted-foreground">Worksheets</p>
               <div className="flex flex-wrap gap-1">
                 {plan.assessments.map((a) => <Badge key={a} variant="outline" className="text-xs">{a}</Badge>)}
               </div>

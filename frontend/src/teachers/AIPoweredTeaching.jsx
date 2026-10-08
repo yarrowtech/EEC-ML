@@ -39,14 +39,22 @@ const getMaterialType = (name = '') => {
 const titleFromFileName = (name = '') => String(name || 'Uploaded Material').replace(/\.[^/.]+$/, '').trim() || 'Uploaded Material';
 
 const defaultContentUploads = {
-  'Upload Worksheet': [],
   'Upload Tryout': [],
-  Assessments: [],
   Experiments: [],
   'Report Upload': [],
   'Explanation Attachments': [],
   'Uploaded Material': [],
 };
+
+const LEGACY_WORKSHEET_BUCKETS = new Set([
+  'Practice Papers Basic',
+  'Practice Papers Intermediate',
+  'Practice Papers Advanced',
+]);
+
+const removeLegacyWorksheetBuckets = (uploads) => Object.fromEntries(
+  Object.entries(uploads || {}).filter(([bucket]) => !LEGACY_WORKSHEET_BUCKETS.has(bucket))
+);
 
 const enrichChapter = (chapter) => ({
   ...chapter,
@@ -57,7 +65,7 @@ const enrichChapter = (chapter) => ({
   didYouKnow: chapter.didYouKnow || '',
   teacherNotes: chapter.teacherNotes || '',
   evaluation: chapter.evaluation || { participation: '', remarks: '', behaviour: '', progress: '', tag: '' },
-  contentUploads: { ...defaultContentUploads, ...(chapter.contentUploads || {}) },
+  contentUploads: { ...defaultContentUploads, ...removeLegacyWorksheetBuckets(chapter.contentUploads) },
   worksheetFiles: chapter.worksheetFiles || [],
   worksheetLink: chapter.worksheetLink || '',
   assessments: Array.isArray(chapter.assessments) ? chapter.assessments : [],
@@ -825,6 +833,16 @@ const AIPoweredTeaching = () => {
 
   const addWorksheetFile = async (chapterId, file) => {
     if (!chapterId || !file) return;
+    const currentChapter = chapters.find((chapter) => chapter.id === chapterId);
+    if ((currentChapter?.worksheetFiles || []).length > 0) {
+      toast.error('Only one worksheet can be uploaded for this chapter');
+      return;
+    }
+    const fileName = String(file.name || '').toLowerCase();
+    if (!fileName.endsWith('.pdf') && !fileName.endsWith('.doc') && !fileName.endsWith('.docx')) {
+      toast.error('Worksheet must be a PDF or DOCX file');
+      return;
+    }
     const tempId = `worksheet-upload-${Date.now()}-${Math.random().toString(36).slice(2)}`;
     const setProgress = (progress) => {
       updateChapter(chapterId, (chapter) => ({
@@ -1029,11 +1047,6 @@ const AIPoweredTeaching = () => {
             referenceMaterials: chapter.teacherNotes ? [stripHtml(chapter.teacherNotes)] : [],
             tryoutSections: chapter.tryouts || [],
             selfAssessments: chapter.recap ? [stripHtml(chapter.recap)] : [],
-            questionPapers: {
-              basic: (chapter.assessments || [])[0]?.title || '',
-              intermediate: (chapter.assessments || [])[1]?.title || '',
-              advanced: (chapter.assessments || [])[2]?.title || '',
-            },
           }],
         }],
       }]
