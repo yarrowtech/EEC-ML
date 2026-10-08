@@ -453,14 +453,27 @@ router.get('/student/papers', authStudent, async (req, res, next) => {
       .sort({ createdAt: -1 })
       .skip(skip)
       .limit(parseInt(limit))
-      .select('-studentAttempts -questions') // Don't send full questions/answers list initially
+      .select('-questions') // Keep questions private until a student starts the paper.
       .lean();
+
+    const papersForStudent = papers.map((paper) => {
+      const attempts = (paper.studentAttempts || [])
+        .filter((attempt) => String(attempt.studentId) === String(req.userId))
+        .sort((a, b) => new Date(b.submittedAt || b.startedAt || 0) - new Date(a.submittedAt || a.startedAt || 0));
+      const latest = attempts[0];
+      let studentStatus = 'not_started';
+      if (latest && !latest.submittedAt) studentStatus = 'in_progress';
+      else if (latest?.submittedAt && latest.percentage !== undefined && latest.percentage !== null) studentStatus = 'completed';
+      else if (latest?.submittedAt) studentStatus = 'submitted';
+      const { studentAttempts, ...safePaper } = paper;
+      return { ...safePaper, studentStatus };
+    });
 
     const total = await PracticePaper.countDocuments(filters);
 
     res.json({
       success: true,
-      papers,
+      papers: papersForStudent,
       total,
       page: parseInt(page),
       limit: parseInt(limit),

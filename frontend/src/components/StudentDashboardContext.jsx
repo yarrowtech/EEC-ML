@@ -20,6 +20,7 @@ const StudentDashboardContext = createContext({
   unreadChatCount: 0,
   notifications: [],
   unreadNotificationCount: 0,
+  smartLearningReminders: [],
   moduleSeenState: {},
   chatSeenCount: 0,
   markModuleVisited: () => {},
@@ -44,6 +45,7 @@ export const StudentDashboardProvider = ({ children }) => {
   const [loading, setLoading] = useState(!initialCachedData);
   const [error, setError] = useState('');
   const [data, setData] = useState(initialCachedData || emptyData);
+  const [smartLearningReminders, setSmartLearningReminders] = useState([]);
   const notificationState = useNotifications();
   const studentNotifications = notificationState.notifications;
   const markNotificationAsRead = notificationState.markAsRead;
@@ -126,6 +128,29 @@ export const StudentDashboardProvider = ({ children }) => {
       activeControllerRef.current?.abort();
     };
   }, [fetchDashboard, initialCachedData]);
+
+  useEffect(() => {
+    let alive = true;
+    const token = localStorage.getItem('token');
+    if (!token || typeof fetch !== 'function' || localStorage.getItem('userType') !== 'Student') return undefined;
+    const headers = { Authorization: `Bearer ${token}` };
+    Promise.all([
+      fetch(`${import.meta.env.VITE_API_URL}/api/practice-papers/student/papers?limit=100`, { headers }).then((r) => r.ok ? r.json() : null),
+      fetch(`${import.meta.env.VITE_API_URL}/api/assignment/student/assignments`, { headers }).then((r) => r.ok ? r.json() : null),
+    ]).then(([paperPayload, assignmentPayload]) => {
+      if (!alive) return;
+      const papers = (Array.isArray(paperPayload?.papers) ? paperPayload.papers : []).filter((paper) => paper.studentStatus !== 'completed');
+      const assignments = (Array.isArray(assignmentPayload) ? assignmentPayload : []).filter((assignment) => {
+        const type = String(assignment?.type || '').toLowerCase();
+        return type.includes('worksheet') && !['submitted', 'graded', 'late'].includes(String(assignment?.submissionStatus || '').toLowerCase());
+      });
+      setSmartLearningReminders([
+        ...papers.map((paper) => ({ id: `paper-${paper._id}`, kind: 'Practice paper', title: paper.title, path: '/student/smart-learning-courses' })),
+        ...assignments.map((assignment) => ({ id: `worksheet-${assignment._id}`, kind: 'Worksheet', title: assignment.title, path: '/student/smart-learning-courses' })),
+      ]);
+    }).catch(() => {});
+    return () => { alive = false; };
+  }, []);
 
   // Single source of truth for the unread-chat badge. Sidebar and
   // MobileBottomNav used to each poll /api/chat/threads independently (every
@@ -210,6 +235,7 @@ export const StudentDashboardProvider = ({ children }) => {
       unreadChatCount,
       notifications: notificationState.notifications,
       unreadNotificationCount: notificationState.unreadCount,
+      smartLearningReminders,
       markNotificationAsRead: notificationState.markAsRead,
       dismissNotification: notificationState.dismissNotification,
       markAllNotificationsAsRead: notificationState.markAllAsRead,
@@ -220,7 +246,7 @@ export const StudentDashboardProvider = ({ children }) => {
       markModuleVisited,
       refresh: () => fetchDashboard(),
     }),
-    [loading, error, data.profile, data.classTeacher, data.stats, data.course, data.recentAttendance, unreadChatCount, notificationState, moduleSeenState, chatSeenCount, markModuleVisited, fetchDashboard]
+    [loading, error, data.profile, data.classTeacher, data.stats, data.course, data.recentAttendance, unreadChatCount, notificationState, smartLearningReminders, moduleSeenState, chatSeenCount, markModuleVisited, fetchDashboard]
   );
 
   return (

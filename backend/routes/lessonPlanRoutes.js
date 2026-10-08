@@ -21,6 +21,7 @@ const Timetable = require('../models/Timetable');
 const TeacherAllocation = require('../models/TeacherAllocation');
 const StudentUser = require('../models/StudentUser');
 const StudentProgress = require('../models/StudentProgress');
+const SmartLearningProgress = require('../models/SmartLearningProgress');
 const TeachingMaterial = require('../models/TeachingMaterial');
 const PracticePaper = require('../models/PracticePaper');
 const Assignment = require('../models/Assignment');
@@ -48,6 +49,8 @@ const classNameRegex = (value) => ({
 });
 const normalizeStringList = (value) =>
   Array.isArray(value) ? value.map((item) => normalizeString(item)).filter(Boolean) : [];
+
+const normalizeProgressKey = (value) => normalizeLower(value).replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '');
 
 const normalizeTryoutList = (value) =>
   Array.isArray(value) ? value.filter((item) => item && typeof item === 'object' && !Array.isArray(item)) : [];
@@ -3135,6 +3138,54 @@ router.patch('/teacher/:id/meta', authTeacher, async (req, res) => {
     );
     if (!plan) return res.status(404).json({ error: 'Lesson plan not found' });
     return res.json({ success: true, data: plan });
+  } catch (err) {
+    return res.status(500).json({ error: err.message });
+  }
+});
+
+// Smart Learning progress is account-backed so a student can resume from
+// another device. Local storage remains a fast offline fallback in the UI.
+router.get('/student/smart-learning-progress', authStudent, async (req, res) => {
+  try {
+    const subjectKey = normalizeProgressKey(req.query.subject);
+    const topicKey = normalizeProgressKey(req.query.topic);
+    if (!subjectKey || !topicKey) return res.status(400).json({ error: 'subject and topic are required' });
+
+    const progress = await SmartLearningProgress.findOne({
+      schoolId: req.schoolId,
+      studentId: req.userId,
+      subjectKey,
+      topicKey,
+    }).lean();
+    return res.json({ success: true, progress: progress || null });
+  } catch (err) {
+    return res.status(500).json({ error: err.message });
+  }
+});
+
+router.put('/student/smart-learning-progress', authStudent, async (req, res) => {
+  try {
+    const subjectKey = normalizeProgressKey(req.body?.subject);
+    const topicKey = normalizeProgressKey(req.body?.topic);
+    if (!subjectKey || !topicKey) return res.status(400).json({ error: 'subject and topic are required' });
+
+    const completedSteps = Array.isArray(req.body?.completedSteps)
+      ? [...new Set(req.body.completedSteps.map((step) => normalizeString(step)).filter(Boolean))]
+      : [];
+    const progress = await SmartLearningProgress.findOneAndUpdate(
+      { schoolId: req.schoolId, studentId: req.userId, subjectKey, topicKey },
+      {
+        $set: {
+          completedSteps,
+          topicCompleted: Boolean(req.body?.topicCompleted),
+          activeStepId: normalizeString(req.body?.activeStepId),
+          scrollTop: Math.max(0, Number(req.body?.scrollTop) || 0),
+          lastAccessedAt: new Date(),
+        },
+      },
+      { upsert: true, new: true, setDefaultsOnInsert: true }
+    ).lean();
+    return res.json({ success: true, progress });
   } catch (err) {
     return res.status(500).json({ error: err.message });
   }

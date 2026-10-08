@@ -131,6 +131,7 @@ const StudentNotificationCenter = () => {
     markNotificationAsRead: markAsRead,
     markAllNotificationsAsRead: markAllAsRead,
     markModuleVisited,
+    smartLearningReminders,
   } = useStudentDashboard();
 
   useEffect(() => {
@@ -173,7 +174,7 @@ const StudentNotificationCenter = () => {
               </p>
             </div>
           </div>
-          {!loading && unreadCount > 0 && (
+      {!loading && unreadCount > 0 && (
             <button
               type="button"
               onClick={markAllAsRead}
@@ -185,6 +186,23 @@ const StudentNotificationCenter = () => {
           )}
         </div>
       </div>
+
+      {smartLearningReminders.length > 0 && (
+        <section className="rounded-2xl border border-indigo-100 bg-indigo-50/70 p-4" aria-label="Smart Learning reminders">
+          <div className="flex items-center justify-between gap-3">
+            <div>
+              <p className="text-sm font-bold text-indigo-950">Smart Learning reminders</p>
+              <p className="mt-1 text-xs text-indigo-700">These stay visible until you finish the task.</p>
+            </div>
+            <button type="button" onClick={() => navigate('/student/smart-learning-courses')} className="rounded-lg bg-indigo-600 px-3 py-2 text-xs font-bold text-white hover:bg-indigo-700">Open</button>
+          </div>
+          <div className="mt-3 space-y-2">
+            {smartLearningReminders.slice(0, 4).map((reminder) => (
+              <div key={reminder.id} className="rounded-xl bg-white px-3 py-2 text-xs font-semibold text-indigo-900">{reminder.kind}: {reminder.title}</div>
+            ))}
+          </div>
+        </section>
+      )}
 
       {/* Stats row */}
       {!loading && notifications.length > 0 && (

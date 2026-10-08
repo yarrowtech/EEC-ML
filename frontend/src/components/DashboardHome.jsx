@@ -574,7 +574,7 @@ const FirstRunDashboard = () => (
 );
 
 const DashboardHome = () => {
-  const { loading, error, stats, recentAttendance } = useStudentDashboard();
+  const { loading, error, stats, recentAttendance, smartLearningReminders } = useStudentDashboard();
 
   const isNewStudent = useMemo(() => (
     !loading && !error && stats
@@ -591,6 +591,23 @@ const DashboardHome = () => {
 
       {/* Welcome Section */}
       <WelcomeCard />
+
+      {smartLearningReminders.length > 0 && (
+        <section className="rounded-2xl border border-indigo-100 bg-indigo-50/70 p-4 shadow-sm" aria-label="Smart Learning reminders">
+          <div className="flex flex-wrap items-center justify-between gap-3">
+            <div>
+              <p className="text-sm font-bold text-indigo-950">Smart Learning reminders</p>
+              <p className="mt-1 text-xs text-indigo-700">You have unfinished learning work to pick up.</p>
+            </div>
+            <Link to="/student/smart-learning-courses" className="rounded-lg bg-indigo-600 px-3 py-2 text-xs font-bold text-white hover:bg-indigo-700">Open Smart Learning</Link>
+          </div>
+          <div className="mt-3 flex flex-wrap gap-2">
+            {smartLearningReminders.slice(0, 3).map((reminder) => (
+              <span key={reminder.id} className="rounded-full bg-white px-3 py-1.5 text-xs font-semibold text-indigo-800">{reminder.kind}: {reminder.title}</span>
+            ))}
+          </div>
+        </section>
+      )}
 
       {isNewStudent ? (
         <FirstRunDashboard />

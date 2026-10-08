@@ -1,8 +1,9 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import { useLocation, useNavigate } from 'react-router-dom';
-import { AlertCircle, ArrowLeft, CheckCircle2, Download, FileText, Upload } from 'lucide-react';
+import { AlertCircle, ArrowLeft, CheckCircle2, Download, FileText, Upload, Play } from 'lucide-react';
 import { deslugifyFromUrl } from '../utils/urlSlug';
 import WorksheetSubmitModal from './WorksheetSubmitModal';
+import PracticeTestInterface from './PracticeTestInterface';
 
 const API_BASE = (import.meta.env.VITE_API_URL || 'http://localhost:5000').replace(/\/$/, '');
 
@@ -19,6 +20,7 @@ const AILearningPracticePaperPage = () => {
   const [worksheetAssignments, setWorksheetAssignments] = useState([]);
   const [worksheetModal, setWorksheetModal] = useState(null);
   const [submittedWorksheetIds, setSubmittedWorksheetIds] = useState(() => new Set());
+  const [selectedPaper, setSelectedPaper] = useState(null);
 
   const topicMatch = location.pathname.match(/\/topic\/([^/]+)/);
   const subjectMatch = location.pathname.match(/\/subject\/([^/]+)/);
@@ -148,6 +150,24 @@ const AILearningPracticePaperPage = () => {
     setSubmittedWorksheetIds((previous) => new Set([...previous, String(assignmentId)]));
   };
 
+  const paperStatus = (paper) => {
+    const key = normalize(paper?.studentStatus);
+    if (key === 'in_progress') return { label: 'In progress', className: 'bg-amber-50 text-amber-700' };
+    if (key === 'submitted') return { label: 'Submitted', className: 'bg-blue-50 text-blue-700' };
+    if (key === 'completed') return { label: 'Completed / graded', className: 'bg-emerald-50 text-emerald-700' };
+    return { label: 'Not started', className: 'bg-slate-100 text-slate-600' };
+  };
+
+  if (selectedPaper) {
+    return (
+      <PracticeTestInterface
+        paperId={selectedPaper._id}
+        paperTitle={selectedPaper.title}
+        onBack={() => setSelectedPaper(null)}
+      />
+    );
+  }
+
   return (
     <div className="min-h-screen bg-[#f8f9ff] px-4 py-6 sm:px-6 lg:px-8" style={{ fontFamily: 'Lexend, sans-serif' }}>
       <div className="mx-auto w-full max-w-[1100px] space-y-5">
@@ -184,7 +204,10 @@ const AILearningPracticePaperPage = () => {
           <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
             {filteredPapers.map((paper) => (
               <div key={paper._id} className="rounded-xl border border-slate-200 bg-white p-4 shadow-sm">
-                <p className="text-lg font-semibold text-slate-900">{paper.title}</p>
+                <div className="flex items-start justify-between gap-3">
+                  <p className="text-lg font-semibold text-slate-900">{paper.title}</p>
+                  <span className={`shrink-0 rounded-full px-2.5 py-1 text-[11px] font-bold ${paperStatus(paper).className}`}>{paperStatus(paper).label}</span>
+                </div>
                 <p className="mt-1 text-sm text-slate-600">{paper.description || 'No description provided'}</p>
                 <div className="mt-3 flex flex-wrap gap-2 text-xs">
                   <span className="rounded-full bg-blue-100 px-2 py-1 text-blue-700">{paper.difficulty || 'medium'}</span>
@@ -192,6 +215,16 @@ const AILearningPracticePaperPage = () => {
                   <span className="rounded-full bg-amber-100 px-2 py-1 text-amber-700">{paper.totalMarks || 0} marks</span>
                   <span className="rounded-full bg-slate-100 px-2 py-1 text-slate-700">{paper.className}-{paper.sectionName}</span>
                 </div>
+                {(paper.dueDate || paper.expiresAt) && (
+                  <p className="mt-3 text-xs font-semibold text-slate-500">Due {new Date(paper.dueDate || paper.expiresAt).toLocaleDateString()}</p>
+                )}
+                <button
+                  type="button"
+                  onClick={() => setSelectedPaper(paper)}
+                  className="mt-4 inline-flex items-center gap-2 rounded-lg bg-indigo-600 px-4 py-2.5 text-sm font-bold text-white hover:bg-indigo-700"
+                >
+                  <Play size={15} /> {paper.studentStatus === 'not_started' ? 'Start Paper' : 'Continue Paper'}
+                </button>
               </div>
             ))}
           </div>

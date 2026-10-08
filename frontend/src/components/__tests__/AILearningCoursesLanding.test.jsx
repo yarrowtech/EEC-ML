@@ -128,7 +128,7 @@ describe('AILearningCoursesLanding loading', () => {
       </MemoryRouter>
     );
 
-    fireEvent.click(await screen.findByRole('button', { name: 'Start Learning' }));
+    fireEvent.click(await screen.findByRole('button', { name: 'Start Lesson' }));
 
     expect(await screen.findByText('Scoped topic page')).toBeInTheDocument();
     expect(screen.getByText('Query: ?view=details')).toBeInTheDocument();
