@@ -871,7 +871,7 @@ const DrawerModal = ({
               <div className="flex flex-col gap-2 sm:flex-row">
                 <Input
                   type="file"
-                  accept=".pdf,.doc,.docx,.xls,.xlsx,image/*"
+                  accept=".pdf,.doc,.docx,application/pdf,application/msword,application/vnd.openxmlformats-officedocument.wordprocessingml.document"
                   onChange={(e) => onAddWorksheetFile(e.target.files?.[0] || null)}
                   className="cursor-pointer"
                 />

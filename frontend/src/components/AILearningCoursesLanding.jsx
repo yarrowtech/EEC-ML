@@ -254,6 +254,7 @@ const SubjectTopicsView = ({ subject, onBack, style = DEFAULT_STYLE }) => {
     const query = normalize(searchQuery);
     return chapterStats.filter((entry) => {
       if (filterMode === 'in-progress' && entry.status !== 'in-progress' && entry.status !== 'almost-done') return false;
+      if (filterMode === 'completed' && entry.status !== 'completed') return false;
       if (query) {
         const chapterMatches = normalize(entry.chapter.title).includes(query);
         const topicMatches = (entry.chapter.topics || []).some((topic) => normalize(topic.title).includes(query));
@@ -341,377 +342,111 @@ const SubjectTopicsView = ({ subject, onBack, style = DEFAULT_STYLE }) => {
   };
 
   return (
-    <div className="space-y-6">
-      <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-        <div className="flex flex-wrap items-center gap-3">
-          <button
-            onClick={onBack}
-            className={`inline-flex items-center gap-2 rounded-xl ${GLASS_INNER} px-3 py-2 text-sm font-bold text-slate-700 ${GLASS_HOVER} hover:text-violet-700`}
-          >
-            <ArrowLeft size={16} /> Back to Subjects
-          </button>
-          <div className="flex items-center gap-1.5 text-sm text-[#8e9aaf]">
-            <span>Learn</span>
-            <ChevronRight size={14} />
-            <span>{subject.title}</span>
-            <ChevronRight size={14} />
-            <span className="font-bold text-violet-600">{chapters.length > 0 ? 'Published Chapters' : 'Chapters'}</span>
-          </div>
-        </div>
+    <div className="space-y-5" style={SUBJECT_CARD_FONT}>
+      <div className="flex items-center justify-between gap-3">
+        <button
+          type="button"
+          onClick={onBack}
+          className="inline-flex items-center gap-1.5 rounded-lg border border-slate-200 bg-white px-3 py-1.5 text-xs font-bold text-slate-600 shadow-sm transition hover:border-violet-300 hover:text-violet-700"
+        >
+          <ArrowLeft size={14} /> Back to Subjects
+        </button>
         {profile?.academicYear && (
-          <div className={`inline-flex items-center gap-1.5 self-start rounded-full ${GLASS_INNER} px-3 py-1.5 text-xs font-bold uppercase tracking-wider text-[#8e9aaf] sm:self-auto`}>
-            <CalendarDays size={14} className="text-violet-500" /> {profile.academicYear}
-          </div>
+          <span className="inline-flex items-center gap-1.5 text-[11px] font-bold uppercase tracking-wide text-slate-400">
+            <CalendarDays size={13} className="text-violet-500" /> {profile.academicYear}
+          </span>
         )}
       </div>
 
-      <section className={`relative overflow-hidden ${GLASS_CARD} p-5 sm:p-8`}>
-        <div className="pointer-events-none absolute -bottom-16 -right-16 h-80 w-80 rounded-full bg-violet-300/25 blur-3xl" />
-        <div className="pointer-events-none absolute -top-8 -right-8 h-56 w-56 rounded-full bg-amber-100/50 blur-2xl" />
-        <SubjectIcon className="pointer-events-none absolute -bottom-8 -right-6 size-40 rotate-12 text-violet-900/[0.04] sm:size-56" />
-
-        <div className="relative z-10 flex flex-col gap-6 lg:flex-row lg:items-center lg:justify-between">
-          <div className="flex-1">
-            <span className="inline-flex items-center gap-1.5 rounded-full bg-violet-500 px-3 py-1 text-[11px] font-bold uppercase tracking-wider text-white">
-              <SubjectIcon size={13} />
-              {chapters.length > 0 ? 'Published Chapters' : 'Coming Soon'}
-            </span>
-            <h1 className="mt-3 text-2xl font-bold text-[#0f172a] sm:text-4xl">{subject.title} {chapters.length > 0 ? 'Chapters' : ''}</h1>
-            <p className="mt-2 max-w-xl text-sm text-[#64748b] sm:text-base">
-              {chapters.length > 0
-                ? 'All chapters published by your teacher are listed here with their topics and subtopics.'
-                : 'Your teacher will publish lesson content here soon. Stay tuned!'}
-            </p>
-            <div className="mt-4 flex flex-wrap items-center gap-3">
-              <div className={`flex items-center gap-2 ${GLASS_INNER} px-3 py-2 text-sm font-semibold text-slate-700`}>
-                <BookOpen size={16} className="text-violet-600" /> {chapters.length} Active Unit{chapters.length === 1 ? '' : 's'}
-              </div>
-              {subject.teacherCount > 0 && (
-                <div className={`flex items-center gap-2 ${GLASS_INNER} px-3 py-2 text-sm font-semibold text-slate-700`}>
-                  <Users size={16} className="text-violet-600" /> {subject.teacherCount} Teacher{subject.teacherCount > 1 ? 's' : ''}
-                </div>
-              )}
+      <header className="relative overflow-hidden rounded-2xl border border-violet-100 bg-gradient-to-r from-white via-white to-violet-50/60 px-5 py-4 shadow-sm sm:px-6">
+        <div aria-hidden="true" className="pointer-events-none absolute -right-16 -top-16 h-48 w-48 rounded-full bg-violet-200/25 blur-3xl" />
+        <div className="relative z-10 flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
+          <div className="min-w-0 space-y-1.5">
+            <div className="flex flex-wrap items-center gap-2.5">
+              <h1 className="text-xl font-extrabold leading-none tracking-tight text-slate-900 sm:text-2xl">{subject.title} Chapters</h1>
+              <span className="inline-flex items-center gap-1 rounded-full bg-violet-600 px-2.5 py-0.5 text-[11px] font-bold text-white shadow-sm">
+                <CheckCircle2 size={12} /> PUBLISHED
+              </span>
+              <span className="inline-flex items-center gap-1 rounded-full border border-violet-200 bg-violet-50 px-2.5 py-0.5 text-[11px] font-bold text-violet-700">
+                <BookOpen size={12} /> {chapters.length} Unit{chapters.length === 1 ? '' : 's'}
+              </span>
             </div>
+            <p className="text-xs text-slate-500 sm:text-sm">Choose a chapter to open its topics, materials, and lesson content.</p>
           </div>
 
           {chapters.length > 0 && (
-            <div className="w-full lg:w-[300px]">
-              <div className={`flex flex-col gap-4 ${GLASS_CARD} p-5`}>
-                <div className="flex items-start justify-between">
-                  <div>
-                    <span className="text-[11px] font-bold uppercase tracking-wider text-[#8e9aaf]">Your Progress</span>
-                    <div className="mt-1 text-2xl font-bold text-[#0f172a]">
-                      {completedChapterCount}/{chapters.length} <span className="text-sm font-normal text-[#8e9aaf]">Chapters</span>
-                    </div>
-                  </div>
-                  <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-full bg-violet-500/10 text-violet-600">
-                    <Flag size={20} />
-                  </div>
+            <div className="flex flex-wrap items-center gap-3 rounded-xl border border-slate-200/80 bg-white/90 px-3.5 py-2 shadow-sm">
+              <div className="flex items-center gap-2.5 border-r border-slate-200/80 pr-3">
+                <div className="flex h-8 w-8 items-center justify-center rounded-lg border border-violet-100 bg-violet-50 text-violet-600"><Flag size={15} /></div>
+                <div>
+                  <div className="flex items-baseline gap-1"><span className="text-base font-black leading-none text-slate-900">{completedChapterCount}/{chapters.length}</span><span className="text-[10px] font-bold uppercase tracking-wide text-slate-400">Chapters</span></div>
+                  <div className="mt-1 flex items-center gap-1.5"><div className="h-1.5 w-14 overflow-hidden rounded-full bg-slate-100"><div className="h-1.5 rounded-full bg-violet-600 transition-all" style={{ width: `${progress}%` }} /></div><span className="text-[10px] font-semibold text-violet-700">{progress}%</span></div>
                 </div>
-                <div className="space-y-1.5">
-                  <div className="flex items-center justify-between text-xs">
-                    <span className="font-semibold text-[#8e9aaf]">Course Completion</span>
-                    <span className="font-bold text-violet-600">{progress}%</span>
-                  </div>
-                  <div className="h-2.5 w-full overflow-hidden rounded-full bg-white/70">
-                    <div className="h-full rounded-full bg-violet-500 transition-all duration-500" style={{ width: `${progress}%` }} />
-                  </div>
-                </div>
-                <div className={`flex items-center gap-3 ${GLASS_INNER} px-3 py-2.5`}>
-                  <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-amber-50 text-amber-600">
-                    <Smile size={16} />
-                  </div>
-                  <p className="text-sm font-semibold text-slate-700">
-                    {moodLead} <span className="font-normal text-[#64748b]">{moodTrail}</span>
-                  </p>
-                </div>
-                {nextIncompleteTopic && progress > 0 && progress < 100 && (
-                  <button
-                    onClick={() => openTopic(nextIncompleteTopic)}
-                    className="inline-flex items-center justify-center gap-2 rounded-xl bg-violet-500 px-4 py-2.5 text-sm font-bold text-white transition-colors hover:bg-violet-600"
-                  >
-                    Continue: {nextIncompleteTopic.title}
-                  </button>
-                )}
               </div>
+              <div className="flex items-center gap-2 text-xs text-slate-700"><span className="flex h-5 w-5 items-center justify-center rounded-full bg-amber-100 text-[11px] text-amber-600">😊</span><strong className="font-semibold">{moodLead}</strong></div>
             </div>
           )}
         </div>
-      </section>
+      </header>
 
-      <section>
-        <div className="mb-4 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-          <div>
-            <h2 className="text-2xl font-bold text-[#0f172a] sm:text-3xl">
-              {chapters.length > 0 ? 'Uploaded Chapters' : 'Lesson Content'}
-            </h2>
-            <p className="text-sm text-[#64748b]">Select a module to view materials, notes, and quiz sheets</p>
+      {smartLearningReminders.length > 0 && (
+        <section aria-label="Reminders" className="flex items-center justify-between gap-3 rounded-xl border border-amber-200/90 bg-amber-50/90 px-4 py-2.5 text-amber-900 shadow-sm">
+          <div className="flex min-w-0 items-center gap-2.5">
+            <span className="h-2 w-2 shrink-0 rounded-full bg-amber-500 ring-4 ring-amber-100" />
+            <div className="truncate text-xs font-medium sm:text-sm"><span className="font-bold text-amber-950">You have unfinished Smart Learning work.</span><span className="ml-1 hidden text-amber-800 md:inline">Reminders stay here until the paper or worksheet is completed.</span></div>
+            {nextIncompleteTopic && <button type="button" onClick={() => openTopic(nextIncompleteTopic)} className="inline-flex shrink-0 items-center gap-1 rounded-lg bg-amber-500 px-2.5 py-1 text-xs font-bold text-white shadow-sm transition-colors hover:bg-amber-600">Continue <ArrowRight size={12} /></button>}
           </div>
-          {chapters.length > 0 && (
-            <div className="flex flex-wrap items-center gap-2">
-              <div className={`flex items-center gap-2 ${GLASS_INNER} px-3 py-2`}>
-                <Search size={16} className="text-[#8e9aaf]" />
-                <input
-                  type="text"
-                  value={searchQuery}
-                  onChange={(event) => setSearchQuery(event.target.value)}
-                  placeholder="Search chapters and topics..."
-                  className="w-36 bg-transparent text-sm text-slate-700 outline-none placeholder:text-[#8e9aaf] sm:w-48"
-                />
-              </div>
-              <div className={`flex items-center gap-1 ${GLASS_INNER} p-1`}>
-                <button
-                  type="button"
-                  onClick={() => setFilterMode('all')}
-                  className={`rounded-lg px-3 py-1.5 text-xs font-bold transition-colors ${filterMode === 'all' ? 'bg-violet-500 text-white' : 'text-slate-500 hover:bg-white/60'}`}
-                >
-                  All ({chapters.length})
-                </button>
-                <button
-                  type="button"
-                  onClick={() => setFilterMode('in-progress')}
-                  className={`rounded-lg px-3 py-1.5 text-xs font-bold transition-colors ${filterMode === 'in-progress' ? 'bg-violet-500 text-white' : 'text-slate-500 hover:bg-white/60'}`}
-                >
-                  In Progress ({inProgressChapterCount})
-                </button>
-              </div>
-            </div>
-          )}
+          <span className="inline-flex shrink-0 items-center rounded-full bg-amber-200/70 px-2 py-0.5 text-xs font-bold text-amber-900">{smartLearningReminders.length} pending</span>
+        </section>
+      )}
+
+      <section className="space-y-4">
+        <div className="flex flex-col items-stretch justify-between gap-3 rounded-xl border border-slate-200 bg-white p-3.5 shadow-sm sm:flex-row sm:items-center">
+          <div><h2 className="text-lg font-bold tracking-tight text-slate-900">{chapters.length > 0 ? 'Uploaded Chapters' : 'Lesson Content'}</h2><p className="text-xs text-slate-500">Select a module to view materials, notes, and quiz sheets</p></div>
+          {chapters.length > 0 && <div className="flex flex-col items-stretch gap-2.5 sm:flex-row sm:items-center"><div className="relative w-full sm:w-64"><Search className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" size={15} /><input type="text" value={searchQuery} onChange={(event) => setSearchQuery(event.target.value)} placeholder="Search chapters & topics..." className="w-full rounded-lg border-slate-200 py-2 pl-9 pr-3 text-xs text-slate-800 placeholder:text-slate-400 focus:border-violet-500 focus:ring-violet-500" /></div><div className="flex items-center gap-1 rounded-lg bg-slate-100/90 p-1 text-xs font-semibold"><button type="button" onClick={() => setFilterMode('all')} className={`rounded-md px-3 py-1.5 transition ${filterMode === 'all' ? 'bg-violet-600 text-white shadow-sm' : 'text-slate-600 hover:bg-white/60'}`}>All ({chapters.length})</button><button type="button" onClick={() => setFilterMode('in-progress')} className={`rounded-md px-3 py-1.5 transition ${filterMode === 'in-progress' ? 'bg-violet-600 text-white shadow-sm' : 'text-slate-600 hover:bg-white/60'}`}>In Progress ({inProgressChapterCount})</button><button type="button" onClick={() => setFilterMode('completed')} className={`rounded-md px-3 py-1.5 transition ${filterMode === 'completed' ? 'bg-violet-600 text-white shadow-sm' : 'text-slate-600 hover:bg-white/60'}`}>Completed ({completedChapterCount})</button></div></div>}
         </div>
-
-        {smartLearningReminders.length > 0 && (
-          <div className="mb-4 flex flex-wrap items-center justify-between gap-3 rounded-2xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm">
-            <div>
-              <p className="font-bold text-amber-900">You have unfinished Smart Learning work</p>
-              <p className="mt-0.5 text-xs text-amber-700">Reminders stay here until the paper or worksheet is completed.</p>
-            </div>
-            <span className="rounded-full bg-white px-3 py-1 text-xs font-bold text-amber-800">{smartLearningReminders.length} pending</span>
-          </div>
-        )}
 
         {chapters.length === 0 ? (
-          <div className="rounded-3xl border-2 border-dashed border-violet-500/30 bg-white/40 p-10 text-center backdrop-blur-[20px]">
-            <div className="mx-auto mb-4 flex h-16 w-16 items-center justify-center rounded-full bg-amber-50">
-              <BookOpen className="text-amber-600" size={32} />
-            </div>
-            <p className="mb-2 text-xl font-bold text-slate-800">No Lesson Plans Published Yet</p>
-            <p className="mx-auto max-w-md text-sm text-[#64748b]">
-              Your teacher hasn't published any lesson plans for <span className="font-semibold">{subject.title}</span> yet.
-              Check back soon or ask your teacher about upcoming topics!
-            </p>
-          </div>
+          <div className="rounded-xl border border-dashed border-violet-200 bg-white p-10 text-center shadow-sm"><div className="mx-auto mb-4 flex h-14 w-14 items-center justify-center rounded-full bg-violet-50"><BookOpen className="text-violet-600" size={28} /></div><p className="text-lg font-bold text-slate-800">No Lesson Plans Published Yet</p><p className="mx-auto mt-1 max-w-md text-sm text-slate-500">Your teacher hasn't published any lesson plans for <span className="font-semibold">{subject.title}</span> yet.</p></div>
         ) : visibleChapterStats.length === 0 ? (
-          <div className="rounded-3xl border-2 border-dashed border-violet-500/30 bg-white/40 p-10 text-center backdrop-blur-[20px]">
-            <p className="text-base font-bold text-slate-700">No chapters match your search</p>
-            <button
-              type="button"
-              onClick={() => { setSearchQuery(''); setFilterMode('all'); }}
-              className="mt-2 text-sm font-bold text-violet-600 hover:underline"
-            >
-              Clear filters
-            </button>
-          </div>
+          <div className="rounded-xl border border-dashed border-slate-300 bg-white p-8 text-center shadow-sm"><p className="text-sm font-bold text-slate-700">No chapters match your search</p><button type="button" onClick={() => { setSearchQuery(''); setFilterMode('all'); }} className="mt-2 text-sm font-bold text-violet-600 hover:underline">Clear filters</button></div>
         ) : (
-          <div className="space-y-4">
+          <div className="space-y-2.5">
             {visibleChapterStats.map((entry) => {
               const { chapter, originalIndex, firstTopic, topicCount, subtopicCount, total, percentage, durationLabel, status } = entry;
               const isOpen = openChapterIndex === originalIndex;
               const meta = CHAPTER_STATUS_META[status];
-              const isLocked = status === 'up-next' || status === 'upcoming';
-
+              const lessonLabel = !firstTopic ? 'No Topics' : status === 'completed' ? 'Review' : status === 'in-progress' || status === 'almost-done' ? 'Continue Lesson' : 'Start Lesson';
               return (
-                <div
-                  key={chapter.id || `${chapter.title}-${originalIndex}`}
-                  className={`overflow-hidden ${GLASS_CARD} ${GLASS_HOVER}`}
-                >
-                  <div className="flex flex-col gap-4 p-5 sm:flex-row sm:items-center sm:justify-between sm:p-6">
-                    <div className="flex items-start gap-4 min-w-0">
-                      <div className={`flex h-16 w-16 shrink-0 flex-col items-center justify-center rounded-2xl ${meta.tile}`}>
-                        {status === 'completed' ? (
-                          <CheckCircle2 size={24} strokeWidth={2.2} />
-                        ) : (
-                          <>
-                            <span className="text-[10px] font-bold uppercase tracking-wide">Unit</span>
-                            <span className="text-xl font-bold leading-none">{String(originalIndex + 1).padStart(2, '0')}</span>
-                          </>
-                        )}
+                <article key={chapter.id || `${chapter.title}-${originalIndex}`} className="group overflow-hidden rounded-xl border border-slate-200 bg-white p-3.5 shadow-sm transition-all duration-200 hover:border-violet-400 hover:shadow-md">
+                  <div className="flex flex-col justify-between gap-4 md:flex-row md:items-center">
+                    <div className="flex min-w-0 items-center gap-3.5">
+                      <div className={`flex h-12 w-12 shrink-0 flex-col items-center justify-center rounded-lg border border-violet-100 bg-violet-50 text-center text-violet-700`}>
+                        {status === 'completed' ? <CheckCircle2 size={22} /> : <><span className="text-[9px] font-extrabold uppercase tracking-wider text-violet-600">UNIT</span><span className="text-sm font-black leading-none">{String(originalIndex + 1).padStart(2, '0')}</span></>}
                       </div>
-                      <div className="min-w-0">
-                        <div className="mb-1 flex flex-wrap items-center gap-2">
-                          <span className={`rounded-full px-2.5 py-0.5 text-[11px] font-bold uppercase tracking-wide ${meta.chip}`}>{meta.label}</span>
-                          {classLabel && (
-                            <>
-                              <span className="text-slate-300">•</span>
-                              <span className="text-xs font-semibold text-[#64748b]">Class {classLabel}</span>
-                            </>
-                          )}
-                        </div>
-                        <h3 className="text-lg font-bold text-[#0f172a] sm:text-xl">{chapter.title}</h3>
-                        <div className="mt-1 flex flex-wrap items-center gap-x-3 gap-y-1 text-sm text-[#64748b]">
-                          <span className="inline-flex items-center gap-1"><Layers size={14} className="text-violet-500" /> {topicCount} topic{topicCount === 1 ? '' : 's'}</span>
-                          <span className="text-slate-300">•</span>
-                          <span className="inline-flex items-center gap-1"><List size={14} className="text-violet-500" /> {subtopicCount} subtopic{subtopicCount === 1 ? '' : 's'}</span>
-                          {durationLabel && (
-                            <>
-                              <span className="text-slate-300">•</span>
-                              <span className="inline-flex items-center gap-1"><Clock size={14} /> {durationLabel}</span>
-                            </>
-                          )}
-                        </div>
-                        {total > 0 && (
-                          <div className="mt-2 flex items-center gap-2">
-                            <div className="h-1.5 w-32 overflow-hidden rounded-full bg-white/70">
-                              <div className={`h-full rounded-full transition-all duration-500 ${meta.bar}`} style={{ width: `${percentage}%` }} />
-                            </div>
-                            <span className="text-xs font-bold text-[#8e9aaf]">{percentage}%</span>
-                          </div>
-                        )}
+                      <div className="min-w-0 space-y-1">
+                        <div className="flex flex-wrap items-center gap-2"><span className={`rounded px-2 py-0.5 text-[10px] font-bold uppercase tracking-wide ${meta.chip}`}>{meta.label}</span>{classLabel && <><span className="text-slate-300">•</span><span className="text-xs font-semibold text-slate-500">Class {classLabel}</span></>}</div>
+                        <h3 className="truncate text-base font-bold text-slate-900 transition-colors group-hover:text-violet-700">{chapter.title}</h3>
+                        <div className="flex flex-wrap items-center gap-3 text-xs font-medium text-slate-500"><span className="inline-flex items-center gap-1"><Layers size={13} className="text-slate-400" />{topicCount} topic{topicCount === 1 ? '' : 's'}</span><span className="text-slate-300">•</span><span className="inline-flex items-center gap-1"><List size={13} className="text-slate-400" />{subtopicCount} subtopic{subtopicCount === 1 ? '' : 's'}</span>{durationLabel && <><span className="text-slate-300">•</span><span className="inline-flex items-center gap-1"><Clock size={13} className="text-slate-400" />{durationLabel}</span></>}</div>
                       </div>
                     </div>
-
-                    <div className="flex items-center gap-2 self-end sm:self-center">
-                      <button
-                        type="button"
-                        onClick={() => openTopic(firstTopic)}
-                        disabled={!firstTopic}
-                        className={`inline-flex items-center gap-2 rounded-xl px-5 py-2.5 text-sm font-bold transition-colors ${
-                          !firstTopic
-                            ? 'cursor-not-allowed bg-slate-100 text-slate-400'
-                            : status === 'completed'
-                            ? 'bg-emerald-500 text-white hover:bg-emerald-600'
-                            : status === 'in-progress' || status === 'almost-done'
-                            ? 'bg-amber-500 text-white hover:bg-amber-600'
-                            : status === 'ready'
-                            ? 'bg-violet-500 text-white hover:bg-violet-600'
-                            : 'bg-white/60 text-slate-700 hover:bg-white/80'
-                        }`}
-                      >
-                        <span>
-                          {!firstTopic ? 'No Topics' : status === 'completed' ? 'Review' : status === 'in-progress' || status === 'almost-done' ? 'Continue Lesson' : 'Start Lesson'}
-                        </span>
-                        {firstTopic && (isLocked ? <FolderOpen size={16} /> : <ArrowRight size={16} />)}
-                      </button>
-                      <button
-                        type="button"
-                        onClick={() => setOpenChapterIndex(isOpen ? -1 : originalIndex)}
-                        className={`rounded-xl p-2.5 text-[#8e9aaf] transition-transform hover:bg-white/60 hover:text-slate-600 ${isOpen ? 'rotate-180' : ''}`}
-                        aria-label={`${isOpen ? 'Hide' : 'Show'} topics for ${chapter.title}`}
-                        aria-expanded={isOpen}
-                      >
-                        <ChevronDown size={18} />
-                      </button>
+                    <div className="flex items-center justify-between gap-4 border-t border-slate-100 pt-2.5 md:justify-end md:border-t-0 md:pt-0">
+                      <div className="flex w-28 items-center gap-2 md:w-32"><div className="h-1.5 w-full overflow-hidden rounded-full bg-slate-100"><div className={`h-1.5 rounded-full ${meta.bar}`} style={{ width: `${percentage}%` }} /></div><span className="text-xs font-semibold text-slate-400">{percentage}%</span></div>
+                      <div className="flex items-center gap-2"><button type="button" onClick={() => openTopic(firstTopic)} disabled={!firstTopic} className={`inline-flex items-center gap-1.5 rounded-lg px-4 py-2 text-xs font-bold shadow-sm transition active:scale-[0.98] ${!firstTopic ? 'cursor-not-allowed bg-slate-100 text-slate-400' : 'bg-violet-600 text-white shadow-violet-600/25 hover:bg-violet-700'}`}>{lessonLabel}{firstTopic && <ArrowRight size={14} />}</button><button type="button" onClick={() => setOpenChapterIndex(isOpen ? -1 : originalIndex)} className={`rounded-md p-1.5 text-slate-400 transition hover:bg-slate-100 hover:text-slate-700 ${isOpen ? 'rotate-180' : ''}`} aria-label={`${isOpen ? 'Hide' : 'Show'} topics for ${chapter.title}`} aria-expanded={isOpen}><ChevronDown size={16} /></button></div>
                     </div>
                   </div>
 
-                  {isOpen && (
-                    <div className="border-t border-violet-500/20 bg-white/30 px-5 pb-5 pt-4 backdrop-blur-[20px] sm:px-6">
-                      <div className="mb-3 flex flex-wrap items-center justify-between gap-2 text-xs font-bold uppercase tracking-wider text-[#8e9aaf]">
-                        <span>Module Outline &amp; Learning Materials</span>
-                        {teacherName && <span className="normal-case font-semibold text-[#64748b]">Teacher: {teacherName}</span>}
-                      </div>
-                      {(chapter.topics || []).length > 0 ? (
-                        <div className="space-y-3 border-l-2 border-dashed border-violet-500/25 pl-4 sm:pl-5">
-                          {chapter.topics.map((topic) => {
-                            const topicProg = topicProgress[topic.title] || { total: 0, completed: 0, percentage: 0 };
-                            return (
-                              <div key={topic.title} className={`relative ${GLASS_INNER} p-4`}>
-                                <span className="absolute -left-5.25 top-6 h-2.5 w-2.5 rounded-full bg-violet-500 ring-4 ring-white sm:-left-6.25" />
-                                <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-                                  <div className="min-w-0">
-                                    <div className="flex flex-wrap items-center gap-2">
-                                      <p className="truncate text-base font-bold text-[#0f172a]">{topic.title}</p>
-                                      {topicProg.total > 0 && topicProg.completed >= topicProg.total && (
-                                        <span className="rounded-full bg-emerald-50 px-2 py-0.5 text-[10px] font-bold uppercase tracking-wide text-emerald-700">Completed</span>
-                                      )}
-                                    </div>
-                                    <p className="text-xs font-medium text-[#64748b]">{topicProg.completed}/{topicProg.total} subtopics complete</p>
-                                  </div>
-                                  <button
-                                    onClick={() => openTopic(topic)}
-                                    className="shrink-0 rounded-full bg-violet-500 px-4 py-2 text-xs font-bold text-white transition hover:bg-violet-600 sm:text-sm"
-                                  >
-                                    {topicProg.completed > 0 ? 'Continue Lesson' : 'Start Lesson'}
-                                  </button>
-                                </div>
-                                {topic.subtopics && topic.subtopics.length > 0 ? (
-                                  <div className="mt-4 space-y-2">
-                                    <p className="text-[11px] font-semibold uppercase tracking-wide text-[#8e9aaf]">Click to mark as complete</p>
-                                    {topic.subtopics.map((subtopic, idx) => {
-                                      const isSubtopicCompleted = (completedSubtopics[topic.title] || []).includes(subtopic);
-                                      return (
-                                        <button
-                                          key={`${subtopic}-${idx}`}
-                                          onClick={() => toggleSubtopicCompletion(topic.title, subtopic)}
-                                          className={`w-full flex items-center gap-3 px-3.5 py-2.5 rounded-xl border transition-all hover:shadow-sm ${
-                                            isSubtopicCompleted
-                                              ? 'border-emerald-300/60 bg-emerald-50/70'
-                                              : 'border-violet-500/25 bg-white/40 hover:border-violet-500/45'
-                                          }`}
-                                        >
-                                          <div className={`w-5 h-5 rounded-md flex items-center justify-center shrink-0 transition-colors ${
-                                            isSubtopicCompleted ? 'bg-emerald-500' : 'bg-white border-2 border-violet-500/30'
-                                          }`}>
-                                            {isSubtopicCompleted && (
-                                              <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="white" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round">
-                                                <polyline points="20 6 9 17 4 12"></polyline>
-                                              </svg>
-                                            )}
-                                          </div>
-                                          <span className={`text-sm font-medium ${isSubtopicCompleted ? 'text-emerald-700 line-through' : 'text-slate-700'}`}>
-                                            {subtopic}
-                                          </span>
-                                        </button>
-                                      );
-                                    })}
-                                  </div>
-                                ) : (
-                                  <p className="mt-3 text-sm text-[#64748b] italic">No subtopics available</p>
-                                )}
-                              </div>
-                            );
-                          })}
-                        </div>
-                      ) : (
-                        <p className="text-sm text-[#64748b] italic">No subtopics available</p>
-                      )}
-                    </div>
-                  )}
-                </div>
+                  {isOpen && <div className="mt-3 border-t border-slate-100 pt-3"><div className="mb-3 flex flex-wrap items-center justify-between gap-2 text-[10px] font-bold uppercase tracking-wider text-slate-400"><span>Module outline &amp; learning materials</span>{teacherName && <span className="normal-case font-semibold tracking-normal text-slate-500">Teacher: {teacherName}</span>}</div>{(chapter.topics || []).length > 0 ? <div className="space-y-2">{chapter.topics.map((topic) => { const topicProg = topicProgress[topic.title] || { total: 0, completed: 0 }; return <div key={topic.title} className="rounded-lg border border-slate-200 bg-slate-50/70 p-3"><div className="flex flex-col justify-between gap-2 sm:flex-row sm:items-center"><div className="min-w-0"><div className="flex flex-wrap items-center gap-2"><p className="truncate text-sm font-bold text-slate-900">{topic.title}</p>{topicProg.total > 0 && topicProg.completed >= topicProg.total && <span className="rounded-full bg-emerald-50 px-2 py-0.5 text-[10px] font-bold uppercase text-emerald-700">Completed</span>}</div><p className="text-xs text-slate-500">{topicProg.completed}/{topicProg.total} subtopics complete</p></div><button type="button" onClick={() => openTopic(topic)} className="shrink-0 self-start rounded-lg bg-violet-600 px-3.5 py-2 text-xs font-bold text-white transition hover:bg-violet-700 sm:self-auto">{topicProg.completed > 0 ? 'Continue Lesson' : 'Start Lesson'}</button></div>{topic.subtopics?.length > 0 && <div className="mt-3 space-y-1.5"><p className="text-[10px] font-semibold uppercase tracking-wide text-slate-400">Click to mark as complete</p>{topic.subtopics.map((subtopic, idx) => { const isSubtopicCompleted = (completedSubtopics[topic.title] || []).includes(subtopic); return <button type="button" key={`${subtopic}-${idx}`} onClick={() => toggleSubtopicCompletion(topic.title, subtopic)} className={`flex w-full items-center gap-3 rounded-lg border px-3 py-2 text-left transition hover:shadow-sm ${isSubtopicCompleted ? 'border-emerald-300/60 bg-emerald-50' : 'border-slate-200 bg-white hover:border-violet-300'}`}><span className={`flex h-5 w-5 shrink-0 items-center justify-center rounded-md ${isSubtopicCompleted ? 'bg-emerald-500' : 'border-2 border-violet-300 bg-white'}`}>{isSubtopicCompleted && <CheckCircle2 size={13} className="text-white" />}</span><span className={`text-sm font-medium ${isSubtopicCompleted ? 'text-emerald-700 line-through' : 'text-slate-700'}`}>{subtopic}</span></button>; })}</div>}</div>; })}</div> : <p className="text-sm italic text-slate-500">No topics available.</p>}</div>}
+                </article>
               );
             })}
           </div>
         )}
       </section>
 
-      <section className="grid grid-cols-1 gap-4 sm:grid-cols-2">
-        <div className={`flex items-start gap-4 ${GLASS_CARD} p-5`}>
-          <div className="flex h-12 w-12 shrink-0 items-center justify-center rounded-xl bg-violet-500/10 text-violet-600">
-            <Users size={22} />
-          </div>
-          <div>
-            <h4 className="text-base font-bold text-[#0f172a]">Course information</h4>
-            <p className="mt-1 text-sm text-[#64748b]">
-              {teacherName ? `Lessons published by ${teacherName}.` : 'Your teacher will add course information here.'}
-            </p>
-            <p className="mt-2 text-xs font-semibold text-[#8e9aaf]">{subject.title} · {chapters.length} chapter{chapters.length === 1 ? '' : 's'}</p>
-          </div>
-        </div>
-        <div className={`flex items-start gap-4 ${GLASS_CARD} p-5`}>
-          <div className="flex h-12 w-12 shrink-0 items-center justify-center rounded-xl bg-violet-500/10 text-violet-600">
-            <FolderOpen size={22} />
-          </div>
-          <div>
-            <h4 className="text-base font-bold text-[#0f172a]">Explore other subjects</h4>
-            <p className="mt-1 text-sm text-[#64748b]">Head back to your subjects list to pick up another chapter.</p>
-            <button
-              type="button"
-              onClick={onBack}
-              className="mt-2 inline-flex items-center gap-1 text-sm font-bold text-violet-600 hover:underline"
-            >
-              Back to Subjects <ArrowRight size={14} />
-            </button>
-          </div>
-        </div>
+      <section className="flex items-start gap-3 rounded-xl border border-slate-200 bg-white p-4 shadow-sm">
+        <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-violet-50 text-violet-600"><Users size={17} /></div>
+        <div><h4 className="text-sm font-bold text-slate-900">Course information</h4><p className="mt-1 text-xs text-slate-500">{teacherName ? `Lessons published by ${teacherName}.` : 'Your teacher will add course information here.'} {subject.title} · {chapters.length} chapter{chapters.length === 1 ? '' : 's'}.</p></div>
       </section>
     </div>
   );
@@ -932,8 +667,8 @@ const AILearningCoursesLanding = () => {
   }
 
   return (
-    <div className="w-full min-h-screen bg-[#f1f5f9] text-slate-900 p-4 sm:p-6 md:p-8">
-      <div className="mx-auto w-full max-w-[1200px]">
+    <div className="min-h-screen w-full bg-[#f8f9fd] px-4 py-6 text-slate-900 sm:px-6 lg:px-8">
+      <div className="mx-auto w-full max-w-7xl">
         {selectedSubject ? (
           <SubjectTopicsView
             subject={selectedSubject}
