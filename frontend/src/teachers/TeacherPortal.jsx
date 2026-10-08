@@ -1285,6 +1285,21 @@ const ClassWorkspace = ({ notifications = [], seenState = {} }) => {
   const [caretX, setCaretX] = useState(null);
   const menuWrapRef = useRef(null);
   // Point the submenu's caret at the centre of the hovered tab.
+  // Caret under the ACTIVE tab that joins it to the page content below.
+  const [activeCaretX, setActiveCaretX] = useState(null);
+  useEffect(() => {
+    const measure = () => {
+      const wrap = menuWrapRef.current;
+      const el = wrap?.querySelector(`[data-tab-id="${activeTab.id}"]`);
+      if (!wrap || !el) return;
+      const w = wrap.getBoundingClientRect();
+      const r = el.getBoundingClientRect();
+      setActiveCaretX(r.left + r.width / 2 - w.left);
+    };
+    measure();
+    window.addEventListener('resize', measure);
+    return () => window.removeEventListener('resize', measure);
+  }, [activeTab.id]);
   const openSubmenu = (tabId, el) => {
     setHoverTabId(tabId);
     const wrap = menuWrapRef.current?.getBoundingClientRect();
@@ -1327,7 +1342,22 @@ const ClassWorkspace = ({ notifications = [], seenState = {} }) => {
           <h1 className="truncate text-[22px] font-bold leading-tight tracking-tight text-slate-900">
             {className ? <>Class {className} - Section {sectionName || '—'}</> : classDisplayName(classId)}
           </h1>
-          <p className="text-[13px] text-slate-500">{rel === 'overview/attendance' ? 'Attendance Overview' : 'Class Overview & Performance'}</p>
+          {/* ── Breadcrumb ── */}
+          <nav aria-label="Breadcrumb" className="mt-0.5 flex flex-wrap items-center gap-1 text-[12.5px] text-slate-500">
+            <NavLink to="/teacher/classes" className="transition hover:text-blue-700">Classes</NavLink>
+            <ChevronRight size={13} className="text-slate-400" />
+            <span>{className ? `Class ${className} - ${sectionName || '—'}` : classDisplayName(classId)}</span>
+            <ChevronRight size={13} className="text-slate-400" />
+            {activeSub ? (
+              <>
+                <NavLink to={`${basePath}/${activeTab.firstPath}`} className="transition hover:text-blue-700">{activeTab.label}</NavLink>
+                <ChevronRight size={13} className="text-slate-400" />
+                <span aria-current="page" className="font-semibold text-blue-700">{activeSub.label}</span>
+              </>
+            ) : (
+              <span aria-current="page" className="font-semibold text-blue-700">{activeTab.label}</span>
+            )}
+          </nav>
         </div>
         <div className="ml-auto flex items-center gap-2">
           <NavLink
@@ -1342,22 +1372,6 @@ const ClassWorkspace = ({ notifications = [], seenState = {} }) => {
         </div>
       </div>
 
-      {/* ── Breadcrumb ── */}
-      <nav aria-label="Breadcrumb" className="flex flex-wrap items-center gap-1 text-[12.5px] text-slate-500">
-        <NavLink to="/teacher/classes" className="transition hover:text-blue-700">Classes</NavLink>
-        <ChevronRight size={13} className="text-slate-400" />
-        <span>{className ? `Class ${className} - ${sectionName || '—'}` : classDisplayName(classId)}</span>
-        <ChevronRight size={13} className="text-slate-400" />
-        {activeSub ? (
-          <>
-            <NavLink to={`${basePath}/${activeTab.firstPath}`} className="transition hover:text-blue-700">{activeTab.label}</NavLink>
-            <ChevronRight size={13} className="text-slate-400" />
-            <span aria-current="page" className="font-semibold text-blue-700">{activeSub.label}</span>
-          </>
-        ) : (
-          <span aria-current="page" className="font-semibold text-blue-700">{activeTab.label}</span>
-        )}
-      </nav>
 
       <div ref={menuWrapRef} className="relative" onMouseLeave={() => setHoverTabId(null)}>
       {/* ── Main tab bar ── */}
@@ -1370,6 +1384,7 @@ const ClassWorkspace = ({ notifications = [], seenState = {} }) => {
             return (
               <NavLink
                 key={tab.id}
+                data-tab-id={tab.id}
                 onMouseEnter={(e) => openSubmenu(tab.id, e.currentTarget)}
                 onFocus={(e) => openSubmenu(tab.id, e.currentTarget)}
                 to={`${basePath}/${tab.firstPath}`}
@@ -1434,7 +1449,19 @@ const ClassWorkspace = ({ notifications = [], seenState = {} }) => {
       </div>
 
       {/* Child route */}
-      <Outlet context={{ className, sectionName }} />
+      {/* Content hangs off the active tab: the caret overlaps the page card's top border. */}
+      <div className="relative">
+        {activeCaretX != null && (
+          <Motion.span
+            aria-hidden="true"
+            initial={false}
+            animate={{ left: activeCaretX }}
+            transition={{ type: 'spring', stiffness: 420, damping: 34 }}
+            className="pointer-events-none absolute -top-[6px] z-10 h-3.5 w-3.5 -translate-x-1/2 rotate-45 border-l border-t border-slate-200 bg-white"
+          />
+        )}
+        <Outlet context={{ className, sectionName }} />
+      </div>
 
     </div>
   );
