@@ -1088,7 +1088,7 @@ const CW_TABS = [
       { label: 'Student Health Records', path: 'students/health-records', notificationKey: 'health' },
       { label: 'Attendance', path: 'students/attendance', notificationKey: 'attendance' },
       { label: 'Assignments', path: 'assignments/manage', notificationKey: 'assignments' },
-      { label: 'Evaluate Submissions', path: 'assignments/evaluate', notificationKey: 'assignments-evaluate' },
+      // { label: 'Evaluate Submissions', path: 'assignments/evaluate', notificationKey: 'assignments-evaluate' },
       { label: 'Achievements', path: 'students/achievements', notificationKey: 'achievements' },
       { label: 'Exam', path: 'assessments/exam', notificationKey: 'assessments' },
     ],
