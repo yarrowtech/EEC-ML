@@ -544,7 +544,7 @@ const TeacherDashboard = () => {
                 <div className="min-w-0">
                   <p className="text-sm font-medium text-slate-700">{card.label}</p>
                   <p className="text-[26px] font-bold leading-tight text-slate-900">{dashboardLoading ? '—' : card.value}</p>
-                  <p className="truncate text-xs text-slate-500">{card.helper}</p>
+                  <p className="truncate text-[11px] text-slate-500">{card.helper}</p>
                 </div>
               </Link>
             ))}
