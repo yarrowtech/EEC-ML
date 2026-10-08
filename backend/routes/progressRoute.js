@@ -9,6 +9,7 @@ const Assignment = require('../models/Assignment');
 const AcademicYear = require('../models/AcademicYear');
 const adminAuth = require('../middleware/adminAuth');
 const teacherAuth = require('../middleware/authTeacher');
+const { computeSessionAttendance, resolveSessionWindow, loadHolidayKeys } = require('../utils/sessionAttendance');
 const {
   allowedSubjectsForStudent,
   buildTeacherAllocationScope,
@@ -81,7 +82,7 @@ const loadVisibleStudents = async (req, res, { grade, section, subject, academic
   }
 
   const students = await StudentUser.find(studentFilter)
-    .select('name grade section roll academicYear campusId')
+    .select('name grade section roll academicYear campusId profilePic')
     .lean();
   if (!isTeacherRequest(req)) return { schoolId, students, scope: null };
 
@@ -155,6 +156,159 @@ router.get('/students', teacherAuth, async (req, res) => {
 });
 
 // Get detailed progress for a specific student
+// Teacher-facing student overview for the analytics "student detail" modal:
+// academic-year attendance (same day-based calculation as the parent portal),
+// exam results, assignment submissions and per-subject performance — works
+// even when the student has no StudentProgress document yet.
+router.get('/student/:studentId/overview', teacherAuth, async (req, res) => {
+  // #swagger.tags = ['Progress']
+  try {
+    const schoolId = resolveSchoolId(req, res);
+    if (!schoolId) return;
+    const { studentId } = req.params;
+    if (!mongoose.isValidObjectId(studentId)) return res.status(400).json({ error: 'Invalid studentId' });
+    const campusId = req.campusId || req.user?.campusId || null;
+
+    const student = await StudentUser.findOne({ _id: studentId, schoolId })
+      .select('name grade section roll profilePic attendance academicYear className sectionName')
+      .lean();
+    if (!student) return res.status(404).json({ error: 'Student not found' });
+
+    if (isTeacherRequest(req)) {
+      const scope = await buildTeacherAllocationScope({ schoolId, campusId, teacherId: req.user?.id });
+      if (!studentIsWithinTeacherScope(student, scope)) {
+        return res.status(403).json({ error: 'Student is outside your assigned scope' });
+      }
+    }
+
+    const [progress, examResults, sessionWindow] = await Promise.all([
+      StudentProgress.findOne({ studentId, schoolId })
+        .populate('submissions.assignmentId', 'title subject dueDate marks')
+        .lean(),
+      ExamResult.find({ studentId, schoolId })
+        .populate('examId', 'title subject marks date term subjectId')
+        .sort({ createdAt: -1 })
+        .lean(),
+      resolveSessionWindow(schoolId),
+    ]);
+
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+    const holidayKeys = await loadHolidayKeys({
+      schoolId,
+      campusId,
+      start: sessionWindow.start,
+      end: sessionWindow.end < today ? sessionWindow.end : today,
+    });
+    const attendance = await computeSessionAttendance({
+      attendance: Array.isArray(student.attendance) ? student.attendance : [],
+      schoolId,
+      campusId,
+      window: sessionWindow,
+      holidayKeys,
+    });
+
+    const pctOf = (score, max) => {
+      const s = Number(score);
+      const m = Number(max) || 100;
+      return Number.isFinite(s) && m > 0 ? Math.round((s / m) * 100) : null;
+    };
+    const avg = (list) => (list.length ? Math.round(list.reduce((a, b) => a + b, 0) / list.length) : null);
+
+    const exams = examResults
+      .filter((r) => r.examId)
+      .map((r) => ({
+        id: String(r._id),
+        title: r.examId.title || 'Exam',
+        subject: r.examId.subject || '',
+        term: r.examId.term || '',
+        date: r.examId.date || null,
+        marks: r.status === 'absent' ? null : r.marks,
+        maxMarks: r.examId.marks || 100,
+        percentage: r.status === 'absent' ? null : pctOf(r.marks, r.examId.marks),
+        grade: r.grade || '',
+        status: r.status || 'pass',
+        published: Boolean(r.published),
+      }));
+
+    const submissions = (progress?.submissions || [])
+      .map((s) => ({
+        title: s.assignmentId?.title || 'Assignment',
+        subject: s.assignmentId?.subject || '',
+        dueDate: s.assignmentId?.dueDate || null,
+        submittedAt: s.submittedAt || null,
+        score: s.score ?? null,
+        maxMarks: s.assignmentId?.marks || 100,
+        percentage: s.score == null ? null : pctOf(s.score, s.assignmentId?.marks),
+        status: s.status || 'submitted',
+      }))
+      .sort((a, b) => new Date(b.submittedAt || 0) - new Date(a.submittedAt || 0));
+
+    // Per-subject performance: exam % and graded-assignment % merged with any
+    // stored progress metrics.
+    const subjects = new Map();
+    const bucket = (name) => {
+      const key = String(name || 'General').trim() || 'General';
+      if (!subjects.has(key)) subjects.set(key, { subject: key, exam: [], assignment: [], submitted: 0, metric: null });
+      return subjects.get(key);
+    };
+    exams.forEach((e) => { if (e.percentage != null) bucket(e.subject).exam.push(e.percentage); });
+    submissions.forEach((s) => {
+      const b = bucket(s.subject);
+      b.submitted += 1;
+      if (s.percentage != null) b.assignment.push(s.percentage);
+    });
+    (progress?.progressMetrics || []).forEach((m) => { if (m?.subject) bucket(m.subject).metric = m; });
+
+    const subjectRows = [...subjects.values()].map((b) => {
+      const examAvg = avg(b.exam);
+      const assignmentAvg = avg(b.assignment);
+      const parts = [examAvg, assignmentAvg].filter((v) => v != null);
+      const score = parts.length ? avg(parts) : (b.metric?.averageScore ?? null);
+      return {
+        subject: b.subject,
+        score,
+        examAverage: examAvg,
+        examCount: b.exam.length,
+        assignmentAverage: assignmentAvg,
+        submitted: b.submitted,
+        completedAssignments: b.metric?.completedAssignments ?? b.submitted,
+        totalAssignments: b.metric?.totalAssignments ?? null,
+      };
+    }).sort((a, b) => a.subject.localeCompare(b.subject));
+
+    const scored = subjectRows.map((r) => r.score).filter((v) => v != null);
+
+    res.json({
+      student: {
+        _id: student._id,
+        name: student.name || 'Student',
+        grade: student.grade || student.className || '',
+        section: student.section || student.sectionName || '',
+        roll: student.roll || null,
+        profilePic: typeof student.profilePic === 'string'
+          ? student.profilePic
+          : (student.profilePic?.secure_url || student.profilePic?.url || null),
+      },
+      overallScore: avg(scored),
+      attendance,
+      improvementTrend: progress?.improvementTrend || 'stable',
+      subjects: subjectRows,
+      exams: exams.slice(0, 200),
+      submissions: submissions.slice(0, 10),
+      totals: {
+        exams: exams.length,
+        submissions: submissions.length,
+        graded: submissions.filter((s) => s.score != null).length,
+        late: submissions.filter((s) => s.status === 'late').length,
+      },
+    });
+  } catch (error) {
+    console.error('Error fetching student overview:', error);
+    res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
 router.get('/student/:studentId', teacherAuth, async (req, res) => {
   // #swagger.tags = ['Progress']
   try {
@@ -177,7 +331,7 @@ router.get('/student/:studentId', teacherAuth, async (req, res) => {
     }
 
     const progress = await StudentProgress.findOne({ studentId, schoolId })
-      .populate('studentId', 'name grade section roll email mobile')
+      .populate('studentId', 'name grade section roll email mobile profilePic')
       .populate('submissions.assignmentId', 'title subject dueDate marks')
       .lean();
 

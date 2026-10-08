@@ -1536,13 +1536,38 @@ const TryoutSubmissionsPanel = ({ submissions, loading, grading, saving, saved, 
   );
 };
 
+const ACTIVITY_TYPES = [
+  { key: 'assignment', label: 'Assignment', description: 'Text or PDF work', icon: FileText, tone: 'bg-blue-100 text-blue-600' },
+  { key: 'worksheet', label: 'Worksheet', description: 'Structured practice', icon: BookOpen, tone: 'bg-emerald-100 text-emerald-600' },
+  { key: 'writing', label: 'Writing', description: 'Essay response', icon: Edit3, tone: 'bg-violet-100 text-violet-600' },
+  { key: 'mcq', label: 'MCQ', description: 'Multiple choice', icon: ListChecks, tone: 'bg-rose-100 text-rose-500' },
+  { key: 'blank', label: 'Fill in Blank', description: 'Answer completion', icon: Layers, tone: 'bg-amber-100 text-amber-600' },
+  { key: 'tryout', label: 'Tryout', description: 'Interactive activity', icon: Activity, tone: 'bg-cyan-100 text-cyan-600' },
+];
+
+const MA_SELECT = 'h-9 w-full appearance-none rounded-xl border border-slate-200 bg-white px-3 pr-8 text-[13px] text-slate-800 shadow-sm outline-none transition focus:border-blue-300';
+
+const MaFilter = ({ label, value, onChange, children }) => (
+  <label className="min-w-[140px] flex-1">
+    <span className="mb-1 block text-[11.5px] text-slate-500">{label}</span>
+    <span className="relative block">
+      <select value={value} onChange={(e) => onChange(e.target.value)} className={MA_SELECT}>{children}</select>
+      <ChevronDown className="pointer-events-none absolute right-2.5 top-1/2 size-4 -translate-y-1/2 text-slate-500" />
+    </span>
+  </label>
+);
+
+const countBadge = (count, testId, title) => (count > 0 ? (
+  <span data-testid={testId} title={title} className="rounded-full bg-red-500 px-1.5 py-0.5 text-[10px] font-bold leading-none text-white">{count > 99 ? '99+' : count}</span>
+) : null);
+
 const ManageAssignments = ({
   onEvaluateSubmissions, openActivityCreator, activityEditor, closeActivityEditor,
   loading, filteredAssignments, myClasses, subjects,
   activeAssignments, draftAssignments, pendingCount, totalAssignments,
   notificationCount = 0,
   siblingNotificationCount = 0,
-  viewMode, setViewMode, filterStatus, setFilterStatus,
+  filterStatus, setFilterStatus,
   filterSubject, setFilterSubject, filterTopic, setFilterTopic, topics,
   searchTerm, setSearchTerm,
   setShowModal, openAIAssignmentCreator, openAssignmentDetail, openDeleteModal,
@@ -1550,60 +1575,60 @@ const ManageAssignments = ({
   getAssignmentClassName, getAssignmentSectionName, getDaysUntilDue,
   createFormProps
 }) => (
-  <div
-    className="relative mx-auto max-w-[1360px] space-y-5 overflow-hidden rounded-[2rem] border border-white/50 bg-white/75 p-5 text-[#0b0e1a] shadow-[0_20px_60px_-20px_rgba(0,0,0,0.08),0_4px_20px_rgba(0,0,0,0.02),inset_0_1px_0_rgba(255,255,255,0.7)] backdrop-blur-lg backdrop-saturate-[1.1] sm:p-8"
-  >
-    <header className="mb-6 flex flex-wrap items-end justify-between gap-4">
+  <div className="mx-auto max-w-[1240px] space-y-3 text-slate-900">
+    {/* Header + view switch */}
+    <header className="flex flex-wrap items-center justify-between gap-3">
       <div>
-        <h1 className="flex items-center gap-2 text-2xl font-semibold tracking-[-0.02em] sm:text-[1.6rem]">
-          <GraduationCap className="size-6 text-[#4f6f8f]" /> Assignment Portal <span className="text-sm font-normal tracking-normal text-[#6f7a8c]">· v2</span>
-        </h1>
-        <p className="mt-1 text-sm text-[#6f7a8c]">Manage assignments and evaluate student submissions</p>
-      </div>
-      <div className="flex rounded-full border border-black/[0.03] bg-[#f0f2f6] p-1">
-        <button type="button" aria-current="page" className="inline-flex items-center gap-1.5 rounded-full bg-white px-4 py-2 text-xs font-medium text-[#0b0e1a] shadow-[0_2px_10px_rgba(0,0,0,0.04),0_1px_4px_rgba(0,0,0,0.02)]"><Layers className="size-3.5" /> Manage Assignments{draftAssignments > 0 && <span className="rounded-full bg-red-500 px-1.5 py-0.5 text-[10px] font-bold leading-none text-white">{draftAssignments > 99 ? '99+' : draftAssignments}</span>}{notificationCount > 0 && <span data-testid="assignment-module-notification" title={`${notificationCount} unread assignment notification${notificationCount === 1 ? '' : 's'}`} className="rounded-full bg-red-500 px-1.5 py-0.5 text-[10px] font-bold leading-none text-white">{notificationCount > 99 ? '99+' : notificationCount}</span>}</button>
-        <button type="button" onClick={onEvaluateSubmissions} className="inline-flex items-center gap-1.5 rounded-full px-4 py-2 text-xs font-medium text-[#6f7a8c] transition hover:bg-white/50 hover:text-[#1e2533]"><CheckCircle className="size-3.5" /> Evaluate Submissions{pendingCount > 0 && <span className="rounded-full bg-red-500 px-1.5 py-0.5 text-[10px] font-bold leading-none text-white">{pendingCount > 99 ? '99+' : pendingCount}</span>}{siblingNotificationCount > 0 && <span data-testid="assignment-evaluate-notification" title={`${siblingNotificationCount} unread assignment notification${siblingNotificationCount === 1 ? '' : 's'}`} className="rounded-full bg-red-500 px-1.5 py-0.5 text-[10px] font-bold leading-none text-white">{siblingNotificationCount > 99 ? '99+' : siblingNotificationCount}</span>}</button>
+        <h1 className="text-[22px] font-bold leading-tight tracking-tight">Assignment Portal <span className="text-slate-500">· v2</span></h1>
+        <p className="text-[13px] text-slate-500">Manage assignments and evaluate student submissions</p>
       </div>
     </header>
+    <div className="flex flex-wrap gap-2 rounded-2xl border border-slate-100 bg-white p-2 shadow-sm">
+      <button type="button" aria-current="page" className="inline-flex h-9 items-center gap-2 rounded-xl border border-blue-200 bg-blue-50 px-4 text-[13px] font-semibold text-blue-700">
+        <FileText className="size-4" /> Manage Assignments
+        {countBadge(draftAssignments)}
+        {countBadge(notificationCount, 'assignment-module-notification', `${notificationCount} unread assignment notification${notificationCount === 1 ? '' : 's'}`)}
+      </button>
+      <button type="button" onClick={onEvaluateSubmissions} className="inline-flex h-9 items-center gap-2 rounded-xl border border-slate-200 bg-white px-4 text-[13px] font-semibold text-slate-700 transition hover:bg-slate-50">
+        <CheckCircle className="size-4" /> Evaluate Submissions
+        {countBadge(pendingCount)}
+        {countBadge(siblingNotificationCount, 'assignment-evaluate-notification', `${siblingNotificationCount} unread assignment notification${siblingNotificationCount === 1 ? '' : 's'}`)}
+      </button>
+    </div>
 
-    <section className="rounded-2xl border border-[#edf0f5] bg-[#fafbfc] p-4">
+    {/* Create learning activity */}
+    <section className="rounded-2xl border border-slate-100 bg-white p-4 shadow-sm">
       <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
-        <div>
-          <h2 className="text-sm font-semibold text-[#1e2533]">Create learning activity</h2>
-          <p className="mt-0.5 text-[11px] text-[#6f7a8c]">Choose a format to open its dedicated editor.</p>
+        <div className="flex items-center gap-3">
+          <span className="flex size-10 items-center justify-center rounded-xl bg-blue-50 text-blue-600"><FileText className="size-5" /></span>
+          <div>
+            <h2 className="text-[16px] font-semibold">Create learning activity</h2>
+            <p className="text-[12px] text-slate-500">Choose a format to open its dedicated editor.</p>
+          </div>
         </div>
-        <span className="rounded-full border border-[#e6eaf0] bg-white px-3 py-1 text-[10px] font-semibold uppercase tracking-[0.04em] text-[#8e9aaf]">6 formats</span>
+        <span className="text-[12px] text-slate-500">6 formats</span>
       </div>
-      <div className="grid grid-cols-2 gap-2 sm:grid-cols-3 xl:grid-cols-6">
-        {[
-          { key: 'assignment', label: 'Assignment', description: 'Text or PDF work', icon: FileText, tone: 'text-blue-700 bg-blue-50 border-blue-100' },
-          { key: 'worksheet', label: 'Worksheet', description: 'Structured practice', icon: BookOpen, tone: 'text-amber-700 bg-amber-50 border-amber-100' },
-          { key: 'writing', label: 'Writing', description: 'Essay response', icon: Edit3, tone: 'text-purple-700 bg-purple-50 border-purple-100' },
-          { key: 'mcq', label: 'MCQ', description: 'Multiple choice', icon: CheckCircle, tone: 'text-emerald-700 bg-emerald-50 border-emerald-100' },
-          { key: 'blank', label: 'Fill in Blank', description: 'Answer completion', icon: ListChecks, tone: 'text-rose-700 bg-rose-50 border-rose-100' },
-          { key: 'tryout', label: 'Tryout', description: 'Interactive activity', icon: Activity, tone: 'text-indigo-700 bg-indigo-50 border-indigo-100' },
-        ].map((activityType) => (
+      <div className="grid grid-cols-2 gap-2.5 sm:grid-cols-3 xl:grid-cols-6">
+        {ACTIVITY_TYPES.map((t) => (
           <button
-            key={activityType.key}
+            key={t.key}
             type="button"
-            onClick={() => openActivityCreator(activityType.key)}
-            className="group rounded-xl border border-[#e6eaf0] bg-white p-3 text-left transition hover:-translate-y-0.5 hover:border-[#c8d0dc] hover:shadow-[0_4px_14px_rgba(0,0,0,0.04)]"
+            onClick={() => openActivityCreator(t.key)}
+            className={`flex flex-col items-center rounded-xl border bg-white px-2 py-3 text-center transition hover:-translate-y-0.5 hover:shadow-md ${activityEditor === t.key ? 'border-blue-300 ring-2 ring-blue-100' : 'border-slate-100'}`}
           >
-            <span className={`mb-2 flex size-8 items-center justify-center rounded-lg border ${activityType.tone}`}>
-              <activityType.icon className="size-4" />
-            </span>
-            <span className="block text-xs font-semibold text-[#1e2533]">{activityType.label}</span>
-            <span className="mt-0.5 block text-[10px] text-[#8e9aaf]">{activityType.description}</span>
+            <span className={`mb-1.5 flex size-10 items-center justify-center rounded-xl ${t.tone}`}><t.icon className="size-5" /></span>
+            <span className="text-[13px] font-semibold text-slate-900">{t.label}</span>
+            <span className="text-[11px] text-slate-500">{t.description}</span>
           </button>
         ))}
       </div>
     </section>
 
     {activityEditor && (
-      <section className="overflow-hidden rounded-2xl border border-[#e2e8ee] bg-white shadow-[0_4px_20px_rgba(0,20,30,0.05)]">
-        <div className="flex flex-wrap items-center justify-between gap-3 border-b border-[#e2e8ee] bg-[#fafbfc] px-4 py-3">
+      <section className="overflow-hidden rounded-2xl border border-slate-100 bg-white shadow-sm">
+        <div className="flex flex-wrap items-center justify-between gap-3 border-b border-slate-100 bg-slate-50 px-4 py-3">
           <div>
-            <p className="text-sm font-semibold text-[#1e2533]">
+            <p className="text-sm font-semibold text-slate-900">
               {activityEditor === 'mcq' ? 'MCQ Editor'
                 : activityEditor === 'blank' ? 'Fill in the Blank Editor'
                 : activityEditor === 'tryout' ? 'Tryout Builder'
@@ -1611,9 +1636,9 @@ const ManageAssignments = ({
                 : activityEditor === 'worksheet' ? 'New Worksheet'
                 : 'New Writing Task'}
             </p>
-            <p className="mt-0.5 text-[11px] text-[#6f7a8c]">Create and manage this activity without leaving Assignments.</p>
+            <p className="mt-0.5 text-[11px] text-slate-500">Create and manage this activity without leaving Assignments.</p>
           </div>
-          <button type="button" onClick={closeActivityEditor} className="inline-flex items-center gap-1.5 rounded-full border border-[#e2e8ee] bg-white px-4 py-2 text-xs font-medium text-[#2a3442] transition hover:bg-[#f0f4f8]">
+          <button type="button" onClick={closeActivityEditor} className="inline-flex h-8 items-center gap-1.5 rounded-xl border border-slate-200 bg-white px-3 text-xs font-medium text-slate-700 transition hover:bg-slate-50">
             <X className="size-3.5" /> Close editor
           </button>
         </div>
@@ -1635,260 +1660,164 @@ const ManageAssignments = ({
 
     {!activityEditor && (
       <>
-    {assignmentPublishMessage && (
-      <div role="status" className="flex items-center gap-2 rounded-2xl border border-emerald-200 bg-emerald-50 px-4 py-3 text-xs font-semibold text-emerald-700">
-        <CheckCircle className="size-4" /> {assignmentPublishMessage}
-      </div>
-    )}
-    {/* Stats Grid */}
-    <div className="grid grid-cols-2 gap-2.5 sm:gap-3 lg:grid-cols-3">
-      {[
-        { label: 'Active', value: activeAssignments, icon: CheckCircle, iconColor: 'text-emerald-600' },
-        { label: 'Drafts', value: draftAssignments, icon: Edit3, iconColor: 'text-amber-600' },
-        { label: 'My Classes', value: myClasses.length, icon: Users, iconColor: 'text-blue-600' },
-      ].map((stat) => (
-        <div key={stat.label} className="rounded-2xl border border-[#e2e8ee] bg-[#fafbfc] p-3.5 transition-colors hover:bg-[#f4f7fa] sm:p-4">
-          <div className="flex items-center justify-between gap-3">
-            <div>
-              <p className="text-[10px] font-semibold uppercase tracking-[0.08em] text-black/45 sm:text-xs">{stat.label}</p>
-              <p className="mt-1 text-2xl font-semibold leading-none text-black">{stat.value}</p>
-            </div>
-            <div className="flex size-9 items-center justify-center rounded-xl border border-[#e2e8ee] bg-white">
-              <stat.icon size={17} className={stat.iconColor} />
-            </div>
+        {assignmentPublishMessage && (
+          <div role="status" className="flex items-center gap-2 rounded-xl border border-emerald-200 bg-emerald-50 px-4 py-2.5 text-xs font-semibold text-emerald-700">
+            <CheckCircle className="size-4" /> {assignmentPublishMessage}
           </div>
-        </div>
-      ))}
-    </div>
+        )}
 
-    {/* Controls */}
-    <div className="rounded-2xl border border-[#e2e8ee] bg-[#fafbfc] p-3 sm:p-4">
-      <div className="flex flex-wrap items-center gap-2.5">
-        <div className="relative flex-1 min-w-[180px]">
-          <Search size={14} className="absolute left-3.5 top-1/2 -translate-y-1/2 text-black/40" />
-          <input
-            type="text"
-            placeholder="Search assignments..."
-            value={searchTerm}
-            onChange={(e) => setSearchTerm(e.target.value)}
-            className="w-full rounded-full border border-[#e2e8ee] bg-white py-2.5 pl-10 pr-4 text-sm text-black outline-none placeholder:text-black/35 transition-colors focus:border-[#b8c4d0]"
-          />
+        {/* Stats */}
+        <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
+          {[
+            { label: 'Active', value: activeAssignments, icon: CheckCircle, tone: 'bg-emerald-100 text-emerald-600' },
+            { label: 'Drafts', value: draftAssignments, icon: FileText, tone: 'bg-orange-100 text-orange-500' },
+            { label: 'My Classes', value: myClasses.length, icon: Users, tone: 'bg-violet-100 text-violet-600' },
+          ].map((s) => (
+            <div key={s.label} className="flex items-center gap-3 rounded-2xl border border-slate-100 bg-white p-3.5 shadow-sm">
+              <span className={`flex size-11 items-center justify-center rounded-xl ${s.tone}`}><s.icon className="size-5" /></span>
+              <div>
+                <p className="text-[12.5px] text-slate-500">{s.label}</p>
+                <p className="text-xl font-bold leading-tight">{s.value}</p>
+              </div>
+            </div>
+          ))}
         </div>
-        <select
-          value={filterStatus}
-          onChange={(e) => setFilterStatus(e.target.value)}
-          className="rounded-full border border-[#e2e8ee] bg-white px-3 py-2.5 text-xs text-black/70 outline-none transition-colors hover:bg-[#f4f7fa] focus:border-[#b8c4d0]"
-        >
-          <option value="all">All Status</option>
-          <option value="active">Active</option>
-          <option value="draft">Draft</option>
-          <option value="completed">Completed</option>
-        </select>
-        <select
-          value={filterSubject}
-          onChange={(e) => setFilterSubject(e.target.value)}
-          className="rounded-full border border-[#e2e8ee] bg-white px-3 py-2.5 text-xs text-black/70 outline-none transition-colors hover:bg-[#f4f7fa] focus:border-[#b8c4d0]"
-        >
-          <option value="all">All Subjects</option>
-          {subjects.map(subject => (
-            <option key={subject} value={subject}>{subject}</option>
-          ))}
-        </select>
-        <select
-          value={filterTopic}
-          onChange={(e) => setFilterTopic(e.target.value)}
-          className="rounded-full border border-[#e2e8ee] bg-white px-3 py-2.5 text-xs text-black/70 outline-none transition-colors hover:bg-[#f4f7fa] focus:border-[#b8c4d0]"
-        >
-          <option value="all">All Topics</option>
-          {topics.map(topic => (
-            <option key={topic} value={topic}>{topic}</option>
-          ))}
-        </select>
-        <div className="flex items-center gap-2 ml-auto">
-          <div className="flex items-center gap-1 rounded-full border border-[#e2e8ee] bg-[#f0f4f8] p-1">
-            <button
-              onClick={() => setViewMode('grid')}
-              className={`rounded-full p-1.5 transition-all ${viewMode === 'grid' ? 'bg-white text-black shadow-sm' : 'text-black/35 hover:text-black/65'}`}
-            >
-              <div className="w-3.5 h-3.5 grid grid-cols-2 gap-0.5">
-                <div className="bg-current rounded-sm" />
-                <div className="bg-current rounded-sm" />
-                <div className="bg-current rounded-sm" />
-                <div className="bg-current rounded-sm" />
-              </div>
-            </button>
-            <button
-              onClick={() => setViewMode('list')}
-              className={`rounded-full p-1.5 transition-all ${viewMode === 'list' ? 'bg-white text-black shadow-sm' : 'text-black/35 hover:text-black/65'}`}
-            >
-              <div className="w-3.5 h-3.5 flex flex-col justify-center gap-[3px]">
-                <div className="bg-current h-[2px] rounded" />
-                <div className="bg-current h-[2px] rounded" />
-                <div className="bg-current h-[2px] rounded" />
-              </div>
-            </button>
+
+        {/* Filters + actions */}
+        <div className="flex flex-wrap items-end gap-3 rounded-2xl border border-slate-100 bg-white p-3.5 shadow-sm">
+          <MaFilter label="Status" value={filterStatus} onChange={setFilterStatus}>
+            <option value="all">All Status</option>
+            <option value="active">Active</option>
+            <option value="draft">Draft</option>
+            <option value="completed">Completed</option>
+          </MaFilter>
+          <MaFilter label="Subject" value={filterSubject} onChange={setFilterSubject}>
+            <option value="all">All Subjects</option>
+            {subjects.map((subject) => <option key={subject} value={subject}>{subject}</option>)}
+          </MaFilter>
+          <MaFilter label="Topic" value={filterTopic} onChange={setFilterTopic}>
+            <option value="all">All Topics</option>
+            {topics.map((topic) => <option key={topic} value={topic}>{topic}</option>)}
+          </MaFilter>
+          <div className="relative min-w-[180px] flex-1">
+            <Search className="absolute left-3 top-1/2 size-4 -translate-y-1/2 text-slate-400" />
+            <input
+              type="text"
+              placeholder="Search assignments..."
+              value={searchTerm}
+              onChange={(e) => setSearchTerm(e.target.value)}
+              className="h-9 w-full rounded-xl border border-slate-200 bg-white pl-9 pr-3 text-[13px] outline-none transition focus:border-blue-300"
+            />
           </div>
-          <button
-            type="button"
-            onClick={openAIAssignmentCreator}
-            className="inline-flex items-center gap-1.5 rounded-full border border-violet-200 bg-violet-50 px-4 py-2.5 text-xs font-semibold text-violet-700 transition hover:-translate-y-0.5 hover:bg-violet-100 hover:shadow-sm"
-          >
-            <Sparkles size={14} />
-            AI Generate
+          <button type="button" onClick={openAIAssignmentCreator} className="inline-flex h-9 items-center gap-1.5 rounded-xl border border-blue-200 bg-blue-50 px-4 text-[13px] font-semibold text-blue-700 transition hover:bg-blue-100">
+            <Sparkles className="size-4" /> AI Generate
           </button>
-          <button
-            onClick={() => setShowModal(true)}
-            className="inline-flex items-center gap-1.5 rounded-full border border-[#d0d8e0] bg-[#f0f4f8] px-4 py-2.5 text-xs font-semibold text-black transition hover:bg-[#e8eef4]"
-          >
-            <Plus size={14} />
-            Create
+          <button type="button" onClick={() => setShowModal(true)} className="inline-flex h-9 items-center gap-1.5 rounded-xl bg-blue-600 px-4 text-[13px] font-semibold text-white shadow-sm transition hover:bg-blue-700">
+            <Plus className="size-4" /> Create
           </button>
         </div>
-      </div>
-    </div>
 
-    {/* Assignment List */}
-    {loading ? (
-      <div className="rounded-2xl border border-dashed border-[#e2e8ee] bg-[#fafbfc] p-12 text-center">
-        <div className="mb-4 inline-flex size-12 items-center justify-center rounded-2xl border border-[#e2e8ee] bg-[#f0f4f8]">
-          <Clock className="size-6 animate-spin text-black/40" />
-        </div>
-        <h3 className="mb-1 text-base font-semibold text-black">Loading assignments...</h3>
-        <p className="text-sm text-black/50">Fetching your assignment data</p>
-      </div>
-    ) : filteredAssignments.length === 0 ? (
-      <div className="rounded-2xl border border-dashed border-[#e2e8ee] bg-[#fafbfc] px-5 py-14 text-center">
-        <div className="mb-4 inline-flex size-14 items-center justify-center rounded-2xl border border-[#e2e8ee] bg-[#f0f4f8]">
-          <FileText className="size-7 text-black/35" />
-        </div>
-        <h3 className="mb-1 text-base font-semibold text-black">No assignments found</h3>
-        <p className="mb-5 text-sm text-black/45">Try adjusting your filters or create a new assignment</p>
-        <button
-          onClick={() => setShowModal(true)}
-          className="inline-flex items-center gap-1.5 rounded-full border border-[#d0d8e0] bg-[#f0f4f8] px-6 py-2.5 text-xs font-semibold text-black transition hover:bg-[#e8eef4]"
-        >
-          <Plus size={14} />
-          Create First Assignment
-        </button>
-      </div>
-    ) : (
-      <div>
-        <div className="flex items-center justify-between mb-3">
-          <p className="text-xs font-medium text-black/45">
-            Showing {filteredAssignments.length} of {totalAssignments} assignments
-          </p>
-        </div>
-        <div className={viewMode === 'grid' ? 'grid grid-cols-1 md:grid-cols-2 gap-4' : 'space-y-3'}>
-          {filteredAssignments.map((assignment) => {
-            const submissionFormat = assignment?.submissionFormat === 'pdf' ? 'pdf' : 'text';
-            const statusBorder = assignment.status === 'active' ? 'border-l-emerald-400/70' : assignment.status === 'draft' ? 'border-l-amber-400/70' : assignment.status === 'completed' ? 'border-l-blue-400/70' : 'border-l-red-400/70';
-            const statusColor = assignment.status === 'active'
-              ? 'border-emerald-100 bg-emerald-50 text-emerald-700'
-              : assignment.status === 'draft'
-                ? 'border-amber-100 bg-amber-50 text-amber-700'
-                : assignment.status === 'completed'
-                  ? 'border-blue-100 bg-blue-50 text-blue-700'
-                  : 'border-red-100 bg-red-50 text-red-700';
-            return (
-              <div
-                key={assignment._id}
-                onClick={() => openAssignmentDetail(assignment)}
-                className={`cursor-pointer rounded-2xl border border-[#e2e8ee] border-l-4 bg-[#fafbfc] transition-all duration-200 hover:-translate-y-0.5 hover:bg-[#f4f7fa] hover:shadow-md ${statusBorder} ${viewMode === 'grid' ? 'p-5' : 'p-4'}`}
-              >
-                <div className="flex items-start justify-between mb-3">
-                  <h3 className="mr-3 flex-1 text-sm font-semibold leading-snug text-black">
-                    {assignment.title}
-                  </h3>
-                  <div className="flex items-center gap-1 shrink-0">
-                    {assignment.status === 'draft' && (
-                      <button
-                        type="button"
-                        onClick={(event) => {
-                          event.stopPropagation();
-                          onPublishAssignment(assignment);
-                        }}
-                        disabled={Boolean(publishingAssignments[String(assignment._id)])}
-                        className="inline-flex items-center gap-1 rounded-lg border border-emerald-200 bg-emerald-50 px-2.5 py-1.5 text-[10px] font-semibold text-emerald-700 transition hover:bg-emerald-100 disabled:cursor-not-allowed disabled:opacity-60"
-                      >
-                        {publishingAssignments[String(assignment._id)] ? <Loader className="size-3 animate-spin" /> : <Share2 className="size-3" />}
-                        {publishingAssignments[String(assignment._id)] ? 'Publishing' : 'Publish'}
-                      </button>
-                    )}
-                    <button
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        openAssignmentDetail(assignment);
-                      }}
-                      className="rounded-lg p-1.5 text-black/35 transition-colors hover:bg-[#e8eef4] hover:text-black"
-                    >
-                      <Eye size={14} />
-                    </button>
-                    <button
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        openDeleteModal(assignment);
-                      }}
-                      className="rounded-lg p-1.5 text-black/35 transition-colors hover:bg-red-50 hover:text-red-600"
-                    >
-                      <Trash2 size={14} />
-                    </button>
-                  </div>
-                </div>
-
-                <div className="flex flex-wrap items-center gap-1.5 mb-3">
-                  <span className={`inline-flex items-center rounded-md border px-2 py-0.5 text-[11px] font-medium ${statusColor}`}>
-                    {assignment.status.charAt(0).toUpperCase() + assignment.status.slice(1)}
-                  </span>
-                  <span className="inline-flex items-center rounded-md border border-[#d9dfe6] bg-white px-2 py-0.5 text-[11px] font-medium text-black/65">
-                    {assignment.subject}
-                  </span>
-                  {assignment.topic && (
-                    <span className="inline-flex items-center rounded-md border border-blue-100 bg-blue-50 px-2 py-0.5 text-[11px] font-medium text-blue-700">
-                      {assignment.topic}
-                    </span>
-                  )}
-                  {assignment.chapterTitle && (
-                    <span className="inline-flex items-center gap-1 rounded-md border border-violet-100 bg-violet-50 px-2 py-0.5 text-[11px] font-medium text-violet-700">
-                      <BookOpen size={11} /> {assignment.chapterTitle}
-                    </span>
-                  )}
-                  <span className="inline-flex items-center rounded-md border border-[#e2e8ee] bg-[#f0f4f8] px-2 py-0.5 text-[11px] font-medium text-black/60">
-                    {`Class ${getAssignmentClassName(assignment) || 'N/A'}${getAssignmentSectionName(assignment) ? ` - ${getAssignmentSectionName(assignment)}` : ''}`}
-                  </span>
-                  <span className={`inline-flex items-center rounded-md border px-2 py-0.5 text-[11px] font-medium ${submissionFormat === 'pdf' ? 'border-purple-100 bg-purple-50 text-purple-700' : 'border-emerald-100 bg-emerald-50 text-emerald-700'}`}>
-                    {submissionFormat === 'pdf' ? 'PDF' : 'Text'}
-                  </span>
-                </div>
-
-                <p className="mb-3 line-clamp-2 text-xs leading-relaxed text-black/50">
-                  {assignment.description}
-                </p>
-
-                <div className="flex flex-wrap items-center gap-4 text-xs text-black/50">
-                  <div className="flex items-center gap-1.5">
-                    <Calendar size={12} className="text-black/35" />
-                    <span>Due {new Date(assignment.dueDate).toLocaleDateString()}</span>
-                    {getDaysUntilDue(assignment.dueDate) <= 3 && getDaysUntilDue(assignment.dueDate) > 0 && (
-                      <AlertTriangle size={12} className="text-orange-500" />
-                    )}
-                  </div>
-                  <div className="flex items-center gap-1.5">
-                    <Award size={12} className="text-black/35" />
-                    <span>{assignment.marks} marks</span>
-                  </div>
-                  {assignment.attachments && assignment.attachments.length > 0 && (
-                    <div className="flex items-center gap-1">
-                      <FileText size={12} className="text-black/35" />
-                      <span>{assignment.attachments.length} files</span>
-                    </div>
-                  )}
-                </div>
+        {/* Assignment table */}
+        <section className="rounded-2xl border border-slate-100 bg-white p-4 shadow-sm">
+          {loading ? (
+            <div className="flex flex-col items-center justify-center py-12 text-center">
+              <Clock className="mb-3 size-7 animate-spin text-blue-400" />
+              <h3 className="text-sm font-semibold">Loading assignments...</h3>
+              <p className="text-xs text-slate-500">Fetching your assignment data</p>
+            </div>
+          ) : filteredAssignments.length === 0 ? (
+            <div className="flex flex-col items-center justify-center py-12 text-center">
+              <span className="mb-3 flex size-12 items-center justify-center rounded-2xl bg-slate-50"><FileText className="size-6 text-slate-400" /></span>
+              <h3 className="text-sm font-semibold">No assignments found</h3>
+              <p className="mb-4 text-xs text-slate-500">Try adjusting your filters or create a new assignment</p>
+              <button type="button" onClick={() => setShowModal(true)} className="inline-flex h-9 items-center gap-1.5 rounded-xl bg-blue-600 px-4 text-[13px] font-semibold text-white hover:bg-blue-700">
+                <Plus className="size-4" /> Create First Assignment
+              </button>
+            </div>
+          ) : (
+            <>
+              <p className="mb-3 text-[13px] text-slate-600">Showing {filteredAssignments.length} of {totalAssignments} assignments</p>
+              <div className="overflow-x-auto rounded-xl border border-slate-100">
+                <table className="w-full min-w-[760px] text-left text-[13px]">
+                  <thead className="bg-slate-50 text-[12px] text-slate-600">
+                    <tr>
+                      <th className="w-14 px-3 py-2.5 font-medium" aria-label="Type" />
+                      <th className="px-3 py-2.5 font-medium">Title &amp; Details</th>
+                      <th className="px-3 py-2.5 font-medium">Due Date</th>
+                      <th className="px-3 py-2.5 font-medium">Marks</th>
+                      <th className="px-3 py-2.5 font-medium">Status</th>
+                      <th className="px-3 py-2.5 text-right font-medium">Actions</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-slate-100">
+                    {filteredAssignments.map((assignment) => {
+                      const isPdf = assignment?.submissionFormat === 'pdf';
+                      const daysLeft = getDaysUntilDue(assignment.dueDate);
+                      const dueSoon = daysLeft <= 3;
+                      const status = String(assignment.status || 'active');
+                      const statusTone = status === 'active' ? 'bg-emerald-50 text-emerald-700'
+                        : status === 'draft' ? 'bg-amber-50 text-amber-700'
+                          : status === 'completed' ? 'bg-blue-50 text-blue-700' : 'bg-red-50 text-red-600';
+                      const dotTone = status === 'active' ? 'bg-emerald-500' : status === 'draft' ? 'bg-amber-500' : status === 'completed' ? 'bg-blue-500' : 'bg-red-500';
+                      const publishing = Boolean(publishingAssignments[String(assignment._id)]);
+                      return (
+                        <tr key={assignment._id} onClick={() => openAssignmentDetail(assignment)} className="cursor-pointer transition-colors hover:bg-slate-50/70">
+                          <td className="px-3 py-2.5">
+                            <span className={`flex size-10 items-center justify-center rounded-xl ${isPdf ? 'bg-violet-50 text-violet-600' : 'bg-pink-50 text-pink-500'}`}><FileText className="size-5" /></span>
+                          </td>
+                          <td className="px-3 py-2.5">
+                            <p className="font-semibold text-slate-900">{assignment.title}</p>
+                            <div className="mt-1 flex flex-wrap gap-1.5 text-[11px]">
+                              {assignment.subject && <span className="rounded-full bg-blue-50 px-2 py-0.5 text-blue-700">{assignment.subject}</span>}
+                              <span className="rounded-full bg-slate-100 px-2 py-0.5 text-slate-600">
+                                {`Class ${getAssignmentClassName(assignment) || 'N/A'}${getAssignmentSectionName(assignment) ? ` - ${getAssignmentSectionName(assignment)}` : ''}`}
+                              </span>
+                              <span className="rounded-full bg-violet-50 px-2 py-0.5 text-violet-700">{isPdf ? 'PDF' : 'Text'}</span>
+                              {assignment.topic && <span className="rounded-full bg-sky-50 px-2 py-0.5 text-sky-700">{assignment.topic}</span>}
+                              {assignment.chapterTitle && <span className="rounded-full bg-amber-50 px-2 py-0.5 text-amber-700">{assignment.chapterTitle}</span>}
+                            </div>
+                          </td>
+                          <td className="whitespace-nowrap px-3 py-2.5">
+                            <span className={`inline-flex items-center gap-1.5 ${dueSoon ? 'text-red-600' : 'text-slate-700'}`}>
+                              <Calendar className="size-4" /> Due {new Date(assignment.dueDate).toLocaleDateString()}
+                            </span>
+                          </td>
+                          <td className="whitespace-nowrap px-3 py-2.5 text-slate-800">{assignment.marks} marks</td>
+                          <td className="px-3 py-2.5">
+                            <span className={`inline-flex items-center gap-1.5 rounded-full px-2.5 py-1 text-[12px] font-medium capitalize ${statusTone}`}>
+                              <span className={`size-2 rounded-full ${dotTone}`} /> {status}
+                            </span>
+                          </td>
+                          <td className="px-3 py-2.5">
+                            <div className="flex items-center justify-end gap-1">
+                              {status === 'draft' && (
+                                <button
+                                  type="button"
+                                  onClick={(event) => { event.stopPropagation(); onPublishAssignment(assignment); }}
+                                  disabled={publishing}
+                                  className="inline-flex items-center gap-1 rounded-lg border border-emerald-200 bg-emerald-50 px-2.5 py-1 text-[11px] font-semibold text-emerald-700 transition hover:bg-emerald-100 disabled:opacity-60"
+                                >
+                                  {publishing ? <Loader className="size-3 animate-spin" /> : <Share2 className="size-3" />}
+                                  {publishing ? 'Publishing' : 'Publish'}
+                                </button>
+                              )}
+                              <button type="button" aria-label="View assignment" onClick={(e) => { e.stopPropagation(); openAssignmentDetail(assignment); }} className="rounded-lg p-1.5 text-slate-400 transition hover:bg-slate-100 hover:text-slate-700">
+                                <Eye className="size-4" />
+                              </button>
+                              <button type="button" aria-label="Delete assignment" onClick={(e) => { e.stopPropagation(); openDeleteModal(assignment); }} className="rounded-lg p-1.5 text-slate-400 transition hover:bg-red-50 hover:text-red-600">
+                                <Trash2 className="size-4" />
+                              </button>
+                            </div>
+                          </td>
+                        </tr>
+                      );
+                    })}
+                  </tbody>
+                </table>
               </div>
-            );
-          })}
-        </div>
-      </div>
-    )}
+            </>
+          )}
+        </section>
       </>
     )}
   </div>

@@ -1024,6 +1024,7 @@ const buildStudentAttendancePayload = (
     className: resolveStudentClass(student),
     section: resolveStudentSection(student),
     roll: student?.roll || null,
+    profilePic: resolveProfilePhoto(student?.profilePic),
     attendanceByDate,
     selectedDateRecord: selectedRecord
       ? {
@@ -1096,7 +1097,7 @@ router.get('/teacher/students', authTeacher, async (req, res) => {
     const activeSessionName = await resolveActiveAcademicSessionName(schoolId);
 
     const scopeStudents = await StudentUser.find(baseFilter)
-      .select('name username studentCode grade section roll attendance admissionDate createdAt')
+      .select('name username studentCode grade section roll attendance admissionDate createdAt profilePic')
       .lean();
 
     let scopedStudents = scopeStudents;
@@ -1158,6 +1159,33 @@ router.get('/teacher/students', authTeacher, async (req, res) => {
         if (sectionCompare !== 0) return sectionCompare;
         return String(a.name || '').localeCompare(String(b.name || ''));
       });
+
+    // Academic-year totals per student (same calculation as the parent
+    // portal: school days in the active session minus holidays) plus photo.
+    // Only computed when the caller asks for it, to keep the marking screen fast.
+    if (parseBoolean(req.query?.withSession) && result.length > 0) {
+      const sessionWindow = await resolveSessionWindow(schoolId);
+      const today = new Date();
+      today.setHours(0, 0, 0, 0);
+      const holidayKeys = await loadHolidayKeys({
+        schoolId,
+        campusId,
+        start: sessionWindow.start,
+        end: sessionWindow.end < today ? sessionWindow.end : today,
+      });
+      const rawById = new Map(scopedStudents.map((student) => [String(student._id), student]));
+      await Promise.all(result.map(async (student) => {
+        const raw = rawById.get(String(student._id));
+        student.profilePic = resolveProfilePhoto(raw?.profilePic);
+        student.sessionSummary = await computeSessionAttendance({
+          attendance: Array.isArray(raw?.attendance) ? raw.attendance : [],
+          schoolId,
+          campusId,
+          window: sessionWindow,
+          holidayKeys,
+        });
+      }));
+    }
 
     const lessonPlanContext = (!isSubstituteMode && requestedClass && requestedSection && normalizeText(subject))
       ? await buildLessonPlanContext({
@@ -1737,7 +1765,7 @@ router.get('/admin/students', adminAuth, async (req, res) => {
     if (campusId) baseFilter.campusId = campusId;
 
     const scopeStudents = await StudentUser.find(baseFilter)
-      .select('name username studentCode grade section roll attendance admissionDate createdAt')
+      .select('name username studentCode grade section roll attendance admissionDate createdAt profilePic')
       .lean();
 
     const activeSessionName = await resolveActiveAcademicSessionName(schoolId);

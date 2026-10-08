@@ -39,6 +39,9 @@ import {
   Sparkles,
   CircleUser,
   ArrowLeftRight,
+  ArrowRight,
+  CheckCircle2,
+  Search,
 } from 'lucide-react';
 import { Button } from '../components/ui/button';
 import { useTenant } from '../context/TenantContext';
@@ -48,6 +51,7 @@ import HealthUpdatesAdvanced from './HealthUpdatesAdvanced';
 import ParentMeetings from './ParentMeetings';
 import AssignmentPortal from './AssignmentPortal';
 import AttendanceManagement from './AttendanceManagement';
+import ClassAttendanceOverview from './ClassAttendanceOverview';
 import TeacherDashboard from './TeacherDashboard';
 import SmartTeachingLessonPlanner from './SmartTeachingLessonPlanner';
 import LessonPlannerWizard from './components/LessonPlannerWizard';
@@ -83,7 +87,6 @@ import { notificationId, readModuleSeenState, writeModuleSeenState } from '../ut
 
 const PORTAL_BASE = '/teacher';
 const API_BASE = (import.meta.env.VITE_API_URL || 'http://localhost:5000').replace(/\/$/, '');
-const MotionNavLink = Motion.create(NavLink);
 
 const portalNavigation = [
   { icon: Home, label: 'Dashboard', path: `${PORTAL_BASE}/dashboard` },
@@ -826,20 +829,6 @@ const PlaceholderModule = ({ icon = FileText, title, description, actions = [], 
   );
 };
 
-const GLASS_CARD = {
-  background: 'rgba(255, 255, 255, 0.35)',
-  backdropFilter: 'blur(18px) saturate(180%)',
-  WebkitBackdropFilter: 'blur(18px) saturate(180%)',
-  boxShadow: '0 20px 40px -12px rgba(100, 120, 200, 0.15), 0 8px 24px -6px rgba(80, 100, 180, 0.06), inset 0 1px 2px rgba(255, 255, 255, 0.5)',
-  border: '1px solid #D7DCFF',
-};
-
-const GLASS_CONTROL = {
-  background: 'rgba(255, 255, 255, 0.20)',
-  backdropFilter: 'blur(4px)',
-  WebkitBackdropFilter: 'blur(4px)',
-};
-
 const ClassesHub = () => {
   const navigate = useNavigate();
   const [allocations, setAllocations] = useState([]);
@@ -848,7 +837,6 @@ const ClassesHub = () => {
   const [selectedSection, setSelectedSection] = useState('');
   const [selectedSubject, setSelectedSubject] = useState('');
   const [allocationError, setAllocationError] = useState('');
-
   useEffect(() => {
     (async () => {
       setLoading(true);
@@ -957,123 +945,103 @@ const ClassesHub = () => {
     });
   };
 
-  const SelectField = ({ id, label, value, onChange, options }) => (
-    <div >
-      <label
-        htmlFor={id}
-        className="mb-2 block text-[0.75rem] font-medium uppercase tracking-[0.04em] text-[#5363F5]/80"
-      >
-        {label}
+  const fields = [
+    { id: 'classSelect', label: 'Class', icon: GraduationCap, iconCls: 'text-slate-500', value: selectedClass, onChange: setSelectedClass, options: classNames, ring: 'focus:border-blue-300 focus:ring-blue-100' },
+    { id: 'sectionSelect', label: 'Section', icon: Users, iconCls: 'text-slate-500', value: selectedSection, onChange: setSelectedSection, options: sections, ring: 'focus:border-blue-300 focus:ring-blue-100' },
+    { id: 'subjectSelect', label: 'Subject', icon: BookOpen, iconCls: 'text-violet-500', value: selectedSubject, onChange: setSelectedSubject, options: subjects, ring: 'border-violet-200 focus:border-violet-300 focus:ring-violet-100' },
+  ];
+
+  const renderField = (f, wide = false) => (
+    <div key={f.id} className={`rounded-2xl border border-white/80 bg-white/80 p-3 shadow-sm ${wide ? 'col-span-2' : ''}`}>
+      <label htmlFor={f.id} className="mb-2 flex items-center gap-2 text-[13px] font-medium text-slate-600">
+        <f.icon size={15} className={f.iconCls} /> {f.label}
       </label>
       <div className="relative">
         <select
-          id={id}
-          value={value}
-          onChange={(e) => onChange(e.target.value)}
-          className="w-full cursor-pointer appearance-none rounded-[60px] border border-[#D7DCFF] px-5 py-3 pr-10 text-base font-medium text-[#5363F5] transition-all duration-200 hover:border-[#C4CDFF] focus:border-[#B8C2F5] focus:outline-none focus:ring-2 focus:ring-[#B8C2F5]/40"
-          style={GLASS_CONTROL}
+          id={f.id}
+          value={f.value}
+          onChange={(e) => f.onChange(e.target.value)}
+          className={`w-full cursor-pointer appearance-none rounded-xl border border-slate-200 bg-white px-3.5 py-2 pr-9 text-sm font-semibold text-slate-900 shadow-sm transition focus:outline-none focus:ring-4 ${f.ring}`}
         >
-          {options.map((o) => (
-            <option key={o} value={o} style={{ background: 'rgba(255,255,255,0.95)', color: '#0b1a2b' }}>
-              {o}
-            </option>
-          ))}
-          {options.length === 0 && (
-            <option value="" style={{ background: 'rgba(255,255,255,0.95)', color: '#0b1a2b' }}>
-              —
-            </option>
-          )}
+          {f.options.map((o) => <option key={o} value={o}>{o}</option>)}
+          {f.options.length === 0 && <option value="">—</option>}
         </select>
-        <span className="pointer-events-none absolute right-4 top-1/2 -translate-y-1/2 text-[1.1rem] text-[#5363F5]/70">
-          ⌄
-        </span>
+        <ChevronDown size={15} className="pointer-events-none absolute right-3 top-1/2 -translate-y-1/2 text-slate-500" />
       </div>
     </div>
   );
 
+  // Full-bleed screen: soft light background with a white frosted edge vignette, card centred, never scrolls.
+  const shell = (children) => (
+    <div className="relative flex h-full min-h-0 items-center justify-center overflow-hidden p-4">
+      <div aria-hidden="true" className="absolute inset-0 bg-gradient-to-br from-blue-100 via-slate-50 to-indigo-100" />
+      <div className="relative w-full max-w-[520px]">{children}</div>
+    </div>
+  );
+
   if (!loading && allocations.length === 0) {
-    return (
-      <div className="flex min-h-full items-center justify-center bg-white p-6 ">
-        <div className="w-full max-w-[520px] rounded-[40px] p-11 text-center" style={GLASS_CARD}>
-          <p className="text-sm text-[#2c405e]">{allocationError || 'No class allocations found. Contact your administrator.'}</p>
-        </div>
-      </div>
+    return shell(
+      <div className="rounded-3xl border border-white/70 bg-white/90 p-8 text-center shadow-2xl backdrop-blur-xl">
+        <p className="text-sm text-slate-600">{allocationError || 'No class allocations found. Contact your administrator.'}</p>
+      </div>,
     );
   }
 
-  return (
-    <div className="flex min-h-full items-center justify-center bg-white rounded-[35px] p-6">
-      <div
-        className="flex w-full max-w-[760px] flex-col rounded-[35px] border border-[#D7DCFF] bg-white/35 transition-colors hover:border-[#C4CDFF]"
-        style={{ ...GLASS_CARD, padding: '3.5rem 4rem 4rem' }}
-      >
-        {/* Title */}
-        <h1
-          className="mb-8 self-center rounded-[60px] px-6 py-1.5 text-center text-[1.6rem] font-semibold tracking-[-0.02em] text-[#5363F5]"
-          style={{ background: 'rgba(255,255,255,0.20)', border: '1px solid #D7DCFF', backdropFilter: 'blur(4px)' }}
-        >
-          Select Class
-        </h1>
+  const chips = [
+    selectedClass && { key: 'c', icon: GraduationCap, text: `Class ${selectedClass}`, cls: 'border-blue-200 bg-blue-50 text-slate-800', iconCls: 'text-blue-600' },
+    selectedSection && { key: 's', icon: Users, text: `Section ${selectedSection}`, cls: 'border-emerald-200 bg-emerald-50 text-slate-800', iconCls: 'text-emerald-600' },
+    selectedSubject && { key: 'j', icon: BookOpen, text: selectedSubject, cls: 'border-violet-200 bg-violet-50 text-slate-800', iconCls: 'text-violet-600' },
+  ].filter(Boolean);
 
-        {/* Class + Section */}
-        <div className="mb-6 grid grid-cols-2 gap-4">
-          <SelectField
-            id="classSelect"
-            label="Class"
-            value={selectedClass}
-            onChange={setSelectedClass}
-            options={classNames}
-          />
-          <SelectField
-            id="sectionSelect"
-            label="Section"
-            value={selectedSection}
-            onChange={setSelectedSection}
-            options={sections}
-          />
+  return shell(
+    <Motion.div
+      initial={{ opacity: 0, y: 14, scale: 0.98 }}
+      animate={{ opacity: 1, y: 0, scale: 1 }}
+      transition={{ duration: 0.35, ease: 'easeOut' }}
+      className="rounded-3xl border border-white/70 bg-white/90 px-5 pb-5 pt-4 shadow-[0_24px_60px_-12px_rgba(0,0,0,0.45)] backdrop-blur-xl"
+    >
+      {/* Header */}
+      <div className="mb-4 flex flex-col items-center text-center">
+        <div className="mb-2 flex h-12 w-12 items-center justify-center rounded-full bg-white text-blue-600 shadow-[0_6px_18px_rgba(37,99,235,0.18)]">
+          <BookOpen size={22} />
         </div>
-
-        {/* Subject */}
-        <SelectField
-          id="subjectSelect"
-          label="Subject"
-          value={selectedSubject}
-          onChange={setSelectedSubject}
-          options={subjects}
-        />
-
-        {/* Divider */}
-        <div className="my-4 h-px w-full" style={{ background: 'rgba(255,255,255,0.15)' }} />
-
-        {/* Selection preview */}
-        <div
-          className="flex flex-wrap items-center justify-center gap-3 rounded-[60px] px-5 py-2.5"
-          style={{ background: 'rgba(255,255,255,0.15)', border: '1px solid #D7DCFF', backdropFilter: 'blur(4px)' }}
-        >
-          <span className="text-[0.7rem] uppercase tracking-[0.04em] text-[#5363F5]/70">Selected</span>
-          {[selectedClass, selectedSection, selectedSubject].filter(Boolean).map((val) => (
-            <span
-              key={val}
-              className="rounded-[40px] px-5 py-1 text-[0.85rem] font-medium text-[#5363F5]"
-              style={{ background: 'rgba(255,255,255,0.20)', border: '1px solid #D7DCFF' }}
-            >
-              {val}
-            </span>
-          ))}
-        </div>
-
-        {/* Go button */}
-        <button
-          type="button"
-          onClick={handleGo}
-          disabled={!selectedClass || !selectedSection}
-          className="mt-5 w-full rounded-[60px] border border-[#D7DCFF] py-3.5 text-base font-semibold text-[#5363F5] transition-all duration-200 hover:-translate-y-1 hover:border-[#C4CDFF] hover:bg-[#C4CDFF]/20 hover:shadow-[0_12px_28px_-10px_rgba(80,100,180,0.20)] active:translate-y-0 active:border-[#B8C2F5] focus:border-[#B8C2F5] focus:outline-none focus:ring-2 focus:ring-[#B8C2F5]/40 disabled:cursor-not-allowed disabled:opacity-50"
-          style={{ background: 'rgba(255,255,255,0.30)', backdropFilter: 'blur(4px)' }}
-        >
-          Go to the Class
-        </button>
+        <h1 className="text-xl font-bold tracking-tight text-slate-900">Select Class</h1>
+        <p className="mt-0.5 text-xs text-slate-500">Choose the class, section and subject to continue</p>
       </div>
-    </div>
+
+      {loading ? (
+        <div className="flex justify-center py-10"><RefreshCw size={20} className="animate-spin text-blue-500" /></div>
+      ) : (
+        <>
+          <div className="grid grid-cols-2 gap-3">
+            {renderField(fields[0])}
+            {renderField(fields[1])}
+            {renderField(fields[2], true)}
+          </div>
+
+          {/* Selection preview */}
+          <div className="mt-3 flex flex-wrap items-center gap-2 rounded-2xl bg-slate-50/90 px-3 py-2.5">
+            <span className="mr-auto flex items-center gap-1.5 text-xs font-medium text-slate-500">
+              <CheckCircle2 size={16} className="fill-sky-500 text-white" /> Selected Class
+            </span>
+            {chips.map((c) => (
+              <span key={c.key} className={`inline-flex items-center gap-1.5 rounded-full border px-3 py-1 text-xs font-semibold ${c.cls}`}>
+                <c.icon size={13} className={c.iconCls} /> {c.text}
+              </span>
+            ))}
+          </div>
+
+          <button
+            type="button"
+            onClick={handleGo}
+            disabled={!selectedClass || !selectedSection}
+            className="mt-4 flex w-full items-center justify-center gap-2 rounded-full bg-gradient-to-r from-blue-500 to-blue-600 py-3 text-sm font-semibold text-white shadow-[0_10px_24px_-8px_rgba(37,99,235,0.6)] transition hover:-translate-y-0.5 hover:from-blue-600 hover:to-blue-700 disabled:cursor-not-allowed disabled:opacity-50"
+          >
+            <ArrowRight size={17} /> Go to the Class
+          </button>
+        </>
+      )}
+    </Motion.div>,
   );
 };
 
@@ -1148,6 +1116,18 @@ const CW_TABS = [
     subTabs: [],
   },
 ];
+
+const SUB_TAB_ICONS = {
+  'overview/analytics': BarChart3,
+  'overview/attendance': CalendarCheck,
+  'students/health-records': Activity,
+  'students/attendance': CalendarCheck,
+  'assignments/manage': FileText,
+  'assignments/evaluate': ClipboardCheck,
+  'students/achievements': Sparkles,
+  'assessments/exam': GraduationCap,
+  'students/observations': Eye,
+};
 
 const ClassWorkspace = ({ notifications = [], seenState = {} }) => {
   const { classId = 'current' } = useParams();
@@ -1305,128 +1285,100 @@ const ClassWorkspace = ({ notifications = [], seenState = {} }) => {
     return <Outlet />;
   }
 
+  const todayLabel = new Date().toLocaleDateString('en-GB', { weekday: 'long', day: 'numeric', month: 'short', year: 'numeric' }).replace(/,/g, '');
+  const countBadge = (count, testId) => (count > 0 ? (
+    <span data-testid={testId} className="inline-flex min-h-4 min-w-4 items-center justify-center rounded-full bg-red-500 px-1 text-[9px] font-bold leading-none text-white">
+      {count > 99 ? '99+' : count}
+    </span>
+  ) : null);
+
   return (
-    <div className="space-y-4">
+    <div className="mx-auto max-w-[1240px] space-y-3">
 
-      {/* ══════════════════════════════════════════════════
-          Card  — white, rounded-[20px], subtle shadow
-      ══════════════════════════════════════════════════ */}
-      <div className="rounded-[20px] bg-white shadow-[0_2px_16px_0_rgba(15,23,42,0.08)] border border-slate-100">
-
-        {/* ── Title block — centered ─────────────────────── */}
-        <div className="pt-8 pb-2 flex flex-col items-center gap-3">
-
-          {/* "Class :5  Section : A" */}
-          <h1 className="text-[1.75rem] font-bold tracking-tight text-[#0F172A] text-center">
-            {className
-              ? <>Class&nbsp;:{className}&nbsp;&nbsp;Section&nbsp;:&nbsp;{sectionName || '—'}</>
-              : classDisplayName(classId)
-            }
+      {/* ── Header: back · title · switch class · date ── */}
+      <div className="flex flex-wrap items-center gap-3">
+        <button
+          type="button"
+          onClick={() => navigate('/teacher/classes')}
+          aria-label="Back to classes"
+          className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full border border-slate-200 bg-white text-slate-700 shadow-sm transition hover:bg-slate-50"
+        >
+          <ChevronLeft size={18} />
+        </button>
+        <div className="min-w-0">
+          <h1 className="truncate text-[22px] font-bold leading-tight tracking-tight text-slate-900">
+            {className ? <>Class {className} - Section {sectionName || '—'}</> : classDisplayName(classId)}
           </h1>
-
-          {/* Switch class pill */}
+          <p className="text-[13px] text-slate-500">{rel === 'overview/attendance' ? 'Attendance Overview' : 'Class Overview & Performance'}</p>
+        </div>
+        <div className="ml-auto flex items-center gap-2">
           <NavLink
             to="/teacher/classes"
-            className="inline-flex items-center rounded-full border border-slate-200 bg-white px-4 py-1.5 text-[13px] font-medium text-slate-600 hover:border-indigo-300 hover:text-indigo-600 transition-colors"
+            className="inline-flex items-center gap-2 rounded-full border border-slate-200 bg-white px-3.5 py-2 text-[13px] font-semibold text-slate-800 shadow-sm transition hover:border-blue-200 hover:text-blue-700"
           >
-            Switch class
+            <ArrowLeftRight size={15} className="text-blue-600" /> Switch Class
           </NavLink>
+          {/* <span className="hidden items-center gap-2 rounded-full border border-slate-200 bg-white px-3.5 py-2 text-[13px] text-slate-600 shadow-sm sm:inline-flex">
+            <CalendarDays size={15} className="text-slate-500" /> {todayLabel}
+          </span> */}
         </div>
+      </div>
 
-        {/* ── Tab bar — centered, pill ───────────────────────
-            Ref: rx=24, fill=#F8FAFC, stroke=#E2E8F0, h=48
-            Active: indigo border with no fill or shadow, rx=18.5, h=37
-        ──────────────────────────────────────────────────── */}
-        <div className="flex justify-center px-6 pt-4 pb-0">
-          <div className="inline-flex items-center gap-[5px] rounded-[24px] border border-[#E2E8F0] bg-[#F8FAFC] p-[5.5px]">
-            {CW_TABS.map((tab) => {
-              const Icon = tab.icon;
-              const isActive = tab.id === activeTab.id;
-              const to = `${basePath}/${tab.firstPath}`;
-              const notificationKey = tab.id === 'overview' ? 'overview' : tab.id;
-              const notificationCount = getTeacherModuleNotificationCount(notifications, notificationKey, seenState);
+      {/* ── Main tab bar ── */}
+      <div className="flex justify-center">
+        <div className="inline-flex max-w-full items-center gap-1 overflow-x-auto rounded-full border border-slate-200 bg-white/80 p-1 shadow-sm">
+          {CW_TABS.map((tab) => {
+            const Icon = tab.icon;
+            const isActive = tab.id === activeTab.id;
+            const notificationCount = getTeacherModuleNotificationCount(notifications, tab.id, seenState);
+            return (
+              <NavLink
+                key={tab.id}
+                to={`${basePath}/${tab.firstPath}`}
+                className={`inline-flex h-9 items-center gap-2 whitespace-nowrap rounded-full px-5 text-[13px] font-semibold transition ${isActive
+                  ? 'border border-blue-200 bg-blue-500 text-white shadow-sm'
+                  : 'border border-transparent text-slate-700 hover:bg-slate-50'}`}
+              >
+                <Icon size={16} className={isActive ? 'text-white' : 'text-slate-500'} />
+                {tab.label}
+                {countBadge(notificationCount, `teacher-class-tab-notification-${tab.id}`)}
+              </NavLink>
+            );
+          })}
+        </div>
+      </div>
+
+      {/* ── Sub-tab bar ── */}
+      {hasSubTabs && (
+        <Motion.div
+          key={activeTab.id}
+          initial={{ opacity: 0, y: -6 }}
+          animate={{ opacity: 1, y: 0 }}
+          transition={{ duration: 0.18, ease: 'easeOut' }}
+          className="flex justify-center"
+        >
+          <div className="inline-flex max-w-full items-center gap-1 overflow-x-auto rounded-full border border-slate-200 bg-white/80 p-1 shadow-sm">
+            {activeTab.subTabs.map((sub, idx) => {
+              const SubIcon = SUB_TAB_ICONS[sub.path] || FileText;
+              const subKey = sub.notificationKey || teacherNotificationModuleKeyForPath(sub.path);
+              const subCount = getTeacherModuleNotificationCount(notifications, subKey, seenState);
               return (
                 <NavLink
-                  key={tab.id}
-                  to={to}
-                  className={[
-                    'inline-flex items-center gap-1.5 rounded-[18px] px-4 text-[13.5px] font-semibold',
-                    'h-[37px] whitespace-nowrap transition-all duration-150',
-                    isActive
-                      ? 'text-[#5363F5] ring-1 ring-[#B8C2F5]'
-                      : 'text-[#475569] hover:text-[#1E293B]',
-                  ].join(' ')}
+                  key={sub.path + idx}
+                  to={`${basePath}/${sub.path}`}
+                  className={({ isActive: ia }) => `inline-flex h-8 items-center gap-2 whitespace-nowrap rounded-full px-4 text-[12.5px] font-medium transition ${ia
+                    ? 'border border-blue-200 bg-blue-500 text-white shadow-sm'
+                    : 'border border-transparent text-slate-700 hover:bg-slate-50'}`}
                 >
-                  <Icon size={15} strokeWidth={isActive ? 2.2 : 1.8} />
-                  {tab.label}
-                  <span data-testid={`teacher-class-tab-notification-${tab.id}`} className={`inline-flex min-h-4 min-w-4 items-center justify-center rounded-full px-1 text-[9px] font-bold leading-none ${notificationCount > 0 ? 'bg-red-500 text-white' : 'bg-slate-200 text-slate-500'}`}>
-                    {notificationCount > 99 ? '99+' : notificationCount}
-                  </span>
+                  <SubIcon size={14} className="text-blue-600" />
+                  {sub.label}
+                  {countBadge(subCount, `teacher-subtab-notification-${subKey}`)}
                 </NavLink>
               );
             })}
           </div>
-        </div>
-
-        {/* ── Caret + Sub-tab bar ────────────────────────────
-            Ref image: small downward-pointing triangle
-            connecting active tab to the sub-bar below.
-            Sub-bar: rx=21.5, fill=#F5F5FF, stroke=#D7DCFF
-            Active sub-item: rx=16, fill=white, h=32
-            Items: soft purple bullet dot + text
-        ──────────────────────────────────────────────────── */}
-        {hasSubTabs && (
-          <Motion.div
-            key={activeTab.id}
-            initial={{ opacity: 0, y: -8 }}
-            animate={{ opacity: 1, y: 0 }}
-            transition={{ duration: 0.18, ease: 'easeOut' }}
-            className="flex flex-col items-center pb-6 pt-0"
-          >
-            {/* Triangle caret — points down from tab bar to sub-bar */}
-            <div
-              style={{
-                width: 0,
-                height: 0,
-                borderLeft: '10px solid transparent',
-                borderRight: '10px solid transparent',
-                borderTop: '10px solid #F5F5FF',
-                filter: 'drop-shadow(0 -1px 0 #D7DCFF)',
-              }}
-            />
-
-            {/* Sub-bar pill */}
-            <div className="inline-flex max-w-full items-center gap-[5px] overflow-x-auto rounded-[22px] border border-[#D7DCFF] bg-[#F5F5FF] p-[5.5px]">
-              {activeTab.subTabs.map((sub, idx) => (
-                <NavLink
-                  key={sub.path + idx}
-                  to={`${basePath}/${sub.path}`}
-                  className={({ isActive: ia }) =>
-                    [
-                      'inline-flex items-center gap-1.5 rounded-[16px] px-3',
-                      'h-8 text-[12.5px] font-semibold whitespace-nowrap transition-all duration-150',
-                      ia
-                        ? 'bg-[#B8C2F5]/25 text-[#5363F5] shadow-sm ring-1 ring-[#B8C2F5]'
-                        : 'text-[#5363F5] hover:bg-[#C4CDFF]/35 hover:text-[#5363F5]',
-                    ].join(' ')
-                  }
-                >
-                  {/* Indigo bullet dot — r=2.5 from SVG */}
-                  <span className="w-[5px] h-[5px] rounded-full bg-[#5363F5] shrink-0" />
-                  {sub.label}
-                  {(() => {
-                    const subKey = sub.notificationKey || teacherNotificationModuleKeyForPath(sub.path);
-                    const subCount = getTeacherModuleNotificationCount(notifications, subKey, seenState);
-                    return <span data-testid={`teacher-subtab-notification-${subKey}`} className={`inline-flex min-h-4 min-w-4 items-center justify-center rounded-full px-1 text-[9px] font-bold leading-none ${subCount > 0 ? 'bg-red-500 text-white' : 'bg-slate-200 text-slate-500'}`}>{subCount > 99 ? '99+' : subCount}</span>;
-                  })()}
-                </NavLink>
-              ))}
-            </div>
-          </Motion.div>
-        )}
-
-        {!hasSubTabs && <div className="pb-4" />}
-      </div>
+        </Motion.div>
+      )}
 
       {/* Child route */}
       <Outlet context={{ className, sectionName }} />
@@ -1473,6 +1425,130 @@ class TeacherPortalErrorBoundary extends Component {
   }
 }
 
+// ── Header pieces (mirrors the school admin header) ──────────────
+const TEACHER_SEARCH_TARGETS = [
+  ...portalNavigation.map((item) => ({ label: item.label, hint: 'Portal', path: item.path })),
+  ...studentsLinks.map((item) => ({ label: item.label, hint: 'Current class · Students', path: buildClassPath('current', item.to) })),
+  ...teachingSectionLinks.map((item) => ({ label: item.label, hint: 'Current class · Teaching', path: buildClassPath('current', `teaching/${item.to}`) })),
+  ...assessmentSectionLinks.map((item) => ({ label: `${item.label} & Marks`, hint: 'Current class · Assessments', path: buildClassPath('current', `assessments/${item.to}`) })),
+  { label: 'Parent Meetings', hint: 'Current class · Communication', path: buildClassPath('current', 'communication/parent-meetings') },
+];
+
+const TeacherModuleSearch = () => {
+  const navigate = useNavigate();
+  const inputRef = useRef(null);
+  const [query, setQuery] = useState('');
+  const [open, setOpen] = useState(false);
+  const [activeIndex, setActiveIndex] = useState(-1);
+
+  const suggestions = useMemo(() => {
+    const q = query.trim().toLowerCase();
+    if (!q) return TEACHER_SEARCH_TARGETS.slice(0, 6);
+    return TEACHER_SEARCH_TARGETS
+      .filter((t) => t.label.toLowerCase().includes(q) || t.hint.toLowerCase().includes(q))
+      .slice(0, 8);
+  }, [query]);
+
+  // ⌘K / Ctrl+K focuses the search
+  useEffect(() => {
+    const onKeyDown = (e) => {
+      if ((e.metaKey || e.ctrlKey) && (e.key === 'k' || e.key === 'K')) {
+        e.preventDefault();
+        inputRef.current?.focus();
+      }
+    };
+    window.addEventListener('keydown', onKeyDown);
+    return () => window.removeEventListener('keydown', onKeyDown);
+  }, []);
+
+  const go = (item) => {
+    if (!item) return;
+    setQuery(''); setOpen(false); setActiveIndex(-1);
+    inputRef.current?.blur();
+    navigate(item.path);
+  };
+
+  const onKeyDown = (e) => {
+    if (!suggestions.length) return;
+    if (e.key === 'ArrowDown') { e.preventDefault(); setActiveIndex((i) => (i + 1) % suggestions.length); }
+    else if (e.key === 'ArrowUp') { e.preventDefault(); setActiveIndex((i) => (i <= 0 ? suggestions.length - 1 : i - 1)); }
+    else if (e.key === 'Escape') { setOpen(false); inputRef.current?.blur(); }
+  };
+
+  return (
+    <div className="relative max-w-md flex-1">
+      <form
+        onSubmit={(e) => { e.preventDefault(); go(suggestions[activeIndex >= 0 ? activeIndex : 0]); }}
+        className="flex w-full items-center gap-2 rounded-full border border-gray-400/50 bg-white py-0.5 pl-4 pr-1.5 transition-all focus-within:shadow-[0_4px_16px_rgba(15,23,42,0.05)]"
+      >
+        <Search className="h-4 w-4 shrink-0 text-slate-400" strokeWidth={2} />
+        <input
+          ref={inputRef}
+          type="text"
+          value={query}
+          placeholder="Search modules…"
+          aria-label="Search modules"
+          onChange={(e) => { setQuery(e.target.value); setActiveIndex(-1); setOpen(true); }}
+          onFocus={() => setOpen(true)}
+          onBlur={() => setTimeout(() => setOpen(false), 120)}
+          onKeyDown={onKeyDown}
+          className="w-full border-none bg-transparent py-2 text-sm font-medium text-slate-900 outline-none placeholder:font-normal placeholder:text-slate-400"
+        />
+        {query ? (
+          <button type="button" onMouseDown={(e) => e.preventDefault()} onClick={() => setQuery('')} className="shrink-0 pr-1 text-slate-400 hover:text-slate-600" aria-label="Clear search">
+            <X size={14} />
+          </button>
+        ) : (
+          <kbd className="hidden rounded-full border border-white/40 bg-white/40 px-2.5 py-1 text-[10px] font-medium text-slate-400 xl:inline-block">⌘+K</kbd>
+        )}
+      </form>
+      {open && (
+        <div className="absolute left-0 right-0 top-full z-50 mt-2 overflow-hidden rounded-2xl border border-white/60 bg-white/95 shadow-xl ring-1 ring-black/5 backdrop-blur-xl">
+          {suggestions.length === 0 ? (
+            <div className="px-4 py-3 text-sm text-slate-400">No results</div>
+          ) : (
+            <ul className="divide-y divide-slate-50">
+              {suggestions.map((item, idx) => (
+                <li key={`${item.label}:${item.path}`}>
+                  <button
+                    type="button"
+                    onMouseDown={(e) => e.preventDefault()}
+                    onMouseEnter={() => setActiveIndex(idx)}
+                    onClick={() => go(item)}
+                    className={`flex w-full items-center gap-3 px-4 py-2.5 text-left transition-colors ${idx === activeIndex ? 'bg-indigo-50/70' : 'hover:bg-indigo-50/50'}`}
+                  >
+                    <Search size={13} className="shrink-0 text-slate-300" />
+                    <div>
+                      <p className="text-sm font-medium text-slate-800">{item.label}</p>
+                      <p className="text-[11px] text-slate-400">{item.hint}</p>
+                    </div>
+                  </button>
+                </li>
+              ))}
+            </ul>
+          )}
+        </div>
+      )}
+    </div>
+  );
+};
+
+// Own component so the 1s tick doesn't re-render the whole portal shell.
+const HeaderClock = () => {
+  const [now, setNow] = useState(() => new Date());
+  useEffect(() => {
+    const t = setInterval(() => setNow(new Date()), 1000);
+    return () => clearInterval(t);
+  }, []);
+  return (
+    <div className="hidden items-center gap-2 rounded-full border border-white/30 bg-white/25 px-3.5 py-1.5 text-sm font-medium text-slate-900 xl:flex">
+      <Clock size={14} className="shrink-0 text-slate-400" />
+      <span className="whitespace-nowrap tabular-nums">{now.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</span>
+      <span className="text-slate-400">{now.toLocaleDateString('en-IN', { day: 'numeric', month: 'short' })}</span>
+    </div>
+  );
+};
+
 const TeacherPortalShell = () => {
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
@@ -1488,7 +1564,9 @@ const TeacherPortalShell = () => {
   const isDashboardRoute = location.pathname === '/teacher/dashboard' || location.pathname === '/teacher';
   const isSmartPlannerRoute = location.pathname.includes('/teaching/lesson-planner') || location.pathname === '/teacher/lesson-plan';
   const isAttendanceRoute = location.pathname.includes('/students/attendance') || location.pathname.includes('/overview/attendance');
-  const hasContainedPageScroll = isChatRoute || isSmartPlannerRoute || isAttendanceRoute;
+  // Class picker is a fixed, non-scrolling full-bleed screen.
+  const isClassesHubRoute = location.pathname.replace(/\/$/, '') === '/teacher/classes';
+  const hasContainedPageScroll = isChatRoute || isSmartPlannerRoute || isAttendanceRoute || isClassesHubRoute;
 
   useEffect(() => {
     if (!location.pathname.startsWith('/teachers')) return;
@@ -1860,7 +1938,7 @@ const TeacherPortalShell = () => {
 
   return (
     <>
-      <div className="flex h-screen h-dvh max-h-screen max-h-dvh min-h-0 overflow-hidden bg-[#fafafa]">
+      <div className="flex h-screen h-dvh max-h-screen max-h-dvh min-h-0 overflow-hidden bg-gray-50">
         {showLogoutConfirm && (
           <div className="fixed inset-0 z-[200] flex items-center justify-center bg-black/40 backdrop-blur-sm p-4">
             <div className="w-full max-w-sm rounded-2xl bg-white shadow-2xl overflow-hidden">
@@ -1898,229 +1976,148 @@ const TeacherPortalShell = () => {
           />
         )}
 
+        {/* Sidebar — same shell as the school admin / parent portals */}
         <aside
           data-testid="teacher-sidebar"
           aria-label="Teacher portal navigation"
-          className={`fixed left-0 top-0 z-50 flex h-screen h-dvh max-h-screen max-h-dvh min-h-0 flex-col overflow-hidden border border-[#f0f2f5] bg-white shadow-[0_4px_24px_rgba(0,0,0,0.04),0_1px_4px_rgba(0,0,0,0.02)] lg:z-40 lg:sticky lg:left-3 lg:top-3 lg:my-3 lg:ml-3 lg:h-[calc(100dvh-1.5rem)] lg:max-h-[calc(100dvh-1.5rem)] lg:rounded-[1.5rem] ${sidebarCollapsed ? 'lg:w-[76px]' : 'lg:w-[280px]'
-            } w-80 ${sidebarOpen ? 'translate-x-0' : '-translate-x-full lg:translate-x-0'
-            }`}
-          style={{
-            fontFamily: "'Poppins', -apple-system, BlinkMacSystemFont, sans-serif",
-            transitionProperty: 'width, transform, box-shadow',
-            transitionDuration: '0.3s',
-            transitionTimingFunction: 'cubic-bezier(0.4, 0, 0.2, 1)',
-          }}
+          className={`fixed inset-y-0 left-0 z-50 flex h-dvh min-h-0 flex-col border-r border-gray-100 bg-white shadow-lg transition-all duration-300 ease-in-out lg:sticky lg:top-0 lg:z-40 ${sidebarCollapsed ? 'w-64 lg:w-[72px]' : 'w-64'} ${sidebarOpen ? 'translate-x-0' : '-translate-x-full lg:translate-x-0'}`}
+          style={{ fontFamily: "'Poppins', -apple-system, BlinkMacSystemFont, sans-serif" }}
         >
-          {/* ── Sidebar Header ── */}
-          <div className="shrink-0 border-b border-[#f0f2f5]">
-            {sidebarCollapsed ? (
-              <div className="flex min-h-[92px] flex-col items-center justify-center gap-3 px-2 py-4">
-                <div
-                  data-testid="teacher-sidebar-logo"
-                  aria-label={`${schoolName} logo`}
-                  className="flex size-12 items-center justify-center overflow-hidden rounded-full border border-slate-700 bg-slate-950 p-1.5 shadow-[0_6px_16px_rgba(15,23,42,0.2)]"
-                >
-                  <img src={schoolLogo || '/logo_new.png'} alt="" className="h-full w-full object-contain" />
-                </div>
-                <button
-                  type="button"
-                  className="hidden rounded-lg p-1.5 text-[#8e9aaf] transition-colors hover:bg-[#f5f3ff] hover:text-[#5b21b6] lg:inline-flex"
-                  onClick={() => setSidebarCollapsed(false)}
-                  aria-label="Expand sidebar"
-                >
-                  <ChevronRight size={16} />
-                </button>
+          {/* ── Brand header ── */}
+          <div className="relative flex items-center gap-3 border-b border-gray-100 bg-indigo-50 px-4 py-3">
+            <div
+              data-testid={sidebarCollapsed ? 'teacher-sidebar-logo' : undefined}
+              aria-label={`${schoolName} logo`}
+              className={`flex shrink-0 items-center justify-center overflow-hidden rounded-full transition-all duration-300 ${sidebarCollapsed ? 'h-9 w-9' : 'h-10 w-10'}`}
+            >
+              <img src={schoolLogo || '/logo_new.png'} alt="" className="h-full w-full object-cover" />
+            </div>
+            {!sidebarCollapsed && (
+              <div className="min-w-0 flex-1">
+                <p className="truncate text-sm font-bold leading-tight text-gray-900">
+                  {schoolName
+                    ?.trim()
+                    .split(/\s+/)
+                    .map(word => word.charAt(0).toUpperCase())
+                    .join('.')}
+                </p>
+                <p className="mt-0.5 truncate text-[11px] font-medium text-indigo-500">Teacher Portal</p>
               </div>
-            ) : (
-              <Motion.div
-                key="expanded-brand"
-                initial={{ opacity: 0, x: -8 }}
-                animate={{ opacity: 1, x: 0 }}
-                transition={{ duration: 0.2 }}
-                className="flex items-center justify-between px-6 pb-6 pt-7"
-              >
-                <div className="flex min-w-0 items-center gap-3">
-                  <div
-                    aria-label={`${schoolName} logo`}
-                    className="flex size-10 shrink-0 items-center justify-center overflow-hidden rounded-full"
-                  >
-                    <img src={schoolLogo || '/logo_new.png'} alt="" className="h-full w-full object-contain" />
-                  </div>
-                  <div className="min-w-0">
-                    <div className="truncate text-[1.1rem] font-bold leading-tight tracking-[-0.02em] text-[#0b0e1a]">
-                      {schoolName
-                        ?.trim()
-                        .split(/\s+/)
-                        .map(word => word.charAt(0).toUpperCase())
-                        .join('.')}
-                    </div>
-                    <div className="mt-1 truncate text-xs font-normal tracking-[0.03em] text-[#6f7a8c]">Teacher Portal</div>
-                  </div>
-                </div>
-                <div className="flex items-center gap-1">
-                  <button
-                    type="button"
-                    className="hidden rounded-lg p-1.5 text-[#8e9aaf] transition-colors hover:bg-[#f5f3ff] hover:text-[#5b21b6] lg:inline-flex"
-                    onClick={() => setSidebarCollapsed(true)}
-                    aria-label="Collapse sidebar"
-                  >
-                    <ChevronRight size={16} className="rotate-180" />
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => setSidebarOpen(false)}
-                    className="rounded-lg p-1.5 text-[#8e9aaf] transition-colors hover:bg-[#f5f3ff] hover:text-[#5b21b6] lg:hidden"
-                    aria-label="Close sidebar"
-                  >
-                    <X size={17} />
-                  </button>
-                </div>
-              </Motion.div>
             )}
+            <button
+              type="button"
+              onClick={() => setSidebarCollapsed((c) => !c)}
+              className={`hidden shrink-0 items-center justify-center transition-all duration-200 lg:flex ${sidebarCollapsed
+                ? 'h-5 w-5 rounded-full bg-yellow-500 text-white shadow-md hover:bg-yellow-600'
+                : 'h-7 w-7 rounded-lg text-gray-400 hover:bg-yellow-50 hover:text-yellow-600'}`}
+              aria-label={sidebarCollapsed ? 'Expand sidebar' : 'Collapse sidebar'}
+            >
+              {sidebarCollapsed ? <ChevronRight size={18} /> : <ChevronRight size={15} className="rotate-180" />}
+            </button>
+            <button
+              type="button"
+              onClick={() => setSidebarOpen(false)}
+              className="flex h-7 w-7 shrink-0 items-center justify-center rounded-lg text-gray-400 transition-all hover:bg-gray-100 hover:text-gray-600 lg:hidden"
+              aria-label="Close sidebar"
+            >
+              <X size={15} />
+            </button>
           </div>
 
           {/* ── Navigation ── */}
-          <nav className={`min-h-0 flex-1 overflow-y-auto overflow-x-hidden overscroll-contain ${!sidebarCollapsed ? 'px-2.5 py-5' : 'px-1.5 py-3'}`}>
-            <div className="space-y-0.5">
-              {portalNavigation.map((item) => {
-                const active = isItemActive(item.path);
-                const Icon = item.icon;
-                const notificationCount = getTeacherModuleNotificationCount(
-                  notifications,
-                  item.label === 'Notifications' ? 'notifications' : teacherNotificationModuleKeyForPath(item.path),
-                  moduleSeenState,
-                );
-                return (
-                  <Button
-                    key={item.path}
-                    asChild
-                    variant="ghost"
-                    className={`group relative !h-auto !w-full !justify-start !rounded-[0.6rem] !border-l-[3px] !px-3 !py-2.5 !text-[0.82rem] !font-medium ${sidebarCollapsed ? '!justify-center !px-2' : 'space-x-2.5'} ${active
-                        ? '!border-l-[#8b5cf6] !bg-[#f5f3ff] !font-semibold !text-[#5b21b6] hover:!bg-[#ede9fe]'
-                        : '!border-l-transparent !bg-transparent !text-[#4a5668] hover:!bg-[#fffbeb] hover:!text-[#0b0e1a]'
-                      }`}
-                  >
-                    <MotionNavLink
-                      to={item.path}
-                      title={sidebarCollapsed ? item.label : undefined}
-                      aria-label={item.label}
-                      whileHover={{ x: sidebarCollapsed ? 0 : 4, scale: 1.01 }}
-                      whileTap={{ scale: 0.98 }}
-                      transition={{ type: 'spring', stiffness: 500, damping: 20 }}
-                      className="relative flex w-full items-center"
-                    >
-                      <span className="flex size-5 shrink-0 items-center justify-center">
-                        <Icon size={16} strokeWidth={1.9} className="shrink-0" />
-                      </span>
-                      {!sidebarCollapsed && <span className="truncate">{item.label}</span>}
-                      {notificationCount > 0 && (
-                        <span
-                          data-testid={`teacher-module-notification-${teacherNotificationModuleKeyForPath(item.path)}`}
-                          title={`${notificationCount} unread item${notificationCount === 1 ? '' : 's'} in ${item.label}`}
-                          className={`${sidebarCollapsed ? 'absolute -right-1 -top-1' : 'ml-auto'} flex min-h-5 min-w-5 items-center justify-center rounded-full border-2 border-white bg-red-500 px-1.5 text-[10px] font-bold leading-none text-white shadow-sm`}
-                        >
-                          {notificationCount > 99 ? '99+' : notificationCount}
-                        </span>
-                      )}
-                    </MotionNavLink>
-                  </Button>
-                );
-              })}
-            </div>
+          <nav className="teacher-sidebar-nav min-h-0 flex-1 space-y-0.5 overflow-y-auto overflow-x-hidden overscroll-contain px-2 py-3">
+            {portalNavigation.map((item) => {
+              const active = isItemActive(item.path);
+              const Icon = item.icon;
+              const notificationCount = getTeacherModuleNotificationCount(
+                notifications,
+                item.label === 'Notifications' ? 'notifications' : teacherNotificationModuleKeyForPath(item.path),
+                moduleSeenState,
+              );
+              const badge = notificationCount > 0 && (
+                <span
+                  data-testid={`teacher-module-notification-${teacherNotificationModuleKeyForPath(item.path)}`}
+                  title={`${notificationCount} unread item${notificationCount === 1 ? '' : 's'} in ${item.label}`}
+                  className={sidebarCollapsed
+                    ? 'absolute -right-1.5 -top-1.5 flex h-3.5 min-w-3.5 items-center justify-center rounded-full bg-red-500 px-1 text-[9px] font-bold text-white'
+                    : 'flex h-5 min-w-[1.25rem] items-center justify-center rounded-full bg-red-500 px-1.5 text-[10px] font-bold text-white'}
+                >
+                  {notificationCount > 99 ? '99+' : notificationCount}
+                </span>
+              );
+              return (
+                <NavLink
+                  key={item.path}
+                  to={item.path}
+                  title={sidebarCollapsed ? item.label : undefined}
+                  aria-label={item.label}
+                  onClick={() => { if (window.innerWidth < 1024) setSidebarOpen(false); }}
+                  className={`group relative flex items-center gap-3 rounded-xl px-3 py-2.5 transition-colors duration-150 ${sidebarCollapsed ? 'lg:justify-center' : ''} ${active ? 'text-yellow-700' : 'text-gray-500 hover:bg-gray-50 hover:text-gray-900'}`}
+                >
+                  {active && (
+                    <Motion.div
+                      layoutId="teacher-sidebar-active-pill"
+                      className="absolute inset-0 rounded-xl bg-yellow-50"
+                      transition={{ type: 'spring', stiffness: 400, damping: 32 }}
+                    />
+                  )}
+                  <span className="relative z-10 shrink-0">
+                    <Icon
+                      size={22}
+                      className={`rounded-full p-1 transition-colors ${active ? 'bg-yellow-500 text-white' : 'bg-gray-100 text-gray-400 group-hover:text-yellow-500'}`}
+                    />
+                    {sidebarCollapsed && <span className="hidden lg:contents">{badge}</span>}
+                  </span>
+                  <span className={`relative z-10 flex flex-1 items-center gap-2 truncate text-sm ${sidebarCollapsed ? 'lg:hidden' : ''} ${active ? 'font-bold' : 'font-semibold'}`}>
+                    {item.label}
+                    {!sidebarCollapsed && badge}
+                  </span>
+                </NavLink>
+              );
+            })}
           </nav>
 
-          {/* ── Bottom: Logout ── */}
-          <div className={`mt-auto shrink-0 border-t border-[#f0f2f5] bg-white ${sidebarCollapsed ? 'p-2.5' : 'px-3 py-3.5'}`}>
-            <div>
-              {sidebarCollapsed ? (
-                <button
-                  type="button"
-                  onClick={handleLogout}
-                  aria-label="Logout"
-                  data-testid="collapsed-sidebar-logout"
-                  className="group relative flex h-11 w-full items-center justify-center overflow-visible rounded-[0.6rem] text-[#536179] transition-all duration-200 hover:bg-[#f5f3ff] hover:text-[#6d28d9] active:scale-95"
-                >
-                  <span aria-hidden="true" className="absolute inset-1 scale-75 rounded-lg bg-gradient-to-br from-violet-100 via-purple-50 to-amber-50 opacity-0 transition-all duration-200 group-hover:scale-100 group-hover:opacity-100" />
-                  <span className="relative flex size-8 items-center justify-center">
-                    <LogOut size={18} strokeWidth={1.9} className="block shrink-0 text-current" />
-                  </span>
-                  <div className="pointer-events-none absolute left-full z-50 ml-3 translate-x-2 opacity-0 transition-all group-hover:translate-x-0 group-hover:opacity-100">
-                    <div className="min-w-max rounded-xl border border-gray-700 bg-gray-900 px-4 py-3 text-left text-white shadow-2xl">
-                      <div className="text-sm font-semibold">Logout</div>
-                      <div className="mt-1 text-xs text-gray-300">Sign out securely</div>
-                      <div className="absolute left-0 top-1/2 -translate-x-1 -translate-y-1/2">
-                        <div className="size-2 rotate-45 border-l border-t border-gray-700 bg-gray-900" />
-                      </div>
-                    </div>
-                  </div>
-                </button>
-              ) : (
-                <Motion.button
-                  type="button"
-                  onClick={handleLogout}
-                  initial="rest"
-                  whileHover="hover"
-                  whileTap={{ scale: 0.98 }}
-                  variants={{
-                    rest: { color: '#4a5668', borderColor: 'rgba(255,255,255,0)' },
-                    hover: { color: '#6d28d9', borderColor: '#ddd6fe' },
-                  }}
-                  transition={{ duration: 0.2 }}
-                  className="group relative flex h-11 w-full items-center gap-2.5 overflow-hidden rounded-[0.6rem] border px-3 text-left text-[0.84rem] font-medium"
-                >
-                  <Motion.span
-                    aria-hidden="true"
-                    variants={{ rest: { scaleX: 0 }, hover: { scaleX: 1 } }}
-                    transition={{ type: 'spring', stiffness: 260, damping: 28 }}
-                    className="absolute inset-0 origin-left bg-gradient-to-r from-violet-100/90 via-purple-50 to-amber-50/80"
-                  />
-                  <Motion.span
-                    aria-hidden="true"
-                    variants={{ rest: { x: -45, opacity: 0 }, hover: { x: 235, opacity: [0, 0.75, 0] } }}
-                    transition={{ duration: 0.85, ease: 'easeInOut' }}
-                    className="absolute -top-3 size-14 rounded-full bg-amber-200/70 blur-xl"
-                  />
-                  <Motion.span
-                    variants={{ rest: { x: 0, rotate: 0 }, hover: { x: 4, rotate: -8 } }}
-                    transition={{ type: 'spring', stiffness: 500, damping: 18 }}
-                    className="relative flex shrink-0 items-center justify-center"
-                  >
-                    <LogOut size={17} strokeWidth={1.8} />
-                  </Motion.span>
-                  <Motion.span variants={{ rest: { x: 0 }, hover: { x: 2 } }} transition={{ type: 'spring', stiffness: 420, damping: 24 }} className="relative whitespace-nowrap">Logout</Motion.span>
-                  <Motion.span variants={{ rest: { x: 0, color: '#8e9aaf' }, hover: { x: -2, color: '#7c3aed' } }} transition={{ duration: 0.25 }} className="relative ml-auto whitespace-nowrap text-[0.64rem] font-normal tracking-[0.02em]">Sign out securely</Motion.span>
-                </Motion.button>
-              )}
-            </div>
+          {/* ── Footer: Logout ── */}
+          <div className="shrink-0 space-y-1 border-t border-gray-100 bg-gray-200/30 p-3">
+            <button
+              type="button"
+              onClick={handleLogout}
+              title={sidebarCollapsed ? 'Logout' : undefined}
+              aria-label="Logout"
+              data-testid={sidebarCollapsed ? 'collapsed-sidebar-logout' : undefined}
+              className={`flex w-full items-center gap-2.5 rounded-xl px-3 py-2 text-sm font-semibold text-red-400 transition-all duration-150 hover:bg-red-50 hover:text-red-600 ${sidebarCollapsed ? 'lg:justify-center' : ''}`}
+            >
+              <LogOut size={15} className="shrink-0" />
+              <span className={sidebarCollapsed ? 'lg:hidden' : ''}>Logout</span>
+            </button>
           </div>
+          <style>{`
+            .teacher-sidebar-nav::-webkit-scrollbar { width: 4px; }
+            .teacher-sidebar-nav::-webkit-scrollbar-track { background: transparent; }
+            .teacher-sidebar-nav::-webkit-scrollbar-thumb { background: #e5e7eb; border-radius: 4px; }
+          `}</style>
         </aside>
 
         <div className="flex h-screen h-dvh max-h-screen max-h-dvh min-h-0 min-w-0 flex-1 flex-col overflow-hidden">
-          <header className="sticky top-0 z-30 hidden w-full bg-slate-100 px-0 py-0 lg:block">
-            <div className="relative flex h-[55px] items-center justify-center rounded-full bg-white">
-              <div className="min-w-0 px-16 text-center leading-none">
-                <p className="truncate text-[16px] font-semibold tracking-[-0.01em] text-[#1F2A44]">
-                  {greeting}, <span className="text-[#4F46E5]">{teacherFirstName}</span>
+          {/* Desktop header — same bar as the school admin portal */}
+          <header className="sticky top-0 z-30 hidden w-full lg:block">
+            <div className="flex items-center gap-3 border border-white/70 bg-indigo-50 px-5 py-2 shadow-[0_16px_44px_-12px_rgba(15,23,42,0.10),0_4px_12px_rgba(15,23,42,0.04)]">
+              {/* <div className="min-w-0 leading-tight">
+                <p className="truncate text-[15px] font-semibold text-slate-900">
+                  {greeting}, <span className="text-indigo-600">{teacherFirstName}</span>
                 </p>
-                <p className="mt-2 truncate text-[12px] font-normal leading-none text-[#64748B]">
-                  {dateLabel}
-                </p>
-              </div>
+                <p className="mt-0.5 truncate text-[11px] text-slate-500">{dateLabel}</p>
+              </div> */}
 
-              <button
-                onClick={() => setSidebarOpen(true)}
-                className="absolute left-2 rounded-xl p-2 text-slate-600 transition-all hover:bg-slate-100 active:scale-95 lg:hidden"
-                aria-label="Open sidebar"
-              >
-                <Menu size={20} />
-              </button>
+              <TeacherModuleSearch />
 
-              {/* Right: Profile */}
-              <div className="absolute right-2 flex items-center gap-1.5 sm:gap-2">
+              {/* Right cluster */}
+              <div className="ml-auto flex items-center gap-2">
+                <HeaderClock />
                 <div className="relative" ref={notificationsRef}>
                   <button
                     onClick={handleToggleNotifications}
-                    className="relative w-9 h-9 flex items-center justify-center rounded-xl text-gray-500 hover:bg-gray-100 border border-gray-100 transition-all"
+                    className="relative flex h-10 w-10 items-center justify-center rounded-full border border-white/30 bg-white/25 text-slate-600 transition-all hover:border-white/60 hover:bg-white/70"
                     aria-label="Notifications"
                   >
                     <Bell size={18} />
@@ -2158,9 +2155,9 @@ const TeacherPortalShell = () => {
                     whileHover={{ y: -1, scale: 1.01 }}
                     whileTap={{ scale: 0.97 }}
                     transition={{ type: 'spring', stiffness: 450, damping: 26 }}
-                    className={`flex items-center gap-2 rounded-xl border bg-white px-1.5 py-1 transition-colors ${profileOpen
-                      ? 'border-violet-200 shadow-[0_8px_20px_-10px_rgba(109,40,217,0.22)]'
-                      : 'border-slate-100 shadow-sm hover:border-slate-200 hover:bg-slate-50'
+                    className={`flex items-center gap-2.5 rounded-full border bg-white/25 pl-1.5 pr-3 py-1 transition-all ${profileOpen
+                      ? 'border-indigo-200 bg-white/70 shadow-sm'
+                      : 'border-white/30 hover:border-white/50 hover:bg-white/50'
                       }`}
                     onClick={() => {
                       setShowNotifications(false);
@@ -2185,10 +2182,10 @@ const TeacherPortalShell = () => {
                       </div>
                     )}
                     <div className="hidden md:block text-left">
-                      <p className="max-w-24 truncate text-[11px] font-semibold leading-tight text-slate-800">
+                      <p className="max-w-40 truncate text-sm font-semibold leading-tight text-slate-800">
                         {hasProfileImage ? teacherFirstName : teacherFirstLastName}
                       </p>
-                      <p className="mt-0.5 max-w-24 truncate text-[9px] text-slate-400">{teacherProfile.department || 'Teacher'}</p>
+                      <p className="mt-0.5 max-w-40 truncate text-[10px] font-medium text-slate-500">{teacherProfile.department || 'Teacher'}</p>
                     </div>
                     <ChevronDown size={14} className={`hidden text-slate-400 transition-transform duration-200 md:block ${profileOpen ? 'rotate-180 text-violet-500' : ''}`} />
                   </Motion.button>
@@ -2274,25 +2271,25 @@ const TeacherPortalShell = () => {
             </div>
           </header>
 
-          <header className="sticky top-0 z-30 bg-violet-600 px-4 pb-4 pt-[calc(1rem+env(safe-area-inset-top))] text-white shadow-md lg:hidden">
+          <header className="sticky top-0 z-30 border-b border-white/70 bg-indigo-50 px-3 pb-2.5 pt-[calc(0.625rem+env(safe-area-inset-top))] text-slate-900 shadow-[0_6px_24px_rgba(15,23,42,0.06)] lg:hidden">
             <div className="flex items-center justify-between gap-3">
               <button type="button" onClick={() => navigate('/teacher/settings')} className="flex min-w-0 items-center gap-3 text-left" aria-label="Open teacher profile">
                 <span className="relative shrink-0">
                   {hasProfileImage ? (
-                    <img src={teacherProfile.profilePic} alt="" className="h-10 w-10 rounded-full border border-white/40 object-cover" />
+                    <img src={teacherProfile.profilePic} alt="" className="h-10 w-10 rounded-full object-cover ring-2 ring-white/70" />
                   ) : (
-                    <span className="flex h-10 w-10 items-center justify-center rounded-full border border-white/40 bg-white/20 text-sm font-bold shadow-inner">{initialsLabel}</span>
+                    <span className="flex h-10 w-10 items-center justify-center rounded-full border bg-gradient-to-br from-blue-400 to-purple-500 text-sm font-bold text-white ring-2 ring-white/70">{initialsLabel}</span>
                   )}
-                  <span className="absolute right-0 top-0 h-3 w-3 rounded-full border-2 border-violet-600 bg-emerald-400" />
+                  <span className="absolute right-0 top-0 h-3 w-3 rounded-full border-2 border-indigo-50 bg-emerald-400" />
                 </span>
-                <span className="min-w-0"><span className="block truncate text-base font-bold leading-tight tracking-tight">{teacherProfile.name || 'Teacher'}</span><span className="block truncate text-xs font-medium text-purple-200">{teacherProfile.department || 'Academic workspace'}</span></span>
+                <span className="min-w-0"><span className="block truncate text-base font-bold leading-tight tracking-tight">{teacherProfile.name || 'Teacher'}</span><span className="block truncate text-xs font-medium text-slate-500">{teacherProfile.department || 'Academic workspace'}</span></span>
               </button>
               <div className="flex items-center gap-2">
                 <div className="relative" ref={notificationsRef}>
-                  <button type="button" onClick={handleToggleNotifications} className="relative flex h-9 w-9 items-center justify-center rounded-full bg-white/10 transition active:scale-95" aria-label="Notifications">
+                  <button type="button" onClick={handleToggleNotifications} className="relative flex h-9 w-9 items-center justify-center rounded-full text-slate-600 transition hover:bg-white/70 active:scale-95" aria-label="Notifications">
                     <Bell size={19} />
                     {unreadCount > 0 && (
-                      <span className="absolute -right-1 -top-1 flex min-h-[17px] min-w-[17px] items-center justify-center rounded-full border-2 border-violet-600 bg-red-500 px-1 text-[10px] font-bold leading-none text-white">
+                      <span className="absolute -right-1 -top-1 flex min-h-[17px] min-w-[17px] items-center justify-center rounded-full border-2 border-indigo-50 bg-red-500 px-1 text-[10px] font-bold leading-none text-white">
                         {unreadCount > 9 ? '9+' : unreadCount}
                       </span>
                     )}
@@ -2318,7 +2315,7 @@ const TeacherPortalShell = () => {
                     )}
                   </AnimatePresence>
                 </div>
-                <button type="button" onClick={() => setSidebarOpen(true)} className="flex h-9 w-9 items-center justify-center rounded-full bg-white/10 transition active:scale-95" aria-label="Open all teacher options" aria-expanded={sidebarOpen}><Menu size={19} /></button>
+                <button type="button" onClick={() => setSidebarOpen(true)} className="flex h-9 w-9 items-center justify-center rounded-full text-slate-600 transition hover:bg-white/70 active:scale-95" aria-label="Open all teacher options" aria-expanded={sidebarOpen}><Menu size={19} /></button>
               </div>
             </div>
           </header>
@@ -2326,11 +2323,11 @@ const TeacherPortalShell = () => {
           <main className={`flex-1 min-h-0 pb-[calc(4.5rem+env(safe-area-inset-bottom))] lg:pb-0 ${isSmartPlannerRoute ? 'p-0' : ''} ${hasContainedPageScroll ? 'overflow-hidden' : 'overflow-y-auto overscroll-contain'}`}>
             <div className={isChatRoute
               ? 'flex h-full min-h-0 flex-col'
-              : isSmartPlannerRoute
+              : isSmartPlannerRoute || isClassesHubRoute
                 ? 'h-full min-h-0'
                 : isAttendanceRoute
                   ? 'h-full min-h-0 overflow-y-auto overscroll-contain p-3 sm:p-6'
-                  : `min-h-full ${isDashboardRoute ? 'p-0 lg:p-6' : 'p-3 sm:p-6'}`}>
+                  : `min-h-full ${isDashboardRoute ? 'p-0 lg:pt-2' : 'p-3 sm:p-6'}`}>
               <Routes>
                 <Route index element={<Navigate to="/teacher/dashboard" replace />} />
                 <Route path="dashboard" element={<TeacherDashboard />} />
@@ -2351,7 +2348,7 @@ const TeacherPortalShell = () => {
                     }
                   />
                   <Route path="overview/analytics" element={<StudentAnalyticsPortal />} />
-                  <Route path="overview/attendance" element={<AttendanceManagement />} />
+                  <Route path="overview/attendance" element={<ClassAttendanceOverview />} />
                   <Route path="students/attendance" element={<AttendanceManagement />} />
                   <Route path="students/health-records" element={<HealthUpdatesAdvanced />} />
                   <Route path="students/observations" element={<StudentObservationOverview />} />
