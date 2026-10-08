@@ -211,7 +211,6 @@ const SubjectTopicsView = ({ subject, onBack, style = DEFAULT_STYLE }) => {
   // target topic. Computed once so both the list and the search/filter
   // controls read from the same numbers.
   const chapterStats = useMemo(() => {
-    let readyAssigned = false;
     return chapters.map((chapter, index) => {
       const chapterTopics = chapter.topics || [];
       const totals = chapterTopics.reduce((acc, topic) => {
@@ -228,11 +227,10 @@ const SubjectTopicsView = ({ subject, onBack, style = DEFAULT_STYLE }) => {
         ? new Date(chapter.meta.date).toLocaleDateString('en-US', { day: 'numeric', month: 'short', year: 'numeric' })
         : '';
 
-      let status = 'upcoming';
+      let status = 'ready';
       if (percentage === 100 && totals.total > 0) status = 'completed';
       else if (percentage >= 50) status = 'almost-done';
       else if (percentage > 0) status = 'in-progress';
-      else if (!readyAssigned) { status = 'ready'; readyAssigned = true; }
 
       return {
         chapter,
@@ -247,13 +245,6 @@ const SubjectTopicsView = ({ subject, onBack, style = DEFAULT_STYLE }) => {
         dateLabel,
         status,
       };
-    }).map((entry, index, all) => {
-      // A second pass upgrades the first not-yet-started chapter right
-      // after "ready" to "up-next" so the rest read as "upcoming".
-      if (entry.status !== 'upcoming') return entry;
-      const readyIndex = all.findIndex((e) => e.status === 'ready');
-      if (readyIndex !== -1 && index === readyIndex + 1) return { ...entry, status: 'up-next' };
-      return entry;
     });
   }, [chapters, topicProgress]);
 
@@ -596,7 +587,7 @@ const SubjectTopicsView = ({ subject, onBack, style = DEFAULT_STYLE }) => {
                         }`}
                       >
                         <span>
-                          {!firstTopic ? 'No Topics' : status === 'completed' ? 'Review' : status === 'in-progress' || status === 'almost-done' ? 'Continue Lesson' : status === 'ready' ? 'Start Lesson' : 'Explore Chapter'}
+                          {!firstTopic ? 'No Topics' : status === 'completed' ? 'Review' : status === 'in-progress' || status === 'almost-done' ? 'Continue Lesson' : 'Start Lesson'}
                         </span>
                         {firstTopic && (isLocked ? <FolderOpen size={16} /> : <ArrowRight size={16} />)}
                       </button>

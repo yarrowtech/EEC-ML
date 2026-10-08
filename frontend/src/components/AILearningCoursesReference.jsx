@@ -734,7 +734,7 @@ const AILearningCoursesReference = () => {
   // navigating from the overview page straight into ?mode=practice), so a
   // plain lazy-init read of the query param would miss that navigation —
   // this effect re-syncs on mount and on every subsequent URL change,
-  // without overriding in-page toggles (Launch Practice / Return to theory)
+  // without overriding a direct legacy practice-mode deep link.
   // that don't touch the URL.
   useEffect(() => {
     setIsPracticeMode(new URLSearchParams(location.search).get('mode') === 'practice');
@@ -994,7 +994,7 @@ const AILearningCoursesReference = () => {
           style={QUEST_FONT}
         >
           {/* Nav row */}
-          <div className="mx-auto mb-4 flex max-w-[1100px] flex-wrap items-center gap-2.5">
+          <div className="mx-auto mb-4 flex max-w-[1280px] flex-wrap items-center gap-2.5">
             <button
               type="button"
               onClick={closeDetailsPage}
@@ -1029,19 +1029,10 @@ const AILearningCoursesReference = () => {
                 {isFullscreen ? <Minimize2 size={16} /> : <Maximize2 size={16} />}
               </button>
             )}
-            {!isPracticeMode && (
-              <button
-                type="button"
-                onClick={() => setIsPracticeMode(true)}
-                className="ml-auto inline-flex items-center gap-2 rounded-full bg-gradient-to-r from-[#493ee5] to-[#635bff] px-4 py-2 text-sm font-bold text-white shadow-sm transition-all hover:-translate-y-0.5 hover:shadow-lg active:scale-95"
-              >
-                Next: Practice <ArrowRight size={14} />
-              </button>
-            )}
           </div>
 
           {/* Reader grid */}
-          <div className="mx-auto grid max-w-[1100px] grid-cols-1 items-start gap-6 lg:grid-cols-[1fr_340px]">
+          <div className="mx-auto grid max-w-[1280px] grid-cols-1 items-start gap-6 lg:grid-cols-[minmax(0,1fr)_360px]">
             {/* ── Book page ── */}
             {!isPracticeMode && (
               <div className="rounded-[2rem] bg-white p-5 shadow-sm sm:p-8">
@@ -1145,17 +1136,45 @@ const AILearningCoursesReference = () => {
                   </button>
                 </div>
 
-                {/* Launch Practice button */}
                 <div className="rounded-[2rem] bg-white p-5 shadow-sm">
-                  <p className="mb-3 text-xs text-[#464555]">Ready to test your understanding?</p>
-                  <button
-                    type="button"
-                    onClick={() => setIsPracticeMode(true)}
-                    className="flex w-full items-center justify-between rounded-full bg-[#eff4ff] px-5 py-3 text-sm font-semibold text-[#493ee5] transition-colors hover:bg-[#e6eeff]"
-                  >
-                    Launch Practice
-                    <ArrowRight size={16} />
-                  </button>
+                  <div className="flex items-start justify-between gap-3">
+                    <div>
+                      <h2 className="text-base font-bold text-[#0d1c2e]">Lesson materials</h2>
+                      <p className="mt-1 text-xs text-[#464555]">Open or download your teacher’s resources.</p>
+                    </div>
+                    {learningMaterials.length > 0 && (
+                      <span className="shrink-0 rounded-full bg-[#eff4ff] px-2.5 py-1 text-[10px] font-bold text-[#493ee5]">{learningMaterials.length}</span>
+                    )}
+                  </div>
+                  {learningMaterials.length === 0 ? (
+                    <p className="mt-3 text-sm italic text-[#464555]">No materials uploaded yet.</p>
+                  ) : (
+                    <div className="mt-3 space-y-2">
+                      {learningMaterials.map((material, idx) => {
+                        const kind = detectMaterialKind(material);
+                        const meta = MATERIAL_KIND_META[kind];
+                        const Icon = meta.icon;
+                        const materialUrl = material.url || material.downloadUrl;
+                        return (
+                          <div key={`${material.title || 'material'}-${idx}`} className="flex items-center gap-2 rounded-xl bg-[#eff4ff] p-2.5">
+                            <div className={`flex h-8 w-8 shrink-0 items-center justify-center rounded-lg ${meta.tile}`}><Icon size={15} /></div>
+                            <p className="min-w-0 flex-1 truncate text-xs font-semibold text-[#0d1c2e]">{material.title || 'Lesson material'}</p>
+                            {material.content && (
+                              <button type="button" onClick={() => setActiveMaterial(material)} className="shrink-0 rounded-lg bg-white px-2 py-1 text-[10px] font-bold text-[#493ee5] hover:bg-[#e6eeff]">Read</button>
+                            )}
+                            {materialUrl && (
+                              <a href={getInlineDocumentUrl(materialUrl)} target="_blank" rel="noreferrer" className="shrink-0 rounded-lg bg-white px-2 py-1 text-[10px] font-bold text-[#493ee5] hover:bg-[#e6eeff]">Open</a>
+                            )}
+                          </div>
+                        );
+                      })}
+                    </div>
+                  )}
+                  {learningMaterials.some((material) => material.url || material.downloadUrl) && (
+                    <button type="button" onClick={handleDownloadAllMaterials} className="mt-3 inline-flex items-center gap-1.5 text-xs font-bold text-[#493ee5] hover:underline">
+                      <Download size={13} /> Download all
+                    </button>
+                  )}
                 </div>
 
                 <div className="rounded-[2rem] bg-[#eff4ff] p-5 shadow-sm">
@@ -1292,24 +1311,6 @@ const AILearningCoursesReference = () => {
               </div>
             )}
           </div>
-
-          {!isPracticeMode && (
-            <section className="mx-auto mt-6 max-w-[1100px] rounded-[2rem] bg-white p-5 shadow-sm sm:p-6">
-              <div className="flex flex-col items-start justify-between gap-4 sm:flex-row sm:items-center">
-                <div>
-                  <h2 className="text-lg font-bold text-[#0d1c2e]">Ready to practise?</h2>
-                  <p className="mt-1 text-sm text-[#464555]">Open the practice paper linked to this topic.</p>
-                </div>
-                <button
-                  type="button"
-                  onClick={openPracticePaperPage}
-                  className="inline-flex items-center gap-2 rounded-full bg-[#493ee5] px-5 py-3 text-sm font-bold text-white transition-colors hover:bg-[#3a30c9]"
-                >
-                  Practice Paper <ArrowRight size={15} />
-                </button>
-              </div>
-            </section>
-          )}
 
         </div>
 
