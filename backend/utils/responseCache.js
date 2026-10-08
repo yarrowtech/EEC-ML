@@ -57,4 +57,9 @@ const userNotificationsCache = createResponseCache({ ttlMs: 60 * 1000 });
 // FeePayment model write hooks, so payments made anywhere show up at once.
 const parentFeesCache = createResponseCache({ ttlMs: 60 * 1000 });
 
-module.exports = { createResponseCache, parentAttendanceCache, userNotificationsCache, parentFeesCache };
+// Teacher class-analytics reads (progress, teacher-analytics, ML, confidence,
+// help-seeking, learning-style, belonging). Any write in those routers clears it;
+// the TTL bounds staleness from student activity recorded elsewhere.
+const teacherAnalyticsCache = createResponseCache({ ttlMs: 60 * 1000, maxEntries: 2000 });
+
+module.exports = { createResponseCache, parentAttendanceCache, userNotificationsCache, parentFeesCache, teacherAnalyticsCache };
