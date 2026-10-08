@@ -1257,8 +1257,8 @@ router.post("/submit", authStudent, async (req, res) => {
         }
 
         const requiredFormat = assignment.submissionFormat || 'text';
-        if (requiredFormat === 'text' && !submissionText?.trim()) {
-            return res.status(400).json({ error: 'This assignment requires a written response.' });
+        if (requiredFormat === 'text' && !submissionText?.trim() && !attachmentUrl) {
+            return res.status(400).json({ error: 'This assignment requires a written response or file upload.' });
         }
         if (requiredFormat === 'pdf' && !attachmentUrl) {
             return res.status(400).json({ error: 'This assignment requires a PDF upload.' });

@@ -13,21 +13,28 @@ const WorksheetSubmitModal = ({ assignment, onClose, onSubmitted }) => {
 
   if (!assignment) return null;
 
-  const format = assignment.submissionFormat || 'text';
-
   const handleFileChange = (e) => {
     const f = e.target.files?.[0];
-    if (f) setFile(f);
+    if (!f) return;
+
+    const allowedTypes = new Set(['application/pdf', 'image/jpeg', 'image/png', 'application/vnd.openxmlformats-officedocument.wordprocessingml.document']);
+    const allowedExtension = /\.(pdf|jpe?g|png|docx)$/i.test(f.name || '');
+    if ((!allowedTypes.has(f.type) && !allowedExtension) || f.size > 20 * 1024 * 1024) {
+      setFile(null);
+      setError(f.size > 20 * 1024 * 1024
+        ? 'The file must be 20 MB or smaller.'
+        : 'Please choose a PDF, JPG, PNG, or DOCX file.');
+      return;
+    }
+
+    setError('');
+    setFile(f);
   };
 
   const handleSubmit = async () => {
     setError('');
-    if (format === 'text' && !submissionText.trim()) {
-      setError('Please write a response before submitting.');
-      return;
-    }
-    if (format === 'pdf' && !file) {
-      setError('Please select a file to upload.');
+    if (!submissionText.trim() && !file) {
+      setError('Please write a response or select a file before submitting.');
       return;
     }
 
@@ -116,29 +123,27 @@ const WorksheetSubmitModal = ({ assignment, onClose, onSubmitted }) => {
                 </div>
               )}
 
-              {(format === 'pdf' || format === 'both') && (
-                <div>
-                  <label className="text-xs font-semibold text-slate-600 mb-1.5 block">Upload Completed Worksheet</label>
-                  <div
-                    onClick={() => fileRef.current?.click()}
-                    className={`cursor-pointer rounded-xl border-2 border-dashed p-5 text-center transition-colors ${file ? 'border-emerald-300 bg-emerald-50' : 'border-slate-200 hover:border-indigo-300 hover:bg-indigo-50/30'}`}
-                  >
-                    <input ref={fileRef} type="file" className="hidden" accept=".pdf,.jpg,.jpeg,.png,.docx" onChange={handleFileChange} />
-                    {file ? (
-                      <div className="flex items-center justify-center gap-2">
-                        <FileText className="size-5 text-emerald-500" />
-                        <p className="text-sm font-semibold text-emerald-700 truncate max-w-[200px]">{file.name}</p>
-                      </div>
-                    ) : (
-                      <>
-                        <Upload className="mx-auto mb-2 size-8 text-slate-300" />
-                        <p className="text-sm text-slate-500">Click to choose a file</p>
-                        <p className="text-xs text-slate-400 mt-0.5">PDF, JPG, PNG or DOCX · Max 20MB</p>
-                      </>
-                    )}
-                  </div>
+              <div>
+                <label className="text-xs font-semibold text-slate-600 mb-1.5 block">Upload Completed Worksheet <span className="font-normal text-slate-400">(optional)</span></label>
+                <div
+                  onClick={() => fileRef.current?.click()}
+                  className={`cursor-pointer rounded-xl border-2 border-dashed p-5 text-center transition-colors ${file ? 'border-emerald-300 bg-emerald-50' : 'border-slate-200 hover:border-indigo-300 hover:bg-indigo-50/30'}`}
+                >
+                  <input ref={fileRef} type="file" className="hidden" accept=".pdf,.jpg,.jpeg,.png,.docx" onChange={handleFileChange} />
+                  {file ? (
+                    <div className="flex items-center justify-center gap-2">
+                      <FileText className="size-5 text-emerald-500" />
+                      <p className="text-sm font-semibold text-emerald-700 truncate max-w-[200px]">{file.name}</p>
+                    </div>
+                  ) : (
+                    <>
+                      <Upload className="mx-auto mb-2 size-8 text-slate-300" />
+                      <p className="text-sm text-slate-500">Click to choose a file</p>
+                      <p className="text-xs text-slate-400 mt-0.5">PDF, JPG, PNG or DOCX · Max 20MB</p>
+                    </>
+                  )}
                 </div>
-              )}
+              </div>
 
               {error && (
                 <div className="rounded-xl bg-rose-50 border border-rose-200 px-4 py-2.5 text-sm text-rose-700 font-medium">

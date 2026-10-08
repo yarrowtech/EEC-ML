@@ -337,6 +337,14 @@ const SubjectTopicsView = ({ subject, onBack, style = DEFAULT_STYLE }) => {
   const moodLead = firstName ? `Keep going, ${firstName}!` : 'Keep going!';
   const moodTrail = progress === 0 ? 'Ready to dive in?' : progress === 100 ? 'Subject complete!' : `You're ${progress}% through.`;
 
+  const openTopic = (topic) => {
+    if (!topic?.title) return;
+    const topicSlug = slugifyForUrl(String(topic.title).trim());
+    navigate(`/student/smart-learning-courses/subject/${slugifyForUrl(subject.key)}/topic/${topicSlug}?view=details`, {
+      state: { smartLearningSubject: subject },
+    });
+  };
+
   return (
     <div className="space-y-6">
       <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
@@ -424,10 +432,7 @@ const SubjectTopicsView = ({ subject, onBack, style = DEFAULT_STYLE }) => {
                 </div>
                 {nextIncompleteTopic && progress > 0 && progress < 100 && (
                   <button
-                    onClick={() => {
-                      const topicSlug = slugifyForUrl(String(nextIncompleteTopic.title || '').trim());
-                      navigate(`/student/smart-learning-courses/subject/${slugifyForUrl(subject.key)}/topic/${topicSlug}`);
-                    }}
+                    onClick={() => openTopic(nextIncompleteTopic)}
                     className="inline-flex items-center justify-center gap-2 rounded-xl bg-violet-500 px-4 py-2.5 text-sm font-bold text-white transition-colors hover:bg-violet-600"
                   >
                     Continue: {nextIncompleteTopic.title}
@@ -562,13 +567,7 @@ const SubjectTopicsView = ({ subject, onBack, style = DEFAULT_STYLE }) => {
                     <div className="flex items-center gap-2 self-end sm:self-center">
                       <button
                         type="button"
-                        onClick={() => {
-                          if (!firstTopic) return;
-                          const topicSlug = slugifyForUrl(String(firstTopic.title || '').trim());
-                          navigate(`/student/smart-learning-courses/subject/${slugifyForUrl(subject.key)}/topic/${topicSlug}`, {
-                            state: { smartLearningSubject: subject },
-                          });
-                        }}
+                        onClick={() => openTopic(firstTopic)}
                         disabled={!firstTopic}
                         className={`inline-flex items-center gap-2 rounded-xl px-5 py-2.5 text-sm font-bold transition-colors ${
                           !firstTopic
@@ -618,13 +617,10 @@ const SubjectTopicsView = ({ subject, onBack, style = DEFAULT_STYLE }) => {
                                     <p className="text-xs font-medium text-[#64748b]">{topicProg.completed}/{topicProg.total} subtopics complete</p>
                                   </div>
                                   <button
-                                    onClick={() => {
-                                      const topicSlug = slugifyForUrl(String(topic.title || '').trim());
-                                      navigate(`/student/smart-learning-courses/subject/${slugifyForUrl(subject.key)}/topic/${topicSlug}`);
-                                    }}
+                                    onClick={() => openTopic(topic)}
                                     className="shrink-0 rounded-full bg-violet-500 px-4 py-2 text-xs font-bold text-white transition hover:bg-violet-600 sm:text-sm"
                                   >
-                                    Open Topic
+                                    Start Learning
                                   </button>
                                 </div>
                                 {topic.subtopics && topic.subtopics.length > 0 ? (

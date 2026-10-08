@@ -17,6 +17,7 @@ jest.mock('../AILearningCoursesReference', () => ({
     return (
       <div>
         Scoped topic page
+        {location.search && <span>Query: {location.search}</span>}
         {location.state?.smartLearningSubject && <span>Seeded topic data</span>}
       </div>
     );
@@ -130,6 +131,7 @@ describe('AILearningCoursesLanding loading', () => {
     fireEvent.click(await screen.findByRole('button', { name: 'Start Learning' }));
 
     expect(await screen.findByText('Scoped topic page')).toBeInTheDocument();
+    expect(screen.getByText('Query: ?view=details')).toBeInTheDocument();
     expect(screen.getByText('Seeded topic data')).toBeInTheDocument();
   });
 });
