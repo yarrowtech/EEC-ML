@@ -1,7 +1,6 @@
 import React, { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState } from 'react';
 import { clearCacheEntry, readCacheEntry, writeCacheEntry } from '../utils/studentCache';
 import { fetchCachedJson } from '../utils/studentApiCache';
-import { AUTH_NOTICE, logoutAndRedirect } from '../utils/authSession';
 import { useNotifications } from '../hooks/useNotifications';
 import {
   getStudentNotificationModule,
@@ -54,7 +53,7 @@ export const StudentDashboardProvider = ({ children }) => {
   const activeControllerRef = useRef(null);
   const isMountedRef = useRef(false);
 
-  const fetchDashboard = useCallback(async ({ silent = false, forceRefresh = false } = {}) => {
+  const fetchDashboard = useCallback(async ({ silent = false } = {}) => {
     activeControllerRef.current?.abort();
     const controller = new AbortController();
     activeControllerRef.current = controller;
@@ -70,14 +69,12 @@ export const StudentDashboardProvider = ({ children }) => {
         setLoading(false);
         return;
       }
-      if (forceRefresh) clearCacheEntry(DASHBOARD_CACHE_KEY);
       const headers = {
         Authorization: `Bearer ${token}`,
         'Content-Type': 'application/json',
       };
       const dashboardResult = await fetchCachedJson(`${import.meta.env.VITE_API_URL}/api/student/auth/dashboard`, {
         ttlMs: STUDENT_API_CACHE_TTL_MS,
-        forceRefresh,
         fetchOptions: {
           signal: controller.signal,
           headers,
@@ -132,15 +129,16 @@ export const StudentDashboardProvider = ({ children }) => {
     };
   }, [fetchDashboard, initialCachedData]);
 
-  const fetchSmartLearningReminders = useCallback(async () => {
+  useEffect(() => {
+    let alive = true;
     const token = localStorage.getItem('token');
-    if (!token || typeof fetch !== 'function' || localStorage.getItem('userType') !== 'Student') return;
+    if (!token || typeof fetch !== 'function' || localStorage.getItem('userType') !== 'Student') return undefined;
     const headers = { Authorization: `Bearer ${token}` };
-    try {
-      const [paperPayload, assignmentPayload] = await Promise.all([
-        fetch(`${import.meta.env.VITE_API_URL}/api/practice-papers/student/papers?limit=100`, { headers }).then((r) => r.ok ? r.json() : null),
-        fetch(`${import.meta.env.VITE_API_URL}/api/assignment/student/assignments`, { headers }).then((r) => r.ok ? r.json() : null),
-      ]);
+    Promise.all([
+      fetch(`${import.meta.env.VITE_API_URL}/api/practice-papers/student/papers?limit=100`, { headers }).then((r) => r.ok ? r.json() : null),
+      fetch(`${import.meta.env.VITE_API_URL}/api/assignment/student/assignments`, { headers }).then((r) => r.ok ? r.json() : null),
+    ]).then(([paperPayload, assignmentPayload]) => {
+      if (!alive) return;
       const papers = (Array.isArray(paperPayload?.papers) ? paperPayload.papers : []).filter((paper) => paper.studentStatus !== 'completed');
       const assignments = (Array.isArray(assignmentPayload) ? assignmentPayload : []).filter((assignment) => {
         const type = String(assignment?.type || '').toLowerCase();
@@ -150,29 +148,9 @@ export const StudentDashboardProvider = ({ children }) => {
         ...papers.map((paper) => ({ id: `paper-${paper._id}`, kind: 'Practice paper', title: paper.title, path: '/student/smart-learning-courses' })),
         ...assignments.map((assignment) => ({ id: `worksheet-${assignment._id}`, kind: 'Worksheet', title: assignment.title, path: '/student/smart-learning-courses' })),
       ]);
-    } catch {
-      // keep existing reminders on transient network errors
-    }
+    }).catch(() => {});
+    return () => { alive = false; };
   }, []);
-
-  // Refetch periodically and on focus/visibility — not just once per mount —
-  // so completing a practice paper or worksheet in-session clears its own
-  // reminder instead of it lingering until the next full page load.
-  useEffect(() => {
-    fetchSmartLearningReminders();
-    const intervalId = window.setInterval(fetchSmartLearningReminders, 60000);
-    const onFocus = () => fetchSmartLearningReminders();
-    const onVisible = () => {
-      if (document.visibilityState === 'visible') fetchSmartLearningReminders();
-    };
-    window.addEventListener('focus', onFocus);
-    document.addEventListener('visibilitychange', onVisible);
-    return () => {
-      window.clearInterval(intervalId);
-      window.removeEventListener('focus', onFocus);
-      document.removeEventListener('visibilitychange', onVisible);
-    };
-  }, [fetchSmartLearningReminders]);
 
   // Single source of truth for the unread-chat badge. Sidebar and
   // MobileBottomNav used to each poll /api/chat/threads independently (every
@@ -195,10 +173,6 @@ export const StudentDashboardProvider = ({ children }) => {
       const res = await fetch(`${import.meta.env.VITE_API_URL}/api/chat/threads`, {
         headers: { Authorization: `Bearer ${token}` },
       });
-      if (res.status === 401 || res.status === 403) {
-        logoutAndRedirect({ notice: AUTH_NOTICE.EXPIRED, clearAllLocalStorage: true });
-        return;
-      }
       if (!res.ok) return;
       const threads = await res.json().catch(() => []);
       const total = (Array.isArray(threads) ? threads : []).reduce(
@@ -236,8 +210,6 @@ export const StudentDashboardProvider = ({ children }) => {
   useEffect(() => {
     fetchUnreadChatCount();
     const intervalId = window.setInterval(fetchUnreadChatCount, 15000);
-    const onChatMessage = () => fetchUnreadChatCount();
-    window.addEventListener('chat:new-message', onChatMessage);
     const onFocus = () => fetchUnreadChatCount();
     const onVisible = () => {
       if (document.visibilityState === 'visible') fetchUnreadChatCount();
@@ -248,7 +220,6 @@ export const StudentDashboardProvider = ({ children }) => {
       window.clearInterval(intervalId);
       window.removeEventListener('focus', onFocus);
       document.removeEventListener('visibilitychange', onVisible);
-      window.removeEventListener('chat:new-message', onChatMessage);
     };
   }, [fetchUnreadChatCount]);
 
@@ -273,7 +244,7 @@ export const StudentDashboardProvider = ({ children }) => {
       moduleSeenState,
       chatSeenCount,
       markModuleVisited,
-      refresh: () => fetchDashboard({ forceRefresh: true }),
+      refresh: () => fetchDashboard(),
     }),
     [loading, error, data.profile, data.classTeacher, data.stats, data.course, data.recentAttendance, unreadChatCount, notificationState, smartLearningReminders, moduleSeenState, chatSeenCount, markModuleVisited, fetchDashboard]
   );

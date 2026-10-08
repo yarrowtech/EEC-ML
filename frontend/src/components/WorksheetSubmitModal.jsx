@@ -9,6 +9,7 @@ const WorksheetSubmitModal = ({ assignment, onClose, onSubmitted }) => {
   const [submissionText, setSubmissionText] = useState('');
   const [uploading, setUploading] = useState(false);
   const [success, setSuccess] = useState(false);
+  const [confirming, setConfirming] = useState(false);
   const [error, setError] = useState('');
 
   if (!assignment) return null;
@@ -17,13 +18,13 @@ const WorksheetSubmitModal = ({ assignment, onClose, onSubmitted }) => {
     const f = e.target.files?.[0];
     if (!f) return;
 
-    const allowedTypes = new Set(['application/pdf', 'image/jpeg', 'image/png', 'application/vnd.openxmlformats-officedocument.wordprocessingml.document']);
-    const allowedExtension = /\.(pdf|jpe?g|png|docx)$/i.test(f.name || '');
+    const allowedTypes = new Set(['application/pdf']);
+    const allowedExtension = /\.pdf$/i.test(f.name || '');
     if ((!allowedTypes.has(f.type) && !allowedExtension) || f.size > 20 * 1024 * 1024) {
       setFile(null);
       setError(f.size > 20 * 1024 * 1024
         ? 'The file must be 20 MB or smaller.'
-        : 'Please choose a PDF, JPG, PNG, or DOCX file.');
+        : 'Please choose a PDF file.');
       return;
     }
 
@@ -31,12 +32,18 @@ const WorksheetSubmitModal = ({ assignment, onClose, onSubmitted }) => {
     setFile(f);
   };
 
-  const handleSubmit = async () => {
+  const requestSubmit = () => {
     setError('');
     if (!submissionText.trim() && !file) {
       setError('Please write a response or select a file before submitting.');
       return;
     }
+    setConfirming(true);
+  };
+
+  const handleSubmit = async () => {
+    setConfirming(false);
+    setError('');
 
     setUploading(true);
     try {
@@ -110,18 +117,16 @@ const WorksheetSubmitModal = ({ assignment, onClose, onSubmitted }) => {
                 )}
               </div>
 
-              {(format === 'text' || format === 'both') && (
-                <div>
-                  <label className="text-xs font-semibold text-slate-600 mb-1.5 block">Your Answer / Response</label>
-                  <textarea
-                    value={submissionText}
-                    onChange={(e) => setSubmissionText(e.target.value)}
-                    rows={4}
-                    placeholder="Write your answer here…"
-                    className="w-full rounded-xl border border-slate-200 px-3 py-2.5 text-sm text-slate-800 resize-none focus:border-indigo-400 focus:outline-none focus:ring-2 focus:ring-indigo-100"
-                  />
-                </div>
-              )}
+              <div>
+                <label className="text-xs font-semibold text-slate-600 mb-1.5 block">Your Answer / Response <span className="font-normal text-slate-400">(optional)</span></label>
+                <textarea
+                  value={submissionText}
+                  onChange={(e) => setSubmissionText(e.target.value)}
+                  rows={4}
+                  placeholder="Write your answer here…"
+                  className="w-full rounded-xl border border-slate-200 px-3 py-2.5 text-sm text-slate-800 resize-none focus:border-indigo-400 focus:outline-none focus:ring-2 focus:ring-indigo-100"
+                />
+              </div>
 
               <div>
                 <label className="text-xs font-semibold text-slate-600 mb-1.5 block">Upload Completed Worksheet <span className="font-normal text-slate-400">(optional)</span></label>
@@ -129,7 +134,7 @@ const WorksheetSubmitModal = ({ assignment, onClose, onSubmitted }) => {
                   onClick={() => fileRef.current?.click()}
                   className={`cursor-pointer rounded-xl border-2 border-dashed p-5 text-center transition-colors ${file ? 'border-emerald-300 bg-emerald-50' : 'border-slate-200 hover:border-indigo-300 hover:bg-indigo-50/30'}`}
                 >
-                  <input ref={fileRef} type="file" className="hidden" accept=".pdf,.jpg,.jpeg,.png,.docx" onChange={handleFileChange} />
+                  <input ref={fileRef} type="file" className="hidden" accept=".pdf,application/pdf" onChange={handleFileChange} />
                   {file ? (
                     <div className="flex items-center justify-center gap-2">
                       <FileText className="size-5 text-emerald-500" />
@@ -139,7 +144,7 @@ const WorksheetSubmitModal = ({ assignment, onClose, onSubmitted }) => {
                     <>
                       <Upload className="mx-auto mb-2 size-8 text-slate-300" />
                       <p className="text-sm text-slate-500">Click to choose a file</p>
-                      <p className="text-xs text-slate-400 mt-0.5">PDF, JPG, PNG or DOCX · Max 20MB</p>
+                      <p className="text-xs text-slate-400 mt-0.5">PDF only · Max 20MB</p>
                     </>
                   )}
                 </div>
@@ -153,16 +158,30 @@ const WorksheetSubmitModal = ({ assignment, onClose, onSubmitted }) => {
 
               <button
                 type="button"
-                onClick={handleSubmit}
+                onClick={requestSubmit}
                 disabled={uploading}
                 className="w-full flex items-center justify-center gap-2 rounded-xl bg-indigo-500 py-3 text-sm font-bold text-white hover:bg-indigo-600 disabled:opacity-60 transition-colors"
               >
                 {uploading ? <><Loader2 className="size-4 animate-spin" /> Submitting…</> : <><Upload className="size-4" /> Submit Worksheet</>}
               </button>
+              <p className="text-center text-[11px] font-semibold text-amber-700">You can submit this worksheet only once.</p>
             </>
           )}
         </div>
       </div>
+
+      {confirming && (
+        <div className="fixed inset-0 z-[60] flex items-center justify-center bg-slate-900/40 p-4">
+          <div className="w-full max-w-sm rounded-2xl bg-white p-5 shadow-2xl">
+            <h3 className="text-base font-bold text-slate-900">Submit worksheet?</h3>
+            <p className="mt-2 text-sm leading-6 text-slate-600">Please check your response carefully. You can submit this worksheet only once.</p>
+            <div className="mt-4 flex justify-end gap-2">
+              <button type="button" onClick={() => setConfirming(false)} className="rounded-lg px-3 py-2 text-sm font-bold text-slate-600 hover:bg-slate-100">Go back</button>
+              <button type="button" onClick={handleSubmit} className="rounded-lg bg-indigo-600 px-3 py-2 text-sm font-bold text-white hover:bg-indigo-700">Confirm submit</button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 };

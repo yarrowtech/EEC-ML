@@ -4,7 +4,7 @@ import {
   AlertCircle, ArrowLeft, ArrowRight, BookOpen, ChevronDown, ChevronRight, CheckCircle2,
   FlaskConical, Globe, Sparkles, Users, CalendarDays,
   Layers, Languages, Landmark, Leaf, Calculator, Palette, Music2,
-  Search, Flag, Smile, List, Clock, FolderOpen, MessageCircle,
+  Search, Flag, Smile, List, Clock, FolderOpen,
 } from 'lucide-react';
 import AILearningCoursesReference from './AILearningCoursesReference';
 import AILearningPracticePaperPage from './AILearningPracticePaperPage';
@@ -114,7 +114,7 @@ const normalize = (value) => String(value || '').trim().toLowerCase();
 const SubjectTopicsView = ({ subject, onBack, style = DEFAULT_STYLE }) => {
   const SubjectIcon = style.icon;
   const navigate = useNavigate();
-  const { profile } = useStudentDashboard();
+  const { profile, smartLearningReminders = [] } = useStudentDashboard();
   const firstName = String(profile?.name || '').trim().split(/\s+/)[0] || '';
   const [openChapterIndex, setOpenChapterIndex] = useState(-1);
   const [completedSubtopics, setCompletedSubtopics] = useState({});
@@ -263,7 +263,11 @@ const SubjectTopicsView = ({ subject, onBack, style = DEFAULT_STYLE }) => {
     const query = normalize(searchQuery);
     return chapterStats.filter((entry) => {
       if (filterMode === 'in-progress' && entry.status !== 'in-progress' && entry.status !== 'almost-done') return false;
-      if (query && !normalize(entry.chapter.title).includes(query)) return false;
+      if (query) {
+        const chapterMatches = normalize(entry.chapter.title).includes(query);
+        const topicMatches = (entry.chapter.topics || []).some((topic) => normalize(topic.title).includes(query));
+        if (!chapterMatches && !topicMatches) return false;
+      }
       return true;
     });
   }, [chapterStats, searchQuery, filterMode]);
@@ -460,7 +464,7 @@ const SubjectTopicsView = ({ subject, onBack, style = DEFAULT_STYLE }) => {
                   type="text"
                   value={searchQuery}
                   onChange={(event) => setSearchQuery(event.target.value)}
-                  placeholder="Search chapters..."
+                  placeholder="Search chapters and topics..."
                   className="w-36 bg-transparent text-sm text-slate-700 outline-none placeholder:text-[#8e9aaf] sm:w-48"
                 />
               </div>
@@ -483,6 +487,16 @@ const SubjectTopicsView = ({ subject, onBack, style = DEFAULT_STYLE }) => {
             </div>
           )}
         </div>
+
+        {smartLearningReminders.length > 0 && (
+          <div className="mb-4 flex flex-wrap items-center justify-between gap-3 rounded-2xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm">
+            <div>
+              <p className="font-bold text-amber-900">You have unfinished Smart Learning work</p>
+              <p className="mt-0.5 text-xs text-amber-700">Reminders stay here until the paper or worksheet is completed.</p>
+            </div>
+            <span className="rounded-full bg-white px-3 py-1 text-xs font-bold text-amber-800">{smartLearningReminders.length} pending</span>
+          </div>
+        )}
 
         {chapters.length === 0 ? (
           <div className="rounded-3xl border-2 border-dashed border-violet-500/30 bg-white/40 p-10 text-center backdrop-blur-[20px]">
@@ -582,7 +596,7 @@ const SubjectTopicsView = ({ subject, onBack, style = DEFAULT_STYLE }) => {
                         }`}
                       >
                         <span>
-                          {!firstTopic ? 'No Topics' : status === 'completed' ? 'Review' : status === 'in-progress' || status === 'almost-done' ? 'Continue' : status === 'ready' ? 'Start Learning' : 'Explore Chapter'}
+                          {!firstTopic ? 'No Topics' : status === 'completed' ? 'Review' : status === 'in-progress' || status === 'almost-done' ? 'Continue Lesson' : status === 'ready' ? 'Start Lesson' : 'Explore Chapter'}
                         </span>
                         {firstTopic && (isLocked ? <FolderOpen size={16} /> : <ArrowRight size={16} />)}
                       </button>
@@ -613,14 +627,19 @@ const SubjectTopicsView = ({ subject, onBack, style = DEFAULT_STYLE }) => {
                                 <span className="absolute -left-5.25 top-6 h-2.5 w-2.5 rounded-full bg-violet-500 ring-4 ring-white sm:-left-6.25" />
                                 <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
                                   <div className="min-w-0">
-                                    <p className="truncate text-base font-bold text-[#0f172a]">{topic.title}</p>
+                                    <div className="flex flex-wrap items-center gap-2">
+                                      <p className="truncate text-base font-bold text-[#0f172a]">{topic.title}</p>
+                                      {topicProg.total > 0 && topicProg.completed >= topicProg.total && (
+                                        <span className="rounded-full bg-emerald-50 px-2 py-0.5 text-[10px] font-bold uppercase tracking-wide text-emerald-700">Completed</span>
+                                      )}
+                                    </div>
                                     <p className="text-xs font-medium text-[#64748b]">{topicProg.completed}/{topicProg.total} subtopics complete</p>
                                   </div>
                                   <button
                                     onClick={() => openTopic(topic)}
                                     className="shrink-0 rounded-full bg-violet-500 px-4 py-2 text-xs font-bold text-white transition hover:bg-violet-600 sm:text-sm"
                                   >
-                                    Start Learning
+                                    {topicProg.completed > 0 ? 'Continue Lesson' : 'Start Lesson'}
                                   </button>
                                 </div>
                                 {topic.subtopics && topic.subtopics.length > 0 ? (
@@ -675,23 +694,15 @@ const SubjectTopicsView = ({ subject, onBack, style = DEFAULT_STYLE }) => {
 
       <section className="grid grid-cols-1 gap-4 sm:grid-cols-2">
         <div className={`flex items-start gap-4 ${GLASS_CARD} p-5`}>
-          <div className="flex h-12 w-12 shrink-0 items-center justify-center rounded-xl bg-amber-50 text-amber-600">
-            <MessageCircle size={22} />
+          <div className="flex h-12 w-12 shrink-0 items-center justify-center rounded-xl bg-violet-500/10 text-violet-600">
+            <Users size={22} />
           </div>
           <div>
-            <h4 className="text-base font-bold text-[#0f172a]">Need help with a topic?</h4>
+            <h4 className="text-base font-bold text-[#0f172a]">Course information</h4>
             <p className="mt-1 text-sm text-[#64748b]">
-              {teacherName
-                ? `Ask your teacher ${teacherName} directly, or post in the Class Wall.`
-                : 'Post your question in the Class Wall and your teacher will see it.'}
+              {teacherName ? `Lessons published by ${teacherName}.` : 'Your teacher will add course information here.'}
             </p>
-            <button
-              type="button"
-              onClick={() => navigate('/student/assignments-academic-alcove')}
-              className="mt-2 inline-flex items-center gap-1 text-sm font-bold text-violet-600 hover:underline"
-            >
-              Ask on Class Wall <ArrowRight size={14} />
-            </button>
+            <p className="mt-2 text-xs font-semibold text-[#8e9aaf]">{subject.title} · {chapters.length} chapter{chapters.length === 1 ? '' : 's'}</p>
           </div>
         </div>
         <div className={`flex items-start gap-4 ${GLASS_CARD} p-5`}>
@@ -1042,7 +1053,7 @@ const AILearningCoursesLanding = () => {
                         >
                           {curriculumLoading ? 'Loading lessons…' : subject.hasLessonPlans ? (
                             <>
-                              Start Learning
+                              Start Lesson
                               <ArrowRight size={16} className="transition-transform duration-200 group-hover:translate-x-1" />
                             </>
                           ) : 'Coming Soon'}

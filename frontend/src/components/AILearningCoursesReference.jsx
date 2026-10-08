@@ -279,7 +279,11 @@ const AILearningCoursesReference = () => {
   const [smartLearningSubjects, setSmartLearningSubjects] = useState(() => seededSubject ? [seededSubject] : []);
   const [realMaterials, setRealMaterials] = useState([]);
   const [completedSteps, setCompletedSteps] = useState([]);
+  const [topicCompleted, setTopicCompleted] = useState(false);
   const [overallProgress, setOverallProgress] = useState(0);
+  const [progressLoaded, setProgressLoaded] = useState(false);
+  const [activeFlowStepId, setActiveFlowStepId] = useState(null);
+  const [savedScrollTop, setSavedScrollTop] = useState(0);
   const [isFullscreen, setIsFullscreen] = useState(false);
   const [downloadingPdf, setDownloadingPdf] = useState(false);
   const [activeMaterial, setActiveMaterial] = useState(null);
@@ -292,8 +296,12 @@ const AILearningCoursesReference = () => {
   const subjectMatch = location.pathname.match(/\/subject\/([^/]+)/);
   const subjectSlug = subjectMatch?.[1] ? deslugifyFromUrl(subjectMatch[1]) : 'Subject';
 
-  // Load progress from localStorage
+  // Load local progress immediately, then merge account-backed progress so the
+  // same lesson resumes consistently on another device.
   useEffect(() => {
+    setProgressLoaded(false);
+    setActiveFlowStepId(null);
+    setSavedScrollTop(0);
     const storageKey = `learning-topic-progress-${normalizeKey(subjectSlug)}-${normalizeKey(topicSlug)}`;
     const saved = localStorage.getItem(storageKey);
     if (saved) {
@@ -301,10 +309,36 @@ const AILearningCoursesReference = () => {
         const data = JSON.parse(saved);
         setCompletedSteps(data.completedSteps || []);
         setOverallProgress(data.percentage || 0);
+        setTopicCompleted(Boolean(data.topicCompleted));
+        setActiveFlowStepId(data.activeStepId || null);
+        setSavedScrollTop(Number(data.scrollTop) || 0);
       } catch (err) {
         console.error('Failed to load progress:', err);
       }
     }
+    const token = localStorage.getItem('token');
+    if (!token || typeof fetch !== 'function') {
+      setProgressLoaded(true);
+      return undefined;
+    }
+    let alive = true;
+    fetch(`${API_BASE}/api/lesson-plans/student/smart-learning-progress?subject=${encodeURIComponent(subjectSlug)}&topic=${encodeURIComponent(topicSlug)}`, {
+      headers: { Authorization: `Bearer ${token}` },
+    })
+      .then((response) => response.ok ? response.json() : null)
+      .then((payload) => {
+        if (!alive) return;
+        const data = payload?.progress;
+        if (data) {
+          setCompletedSteps(Array.isArray(data.completedSteps) ? data.completedSteps : []);
+          setTopicCompleted(Boolean(data.topicCompleted));
+          setActiveFlowStepId(data.activeStepId || null);
+          setSavedScrollTop(Number(data.scrollTop) || 0);
+        }
+      })
+      .catch(() => {})
+      .finally(() => { if (alive) setProgressLoaded(true); });
+    return () => { alive = false; };
   }, [subjectSlug, topicSlug]);
 
   // Fetch profile, subject context, and smart learning map once on mount.
@@ -580,6 +614,9 @@ const AILearningCoursesReference = () => {
     const data = {
       completedSteps,
       percentage,
+      topicCompleted,
+      activeStepId: activeFlowStepId,
+      scrollTop: savedScrollTop,
       lastAccessed: new Date().toISOString(),
     };
     try {
@@ -589,7 +626,25 @@ const AILearningCoursesReference = () => {
       // tracking is best-effort and must not crash the page.
     }
     setOverallProgress(percentage);
-  }, [completedSteps, chapterInstructionalFlow.length, subjectSlug, topicSlug]);
+    if (!progressLoaded || typeof fetch !== 'function') return undefined;
+    const token = localStorage.getItem('token');
+    if (!token) return undefined;
+    const timer = window.setTimeout(() => {
+      fetch(`${API_BASE}/api/lesson-plans/student/smart-learning-progress`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+        body: JSON.stringify({
+          subject: subjectSlug,
+          topic: topicSlug,
+          completedSteps,
+          topicCompleted,
+          activeStepId: activeFlowStepId || '',
+          scrollTop: savedScrollTop,
+        }),
+      }).catch(() => {});
+    }, 450);
+    return () => window.clearTimeout(timer);
+  }, [completedSteps, chapterInstructionalFlow.length, subjectSlug, topicSlug, topicCompleted, activeFlowStepId, savedScrollTop, progressLoaded]);
 
   const chapterIntroduction = String(selectedChapterMeta.introduction || '').trim();
   const chapterExplanation = String(selectedChapterMeta.explanation || '').trim();
@@ -684,7 +739,6 @@ const AILearningCoursesReference = () => {
   useEffect(() => {
     setIsPracticeMode(new URLSearchParams(location.search).get('mode') === 'practice');
   }, [location.search]);
-  const [activeFlowStepId, setActiveFlowStepId] = useState(null);
   const [activeDetailSection, setActiveDetailSection] = useState('introduction');
   const [readerFontScale, setReaderFontScale] = useState(1);
   const detailSectionRefs = useRef({});
@@ -716,11 +770,20 @@ const AILearningCoursesReference = () => {
   const handleDetailsScroll = () => {
     const container = detailsScrollRef.current;
     if (!container || !detailSections.length) return;
+    setSavedScrollTop(container.scrollTop);
     const distanceFromBottom = container.scrollHeight - container.scrollTop - container.clientHeight;
     if (distanceFromBottom <= 8) {
       setActiveDetailSection(detailSections[detailSections.length - 1].id);
     }
   };
+
+  useEffect(() => {
+    if (!isDetailsView || !progressLoaded || !detailsScrollRef.current) return undefined;
+    const frame = window.requestAnimationFrame(() => {
+      if (detailsScrollRef.current) detailsScrollRef.current.scrollTop = savedScrollTop;
+    });
+    return () => window.cancelAnimationFrame(frame);
+  }, [isDetailsView, progressLoaded, savedScrollTop]);
 
   const handleDownloadAllMaterials = () => {
     const downloadable = learningMaterials.filter((material) => material.url || material.downloadUrl);
@@ -905,11 +968,18 @@ const AILearningCoursesReference = () => {
     );
   }
 
+  const canUseFlowStep = (idx) => idx === 0 || completedSteps.includes(chapterInstructionalFlow[idx - 1]?.id);
+  const toggleFlowStep = (stepId, idx) => {
+    if (!canUseFlowStep(idx)) return;
+    setActiveFlowStepId(stepId);
+    setCompletedSteps((previous) => previous.includes(stepId)
+      ? previous.filter((id) => id !== stepId)
+      : [...previous, stepId]);
+  };
+  const markTopicComplete = () => setTopicCompleted((previous) => !previous);
+
   if (isDetailsView) {
     const practiceResources = assessmentItems;
-    const totalWords = detailSections.reduce((sum, s) => sum + String(s?.text || '').trim().split(/\s+/).filter(Boolean).length, 0);
-    const readMinutes = detailSections.length > 0 ? Math.max(1, Math.round(totalWords / 200)) : 0;
-
     return (
       <>
         <style>{`
@@ -980,10 +1050,7 @@ const AILearningCoursesReference = () => {
                   <span className="rounded-full bg-[#e2dfff] px-3.5 py-1.5 text-[11px] font-bold uppercase tracking-wider text-[#321ed2]">
                     {mapScope.chapterTitle || subjectSlug}
                   </span>
-                  <span className="flex items-center gap-2 text-xs font-semibold text-[#464555]">
-                    <span className="rdr-dot" />
-                    {readMinutes > 0 ? `${readMinutes} min read` : 'Reading'}
-                  </span>
+                  <span className="flex items-center gap-2 text-xs font-semibold text-[#464555]"><span className="rdr-dot" /> Lesson</span>
                 </div>
 
                 {/* Title */}
@@ -1038,6 +1105,44 @@ const AILearningCoursesReference = () => {
                       ))}
                     </ul>
                   )}
+                </div>
+
+                <div className="rounded-[2rem] bg-white p-5 shadow-sm">
+                  <div className="flex items-start justify-between gap-3">
+                    <div>
+                      <h2 className="text-base font-bold text-[#0d1c2e]">Learning steps</h2>
+                      <p className="mt-1 text-xs text-[#464555]">Mark each step when you finish it.</p>
+                    </div>
+                    <span className="shrink-0 text-xs font-bold text-[#493ee5]">{completedSteps.length}/{chapterInstructionalFlow.length}</span>
+                  </div>
+                  <div className="mt-3 space-y-2">
+                    {chapterInstructionalFlow.length === 0 ? (
+                      <p className="text-sm italic text-[#464555]">No steps published yet.</p>
+                    ) : chapterInstructionalFlow.map((step, idx) => {
+                      const done = completedSteps.includes(step.id);
+                      const available = canUseFlowStep(idx);
+                      return (
+                        <button
+                          key={step.id}
+                          type="button"
+                          disabled={!available}
+                          onClick={() => toggleFlowStep(step.id, idx)}
+                          className={`flex w-full items-center gap-2 rounded-xl px-3 py-2 text-left text-xs font-semibold transition-colors ${done ? 'bg-emerald-50 text-emerald-700' : available ? 'bg-[#eff4ff] text-[#493ee5] hover:bg-[#e6eeff]' : 'cursor-not-allowed bg-slate-50 text-slate-400'}`}
+                        >
+                          {done ? <CheckCircle2 size={14} /> : <span className="flex h-4 w-4 items-center justify-center rounded-full border border-current text-[10px]">{idx + 1}</span>}
+                          <span className="min-w-0 flex-1 truncate">{step.title}</span>
+                          <span>{done ? 'Completed' : available ? 'Mark complete' : 'Locked'}</span>
+                        </button>
+                      );
+                    })}
+                  </div>
+                  <button
+                    type="button"
+                    onClick={markTopicComplete}
+                    className={`mt-3 flex w-full items-center justify-center gap-2 rounded-xl px-3 py-2.5 text-xs font-bold ${topicCompleted ? 'bg-emerald-100 text-emerald-700' : 'bg-[#493ee5] text-white hover:bg-[#3a30c9]'}`}
+                  >
+                    <CheckCircle2 size={14} /> {topicCompleted ? 'Topic completed' : 'Mark topic complete'}
+                  </button>
                 </div>
 
                 {/* Launch Practice button */}
@@ -1244,10 +1349,6 @@ const AILearningCoursesReference = () => {
   const handleFlowStepClick = (stepId, idx) => {
     if (isStepLocked(idx)) return;
     setActiveFlowStepId(stepId);
-    setCompletedSteps((prev) => {
-      if (prev.includes(stepId)) return prev;
-      return [...prev, stepId];
-    });
   };
 
   const stepsDoneLabel = `${completedSteps.length}/${chapterInstructionalFlow.length || 0} (${overallProgress}%)`;
