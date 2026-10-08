@@ -954,7 +954,7 @@ const ClassesHub = () => {
   ];
 
   const renderField = (f, wide = false) => (
-    <div key={f.id} className={`rounded-2xl border border-white/80 bg-white/80 p-3 shadow-sm ${wide ? 'col-span-2' : ''}`}>
+    <div key={f.id} className={`rounded-2xl border border-white/80 bg-white/80 p-3 ${wide ? 'col-span-2' : ''}`}>
       <label htmlFor={f.id} className="mb-2 flex items-center gap-2 text-[13px] font-medium text-slate-600">
         <f.icon size={15} className={f.iconCls} /> {f.label}
       </label>
@@ -963,7 +963,7 @@ const ClassesHub = () => {
           id={f.id}
           value={f.value}
           onChange={(e) => f.onChange(e.target.value)}
-          className={`w-full cursor-pointer appearance-none rounded-xl border border-slate-200 bg-white px-3.5 py-2 pr-9 text-sm font-semibold text-slate-900 shadow-sm transition focus:outline-none focus:ring-4 ${f.ring}`}
+          className={`w-full cursor-pointer appearance-none rounded-full border border-slate-200 bg-white px-3.5 py-2 pr-9 text-sm font-semibold text-slate-900 shadow-sm transition focus:outline-none focus:ring-4 ${f.ring}`}
         >
           {f.options.map((o) => <option key={o} value={o}>{o}</option>)}
           {f.options.length === 0 && <option value="">—</option>}
@@ -1022,7 +1022,7 @@ const ClassesHub = () => {
           </div>
 
           {/* Selection preview */}
-          <div className="mt-3 flex flex-wrap items-center gap-2 rounded-2xl bg-slate-50/90 px-3 py-2.5">
+          <div className="mt-3 flex flex-wrap items-center gap-2 rounded-2xl bg-slate-100 px-3 py-2.5">
             <span className="mr-auto flex items-center gap-1.5 text-xs font-medium text-slate-500">
               <CheckCircle2 size={16} className="fill-sky-500 text-white" /> Selected Class
             </span>
@@ -2139,7 +2139,7 @@ const TeacherPortalShell = () => {
                   {active && (
                     <Motion.div
                       layoutId="teacher-sidebar-active-pill"
-                      className="absolute inset-0 rounded-xl bg-yellow-50"
+                      className="absolute inset-0 rounded-full bg-yellow-50"
                       transition={{ type: 'spring', stiffness: 400, damping: 32 }}
                     />
                   )}
