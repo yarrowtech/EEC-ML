@@ -502,9 +502,6 @@ const DrawerModal = ({
       case 'info':
         return (
           <div className="space-y-4">
-            <p className={`rounded-lg px-3 py-2 text-sm font-medium ${accent.banner}`}>
-              Name this lesson, pick a date and set how long it will run.
-            </p>
             <Card>
               <Field label="Chapter Title">
                 <Input
@@ -1466,7 +1463,7 @@ const DrawerModal = ({
 
           {/* Step navigation */}
           <div className="overflow-x-auto border-b border-[#e9edf2] px-3 py-2 sm:px-5 sm:py-3 dark:border-slate-800">
-            <div className="flex w-max min-w-full items-center gap-1 rounded-full border border-[#e2e8f0] bg-[#f8fafc] p-1">
+            <div className="mx-auto flex w-max min-w-full items-center justify-center gap-1 rounded-full border border-[#e2e8f0] bg-[#f8fafc] p-1">
               {STEPS.map((step, index) => {
                 const isActive = index === currentStep;
                 const isDone = index < currentStep;
