@@ -10,6 +10,7 @@ import {
   Activity, TrendingUp as TrendingUpIcon, Gauge, HandHelping, Heart, Sparkle,
   GraduationCap as GraduationCapIcon
 } from 'lucide-react';
+import { cachedFetch, invalidateTeacherAnalytics } from '../utils/teacherAnalyticsCache';
 
 const API_BASE = (import.meta.env.VITE_API_URL || 'http://localhost:5000').replace(/\/$/, '');
 
@@ -143,15 +144,15 @@ const StudentAnalyticsPortal = () => {
       if (filters.subject) params.set('subject', filters.subject);
 
       const [studentsRes, analyticsRes] = await Promise.all([
-        fetch(`${API_BASE}/api/progress/students?${params}`, { headers: authHeaders() }),
-        fetch(`${API_BASE}/api/progress/analytics?${params}`, { headers: authHeaders() }),
+        cachedFetch(`${API_BASE}/api/progress/students?${params}`, { headers: authHeaders() }),
+        cachedFetch(`${API_BASE}/api/progress/analytics?${params}`, { headers: authHeaders() }),
       ]);
 
       if (studentsRes.ok) {
         const data = await studentsRes.json();
         setStudents(Array.isArray(data) ? data : []);
       } else {
-        const fallbackRes = await fetch(`${API_BASE}/api/teacher/dashboard/students`, { headers: authHeaders() });
+        const fallbackRes = await cachedFetch(`${API_BASE}/api/teacher/dashboard/students`, { headers: authHeaders() });
         if (fallbackRes.ok) {
           const fallbackData = await fallbackRes.json();
           setClassOptions((fallbackData.classes || []).map(c => typeof c === 'string' ? c : c.name));
@@ -258,7 +259,7 @@ const StudentAnalyticsPortal = () => {
       if (interventionFilters.subject) params.set('subject', interventionFilters.subject);
       if (interventionFilters.interventionLevel) params.set('level', interventionFilters.interventionLevel);
 
-      const res = await fetch(`${API_BASE}/api/teacher-analytics/at-risk?${params}`, {
+      const res = await cachedFetch(`${API_BASE}/api/teacher-analytics/at-risk?${params}`, {
         headers: authHeaders(),
       });
       if (res.ok) {
@@ -276,7 +277,7 @@ const StudentAnalyticsPortal = () => {
 
   const fetchInterventionLogs = useCallback(async () => {
     try {
-      const res = await fetch(`${API_BASE}/api/teacher-analytics/interventions`, { headers: authHeaders() });
+      const res = await cachedFetch(`${API_BASE}/api/teacher-analytics/interventions`, { headers: authHeaders() });
       if (res.ok) {
         const payload = await res.json();
         setInterventionLogs(payload.data || []);
@@ -305,6 +306,26 @@ const StudentAnalyticsPortal = () => {
     if (activeTab === 'learning-style') fetchLearningStyle();
   }, [activeTab]); // eslint-disable-line react-hooks/exhaustive-deps
 
+  // Once the Overview has painted, warm every other tab in the background so
+  // switching tabs renders from the client cache instead of waiting on the API.
+  useEffect(() => {
+    if (loading) return undefined;
+    const timer = setTimeout(() => {
+      fetchInterventionLogs();
+      fetchMisconceptions();
+      fetchClassGaps();
+      fetchForecast7d();
+      fetchForecastValidation();
+      fetchMasteryAll();
+      fetchMlScores();
+      fetchConfidence();
+      fetchHelpSeeking();
+      fetchBelonging();
+      fetchLearningStyle();
+    }, 800);
+    return () => clearTimeout(timer);
+  }, [loading]); // eslint-disable-line react-hooks/exhaustive-deps
+
   // ─────────────────────────────────────────────────────────────────────────
   // SOCKET — real-time ML intervention alerts
   // ─────────────────────────────────────────────────────────────────────────
@@ -319,6 +340,7 @@ const StudentAnalyticsPortal = () => {
     socket.on('intervention_alert', (payload) => {
       const { studentName, subject, topicTitle, score } = payload;
       setAlertToast({ studentName, subject, topicTitle, score, id: Date.now() });
+      invalidateTeacherAnalytics();
       clearTimeout(alertTimerRef.current);
       alertTimerRef.current = setTimeout(() => setAlertToast(null), 7000);
       fetchWeakStudents();
@@ -350,6 +372,7 @@ const StudentAnalyticsPortal = () => {
         }),
       });
       if (!response.ok) throw new Error('Unable to save intervention');
+      invalidateTeacherAnalytics();
       setInterventionModal(null);
       setInterventionForm({ action: '', notes: '', scheduledDate: '' });
       fetchInterventionLogs();
@@ -371,6 +394,7 @@ const StudentAnalyticsPortal = () => {
         }),
       });
       if (!response.ok) throw new Error('Unable to save intervention outcome');
+      invalidateTeacherAnalytics();
       setOutcomeModal(null);
       setOutcomeForm({ outcome: '', improvement: '' });
       fetchInterventionLogs();
@@ -441,7 +465,7 @@ const StudentAnalyticsPortal = () => {
       if (ctxGrade) params.set('className', ctxGrade);
       if (ctxSection) params.set('section', ctxSection);
       if (misconceptionFilters.subject) params.set('subject', misconceptionFilters.subject);
-      const res = await fetch(`${API_BASE}/api/teacher-analytics/misconceptions?${params}`, { headers: authHeaders() });
+      const res = await cachedFetch(`${API_BASE}/api/teacher-analytics/misconceptions?${params}`, { headers: authHeaders() });
       if (res.ok) { const d = await res.json(); setMisconceptions(d.data || []); }
     } catch { /* silent */ } finally { setLoadingMisconceptions(false); }
   }, [misconceptionFilters]);
@@ -476,7 +500,7 @@ const StudentAnalyticsPortal = () => {
       if (ctxGrade) params.set('className', ctxGrade);
       if (ctxSection) params.set('section', ctxSection);
       if (gapFilters.subject) params.set('subject', gapFilters.subject);
-      const res = await fetch(`${API_BASE}/api/teacher-analytics/class-gaps?${params}`, { headers: authHeaders() });
+      const res = await cachedFetch(`${API_BASE}/api/teacher-analytics/class-gaps?${params}`, { headers: authHeaders() });
       if (res.ok) { const d = await res.json(); setClassGaps(d.data || []); }
     } catch { /* silent */ } finally { setLoadingGaps(false); }
   }, [gapFilters]);
@@ -490,7 +514,7 @@ const StudentAnalyticsPortal = () => {
       const params = new URLSearchParams();
       if (ctxGrade) params.set('className', ctxGrade);
       if (ctxSection) params.set('section', ctxSection);
-      const res = await fetch(`${API_BASE}/api/teacher-analytics/at-risk-7day?${params}`, { headers: authHeaders() });
+      const res = await cachedFetch(`${API_BASE}/api/teacher-analytics/at-risk-7day?${params}`, { headers: authHeaders() });
       if (res.ok) { const d = await res.json(); setForecast7d(d.data || []); }
     } catch { /* silent */ } finally { setLoadingForecast(false); }
   }, [forecastFilters]);
@@ -500,7 +524,7 @@ const StudentAnalyticsPortal = () => {
   // forecast unvalidated. See backend/services/forecastValidationService.js.
   const fetchForecastValidation = useCallback(async () => {
     try {
-      const res = await fetch(`${API_BASE}/api/teacher-analytics/forecast-validation`, { headers: authHeaders() });
+      const res = await cachedFetch(`${API_BASE}/api/teacher-analytics/forecast-validation`, { headers: authHeaders() });
       if (res.ok) { const d = await res.json(); setForecastValidation(d.data || null); }
     } catch { /* silent */ }
   }, []);
@@ -513,7 +537,7 @@ const StudentAnalyticsPortal = () => {
       const params = new URLSearchParams();
       if (ctxGrade) params.set('className', ctxGrade);
       if (ctxSection) params.set('section', ctxSection);
-      const res = await fetch(`${API_BASE}/api/confidence/class?${params}`, { headers: authHeaders() });
+      const res = await cachedFetch(`${API_BASE}/api/confidence/class?${params}`, { headers: authHeaders() });
       if (res.ok) { const d = await res.json(); setConfidenceData(d.data || []); }
     } catch { /* silent */ } finally { setLoadingConfidence(false); }
   }, []);
@@ -523,7 +547,7 @@ const StudentAnalyticsPortal = () => {
   const fetchHelpSeeking = useCallback(async () => {
     setLoadingHelpSeeking(true);
     try {
-      const res = await fetch(`${API_BASE}/api/help-seeking/class`, { headers: authHeaders() });
+      const res = await cachedFetch(`${API_BASE}/api/help-seeking/class`, { headers: authHeaders() });
       if (res.ok) { const d = await res.json(); setHelpSeekingData(d.data || []); }
     } catch { /* silent */ } finally { setLoadingHelpSeeking(false); }
   }, []);
@@ -533,7 +557,7 @@ const StudentAnalyticsPortal = () => {
   const fetchBelonging = useCallback(async () => {
     setLoadingBelonging(true);
     try {
-      const res = await fetch(`${API_BASE}/api/belonging/class`, { headers: authHeaders() });
+      const res = await cachedFetch(`${API_BASE}/api/belonging/class`, { headers: authHeaders() });
       if (res.ok) { const d = await res.json(); setBelongingData(d.data || []); }
     } catch { /* silent */ } finally { setLoadingBelonging(false); }
   }, []);
@@ -543,7 +567,7 @@ const StudentAnalyticsPortal = () => {
   const fetchLearningStyle = useCallback(async () => {
     setLoadingLearningStyle(true);
     try {
-      const res = await fetch(`${API_BASE}/api/learning-style/class`, { headers: authHeaders() });
+      const res = await cachedFetch(`${API_BASE}/api/learning-style/class`, { headers: authHeaders() });
       if (res.ok) { const d = await res.json(); setLearningStyleData(d.data || null); }
     } catch { /* silent */ } finally { setLoadingLearningStyle(false); }
   }, []);
@@ -558,7 +582,7 @@ const StudentAnalyticsPortal = () => {
       if (ctxGrade) params.set('className', ctxGrade);
       if (ctxSection) params.set('section', ctxSection);
       if (masteryAllFilters.subject) params.set('subject', masteryAllFilters.subject);
-      const res = await fetch(`${API_BASE}/api/teacher-analytics/student-mastery-all?${params}`, { headers: authHeaders() });
+      const res = await cachedFetch(`${API_BASE}/api/teacher-analytics/student-mastery-all?${params}`, { headers: authHeaders() });
       if (res.ok) { const d = await res.json(); setMasteryAllData(d.data || []); }
     } catch { /* silent */ } finally { setMasteryAllLoading(false); }
   }, [masteryAllFilters]);
@@ -569,7 +593,7 @@ const StudentAnalyticsPortal = () => {
       const params = new URLSearchParams();
       if (ctxGrade) params.set('className', ctxGrade);
       if (ctxSection) params.set('section', ctxSection);
-      const res = await fetch(`${API_BASE}/api/ml/class/scores?${params}`, { headers: authHeaders() });
+      const res = await cachedFetch(`${API_BASE}/api/ml/class/scores?${params}`, { headers: authHeaders() });
       if (res.ok) { const d = await res.json(); setMlClassData(d.data || []); }
       else setMlClassData([]);
     } catch { setMlClassData([]); } finally { setMlLoading(false); }
@@ -596,9 +620,11 @@ const StudentAnalyticsPortal = () => {
     [weakStudents, interventionSearch]
   );
 
+  // Server-computed from exam results + graded assignments; null = no marks yet.
   const overallScore = (student) => {
+    if (student.summary) return student.summary.overallScore ?? null;
     const metrics = student.progressMetrics || [];
-    if (!metrics.length) return 0;
+    if (!metrics.length) return null;
     return Math.round(metrics.reduce((sum, m) => sum + (m.averageScore || 0), 0) / metrics.length);
   };
 
@@ -643,8 +669,8 @@ const StudentAnalyticsPortal = () => {
         transition={{ duration: 0.35, ease: [0.16, 1, 0.3, 1] }}
         className="w-full rounded-2xl border border-slate-100 bg-white/90 p-4 shadow-[0_2px_16px_rgba(15,23,42,0.05)] sm:p-5"
       >
-        <header className="mb-4 flex flex-wrap items-center justify-between gap-3">
-          <div className="flex items-center gap-3">
+        <header className="mb-4 flex flex-wrap items-center justify-between gap-3 lg:flex-nowrap lg:gap-5">
+          <div className="flex shrink-0 items-center gap-3">
             <div className="flex h-12 w-12 shrink-0 items-center justify-center rounded-full bg-blue-100 text-blue-600">
               <BarChart3 className="size-6" strokeWidth={2.4} />
             </div>
@@ -676,10 +702,10 @@ const StudentAnalyticsPortal = () => {
               <Users className="size-4 text-blue-600" /> {analytics?.totalStudents ?? filteredStudents.length} Students
             </span>
           </div> */}
-        </header>
 
-        {/* Analytics tabs — horizontally scrollable with ‹ › arrows */}
-        <div className="relative mb-4 flex items-center gap-1 rounded-full border border-slate-100 bg-slate-100 p-1">
+        {/* Analytics tabs — beside the title, horizontally scrollable with ‹ › arrows */}
+        <div className="relative flex w-full min-w-0 items-center gap-1 rounded-full border border-slate-100 bg-slate-100 p-1 lg:w-auto lg:flex-1">
+
           {tabScroll.left && (<button
             type="button"
             aria-label="Scroll tabs left"
@@ -723,6 +749,7 @@ const StudentAnalyticsPortal = () => {
             <ChevronRight className="size-4" />
           </button>)}
         </div>
+        </header>
 
         <AnimatePresence mode="wait" initial={false}>
           <Motion.div
@@ -1194,6 +1221,32 @@ const LearningStyleTab = ({ data, loading, onFetch }) => {
   );
 };
 
+// Small "i" button that explains a stat card in plain language (hover, focus or tap).
+const InfoTip = ({ text, label }) => {
+  const [open, setOpen] = useState(false);
+  if (!text) return null;
+  return (
+    <span className="relative inline-flex" onMouseEnter={() => setOpen(true)} onMouseLeave={() => setOpen(false)}>
+      <button
+        type="button"
+        aria-label={`What does ${label} mean?`}
+        aria-expanded={open}
+        onClick={() => setOpen((v) => !v)}
+        onFocus={() => setOpen(true)}
+        onBlur={() => setOpen(false)}
+        className="flex h-4 w-4 items-center justify-center rounded-full border border-slate-300 text-[9px] font-bold italic leading-none text-slate-500 transition hover:border-blue-400 hover:text-blue-600"
+      >
+        i
+      </button>
+      {open && (
+        <span role="tooltip" className="absolute left-1/2 top-full z-40 mt-1.5 w-56 -translate-x-1/2 rounded-xl bg-slate-900 px-3 py-2 text-[11.5px] font-normal leading-snug text-white shadow-lg">
+          {text}
+        </span>
+      )}
+    </span>
+  );
+};
+
 // ═════════════════════════════════════════════════════════════════════════════
 // PROGRESS TAB COMPONENT
 // ═════════════════════════════════════════════════════════════════════════════
@@ -1202,7 +1255,28 @@ const ProgressTab = ({
   overallScore, classLabel,
   selectedStudent, setSelectedStudent, setActiveTab
 }) => {
-  const supportStudents = filteredStudents.filter((student) => overallScore(student) < 60);
+  // A student needs support for any of these reasons (most serious first):
+  //   low   — real marks average below 60%
+  //   missed — submitted under 60% of the assignments set for them
+  //   unassessed — assignments submitted / set, but nothing graded and no exam marks
+  const supportReason = (student) => {
+    const score = overallScore(student);
+    const sum = student.summary || {};
+    const assigned = Number(sum.assignedAssignments || 0);
+    const submitted = Number(sum.submittedAssignments || 0);
+    if (score != null && score < 60) return { rank: 0, sort: score, badge: `${score}%`, text: 'Low marks', tone: 'bg-red-50 text-red-600' };
+    if (assigned > 0 && submitted / assigned < 0.6) {
+      return { rank: 1, sort: submitted / assigned, badge: `${submitted}/${assigned}`, text: `Missed ${assigned - submitted} assignment${assigned - submitted === 1 ? '' : 's'}`, tone: 'bg-orange-50 text-orange-600' };
+    }
+    if (score == null && (assigned > 0 || submitted > 0)) {
+      return { rank: 2, sort: 0, badge: 'Not graded', text: 'No marks yet — grade work', tone: 'bg-slate-100 text-slate-600' };
+    }
+    return null;
+  };
+  const supportStudents = filteredStudents
+    .map((student) => ({ student, reason: supportReason(student) }))
+    .filter((row) => row.reason)
+    .sort((a, b) => a.reason.rank - b.reason.rank || a.reason.sort - b.reason.sort);
   const averageFromMetrics = (field) => {
     const values = filteredStudents
       .flatMap((student) => student.progressMetrics || [])
@@ -1210,20 +1284,31 @@ const ProgressTab = ({
       .filter((value) => Number.isFinite(value) && value > 0);
     return values.length ? Math.round(values.reduce((sum, value) => sum + value, 0) / values.length) : 0;
   };
-  const averageScore = Number(analytics?.averageScore ?? 0) || (
-    filteredStudents.length
-      ? Math.round(filteredStudents.reduce((sum, student) => sum + overallScore(student), 0) / filteredStudents.length)
-      : 0
-  );
-  const attendanceRate = Number(analytics?.attendanceRate ?? 0) || averageFromMetrics('attendanceRate');
+  // Every metric is null when nothing stands behind it, so the UI shows
+  // "No data yet" instead of a misleading 0% (or a value copied from another card).
+  const examCount = Number(analytics?.dataCounts?.examResults ?? 0);
+  const studentScores = filteredStudents.filter((s) => overallScore(s) != null);
+  const averageScore = examCount > 0 || Number(analytics?.averageScore) > 0
+    ? Number(analytics.averageScore)
+    : studentScores.length
+      ? Math.round(studentScores.reduce((sum, student) => sum + overallScore(student), 0) / studentScores.length)
+      : null;
+  const attendanceRate = analytics?.attendanceRate ?? null;
   const assignmentPairs = filteredStudents
     .flatMap((student) => student.progressMetrics || [])
     .map((metric) => ({ completed: Number(metric?.completedAssignments), total: Number(metric?.totalAssignments) }))
     .filter((item) => item.total > 0);
-  const assignmentCompletion = assignmentPairs.length
-    ? Math.round((assignmentPairs.reduce((sum, item) => sum + item.completed, 0) / assignmentPairs.reduce((sum, item) => sum + item.total, 0)) * 100)
-    : averageScore;
-  const testPerformance = Number(analytics?.testPerformance ?? analytics?.assessmentAverage ?? 0) || averageFromMetrics('testPerformance') || averageScore;
+  const assignmentTotal = assignmentPairs.reduce((sum, item) => sum + item.total, 0);
+  const assignmentCompletion = analytics?.assignmentCompletion != null
+    ? Number(analytics.assignmentCompletion)
+    : assignmentPairs.length
+    ? Math.round((assignmentPairs.reduce((sum, item) => sum + item.completed, 0) / assignmentTotal) * 100)
+    : null;
+  // Exams are the tests, so the exam-based average is the test score.
+  const testPerformance = Number(analytics?.testPerformance ?? analytics?.assessmentAverage ?? 0)
+    || averageFromMetrics('testPerformance')
+    || (examCount > 0 ? averageScore : null);
+  const attendanceDays = Number(analytics?.attendanceMeta?.markedStudentDays ?? 0);
   const progressItems = [
     { label: 'Overall class average', value: averageScore, tone: 'bg-blue-600' },
     { label: 'Attendance rate', value: attendanceRate, tone: 'bg-sky-500' },
@@ -1231,13 +1316,41 @@ const ProgressTab = ({
     { label: 'Test performance', value: testPerformance, tone: 'bg-orange-400' },
   ];
   const clampPercent = (value) => Math.max(0, Math.min(100, Number(value) || 0));
+  const pctOrEmpty = (value) => (value == null ? 'No data yet' : `${clampPercent(value)}%`);
   const totalStudents = analytics?.totalStudents ?? filteredStudents.length;
   const statCards = [
-    { label: 'Total Students', value: totalStudents, helper: classLabel, icon: Users, iconBg: 'bg-indigo-100', iconColor: 'text-indigo-600' },
-    { label: 'Overall Class Average', value: `${clampPercent(averageScore)}%`, helper: 'Across all subjects', icon: BarChart3, iconBg: 'bg-emerald-100', iconColor: 'text-emerald-600' },
-    { label: 'Attendance Rate', value: `${clampPercent(attendanceRate)}%`, helper: 'This academic year', icon: Calendar, iconBg: 'bg-red-100', iconColor: 'text-red-500' },
-    { label: 'Assignment Completion', value: `${clampPercent(assignmentCompletion)}%`, helper: 'Submitted on time', icon: FileText, iconBg: 'bg-orange-100', iconColor: 'text-orange-500' },
-    { label: 'Test Performance', value: `${clampPercent(testPerformance)}%`, helper: 'Average test score', icon: CheckCircle, iconBg: 'bg-blue-100', iconColor: 'text-blue-600' },
+    {
+      label: 'Total Students', value: totalStudents, helper: classLabel, icon: Users, iconBg: 'bg-indigo-100', iconColor: 'text-indigo-600',
+      info: 'Number of students enrolled in this class-section this academic year.',
+    },
+    {
+      label: 'Overall Class Average', value: pctOrEmpty(averageScore),
+      helper: examCount > 0 ? `From ${examCount} exam result${examCount === 1 ? '' : 's'}` : 'Across all subjects',
+      icon: BarChart3, iconBg: 'bg-emerald-100', iconColor: 'text-emerald-600',
+      info: 'The average mark of the whole class across every exam entered, as a percentage of full marks. With only a few exams entered, this can look unusually high or low.',
+    },
+    {
+      label: 'Attendance Rate', value: pctOrEmpty(attendanceRate),
+      helper: attendanceDays > 0 ? `${analytics?.attendanceMeta?.sessionName || 'This academic year'}` : 'Attendance not taken yet',
+      icon: Calendar, iconBg: 'bg-red-100', iconColor: 'text-red-500',
+      info: 'Of all the days attendance was taken this academic year, the share where students were present (late counts as present). Days with no attendance taken are not counted.',
+    },
+    {
+      label: 'Assignment Completion', value: pctOrEmpty(assignmentCompletion),
+      helper: assignmentCompletion == null
+        ? 'No assignments set yet'
+        : analytics?.assignmentMeta
+          ? `${analytics.assignmentMeta.submitted} of ${analytics.assignmentMeta.assigned} submitted`
+          : 'Submitted',
+      icon: FileText, iconBg: 'bg-orange-100', iconColor: 'text-orange-500',
+      info: 'Of all assignments given to this class, the share students submitted.',
+    },
+    {
+      label: 'Test Performance', value: pctOrEmpty(testPerformance),
+      helper: testPerformance == null ? 'No test marks yet' : 'Average test score',
+      icon: CheckCircle, iconBg: 'bg-blue-100', iconColor: 'text-blue-600',
+      info: 'The class average score in tests and exams, as a percentage of full marks.',
+    },
   ];
 
   return (
@@ -1264,8 +1377,14 @@ const ProgressTab = ({
               <card.icon className={`size-[18px] ${card.iconColor}`} strokeWidth={2.3} />
             </div>
             <div className="min-w-0 flex-1">
-              <p className="text-[11.5px] leading-tight text-slate-600">{card.label}</p>
-              <p className="text-lg font-bold leading-snug text-slate-900">{loading ? '—' : card.value}</p>
+              <div className="flex items-center gap-1">
+                <p className="text-[11.5px] leading-tight text-slate-600">{card.label}</p>
+                <InfoTip text={card.info} label={card.label} />
+              </div>
+              <p className={card.value === 'No data yet'
+                ? 'text-[13px] font-semibold leading-7 text-slate-400'
+                : 'text-lg font-bold leading-snug text-slate-900'}
+              >{loading ? '—' : card.value}</p>
               <p className="text-[10.5px] leading-tight text-slate-500">{card.helper}</p>
             </div>
           </div>
@@ -1295,8 +1414,7 @@ const ProgressTab = ({
           ) : (
             <>
               <div className="divide-y divide-slate-100">
-                {supportStudents.slice(0, 6).map((student) => {
-                  const score = overallScore(student);
+                {supportStudents.slice(0, 6).map(({ student, reason }) => {
                   return (
                     <button
                       key={student._id}
@@ -1308,10 +1426,10 @@ const ProgressTab = ({
                         <StudentPhoto student={student.studentId} className="size-9 text-sm" />
                         <div className="min-w-0">
                           <p className="truncate text-[13px] font-semibold text-slate-900">{student.studentId?.name || 'Unknown'}</p>
-                          <p className="text-[11.5px] text-slate-500">{classLabel} · Roll {student.studentId?.roll || '—'}</p>
+                          <p className="text-[11.5px] text-slate-500">Roll {student.studentId?.roll || '—'} · {reason.text}</p>
                         </div>
                       </div>
-                      <span className="w-20 rounded-full bg-red-50 py-1 text-center text-xs font-semibold text-red-600">{score}%</span>
+                      <span className={`min-w-20 shrink-0 rounded-full px-2 py-1 text-center text-xs font-semibold ${reason.tone}`}>{reason.badge}</span>
                     </button>
                   );
                 })}
@@ -1335,17 +1453,18 @@ const ProgressTab = ({
 
           <div className="space-y-3.5 border-t border-slate-100 pt-3">
             {progressItems.map((item, index) => {
+              const empty = item.value == null;
               const value = clampPercent(item.value);
               return (
                 <div key={item.label}>
                   <div className="mb-1.5 flex justify-between text-[13px] text-slate-800">
                     <span>{item.label}</span>
-                    <span className="font-semibold text-slate-900">{value}%</span>
+                    <span className={empty ? 'text-xs font-medium text-slate-400' : 'font-semibold text-slate-900'}>{empty ? 'No data yet' : `${value}%`}</span>
                   </div>
                   <div className="h-2 overflow-hidden rounded-full bg-slate-100">
                     <Motion.div
                       initial={{ width: 0 }}
-                      animate={{ width: `${Math.max(value, 1.5)}%` }}
+                      animate={{ width: empty ? '0%' : `${Math.max(value, 1.5)}%` }}
                       transition={{ duration: 0.8, delay: 0.15 + index * 0.08, ease: [0.16, 1, 0.3, 1] }}
                       className={`h-full rounded-full ${value === 0 ? 'bg-red-500' : item.tone}`}
                     />
@@ -1676,7 +1795,7 @@ const StudentDetailModal = ({ student, onClose }) => {
       setLoading(true);
       setError('');
       try {
-        const res = await fetch(`${API_BASE}/api/progress/student/${studentKey}/overview`, { headers: authHeaders() });
+        const res = await cachedFetch(`${API_BASE}/api/progress/student/${studentKey}/overview`, { headers: authHeaders() });
         const data = await res.json().catch(() => ({}));
         if (!res.ok) throw new Error(data?.error || 'Unable to load student details');
         if (!cancelled) setDetail(data);
@@ -2675,7 +2794,7 @@ const MLStudentDetailModal = ({ student, onClose }) => {
 
   useEffect(() => {
     setLoading(true);
-    fetch(`${API_BASE}/api/ml/student/${student.studentId}`, { headers: authHeaders() })
+    cachedFetch(`${API_BASE}/api/ml/student/${student.studentId}`, { headers: authHeaders() })
       .then((r) => r.json())
       .then((d) => setDetail(d.data || null))
       .catch(() => setDetail(null))
@@ -2863,7 +2982,7 @@ const HeatmapSubPanel = ({ ctxGrade, ctxSection }) => {
     const params = new URLSearchParams();
     if (ctxGrade) params.set('className', ctxGrade);
     if (ctxSection) params.set('section', ctxSection);
-    fetch(`${API_BASE}/api/teacher-analytics/mastery-heatmap?${params}`, { headers: authHeaders() })
+    cachedFetch(`${API_BASE}/api/teacher-analytics/mastery-heatmap?${params}`, { headers: authHeaders() })
       .then((r) => r.ok ? r.json() : null)
       .then((d) => setHeatmap(d?.data || null))
       .catch(() => setHeatmap(null))
@@ -2933,7 +3052,7 @@ const TrendsSubPanel = ({ ctxGrade, ctxSection }) => {
     const params = new URLSearchParams({ days: d });
     if (ctxGrade) params.set('className', ctxGrade);
     if (ctxSection) params.set('section', ctxSection);
-    fetch(`${API_BASE}/api/teacher-analytics/improvement-trends?${params}`, { headers: authHeaders() })
+    cachedFetch(`${API_BASE}/api/teacher-analytics/improvement-trends?${params}`, { headers: authHeaders() })
       .then((r) => r.ok ? r.json() : null)
       .then((d) => setTrendData(d?.data || []))
       .catch(() => setTrendData([]))

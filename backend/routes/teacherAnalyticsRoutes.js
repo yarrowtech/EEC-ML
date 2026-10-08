@@ -1,5 +1,7 @@
 const express = require('express');
 const router = express.Router();
+const { teacherAnalyticsCache } = require('../utils/responseCache');
+router.use(teacherAnalyticsCache.invalidateOnWrite);
 const mongoose = require('mongoose');
 const authTeacher = require('../middleware/authTeacher');
 const StudentUser = require('../models/StudentUser');
@@ -127,7 +129,7 @@ const computeRiskScore = (student, examResults = []) => {
 };
 
 // ── GET /api/teacher-analytics/at-risk ───────────────────────────────────────
-router.get('/at-risk', authTeacher, async (req, res) => {
+router.get('/at-risk', authTeacher, teacherAnalyticsCache.cache, async (req, res) => {
   try {
     const schoolId = req.schoolId;
     const { className, section } = req.query;
@@ -189,7 +191,7 @@ router.get('/at-risk', authTeacher, async (req, res) => {
 });
 
 // ── GET /api/teacher-analytics/class-trends ───────────────────────────────────
-router.get('/class-trends', authTeacher, async (req, res) => {
+router.get('/class-trends', authTeacher, teacherAnalyticsCache.cache, async (req, res) => {
   try {
     const schoolId = req.schoolId;
     const { className, section } = req.query;
@@ -325,7 +327,7 @@ router.post('/interventions', authTeacher, async (req, res) => {
 });
 
 // ── GET /api/teacher-analytics/interventions ──────────────────────────────────
-router.get('/interventions', authTeacher, async (req, res) => {
+router.get('/interventions', authTeacher, teacherAnalyticsCache.cache, async (req, res) => {
   try {
     const schoolId = req.schoolId;
     const teacherId = req.user?.id || req.teacher?.id;
@@ -374,7 +376,7 @@ router.put('/interventions/:id/outcome', authTeacher, async (req, res) => {
 
 // ── GET /api/teacher-analytics/at-risk-7day ───────────────────────────────────
 // 7-day sliding window — flags students whose last-7-day trend is deteriorating
-router.get('/at-risk-7day', authTeacher, async (req, res) => {
+router.get('/at-risk-7day', authTeacher, teacherAnalyticsCache.cache, async (req, res) => {
   try {
     const students = await require('../utils/analyticsScope').scopedStudents(req);
     const data = await require('../services/classLearningAnalytics').forecastClass(students, req.schoolId);
@@ -385,7 +387,7 @@ router.get('/at-risk-7day', authTeacher, async (req, res) => {
 // ── GET /api/teacher-analytics/forecast-validation ────────────────────────────
 // Retrospective backtest of the 7-day score forecast: predicts from evidence up
 // to (now - 7d), then checks each student's own following week as ground truth.
-router.get('/forecast-validation', authTeacher, async (req, res) => {
+router.get('/forecast-validation', authTeacher, teacherAnalyticsCache.cache, async (req, res) => {
   try {
     const students = await require('../utils/analyticsScope').scopedStudents(req);
     const data = await require('../services/forecastValidationService').backtestScoreForecast({
@@ -397,7 +399,7 @@ router.get('/forecast-validation', authTeacher, async (req, res) => {
 
 // ── GET /api/teacher-analytics/misconceptions ─────────────────────────────────
 // Aggregate wrong practice-attempt answers to detect class-wide misconceptions
-router.get('/misconceptions', authTeacher, async (req, res) => {
+router.get('/misconceptions', authTeacher, teacherAnalyticsCache.cache, async (req, res) => {
   try {
     const students = await require('../utils/analyticsScope').scopedStudents(req);
     const data = await require('../services/classLearningAnalytics').classMisconceptions(students, req.schoolId, req.query.subject);
@@ -407,7 +409,7 @@ router.get('/misconceptions', authTeacher, async (req, res) => {
 
 // ── GET /api/teacher-analytics/class-gaps ─────────────────────────────────────
 // Aggregate mastery scores across a class to identify shared learning gaps
-router.get('/class-gaps', authTeacher, async (req, res) => {
+router.get('/class-gaps', authTeacher, teacherAnalyticsCache.cache, async (req, res) => {
   try {
     const schoolId = req.schoolId;
     const { className, section, subject } = req.query;
@@ -469,7 +471,7 @@ router.get('/class-gaps', authTeacher, async (req, res) => {
 
 // ── GET /api/teacher-analytics/student-mastery-all ───────────────────────────
 // All students in a class with avg mastery + strong/weak topic breakdown
-router.get('/student-mastery-all', authTeacher, async (req, res) => {
+router.get('/student-mastery-all', authTeacher, teacherAnalyticsCache.cache, async (req, res) => {
   try {
     const schoolId = req.schoolId;
     const { className, section, subject } = req.query;
@@ -535,7 +537,7 @@ router.get('/student-mastery-all', authTeacher, async (req, res) => {
 // ── GET /api/teacher-analytics/student-misconceptions/:studentId ─────────────
 // The explicit per-student misconception model (recurring same-type errors on a
 // topic), plus the resolved history.
-router.get('/student-misconceptions/:studentId', authTeacher, async (req, res) => {
+router.get('/student-misconceptions/:studentId', authTeacher, teacherAnalyticsCache.cache, async (req, res) => {
   try {
     const schoolId = req.schoolId;
     const { studentId } = req.params;
@@ -564,7 +566,7 @@ router.get('/student-misconceptions/:studentId', authTeacher, async (req, res) =
 
 // ── GET /api/teacher-analytics/mastery-growth/:studentId ──────────────────────
 // Time-series mastery scores for a student — used for the mastery growth report
-router.get('/mastery-growth/:studentId', authTeacher, async (req, res) => {
+router.get('/mastery-growth/:studentId', authTeacher, teacherAnalyticsCache.cache, async (req, res) => {
   try {
     const schoolId = req.schoolId;
     const { studentId } = req.params;
@@ -626,7 +628,7 @@ router.get('/mastery-growth/:studentId', authTeacher, async (req, res) => {
 
 // ── GET /api/teacher-analytics/term-comparison ────────────────────────────────
 // Group exam results by term for a class and return per-subject, per-term averages
-router.get('/term-comparison', authTeacher, async (req, res) => {
+router.get('/term-comparison', authTeacher, teacherAnalyticsCache.cache, async (req, res) => {
   try {
     const schoolId = req.schoolId;
     const { className, section, subject } = req.query;
@@ -688,7 +690,7 @@ router.get('/term-comparison', authTeacher, async (req, res) => {
 
 // ── GET /api/teacher-analytics/cohort ─────────────────────────────────────────
 // Multi-class performance dashboard — aggregates across all classes the teacher is allocated to
-router.get('/cohort', authTeacher, async (req, res) => {
+router.get('/cohort', authTeacher, teacherAnalyticsCache.cache, async (req, res) => {
   try {
     const schoolId = req.schoolId;
     const teacherId = req.user?.id || req.teacher?.id;
@@ -754,7 +756,7 @@ router.get('/cohort', authTeacher, async (req, res) => {
 // ── GET /api/teacher-analytics/grade-book-csv — term-end grade book export ───
 // Query: ?term=&subject=&className=&sectionName=
 // Streams a CSV; also emails it to admin if ADMIN_EMAIL is set
-router.get('/grade-book-csv', authTeacher, async (req, res) => {
+router.get('/grade-book-csv', authTeacher, teacherAnalyticsCache.cache, async (req, res) => {
   try {
     const schoolId  = req.schoolId;
     const { term, subject, className, sectionName } = req.query;
@@ -830,7 +832,7 @@ router.get('/grade-book-csv', authTeacher, async (req, res) => {
 });
 
 // ── GET /api/teacher-analytics/low-mastery — subjects where class avg < 50% ──
-router.get('/low-mastery', authTeacher, async (req, res) => {
+router.get('/low-mastery', authTeacher, teacherAnalyticsCache.cache, async (req, res) => {
   try {
     const schoolId  = req.schoolId;
     const teacherId = req.user?.id || req.teacher?.id;
@@ -871,7 +873,7 @@ router.get('/low-mastery', authTeacher, async (req, res) => {
 });
 
 // ── GET /api/teacher-analytics/mastery-heatmap?className=&section= ────────────
-router.get('/mastery-heatmap', authTeacher, async (req, res) => {
+router.get('/mastery-heatmap', authTeacher, teacherAnalyticsCache.cache, async (req, res) => {
   try {
     const { className, section } = req.query;
     const schoolId = req.schoolId;
@@ -907,7 +909,7 @@ router.get('/mastery-heatmap', authTeacher, async (req, res) => {
 });
 
 // ── GET /api/teacher-analytics/improvement-trends?className=&section=&days=7 ──
-router.get('/improvement-trends', authTeacher, async (req, res) => {
+router.get('/improvement-trends', authTeacher, teacherAnalyticsCache.cache, async (req, res) => {
   try {
     const { className, section, days = '7' } = req.query;
     const schoolId = req.schoolId;
@@ -950,7 +952,7 @@ router.get('/improvement-trends', authTeacher, async (req, res) => {
 
 // ── GET /api/teacher-analytics/bloom-distribution?subject=&className= ──────────
 // Returns Bloom taxonomy level counts across all teaching materials for a subject/class.
-router.get('/bloom-distribution', authTeacher, async (req, res) => {
+router.get('/bloom-distribution', authTeacher, teacherAnalyticsCache.cache, async (req, res) => {
   try {
     const { subject, className } = req.query;
 
@@ -984,7 +986,7 @@ router.get('/bloom-distribution', authTeacher, async (req, res) => {
 
 // ── GET /api/teacher-analytics/error-breakdown?subject=&classId= ──────────────
 // Returns error type breakdown for the teacher's class — feeds the error history view.
-router.get('/error-breakdown', authTeacher, async (req, res) => {
+router.get('/error-breakdown', authTeacher, teacherAnalyticsCache.cache, async (req, res) => {
   try {
     const { subject, classId } = req.query;
     const scope = await requireTeacherScope(req, res);
@@ -1023,7 +1025,7 @@ router.get('/error-breakdown', authTeacher, async (req, res) => {
 
 // ── GET /api/teacher-analytics/class-insights?classId=&subject= ──────────────
 // AI-generated narrative summary for the whole class, using actual mastery data.
-router.get('/class-insights', authTeacher, async (req, res) => {
+router.get('/class-insights', authTeacher, teacherAnalyticsCache.cache, async (req, res) => {
   try {
     const { classId, subject, className } = req.query;
     const scope = await requireTeacherScope(req, res);
@@ -1168,7 +1170,7 @@ router.post('/outcome-studies/:id/measure', authTeacher, async (req, res) => {
 });
 
 // GET /api/teacher-analytics/outcome-studies  (and /:id)
-router.get('/outcome-studies', authTeacher, async (req, res) => {
+router.get('/outcome-studies', authTeacher, teacherAnalyticsCache.cache, async (req, res) => {
   try {
     const OutcomeStudy = require('../models/OutcomeStudy');
     const rows = await OutcomeStudy.find({ schoolId: req.schoolId, createdBy: req.user?.id || req.teacher?.id })
@@ -1179,7 +1181,7 @@ router.get('/outcome-studies', authTeacher, async (req, res) => {
   }
 });
 
-router.get('/outcome-studies/:id', authTeacher, async (req, res) => {
+router.get('/outcome-studies/:id', authTeacher, teacherAnalyticsCache.cache, async (req, res) => {
   try {
     const study = await loadOwnStudy(req, res);
     if (!study) return;

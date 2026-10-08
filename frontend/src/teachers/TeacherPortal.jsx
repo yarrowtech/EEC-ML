@@ -1059,6 +1059,7 @@ const CW_TABS = [
   {
     id: 'overview',
     label: 'Overview',
+    description: 'Class-wide performance and attendance at a glance',
     icon: Home,
     ownPaths: (rel) => rel.startsWith('overview/'),
     firstPath: 'overview/analytics',
@@ -1070,6 +1071,7 @@ const CW_TABS = [
   {
     id: 'students',
     label: 'Students',
+    description: 'Manage and track student related activities',
     icon: Users,
     ownPaths: (rel) =>
       rel === 'students' ||
@@ -1092,6 +1094,7 @@ const CW_TABS = [
   {
     id: 'observations',
     label: 'Observations',
+    description: 'Observe student wellbeing and behaviour',
     icon: Eye,
     ownPaths: (rel) =>
       rel.startsWith('students/observations') ||
@@ -1104,6 +1107,7 @@ const CW_TABS = [
   {
     id: 'ai',
     label: 'AI',
+    description: 'AI assistant and teaching tools',
     icon: BarChart3,
     ownPaths: (rel) =>
       rel === 'teaching' ||
@@ -1277,7 +1281,21 @@ const ClassWorkspace = ({ notifications = [], seenState = {} }) => {
   // ── Active tab ────────────────────────────────────────────
   const rel = location.pathname.replace(basePath, '').replace(/^\//, '');
   const activeTab = useMemo(() => CW_TABS.find((t) => t.ownPaths(rel)) ?? CW_TABS[0], [rel]);
-  const hasSubTabs = activeTab.subTabs.length > 0;
+  const [hoverTabId, setHoverTabId] = useState(null);
+  const [caretX, setCaretX] = useState(null);
+  const menuWrapRef = useRef(null);
+  // Point the submenu's caret at the centre of the hovered tab.
+  const openSubmenu = (tabId, el) => {
+    setHoverTabId(tabId);
+    const wrap = menuWrapRef.current?.getBoundingClientRect();
+    const rect = el?.getBoundingClientRect();
+    if (wrap && rect) setCaretX(rect.left + rect.width / 2 - wrap.left);
+  };
+  // Hovering a main tab previews its children; otherwise the active tab's children show.
+  const hoverTab = CW_TABS.find((t) => t.id === hoverTabId);
+  const panelTab = hoverTab && hoverTab.subTabs.length > 0 ? hoverTab : null;
+  const hasSubTabs = Boolean(panelTab);
+  const activeSub = activeTab.subTabs.find((sub) => rel === sub.path || rel.startsWith(`${sub.path}/`));
 
   // Communication pages are direct destinations from the main sidebar.
   // Do not render the class workspace header/tabs around them.
@@ -1324,6 +1342,24 @@ const ClassWorkspace = ({ notifications = [], seenState = {} }) => {
         </div>
       </div>
 
+      {/* ── Breadcrumb ── */}
+      <nav aria-label="Breadcrumb" className="flex flex-wrap items-center gap-1 text-[12.5px] text-slate-500">
+        <NavLink to="/teacher/classes" className="transition hover:text-blue-700">Classes</NavLink>
+        <ChevronRight size={13} className="text-slate-400" />
+        <span>{className ? `Class ${className} - ${sectionName || '—'}` : classDisplayName(classId)}</span>
+        <ChevronRight size={13} className="text-slate-400" />
+        {activeSub ? (
+          <>
+            <NavLink to={`${basePath}/${activeTab.firstPath}`} className="transition hover:text-blue-700">{activeTab.label}</NavLink>
+            <ChevronRight size={13} className="text-slate-400" />
+            <span aria-current="page" className="font-semibold text-blue-700">{activeSub.label}</span>
+          </>
+        ) : (
+          <span aria-current="page" className="font-semibold text-blue-700">{activeTab.label}</span>
+        )}
+      </nav>
+
+      <div ref={menuWrapRef} className="relative" onMouseLeave={() => setHoverTabId(null)}>
       {/* ── Main tab bar ── */}
       <div className="flex justify-center">
         <div className="inline-flex max-w-full items-center gap-1 overflow-x-auto rounded-full border border-slate-200 bg-white/80 p-1 shadow-sm">
@@ -1334,6 +1370,8 @@ const ClassWorkspace = ({ notifications = [], seenState = {} }) => {
             return (
               <NavLink
                 key={tab.id}
+                onMouseEnter={(e) => openSubmenu(tab.id, e.currentTarget)}
+                onFocus={(e) => openSubmenu(tab.id, e.currentTarget)}
                 to={`${basePath}/${tab.firstPath}`}
                 className={`inline-flex h-9 items-center gap-2 whitespace-nowrap rounded-full px-5 text-[13px] font-semibold transition ${isActive
                   ? 'border border-blue-200 bg-blue-500 text-white shadow-sm'
@@ -1351,34 +1389,49 @@ const ClassWorkspace = ({ notifications = [], seenState = {} }) => {
       {/* ── Sub-tab bar ── */}
       {hasSubTabs && (
         <Motion.div
-          key={activeTab.id}
-          initial={{ opacity: 0, y: -6 }}
-          animate={{ opacity: 1, y: 0 }}
-          transition={{ duration: 0.18, ease: 'easeOut' }}
-          className="flex justify-center"
+          key="cw-submenu"
+          initial={{ opacity: 0, y: -6, left: caretX ?? '50%' }}
+          animate={{ opacity: 1, y: 0, left: caretX ?? '50%' }}
+          transition={{ duration: 0.18, ease: 'easeOut', left: { type: 'spring', stiffness: 420, damping: 34 } }}
+          style={{ x: '-50%' }}
+          className="absolute top-full z-30 w-max max-w-[calc(100vw-2rem)] pt-3"
         >
-          <div className="inline-flex max-w-full items-center gap-1 overflow-x-auto rounded-full border border-slate-200 bg-white/80 p-1 shadow-sm">
-            {activeTab.subTabs.map((sub, idx) => {
-              const SubIcon = SUB_TAB_ICONS[sub.path] || FileText;
-              const subKey = sub.notificationKey || teacherNotificationModuleKeyForPath(sub.path);
-              const subCount = getTeacherModuleNotificationCount(notifications, subKey, seenState);
-              return (
-                <NavLink
-                  key={sub.path + idx}
-                  to={`${basePath}/${sub.path}`}
-                  className={({ isActive: ia }) => `inline-flex h-8 items-center gap-2 whitespace-nowrap rounded-full px-4 text-[12.5px] font-medium transition ${ia
-                    ? 'border border-blue-200 bg-blue-500 text-white shadow-sm'
-                    : 'border border-transparent text-slate-700 hover:bg-slate-50'}`}
-                >
-                  <SubIcon size={14} className="text-blue-600" />
-                  {sub.label}
-                  {countBadge(subCount, `teacher-subtab-notification-${subKey}`)}
-                </NavLink>
-              );
-            })}
+          {/* Card is centred under the hovered tab, so the caret always sits on it. */}
+          <span
+            aria-hidden="true"
+            className="absolute left-1/2 top-[5px] z-10 h-3.5 w-3.5 -translate-x-1/2 rotate-45 border-l border-t border-slate-200 bg-white"
+          />
+          <div className="relative w-fit max-w-full rounded-full border border-slate-200 bg-white p-1.5 shadow-[0_10px_30px_-12px_rgba(15,23,42,0.15)]">
+            <div className="flex items-stretch overflow-x-auto">
+              {panelTab.subTabs.map((sub, idx) => {
+                const SubIcon = SUB_TAB_ICONS[sub.path] || FileText;
+                const subKey = sub.notificationKey || teacherNotificationModuleKeyForPath(sub.path);
+                const subCount = getTeacherModuleNotificationCount(notifications, subKey, seenState);
+                return (
+                  <div key={sub.path + idx} className="flex shrink-0 items-center">
+                    {idx > 0 && <span aria-hidden="true" className="mx-1 h-8 w-px bg-slate-200" />}
+                    <NavLink
+                      to={`${basePath}/${sub.path}`}
+                      className={({ isActive: ia }) => `inline-flex min-h-11 items-center gap-2.5 rounded-full px-4 py-1.5 text-left text-[12.5px] font-medium leading-tight transition ${ia
+                        ? 'bg-blue-500 text-white ring-1 ring-blue-100'
+                        : 'text-slate-700 hover:bg-slate-50 hover:text-blue-700'}`}
+                    >
+                      {({ isActive: ia }) => (
+                        <>
+                          <SubIcon size={18} className={ia ? 'text-white' : 'text-slate-500'} />
+                          <span className="max-w-[110px]">{sub.label}</span>
+                          {countBadge(subCount, `teacher-subtab-notification-${subKey}`)}
+                        </>
+                      )}
+                    </NavLink>
+                  </div>
+                );
+              })}
+            </div>
           </div>
         </Motion.div>
       )}
+      </div>
 
       {/* Child route */}
       <Outlet context={{ className, sectionName }} />

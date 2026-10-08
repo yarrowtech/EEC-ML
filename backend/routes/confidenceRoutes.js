@@ -1,5 +1,7 @@
 const express = require('express');
 const router = express.Router();
+const { teacherAnalyticsCache } = require('../utils/responseCache');
+router.use(teacherAnalyticsCache.invalidateOnWrite);
 const authStudent = require('../middleware/authStudent');
 const authTeacher = require('../middleware/authTeacher');
 const { scopedStudents } = require('../utils/analyticsScope');
@@ -35,7 +37,7 @@ router.get('/profile', authStudent, async (req, res) => {
 });
 
 // GET /api/confidence/class?className=&section=&subject= — teacher view, most-miscalibrated first
-router.get('/class', authTeacher, async (req, res) => {
+router.get('/class', authTeacher, teacherAnalyticsCache.cache, async (req, res) => {
   try {
     const students = await scopedStudents(req);
     const summary = await getClassCalibrationSummary({
