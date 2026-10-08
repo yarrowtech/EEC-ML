@@ -68,6 +68,7 @@ import ClassRoutine from './ClassRoutine';
 import StudentObservationOverview from './StudentObservationOverview';
 import ClassNotes from './ClassNotes';
 import PracticeQuestions from './PracticeQuestions';
+import PracticePapersPortal from './components/PracticePapersPortal';
 import LanguagePracticeManager from './LanguagePracticeManager';
 import TeacherFeedbackPortal from './TeacherFeedbackPortal';
 import ExcuseLetters from './ExcuseLetters';
@@ -132,6 +133,7 @@ const teachingSectionLinks = [
   { label: 'Lesson Planner Wizard', to: 'lesson-planner-wizard' },
   { label: 'Class Notes', to: 'class-notes' },
   { label: 'Practice Questions', to: 'practice-questions' },
+  { label: 'Practice Papers', to: 'practice-papers' },
   { label: 'Language Practice', to: 'language-practice' },
   { label: 'Study Materials', to: 'study-materials' },
   { label: 'AI Teaching Assistant', to: 'ai-assistant' },
@@ -2452,6 +2454,7 @@ const TeacherPortalShell = () => {
                   <Route path="teaching/lesson-planner-wizard" element={<LessonPlannerWizard />} />
                   <Route path="teaching/class-notes" element={<ClassNotes />} />
                   <Route path="teaching/practice-questions" element={<PracticeQuestions />} />
+                  <Route path="teaching/practice-papers" element={<PracticePapersPortal />} />
                   <Route path="teaching/language-practice" element={<LanguagePracticeManager />} />
                   <Route path="teaching/study-materials" element={<TeacherAlcove />} />
                   <Route path="teaching/ai-assistant" element={<GenerateAIPathPortal />} />

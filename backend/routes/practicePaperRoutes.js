@@ -6,6 +6,7 @@ const PracticePaper = require('../models/PracticePaper');
 const Class = require('../models/Class');
 const Section = require('../models/Section');
 const Subject = require('../models/Subject');
+const LessonPlan = require('../models/LessonPlan');
 const authTeacher = require('../middleware/authTeacher');
 const authStudent = require('../middleware/authStudent');
 const StudentUser = require('../models/StudentUser');
@@ -131,11 +132,18 @@ router.post('/', authTeacher, async (req, res, next) => {
       classId,
       sectionId,
       subjectId,
+      subjectName,
       questions,
       duration,
       difficulty,
       tags,
       chapter,
+      chapterId,
+      chapterTitle,
+      topicTitle,
+      subTopicTitle,
+      sourceLessonPlanId,
+      sourceSubTopicId,
       unit,
       topics,
       passingPercentage,
@@ -161,8 +169,38 @@ router.post('/', authTeacher, async (req, res, next) => {
       });
     }
 
+    // A paper created from this portal must remain traceable to the lesson
+    // students see. Validate the optional lesson-plan link against the
+    // teacher's own school/class before saving it.
+    let linkedLessonPlan = null;
+    if (sourceLessonPlanId) {
+      if (!mongoose.Types.ObjectId.isValid(sourceLessonPlanId)) {
+        return res.status(400).json({ success: false, message: 'sourceLessonPlanId must be a valid lesson plan id' });
+      }
+      linkedLessonPlan = await LessonPlan.findOne({
+        _id: sourceLessonPlanId,
+        schoolId: req.schoolId,
+        teacherId: req.userId,
+      }).lean();
+      if (!linkedLessonPlan) {
+        return res.status(400).json({ success: false, message: 'The selected lesson plan is not available to this teacher' });
+      }
+      if (String(linkedLessonPlan.classId || '') !== String(classId)
+        || String(linkedLessonPlan.sectionId || '') !== String(sectionId)) {
+        return res.status(400).json({ success: false, message: 'Lesson plan, class, and section must match' });
+      }
+      if (subjectId && linkedLessonPlan.subjectId && String(linkedLessonPlan.subjectId) !== String(subjectId)) {
+        return res.status(400).json({ success: false, message: 'Lesson plan and subject must match' });
+      }
+    }
+
+    const resolvedSubjectId = subjectId || linkedLessonPlan?.subjectId || null;
     // Resolve denormalized names
-    const denormalized = await resolveDenormalizedNames(classId, sectionId, subjectId);
+    const denormalized = await resolveDenormalizedNames(classId, sectionId, resolvedSubjectId);
+    if (!denormalized.subjectName && subjectName) denormalized.subjectName = String(subjectName).trim();
+    if (!denormalized.subjectName && linkedLessonPlan?.subject) {
+      denormalized.subjectName = String(linkedLessonPlan.subject).trim();
+    }
 
     const paperData = {
       schoolId: req.schoolId,
@@ -171,7 +209,7 @@ router.post('/', authTeacher, async (req, res, next) => {
       paperType: paperType || 'practice_set',
       classId,
       sectionId,
-      subjectId: subjectId || null,
+      subjectId: resolvedSubjectId,
       ...denormalized,
       teacherId: req.userId,
       teacherName: req.userDetails?.name || 'Teacher',
@@ -179,7 +217,13 @@ router.post('/', authTeacher, async (req, res, next) => {
       duration: duration || 0,
       difficulty: difficulty || 'medium',
       tags: tags || [],
-      chapter: chapter || '',
+      chapter: chapter || chapterTitle || '',
+      chapterId: chapterId || '',
+      chapterTitle: chapterTitle || chapter || '',
+      topicTitle: topicTitle || '',
+      subTopicTitle: subTopicTitle || '',
+      sourceLessonPlanId: sourceLessonPlanId || linkedLessonPlan?._id || null,
+      sourceSubTopicId: sourceSubTopicId || '',
       unit: unit || '',
       topics: topics || [],
       passingPercentage: passingPercentage || 40,
@@ -297,7 +341,13 @@ router.patch('/:id', authTeacher, async (req, res, next) => {
     if (difficulty) paper.difficulty = difficulty;
     if (duration !== undefined) paper.duration = duration;
     if (passingPercentage !== undefined) paper.passingPercentage = passingPercentage;
-    if (status) paper.status = status;
+    if (status) {
+      paper.status = status;
+      if (status === 'published') {
+        paper.publishedForStudentPortal = true;
+        paper.publishedAt = paper.publishedAt || new Date();
+      }
+    }
 
     await paper.save();
 
@@ -364,6 +414,7 @@ router.post('/:id/publish', authTeacher, async (req, res, next) => {
 
     const wasPublished = paper.status === 'published';
     paper.status = 'published';
+    paper.publishedForStudentPortal = true;
     paper.publishedAt = new Date();
     await paper.save();
 

@@ -12,7 +12,39 @@ const BLOOM_LEVELS = [
   { value: 'create', label: 'Create' },
 ];
 
-const PracticePaperBuilder = ({ classId, sectionId, onSave, onCancel }) => {
+const getEntityId = (value) => {
+  if (!value) return '';
+  if (typeof value === 'object') return String(value._id || value.id || '');
+  return String(value);
+};
+
+const getPlanChapters = (plan) => {
+  const planned = Array.isArray(plan?.plannerContent?.chapters) ? plan.plannerContent.chapters : [];
+  const raw = Array.isArray(plan?.rawChapters) ? plan.rawChapters : [];
+  const source = planned.length ? planned : raw;
+  return source.map((item, index) => ({
+    id: getEntityId(item?.id || item?._id) || `chapter-${index + 1}`,
+    title: String(typeof item === 'string' ? item : item?.title || '').trim(),
+    topics: Array.isArray(item?.topics) ? item.topics : Array.isArray(item?.subtopics) ? item.subtopics : [],
+  })).filter((item) => item.title);
+};
+
+const getChapterTopics = (chapter) => (chapter?.topics || [])
+  .map((item, index) => ({
+    id: getEntityId(item?.id || item?._id) || `topic-${index + 1}`,
+    title: String(typeof item === 'string' ? item : item?.title || item?.name || item?.topic || '').trim(),
+  }))
+  .filter((item) => item.title);
+
+const PracticePaperBuilder = ({
+  classId,
+  sectionId,
+  subjectOptions = [],
+  initialSubjectId = '',
+  initialSubjectName = '',
+  onSave,
+  onCancel,
+}) => {
   const API_BASE = (import.meta.env.VITE_API_URL || 'http://localhost:5000').replace(/\/$/, '');
   const token = localStorage.getItem('token');
 
@@ -24,6 +56,13 @@ const PracticePaperBuilder = ({ classId, sectionId, onSave, onCancel }) => {
   const [passingPercentage, setPassingPercentage] = useState('40');
   const [tags, setTags] = useState('');
   const [chapter, setChapter] = useState('');
+  const [selectedSubjectId, setSelectedSubjectId] = useState(String(initialSubjectId || ''));
+  const [selectedSubjectName, setSelectedSubjectName] = useState(String(initialSubjectName || ''));
+  const [lessonPlans, setLessonPlans] = useState([]);
+  const [lessonPlanId, setLessonPlanId] = useState('');
+  const [chapterId, setChapterId] = useState('');
+  const [chapterTitle, setChapterTitle] = useState('');
+  const [topicTitle, setTopicTitle] = useState('');
   const [practiceSectionId, setPracticeSectionId] = useState('');
   const [practiceSections, setPracticeSections] = useState([]);
 
@@ -47,6 +86,56 @@ const PracticePaperBuilder = ({ classId, sectionId, onSave, onCancel }) => {
   const [aiSubject, setAiSubject] = useState('');
   const [aiTopic, setAiTopic] = useState('');
   const [aiBloomLevel, setAiBloomLevel] = useState('');
+
+  const normalizedSubjectOptions = subjectOptions.map((subject) => ({
+    id: getEntityId(subject?.id || subject?._id),
+    name: String(subject?.name || subject?.subjectName || subject || '').trim(),
+  })).filter((subject) => subject.name);
+
+  useEffect(() => {
+    if (normalizedSubjectOptions.length === 0) return;
+    const selected = normalizedSubjectOptions.find((subject) => (
+      (selectedSubjectId && subject.id === String(selectedSubjectId))
+      || (selectedSubjectName && subject.name.toLowerCase() === selectedSubjectName.toLowerCase())
+    )) || normalizedSubjectOptions[0];
+    setSelectedSubjectId(selected.id);
+    setSelectedSubjectName(selected.name);
+  }, [subjectOptions]);
+
+  // Only published plans are selectable because students can only access
+  // published lesson content in Smart Learning.
+  useEffect(() => {
+    let cancelled = false;
+    const loadLessonPlans = async () => {
+      if (!classId || !sectionId || !token) return;
+      try {
+        const response = await fetch(`${API_BASE}/api/lesson-plans/teacher/my`, {
+          headers: { Authorization: `Bearer ${token}` },
+        });
+        const data = await response.json().catch(() => []);
+        if (!cancelled) {
+          const plans = Array.isArray(data) ? data : [];
+          setLessonPlans(plans.filter((plan) => (
+            getEntityId(plan?.classId) === String(classId)
+            && getEntityId(plan?.sectionId) === String(sectionId)
+            && plan?.status === 'published'
+            && plan?.isDraft !== true
+            && (!selectedSubjectId || getEntityId(plan?.subjectId) === String(selectedSubjectId)
+              || String(plan?.subject || '').trim().toLowerCase() === selectedSubjectName.trim().toLowerCase())
+          )));
+        }
+      } catch (error) {
+        if (!cancelled) setLessonPlans([]);
+      }
+    };
+    loadLessonPlans();
+    return () => { cancelled = true; };
+  }, [classId, sectionId, selectedSubjectId, selectedSubjectName, API_BASE, token]);
+
+  const selectedLessonPlan = lessonPlans.find((plan) => getEntityId(plan?._id) === String(lessonPlanId));
+  const lessonPlanChapters = getPlanChapters(selectedLessonPlan);
+  const selectedChapter = lessonPlanChapters.find((item) => item.id === chapterId);
+  const chapterTopics = getChapterTopics(selectedChapter);
 
   // Fetch practice sections
   useEffect(() => {
@@ -182,6 +271,16 @@ const PracticePaperBuilder = ({ classId, sectionId, onSave, onCancel }) => {
       return false;
     }
 
+    if (!selectedSubjectName.trim()) {
+      toast.error('Select a subject');
+      return false;
+    }
+
+    if (!lessonPlanId || !chapterId || !chapterTitle.trim() || !topicTitle.trim()) {
+      toast.error('Link the paper to a lesson plan, chapter, and topic');
+      return false;
+    }
+
     if (questions.some(q => !q.questionText.trim())) {
       toast.error('All questions must have text');
       return false;
@@ -215,17 +314,23 @@ const PracticePaperBuilder = ({ classId, sectionId, onSave, onCancel }) => {
         paperType,
         classId,
         sectionId,
+        subjectId: selectedSubjectId || undefined,
+        subjectName: selectedSubjectName.trim(),
         practiceSectionId: practiceSectionId || undefined,
         difficulty,
         duration: parseInt(duration) || 0,
         passingPercentage: parseInt(passingPercentage) || 40,
         tags: tags.split(',').map(t => t.trim()).filter(Boolean),
         chapter,
+        chapterId,
+        chapterTitle: chapterTitle.trim(),
+        topicTitle: topicTitle.trim(),
+        sourceLessonPlanId: lessonPlanId,
         questions,
         status: 'draft'
       };
 
-      const response = await fetch(`${import.meta.env.VITE_API_URL}/api/practice-papers`, {
+      const response = await fetch(`${API_BASE}/api/practice-papers`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -324,6 +429,71 @@ const PracticePaperBuilder = ({ classId, sectionId, onSave, onCancel }) => {
             <option value="unit_test">Unit Test</option>
             <option value="mock_test">Mock Test</option>
           </select>
+        </div>
+      </div>
+
+      {/* Smart Learning alignment */}
+      <div className="mb-6 rounded-xl border border-blue-100 bg-blue-50/60 p-4">
+        <div className="mb-3">
+          <h3 className="text-sm font-bold text-slate-900">Smart Learning link</h3>
+          <p className="mt-1 text-xs text-slate-500">Choose exactly where students will find this paper.</p>
+        </div>
+        <div className="grid grid-cols-1 gap-3 md:grid-cols-2">
+          <div>
+            <label className="block text-xs font-semibold text-slate-600 mb-1">Subject *</label>
+            {normalizedSubjectOptions.length > 0 ? (
+              <select
+                value={selectedSubjectId || selectedSubjectName}
+                onChange={(e) => {
+                  const subject = normalizedSubjectOptions.find((item) => (item.id || item.name) === e.target.value);
+                  setSelectedSubjectId(subject?.id || '');
+                  setSelectedSubjectName(subject?.name || '');
+                  setLessonPlanId(''); setChapterId(''); setChapterTitle(''); setTopicTitle(''); setChapter('');
+                }}
+                className="w-full rounded-lg border border-blue-200 bg-white px-3 py-2 text-sm"
+              >
+                <option value="">Select Subject</option>
+                {normalizedSubjectOptions.map((subject) => <option key={subject.id || subject.name} value={subject.id || subject.name}>{subject.name}</option>)}
+              </select>
+            ) : (
+              <input value={selectedSubjectName} onChange={(e) => setSelectedSubjectName(e.target.value)} placeholder="Subject" className="w-full rounded-lg border border-blue-200 bg-white px-3 py-2 text-sm" />
+            )}
+          </div>
+          <div>
+            <label className="block text-xs font-semibold text-slate-600 mb-1">Lesson Plan *</label>
+            <select
+              value={lessonPlanId}
+              onChange={(e) => { setLessonPlanId(e.target.value); setChapterId(''); setChapterTitle(''); setTopicTitle(''); setChapter(''); }}
+              disabled={!selectedSubjectName || lessonPlans.length === 0}
+              className="w-full rounded-lg border border-blue-200 bg-white px-3 py-2 text-sm disabled:opacity-50"
+            >
+              <option value="">{lessonPlans.length ? 'Select Lesson Plan' : 'No published plans found'}</option>
+              {lessonPlans.map((plan) => <option key={getEntityId(plan._id)} value={getEntityId(plan._id)}>{plan.title}</option>)}
+            </select>
+          </div>
+          <div>
+            <label className="block text-xs font-semibold text-slate-600 mb-1">Chapter *</label>
+            <select
+              value={chapterId}
+              onChange={(e) => { const item = lessonPlanChapters.find((entry) => entry.id === e.target.value); setChapterId(e.target.value); setChapterTitle(item?.title || ''); setChapter(item?.title || ''); setTopicTitle(''); }}
+              disabled={!lessonPlanId || lessonPlanChapters.length === 0}
+              className="w-full rounded-lg border border-blue-200 bg-white px-3 py-2 text-sm disabled:opacity-50"
+            >
+              <option value="">{lessonPlanId ? 'Select Chapter' : 'Select Lesson Plan First'}</option>
+              {lessonPlanChapters.map((item) => <option key={item.id} value={item.id}>{item.title}</option>)}
+            </select>
+          </div>
+          <div>
+            <label className="block text-xs font-semibold text-slate-600 mb-1">Topic *</label>
+            {chapterTopics.length > 0 ? (
+              <select value={topicTitle} onChange={(e) => setTopicTitle(e.target.value)} disabled={!chapterId} className="w-full rounded-lg border border-blue-200 bg-white px-3 py-2 text-sm disabled:opacity-50">
+                <option value="">Select Topic</option>
+                {chapterTopics.map((item) => <option key={item.id} value={item.title}>{item.title}</option>)}
+              </select>
+            ) : (
+              <input value={topicTitle} onChange={(e) => setTopicTitle(e.target.value)} disabled={!chapterId} placeholder="Enter topic" className="w-full rounded-lg border border-blue-200 bg-white px-3 py-2 text-sm disabled:opacity-50" />
+            )}
+          </div>
         </div>
       </div>
 

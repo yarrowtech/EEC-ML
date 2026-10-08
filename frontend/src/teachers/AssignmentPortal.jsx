@@ -714,8 +714,13 @@ const AssignmentPortal = ({ view = 'manage', notificationCount = 0, siblingNotif
   const handlePdfUpload = async (e) => {
     const file = e.target.files[0];
     if (!file) return;
-    if (file.type !== 'application/pdf') {
-      alert('Please select a PDF file');
+    const allowedWorksheetTypes = new Set([
+      'application/pdf',
+      'application/msword',
+      'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+    ]);
+    if (!allowedWorksheetTypes.has(file.type)) {
+      alert('Please select a PDF or DOCX file');
       return;
     }
     if (file.size > 20 * 1024 * 1024) {
@@ -2540,8 +2545,8 @@ const CreateAssignmentModal = ({
               <>
                 <Upload size={28} className="mx-auto mb-2" style={{ color: '#2a7de1' }} />
                 <p className="text-[13px] font-medium mb-1" style={{ color: '#1f384b' }}>Drop files here or click to browse</p>
-                <p className="text-[11px] mb-3" style={{ color: '#a5b9cc' }}>PDF, DOCX, images — up to 20 MB each</p>
-                <input type="file" accept="application/pdf" onChange={handlePdfUpload} className="hidden" id="pdf-upload-main" />
+                <p className="text-[11px] mb-3" style={{ color: '#a5b9cc' }}>PDF or DOCX — up to 20 MB each</p>
+                <input type="file" accept=".pdf,.doc,.docx,application/pdf,application/msword,application/vnd.openxmlformats-officedocument.wordprocessingml.document" onChange={handlePdfUpload} className="hidden" id="pdf-upload-main" />
                 <label htmlFor="pdf-upload-main"
                   className="inline-flex items-center gap-1.5 px-5 py-2 text-[13px] font-semibold rounded-[60px] cursor-pointer transition-all hover:-translate-y-px"
                   style={{ background: 'linear-gradient(135deg,#2a7de1,#1a5bb5)', color: '#fff', boxShadow: '0 4px 14px rgba(42,125,225,0.25)' }}>
@@ -2918,8 +2923,8 @@ const CreateWorksheetForm = ({
               <>
                 <Upload size={28} className="mx-auto mb-2" style={{ color: '#2a7de1' }} />
                 <p className="text-[13px] font-medium mb-1" style={{ color: '#1f384b' }}>Drop files here or click to browse</p>
-                <p className="text-[11px] mb-3" style={{ color: '#a5b9cc' }}>PDF, DOCX, images — up to 20 MB each</p>
-                <input type="file" accept="application/pdf" onChange={handlePdfUpload} className="hidden" id="pdf-upload-ws" />
+                <p className="text-[11px] mb-3" style={{ color: '#a5b9cc' }}>PDF or DOCX — up to 20 MB each</p>
+                <input type="file" accept=".pdf,.doc,.docx,application/pdf,application/msword,application/vnd.openxmlformats-officedocument.wordprocessingml.document" onChange={handlePdfUpload} className="hidden" id="pdf-upload-ws" />
                 <label htmlFor="pdf-upload-ws"
                   className="inline-flex items-center gap-1.5 px-5 py-2 text-[13px] font-semibold rounded-[60px] cursor-pointer transition-all hover:-translate-y-px"
                   style={{ background: 'linear-gradient(135deg,#2a7de1,#1a5bb5)', color: '#fff', boxShadow: '0 4px 14px rgba(42,125,225,0.25)' }}>
