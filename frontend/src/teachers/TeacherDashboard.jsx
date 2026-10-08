@@ -7,10 +7,8 @@
 import React, { useEffect, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { motion as framerMotion, useReducedMotion } from 'framer-motion';
-import { Bar, BarChart, CartesianGrid, Cell, ResponsiveContainer, Tooltip, XAxis, YAxis } from 'recharts';
 
 import {
-  Activity,
   AlertCircle,
   ArrowUpRight,
   BarChart3,
@@ -21,12 +19,15 @@ import {
   ChevronRight,
   ClipboardCheck,
   Clock,
-  Eye,
   FileText,
   MessageSquare,
   Sparkles,
   Users,
   Zap,
+  Star,
+  PenLine,
+  ClipboardList,
+  Megaphone,
 } from 'lucide-react';
 
 const MotionSection = framerMotion.section;
@@ -66,19 +67,33 @@ const formatDate = (value, options = { month: 'short', day: 'numeric' }) => {
   return date.toLocaleDateString('en-US', options);
 };
 
+// Client-side dashboard cache (per teacher token) so revisits paint instantly.
+const DASHBOARD_CACHE_KEY = 'teacher_dashboard_cache_v1';
+const DASHBOARD_CACHE_MAX_AGE_MS = 24 * 60 * 60 * 1000;
+const dashboardCacheOwner = () => String(localStorage.getItem('token') || '').slice(-24);
+
+const readDashboardCache = () => {
+  try {
+    const parsed = JSON.parse(localStorage.getItem(DASHBOARD_CACHE_KEY) || 'null');
+    if (!parsed || parsed.owner !== dashboardCacheOwner()) return null;
+    if (Date.now() - Number(parsed.savedAt || 0) > DASHBOARD_CACHE_MAX_AGE_MS) return null;
+    return parsed.data || null;
+  } catch {
+    return null;
+  }
+};
+
+const writeDashboardCache = (data) => {
+  try {
+    localStorage.setItem(DASHBOARD_CACHE_KEY, JSON.stringify({ owner: dashboardCacheOwner(), savedAt: Date.now(), data }));
+  } catch { /* storage full or blocked — cache is optional */ }
+};
+
+// School cover photo (admin settings) shown in the greeting banner.
+const coverImageOf = (dashboard) => String(dashboard?.school?.coverImage || '').trim();
+
 const deadlineKey = (task) =>
   String(task?.id || `${task?.title || ''}|${task?.class || ''}|${task?.dueDate || ''}`);
-
-const daysUntil = (value) => {
-  if (!value) return 'No due date';
-  const due = new Date(value);
-  if (Number.isNaN(due.getTime())) return 'Date pending';
-  const days = Math.ceil((due.getTime() - Date.now()) / 86400000);
-  if (days < 0) return `${Math.abs(days)}d overdue`;
-  if (days === 0) return 'Due today';
-  if (days === 1) return 'Due tomorrow';
-  return `${days}d left`;
-};
 
 // ── Glass design tokens ───────────────────────────────────────────────────────
 // Frosted-glass surfaces used throughout: semi-transparent white + blur/
@@ -86,87 +101,6 @@ const daysUntil = (value) => {
 // strings so every card/pill in the dashboard reads as one consistent system.
 const GLASS_PANEL = 'border border-white/70 bg-white/60 shadow-[0_8px_30px_-12px_rgba(15,23,42,0.12)] backdrop-blur-xl backdrop-saturate-[1.8]';
 const GLASS_PANEL_SOLID = 'border border-white/80 bg-white/75 shadow-[0_8px_30px_-12px_rgba(15,23,42,0.1)] backdrop-blur-xl backdrop-saturate-[1.8]';
-const GLASS_INSET = 'border border-white/70 bg-white/50 backdrop-blur-lg backdrop-saturate-[1.8]';
-
-const Badge = ({ children, tone = 'neutral', className = '' }) => {
-  const tones = {
-    neutral: 'border-slate-200/70 bg-white/60 text-[#64748b]',
-    emerald: 'border-emerald-200/70 bg-emerald-50/80 text-emerald-700',
-    amber: 'border-amber-200/70 bg-[#fffbeb]/90 text-amber-700',
-    rose: 'border-rose-200/70 bg-rose-50/80 text-rose-700',
-    sky: 'border-sky-200/70 bg-sky-50/80 text-sky-700',
-    violet: 'border-violet-200/70 bg-violet-50/80 text-violet-700',
-  };
-
-  return (
-    <span className={cx('inline-flex items-center gap-1 rounded-full border px-2.5 py-1 text-xs font-semibold backdrop-blur-sm', tones[tone], className)}>
-      {children}
-    </span>
-  );
-};
-
-const CardShell = ({ children, className = '', delay = 0 }) => {
-  const reduceMotion = useReducedMotion();
-
-  return (
-    <MotionSection
-      initial={reduceMotion ? false : { opacity: 0, y: 14 }}
-      animate={reduceMotion ? undefined : { opacity: 1, y: 0 }}
-      transition={{ duration: 0.32, delay, ease: 'easeOut' }}
-      className={cx('rounded-2xl', GLASS_PANEL, className)}
-    >
-      {children}
-    </MotionSection>
-  );
-};
-const SectionHeader = ({ icon: Icon, title, subtitle, action }) => (
-  <div className="flex items-start justify-between gap-4 border-b border-white/60 px-5 py-4">
-    <div className="flex items-start gap-3">
-      <div className="mt-0.5 rounded-xl border border-white/70 bg-white/70 p-2 text-[#8b5cf6] shadow-sm backdrop-blur-sm">
-        {React.createElement(Icon, { size: 18 })}
-      </div>
-      <div>
-        <h2 className="text-base font-semibold text-[#0f172a]">{title}</h2>
-        {subtitle && <p className="mt-1 text-sm text-[#64748b]">{subtitle}</p>}
-      </div>
-    </div>
-    {action}
-  </div>
-);
-
-const Progress = ({ value, tone = 'emerald' }) => {
-  const tones = {
-    emerald: 'bg-emerald-500',
-    amber: 'bg-amber-400',
-    rose: 'bg-rose-500',
-    sky: 'bg-sky-500',
-    violet: 'bg-[#8b5cf6]',
-  };
-
-  return (
-    <div className="h-2 overflow-hidden rounded-full bg-white/70 ring-1 ring-white/70">
-      <div className={cx('h-full rounded-full transition-all duration-500 ease-out', tones[tone])} style={{ width: `${clampPercent(value)}%` }} />
-    </div>
-  );
-};
-
-const EmptyState = ({ icon: Icon, title, description }) => (
-  <div className="flex flex-col items-center justify-center rounded-2xl border border-dashed border-slate-300/70 bg-white/40 px-5 py-10 text-center backdrop-blur-sm">
-    <div className="mb-3 flex h-12 w-12 items-center justify-center rounded-2xl border border-white/70 bg-white/70 text-[#8e9aaf] shadow-sm">
-      {React.createElement(Icon, { size: 22 })}
-    </div>
-    <p className="font-semibold text-[#0f172a]">{title}</p>
-    <p className="mt-1 max-w-xs text-sm leading-5 text-[#64748b]">{description}</p>
-  </div>
-);
-
-const SkeletonGrid = () => (
-  <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
-    {Array.from({ length: 4 }).map((_, index) => (
-      <div key={index} className={cx('h-36 animate-pulse rounded-2xl', GLASS_INSET)} />
-    ))}
-  </div>
-);
 
 const TeacherDashboard = () => {
   const reduceMotion = useReducedMotion();
@@ -175,7 +109,6 @@ const TeacherDashboard = () => {
   const [classTeacherAllocations, setClassTeacherAllocations] = useState([]);
   const [dashboardError, setDashboardError] = useState('');
   const [dashboardLoading, setDashboardLoading] = useState(true);
-  const [activeTimeframe, setActiveTimeframe] = useState('weekly');
   const [clearedDeadlines, setClearedDeadlines] = useState(() => new Set());
   const [completingDeadlineId, setCompletingDeadlineId] = useState('');
   const [deadlineError, setDeadlineError] = useState('');
@@ -213,8 +146,17 @@ const TeacherDashboard = () => {
 
   useEffect(() => {
     const fetchDashboard = async () => {
-      setDashboardLoading(true);
       setDashboardError('');
+      // Stale-while-revalidate: paint the last dashboard instantly from the
+      // per-teacher cache, then refresh it from the server in the background.
+      const cached = readDashboardCache();
+      if (cached) {
+        setDashboardData(cached.dashboard);
+        setClassTeacherAllocations(cached.classTeacherAllocations || []);
+        setDashboardLoading(false);
+      } else {
+        setDashboardLoading(true);
+      }
       try {
         const token = localStorage.getItem('token');
         const headers = {
@@ -250,11 +192,14 @@ const TeacherDashboard = () => {
               return getAcademicYearId(item) === activeYearId;
             });
           setClassTeacherAllocations(classTeacherOnly);
+          writeDashboardCache({ dashboard: dashboardPayload, classTeacherAllocations: classTeacherOnly });
         } else {
           setClassTeacherAllocations([]);
+          writeDashboardCache({ dashboard: dashboardPayload, classTeacherAllocations: [] });
         }
       } catch (error) {
-        setDashboardError(error.message || 'Unable to load dashboard data');
+        // Keep showing cached data if the refresh fails; only surface the error otherwise.
+        if (!cached) setDashboardError(error.message || 'Unable to load dashboard data');
       } finally {
         setDashboardLoading(false);
       }
@@ -313,66 +258,6 @@ const TeacherDashboard = () => {
   const nextClass = dashboardData?.nextClass || null;
   const pendingTasks = Number(stats.pendingEvaluations ?? visibleDeadlines.length ?? 0);
 
-  const insightCards = [
-    {
-      label: 'Total Students',
-      value: stats.totalStudents ?? 0,
-      icon: Users,
-      path: '/teacher/classes',
-      tone: 'sky',
-    },
-    {
-      label: 'Attendance Rate',
-      value: `${stats.attendanceRate ?? 0}%`,
-      icon: Activity,
-      path: '/teacher/classes/current/students/attendance',
-      tone: 'emerald',
-    },
-    {
-      label: 'Pending Tasks',
-      value: pendingTasks,
-      icon: FileText,
-      path: '/teacher/classes/current/assignments',
-      tone: pendingTasks > 8 ? 'rose' : 'amber',
-    },
-    {
-      label: 'Upcoming Events',
-      value: stats.upcomingEvents ?? 0,
-      icon: Calendar,
-      path: '/teacher/calendar',
-      tone: 'violet',
-    },
-  ];
-
-  const workflowGroups = [
-    {
-      title: 'Core actions',
-      items: [
-        { title: 'Open Classes', description: 'Jump into roster and class context.', icon: Users, path: '/teacher/classes' },
-        { title: 'Attendance', description: 'Mark today and review exceptions.', icon: ClipboardCheck, path: '/teacher/classes/current/students/attendance' },
-        { title: 'Assignments', description: 'Review submissions and pending work.', icon: FileText, path: '/teacher/classes/current/assignments' },
-      ],
-    },
-    {
-      title: 'Support',
-      items: [
-        { title: 'Teaching', description: 'Lesson materials and notes.', icon: BookOpen, path: '/teacher/classes/current/teaching' },
-        { title: 'AI Center', description: 'Get class insights and teaching support.', icon: Sparkles, path: '/teacher/lesson-plan' },
-      ],
-    },
-  ];
-
-  const analyticsSnapshot = [
-    { label: 'Attendance rate', value: `${stats.attendanceRate ?? 0}%`, helper: 'Current teacher scope', progress: stats.attendanceRate ?? 0, tone: 'emerald' },
-    ...performanceMetrics.slice(0, 3).map((metric) => ({
-      label: `${metric.subject} average`,
-      value: `${metric.average}%`,
-      helper: 'Current performance data',
-      progress: metric.average,
-      tone: 'violet',
-    })),
-  ];
-
   const pageVariants = reduceMotion ? {} : {
     hidden: { opacity: 0 },
     show: { opacity: 1, transition: { staggerChildren: 0.05 } },
@@ -381,6 +266,50 @@ const TeacherDashboard = () => {
     hidden: { opacity: 0, y: 14 },
     show: { opacity: 1, y: 0, transition: { duration: 0.3, ease: 'easeOut' } },
   };
+
+  // ── Desktop dashboard data ──
+  const completedClasses = todaysClasses.filter((c) => c.status === 'Completed').length;
+  const attendance = {
+    present: dashboardData?.attendanceSummary?.present ?? 0,
+    absent: dashboardData?.attendanceSummary?.absent ?? 0,
+    notMarked: dashboardData?.attendanceSummary?.notMarked ?? 0,
+  };
+  // Today's attendance: students marked present today out of all students
+  // in the teacher's classes (unmarked students count as not present yet).
+  const attendanceTotal = attendance.present + attendance.absent + attendance.notMarked;
+  const attendancePercent = attendanceTotal ? (attendance.present / attendanceTotal) * 100 : 0;
+
+  const statCards = [
+    { label: 'My Classes Today', value: todaysClasses.length, helper: 'View Schedule →', icon: BookOpen, iconBg: 'bg-blue-100', iconColor: 'text-blue-600', to: '/teacher/timetable' },
+    { label: 'Total Students', value: stats.totalStudents ?? 0, helper: 'Across my classes', icon: Users, iconBg: 'bg-emerald-100', iconColor: 'text-emerald-600', to: '/teacher/classes' },
+    { label: 'Attendance', value: `${completedClasses} / ${todaysClasses.length}`, helper: 'Classes completed', icon: CheckCircle2, iconBg: 'bg-rose-100', iconColor: 'text-rose-500', to: '/teacher/classes/current/students/attendance' },
+    { label: 'Pending Work', value: pendingTasks, helper: 'Homework / Assignments', icon: ClipboardList, iconBg: 'bg-orange-100', iconColor: 'text-orange-500', to: '/teacher/classes/current/assignments' },
+  ];
+
+  const WEEK = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday'];
+  const todayIdx = (currentDateTime.getDay() + 6) % 7;
+  const nowMinutes = currentDateTime.getHours() * 60 + currentDateTime.getMinutes();
+  const toMinutes = (t) => {
+    const m = /^(\d{1,2}):(\d{2})/.exec(String(t || ''));
+    return m ? Number(m[1]) * 60 + Number(m[2]) : null;
+  };
+  const upcomingSchedule = (Array.isArray(dashboardData?.upcomingClasses) ? dashboardData.upcomingClasses : [])
+    .map((c) => {
+      const offset = (WEEK.indexOf(c.dayOfWeek) - todayIdx + 7) % 7;
+      const start = toMinutes(c.startTime);
+      return { ...c, offset, start: start ?? Number(c.period || 0) };
+    })
+    .filter((c) => c.offset > 0 || (c.start ?? 0) >= nowMinutes)
+    .sort((a, b) => a.offset - b.offset || a.start - b.start)
+    .slice(0, 4)
+    .map((c) => ({ ...c, dayLabel: c.offset === 0 ? 'Today' : c.offset === 1 ? 'Tomorrow' : c.dayOfWeek }));
+
+  const lowSubject = performanceMetrics.find((m) => Number(m.average) < 50);
+  const studentAlerts = [
+    attendance.absent > 0 && { title: `${attendance.absent} student${attendance.absent === 1 ? '' : 's'} absent today`, sub: 'Need attention', icon: Users, cls: 'bg-rose-50 text-rose-500', to: '/teacher/classes/current/students/attendance' },
+    pendingTasks > 0 && { title: `${pendingTasks} submission${pendingTasks === 1 ? '' : 's'} awaiting review`, sub: 'Homework / assignments', icon: FileText, cls: 'bg-orange-50 text-orange-500', to: '/teacher/classes/current/assignments' },
+    lowSubject && { title: `${lowSubject.subject} average is ${lowSubject.average}%`, sub: 'Recent tests', icon: Star, cls: 'bg-amber-50 text-amber-500', to: '/teacher/classes/current/students/analytics' },
+  ].filter(Boolean);
 
   const mobileClassLabel = classTeacherAllocations.length
     ? classTeacherAllocations
@@ -571,319 +500,302 @@ const TeacherDashboard = () => {
       </div>
 
       <div className="hidden lg:block">
-      <div className="mx-auto max-w-[1800px] space-y-4 p-3 pt-0 sm:p-4 sm:pt-0 lg:p-5 lg:pt-0">
-        {dashboardError && (
-            <div className="mb-4 flex items-center gap-3 rounded-2xl border border-rose-200/70 bg-rose-50/80 px-4 py-3 text-sm text-rose-700 backdrop-blur-sm">
-              <AlertCircle size={18} />
-              {dashboardError}
+        <MotionDiv variants={pageVariants} initial="hidden" animate="show" className="mx-auto max-w-[1240px] space-y-4 px-5 pb-6 pt-1">
+          {dashboardError && (
+            <div className="flex items-center gap-3 rounded-xl border border-rose-200 bg-rose-50 px-4 py-2.5 text-sm text-rose-700">
+              <AlertCircle size={16} /> {dashboardError}
             </div>
           )}
 
-          <MotionDiv variants={pageVariants} initial="hidden" animate="show" className="space-y-4">
-            <MotionSection variants={itemVariants} className={cx('relative overflow-hidden rounded-3xl p-5 sm:p-6 lg:p-7', GLASS_PANEL_SOLID)}>
-              <div className="pointer-events-none absolute inset-0 bg-[radial-gradient(circle_at_top_right,rgba(139,92,246,0.16),transparent_45%),radial-gradient(circle_at_bottom_left,rgba(16,185,129,0.12),transparent_45%)]" />
-              <div className="pointer-events-none absolute right-6 top-6 hidden h-36 w-36 rounded-full border border-white/60 lg:block" />
-              <div className="relative grid gap-6 lg:grid-cols-[1.5fr_1fr] lg:items-end">
-                <div>
-                  <div className="mb-5 flex flex-wrap items-center gap-2">
-                    <Badge tone="emerald"><span className="h-2 w-2 rounded-full bg-emerald-400" />Live workspace</Badge>
-                    <Badge tone="neutral">{dateStr}</Badge>
-                    <Badge tone="neutral">{currentDateTime.toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit' })}</Badge>
-                  </div>
-                  <h1 className="max-w-3xl text-3xl font-semibold tracking-tight text-[#0f172a] sm:text-4xl">{getGreeting()}, {teacherName.split(' ')[0]}.</h1>
-                  <p className="mt-3 max-w-2xl text-base leading-7 text-[#64748b]">
-                    {dashboardLoading
-                      ? 'Loading today\'s timetable and workload…'
-                      : `You have ${todaysClasses.length} ${todaysClasses.length === 1 ? 'class' : 'classes'} today and ${pendingTasks} pending evaluations. AI can prepare your next lesson, flag student risks, and clear routine work faster.`}
-                  </p>
-                  <div className="mt-5 flex flex-wrap gap-3">
-                    <Link to="/teacher/classes" className="inline-flex h-10 items-center gap-2 rounded-xl bg-[#8b5cf6] px-4 text-sm font-semibold text-white shadow-sm shadow-violet-300/50 transition duration-200 ease-out hover:-translate-y-0.5 hover:bg-[#7c4deb]">Open classes <ArrowUpRight size={16} /></Link>
-                    <Link to="/teacher/lesson-plan" className="inline-flex h-10 items-center gap-2 rounded-xl border border-white/70 bg-white/60 px-4 text-sm font-semibold text-[#0f172a] backdrop-blur-sm transition duration-200 ease-out hover:-translate-y-0.5 hover:bg-white/80">Ask AI <Sparkles size={16} className="text-[#8b5cf6]" /></Link>
-                  </div>
+          {/* ── Greeting banner ── */}
+          <MotionSection variants={itemVariants} className="relative overflow-hidden rounded-2xl border border-white bg-gradient-to-r from-[#eaf1fd] via-[#eef4fd] to-[#dfeafb] px-7 py-5 shadow-[0_4px_18px_rgba(30,64,175,0.06)]">
+            {coverImageOf(dashboardData) ? (
+              // Same treatment as the parent/admin banners: photo fully clear on
+              // the right, blending only on its left edge into the banner.
+              <div aria-hidden="true" className="pointer-events-none absolute inset-y-0 right-0 w-3/5 overflow-hidden">
+                <div className="absolute inset-0 bg-cover bg-center" style={{ backgroundImage: `url(${coverImageOf(dashboardData)})` }} />
+                <div className="absolute inset-0 bg-gradient-to-r from-[#eef4fd] via-[#eef4fd]/40 to-transparent" />
+              </div>
+            ) : (
+              <SchoolIllustration />
+            )}
+            <div className="relative z-10">
+              <h1 className="text-[26px] font-bold tracking-tight text-slate-900">
+                {getGreeting()}, {teacherName} <span aria-hidden="true">👋</span>
+              </h1>
+              <p className="mt-1 text-[15px] text-slate-600">
+                {dateStr} <span className="mx-1.5 text-slate-300">|</span> Have a great day of teaching!
+              </p>
+            </div>
+          </MotionSection>
+
+          {/* ── Stat cards ── */}
+          <MotionSection variants={itemVariants} className="grid grid-cols-2 gap-4 xl:grid-cols-4">
+            {statCards.map((card) => (
+              <Link key={card.label} to={card.to} className="flex items-center gap-4 rounded-2xl border border-slate-100 bg-white p-4 shadow-sm transition hover:-translate-y-0.5 hover:shadow-md">
+                <div className={cx('flex h-14 w-14 shrink-0 items-center justify-center rounded-2xl', card.iconBg)}>
+                  {React.createElement(card.icon, { size: 26, className: card.iconColor })}
                 </div>
-                <div className="grid gap-3 sm:grid-cols-3 lg:grid-cols-1">
-                  <HeroChip label="Class teacher" value={classTeacherLabel} />
-                  <HeroChip
-                    label="Next class"
-                    value={dashboardLoading
-                      ? 'Loading from timetable…'
-                      : nextClass
-                        ? `${nextClass.subject || nextClass.class || 'Details unavailable'} at ${nextClass.time}`
-                        : 'No more classes today'}
-                  />
-                  <HeroChip label="Workload" value={pendingTasks > 0 ? `${pendingTasks} actions need review` : 'Clear for focused teaching'} />
+                <div className="min-w-0">
+                  <p className="text-sm font-medium text-slate-700">{card.label}</p>
+                  <p className="text-[26px] font-bold leading-tight text-slate-900">{dashboardLoading ? '—' : card.value}</p>
+                  <p className="truncate text-xs text-slate-500">{card.helper}</p>
+                </div>
+              </Link>
+            ))}
+          </MotionSection>
+
+          {/* ── Classes / Attendance / Quick actions ── */}
+          <MotionSection variants={itemVariants} className="grid gap-4 xl:grid-cols-[1.6fr_1fr_0.95fr]">
+            <Panel icon={Calendar} iconColor="text-blue-600" title="Today's Classes" link={{ to: '/teacher/timetable', label: 'View Full Schedule' }}>
+              {todaysClasses.length === 0 ? (
+                <p className="py-10 text-center text-sm text-slate-400">{dashboardLoading ? 'Loading timetable…' : 'No classes scheduled today.'}</p>
+              ) : (
+                <div className="overflow-hidden rounded-xl border border-slate-100">
+                  <table className="w-full text-left text-[13px]">
+                    <thead className="bg-slate-50 text-slate-600">
+                      <tr>{['Time', 'Class', 'Subject', 'Room', 'Status', 'Action'].map((h) => <th key={h} className="px-3 py-2.5 font-medium">{h}</th>)}</tr>
+                    </thead>
+                    <tbody className="divide-y divide-slate-100">
+                      {todaysClasses.slice(0, 6).map((c, i) => {
+                        const st = c.status === 'In progress' ? 'Ongoing' : c.status;
+                        return (
+                          <tr key={c.id || i} className="text-slate-800">
+                            <td className="whitespace-nowrap px-3 py-2.5">{formatClock(c.startTime) || c.time}</td>
+                            <td className="px-3 py-2.5">{c.class || '—'}</td>
+                            <td className="px-3 py-2.5">{c.subject || '—'}</td>
+                            <td className="px-3 py-2.5">{c.room || '—'}</td>
+                            <td className="px-3 py-2.5">
+                              <span className={cx('rounded-md px-2 py-1 text-xs font-medium', st === 'Completed' ? 'bg-emerald-50 text-emerald-600' : st === 'Ongoing' ? 'bg-blue-50 text-blue-600' : 'bg-slate-100 text-slate-500')}>{st}</span>
+                            </td>
+                            <td className="px-3 py-2">
+                              {st === 'Ongoing' ? (
+                                <Link to={classWorkspacePath(c, 'students/attendance')} className="inline-flex w-full justify-center whitespace-nowrap rounded-md bg-blue-600 px-2.5 py-1.5 text-xs font-medium text-white hover:bg-blue-700">Take Attendance</Link>
+                              ) : (
+                                <Link to={classWorkspacePath(c, 'teaching')} className="inline-flex w-full justify-center rounded-md border border-slate-200 px-2.5 py-1.5 text-xs font-semibold text-slate-800 hover:bg-slate-50">View</Link>
+                              )}
+                            </td>
+                          </tr>
+                        );
+                      })}
+                    </tbody>
+                  </table>
+                </div>
+              )}
+            </Panel>
+
+            <Panel icon={Users} iconColor="text-blue-600" title="Today's Attendance" link={{ to: '/teacher/classes/current/students/attendance', label: 'View Details' }}>
+              <div className="flex items-center gap-5 px-1">
+                <Donut percent={attendancePercent} />
+                <div>
+                  <p className="text-2xl font-bold text-slate-900">{attendance.present} / {attendanceTotal}</p>
+                  <p className="text-sm text-slate-500">Students present today</p>
                 </div>
               </div>
-            </MotionSection>
+              <div className="mt-4 space-y-2 px-1 text-sm">
+                {[
+                  { label: 'Present', value: attendance.present, dot: 'bg-emerald-500' },
+                  { label: 'Absent', value: attendance.absent, dot: 'bg-rose-500' },
+                  { label: 'Not Marked', value: attendance.notMarked, dot: 'bg-slate-300' },
+                ].map((row) => (
+                  <div key={row.label} className="flex items-center gap-3">
+                    <span className={cx('h-3.5 w-3.5 rounded-full', row.dot)} />
+                    <span className="flex-1 text-slate-700">{row.label}</span>
+                    <span className="w-12 text-right font-semibold text-slate-900">{row.value}</span>
+                  </div>
+                ))}
+              </div>
+              <Link to="/teacher/classes/current/students/attendance" className="mt-4 block rounded-xl bg-blue-100/70 py-2.5 text-center text-sm font-semibold text-blue-700 hover:bg-blue-100">Take Attendance</Link>
+            </Panel>
 
-            {dashboardLoading ? <SkeletonGrid /> : (
-              <MotionSection variants={itemVariants} className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
-                {insightCards.map((stat, index) => {
-                  const Icon = stat.icon;
-                  return (
-                    <Link key={stat.label} to={stat.path} className="group">
-                      <CardShell delay={index * 0.03} className="h-full p-5 transition duration-200 ease-out hover:-translate-y-1 hover:bg-white/75 hover:shadow-[0_16px_40px_-14px_rgba(15,23,42,0.18)]">
-                        <div className="flex items-start justify-between gap-3">
-                          <div className={cx('rounded-2xl border border-white/70 p-3', stat.tone === 'rose' ? 'bg-rose-50/80 text-rose-600' : stat.tone === 'amber' ? 'bg-[#fffbeb]/90 text-amber-600' : stat.tone === 'violet' ? 'bg-violet-50/80 text-[#8b5cf6]' : stat.tone === 'sky' ? 'bg-sky-50/80 text-sky-600' : 'bg-emerald-50/80 text-emerald-600')}>
-                            <Icon size={21} />
+            <Panel icon={Zap} iconColor="text-amber-500" title="Quick Actions">
+              <div className="grid grid-cols-2 gap-2.5">
+                {QUICK_ACTIONS.map((a) => (
+                  <Link key={a.label} to={a.to} className={cx('flex h-[76px] flex-col items-center justify-center gap-1 rounded-xl border px-2 text-center text-xs font-medium leading-tight transition hover:-translate-y-0.5', a.cls)}>
+                    {React.createElement(a.icon, { size: 20 })}
+                    {a.label}
+                  </Link>
+                ))}
+              </div>
+            </Panel>
+          </MotionSection>
+
+          {/* ── Homework / Schedule / Alerts + Activity ── */}
+          <MotionSection variants={itemVariants} className="grid gap-4 xl:grid-cols-3">
+            <Panel icon={FileText} iconColor="text-blue-600" title="Homework & Assignments" link={{ to: '/teacher/classes/current/assignments', label: 'View All' }}>
+              {deadlineError && <p className="mb-2 rounded-lg bg-rose-50 px-3 py-2 text-xs text-rose-700">{deadlineError}</p>}
+              {visibleDeadlines.length === 0 ? (
+                <p className="py-10 text-center text-sm text-slate-400">No pending homework or assignments.</p>
+              ) : (
+                <div className="divide-y divide-slate-100">
+                  {visibleDeadlines.map((task) => {
+                    const total = Number(task.totalStudents) || 0;
+                    const done = Number(task.submittedCount) || 0;
+                    const pct = total ? Math.min(100, Math.round((done / total) * 100)) : 0;
+                    const due = dueLabel(task.dueDate);
+                    return (
+                      <div key={deadlineKey(task)} className="flex gap-3 py-3 first:pt-0">
+                        <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-blue-50 text-blue-600"><FileText size={17} /></div>
+                        <div className="min-w-0 flex-1">
+                          <div className="flex items-start justify-between gap-2">
+                            <p className="truncate text-sm font-semibold text-slate-900">{task.title}</p>
+                            <span className={cx('shrink-0 rounded-md px-2 py-0.5 text-[11px] font-medium', due.cls)}>{due.text}</span>
                           </div>
-                        </div>
-                        <div className="mt-5">
-                          <div className="flex items-end justify-between gap-3">
-                            <p className="text-3xl font-semibold tracking-tight text-[#0f172a]">{stat.value}</p>
+                          <p className="text-xs text-slate-500">Class {[task.class, task.section].filter(Boolean).join('-') || '—'}{task.subject ? ` • ${task.subject}` : ''}</p>
+                          <div className="mt-1.5 flex items-end gap-2">
+                            <div className="flex-1">
+                              <p className="mb-1 text-[11px] text-slate-500">{done} / {total || '—'} submitted</p>
+                              <div className="h-1.5 rounded-full bg-slate-100"><div className="h-full rounded-full bg-blue-600" style={{ width: `${pct}%` }} /></div>
+                            </div>
+                            <span className="w-8 text-right text-[11px] text-slate-600">{pct}%</span>
+                            <button type="button" onClick={() => clearDeadline(task)} disabled={completingDeadlineId === deadlineKey(task)} className="rounded-md border border-slate-200 px-3 py-1 text-xs font-semibold text-slate-800 hover:bg-slate-50 disabled:opacity-50">
+                              {completingDeadlineId === deadlineKey(task) ? '…' : 'Done'}
+                            </button>
                           </div>
-                          <p className="mt-1 text-sm font-medium text-[#64748b]">{stat.label}</p>
-                        </div>
-                      </CardShell>
-                    </Link>
-                  );
-                })}
-              </MotionSection>
-            )}
-
-
-            <MotionSection variants={itemVariants} className="grid gap-4 2xl:grid-cols-[1fr_360px]">
-              <div className="space-y-4">
-                <CardShell>
-                  <SectionHeader icon={Zap} title="Workflow Actions" subtitle="Grouped by how teachers actually move through the day." action={<Link to="/teacher/classes" className="text-sm font-semibold text-[#64748b] transition hover:text-[#0f172a]">View modules</Link>} />
-                  <div className="grid gap-4 p-5 lg:grid-cols-2">
-                    {workflowGroups.map((group) => (
-                      <div key={group.title}>
-                        <h3 className="mb-3 text-xs font-bold uppercase tracking-wide text-[#8e9aaf]">{group.title}</h3>
-                        <div className="space-y-3">
-                          {group.items.map((item) => <WorkflowAction key={item.title} item={item} />)}
                         </div>
                       </div>
+                    );
+                  })}
+                </div>
+              )}
+            </Panel>
+
+            <Panel icon={Calendar} iconColor="text-blue-600" title="Upcoming Schedule" link={{ to: '/teacher/timetable', label: 'View All' }}>
+              {upcomingSchedule.length === 0 ? (
+                <p className="py-10 text-center text-sm text-slate-400">Nothing scheduled.</p>
+              ) : (
+                <ol className="relative ml-1.5 space-y-4 border-l-2 border-slate-100 pl-5">
+                  {upcomingSchedule.map((c, i) => (
+                    <li key={`${c.id || i}-${c.dayLabel}`} className="relative">
+                      <span className={cx('absolute -left-[27px] top-1 h-3 w-3 rounded-full ring-4 ring-white', i % 3 === 2 ? 'bg-violet-500' : 'bg-blue-500')} />
+                      <p className="text-sm font-semibold text-slate-900">{c.dayLabel} • {formatClock(c.startTime) || c.time}</p>
+                      <p className="text-[13px] text-slate-600">Class {c.class || '—'}{c.subject ? ` • ${c.subject}` : ''}</p>
+                      {c.room && <p className="text-[13px] text-slate-500">Room {c.room}</p>}
+                    </li>
+                  ))}
+                </ol>
+              )}
+            </Panel>
+
+            <div className="space-y-4">
+              <Panel icon={Bell} iconColor="text-rose-500" title="Student Alerts" link={{ to: '/teacher/classes/current/students/analytics', label: 'View All' }}>
+                {studentAlerts.length === 0 ? (
+                  <p className="py-4 text-center text-sm text-slate-400">No alerts right now.</p>
+                ) : (
+                  <div className="space-y-2">
+                    {studentAlerts.map((a) => (
+                      <Link key={a.title} to={a.to} className="flex items-center gap-3 rounded-lg p-1 hover:bg-slate-50">
+                        <div className={cx('flex h-9 w-9 shrink-0 items-center justify-center rounded-lg', a.cls)}>{React.createElement(a.icon, { size: 16 })}</div>
+                        <div className="min-w-0">
+                          <p className="truncate text-[13px] font-medium text-slate-900">{a.title}</p>
+                          <p className="text-[11px] text-slate-500">{a.sub}</p>
+                        </div>
+                      </Link>
                     ))}
                   </div>
-                </CardShell>
+                )}
+              </Panel>
 
-                <div className="grid gap-4 xl:grid-cols-[0.95fr_1.05fr]">
-                  <CardShell>
-                    <SectionHeader icon={Clock} title="Today's Schedule" subtitle={nextClass ? `Next: ${nextClass.subject || nextClass.class || 'Details unavailable'} ${nextClass.time}` : 'Your class timeline is clear.'} action={<Badge tone="emerald">Live</Badge>} />
-                    <div className="max-h-[430px] space-y-3 overflow-y-auto p-5">
-                      {todaysClasses.length === 0 ? <EmptyState icon={Calendar} title="No classes scheduled today" description="Today's schedule will appear here when timetable data is available." /> : todaysClasses.map((classItem, index) => (
-                        <ScheduleItem key={classItem.id || `${classItem.subject}-${index}`} classItem={classItem} index={index} isNext={classItem.id === nextClass?.id} reduceMotion={reduceMotion} />
-                      ))}
-                    </div>
-                  </CardShell>
-
-                  <CardShell>
-                    <SectionHeader
-                      icon={BarChart3}
-                      title="Analytics Snapshot"
-                      subtitle="Compact signals only. Detailed analytics stay in reports."
-                      action={<TimeframeToggle activeTimeframe={activeTimeframe} setActiveTimeframe={setActiveTimeframe} />}
-                    />
-                    <div className="space-y-4 p-5">
-                      {analyticsSnapshot.length > 0 && <SnapshotChart metrics={analyticsSnapshot} />}
-                      <div className="grid gap-3 sm:grid-cols-2">
-                      {analyticsSnapshot.map((metric) => (
-                        <Link key={metric.label} to="/teacher/classes/current/reports" className={cx('rounded-2xl p-4 transition duration-200 ease-out hover:-translate-y-0.5 hover:bg-white/70', GLASS_INSET)}>
-                          <div className="mb-4 flex items-start justify-between">
-                            <div>
-                              <p className="text-sm font-semibold text-[#0f172a]">{metric.label}</p>
-                              <p className="mt-1 text-xs text-[#8e9aaf]">{metric.helper}</p>
-                            </div>
-                            <ArrowUpRight size={16} className="text-[#8e9aaf]" />
-                          </div>
-                          <p className="mb-3 text-2xl font-semibold text-[#0f172a]">{metric.value}</p>
-                          <Progress value={metric.progress} tone={metric.tone} />
-                        </Link>
-                      ))}
-                      </div>
-                    </div>
-                  </CardShell>
-                </div>
-
-                <div className="grid gap-4 xl:grid-cols-[1.2fr_0.8fr]">
-                  <CardShell>
-                    <SectionHeader icon={Bell} title="Recent Activity" subtitle="Interactive timeline of relevant classroom updates." action={<Badge tone="neutral">{recentActivities.length} updates</Badge>} />
-                    <div className="p-5">
-                      {recentActivities.length === 0 ? <EmptyState icon={Bell} title="No recent activity" description="Attendance, assignments, reports, and meetings will appear here." /> : (
-                        <div className="space-y-1">
-                          {recentActivities.slice(0, 6).map((activity, index) => <ActivityItem key={activity.id || index} activity={activity} index={index} total={Math.min(recentActivities.length, 6)} />)}
-                        </div>
-                      )}
-                    </div>
-                  </CardShell>
-
-                  <CardShell>
-                    <SectionHeader icon={CheckCircle2} title="Priority Task Board" subtitle="Deadlines without report-page overload." action={<Badge tone="amber">{visibleDeadlines.length} pending</Badge>} />
-                    <div className="max-h-[440px] space-y-3 overflow-y-auto p-5">
-                      {deadlineError && <p className="rounded-xl border border-rose-200/70 bg-rose-50/80 px-3 py-2 text-xs text-rose-700">{deadlineError}</p>}
-                      {visibleDeadlines.length === 0 ? <EmptyState icon={CheckCircle2} title="All caught up" description="No upcoming deadlines are waiting for action." /> : visibleDeadlines.map((task, index) => <DeadlineTask key={deadlineKey(task)} task={task} index={index} onComplete={() => clearDeadline(task)} completing={completingDeadlineId === deadlineKey(task)} />)}
-                    </div>
-                  </CardShell>
-                </div>
-              </div>
-
-            </MotionSection> 
-          </MotionDiv>
-      </div>
+              <Panel icon={Clock} iconColor="text-blue-600" title="Recent Activity" link={{ to: '/teacher/notifications', label: 'View All' }}>
+                {recentActivities.length === 0 ? (
+                  <p className="py-4 text-center text-sm text-slate-400">No recent activity.</p>
+                ) : (
+                  <ul className="space-y-2">
+                    {recentActivities.slice(0, 4).map((a, i) => (
+                      <li key={a.id || i} className="flex items-center gap-2.5 text-[12.5px]">
+                        <span className={cx('h-2.5 w-2.5 shrink-0 rounded-full border-2', ['border-emerald-500', 'border-amber-400', 'border-amber-400', 'border-rose-400'][i % 4])} />
+                        <span className="min-w-0 flex-1 truncate text-slate-700">{a.message}</span>
+                        <span className="shrink-0 text-[11px] text-slate-400">{a.time}</span>
+                      </li>
+                    ))}
+                  </ul>
+                )}
+              </Panel>
+            </div>
+          </MotionSection>
+        </MotionDiv>
       </div>
     </div>
   );
 };
 
-const HeroChip = ({ label, value }) => (
-  <div className="rounded-2xl border border-white/70 bg-white/60 p-4 shadow-sm backdrop-blur-lg backdrop-saturate-[1.8]">
-    <p className="text-xs uppercase tracking-wide text-[#8e9aaf]">{label}</p>
-    <p className="mt-1 text-sm font-semibold text-[#0f172a]">{value}</p>
-  </div>
-);
+const QUICK_ACTIONS = [
+  { label: 'Create Homework', icon: FileText, to: '/teacher/classes/current/assignments/manage', cls: 'border-blue-100 bg-blue-50 text-blue-700' },
+  { label: 'Create Assignment', icon: PenLine, to: '/teacher/classes/current/assignments/manage', cls: 'border-emerald-100 bg-emerald-50 text-emerald-700' },
+  { label: 'Upload Study Material', icon: BookOpen, to: '/teacher/classes/current/teaching/study-materials', cls: 'border-violet-100 bg-violet-50 text-violet-700' },
+  { label: 'Create Exam', icon: ClipboardList, to: '/teacher/classes/current/assessments/exam', cls: 'border-orange-100 bg-orange-50 text-orange-600' },
+  { label: 'Enter Marks', icon: BarChart3, to: '/teacher/classes/current/assessments/exam', cls: 'border-rose-100 bg-rose-50 text-rose-600' },
+  { label: 'Post Notice', icon: Megaphone, to: '/teacher/notifications', cls: 'border-cyan-100 bg-cyan-50 text-cyan-700' },
+];
 
-const WorkflowAction = ({ item }) => {
-  const Icon = item.icon;
-  return (
-    <Link to={item.path} className={cx('group flex min-h-[98px] gap-3 rounded-2xl p-4 transition duration-200 ease-out hover:-translate-y-0.5 hover:bg-white/70 hover:shadow-[0_10px_28px_-14px_rgba(15,23,42,0.18)]', GLASS_INSET)}>
-      <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl border border-white/70 bg-white/80 text-[#64748b] transition duration-200 ease-out group-hover:bg-[#8b5cf6] group-hover:text-white">
-        <Icon size={20} />
-      </div>
-      <div className="min-w-0">
-        <p className="font-semibold text-[#0f172a]">{item.title}</p>
-        <p className="mt-1 text-sm leading-5 text-[#64748b]">{item.description}</p>
-      </div>
-    </Link>
-  );
+const formatClock = (hhmm) => {
+  const m = /^(\d{1,2}):(\d{2})/.exec(String(hhmm || ''));
+  if (!m) return '';
+  const h = Number(m[1]);
+  return `${String(((h + 11) % 12) + 1).padStart(2, '0')}:${m[2]} ${h >= 12 ? 'PM' : 'AM'}`;
 };
 
-const ScheduleItem = ({ classItem, index, isNext, reduceMotion }) => (
-  <MotionDiv
-    initial={reduceMotion ? false : { opacity: 0, x: -12 }}
-    animate={reduceMotion ? undefined : { opacity: 1, x: 0 }}
-    transition={{ duration: 0.26, delay: index * 0.04, ease: 'easeOut' }}
-    className={cx('relative rounded-2xl p-4 transition duration-200 ease-out hover:bg-white/70', isNext ? 'border border-emerald-200/70 bg-emerald-50/60 backdrop-blur-lg backdrop-saturate-[1.8]' : GLASS_INSET)}
-  >
-    <div className="flex items-start gap-3">
-      <span className={cx('mt-1 h-12 w-1.5 rounded-full', isNext ? 'bg-emerald-500' : 'bg-slate-300')} />
-      <div className="min-w-0 flex-1">
-        <div className="flex flex-wrap items-center gap-2">
-          <h3 className="font-semibold text-[#0f172a]">{classItem.subject}</h3>
-          <Badge tone={isNext ? 'emerald' : 'neutral'}>{classItem.status}</Badge>
-        </div>
-        <p className="mt-1 text-sm text-[#64748b]">{classItem.class} {classItem.section && `• ${classItem.section}`} {classItem.room && `• Room ${classItem.room}`}</p>
-        <div className="mt-3 flex flex-wrap gap-2">
-          <Link to={classWorkspacePath(classItem, 'students/attendance')} className="inline-flex h-8 items-center gap-1.5 rounded-lg border border-white/70 bg-white/70 px-3 text-xs font-semibold text-[#64748b] transition hover:bg-white/90"><ClipboardCheck size={14} /> Attendance</Link>
-          <Link to={classWorkspacePath(classItem, 'teaching')} className="inline-flex h-8 items-center gap-1.5 rounded-lg bg-[#8b5cf6] px-3 text-xs font-semibold text-white transition hover:bg-[#7c4deb]">Open <ChevronRight size={14} /></Link>
-        </div>
-      </div>
-      <div className="text-right">
-        <p className="font-semibold text-[#0f172a]">{classItem.time}</p>
-        <p className="mt-1 text-xs text-[#8e9aaf]">{classItem.status === 'In progress' ? 'Happening now' : isNext ? 'Next class' : classItem.status}</p>
-      </div>
-    </div>
-  </MotionDiv>
-);
-
-// Bar-fill colors for the snapshot chart, matching the Progress/Badge tone
-// palette used across the rest of the dashboard.
-const TONE_HEX = {
-  emerald: '#10b981',
-  violet: '#8b5cf6',
-  amber: '#f59e0b',
-  rose: '#f43f5e',
-  sky: '#0ea5e9',
+const dueLabel = (value) => {
+  const date = new Date(value);
+  if (!value || Number.isNaN(date.getTime())) return { text: 'No due date', cls: 'bg-slate-100 text-slate-600' };
+  const days = Math.ceil((date.getTime() - Date.now()) / 86400000);
+  if (days < 0) return { text: 'Overdue', cls: 'bg-rose-50 text-rose-600' };
+  if (days === 0) return { text: 'Due Today', cls: 'bg-rose-50 text-rose-600' };
+  if (days === 1) return { text: 'Due Tomorrow', cls: 'bg-rose-50 text-rose-600' };
+  if (days <= 3) return { text: `Due in ${days} days`, cls: 'bg-amber-50 text-amber-600' };
+  return { text: `Due ${formatDate(value, { day: 'numeric', month: 'short' })}`, cls: 'bg-slate-100 text-slate-600' };
 };
 
-const SnapshotChartTooltip = ({ active, payload }) => {
-  if (!active || !payload?.length) return null;
-  const point = payload[0]?.payload;
-  if (!point) return null;
-  return (
-    <div className="rounded-xl border border-white/70 bg-white/90 px-3 py-2 text-xs shadow-lg backdrop-blur-md">
-      <p className="font-semibold text-[#0f172a]">{point.label}</p>
-      <p className="mt-0.5 text-[#64748b]">{point.value}%</p>
-    </div>
-  );
-};
-
-// Compact bar chart summarizing the same signals as the tiles below it —
-// attendance rate plus up to three subject averages — so the "snapshot" is
-// scannable at a glance without leaving the dashboard for the full reports.
-const SnapshotChart = ({ metrics }) => {
-  const chartData = metrics.map((metric) => ({
-    label: metric.label,
-    shortLabel: metric.label.replace(/\s*average$/i, '').replace(/\s*rate$/i, ''),
-    value: clampPercent(metric.progress),
-    tone: metric.tone,
-  }));
-
-  return (
-    <div className={cx('rounded-2xl p-4', GLASS_INSET)}>
-      <ResponsiveContainer width="100%" height={180}>
-        <BarChart data={chartData} margin={{ top: 6, right: 8, left: -20, bottom: 0 }} barSize={32}>
-          <CartesianGrid vertical={false} strokeDasharray="3 3" stroke="rgba(148,163,184,0.25)" />
-          <XAxis
-            dataKey="shortLabel"
-            tick={{ fill: '#8e9aaf', fontSize: 11 }}
-            tickLine={false}
-            axisLine={{ stroke: 'rgba(148,163,184,0.3)' }}
-          />
-          <YAxis
-            domain={[0, 100]}
-            tick={{ fill: '#8e9aaf', fontSize: 11 }}
-            tickLine={false}
-            axisLine={false}
-            width={32}
-            tickFormatter={(v) => `${v}%`}
-          />
-          <Tooltip cursor={{ fill: 'rgba(139,92,246,0.06)' }} content={<SnapshotChartTooltip />} />
-          <Bar dataKey="value" radius={[8, 8, 8, 8]}>
-            {chartData.map((entry) => (
-              <Cell key={entry.label} fill={TONE_HEX[entry.tone] || TONE_HEX.violet} />
-            ))}
-          </Bar>
-        </BarChart>
-      </ResponsiveContainer>
-    </div>
-  );
-};
-
-const TimeframeToggle = ({ activeTimeframe, setActiveTimeframe }) => (
-  <div className="flex rounded-xl border border-white/70 bg-white/50 p-1 backdrop-blur-sm">
-    {['weekly', 'monthly', 'yearly'].map((timeframe) => (
-      <button key={timeframe} type="button" onClick={() => setActiveTimeframe(timeframe)} className={cx('rounded-lg px-3 py-1.5 text-xs font-semibold capitalize transition duration-150 ease-out', activeTimeframe === timeframe ? 'bg-white text-[#0f172a] shadow-sm' : 'text-[#8e9aaf] hover:text-[#0f172a]')}>
-        {timeframe}
-      </button>
-    ))}
-  </div>
-);
-
-const ActivityItem = ({ activity, index, total }) => (
-  <div className="grid grid-cols-[auto_1fr_auto] gap-3 rounded-2xl p-3 transition duration-200 ease-out hover:bg-white/60">
-    <div className="relative">
-      <div className="flex h-10 w-10 items-center justify-center rounded-xl border border-white/70 bg-white/70 text-[#64748b]"><Activity size={18} /></div>
-      {index < total - 1 && <span className="absolute left-1/2 top-11 h-5 w-px bg-slate-200/70" />}
-    </div>
-    <div className="min-w-0">
-      <p className="truncate text-sm font-semibold text-[#0f172a]">{activity.message}</p>
-      <p className="mt-1 text-xs text-[#8e9aaf]">{activity.class || 'Class update'} • {activity.time}</p>
-    </div>
-    <button className="flex h-9 w-9 items-center justify-center rounded-xl text-[#8e9aaf] transition hover:bg-white/70 hover:text-[#0f172a]" aria-label="View activity"><Eye size={16} /></button>
-  </div>
-);
-
-const DeadlineTask = ({ task, index, onComplete, completing = false }) => (
-  <div className={cx('rounded-2xl p-4 transition duration-200 ease-out hover:bg-white/70', GLASS_INSET)}>
+const Panel = ({ icon: Icon, iconColor, title, link, children }) => (
+  <section className="rounded-2xl border border-slate-100 bg-white p-4 shadow-sm">
     <div className="mb-3 flex items-center justify-between gap-2">
-      <Badge tone={index === 0 ? 'rose' : 'amber'}>{daysUntil(task.dueDate)}</Badge>
-      <span className="text-xs font-semibold text-[#8e9aaf]">{formatDate(task.dueDate)}</span>
+      <div className="flex items-center gap-2.5">
+        <Icon size={18} className={iconColor} />
+        <h2 className="text-[16px] font-semibold text-slate-900">{title}</h2>
+      </div>
+      {link && (
+        <Link to={link.to} className="inline-flex items-center gap-0.5 whitespace-nowrap text-xs font-medium text-blue-600 hover:underline">
+          {link.label} <ChevronRight size={13} />
+        </Link>
+      )}
     </div>
-    <h3 className="font-semibold text-[#0f172a]">{task.title}</h3>
-    <p className="mt-1 text-sm text-[#64748b]">{task.class || '-'}{task.subject ? ` • ${task.subject}` : ''}</p>
-    <div className="mt-4 flex gap-2">
-      <button
-        type="button"
-        onClick={onComplete}
-        disabled={completing}
-        className="inline-flex h-8 items-center gap-1.5 rounded-lg border border-white/70 bg-white/60 px-3 text-xs font-semibold text-[#64748b] transition duration-150 ease-out hover:border-emerald-300/70 hover:bg-emerald-50/80 hover:text-emerald-700"
-      >
-        <CheckCircle2 size={14} /> {completing ? 'Completing…' : 'Mark complete'}
-      </button>
-      <Link to="/teacher/classes/current/assignments" className="inline-flex h-8 items-center rounded-lg bg-[#8b5cf6] px-3 text-xs font-semibold text-white transition hover:bg-[#7c4deb]">Open task</Link>
+    {children}
+  </section>
+);
+
+const Donut = ({ percent }) => {
+  const r = 42;
+  const c = 2 * Math.PI * r;
+  return (
+    <div className="relative h-[104px] w-[104px] shrink-0">
+      <svg viewBox="0 0 104 104" className="h-full w-full -rotate-90">
+        <circle cx="52" cy="52" r={r} fill="none" stroke="#dcfce7" strokeWidth="11" />
+        <circle
+          cx="52" cy="52" r={r} fill="none" stroke="#22c55e" strokeWidth="11" strokeLinecap="round"
+          strokeDasharray={c} strokeDashoffset={c * (1 - clampPercent(percent) / 100)}
+          style={{ transition: 'stroke-dashoffset .6s ease' }}
+        />
+      </svg>
+      <span className="absolute inset-0 flex items-center justify-center text-xl font-bold text-slate-900">{Math.round(clampPercent(percent))}%</span>
     </div>
-  </div>
+  );
+};
+
+// Decorative school + trees for the greeting banner (pure SVG, no asset).
+const SchoolIllustration = () => (
+  <svg aria-hidden="true" viewBox="0 0 420 110" className="pointer-events-none absolute bottom-0 right-0 h-full w-[46%] max-w-[460px]" preserveAspectRatio="xMaxYMax meet">
+    <ellipse cx="400" cy="40" rx="40" ry="38" fill="#86c46b" />
+    <ellipse cx="385" cy="70" rx="45" ry="40" fill="#6fb35a" />
+    <rect x="150" y="45" width="200" height="65" fill="#f5efe1" />
+    <rect x="215" y="25" width="70" height="85" fill="#efe5d0" />
+    <polygon points="210,27 250,8 290,27" fill="#d8c7a6" />
+    <circle cx="250" cy="40" r="6" fill="#9fc3e6" />
+    {[160, 180, 300, 320].flatMap((x) => [58, 82].map((y) => <rect key={`${x}-${y}`} x={x} y={y} width="14" height="12" fill="#9fc3e6" />))}
+    {[225, 260].flatMap((x) => [55, 78].map((y) => <rect key={`c${x}-${y}`} x={x} y={y} width="14" height="14" fill="#9fc3e6" />))}
+    <rect x="243" y="92" width="14" height="18" fill="#c9b48e" />
+    <ellipse cx="120" cy="100" rx="40" ry="14" fill="#8fcb73" />
+    <ellipse cx="370" cy="104" rx="60" ry="10" fill="#7dbb63" />
+  </svg>
 );
 
 export default TeacherDashboard;

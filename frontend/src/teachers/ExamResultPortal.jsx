@@ -4,7 +4,7 @@ import { AUTH_NOTICE, logoutAndRedirect } from '../utils/authSession';
 import { AnimatePresence, motion as Motion } from 'framer-motion';
 import {
   CalendarDays, CheckCircle2, Clock3, Edit2,
-  GraduationCap, Loader2, Save, Search, Trash2, X, Brain, Sparkles,
+  GraduationCap, Loader2, Save, Search, Trash2, X, Brain, Sparkles, FileUp, Lock, Download,
 } from 'lucide-react';
 
 const API_BASE = (import.meta.env.VITE_API_URL || 'http://localhost:5000').replace(/\/$/, '');
@@ -136,10 +136,15 @@ const ExamResultPortal = () => {
   const [examForm, setExamForm] = useState(EMPTY_EXAM);
   const [savingExam, setSavingExam] = useState(false);
 
-  const [resultForm, setResultForm] = useState(EMPTY_RESULT);
-  const [savingResult, setSavingResult] = useState(false);
-  const [resultStudents, setResultStudents] = useState([]);
-  const [loadingStudents, setLoadingStudents] = useState(false);
+  // Subject-wise marks entry (grid) + Excel bulk upload
+  const [marksExam, setMarksExam] = useState(null);
+  const [marksRows, setMarksRows] = useState([]);
+  const [loadingMarks, setLoadingMarks] = useState(false);
+  const [savingMarks, setSavingMarks] = useState(false);
+  const [uploadExam, setUploadExam] = useState(null);
+  const [uploadFile, setUploadFile] = useState(null);
+  const [uploading, setUploading] = useState(false);
+  const [uploadErrors, setUploadErrors] = useState([]);
 
   const [search, setSearch] = useState('');
 
@@ -158,7 +163,9 @@ const ExamResultPortal = () => {
     const h = { Authorization: `Bearer ${token}`, ...(opts.headers || {}) };
     if (!(opts.body instanceof FormData)) h['Content-Type'] = 'application/json';
     const res = await fetch(`${API_BASE}${path}`, { ...opts, headers: h });
-    if (res.status === 401 || res.status === 403) {
+    // 403 here is a scope error (e.g. not allocated for an exam's subject),
+    // not an expired session — surface it instead of logging out.
+    if (res.status === 401) {
       logoutAndRedirect({ navigate, notice: AUTH_NOTICE.EXPIRED, clearAllLocalStorage: true });
       const authError = new Error('Session expired');
       authError.code = AUTH_NOTICE.EXPIRED;
@@ -204,9 +211,13 @@ const ExamResultPortal = () => {
         .sort((a, b) => a.name.localeCompare(b.name));
       setSubjectOptions(subjs);
 
-      // Filter exams to this class
+      // Only exams of this class + section for subjects allocated to this teacher
+      const subjectIdSet = new Set(subjs.map(s => s._id));
       const allExams = Array.isArray(examData) ? examData : [];
-      const myExams = allExams.filter(ex => String(ex?.classId?._id || ex?.classId) === cid);
+      const myExams = allExams.filter(ex =>
+        String(ex?.classId?._id || ex?.classId) === cid
+        && (!sid || !ex?.sectionId || String(ex?.sectionId?._id || ex?.sectionId) === sid)
+        && subjectIdSet.has(String(ex?.subjectId?._id || ex?.subjectId || '')));
       setExams(myExams);
 
       // Load results for these exams
@@ -228,24 +239,6 @@ const ExamResultPortal = () => {
     setExamForm(prev => ({ ...prev, classId: classMongoId, sectionId: sectionMongoId }));
   }, [classMongoId, sectionMongoId]);
 
-  // Load students when result exam changes
-  useEffect(() => {
-    if (!resultForm.examId) { setResultStudents([]); return; }
-    setLoadingStudents(true);
-    apiFetch(`/api/exam/results/exam-students?examId=${encodeURIComponent(resultForm.examId)}`)
-      .then(d => setResultStudents(Array.isArray(d?.students) ? d.students : []))
-      .catch(() => setResultStudents([]))
-      .finally(() => setLoadingStudents(false));
-  }, [resultForm.examId, apiFetch]);
-
-  // Auto-derive grade in result form
-  useEffect(() => {
-    if (resultForm.status === 'absent' || resultForm.marks === '') return;
-    const ex = exams.find(e => String(e._id) === resultForm.examId);
-    const g = gradeFrom(resultForm.marks, ex?.marks);
-    if (g) setResultForm(prev => ({ ...prev, grade: g }));
-  }, [resultForm.marks, resultForm.examId, resultForm.status, exams]);
-
   // Auto-clear success after 3 s
   useEffect(() => {
     if (!success) return undefined;
@@ -254,7 +247,20 @@ const ExamResultPortal = () => {
   }, [success]);
 
   // ── Derived ───────────────────────────────────────────────
-  const completedExams = useMemo(() => exams.filter(ex => examStatus(ex) === 'completed'), [exams]);
+  // Assigned subjects → their exams, with how many results are already entered
+  const subjectGroups = useMemo(() => {
+    const resultCountByExam = new Map();
+    results.forEach(r => {
+      const id = String(r.examId?._id || r.examId || '');
+      resultCountByExam.set(id, (resultCountByExam.get(id) || 0) + 1);
+    });
+    return subjectOptions.map(s => ({
+      ...s,
+      exams: exams
+        .filter(ex => String(ex?.subjectId?._id || ex?.subjectId || '') === s._id)
+        .map(ex => ({ ...ex, resultCount: resultCountByExam.get(String(ex._id)) || 0 })),
+    }));
+  }, [subjectOptions, exams, results]);
 
   const visibleExams = useMemo(() => {
     const q = search.trim().toLowerCase();
@@ -265,7 +271,6 @@ const ExamResultPortal = () => {
     });
   }, [exams, search]);
 
-  const resultExam = useMemo(() => exams.find(e => String(e._id) === resultForm.examId), [exams, resultForm.examId]);
 
   const recentResults = useMemo(() =>
     [...results].sort((a, b) => new Date(b.createdAt || 0) - new Date(a.createdAt || 0)).slice(0, 6),
@@ -365,28 +370,107 @@ const ExamResultPortal = () => {
     finally { setSavingExam(false); }
   };
 
-  const handleUploadResult = async (e) => {
-    e.preventDefault();
-    if (!resultForm.examId || !resultForm.studentId) { setError('Exam and student are required'); return; }
-    if (resultForm.status !== 'absent') {
-      const m = Number(resultForm.marks);
-      if (!Number.isFinite(m) || m < 0) { setError('Enter valid marks'); return; }
-      const max = Number(resultExam?.marks);
-      if (Number.isFinite(max) && max > 0 && m > max) { setError(`Marks cannot exceed ${max}`); return; }
-    }
-    setSavingResult(true); setError(''); setSuccess('');
+  // ── Marks entry (whole class grid for one completed exam) ──
+  const openMarksEntry = async (exam) => {
+    setMarksExam(exam); setMarksRows([]); setLoadingMarks(true); setError('');
     try {
-      const payload = {
-        examId: resultForm.examId, studentId: resultForm.studentId,
-        grade: resultForm.grade, remarks: resultForm.remarks.trim(), status: resultForm.status,
-      };
-      if (resultForm.status !== 'absent') payload.marks = Number(resultForm.marks);
-      await apiFetch('/api/exam/results', { method: 'POST', body: JSON.stringify(payload) });
-      setSuccess('Result uploaded successfully');
-      setResultForm(EMPTY_RESULT);
+      const d = await apiFetch(`/api/exam/results/exam-students?examId=${encodeURIComponent(exam._id)}`);
+      const students = Array.isArray(d?.students) ? d.students : [];
+      setMarksRows(students.map(s => ({
+        studentId: String(s._id), name: s.name, roll: s.roll,
+        marks: s.marks ?? '', status: s.status || '', remarks: '',
+        hasResult: s.hasResult, published: s.published,
+      })));
+    } catch (err) {
+      setError(err.message || 'Failed to load students');
+      setMarksExam(null);
+    } finally { setLoadingMarks(false); }
+  };
+
+  const updateMarksRow = (studentId, patch) => {
+    setMarksRows(rows => rows.map(r => (r.studentId === studentId ? { ...r, ...patch } : r)));
+  };
+
+  const rowStatus = (row, maxMarks) => {
+    if (row.status === 'absent') return 'absent';
+    if (row.marks === '' || row.marks == null) return '';
+    const max = Number(maxMarks) || 100;
+    return Number(row.marks) >= max * 0.5 ? 'pass' : 'fail';
+  };
+
+  const handleSaveMarks = async () => {
+    if (!marksExam) return;
+    const max = Number(marksExam.marks);
+    const toSave = marksRows.filter(r => r.status === 'absent' || r.marks !== '');
+    if (!toSave.length) { setError('Enter marks for at least one student'); return; }
+    const invalid = toSave.find(r => r.status !== 'absent'
+      && (!Number.isFinite(Number(r.marks)) || Number(r.marks) < 0 || (max > 0 && Number(r.marks) > max)));
+    if (invalid) { setError(`Invalid marks for ${invalid.name}${max > 0 ? ` (0–${max})` : ''}`); return; }
+
+    setSavingMarks(true); setError(''); setSuccess('');
+    const outcomes = await Promise.allSettled(toSave.map(r => {
+      const status = rowStatus(r, max);
+      const payload = { examId: marksExam._id, studentId: r.studentId, status, remarks: r.remarks.trim() };
+      if (status !== 'absent') {
+        payload.marks = Number(r.marks);
+        payload.grade = gradeFrom(r.marks, max || 100);
+      }
+      return apiFetch('/api/exam/results', { method: 'POST', body: JSON.stringify(payload) });
+    }));
+    const failed = outcomes.filter(o => o.status === 'rejected');
+    setSavingMarks(false);
+    if (failed.length) {
+      setError(`${toSave.length - failed.length} saved, ${failed.length} failed: ${failed[0].reason?.message || 'error'}`);
+    } else {
+      setSuccess(`Marks saved for ${toSave.length} student${toSave.length !== 1 ? 's' : ''}`);
+      setMarksExam(null);
+    }
+    await loadAll();
+  };
+
+  // ── Excel bulk upload (same template/endpoint as admin) ──
+  const downloadTemplate = async (exam) => {
+    setError('');
+    try {
+      const d = await apiFetch(`/api/exam/results/exam-students?examId=${encodeURIComponent(exam._id)}`);
+      const students = Array.isArray(d?.students) ? d.students : [];
+      if (!students.length) { setError('No students found for this exam'); return; }
+      const XLSX = await import('xlsx');
+      const max = Number(exam.marks) || 100;
+      const header = ['studentId', 'examId', 'roll', 'name', 'subject', 'maxMarks', 'marks', 'remarks', 'status'];
+      const rows = students.map((s, i) => {
+        const r = i + 2;
+        return {
+          studentId: String(s._id), examId: String(exam._id), roll: s.roll ?? '', name: s.name || '',
+          subject: exam.subjectId?.name || exam.subject || '', maxMarks: max,
+          marks: s.marks ?? '', remarks: '',
+          // blank marks → absent, otherwise pass/fail at 50% (matches the admin template)
+          status: { f: `IF(ISBLANK(G${r}),"absent",IF(G${r}>=F${r}*0.5,"pass","fail"))` },
+        };
+      });
+      const ws = XLSX.utils.json_to_sheet(rows, { header });
+      ws['!cols'] = [{ hidden: true }, { hidden: true }, { wch: 6 }, { wch: 28 }, { wch: 16 }, { wch: 10 }, { wch: 8 }, { wch: 24 }, { wch: 10 }];
+      const wb = XLSX.utils.book_new();
+      XLSX.utils.book_append_sheet(wb, ws, 'Marks');
+      const safe = `${exam.title || 'exam'}_${exam.subjectId?.name || ''}`.replace(/[^a-z0-9]+/gi, '_');
+      XLSX.writeFile(wb, `${safe}_marks_template.xlsx`);
+    } catch (err) { setError(err.message || 'Could not generate template'); }
+  };
+
+  const handleBulkUpload = async (e) => {
+    e.preventDefault();
+    if (!uploadFile) { setError('Choose an Excel file'); return; }
+    setUploading(true); setError(''); setSuccess(''); setUploadErrors([]);
+    try {
+      const fd = new FormData();
+      fd.append('file', uploadFile);
+      const d = await apiFetch('/api/exam/results/bulk-upload', { method: 'POST', body: fd });
+      if (Array.isArray(d?.errors) && d.errors.length) setUploadErrors(d.errors);
+      else { setUploadExam(null); setUploadFile(null); }
+      setSuccess(d?.message || 'Marks uploaded');
       await loadAll();
-    } catch (err) { setError(err.message || 'Failed to upload result'); }
-    finally { setSavingResult(false); }
+    } catch (err) { setError(err.message || 'Upload failed'); }
+    finally { setUploading(false); }
   };
 
   const handleDeleteExam = async (exam) => {
@@ -564,56 +648,65 @@ const ExamResultPortal = () => {
         </form>
       </Card>
 
-      {/* ── 2. Upload Result ─────────────────────────────── */}
-      <Card title="Upload Result">
-        <form onSubmit={handleUploadResult} className="space-y-4">
-          <div className="grid grid-cols-2 gap-3 sm:grid-cols-3">
-            <FL label="Exam (completed)">
-              <select className={IC} value={resultForm.examId} onChange={e => setResultForm(p => ({ ...p, examId: e.target.value, studentId: '', marks: '', grade: '' }))}>
-                <option value="">Select exam</option>
-                {completedExams.map(ex => (
-                  <option key={ex._id} value={ex._id}>
-                    {ex.title}{ex.subjectId?.name ? ` (${ex.subjectId.name})` : ex.subject ? ` (${ex.subject})` : ''}
-                  </option>
-                ))}
-              </select>
-            </FL>
-            <FL label="Student">
-              <select className={IC} value={resultForm.studentId} onChange={e => setResultForm(p => ({ ...p, studentId: e.target.value }))} disabled={!resultForm.examId || loadingStudents}>
-                <option value="">{loadingStudents ? 'Loading…' : 'Select student'}</option>
-                {resultStudents.map(s => <option key={s._id} value={s._id}>{s.name}{s.roll ? ` (Roll ${s.roll})` : ''}</option>)}
-              </select>
-            </FL>
-            <FL label="Marks">
-              <input
-                type="number" min="0"
-                max={Number.isFinite(Number(resultExam?.marks)) ? Number(resultExam?.marks) : undefined}
-                className={IC}
-                value={resultForm.marks}
-                onChange={e => setResultForm(p => ({ ...p, marks: e.target.value }))}
-                disabled={resultForm.status === 'absent'}
-                placeholder={resultExam?.marks ? `0–${resultExam.marks}` : 'Marks'}
-              />
-            </FL>
-            <FL label="Grade">
-              <input className={`${IC} cursor-not-allowed bg-[#f0f4f8]`} value={resultForm.grade} readOnly title="Auto-derived from marks" placeholder="Auto" />
-            </FL>
-            <FL label="Status">
-              <select className={IC} value={resultForm.status} onChange={e => setResultForm(p => ({ ...p, status: e.target.value, marks: e.target.value === 'absent' ? '' : p.marks }))}>
-                {RESULT_STATUS_OPTIONS.map(s => <option key={s} value={s}>{s}</option>)}
-              </select>
-            </FL>
-            <FL label="Remarks">
-              <input className={IC} value={resultForm.remarks} onChange={e => setResultForm(p => ({ ...p, remarks: e.target.value }))} placeholder="Optional" />
-            </FL>
+      {/* ── 2. Subject-wise Marks Entry ──────────────────── */}
+      <Card title="Marks Entry — My Subjects" badge={subjectGroups.length}>
+        <p className="mb-3 text-xs text-slate-500">
+          You can enter marks only for your assigned subjects, and only after the exam status is <span className="font-semibold text-emerald-700">completed</span>.
+        </p>
+        {subjectGroups.length === 0 ? (
+          <p className="py-6 text-center text-sm text-slate-400">No subjects are allocated to you for this class.</p>
+        ) : (
+          <div className="space-y-3">
+            {subjectGroups.map(sg => (
+              <div key={sg._id} className="rounded-xl border border-[#e2e8ee] bg-white">
+                <div className="flex items-center justify-between border-b border-slate-100 px-4 py-2.5">
+                  <span className="text-sm font-semibold text-slate-800">{sg.name}</span>
+                  <span className="text-[11px] text-slate-400">{sg.exams.length} exam{sg.exams.length !== 1 ? 's' : ''}</span>
+                </div>
+                {sg.exams.length === 0 ? (
+                  <p className="px-4 py-3 text-xs text-slate-400">No exams for this subject yet.</p>
+                ) : (
+                  <div className="divide-y divide-slate-50">
+                    {sg.exams.map(ex => {
+                      const st = examStatus(ex);
+                      const isDone = st === 'completed';
+                      return (
+                        <div key={ex._id} className="flex flex-wrap items-center justify-between gap-2 px-4 py-2.5">
+                          <div className="min-w-0">
+                            <div className="flex flex-wrap items-center gap-1.5">
+                              <span className="text-sm text-slate-800">{ex.title}</span>
+                              <span className={`rounded-full px-2 py-0.5 text-[10px] font-semibold capitalize ${EXAM_BADGE[st] || EXAM_BADGE.scheduled}`}>{st}</span>
+                              {ex.resultCount > 0 && (
+                                <span className="rounded-full bg-indigo-50 px-2 py-0.5 text-[10px] font-semibold text-indigo-600">{ex.resultCount} marked</span>
+                              )}
+                            </div>
+                            <p className="mt-0.5 text-xs text-slate-400">
+                              {ex.term}{ex.date ? ` · ${fDate(ex.date)}` : ''}{ex.marks ? ` · ${ex.marks} marks` : ''}
+                            </p>
+                          </div>
+                          {isDone ? (
+                            <div className="flex shrink-0 items-center gap-1.5">
+                              <button type="button" onClick={() => openMarksEntry(ex)} className="inline-flex items-center gap-1.5 rounded-lg bg-indigo-600 px-3 py-1.5 text-xs font-semibold text-white hover:bg-indigo-700 transition">
+                                <Edit2 size={12} /> {ex.resultCount ? 'Edit Marks' : 'Enter Marks'}
+                              </button>
+                              <button type="button" onClick={() => { setUploadExam(ex); setUploadFile(null); setUploadErrors([]); }} className="inline-flex items-center gap-1.5 rounded-lg border border-violet-200 bg-violet-50 px-3 py-1.5 text-xs font-semibold text-violet-700 hover:bg-violet-100 transition">
+                                <FileUp size={12} /> Bulk Upload
+                              </button>
+                            </div>
+                          ) : (
+                            <span className="inline-flex shrink-0 items-center gap-1.5 rounded-lg bg-slate-100 px-3 py-1.5 text-xs font-medium text-slate-500" title="Marks can be entered once the exam is completed">
+                              <Lock size={12} /> Locked until completed
+                            </span>
+                          )}
+                        </div>
+                      );
+                    })}
+                  </div>
+                )}
+              </div>
+            ))}
           </div>
-          <div className="flex justify-end">
-            <button type="submit" disabled={savingResult} className="inline-flex items-center gap-2 rounded-xl bg-indigo-600 px-4 py-2 text-sm font-semibold text-white hover:bg-indigo-700 disabled:opacity-60 transition">
-              <Save size={14} />
-              {savingResult ? 'Uploading…' : 'Upload & Notify'}
-            </button>
-          </div>
-        </form>
+        )}
       </Card>
 
       {/* ── 3. Exams List ────────────────────────────────── */}
@@ -790,6 +883,91 @@ const ExamResultPortal = () => {
                 <button type="button" onClick={() => setEditExam(null)} className="rounded-xl border border-slate-200 px-4 py-2 text-sm text-slate-600 hover:bg-slate-50 transition">Cancel</button>
                 <button type="submit" disabled={savingEdit} className="inline-flex items-center gap-2 rounded-xl bg-indigo-600 px-4 py-2 text-sm font-semibold text-white hover:bg-indigo-700 disabled:opacity-60 transition">
                   <Save size={13} />{savingEdit ? 'Saving…' : 'Update Exam'}
+                </button>
+              </div>
+            </form>
+          </Modal>
+        )}
+      </AnimatePresence>
+
+      {/* ── Marks Entry Modal ────────────────────────────── */}
+      <AnimatePresence>
+        {marksExam && (
+          <Modal key="marks-entry" onClose={() => !savingMarks && setMarksExam(null)}
+            title={`Enter Marks — ${marksExam.title} (${marksExam.subjectId?.name || marksExam.subject || ''})`}>
+            {loadingMarks ? (
+              <div className="flex justify-center py-10"><Loader2 className="animate-spin text-indigo-400" size={24} /></div>
+            ) : marksRows.length === 0 ? (
+              <p className="py-6 text-center text-sm text-slate-400">No students found for this exam.</p>
+            ) : (
+              <>
+                <p className="mb-3 text-xs text-slate-500">
+                  Max marks: <span className="font-semibold">{marksExam.marks || 100}</span>. Grade and pass/fail are derived automatically. Leave blank to skip a student.
+                </p>
+                <div className="space-y-1.5">
+                  {marksRows.map(r => {
+                    const st = rowStatus(r, marksExam.marks);
+                    const absent = r.status === 'absent';
+                    return (
+                      <div key={r.studentId} className="grid grid-cols-[2.5rem_1fr_5rem_auto] items-center gap-2 rounded-lg border border-slate-100 px-2 py-1.5">
+                        <span className="text-xs text-slate-400">{r.roll ?? '—'}</span>
+                        <span className="truncate text-sm text-slate-800" title={r.name}>
+                          {r.name}{r.published && <CheckCircle2 size={11} className="ml-1 inline text-emerald-500" title="Published" />}
+                        </span>
+                        <input type="number" min="0" max={marksExam.marks || undefined} disabled={absent}
+                          className={`${IC} px-2 py-1 disabled:bg-slate-100`} value={absent ? '' : r.marks}
+                          placeholder={absent ? 'AB' : '—'}
+                          onChange={e => updateMarksRow(r.studentId, { marks: e.target.value })} />
+                        <div className="flex items-center gap-1.5">
+                          <label className="flex cursor-pointer items-center gap-1 text-[11px] text-slate-500">
+                            <input type="checkbox" checked={absent} className="accent-slate-600"
+                              onChange={e => updateMarksRow(r.studentId, { status: e.target.checked ? 'absent' : '', marks: e.target.checked ? '' : r.marks })} />
+                            AB
+                          </label>
+                          <span className={`w-12 rounded-full px-1.5 py-0.5 text-center text-[10px] font-semibold capitalize ${st ? RESULT_BADGE[st] : 'text-slate-300'}`}>
+                            {st ? (st === 'absent' ? 'absent' : gradeFrom(r.marks, marksExam.marks || 100)) : '—'}
+                          </span>
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+                <div className="mt-4 flex justify-end gap-2">
+                  <button type="button" onClick={() => setMarksExam(null)} disabled={savingMarks} className="rounded-xl border border-slate-200 px-4 py-2 text-sm text-slate-600 hover:bg-slate-50">Cancel</button>
+                  <button type="button" onClick={handleSaveMarks} disabled={savingMarks} className="inline-flex items-center gap-2 rounded-xl bg-indigo-600 px-4 py-2 text-sm font-semibold text-white hover:bg-indigo-700 disabled:opacity-60 transition">
+                    <Save size={14} /> {savingMarks ? 'Saving…' : 'Save Marks'}
+                  </button>
+                </div>
+              </>
+            )}
+          </Modal>
+        )}
+      </AnimatePresence>
+
+      {/* ── Bulk Upload Modal ────────────────────────────── */}
+      <AnimatePresence>
+        {uploadExam && (
+          <Modal key="bulk-upload" onClose={() => !uploading && setUploadExam(null)}
+            title={`Bulk Upload — ${uploadExam.title} (${uploadExam.subjectId?.name || uploadExam.subject || ''})`}>
+            <form onSubmit={handleBulkUpload} className="space-y-4">
+              <ol className="list-decimal space-y-1 pl-5 text-xs text-slate-500">
+                <li>Download the template — it lists every student in this class.</li>
+                <li>Fill the <span className="font-semibold">marks</span> column (blank = absent) and optional remarks.</li>
+                <li>Upload the filled file.</li>
+              </ol>
+              <button type="button" onClick={() => downloadTemplate(uploadExam)} className="inline-flex items-center gap-2 rounded-xl border border-indigo-200 bg-indigo-50 px-4 py-2 text-sm font-semibold text-indigo-700 hover:bg-indigo-100 transition">
+                <Download size={14} /> Download Template
+              </button>
+              <input type="file" accept=".xlsx,.xls,.csv" onChange={e => setUploadFile(e.target.files?.[0] || null)}
+                className="block w-full text-sm text-slate-600 file:mr-3 file:rounded-lg file:border-0 file:bg-violet-50 file:px-3 file:py-2 file:text-sm file:font-semibold file:text-violet-700" />
+              {uploadErrors.length > 0 && (
+                <div className="max-h-40 overflow-y-auto rounded-xl border border-amber-200 bg-amber-50 p-3 text-xs text-amber-800">
+                  {uploadErrors.map((m, i) => <p key={i}>{m}</p>)}
+                </div>
+              )}
+              <div className="flex justify-end">
+                <button type="submit" disabled={uploading || !uploadFile} className="inline-flex items-center gap-2 rounded-xl bg-violet-600 px-4 py-2 text-sm font-semibold text-white hover:bg-violet-700 disabled:opacity-60 transition">
+                  <FileUp size={14} /> {uploading ? 'Uploading…' : 'Upload Marks'}
                 </button>
               </div>
             </form>

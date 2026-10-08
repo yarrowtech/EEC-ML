@@ -88,7 +88,7 @@ describe('TeacherPortal', () => {
     expect(screen.getByTestId('teacher-sidebar')).toHaveStyle({
       fontFamily: "'Poppins', -apple-system, BlinkMacSystemFont, sans-serif",
     });
-    expect(screen.getByRole('link', { name: 'Dashboard' })).toHaveClass('!bg-[#f5f3ff]');
+    expect(screen.getByRole('link', { name: 'Dashboard' })).toHaveClass('text-yellow-700');
   });
 
   test('keeps a visible brand mark when the sidebar is collapsed', async () => {

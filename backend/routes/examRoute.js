@@ -208,6 +208,19 @@ const canTeacherManageExam = (scopeKeys, examDoc) => {
   );
 };
 
+// Marks entry is stricter than exam management: a teacher may enter marks only
+// for the exact subject they are allocated to — class-wide ('*') scope does not
+// cover other teachers' subjects. Legacy exams without subjectId fall back.
+const canTeacherEnterMarks = (scopeKeys, examDoc) => {
+  if (!examDoc) return false;
+  const subjectId = toIdString(examDoc.subjectId);
+  if (!subjectId) return canTeacherManageExam(scopeKeys, examDoc);
+  const classId = toIdString(examDoc.classId);
+  const sectionId = toIdString(examDoc.sectionId);
+  if (!classId || !sectionId) return false;
+  return scopeKeys.has(buildScopeKey(classId, sectionId, subjectId));
+};
+
 const isExamCompleted = (examDoc) =>
   String(examDoc?.status || '').trim().toLowerCase() === 'completed';
 
@@ -1817,7 +1830,7 @@ router.post("/results", adminOrTeacherAuth, async (req, res) => {
                 campusId,
                 teacherId: req.user?.id || null,
             });
-            if (!canTeacherManageExam(scopeKeys, exam)) {
+            if (!canTeacherEnterMarks(scopeKeys, exam)) {
                 return res.status(403).json({ error: 'You are not allocated for this exam' });
             }
             if (!isExamCompleted(exam)) {
@@ -2119,7 +2132,7 @@ router.get("/results/exam-options", adminOrTeacherAuth, async (req, res) => {
         campusId,
         teacherId: req.user?.id || null,
       });
-      exams = exams.filter((exam) => canTeacherManageExam(scopeKeys, exam) && isExamCompleted(exam));
+      exams = exams.filter((exam) => canTeacherEnterMarks(scopeKeys, exam) && isExamCompleted(exam));
     }
 
     res.status(200).json(exams);
@@ -2154,7 +2167,7 @@ router.get("/results/exam-students", adminOrTeacherAuth, async (req, res) => {
         campusId,
         teacherId: req.user?.id || null,
       });
-      if (!canTeacherManageExam(scopeKeys, exam)) {
+      if (!canTeacherEnterMarks(scopeKeys, exam)) {
         return res.status(403).json({ error: 'You are not allocated for this exam' });
       }
       if (!isExamCompleted(exam)) {
@@ -2389,7 +2402,7 @@ router.post("/results/bulk-upload", adminOrTeacherAuth, upload.single('file'), a
                         errorCount++;
                         continue;
                     }
-                    if (isTeacherUser && !canTeacherManageExam(teacherScopeKeys, exam)) {
+                    if (isTeacherUser && !canTeacherEnterMarks(teacherScopeKeys, exam)) {
                         errors.push(`Sheet "${sheetName}", Row ${i + 2}: You are not allocated for this exam`);
                         errorCount++;
                         continue;
@@ -2640,7 +2653,7 @@ router.put("/results/:id", adminOrTeacherAuth, async (req, res) => {
         campusId,
         teacherId: req.user?.id || null,
       });
-      if (!canTeacherManageExam(scopeKeys, exam)) {
+      if (!canTeacherEnterMarks(scopeKeys, exam)) {
         return res.status(403).json({ error: 'You are not allocated for this exam' });
       }
       if (!isExamCompleted(exam)) {
@@ -2767,7 +2780,7 @@ router.delete("/results/:id", adminOrTeacherAuth, async (req, res) => {
         campusId,
         teacherId: req.user?.id || null,
       });
-      if (!canTeacherManageExam(scopeKeys, existing.examId)) {
+      if (!canTeacherEnterMarks(scopeKeys, existing.examId)) {
         return res.status(403).json({ error: 'You are not allocated for this exam' });
       }
     }

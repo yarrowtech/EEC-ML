@@ -30,9 +30,17 @@ const SupportRequest = require('../models/SupportRequest');
 const Notification = require('../models/Notification');
 const ParentMeeting = require('../models/ParentMeeting');
 const TeacherTaskAcknowledgement = require('../models/TeacherTaskAcknowledgement');
+const Admin = require('../models/Admin');
+const { createResponseCache } = require('../utils/responseCache');
 
 const { notifyParentComplaintStatus } = require('../utils/complaintNotifications');
 const router = express.Router();
+
+// Short-lived per-teacher cache so the dashboard opens instantly on revisit.
+// Any write through this router (e.g. completing a deadline) clears it; the
+// TTL bounds staleness from writes made elsewhere (attendance, assignments).
+const teacherDashboardCache = createResponseCache({ ttlMs: 30 * 1000 });
+router.use(teacherDashboardCache.invalidateOnWrite);
 
 // Teacher check-in/out, leave and expense writes feed the admin HR screens —
 // drop the admin HR response cache so those show the change immediately.
@@ -474,7 +482,7 @@ const resolveComplaintGuardianNames = async (complaints, schoolId) => {
   return byComplaint;
 };
 
-router.get('/', authTeacher, async (req, res) => {
+router.get('/', authTeacher, teacherDashboardCache.cache, async (req, res) => {
   // #swagger.tags = ['Teacher Dashboard']
   try {
     const schoolId = req.schoolId || req.user?.schoolId || null;
@@ -836,10 +844,27 @@ router.get('/', authTeacher, async (req, res) => {
     const upcomingDeadlines = await Assignment.find(assignmentFilter)
       .sort({ dueDate: 1 })
       .limit(3)
-      .select('title class subject dueDate')
+      .select('title class section subject dueDate')
+      .lean();
+
+    // Per-deadline submission progress for the dashboard's homework card.
+    const submittedByAssignment = new Map();
+    submissionItems.forEach((item) => {
+      const key = String(item.assignmentId || '');
+      if (key) submittedByAssignment.set(key, (submittedByAssignment.get(key) || 0) + 1);
+    });
+    const classStudentCount = (cls, section) => scopedStudents.filter((student) => (
+      String(student.grade || '') === String(cls || '')
+      && (!section || String(student.section || '') === String(section))
+    )).length;
+
+    // School cover photo for the greeting banner (set in admin settings).
+    const coverAdmin = await Admin.findOne({ schoolId, role: 'admin', coverImage: { $nin: [null, ''] } })
+      .select('coverImage')
       .lean();
 
     res.json({
+      school: { coverImage: coverAdmin?.coverImage || '' },
       teacher: {
         name: teacher?.name || 'Teacher',
         campusName: teacher?.campusName || null,
@@ -850,6 +875,12 @@ router.get('/', authTeacher, async (req, res) => {
         attendanceRate,
         pendingEvaluations,
         upcomingEvents: upcomingClasses.length,
+      },
+      attendanceSummary: {
+        present: attendancePresent,
+        absent: attendanceMarked - attendancePresent,
+        notMarked: scopedStudents.length - attendanceMarked,
+        total: scopedStudents.length,
       },
       upcomingClasses,
       todaysClasses,
@@ -862,7 +893,10 @@ router.get('/', authTeacher, async (req, res) => {
         title: item.title,
         class: item.class || '',
         subject: item.subject || '',
+        section: item.section || '',
         dueDate: item.dueDate,
+        submittedCount: submittedByAssignment.get(String(item._id)) || 0,
+        totalStudents: classStudentCount(item.class, item.section),
       })),
     });
   } catch (err) {
@@ -900,7 +934,7 @@ router.post('/deadlines/:assignmentId/complete', authTeacher, async (req, res) =
 });
 
 // Get teacher allocations (classes/sections/subjects)
-router.get('/allocations', authTeacher, async (req, res) => {
+router.get('/allocations', authTeacher, teacherDashboardCache.cache, async (req, res) => {
   try {
     const isTeacherUser =
       String(req.user?.userType || '').toLowerCase() === 'teacher' ||
