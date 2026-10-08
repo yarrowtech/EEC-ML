@@ -10,6 +10,9 @@ const TeacherAllocation = require('../models/TeacherAllocation');
 const InterventionLog = require('../models/InterventionLog');
 const MasteryScore = require('../models/MasteryScore');
 const PracticeAttempt = require('../models/PracticeAttempt');
+const TeacherUser = require('../models/TeacherUser');
+const NotificationService = require('../utils/notificationService');
+const { computeSessionAttendance, resolveSessionWindow, loadHolidayKeys } = require('../utils/sessionAttendance');
 const PracticeQuestion = require('../models/PracticeQuestion');
 const {
   buildTeacherAllocationScope,
@@ -86,16 +89,28 @@ const buildScopedStudentFilter = (schoolId, scope, { className, section } = {}) 
 
 // ── Compute composite at-risk score for a student ────────────────────────────
 // Factors: attendance %, exam score avg, score trend (declining?), submission rate
-const computeRiskScore = (student, examResults = []) => {
-  const attendance = Array.isArray(student.attendance) ? student.attendance : [];
-  const totalDays = attendance.length;
-  const presentDays = attendance.filter((a) => a.status === 'present').length;
-  const attPct = totalDays > 0 ? Math.round((presentDays / totalDays) * 100) : 100;
+// sessionAttendance is the day-based academic-year summary from
+// utils/sessionAttendance (present days ÷ school days, holidays/Sundays excluded),
+// the same figure the parent and student dashboards show.
+const computeRiskScore = (student, examResults = [], sessionAttendance = null) => {
+  let attPct;
+  if (sessionAttendance) {
+    attPct = sessionAttendance.schoolDays > 0 ? sessionAttendance.percentage : null;
+  } else {
+    const attendance = Array.isArray(student.attendance) ? student.attendance : [];
+    const presentDays = attendance.filter((a) => a.status === 'present').length;
+    attPct = attendance.length > 0 ? Math.round((presentDays / attendance.length) * 100) : null;
+  }
 
-  // Avg exam score (last 6)
+  // Exam marks as a percentage of each exam's full marks (raw marks are not
+  // comparable across a 20-mark and a 100-mark paper).
+  const pctOf = (r) => {
+    const max = Number(r.examId?.marks) || 100;
+    return Math.max(0, Math.min(100, ((Number(r.marks) || 0) / max) * 100));
+  };
   const recent = examResults.slice(-6);
   const avgScore = recent.length
-    ? Math.round(recent.reduce((s, r) => s + (Number(r.marks) || 0), 0) / recent.length)
+    ? Math.round(recent.reduce((s, r) => s + pctOf(r), 0) / recent.length)
     : null;
 
   // Score trend: compare first half vs second half (declining = risk)
@@ -103,14 +118,15 @@ const computeRiskScore = (student, examResults = []) => {
   if (recent.length >= 4) {
     const firstHalf = recent.slice(0, Math.floor(recent.length / 2));
     const secondHalf = recent.slice(Math.floor(recent.length / 2));
-    const avgFirst = firstHalf.reduce((s, r) => s + (Number(r.marks) || 0), 0) / firstHalf.length;
-    const avgSecond = secondHalf.reduce((s, r) => s + (Number(r.marks) || 0), 0) / secondHalf.length;
+    const avgFirst = firstHalf.reduce((s, r) => s + pctOf(r), 0) / firstHalf.length;
+    const avgSecond = secondHalf.reduce((s, r) => s + pctOf(r), 0) / secondHalf.length;
     scoreTrend = avgSecond - avgFirst;
   }
 
   // Composite risk score (0-100, higher = more at risk)
   let risk = 0;
-  if (attPct < 60)       risk += 35;
+  if (attPct == null)    risk += 0; // no school days yet
+  else if (attPct < 60)  risk += 35;
   else if (attPct < 75)  risk += 20;
   else if (attPct < 85)  risk += 8;
 
@@ -140,7 +156,7 @@ router.get('/at-risk', authTeacher, teacherAnalyticsCache.cache, async (req, res
     const filter = buildScopedStudentFilter(schoolId, scope, { className, section });
 
     const students = await StudentUser.find(filter)
-      .select('name roll grade section attendance')
+      .select('name roll grade section attendance profilePic')
       .lean();
 
     // Get exam results for all these students in one query
@@ -162,17 +178,48 @@ router.get('/at-risk', authTeacher, teacherAnalyticsCache.cache, async (req, res
       resultsByStudent[sid].push(r);
     });
 
+    // Day-based academic-year attendance per student (window + holidays loaded once).
+    const sessionWindow = await resolveSessionWindow(schoolId);
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+    const holidayKeys = await loadHolidayKeys({
+      schoolId,
+      campusId: req.campusId || null,
+      start: sessionWindow.start,
+      end: sessionWindow.end < today ? sessionWindow.end : today,
+    });
+    const attendanceById = new Map(await Promise.all(students.map(async (student) => [
+      String(student._id),
+      await computeSessionAttendance({
+        attendance: Array.isArray(student.attendance) ? student.attendance : [],
+        schoolId,
+        window: sessionWindow,
+        holidayKeys,
+      }),
+    ])));
+
     const atRiskStudents = students
       .map((student) => {
         const results = resultsByStudent[String(student._id)] || [];
-        const metrics = computeRiskScore(student, results);
+        const attendance = attendanceById.get(String(student._id));
+        const metrics = computeRiskScore(student, results, attendance);
         return {
           studentId: student._id,
           name: student.name,
           roll: student.roll,
           grade: student.grade,
           section: student.section,
+          profilePic: typeof student.profilePic === 'string'
+            ? student.profilePic
+            : (student.profilePic?.secure_url || student.profilePic?.url || null),
           ...metrics,
+          attendanceDays: attendance ? {
+            present: attendance.presentDays,
+            absent: attendance.absentDays,
+            schoolDays: attendance.schoolDays,
+            notMarked: Math.max(0, attendance.schoolDays - attendance.markedDays),
+            sessionName: attendance.sessionName || null,
+          } : null,
           recentScores: results.slice(-3).map((r) => ({
             subject: r.examId?.subject || '',
             marks: r.marks,
@@ -320,6 +367,31 @@ router.post('/interventions', authTeacher, async (req, res) => {
       })),
       status: 'planned',
     });
+    // Tell the student when a session is scheduled (non-blocking for the save).
+    if (log.scheduledDate) {
+      try {
+        const teacher = await TeacherUser.findById(teacherId).select('name').lean();
+        const when = log.scheduledDate.toLocaleString('en-IN', {
+          timeZone: 'Asia/Kolkata', day: 'numeric', month: 'short', year: 'numeric', hour: 'numeric', minute: '2-digit', hour12: true,
+        });
+        await NotificationService.createNotification({
+          schoolId,
+          campusId: req.campusId || null,
+          title: 'Intervention session scheduled',
+          message: `${teacher?.name || 'Your teacher'} has scheduled an intervention session for you on ${when}.${action ? ` Plan: ${action}.` : ''}`,
+          audience: 'Specific',
+          type: 'learning',
+          priority: 'high',
+          category: 'academic',
+          targetUserIds: [studentId],
+          targetRole: 'student',
+          createdBy: teacherId,
+          relatedEntity: { entityType: 'at_risk', entityId: log._id },
+        });
+      } catch (notifyErr) {
+        req.log?.warn?.({ err: notifyErr }, 'intervention notification failed');
+      }
+    }
     return res.status(201).json({ success: true, data: log });
   } catch (err) {
     return res.status(500).json({ error: err.message });
@@ -350,6 +422,19 @@ router.get('/interventions', authTeacher, teacherAnalyticsCache.cache, async (re
 });
 
 // ── PUT /api/teacher-analytics/interventions/:id/outcome ─────────────────────
+// ── DELETE /api/teacher-analytics/interventions/:id ─ teacher removes their own log
+router.delete('/interventions/:id', authTeacher, async (req, res) => {
+  try {
+    const teacherId = req.user?.id || req.teacher?.id;
+    if (!mongoose.Types.ObjectId.isValid(req.params.id)) return res.status(400).json({ error: 'Invalid id' });
+    const deleted = await InterventionLog.findOneAndDelete({ _id: req.params.id, schoolId: req.schoolId, teacherId });
+    if (!deleted) return res.status(404).json({ error: 'Intervention not found' });
+    return res.json({ success: true });
+  } catch (err) {
+    return res.status(500).json({ error: err.message });
+  }
+});
+
 router.put('/interventions/:id/outcome', authTeacher, async (req, res) => {
   try {
     const schoolId = req.schoolId;
@@ -463,7 +548,9 @@ router.get('/class-gaps', authTeacher, teacherAnalyticsCache.cache, async (req, 
       .filter((t) => t.gapSeverity !== 'low')
       .sort((a, b) => a.avgMastery - b.avgMastery);
 
-    return res.json({ success: true, data: gaps, totalStudents });
+    // Topics at or above 75% — lets the UI show the full mastery distribution.
+    const healthyTopics = Object.keys(topicMap).length - gaps.length;
+    return res.json({ success: true, data: gaps, totalStudents, totalTopics: Object.keys(topicMap).length, healthyTopics });
   } catch (err) {
     return res.status(500).json({ error: err.message });
   }
