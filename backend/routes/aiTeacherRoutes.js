@@ -4,6 +4,7 @@ const axios = require('axios');
 const mongoose = require('mongoose');
 const authTeacher = require('../middleware/authTeacher');
 const StudentUser = require('../models/StudentUser');
+const { summarizeStudentAttendance, attendancePercentOf } = require('../utils/sessionAttendance');
 const ExamResult = require('../models/ExamResult');
 const MasteryScore = require('../models/MasteryScore');
 const ClassModel = require('../models/Class');
@@ -66,7 +67,7 @@ const requireStudentScope = async (req, res, studentId) => {
     res.status(401).json({ error: 'Unauthorized' });
     return null;
   }
-  const student = await StudentUser.findOne({ _id: studentId, schoolId }).select('name grade section attendance').lean();
+  const student = await StudentUser.findOne({ _id: studentId, schoolId }).select('name grade section attendance attendanceSummary').lean();
   if (!student) {
     res.status(404).json({ error: 'Student not found' });
     return null;
@@ -420,7 +421,7 @@ router.post('/class-summary', authTeacher, async (req, res) => {
     if (className) filter.$or = [{ grade: className }, { grade: `Class ${className}` }];
     if (section) filter.section = section;
 
-    const students = await StudentUser.find(filter).select('_id name grade section attendance').lean();
+    const students = await StudentUser.find(filter).select('_id name grade section attendance attendanceSummary').lean();
     const studentIds = students.map((s) => s._id);
 
     const results = await ExamResult.find({
@@ -434,10 +435,9 @@ router.post('/class-summary', authTeacher, async (req, res) => {
 
     // Compute class averages
     const totalStudents = students.length;
-    const attPcts = students.map((s) => {
-      const att = s.attendance || [];
-      return att.length > 0 ? Math.round((att.filter((a) => a.status === 'present').length / att.length) * 100) : 100;
-    });
+    // Academic-year attendance (present days ÷ school days), stored per student.
+    const attSummaries = await summarizeStudentAttendance(students, { schoolId, campusId: req.campusId || null });
+    const attPcts = students.map((s) => attendancePercentOf(attSummaries, s._id)).filter((v) => v != null);
     const avgAtt = attPcts.length ? Math.round(attPcts.reduce((a, b) => a + b, 0) / attPcts.length) : 0;
     const below75 = attPcts.filter((p) => p < 75).length;
 
@@ -500,8 +500,8 @@ router.post('/parent-report', authTeacher, async (req, res) => {
       .limit(20)
       .lean();
 
-    const att = student?.attendance || [];
-    const attPct = att.length > 0 ? Math.round((att.filter((a) => a.status === 'present').length / att.length) * 100) : 100;
+    const attSummaries = student ? await summarizeStudentAttendance([student], { schoolId, campusId: req.campusId || null }) : new Map();
+    const attPct = student ? (attendancePercentOf(attSummaries, student._id) ?? 100) : 100;
 
     const subjectMap = {};
     results.forEach((r) => {
@@ -1165,17 +1165,15 @@ router.post('/progress-summary', authTeacher, async (req, res) => {
     if (!(await requireStudentScope(req, res, studentId))) return;
 
     const [student, results, mastery] = await Promise.all([
-      StudentUser.findById(studentId).select('name grade section attendance').lean(),
+      StudentUser.findById(studentId).select('name grade section attendance attendanceSummary').lean(),
       ExamResult.find({ schoolId, studentId, published: true })
         .populate('examId', 'subject marks date')
         .sort({ createdAt: -1 }).limit(20).lean(),
       MasteryScore.find({ studentId, schoolId }).sort({ score: 1 }).lean(),
     ]);
 
-    const att = student?.attendance || [];
-    const attPct = att.length > 0
-      ? Math.round((att.filter((a) => a.status === 'present').length / att.length) * 100)
-      : 100;
+    const attSummaries = student ? await summarizeStudentAttendance([student], { schoolId, campusId: req.campusId || null }) : new Map();
+    const attPct = student ? (attendancePercentOf(attSummaries, student._id) ?? 100) : 100;
 
     const subjectMap = {};
     results.forEach((r) => {
@@ -1365,7 +1363,7 @@ router.post('/cohort-report', authTeacher, async (req, res) => {
     const filter = { schoolId };
     if (className) filter.grade = { $regex: `^${className}$`, $options: 'i' };
     if (section) filter.section = { $regex: `^${section}$`, $options: 'i' };
-    const students = await StudentUserModel.find(filter).select('_id name grade section attendance').lean();
+    const students = await StudentUserModel.find(filter).select('_id name grade section attendance attendanceSummary').lean();
     const studentIds = students.map((s) => s._id);
     const since = new Date(Date.now() - 30 * 86400000);
 
@@ -1387,10 +1385,10 @@ router.post('/cohort-report', authTeacher, async (req, res) => {
       .join('\n');
 
     const weakTopics = [...new Set(masteryLow.map((m) => m.topicTitle))].slice(0, 5).join(', ');
-    const attArr = students.flatMap((s) => s.attendance || []);
-    const attPct = attArr.length > 0
-      ? Math.round((attArr.filter((a) => a.status === 'present').length / attArr.length) * 100)
-      : 100;
+    // Class academic-year attendance: total present days ÷ total school days.
+    const attSummaries = await summarizeStudentAttendance(students, { schoolId, campusId: req.campusId || null });
+    const attTotals = [...attSummaries.values()].reduce((t, v) => ({ p: t.p + (v.presentDays || 0), d: t.d + (v.schoolDays || 0) }), { p: 0, d: 0 });
+    const attPct = attTotals.d > 0 ? Math.round((attTotals.p / attTotals.d) * 100) : 100;
 
     const context = [
       `Class: Grade ${className}${section ? ' Section ' + section : ''} | ${students.length} students | Period: last 30 days`,

@@ -31,6 +31,7 @@ async function buildClassScores(students, schoolId) {
         roll: s.roll,
         grade: s.grade,
         section: s.section,
+        profilePic: typeof s.profilePic === 'string' ? s.profilePic : (s.profilePic?.secure_url || s.profilePic?.url || null),
         atRisk: scores.atRisk,
         engagement: scores.engagement,
         masteryAvg: scores.masteryAvg,

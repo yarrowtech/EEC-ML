@@ -21,13 +21,18 @@ router.get('/profile', authStudent, async (req, res) => {
 router.get('/class', authTeacher, teacherAnalyticsCache.cache, async (req, res) => {
   try {
     const students = await scopedStudents(req);
-    const summary = await getClassHelpSeekingSummary({ schoolId: req.schoolId, studentIds: students.map((s) => s._id) });
+    const days = Math.min(Math.max(Number(req.query.days) || 30, 1), 365);
+    const summary = await getClassHelpSeekingSummary({ schoolId: req.schoolId, studentIds: students.map((s) => s._id), sinceDays: days });
     const byId = new Map(students.map((s) => [String(s._id), s]));
-    const data = summary.map((row) => ({
-      ...row,
-      name: byId.get(String(row.studentId))?.name,
-      roll: byId.get(String(row.studentId))?.roll,
-    }));
+    const data = summary.map((row) => {
+      const st = byId.get(String(row.studentId));
+      return {
+        ...row,
+        name: st?.name,
+        roll: st?.roll,
+        profilePic: typeof st?.profilePic === 'string' ? st.profilePic : (st?.profilePic?.secure_url || st?.profilePic?.url || null),
+      };
+    });
     return res.json({ success: true, data });
   } catch (err) {
     return res.status(err.status || 500).json({ success: false, error: err.message });

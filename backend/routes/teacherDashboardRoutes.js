@@ -502,7 +502,7 @@ router.get('/', authTeacher, teacherDashboardCache.cache, async (req, res) => {
     }
     const scope = await buildTeacherScope({ schoolId, campusId, teacherId });
     const students = await StudentUser.find(studentFilter)
-      .select('name grade section attendance')
+      .select('name grade section attendance attendanceSummary')
       .lean();
     const scopedStudents = students.filter((student) => studentIsWithinScope(student, scope));
     const studentIds = scopedStudents.map((student) => student._id);
@@ -835,28 +835,55 @@ router.get('/', authTeacher, teacherDashboardCache.cache, async (req, res) => {
       schoolId,
       teacherId,
       status: 'active',
-      dueDate: { $gte: today },
+      // Upcoming work plus the last 14 days of overdue work, so assignments that
+      // still have missing or ungraded submissions stay visible after the due date.
+      dueDate: { $gte: new Date(todayStart.getTime() - 14 * 24 * 60 * 60 * 1000) },
       ...(completedAssignmentIds.length ? { _id: { $nin: completedAssignmentIds } } : {}),
     };
     if (campusId) {
       assignmentFilter.campusId = campusId;
     }
-    const upcomingDeadlines = await Assignment.find(assignmentFilter)
+    const deadlineCandidates = await Assignment.find(assignmentFilter)
       .sort({ dueDate: 1 })
-      .limit(3)
+      .limit(50)
       .select('title class section subject dueDate')
       .lean();
 
     // Per-deadline submission progress for the dashboard's homework card.
     const submittedByAssignment = new Map();
+    const toGradeByAssignment = new Map();
     submissionItems.forEach((item) => {
       const key = String(item.assignmentId || '');
-      if (key) submittedByAssignment.set(key, (submittedByAssignment.get(key) || 0) + 1);
+      if (!key) return;
+      submittedByAssignment.set(key, (submittedByAssignment.get(key) || 0) + 1);
+      if (item.status === 'submitted' || item.status === 'late') {
+        toGradeByAssignment.set(key, (toGradeByAssignment.get(key) || 0) + 1);
+      }
     });
     const classStudentCount = (cls, section) => scopedStudents.filter((student) => (
       String(student.grade || '') === String(cls || '')
       && (!section || String(student.section || '') === String(section))
     )).length;
+
+    // Keep upcoming items, and overdue items only while something is left to do
+    // (submissions to grade or students who have not submitted). Overdue first.
+    const upcomingDeadlines = deadlineCandidates
+      .map((item) => {
+        const id = String(item._id);
+        const total = classStudentCount(item.class, item.section);
+        const submitted = submittedByAssignment.get(id) || 0;
+        return {
+          item,
+          id,
+          total,
+          submitted,
+          toGrade: toGradeByAssignment.get(id) || 0,
+          overdue: new Date(item.dueDate) < todayStart,
+        };
+      })
+      .filter((d) => !d.overdue || d.toGrade > 0 || d.submitted < d.total)
+      .sort((a, b) => (Number(b.overdue) - Number(a.overdue)) || (new Date(a.item.dueDate) - new Date(b.item.dueDate)))
+      .slice(0, 5);
 
     // School cover photo for the greeting banner (set in admin settings).
     const coverAdmin = await Admin.findOne({ schoolId, role: 'admin', coverImage: { $nin: [null, ''] } })
@@ -888,15 +915,17 @@ router.get('/', authTeacher, teacherDashboardCache.cache, async (req, res) => {
       recentActivities,
       performanceMetrics,
       topStudents,
-      upcomingDeadlines: upcomingDeadlines.map((item) => ({
-        id: String(item._id),
+      upcomingDeadlines: upcomingDeadlines.map(({ item, id, total, submitted, toGrade, overdue }) => ({
+        id,
         title: item.title,
         class: item.class || '',
         subject: item.subject || '',
         section: item.section || '',
         dueDate: item.dueDate,
-        submittedCount: submittedByAssignment.get(String(item._id)) || 0,
-        totalStudents: classStudentCount(item.class, item.section),
+        submittedCount: submitted,
+        totalStudents: total,
+        toGradeCount: toGrade,
+        overdue,
       })),
     });
   } catch (err) {
@@ -1110,7 +1139,7 @@ router.get('/students', authTeacher, async (req, res) => {
 
     // Fetch students
     const students = await StudentUser.find(studentFilter)
-      .select('name username rollNumber grade section className sectionName campusId campusName attendance profilePic')
+      .select('name username rollNumber grade section className sectionName campusId campusName attendance attendanceSummary profilePic')
       .sort({ grade: 1, section: 1, rollNumber: 1 })
       .lean();
 

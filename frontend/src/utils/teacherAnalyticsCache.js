@@ -6,7 +6,7 @@
 // The backend also caches these reads (teacherAnalyticsCache, 60s).
 import { readCache, writeCache, invalidateCache } from './swrCache';
 
-const PREFIX = 'teacher-analytics:v4:';
+const PREFIX = 'teacher-analytics:v14:';
 const FRESH_MS = 60 * 1000;
 const MAX_AGE_MS = 10 * 60 * 1000;
 const inflight = new Map();

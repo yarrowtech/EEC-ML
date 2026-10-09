@@ -271,6 +271,24 @@ const studentUserSchema = new mongoose.Schema({
   // Embedded attendance array
   attendance: [attendanceSchema],
 
+  // Stored academic-year attendance (utils/sessionAttendance): present days ÷
+  // school days of the active session. Refreshed whenever attendance is saved
+  // and lazily once per day by summarizeStudentAttendance(), because school
+  // days keep growing even when nothing is marked.
+  attendanceSummary: {
+    sessionName: { type: String, default: '' },
+    sessionStart: { type: Date, default: null },
+    sessionEnd: { type: Date, default: null },
+    schoolDays: { type: Number, default: 0 },
+    markedDays: { type: Number, default: 0 },
+    presentDays: { type: Number, default: 0 },
+    absentDays: { type: Number, default: 0 },
+    notMarkedDays: { type: Number, default: 0 },
+    percentage: { type: Number, default: null },
+    computedFor: { type: String, default: '' }, // YYYY-MM-DD the counts are valid for
+    updatedAt: { type: Date, default: null },
+  },
+
   achievements: [{
     title: { type: String, required: true },
     category: { type: String, enum: ['Academic', 'Extra-Curricular', 'Sports', 'Other'], default: 'Academic' },
@@ -304,6 +322,13 @@ studentUserSchema.pre('save', async function (next) {
       payload[field] = this[field];
     }
   });
+  if (this.isModified('attendance') && this.schoolId) {
+    // Lazy require: sessionAttendance loads other models.
+    const { buildAttendanceSummary } = require('../utils/sessionAttendance');
+    this.attendanceSummary = await buildAttendanceSummary({
+      attendance: this.attendance || [], schoolId: this.schoolId, campusId: this.campusId || null,
+    });
+  }
   assertEncryptionConfigured(payload);
   const key = getEncryptionKey();
   STUDENT_SENSITIVE_FIELDS.forEach((field) => {

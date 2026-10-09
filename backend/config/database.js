@@ -138,6 +138,7 @@ const startSchedulers = () => {
   if (process.env.NODE_ENV !== 'test') {
     const { startSchedulers: startSpacedRepSchedulers } = require('../schedulers/spacedRepetitionCron');
     startSpacedRepSchedulers();
+    require('../schedulers/attendanceSummaryCron').startAttendanceSummaryScheduler();
   }
   const runSpacedRepNudges = () => {
     sendSpacedRepetitionNudges(null).catch((err) =>

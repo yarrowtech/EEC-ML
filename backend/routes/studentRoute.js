@@ -1,5 +1,5 @@
 const express = require('express');
-const { computeSessionAttendance } = require('../utils/sessionAttendance');
+const { computeSessionAttendance, summarizeStudentAttendance } = require('../utils/sessionAttendance');
 const router = express.Router();
 const mongoose = require('mongoose');
 const StudentUser = require('../models/StudentUser');
@@ -1897,7 +1897,7 @@ router.get('/attendance', authStudent, async (req, res) => {
       targetId: req.user?.id,
     });
     const student = await StudentUser.findById(req.user.id)
-      .select('attendance name grade section')
+      .select('attendance attendanceSummary name grade section')
       .lean();
 
     if (!student) {
@@ -1913,11 +1913,14 @@ router.get('/attendance', authStudent, async (req, res) => {
     }
 
     const attendance = student.attendance || [];
-    const totalClasses = attendance.length;
-    const presentDays = attendance.filter(a => a.status === 'present').length;
-    const absentDays = attendance.filter(a => a.status === 'absent').length;
+    // Academic-year basis: present days ÷ school days of the active session.
+    const yearSummary = (await summarizeStudentAttendance([student], { schoolId: req.schoolId, campusId: req.campusId || null }))
+      .get(String(student._id)) || {};
+    const totalClasses = yearSummary.schoolDays || 0;
+    const presentDays = yearSummary.presentDays || 0;
+    const absentDays = yearSummary.absentDays || 0;
     const leaveDays = attendance.filter(a => a.status === 'leave').length;
-    const attendancePercentage = totalClasses > 0 ? Math.round((presentDays / totalClasses) * 100) : 0;
+    const attendancePercentage = yearSummary.percentage ?? 0;
 
     res.json({
       attendance: attendance.sort((a, b) => new Date(b.date) - new Date(a.date)),
@@ -1926,6 +1929,8 @@ router.get('/attendance', authStudent, async (req, res) => {
         presentDays,
         absentDays,
         leaveDays,
+        notMarkedDays: yearSummary.notMarkedDays || 0,
+        sessionName: yearSummary.sessionName || '',
         attendancePercentage
       }
     });
@@ -2653,13 +2658,14 @@ router.get('/system-badges', authStudent, async (req, res) => {
 
     const [masteryDocs, student] = await Promise.all([
       MasteryScore.find({ studentId }).lean(),
-      StudentUser.findById(studentId).select('attendance achievements').lean(),
+      StudentUser.findById(studentId).select('attendance attendanceSummary achievements').lean(),
     ]);
 
     const masteredCount = masteryDocs.filter((m) => m.score >= 75).length;
-    const totalAttendance = student?.attendance?.length || 0;
-    const presentDays = student?.attendance?.filter((a) => a.status === 'present').length || 0;
-    const attendancePct = totalAttendance > 0 ? Math.round((presentDays / totalAttendance) * 100) : 0;
+    const attendancePct = student
+      ? ((await summarizeStudentAttendance([{ ...student, _id: studentId }], { schoolId, campusId: req.campusId || null }))
+        .get(String(studentId))?.percentage ?? 0)
+      : 0;
     const teacherAwardsCount = Array.isArray(student?.achievements) ? student.achievements.length : 0;
 
     const SYSTEM_BADGE_DEFS = [

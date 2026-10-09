@@ -104,4 +104,73 @@ const computeSessionAttendance = async ({ attendance = [], schoolId, campusId = 
   };
 };
 
-module.exports = { computeSessionAttendance, resolveSessionWindow, loadHolidayKeys };
+// Shape stored on StudentUser.attendanceSummary.
+const toStoredSummary = (summary) => ({
+  sessionName: summary.sessionName || '',
+  sessionStart: summary.startDate || null,
+  sessionEnd: summary.endDate || null,
+  schoolDays: summary.schoolDays,
+  markedDays: summary.markedDays,
+  presentDays: summary.presentDays,
+  absentDays: summary.absentDays,
+  notMarkedDays: Math.max(0, summary.schoolDays - summary.markedDays),
+  percentage: summary.schoolDays > 0 ? summary.percentage : null,
+  computedFor: dayKey(new Date()),
+  updatedAt: new Date(),
+});
+
+// Fresh stored summary for one student's attendance array (used by the save hook).
+const buildAttendanceSummary = async ({ attendance = [], schoolId, campusId = null, window, holidayKeys }) => (
+  toStoredSummary(await computeSessionAttendance({ attendance, schoolId, campusId, window, holidayKeys }))
+);
+
+/**
+ * Academic-year attendance for many students of one school — the single source
+ * every screen should use. Reuses each student's stored summary when it was
+ * computed today for the same session; otherwise recomputes (window + holidays
+ * loaded once) and writes the refreshed summary back in one bulk write.
+ * Students must be loaded with `attendance` and `attendanceSummary`.
+ * @returns {Promise<Map<string, object>>} studentId -> stored-summary shape
+ */
+const summarizeStudentAttendance = async (students = [], { schoolId, campusId = null, awaitWrite = false } = {}) => {
+  const result = new Map();
+  if (!students.length) return result;
+  const window = await resolveSessionWindow(schoolId);
+  const today = dayKey(new Date());
+  const sessionStart = window.start.getTime();
+  const stale = students.filter((st) => {
+    const sum = st.attendanceSummary;
+    const fresh = sum && sum.computedFor === today && sum.sessionStart && new Date(sum.sessionStart).getTime() === sessionStart;
+    if (fresh) result.set(String(st._id), sum);
+    return !fresh;
+  });
+  if (!stale.length) return result;
+
+  const until = window.end < startOfDay(new Date()) ? window.end : startOfDay(new Date());
+  const holidayKeys = await loadHolidayKeys({ schoolId, campusId, start: window.start, end: until });
+  const writes = [];
+  for (const st of stale) {
+    // eslint-disable-next-line no-await-in-loop -- window + holidays preloaded, pure CPU
+    const summary = await buildAttendanceSummary({
+      attendance: Array.isArray(st.attendance) ? st.attendance : [], schoolId, window, holidayKeys,
+    });
+    result.set(String(st._id), summary);
+    writes.push({ updateOne: { filter: { _id: st._id }, update: { $set: { attendanceSummary: summary } } } });
+  }
+  if (writes.length) {
+    // Best-effort persistence; reads never depend on it succeeding. Jobs pass
+    // awaitWrite so the refresh is finished before they report.
+    const write = require('../models/StudentUser').bulkWrite(writes, { ordered: false });
+    if (awaitWrite) await write;
+    else write.catch(() => {});
+  }
+  return result;
+};
+
+// Convenience: percentage (or null when no school days yet) for one student.
+const attendancePercentOf = (summaryMap, studentId) => summaryMap.get(String(studentId))?.percentage ?? null;
+
+module.exports = {
+  computeSessionAttendance, resolveSessionWindow, loadHolidayKeys,
+  buildAttendanceSummary, summarizeStudentAttendance, attendancePercentOf,
+};

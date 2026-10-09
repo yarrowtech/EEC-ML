@@ -1,5 +1,7 @@
 const express = require('express');
-const { computeSessionAttendance, resolveSessionWindow, loadHolidayKeys } = require('../utils/sessionAttendance');
+const {
+  computeSessionAttendance, resolveSessionWindow, loadHolidayKeys, summarizeStudentAttendance,
+} = require('../utils/sessionAttendance');
 const router = express.Router();
 const { parentAttendanceCache } = require('../utils/responseCache');
 // Any write here clears the parent attendance screen's response cache.
@@ -81,6 +83,20 @@ const findAttendanceIndexByDateAndSubject = (attendance = [], dateValue, subject
   });
 };
 
+// Academic-year summary (stored StudentUser.attendanceSummary / sessionAttendance)
+// in the legacy { totalClasses, presentDays, absentDays, attendancePercentage }
+// shape the screens already read. totalClasses = school days in the session.
+const sessionSummaryToLegacy = (sum) => ({
+  totalClasses: sum.schoolDays || 0,
+  presentDays: sum.presentDays || 0,
+  absentDays: sum.absentDays || 0,
+  notMarkedDays: sum.notMarkedDays ?? Math.max(0, (sum.schoolDays || 0) - (sum.markedDays || 0)),
+  attendancePercentage: sum.percentage ?? 0,
+  sessionName: sum.sessionName || '',
+  basis: 'academic_year',
+});
+
+// Plain count over the given records — used for a single month's view only.
 const buildSummary = (attendance = []) => {
   const totalClasses = attendance.length;
   const presentDays = attendance.filter((item) => item.status === 'present').length;
@@ -752,7 +768,7 @@ const notifyParentsForLowAttendance = async ({ schoolId, campusId, studentIds = 
   const studentFilter = { schoolId, _id: { $in: uniqueStudentIds } };
   if (campusId) studentFilter.campusId = campusId;
   const students = await StudentUser.find(studentFilter)
-    .select('name grade section attendance')
+    .select('name grade section attendance attendanceSummary')
     .lean();
   if (!students.length) return;
 
@@ -796,8 +812,12 @@ const notifyParentsForLowAttendance = async ({ schoolId, campusId, studentIds = 
   const windowStart = new Date(Date.now() - (LOW_ATTENDANCE_NOTIFICATION_WINDOW_DAYS * 24 * 60 * 60 * 1000));
   const flaggedStudents = [];
 
+  const yearSummaries = await summarizeStudentAttendance(students, { schoolId, campusId: campusId || null });
   for (const student of students) {
-    const summary = buildSummary(Array.isArray(student?.attendance) ? student.attendance : []);
+    const yearSummary = yearSummaries.get(String(student._id));
+    if (!yearSummary || !yearSummary.schoolDays) continue;
+    if (yearSummary.notMarkedDays > yearSummary.schoolDays * 0.2) continue;
+    const summary = sessionSummaryToLegacy(yearSummary);
     if (summary.attendancePercentage >= LOW_ATTENDANCE_THRESHOLD) continue;
 
     const targetParentIds = [...(parentIdsByStudentId.get(String(student._id)) || new Set())];
@@ -812,7 +832,7 @@ const notifyParentsForLowAttendance = async ({ schoolId, campusId, studentIds = 
     }).lean();
     if (existing) continue;
 
-    const attendanceMessage = `${student.name || 'Student'} attendance is ${summary.attendancePercentage}% (${summary.presentDays}/${summary.totalClasses} classes). This is below 75%.`;
+    const attendanceMessage = `${student.name || 'Student'} attendance this academic year is ${summary.attendancePercentage}% (${summary.presentDays}/${summary.totalClasses} school days). This is below 75%.`;
     const toInsert = [
       {
         schoolId,
@@ -1003,7 +1023,9 @@ const buildStudentAttendancePayload = (
   });
 
   const monthlySummary = buildSummary(monthEntries);
-  const overallSummary = buildSummary(attendance);
+  const overallSummary = student?.attendanceSummary?.schoolDays != null && student?.attendanceSummary?.computedFor
+    ? sessionSummaryToLegacy(student.attendanceSummary)
+    : buildSummary(attendance);
   const dayStart = startOfDay(selectedDate);
   const dayEnd = endOfDay(selectedDate);
   const selectedRecord = attendance.find((entry) => {
@@ -1097,7 +1119,7 @@ router.get('/teacher/students', authTeacher, async (req, res) => {
     const activeSessionName = await resolveActiveAcademicSessionName(schoolId);
 
     const scopeStudents = await StudentUser.find(baseFilter)
-      .select('name username studentCode grade section roll attendance admissionDate createdAt profilePic')
+      .select('name username studentCode grade section roll attendance attendanceSummary admissionDate createdAt profilePic')
       .lean();
 
     let scopedStudents = scopeStudents;
@@ -1630,7 +1652,7 @@ router.get('/parent/children', authParent, parentAttendanceCache.cache, async (r
         ...studentFilter,
         _id: { $in: parent.childrenIds },
       })
-        .select('name grade section roll studentCode admissionNumber username academicYear attendance profilePic')
+        .select('name grade section roll studentCode admissionNumber username academicYear attendance attendanceSummary profilePic')
         .lean();
     }
 
@@ -1641,7 +1663,7 @@ router.get('/parent/children', authParent, parentAttendanceCache.cache, async (r
           ...studentFilter,
           name: { $in: validNames },
         })
-          .select('name grade section roll studentCode admissionNumber username academicYear attendance profilePic')
+          .select('name grade section roll studentCode admissionNumber username academicYear attendance attendanceSummary profilePic')
           .lean();
       }
     }
@@ -1691,7 +1713,10 @@ router.get('/parent/children', authParent, parentAttendanceCache.cache, async (r
           profilePic: resolveProfilePhoto(student.profilePic),
         },
         month: monthRange.key,
-        summary: buildSummary(attendance),
+        summary: sessionSummaryToLegacy({
+          ...sessionSummaries[index],
+          notMarkedDays: Math.max(0, sessionSummaries[index].schoolDays - sessionSummaries[index].markedDays),
+        }),
         monthlySummary: buildSummary(monthAttendance),
         sessionSummary: sessionSummaries[index],
         attendance: monthAttendance,
@@ -1765,7 +1790,7 @@ router.get('/admin/students', adminAuth, async (req, res) => {
     if (campusId) baseFilter.campusId = campusId;
 
     const scopeStudents = await StudentUser.find(baseFilter)
-      .select('name username studentCode grade section roll attendance admissionDate createdAt profilePic')
+      .select('name username studentCode grade section roll attendance attendanceSummary admissionDate createdAt profilePic')
       .lean();
 
     const activeSessionName = await resolveActiveAcademicSessionName(schoolId);

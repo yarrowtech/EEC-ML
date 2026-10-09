@@ -15,7 +15,7 @@ async function scopedStudents(req) {
   if (req.campusId) filter.campusId = req.campusId;
   if (className) filter.grade = { $regex: '^(?:Class\\s+)?' + escape(className.replace(/^class\s+/i, '')) + '$', $options: 'i' };
   if (section) filter.section = { $regex: '^' + escape(section) + '$', $options: 'i' };
-  const students = await StudentUser.find(filter).select('_id name roll grade section attendance').lean();
+  const students = await StudentUser.find(filter).select('_id name roll grade section attendance attendanceSummary profilePic').lean();
   return students.filter((s) => studentIsWithinTeacherScope(s, scope));
 }
 

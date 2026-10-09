@@ -40,15 +40,24 @@ router.get('/profile', authStudent, async (req, res) => {
 router.get('/class', authTeacher, teacherAnalyticsCache.cache, async (req, res) => {
   try {
     const students = await scopedStudents(req);
+    // ?days= limits check-ins to a recent window; ?all=1 also returns students
+    // with no check-ins yet (shown as "insufficient data").
+    const days = Number(req.query.days);
+    const since = Number.isFinite(days) && days > 0 ? new Date(Date.now() - days * 86400000) : null;
     const summary = await getClassCalibrationSummary({
       schoolId: req.schoolId, studentIds: students.map((s) => s._id), subject: req.query.subject,
+      since, includeEmpty: req.query.all === '1',
     });
     const byId = new Map(students.map((s) => [String(s._id), s]));
-    const data = summary.map((row) => ({
-      ...row,
-      name: byId.get(String(row.studentId))?.name,
-      roll: byId.get(String(row.studentId))?.roll,
-    }));
+    const data = summary.map((row) => {
+      const st = byId.get(String(row.studentId));
+      return {
+        ...row,
+        name: st?.name,
+        roll: st?.roll,
+        profilePic: typeof st?.profilePic === 'string' ? st.profilePic : (st?.profilePic?.secure_url || st?.profilePic?.url || null),
+      };
+    });
     return res.json({ success: true, data });
   } catch (err) {
     return res.status(err.status || 500).json({ success: false, error: err.message });

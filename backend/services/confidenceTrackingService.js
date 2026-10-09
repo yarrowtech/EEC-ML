@@ -40,10 +40,11 @@ async function recordCheckin({ studentId, schoolId, subject, topicId, topicTitle
 }
 
 // Most-recent checkin per topic, plus an overall calibration trend for the student.
-async function getStudentCalibrationProfile({ studentId, schoolId, subject }) {
+async function getStudentCalibrationProfile({ studentId, schoolId, subject, since = null }) {
   const StudentConfidenceCheckin = require('../models/StudentConfidenceCheckin');
   const filter = { studentId, schoolId };
   if (subject) filter.subject = subject;
+  if (since) filter.createdAt = { $gte: since };
   const checkins = await StudentConfidenceCheckin.find(filter).sort({ createdAt: -1 }).limit(200).lean();
 
   const latestByTopic = new Map();
@@ -54,6 +55,8 @@ async function getStudentCalibrationProfile({ studentId, schoolId, subject }) {
   const topics = [...latestByTopic.values()];
   const gaps = topics.map((t) => t.calibrationGap).filter((g) => g != null);
   const overallGap = gaps.length ? Math.round(gaps.reduce((a, b) => a + b, 0) / gaps.length) : null;
+  const mean = (arr) => (arr.length ? Math.round(arr.reduce((a, b) => a + b, 0) / arr.length) : null);
+  const scored = topics.filter((t) => t.calibrationGap != null);
 
   return {
     topics: topics.map((t) => ({
@@ -63,6 +66,8 @@ async function getStudentCalibrationProfile({ studentId, schoolId, subject }) {
     })),
     overallGap,
     overallLabel: labelFromGap(overallGap),
+    avgConfidence: mean(scored.map((t) => t.confidencePercent)),
+    avgActual: mean(scored.map((t) => t.masteryScoreAtCheckin)),
     sampleSize: gaps.length,
     history: checkins.slice(0, 30).map((c) => ({ at: c.createdAt, gap: c.calibrationGap, label: c.calibrationLabel })).reverse(),
   };
@@ -70,18 +75,18 @@ async function getStudentCalibrationProfile({ studentId, schoolId, subject }) {
 
 // Teacher-facing view: which students in a class are most miscalibrated, ranked
 // by the size of their average confidence/mastery gap (largest first).
-async function getClassCalibrationSummary({ schoolId, studentIds, subject }) {
+async function getClassCalibrationSummary({ schoolId, studentIds, subject, since = null, includeEmpty = false }) {
   const results = await Promise.allSettled(
     studentIds.map(async (studentId) => ({
       studentId,
-      ...(await getStudentCalibrationProfile({ studentId, schoolId, subject })),
+      ...(await getStudentCalibrationProfile({ studentId, schoolId, subject, since })),
     }))
   );
 
   return results
     .filter((r) => r.status === 'fulfilled')
     .map((r) => r.value)
-    .filter((r) => r.sampleSize > 0)
+    .filter((r) => includeEmpty || r.sampleSize > 0)
     .sort((a, b) => Math.abs(b.overallGap ?? 0) - Math.abs(a.overallGap ?? 0));
 }
 

@@ -2,6 +2,17 @@ const express = require('express');
 const mongoose = require('mongoose');
 const principalAuth = require('../middleware/principalAuth');
 const StudentUser = require('../models/StudentUser');
+const { summarizeStudentAttendance } = require('../utils/sessionAttendance');
+
+// School/class attendance for the active academic year: total present days ÷
+// total school days across the given students (one decimal, 0 when none).
+const academicYearAttendanceRate = async (students, req) => {
+  const summaries = await summarizeStudentAttendance(students, { schoolId: req.schoolId, campusId: req.campusId || null });
+  let present = 0;
+  let days = 0;
+  summaries.forEach((sum) => { present += sum.presentDays || 0; days += sum.schoolDays || 0; });
+  return days ? Number(((present / days) * 100).toFixed(1)) : 0;
+};
 const AcademicYear = require('../models/AcademicYear');
 const TeacherUser = require('../models/TeacherUser');
 const ParentUser = require('../models/ParentUser');
@@ -197,23 +208,11 @@ router.get('/overview', principalAuth, async (req, res) => {
       return !(children.length > 0 && activeChildren.length === 0);
     }).length;
 
-    const students = await StudentUser.find(schoolFilter, 'attendance').lean();
-    let present = 0;
-    let total = 0;
+    const students = await StudentUser.find(schoolFilter, 'attendance attendanceSummary').lean();
 
-    // Cumulative across all recorded attendance — matches how
-    // /academic/analytics computes "Avg Attendance" so both pages agree
-    // instead of one showing a rolling 30-day window and the other all-time.
-    students.forEach((student) => {
-      (student.attendance || []).forEach((entry) => {
-        total += 1;
-        if (entry.status === 'present') {
-          present += 1;
-        }
-      });
-    });
-
-    const attendanceRate = total ? Number(((present / total) * 100).toFixed(1)) : 0;
+    // Academic-year basis (present days ÷ school days of the active session) —
+    // the same figure every other attendance screen uses.
+    const attendanceRate = await academicYearAttendanceRate(students, req);
     const attendanceTrend = buildAttendanceTrend(students, 6);
 
     const gradeMap = studentProgress.reduce((acc, curr) => {
@@ -333,7 +332,7 @@ router.get('/students/analytics', principalAuth, async (req, res) => {
       if (matcher) studentFilter.academicYear = matcher;
     }
 
-    const students = await StudentUser.find(studentFilter, 'name grade attendance').lean();
+    const students = await StudentUser.find(studentFilter, 'name grade attendance attendanceSummary').lean();
     const studentIds = students.map((student) => student._id);
 
     const progressFilter = { schoolId: req.schoolId };
@@ -354,17 +353,10 @@ router.get('/students/analytics', principalAuth, async (req, res) => {
     const last30 = new Date();
     last30.setDate(last30.getDate() - 30);
 
-    // Cumulative across all recorded attendance — matches how the Overview
-    // and Academic Analytics pages compute their attendance figure, so this
-    // page doesn't show a different number for the same students.
-    let attendanceTotal = 0;
-    let attendancePresent = 0;
-    students.forEach((student) => {
-      (student.attendance || []).forEach((entry) => {
-        attendanceTotal += 1;
-        if (entry.status === 'present') attendancePresent += 1;
-      });
-    });
+    // Academic-year attendance — same calculation as the Overview and Academic
+    // Analytics pages (present days ÷ school days of the active session), so
+    // every page shows the same number for the same students.
+    const schoolAttendanceRate = await academicYearAttendanceRate(students, req);
 
     // "Top students" is deliberately a recent (last-30-day) leaderboard, so
     // it keeps its own windowed rate rather than the cumulative one above.
@@ -398,9 +390,7 @@ router.get('/students/analytics', principalAuth, async (req, res) => {
     res.json({
       summary: {
         totalStudents: students.length,
-        attendanceRate: attendanceTotal
-          ? Number(((attendancePresent / attendanceTotal) * 100).toFixed(1))
-          : 0,
+        attendanceRate: schoolAttendanceRate,
         gradedStudents: studentProgressList.length,
         highPerformers,
         weakStudents,
@@ -567,7 +557,7 @@ router.get('/academic/analytics', principalAuth, async (req, res) => {
     }
 
     const [students, exams, classes, subjects] = await Promise.all([
-      StudentUser.find(studentFilter, '_id name grade attendance').lean(),
+      StudentUser.find(studentFilter, '_id name grade attendance attendanceSummary').lean(),
       Exam.find(schoolFilter)
         .sort({ date: 1 })
         .populate('subjectId', 'name')
@@ -747,15 +737,7 @@ router.get('/academic/analytics', principalAuth, async (req, res) => {
     };
 
     // Calculate attendance rate for academic overview
-    let attTotal = 0;
-    let attPresent = 0;
-    students.forEach(s => {
-      (s.attendance || []).forEach(e => {
-        attTotal++;
-        if (e.status === 'present') attPresent++;
-      });
-    });
-    academicOverview.attendanceRate = attTotal ? Number(((attPresent / attTotal) * 100).toFixed(1)) : 0;
+    academicOverview.attendanceRate = await academicYearAttendanceRate(students, req);
 
     res.json({
       academicOverview,
