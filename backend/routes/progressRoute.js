@@ -269,7 +269,7 @@ router.get('/student/:studentId/overview', teacherAuth, teacherAnalyticsCache.ca
     const campusId = req.campusId || req.user?.campusId || null;
 
     const student = await StudentUser.findOne({ _id: studentId, schoolId })
-      .select('name grade section roll profilePic attendance academicYear className sectionName')
+      .select('name grade section roll profilePic attendance attendanceSummary academicYear className sectionName')
       .lean();
     if (!student) return res.status(404).json({ error: 'Student not found' });
 
@@ -708,7 +708,7 @@ router.get('/analytics', teacherAuth, teacherAnalyticsCache.cache, async (req, r
     // Today's attendance for the selected students (embedded attendance log).
     const todayKey = new Date().toISOString().slice(0, 10);
     const attendanceDocs = studentIds.length
-      ? await StudentUser.find({ _id: { $in: studentIds } }).select('attendance').lean()
+      ? await StudentUser.find({ _id: { $in: studentIds } }).select('attendance attendanceSummary').lean()
       : [];
     const today = { date: todayKey, present: 0, absent: 0, late: 0, notMarked: 0, total: studentIds.length };
     attendanceDocs.forEach((doc) => {

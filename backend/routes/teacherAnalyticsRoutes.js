@@ -12,7 +12,9 @@ const MasteryScore = require('../models/MasteryScore');
 const PracticeAttempt = require('../models/PracticeAttempt');
 const TeacherUser = require('../models/TeacherUser');
 const NotificationService = require('../utils/notificationService');
-const { computeSessionAttendance, resolveSessionWindow, loadHolidayKeys } = require('../utils/sessionAttendance');
+const {
+  computeSessionAttendance, resolveSessionWindow, loadHolidayKeys, summarizeStudentAttendance, attendancePercentOf,
+} = require('../utils/sessionAttendance');
 const PracticeQuestion = require('../models/PracticeQuestion');
 const {
   buildTeacherAllocationScope,
@@ -156,7 +158,7 @@ router.get('/at-risk', authTeacher, teacherAnalyticsCache.cache, async (req, res
     const filter = buildScopedStudentFilter(schoolId, scope, { className, section });
 
     const students = await StudentUser.find(filter)
-      .select('name roll grade section attendance profilePic')
+      .select('name roll grade section attendance attendanceSummary profilePic')
       .lean();
 
     // Get exam results for all these students in one query
@@ -178,25 +180,8 @@ router.get('/at-risk', authTeacher, teacherAnalyticsCache.cache, async (req, res
       resultsByStudent[sid].push(r);
     });
 
-    // Day-based academic-year attendance per student (window + holidays loaded once).
-    const sessionWindow = await resolveSessionWindow(schoolId);
-    const today = new Date();
-    today.setHours(0, 0, 0, 0);
-    const holidayKeys = await loadHolidayKeys({
-      schoolId,
-      campusId: req.campusId || null,
-      start: sessionWindow.start,
-      end: sessionWindow.end < today ? sessionWindow.end : today,
-    });
-    const attendanceById = new Map(await Promise.all(students.map(async (student) => [
-      String(student._id),
-      await computeSessionAttendance({
-        attendance: Array.isArray(student.attendance) ? student.attendance : [],
-        schoolId,
-        window: sessionWindow,
-        holidayKeys,
-      }),
-    ])));
+    // Stored academic-year attendance per student (refreshed daily / on marking).
+    const attendanceById = await summarizeStudentAttendance(students, { schoolId, campusId: req.campusId || null });
 
     const atRiskStudents = students
       .map((student) => {
@@ -248,7 +233,7 @@ router.get('/class-trends', authTeacher, teacherAnalyticsCache.cache, async (req
 
     const filter = buildScopedStudentFilter(schoolId, scope, { className, section });
 
-    const students = await StudentUser.find(filter).select('_id grade section attendance').lean();
+    const students = await StudentUser.find(filter).select('_id grade section attendance attendanceSummary').lean();
     const studentIds = students.map((s) => s._id);
 
     // Exam results grouped by subject over time
@@ -297,11 +282,9 @@ router.get('/class-trends', authTeacher, teacherAnalyticsCache.cache, async (req
 
     // Class stats
     const totalStudents = students.length;
-    const allAttPct = students.map((s) => {
-      const att = s.attendance || [];
-      const p = att.filter((a) => a.status === 'present').length;
-      return att.length > 0 ? Math.round((p / att.length) * 100) : 100;
-    });
+    // Academic-year attendance per student (present days ÷ school days).
+    const attSummaries = await summarizeStudentAttendance(students, { schoolId, campusId: req.campusId || null });
+    const allAttPct = students.map((s) => attendancePercentOf(attSummaries, s._id)).filter((v) => v != null);
     const avgAttPct = allAttPct.length
       ? Math.round(allAttPct.reduce((s, v) => s + v, 0) / allAttPct.length) : 0;
 
@@ -465,6 +448,16 @@ router.get('/at-risk-7day', authTeacher, teacherAnalyticsCache.cache, async (req
   try {
     const students = await require('../utils/analyticsScope').scopedStudents(req);
     const data = await require('../services/classLearningAnalytics').forecastClass(students, req.schoolId);
+    // Academic-year attendance (present days ÷ school days) for display alongside
+    // the 7-day signals, which stay on the recent window by design.
+    const yearById = await summarizeStudentAttendance(students, { schoolId: req.schoolId, campusId: req.campusId || null });
+    data.forEach((row) => {
+      const y = yearById.get(String(row.studentId));
+      row.attendanceYear = y ? {
+        percentage: y.percentage, presentDays: y.presentDays, absentDays: y.absentDays,
+        schoolDays: y.schoolDays, notMarkedDays: y.notMarkedDays, sessionName: y.sessionName,
+      } : null;
+    });
     return res.json({ success: true, data, windowDays: 7 });
   } catch (err) { return res.status(err.status || 500).json({ error: err.message }); }
 });
@@ -569,7 +562,7 @@ router.get('/student-mastery-all', authTeacher, teacherAnalyticsCache.cache, asy
     const studentFilter = buildScopedStudentFilter(schoolId, scope, { className, section });
 
     const students = await StudentUser.find(studentFilter)
-      .select('name roll grade section')
+      .select('name roll grade section profilePic')
       .lean();
 
     if (!students.length) return res.json({ success: true, data: [] });
@@ -597,6 +590,7 @@ router.get('/student-mastery-all', authTeacher, teacherAnalyticsCache.cache, asy
           studentId: student._id,
           name: student.name,
           roll: student.roll,
+          profilePic: typeof student.profilePic === 'string' ? student.profilePic : (student.profilePic?.secure_url || student.profilePic?.url || null),
           grade: student.grade,
           section: student.section,
           avgMastery,
@@ -802,7 +796,7 @@ router.get('/cohort', authTeacher, teacherAnalyticsCache.cache, async (req, res)
         if (className) filter.$or = [{ grade: className }, { grade: `Class ${className}` }];
         if (sectionName) filter.section = sectionName;
 
-        const students = await StudentUser.find(filter).select('_id attendance').lean();
+        const students = await StudentUser.find(filter).select('_id attendance attendanceSummary').lean();
         const studentIds = students.map((s) => s._id);
         if (!studentIds.length) return { className, sectionName, subjectName, avgScore: null, avgAtt: null, studentCount: 0 };
 
@@ -824,10 +818,8 @@ router.get('/cohort', authTeacher, teacherAnalyticsCache.cache, async (req, res)
 
         const avgScore = scores.length ? Math.round(scores.reduce((a, b) => a + b, 0) / scores.length) : null;
 
-        const attPcts = students.map((s) => {
-          const att = s.attendance || [];
-          return att.length > 0 ? Math.round((att.filter((a) => a.status === 'present').length / att.length) * 100) : 100;
-        });
+        const attSummaries = await summarizeStudentAttendance(students, { schoolId, campusId: req.campusId || null });
+        const attPcts = students.map((s) => attendancePercentOf(attSummaries, s._id)).filter((v) => v != null);
         const avgAtt = attPcts.length ? Math.round(attPcts.reduce((a, b) => a + b, 0) / attPcts.length) : null;
 
         return { className, sectionName, subjectName, avgScore, avgAtt, studentCount: students.length };
@@ -969,13 +961,22 @@ router.get('/mastery-heatmap', authTeacher, teacherAnalyticsCache.cache, async (
     if (!scope) return;
 
     const filter = buildScopedStudentFilter(schoolId, scope, { className, section });
-    const students = await StudentUser.find(filter).select('_id name roll grade section').lean();
+    const rawStudents = await StudentUser.find(filter).select('_id name roll grade section profilePic').lean();
+    const students = rawStudents.map((s) => ({
+      ...s,
+      profilePic: typeof s.profilePic === 'string' ? s.profilePic : (s.profilePic?.secure_url || s.profilePic?.url || null),
+    }));
 
     const studentIds = students.map((s) => s._id);
     const records = await MasteryScore.find({ studentId: { $in: studentIds }, schoolId }).lean();
 
     const topicSet = new Set();
-    records.forEach((r) => topicSet.add(r.topicTitle || r.topicId));
+    const topicSubjects = {};
+    records.forEach((r) => {
+      const key = r.topicTitle || r.topicId;
+      topicSet.add(key);
+      if (r.subject && !topicSubjects[key]) topicSubjects[key] = r.subject;
+    });
     const topics = [...topicSet].slice(0, 20);
 
     const cells = {};
@@ -989,7 +990,7 @@ router.get('/mastery-heatmap', authTeacher, teacherAnalyticsCache.cache, async (
       }
     }
 
-    return res.json({ success: true, data: { students, topics, cells } });
+    return res.json({ success: true, data: { students, topics, cells, topicSubjects } });
   } catch (err) {
     return res.status(500).json({ error: err.message });
   }
@@ -1011,27 +1012,93 @@ router.get('/improvement-trends', authTeacher, teacherAnalyticsCache.cache, asyn
     const priorStart = recentStart - N * DAY;
 
     const filter = buildScopedStudentFilter(schoolId, scope, { className, section });
-    const students = await StudentUser.find(filter).select('_id name roll').lean();
+    const students = await StudentUser.find(filter).select('_id name roll profilePic').lean();
+    const studentIds = students.map((st) => st._id);
+    const subjectFilter = String(req.query.subject || '').trim().toLowerCase();
 
+    // Score events as % of full marks: graded assignment submissions + published
+    // exam results, each with a timestamp and subject.
     const StudentProgress = require('../models/StudentProgress');
-    const results = await Promise.allSettled(students.map(async (s) => {
-      const prog = await StudentProgress.findOne({ studentId: s._id, schoolId }).select('submissions').lean();
-      const subs = (prog?.submissions || []).filter((sub) => sub.score != null && sub.submittedAt);
-      const recent = subs.filter((sub) => new Date(sub.submittedAt).getTime() >= recentStart);
-      const prior = subs.filter((sub) => {
-        const t = new Date(sub.submittedAt).getTime();
-        return t >= priorStart && t < recentStart;
+    const Assignment = require('../models/Assignment');
+    const Exam = require('../models/Exam');
+    const [progressDocs, examResults] = await Promise.all([
+      StudentProgress.find({ studentId: { $in: studentIds }, schoolId }).select('studentId submissions').lean(),
+      ExamResult.find({ schoolId, studentId: { $in: studentIds }, published: true, status: { $ne: 'absent' } })
+        .select('studentId examId marks createdAt').lean(),
+    ]);
+    const assignmentIds = [...new Set(progressDocs.flatMap((d) => (d.submissions || []).map((x) => String(x.assignmentId || ''))).filter(Boolean))];
+    const [assignments, exams] = await Promise.all([
+      assignmentIds.length ? Assignment.find({ _id: { $in: assignmentIds } }).select('subject marks').lean() : [],
+      examResults.length ? Exam.find({ _id: { $in: [...new Set(examResults.map((r) => String(r.examId)))] } }).select('subject marks date').lean() : [],
+    ]);
+    const assignmentMap = new Map(assignments.map((a) => [String(a._id), a]));
+    const examMap = new Map(exams.map((e) => [String(e._id), e]));
+    const eventsByStudent = new Map();
+    const subjects = new Set();
+    const pushEvent = (sid, when, pct, subj) => {
+      if (!Number.isFinite(when) || !Number.isFinite(pct)) return;
+      if (subj) subjects.add(subj);
+      if (subjectFilter && String(subj || '').toLowerCase() !== subjectFilter) return;
+      if (!eventsByStudent.has(sid)) eventsByStudent.set(sid, []);
+      eventsByStudent.get(sid).push({ when, pct: Math.max(0, Math.min(100, pct)) });
+    };
+    progressDocs.forEach((doc) => (doc.submissions || []).forEach((sub) => {
+      if (sub.score == null || !sub.submittedAt) return;
+      const a = assignmentMap.get(String(sub.assignmentId || ''));
+      const max = Number(a?.marks) || 100;
+      pushEvent(String(doc.studentId), new Date(sub.submittedAt).getTime(), (Number(sub.score) / max) * 100, a?.subject || '');
+    }));
+    examResults.forEach((r) => {
+      const e = examMap.get(String(r.examId));
+      const max = Number(e?.marks) || 0;
+      if (!max) return;
+      pushEvent(String(r.studentId), new Date(e.date || r.createdAt).getTime(), (Number(r.marks) / max) * 100, e.subject || '');
+    });
+
+    // Daily buckets for the window (oldest → today).
+    const dayStart = new Date(now); dayStart.setHours(0, 0, 0, 0);
+    const dayKeys = Array.from({ length: N }, (_, i) => dayStart.getTime() - (N - 1 - i) * DAY);
+    const bucketOf = (when) => {
+      const idx = Math.floor((when - dayKeys[0]) / DAY);
+      return idx >= 0 && idx < N ? idx : -1;
+    };
+    const mean = (arr) => (arr.length ? Math.round(arr.reduce((a, b) => a + b, 0) / arr.length) : null);
+    const classDaily = Array.from({ length: N }, () => []);
+
+    const data = students.map((st) => {
+      const sid = String(st._id);
+      const events = eventsByStudent.get(sid) || [];
+      const recent = events.filter((e) => e.when >= recentStart).map((e) => e.pct);
+      const prior = events.filter((e) => e.when >= priorStart && e.when < recentStart).map((e) => e.pct);
+      const daily = Array.from({ length: N }, () => []);
+      events.forEach((e) => {
+        const b = bucketOf(e.when);
+        if (b >= 0) { daily[b].push(e.pct); classDaily[b].push(e.pct); }
       });
-      const avg = (arr) => arr.length ? Math.round(arr.reduce((a, b) => a + b.score, 0) / arr.length) : null;
-      const recentAvg = avg(recent);
-      const priorAvg = avg(prior);
+      const recentAvg = mean(recent);
+      const priorAvg = mean(prior);
+      // "Current" falls back to the latest score ever when nothing is recent.
+      const lastEver = events.length ? Math.round([...events].sort((a, b) => a.when - b.when).at(-1).pct) : null;
       const delta = recentAvg !== null && priorAvg !== null ? recentAvg - priorAvg : null;
       const trend = delta === null ? 'stable' : delta < -5 ? 'declining' : delta > 5 ? 'improving' : 'stable';
-      return { studentId: s._id, name: s.name, roll: s.roll, recentAvg, priorAvg, delta, trend };
-    }));
+      return {
+        studentId: st._id,
+        name: st.name,
+        roll: st.roll,
+        profilePic: typeof st.profilePic === 'string' ? st.profilePic : (st.profilePic?.secure_url || st.profilePic?.url || null),
+        recentAvg,
+        priorAvg,
+        currentScore: recentAvg ?? lastEver,
+        delta,
+        trend,
+        series: daily.map(mean),
+        recentCount: recent.length,
+        priorCount: prior.length,
+      };
+    });
 
-    const data = results.filter((r) => r.status === 'fulfilled').map((r) => r.value);
-    return res.json({ success: true, data, days: N });
+    const classSeries = dayKeys.map((t, i) => ({ date: new Date(t).toISOString().slice(0, 10), avg: mean(classDaily[i]) }));
+    return res.json({ success: true, data, days: N, classSeries, subjects: [...subjects].filter(Boolean).sort() });
   } catch (err) {
     return res.status(500).json({ error: err.message });
   }

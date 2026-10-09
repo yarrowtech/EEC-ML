@@ -8,6 +8,7 @@ router.use(growthCache.invalidateOnWrite);
 const axios = require('axios');
 const authParent = require('../middleware/authParent');
 const StudentUser = require('../models/StudentUser');
+const { summarizeStudentAttendance } = require('../utils/sessionAttendance');
 const MasteryScore = require('../models/MasteryScore');
 const ExamResult = require('../models/ExamResult');
 const Exam = require('../models/Exam');
@@ -293,7 +294,7 @@ router.get('/analytics/academic/:studentId', authParent, growthCache.cache, asyn
     const [masteryScores, examResults, student] = await Promise.all([
       MasteryScore.find({ studentId: sid, schoolId: req.schoolId }).lean(),
       ExamResult.find({ studentId: sid }).lean(),
-      StudentUser.findById(sid).select('name grade section attendance').lean(),
+      StudentUser.findById(sid).select('name grade section attendance attendanceSummary').lean(),
     ]);
     const examIndex = await buildExamIndex(examResults.map((r) => r.examId));
 
@@ -320,9 +321,13 @@ router.get('/analytics/academic/:studentId', authParent, growthCache.cache, asyn
 
     // Attendance summary from embedded array
     const attendance = Array.isArray(student?.attendance) ? student.attendance : [];
-    const presentDays = attendance.filter((a) => String(a.status).toLowerCase() === 'present').length;
-    const totalDays = attendance.length;
-    const attendancePct = totalDays > 0 ? Math.round((presentDays / totalDays) * 100) : null;
+    // Academic-year basis: present days ÷ school days of the active session.
+    const yearSummary = student
+      ? (await summarizeStudentAttendance([student], { schoolId: req.schoolId, campusId: req.campusId || null })).get(String(student._id)) || {}
+      : {};
+    const presentDays = yearSummary.presentDays || 0;
+    const totalDays = yearSummary.schoolDays || 0;
+    const attendancePct = yearSummary.percentage ?? null;
 
     // Monthly attendance trend (last 6 months)
     const monthlyAttendance = [];
@@ -461,7 +466,7 @@ router.get('/analytics/skills/:studentId', authParent, growthCache.cache, async 
     const [masteryScores, examResults, student, observations, devProfile] = await Promise.all([
       MasteryScore.find({ studentId: sid, schoolId: req.schoolId }).lean(),
       ExamResult.find({ studentId: sid }).lean(),
-      StudentUser.findById(sid).select('name grade section attendance').lean(),
+      StudentUser.findById(sid).select('name grade section attendance attendanceSummary').lean(),
       StudentObservation.find({ studentId: sid, schoolId: req.schoolId }).sort({ recordedAt: -1 }).limit(40).lean(),
       StudentDevelopmentProfile.findOne({ studentId: sid, schoolId: req.schoolId }).lean(),
     ]);
@@ -479,8 +484,9 @@ router.get('/analytics/skills/:studentId', authParent, growthCache.cache, async 
       : null;
 
     const attendance = Array.isArray(student?.attendance) ? student.attendance : [];
-    const presentDays = attendance.filter((a) => String(a.status).toLowerCase() === 'present').length;
-    const attendancePct = attendance.length > 0 ? Math.round((presentDays / attendance.length) * 100) : null;
+    const attendancePct = student
+      ? ((await summarizeStudentAttendance([student], { schoolId: req.schoolId, campusId: req.campusId || null })).get(String(student._id))?.percentage ?? null)
+      : null;
 
     const moodRatings = observations.filter((o) => o.moodRating != null).map((o) => o.moodRating);
     const moodScore = moodRatings.length

@@ -11,6 +11,7 @@ const aiInsightsLimiter = rateLimit({ windowMs: 5 * 60 * 1000, max: 20 });
 const MasteryScore = require('../models/MasteryScore');
 const TeacherUser = require('../models/TeacherUser');
 const StudentUser = require('../models/StudentUser');
+const { summarizeStudentAttendance } = require('../utils/sessionAttendance');
 const ExamAttempt = require('../models/ExamAttempt');
 const ExamResult = require('../models/ExamResult');
 const TeachingMaterial = require('../models/TeachingMaterial');
@@ -321,7 +322,7 @@ router.get('/dropout-risk', adminAuth, async (req, res) => {
 
     const scope = await resolveClassScope(req);
     const students = await StudentUser.find(scope ? scope.studentFilter : scopedFilter(req, { status: 'Active' }))
-      .select('name grade section attendance')
+      .select('name grade section attendance attendanceSummary')
       .lean();
 
     const failedResults = await ExamResult.aggregate([
@@ -343,22 +344,15 @@ router.get('/dropout-risk', adminAuth, async (req, res) => {
 
     const failMap = new Map(failedResults.map((r) => [String(r._id), r.failCount]));
 
+    // Academic-year attendance (present days ÷ school days of the session).
+    const attSummaries = await summarizeStudentAttendance(students, { schoolId: req.schoolId, campusId: req.campusId || null });
     const atRisk = [];
     for (const student of students) {
-      // Count distinct days (period-wise records can log several per day) and
-      // only judge attendance once there's a meaningful sample — a single
-      // absent period used to show up as "0% attendance".
-      const byDay = new Map();
-      (student.attendance || []).forEach((a) => {
-        const day = a?.date ? new Date(a.date).toISOString().slice(0, 10) : null;
-        if (!day) return;
-        const present = ['present', 'late'].includes(String(a.status || '').toLowerCase());
-        byDay.set(day, (byDay.get(day) || false) || present);
-      });
-      const total = byDay.size;
-      const present = [...byDay.values()].filter(Boolean).length;
+      const yearSummary = attSummaries.get(String(student._id)) || {};
+      const total = yearSummary.schoolDays || 0;
+      // Judge attendance only after a meaningful number of school days.
       const MIN_DAYS = 5;
-      const attendanceRate = total >= MIN_DAYS ? Math.round((present / total) * 100) : null;
+      const attendanceRate = total >= MIN_DAYS ? yearSummary.percentage : null;
       const failCount = failMap.get(String(student._id)) || 0;
 
       const lowAttendance = attendanceRate !== null && attendanceRate < 75;

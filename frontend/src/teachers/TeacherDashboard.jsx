@@ -283,7 +283,7 @@ const TeacherDashboard = () => {
     { label: 'My Classes Today', value: todaysClasses.length, helper: 'View Schedule →', icon: BookOpen, iconBg: 'bg-blue-500', iconColor: 'text-white', to: '/teacher/timetable' },
     { label: 'Total Students', value: stats.totalStudents ?? 0, helper: 'Across my classes', icon: Users, iconBg: 'bg-green-500', iconColor: 'text-white', to: '/teacher/classes' },
     { label: 'Attendance', value: `${completedClasses} / ${todaysClasses.length}`, helper: 'Classes completed', icon: CheckCircle2, iconBg: 'bg-red-500', iconColor: 'text-white', to: '/teacher/classes/current/students/attendance' },
-    { label: 'Pending Work', value: pendingTasks, helper: 'Homework / Assignments', icon: ClipboardList, iconBg: 'bg-orange-500', iconColor: 'text-white', to: '/teacher/classes/current/assignments' },
+    { label: 'Submissions to Grade', value: pendingTasks, helper: 'Homework / assignments to check', icon: ClipboardList, iconBg: 'bg-orange-500', iconColor: 'text-white', to: '/teacher/classes/current/assignments' },
   ];
 
   const WEEK = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday'];
@@ -649,33 +649,46 @@ const TeacherDashboard = () => {
           {/* ── Homework / Schedule / Alerts + Activity ── */}
           <MotionSection variants={itemVariants} className="grid gap-4 xl:grid-cols-3">
             <Panel icon={FileText} iconColor="text-blue-600" title="Homework & Assignments" link={{ to: '/teacher/classes/current/assignments', label: 'View All' }}>
+              <p className="-mt-1 mb-3 text-[11.5px] text-slate-500">Your assignments that are due soon or still need follow-up.</p>
               {deadlineError && <p className="mb-2 rounded-lg bg-rose-50 px-3 py-2 text-xs text-rose-700">{deadlineError}</p>}
               {visibleDeadlines.length === 0 ? (
-                <p className="py-10 text-center text-sm text-slate-400">No pending homework or assignments.</p>
+                <div className="flex flex-col items-center px-4 py-8 text-center">
+                  <span className="mb-2 flex h-10 w-10 items-center justify-center rounded-full bg-emerald-50 text-emerald-600"><CheckCircle2 size={20} /></span>
+                  <p className="text-sm font-semibold text-slate-800">You're all caught up</p>
+                  <p className="mt-1 text-xs text-slate-500">No assignment is due soon, and nothing from the last 2 weeks is waiting to be graded or submitted.</p>
+                  <Link to="/teacher/classes/current/assignments/manage" className="mt-3 rounded-lg bg-blue-50 px-3 py-1.5 text-xs font-semibold text-blue-700 hover:bg-blue-100">+ Create assignment</Link>
+                </div>
               ) : (
                 <div className="divide-y divide-slate-100">
                   {visibleDeadlines.map((task) => {
                     const total = Number(task.totalStudents) || 0;
                     const done = Number(task.submittedCount) || 0;
+                    const toGrade = Number(task.toGradeCount) || 0;
+                    const missing = Math.max(0, total - done);
                     const pct = total ? Math.min(100, Math.round((done / total) * 100)) : 0;
                     const due = dueLabel(task.dueDate);
                     return (
                       <div key={deadlineKey(task)} className="flex gap-3 py-3 first:pt-0">
-                        <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-blue-50 text-blue-600"><FileText size={17} /></div>
+                        <div className={cx('flex h-9 w-9 shrink-0 items-center justify-center rounded-lg', task.overdue ? 'bg-rose-50 text-rose-600' : 'bg-blue-50 text-blue-600')}><FileText size={17} /></div>
                         <div className="min-w-0 flex-1">
                           <div className="flex items-start justify-between gap-2">
-                            <p className="truncate text-sm font-semibold text-slate-900">{task.title}</p>
+                            <p className="truncate text-sm font-semibold text-slate-900" title={task.title}>{task.title}</p>
                             <span className={cx('shrink-0 rounded-md px-2 py-0.5 text-[11px] font-medium', due.cls)}>{due.text}</span>
                           </div>
                           <p className="text-xs text-slate-500">Class {[task.class, task.section].filter(Boolean).join('-') || '—'}{task.subject ? ` • ${task.subject}` : ''}</p>
-                          <div className="mt-1.5 flex items-end gap-2">
-                            <div className="flex-1">
-                              <p className="mb-1 text-[11px] text-slate-500">{done} / {total || '—'} submitted</p>
-                              <div className="h-1.5 rounded-full bg-slate-100"><div className="h-full rounded-full bg-blue-600" style={{ width: `${pct}%` }} /></div>
+                          <div className="mt-1.5">
+                            <div className="mb-1 flex justify-between text-[11px] text-slate-500">
+                              <span><span className="font-semibold text-slate-700">{done}</span> of {total || '—'} students submitted</span>
+                              <span>{pct}%</span>
                             </div>
-                            <span className="w-8 text-right text-[11px] text-slate-600">{pct}%</span>
-                            <button type="button" onClick={() => clearDeadline(task)} disabled={completingDeadlineId === deadlineKey(task)} className="rounded-md border border-slate-200 px-3 py-1 text-xs font-semibold text-slate-800 hover:bg-slate-50 disabled:opacity-50">
-                              {completingDeadlineId === deadlineKey(task) ? '…' : 'Done'}
+                            <div className="h-1.5 rounded-full bg-slate-100"><div className={cx('h-full rounded-full', pct === 100 ? 'bg-emerald-500' : 'bg-blue-600')} style={{ width: `${pct}%` }} /></div>
+                          </div>
+                          <div className="mt-2 flex flex-wrap items-center gap-1.5">
+                            {toGrade > 0 && <span className="rounded-full bg-orange-50 px-2 py-0.5 text-[11px] font-medium text-orange-600">{toGrade} to grade</span>}
+                            {missing > 0 && <span className="rounded-full bg-slate-100 px-2 py-0.5 text-[11px] font-medium text-slate-600">{missing} not submitted</span>}
+                            {toGrade === 0 && missing === 0 && total > 0 && <span className="rounded-full bg-emerald-50 px-2 py-0.5 text-[11px] font-medium text-emerald-600">All submitted & graded</span>}
+                            <button type="button" onClick={() => clearDeadline(task)} disabled={completingDeadlineId === deadlineKey(task)} title="Hide this from the dashboard" className="ml-auto rounded-md border border-slate-200 px-2.5 py-1 text-[11px] font-semibold text-slate-700 hover:bg-slate-50 disabled:opacity-50">
+                              {completingDeadlineId === deadlineKey(task) ? '…' : 'Mark done'}
                             </button>
                           </div>
                         </div>
@@ -801,7 +814,7 @@ const dueLabel = (value) => {
   const date = new Date(value);
   if (!value || Number.isNaN(date.getTime())) return { text: 'No due date', cls: 'bg-slate-100 text-slate-600' };
   const days = Math.ceil((date.getTime() - Date.now()) / 86400000);
-  if (days < 0) return { text: 'Overdue', cls: 'bg-rose-50 text-rose-600' };
+  if (days < 0) return { text: `Overdue by ${-days} day${days === -1 ? '' : 's'}`, cls: 'bg-rose-50 text-rose-600' };
   if (days === 0) return { text: 'Due Today', cls: 'bg-rose-50 text-rose-600' };
   if (days === 1) return { text: 'Due Tomorrow', cls: 'bg-rose-50 text-rose-600' };
   if (days <= 3) return { text: `Due in ${days} days`, cls: 'bg-amber-50 text-amber-600' };
