@@ -1,64 +1,313 @@
-import React, { useEffect, useMemo, useState } from 'react';
-import { Activity, AlertCircle, Calendar, CheckCircle2, Heart, MessageCircle, Search, Shield, TrendingUp, User } from 'lucide-react';
+import React, { useCallback, useEffect, useMemo, useState } from 'react';
+import { createPortal } from 'react-dom';
+import {
+  AlertTriangle, ArrowRight, Bell, Calendar, CheckCircle2, ChevronDown, ChevronLeft, ChevronRight, ClipboardList,
+  FileText, Heart, HeartPulse, Home, Leaf, Loader2, Lock, MessageCircle, Plus, RefreshCcw, Save, Search, Shield,
+  Smile, TrendingUp, UserRound, Users, Wrench, X, Clock, AlertCircle, Activity,
+} from 'lucide-react';
 import { motion as Motion, AnimatePresence } from 'framer-motion';
-
-const moodScores = { '😊': 95, '😐': 65, '😟': 35 };
-const energyScores = { High: 90, Medium: 65, Low: 40 };
-const issueScores = { No: 95, Yes: 40 };
+import toast from 'react-hot-toast';
 
 const API_BASE = (import.meta.env.VITE_API_URL || 'http://localhost:5000').replace(/\/$/, '');
 
-const avg = (arr) => (arr.length ? Math.round(arr.reduce((a, b) => a + b, 0) / arr.length) : 0);
+const STATUS_OPTIONS = [
+  { value: 'good', label: 'Good', icon: CheckCircle2, active: 'border-emerald-300 bg-emerald-50 text-emerald-700', idle: 'border-emerald-100 bg-emerald-50/40 text-emerald-700' },
+  { value: 'moderate', label: 'Moderate', icon: Smile, active: 'border-amber-300 bg-amber-50 text-amber-700', idle: 'border-amber-100 bg-amber-50/40 text-amber-700' },
+  { value: 'at_risk', label: 'At Risk', icon: AlertCircle, active: 'border-rose-300 bg-rose-50 text-rose-700', idle: 'border-rose-100 bg-rose-50/40 text-rose-700' },
+];
+const ISSUE_TODAY_OPTIONS = [{ value: 'no', label: 'No' }, { value: 'yes', label: 'Yes' }, { value: 'maybe', label: 'Maybe' }];
+const ISSUE_TAGS = [
+  { value: 'none', label: 'None' }, { value: 'headache', label: 'Headache' }, { value: 'fatigue', label: 'Fatigue' },
+  { value: 'fever', label: 'Fever' }, { value: 'stomach_ache', label: 'Stomach Ache' }, { value: 'other', label: 'Other' },
+];
+const ISSUE_LABEL = Object.fromEntries(ISSUE_TAGS.map((t) => [t.value, t.label]));
+const STATUS_SCORE = { good: 90, moderate: 60, at_risk: 30 };
+const ISSUE_PENALTY = { no: 0, maybe: 10, yes: 20 };
+const AVATAR_COLORS = [
+  'bg-blue-100 text-blue-600', 'bg-pink-100 text-pink-600', 'bg-cyan-100 text-cyan-600',
+  'bg-violet-100 text-violet-600', 'bg-rose-100 text-rose-600', 'bg-emerald-100 text-emerald-600', 'bg-amber-100 text-amber-600',
+];
+const TABS = [
+  { key: 'overview', label: 'Overview', icon: Home },
+  { key: 'entries', label: 'Health Entry', icon: ClipboardList },
+  { key: 'trends', label: 'Trends', icon: TrendingUp },
+  { key: 'parent', label: 'Parent', icon: UserRound },
+  { key: 'intervention', label: 'Intervention', icon: Wrench },
+  { key: 'confidential', label: 'Confidential', icon: Lock },
+];
+const PAGE_SIZE = 10;
+const NOTE_LIMIT = 200;
 
-const computeMetrics = (student) => {
-  const logs = student.logs || [];
-  const moodScore = logs.length ? avg(logs.map((l) => moodScores[l.mood] || 50)) : Math.round(student.moodBase ?? 70);
-  const healthScore = logs.length
-    ? avg(logs.map((l) => Math.round((energyScores[l.energy] + issueScores[l.physicalIssue]) / 2)))
-    : Math.round(student.healthBase ?? 70);
-  const behaviorScore = logs.length
-    ? avg(logs.map((l) => l.behaviorScore ?? student.behaviorBaseline ?? 60))
-    : Math.round(student.behaviorBaseline ?? 70);
-  const wellbeingScore = Math.round(moodScore * 0.35 + behaviorScore * 0.35 + healthScore * 0.3);
-  const issueCounts = logs.reduce((acc, l) => {
-    const k = String(l.issueTag || '').toLowerCase();
-    if (k && k !== 'none') acc[k] = (acc[k] || 0) + 1;
-    return acc;
-  }, {});
-  const maxIssueCount = Object.values(issueCounts).reduce((m, n) => Math.max(m, n), 0);
-  const autoAlert = maxIssueCount >= 3;
-  const status = autoAlert || wellbeingScore < 45 ? 'Critical' : wellbeingScore < 70 ? 'Risk' : 'Good';
-  return { moodScore, behaviorScore, healthScore, wellbeingScore, autoAlert, status };
+const avg = (arr) => (arr.length ? Math.round(arr.reduce((a, b) => a + b, 0) / arr.length) : 0);
+const localDateKey = (d = new Date()) => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+const initials = (name) => String(name || 'S').split(/\s+/).filter(Boolean).map((p) => p[0]).join('').slice(0, 2).toUpperCase();
+const avatarColor = (name) => AVATAR_COLORS[(String(name || '').charCodeAt(0) || 0) % AVATAR_COLORS.length];
+const photoUrl = (p) => (!p ? '' : typeof p === 'string' ? p : p.secure_url || p.url || '');
+const authHeaders = () => ({ Authorization: `Bearer ${localStorage.getItem('token')}`, 'Content-Type': 'application/json' });
+const formatDate = (key) => {
+  const d = new Date(`${key}T00:00:00`);
+  return Number.isNaN(d.getTime()) ? key : d.toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' });
+};
+const parseSortNumber = (value) => {
+  const n = Number(String(value ?? '').match(/\d+/)?.[0]);
+  return Number.isFinite(n) ? n : Number.POSITIVE_INFINITY;
 };
 
-const statusClass = (status) => (status === 'Critical' ? 'bg-red-100 text-red-700' : status === 'Risk' ? 'bg-yellow-100 text-yellow-700' : 'bg-green-100 text-green-700');
+const toneOf = (score) => (score >= 70 ? 'good' : score >= 40 ? 'moderate' : 'risk');
+const TONE = {
+  good: { label: 'Good', pill: 'bg-emerald-50 text-emerald-600', score: 'bg-emerald-50 text-emerald-600', bar: 'bg-emerald-500' },
+  moderate: { label: 'Moderate', pill: 'bg-amber-50 text-amber-600', score: 'bg-amber-50 text-amber-600', bar: 'bg-amber-400' },
+  risk: { label: 'At Risk', pill: 'bg-rose-50 text-rose-600', score: 'bg-amber-50 text-amber-600', bar: 'bg-rose-500' },
+};
 
-const TrendGraph = ({ pointsA = [], pointsB = [], colorA = '#2563eb', colorB = '#f59e0b' }) => {
+// Scores come from the teacher's saved daily check-ins; when a student has no
+// check-ins yet we fall back to an attendance-derived baseline.
+const computeMetrics = (student) => {
+  const logs = student.logs || [];
+  if (!logs.length) {
+    const base = student.baseline;
+    return { mood: base, behavior: base, health: base, wellbeing: base, hasData: false };
+  }
+  const mood = avg(logs.map((l) => l.mood ?? STATUS_SCORE[l.overallStatus] ?? 60));
+  const behavior = avg(logs.map((l) => l.behavior ?? student.baseline));
+  const health = avg(logs.map((l) => Math.max(0, (STATUS_SCORE[l.overallStatus] ?? 60) - (ISSUE_PENALTY[l.issueToday] || 0))));
+  const wellbeing = Math.round(mood * 0.35 + behavior * 0.35 + health * 0.3);
+  return { mood, behavior, health, wellbeing, hasData: true };
+};
+
+const Avatar = ({ name, profilePic, className = 'size-9 text-xs' }) => {
+  const [failed, setFailed] = useState(false);
+  const src = photoUrl(profilePic);
+  if (src && !failed) return <img src={src} alt="" loading="lazy" onError={() => setFailed(true)} className={`shrink-0 rounded-full object-cover ${className}`} />;
+  return <span className={`flex shrink-0 items-center justify-center rounded-full font-bold ${avatarColor(name)} ${className}`}>{initials(name)}</span>;
+};
+
+const SelectBox = ({ value, onChange, children, className = '' }) => (
+  <div className={`relative ${className}`}>
+    <select value={value} onChange={onChange} className="w-full appearance-none rounded-lg border border-[#e2e8f0] bg-white py-2 pl-3 pr-8 text-xs text-[#14234b] outline-none focus:border-blue-300">
+      {children}
+    </select>
+    <ChevronDown className="pointer-events-none absolute right-2.5 top-1/2 size-3.5 -translate-y-1/2 text-slate-500" />
+  </div>
+);
+
+const TrendGraph = ({ series, height = 110 }) => {
   const width = 320;
-  const height = 120;
-  const toPolyline = (arr) => {
-    if (!arr.length) return '';
-    return arr.map((v, i) => `${(i / Math.max(1, arr.length - 1)) * width},${height - (Math.max(0, Math.min(100, v)) / 100) * height}`).join(' ');
-  };
+  const toPoints = (arr) => arr.map((v, i) => `${(i / Math.max(1, arr.length - 1)) * width},${height - (Math.max(0, Math.min(100, v)) / 100) * height}`).join(' ');
   return (
-    <svg viewBox={`0 0 ${width} ${height}`} className="w-full h-32 bg-slate-50 rounded-lg border border-slate-200">
-      <polyline fill="none" stroke={colorA} strokeWidth="3" points={toPolyline(pointsA)} />
-      {pointsB.length > 0 && <polyline fill="none" stroke={colorB} strokeWidth="3" points={toPolyline(pointsB)} />}
+    <svg viewBox={`0 0 ${width} ${height}`} className="h-28 w-full rounded-lg border border-slate-100 bg-slate-50" preserveAspectRatio="none">
+      {series.map((s) => s.points.length > 0 && <polyline key={s.label} fill="none" stroke={s.color} strokeWidth="2.5" points={toPoints(s.points)} />)}
     </svg>
   );
 };
 
-const parseSortNumber = (value) => {
-  const text = String(value ?? '').trim();
-  if (!text) return Number.POSITIVE_INFINITY;
-  const n = Number(text);
-  if (Number.isFinite(n)) return n;
-  const m = text.match(/\d+/);
-  return m ? Number(m[0]) : Number.POSITIVE_INFINITY;
+const Pager = ({ page, totalPages, onPage }) => {
+  const pages = useMemo(() => {
+    if (totalPages <= 6) return Array.from({ length: totalPages }, (_, i) => i + 1);
+    const set = new Set([1, totalPages, page - 1, page, page + 1].filter((n) => n >= 1 && n <= totalPages));
+    if (page <= 3) [2, 3, 4, 5].forEach((n) => set.add(n));
+    const sorted = [...set].sort((a, b) => a - b);
+    const out = [];
+    sorted.forEach((n, i) => { if (i && n - sorted[i - 1] > 1) out.push('…'); out.push(n); });
+    return out;
+  }, [page, totalPages]);
+  return (
+    <div className="flex items-center gap-1">
+      <button type="button" onClick={() => onPage(page - 1)} disabled={page === 1} className="flex size-7 items-center justify-center rounded-md border border-[#e2e8f0] bg-white disabled:opacity-40"><ChevronLeft className="size-3.5" /></button>
+      {pages.map((n, i) => n === '…' ? <span key={`e${i}`} className="px-0.5 text-xs">…</span> : (
+        <button key={n} type="button" onClick={() => onPage(n)} className={`flex size-7 items-center justify-center rounded-md border text-xs ${n === page ? 'border-blue-600 bg-blue-600 font-semibold text-white' : 'border-[#e2e8f0] bg-white text-[#2a3a60] hover:bg-[#f3f6fd]'}`}>{n}</button>
+      ))}
+      <button type="button" onClick={() => onPage(page + 1)} disabled={page === totalPages} className="flex size-7 items-center justify-center rounded-md border border-[#e2e8f0] bg-white text-blue-600 disabled:opacity-40"><ChevronRight className="size-3.5" /></button>
+    </div>
+  );
+};
+
+const Modal = ({ open, onClose, children, width = 'max-w-5xl' }) => {
+  useEffect(() => {
+    if (!open) return undefined;
+    const onKey = (e) => { if (e.key === 'Escape') onClose(); };
+    window.addEventListener('keydown', onKey);
+    const prev = document.body.style.overflow;
+    document.body.style.overflow = 'hidden';
+    return () => { window.removeEventListener('keydown', onKey); document.body.style.overflow = prev; };
+  }, [open, onClose]);
+  return createPortal(
+    <AnimatePresence>
+      {open && (
+        <Motion.div className="fixed inset-0 z-[110] flex items-center justify-center bg-slate-950/60 p-4 backdrop-blur-[2px]" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} onClick={onClose}>
+          <Motion.div role="dialog" aria-modal="true" initial={{ opacity: 0, y: 14, scale: 0.97 }} animate={{ opacity: 1, y: 0, scale: 1 }} exit={{ opacity: 0, y: 14, scale: 0.97 }} transition={{ type: 'spring', stiffness: 340, damping: 30 }} className={`flex max-h-[90vh] w-full flex-col overflow-hidden rounded-2xl bg-white shadow-2xl ${width}`} onClick={(e) => e.stopPropagation()}>
+            {children}
+          </Motion.div>
+        </Motion.div>
+      )}
+    </AnimatePresence>,
+    document.body,
+  );
+};
+
+const emptyRow = () => ({ include: true, overallStatus: 'good', issueToday: 'no', issueTag: 'none', mood: '', behavior: '', notes: '' });
+
+const BulkEntryModal = ({ open, onClose, students, onSaved }) => {
+  const [date, setDate] = useState(localDateKey());
+  const [rows, setRows] = useState({});
+  const [filter, setFilter] = useState('');
+  const [saving, setSaving] = useState(false);
+
+  // Prefill each row from that day's saved entry, if any.
+  useEffect(() => {
+    if (!open) return;
+    const next = {};
+    students.forEach((s) => {
+      const log = s.logs.find((l) => l.date === date);
+      next[s.id] = log
+        ? { include: true, overallStatus: log.overallStatus, issueToday: log.issueToday, issueTag: log.issueTag, mood: log.mood ?? '', behavior: log.behavior ?? '', notes: log.notes || '' }
+        : emptyRow();
+    });
+    setRows(next);
+  }, [open, date, students]);
+
+  const visible = useMemo(() => {
+    const q = filter.trim().toLowerCase();
+    return q ? students.filter((s) => s.name.toLowerCase().includes(q) || String(s.roll).toLowerCase().includes(q)) : students;
+  }, [students, filter]);
+  const update = (id, patch) => setRows((prev) => ({ ...prev, [id]: { ...prev[id], ...patch } }));
+  const includedIds = students.filter((s) => rows[s.id]?.include).map((s) => s.id);
+  const allIncluded = students.length > 0 && includedIds.length === students.length;
+  const applyToAll = (patch) => setRows((prev) => Object.fromEntries(Object.entries(prev).map(([id, r]) => [id, r.include ? { ...r, ...patch } : r])));
+
+  const save = async () => {
+    if (!includedIds.length) { toast.error('Select at least one student'); return; }
+    setSaving(true);
+    try {
+      const entries = includedIds.map((id) => {
+        const r = rows[id];
+        return {
+          studentId: id, overallStatus: r.overallStatus, issueToday: r.issueToday,
+          issueTag: r.issueToday === 'no' ? 'none' : r.issueTag,
+          mood: r.mood === '' ? null : Number(r.mood), behavior: r.behavior === '' ? null : Number(r.behavior),
+          notes: r.notes,
+        };
+      });
+      const res = await fetch(`${API_BASE}/api/health-records/logs/bulk`, { method: 'POST', headers: authHeaders(), body: JSON.stringify({ date, entries }) });
+      const payload = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(payload?.error || 'Unable to save entries');
+      toast.success(payload.message || 'Health entries saved');
+      onSaved();
+      onClose();
+    } catch (err) {
+      toast.error(err.message);
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const inputCls = 'w-full rounded-md border border-[#e2e8f0] bg-white px-2 py-1.5 text-[11px] outline-none focus:border-blue-300 disabled:bg-slate-50 disabled:text-slate-400';
+
+  return (
+    <Modal open={open} onClose={saving ? () => {} : onClose}>
+      <div className="flex items-start justify-between gap-3 border-b border-slate-100 px-5 py-4">
+        <div className="flex items-center gap-3">
+          <span className="flex size-10 items-center justify-center rounded-xl bg-blue-50 text-blue-600"><ClipboardList className="size-5" /></span>
+          <div>
+            <h3 className="text-[15px] font-bold text-[#14234b]">Bulk Health Entry</h3>
+            <p className="text-[11.5px] text-slate-500">Record today's health and wellbeing status for every student at once. Existing entries for the date are updated.</p>
+          </div>
+        </div>
+        <button type="button" onClick={onClose} disabled={saving} aria-label="Close" className="rounded-lg p-1.5 text-slate-400 hover:bg-slate-100 hover:text-slate-700"><X className="size-4" /></button>
+      </div>
+
+      <div className="flex flex-wrap items-center gap-2 border-b border-slate-100 bg-slate-50/60 px-5 py-3">
+        <label className="flex items-center gap-2 rounded-lg border border-[#e2e8f0] bg-white px-3 py-1.5 text-xs text-[#14234b]">
+          <Calendar className="size-3.5 text-slate-500" />
+          <input type="date" value={date} max={localDateKey()} onChange={(e) => e.target.value && setDate(e.target.value)} className="bg-transparent text-xs outline-none" />
+        </label>
+        <div className="relative min-w-[180px] flex-1">
+          <Search className="pointer-events-none absolute left-3 top-1/2 size-3.5 -translate-y-1/2 text-slate-400" />
+          <input value={filter} onChange={(e) => setFilter(e.target.value)} placeholder="Find student by name or roll..." className="w-full rounded-lg border border-[#e2e8f0] bg-white py-1.5 pl-8 pr-3 text-xs outline-none focus:border-blue-300" />
+        </div>
+        <span className="text-[11px] text-slate-500">Set selected to:</span>
+        {STATUS_OPTIONS.map((o) => (
+          <button key={o.value} type="button" onClick={() => applyToAll({ overallStatus: o.value })} className={`rounded-lg border px-2.5 py-1 text-[11px] font-semibold ${o.idle}`}>{o.label}</button>
+        ))}
+      </div>
+
+      <div className="flex-1 overflow-auto">
+        <table className="w-full min-w-[980px] text-xs">
+          <thead className="sticky top-0 z-10 bg-[#f3f6fd] text-left text-[11px] font-semibold text-[#2a3a60]">
+            <tr>
+              <th className="w-10 px-3 py-2.5">
+                <input type="checkbox" checked={allIncluded} onChange={(e) => setRows((prev) => Object.fromEntries(Object.entries(prev).map(([id, r]) => [id, { ...r, include: e.target.checked }])))} aria-label="Select all students" />
+              </th>
+              <th className="px-3 py-2.5">Student</th>
+              <th className="px-3 py-2.5">Overall Status</th>
+              <th className="w-24 px-3 py-2.5">Any Issue?</th>
+              <th className="w-32 px-3 py-2.5">Issue</th>
+              <th className="w-20 px-3 py-2.5">Mood</th>
+              <th className="w-20 px-3 py-2.5">Behavior</th>
+              <th className="px-3 py-2.5">Notes</th>
+            </tr>
+          </thead>
+          <tbody>
+            {visible.length === 0 && <tr><td colSpan={8} className="px-3 py-10 text-center text-slate-400">No students to show.</td></tr>}
+            {visible.map((s) => {
+              const r = rows[s.id] || emptyRow();
+              const disabled = !r.include;
+              return (
+                <tr key={s.id} className={`border-t border-[#eef2f7] ${disabled ? 'opacity-50' : ''}`}>
+                  <td className="px-3 py-2"><input type="checkbox" checked={r.include} onChange={(e) => update(s.id, { include: e.target.checked })} aria-label={`Include ${s.name}`} /></td>
+                  <td className="px-3 py-2">
+                    <div className="flex items-center gap-2">
+                      <Avatar name={s.name} profilePic={s.profilePic} className="size-7 text-[10px]" />
+                      <div className="min-w-0">
+                        <p className="truncate font-semibold text-[#14234b]">{s.name}</p>
+                        <p className="text-[10px] text-slate-500">Roll {s.roll || '—'} · {s.className}</p>
+                      </div>
+                    </div>
+                  </td>
+                  <td className="px-3 py-2">
+                    <div className="flex gap-1">
+                      {STATUS_OPTIONS.map((o) => (
+                        <button key={o.value} type="button" disabled={disabled} onClick={() => update(s.id, { overallStatus: o.value })} className={`rounded-md border px-2 py-1 text-[10.5px] font-semibold transition ${r.overallStatus === o.value ? o.active : 'border-slate-200 bg-white text-slate-400 hover:bg-slate-50'}`}>{o.label}</button>
+                      ))}
+                    </div>
+                  </td>
+                  <td className="px-3 py-2">
+                    <select disabled={disabled} value={r.issueToday} onChange={(e) => update(s.id, { issueToday: e.target.value, issueTag: e.target.value === 'no' ? 'none' : r.issueTag })} className={inputCls}>
+                      {ISSUE_TODAY_OPTIONS.map((o) => <option key={o.value} value={o.value}>{o.label}</option>)}
+                    </select>
+                  </td>
+                  <td className="px-3 py-2">
+                    <select disabled={disabled || r.issueToday === 'no'} value={r.issueToday === 'no' ? 'none' : r.issueTag} onChange={(e) => update(s.id, { issueTag: e.target.value })} className={inputCls}>
+                      {ISSUE_TAGS.map((o) => <option key={o.value} value={o.value}>{o.label}</option>)}
+                    </select>
+                  </td>
+                  <td className="px-3 py-2"><input disabled={disabled} type="number" min={0} max={100} value={r.mood} placeholder="0-100" onChange={(e) => update(s.id, { mood: e.target.value })} className={inputCls} /></td>
+                  <td className="px-3 py-2"><input disabled={disabled} type="number" min={0} max={100} value={r.behavior} placeholder="0-100" onChange={(e) => update(s.id, { behavior: e.target.value })} className={inputCls} /></td>
+                  <td className="px-3 py-2"><input disabled={disabled} value={r.notes} maxLength={NOTE_LIMIT} placeholder="Short note..." onChange={(e) => update(s.id, { notes: e.target.value })} className={inputCls} /></td>
+                </tr>
+              );
+            })}
+          </tbody>
+        </table>
+      </div>
+
+      <div className="flex flex-wrap items-center justify-between gap-3 border-t border-slate-100 px-5 py-3">
+        <p className="text-xs text-slate-500">{includedIds.length} of {students.length} students selected · {formatDate(date)}</p>
+        <div className="flex gap-2">
+          <button type="button" onClick={onClose} disabled={saving} className="rounded-lg border border-slate-200 px-4 py-2 text-xs font-semibold text-slate-600 hover:bg-slate-50">Cancel</button>
+          <button type="button" onClick={save} disabled={saving || !includedIds.length} className="inline-flex items-center gap-2 rounded-lg bg-blue-600 px-4 py-2 text-xs font-semibold text-white hover:bg-blue-700 disabled:opacity-50">
+            {saving ? <Loader2 className="size-3.5 animate-spin" /> : <Save className="size-3.5" />} Save {includedIds.length} entries
+          </button>
+        </div>
+      </div>
+    </Modal>
+  );
 };
 
 const HealthUpdatesAdvanced = () => {
   const [students, setStudents] = useState([]);
+  const [logs, setLogs] = useState([]);
+  const [interventions, setInterventions] = useState([]);
   const [selectedId, setSelectedId] = useState(null);
   const [loadingStudents, setLoadingStudents] = useState(true);
   const [loadError, setLoadError] = useState('');
@@ -70,330 +319,526 @@ const HealthUpdatesAdvanced = () => {
   const [selectedSection, setSelectedSection] = useState('');
   const [search, setSearch] = useState('');
   const [statusFilter, setStatusFilter] = useState('all');
-  const [sortBy, setSortBy] = useState('recent');
-  const [range, setRange] = useState('7');
-  const [quick, setQuick] = useState({ mood: '😊', energy: 'High', physicalIssue: 'No', notes: '', issueTag: 'none' });
-  const [action, setAction] = useState({ type: 'Talked to student', followUpDate: '', notes: '', privateNote: false });
+  const [page, setPage] = useState(1);
+  const [range, setRange] = useState(7);
   const [tab, setTab] = useState('overview');
+  const [reloadKey, setReloadKey] = useState(0);
+  const [bulkOpen, setBulkOpen] = useState(false);
+  const [quick, setQuick] = useState({ date: localDateKey(), overallStatus: 'good', issueToday: 'no', issueTag: 'none', notes: '' });
+  const [savingQuick, setSavingQuick] = useState(false);
+  const [action, setAction] = useState({ type: 'Talked to student', followUpDate: '', notes: '', confidential: false });
+  const [savingAction, setSavingAction] = useState(false);
 
   useEffect(() => {
+    let cancelled = false;
     const loadStudents = async () => {
       setLoadingStudents(true);
       setLoadError('');
       try {
         const token = localStorage.getItem('token');
-        const userType = localStorage.getItem('userType');
-        if (!token || userType !== 'Teacher') throw new Error('Teacher login required');
-
+        if (!token || localStorage.getItem('userType') !== 'Teacher') throw new Error('Teacher login required');
         const now = new Date();
-        const month = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`;
-        const date = now.toISOString().slice(0, 10);
-        const query = new URLSearchParams({ month, date });
+        const query = new URLSearchParams({ month: `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`, date: localDateKey(now) });
         if (selectedSession) query.set('session', selectedSession);
         if (selectedClass) query.set('className', selectedClass);
         if (selectedSection) query.set('section', selectedSection);
-        if (search.trim()) query.set('search', search.trim());
-
-        const res = await fetch(`${API_BASE}/api/attendance/teacher/students?${query.toString()}`, {
-          headers: { Authorization: `Bearer ${token}` },
-        });
+        const res = await fetch(`${API_BASE}/api/attendance/teacher/students?${query.toString()}`, { headers: { Authorization: `Bearer ${token}` } });
         const payload = await res.json().catch(() => ({}));
         if (!res.ok) throw new Error(payload?.error || 'Unable to load students');
 
         const mapped = (Array.isArray(payload?.students) ? payload.students : []).map((s) => {
-          const attendancePercent = Number(
-            s?.monthlySummary?.attendancePercentage ??
-              s?.overallSummary?.attendancePercentage ??
-              80
-          );
-          const safePct = Number.isFinite(attendancePercent) ? attendancePercent : 80;
+          const pct = Number(s?.monthlySummary?.attendancePercentage ?? s?.overallSummary?.attendancePercentage ?? 80);
           return {
             id: String(s._id || s.id),
             name: s.name || 'Student',
             className: `${s.className || s.grade || '-'}${s.section ? `-${s.section}` : ''}`,
             roll: s.roll || s.rollNo || s.rollNumber || '',
             section: s.section || '',
-            parentFeedback: { homeBehavior: '—', sleepScreen: '—', emotionalState: '—' },
-            behaviorBaseline: Math.max(45, Math.min(95, Math.round(safePct))),
-            moodBase: Math.max(45, Math.min(95, Math.round(safePct * 0.9))),
-            healthBase: Math.max(45, Math.min(95, Math.round(safePct))),
-            logs: [],
-            interventions: [],
-            confidentialNotes: [],
+            profilePic: s.profilePic,
+            baseline: Math.max(45, Math.min(95, Math.round(Number.isFinite(pct) ? pct : 80))),
           };
         });
 
+        // Fetch saved check-ins in chunks to keep the query string short.
+        const ids = mapped.map((s) => s.id);
+        const chunks = [];
+        for (let i = 0; i < ids.length; i += 80) chunks.push(ids.slice(i, i + 80));
+        const results = await Promise.all(chunks.map(async (chunk) => {
+          const r = await fetch(`${API_BASE}/api/health-records/logs?days=30&studentIds=${chunk.join(',')}`, { headers: { Authorization: `Bearer ${token}` } });
+          const p = await r.json().catch(() => ({}));
+          return r.ok ? p.data : { logs: [], interventions: [] };
+        }));
+        if (cancelled) return;
         setStudents(mapped);
+        setLogs(results.flatMap((r) => r?.logs || []));
+        setInterventions(results.flatMap((r) => r?.interventions || []));
         setSessionOptions(Array.isArray(payload?.options?.sessions) ? payload.options.sessions : []);
         setClassOptions(Array.isArray(payload?.options?.classes) ? payload.options.classes : []);
         setSectionOptions(Array.isArray(payload?.options?.sections) ? payload.options.sections : []);
         setSelectedId((prev) => (mapped.some((s) => s.id === prev) ? prev : mapped[0]?.id || null));
       } catch (err) {
-        console.error('Health updates student fetch error:', err);
+        if (cancelled) return;
         setLoadError(err.message || 'Unable to load student data');
         setStudents([]);
         setSelectedId(null);
       } finally {
-        setLoadingStudents(false);
+        if (!cancelled) setLoadingStudents(false);
       }
     };
     loadStudents();
-  }, [selectedSession, selectedClass, selectedSection, search]);
+    return () => { cancelled = true; };
+  }, [selectedSession, selectedClass, selectedSection, reloadKey]);
 
-  const enriched = useMemo(() => students.map((s) => ({ ...s, metrics: computeMetrics(s) })), [students]);
-  const selectedStudent = useMemo(() => enriched.find((s) => s.id === selectedId) || null, [enriched, selectedId]);
+  const refresh = useCallback(() => setReloadKey((k) => k + 1), []);
+
+  const enriched = useMemo(() => {
+    const logsBy = {};
+    logs.forEach((l) => { (logsBy[String(l.studentId)] ||= []).push(l); });
+    const actionsBy = {};
+    interventions.forEach((a) => { (actionsBy[String(a.studentId)] ||= []).push(a); });
+    return students.map((s) => {
+      const studentLogs = (logsBy[s.id] || []).sort((a, b) => b.date.localeCompare(a.date));
+      const withLogs = { ...s, logs: studentLogs, interventions: actionsBy[s.id] || [] };
+      const metrics = computeMetrics(withLogs);
+      return { ...withLogs, metrics, tone: toneOf(metrics.wellbeing) };
+    });
+  }, [students, logs, interventions]);
 
   const directory = useMemo(() => {
-    let list = enriched.filter((s) => s.name.toLowerCase().includes(search.toLowerCase()) || s.className.toLowerCase().includes(search.toLowerCase()));
-    if (statusFilter !== 'all') list = list.filter((s) => s.metrics.status.toLowerCase() === statusFilter);
-    list = [...list].sort((a, b) => {
-      if (sortBy === 'lowest') {
-        const diff = a.metrics.wellbeingScore - b.metrics.wellbeingScore;
-        if (diff !== 0) return diff;
-      }
-      const aDate = a.logs[0]?.date || '';
-      const bDate = b.logs[0]?.date || '';
-      const byDate = String(bDate).localeCompare(String(aDate));
-      if (byDate !== 0) return byDate;
-      const byRoll = parseSortNumber(a.roll) - parseSortNumber(b.roll);
-      if (byRoll !== 0) return byRoll;
-      return String(a.name).localeCompare(String(b.name), undefined, { numeric: true });
-    });
-    return list;
-  }, [enriched, search, statusFilter, sortBy]);
+    const q = search.trim().toLowerCase();
+    return enriched
+      .filter((s) => !q || s.name.toLowerCase().includes(q) || String(s.roll).toLowerCase().includes(q))
+      .filter((s) => statusFilter === 'all' || s.tone === statusFilter)
+      .sort((a, b) => parseSortNumber(a.roll) - parseSortNumber(b.roll) || a.name.localeCompare(b.name));
+  }, [enriched, search, statusFilter]);
 
-  const emotionalInsights = useMemo(() => {
-    const atRisk = enriched.filter((s) => s.metrics.status !== 'Good');
-    const issueMap = {};
-    enriched.forEach((s) => s.logs.forEach((l) => {
-      const key = String(l.issueTag || '').toLowerCase();
-      if (key && key !== 'none') issueMap[key] = (issueMap[key] || 0) + 1;
-    }));
-    const frequentIssues = Object.entries(issueMap).sort((a, b) => b[1] - a[1]).slice(0, 5);
-    return { atRisk, frequentIssues };
-  }, [enriched]);
+  useEffect(() => { setPage(1); }, [search, statusFilter, selectedSession, selectedClass, selectedSection]);
+  const totalPages = Math.max(1, Math.ceil(directory.length / PAGE_SIZE));
+  const currentPage = Math.min(page, totalPages);
+  const pageStart = (currentPage - 1) * PAGE_SIZE;
+  const pageRows = directory.slice(pageStart, pageStart + PAGE_SIZE);
 
-  const saveQuickEntry = () => {
-    if (!selectedStudent) return;
-    const entry = {
-      date: new Date().toISOString().slice(0, 10),
-      mood: quick.mood,
-      energy: quick.energy,
-      physicalIssue: quick.physicalIssue,
-      notes: quick.notes.trim(),
-      issueTag: quick.issueTag.trim().toLowerCase() || 'none',
-      behaviorScore: selectedStudent.behaviorBaseline,
-      attendance: 1,
-    };
-    setStudents((prev) => prev.map((s) => (s.id === selectedStudent.id ? { ...s, logs: [entry, ...(s.logs || [])] } : s)));
-    setQuick((q) => ({ ...q, notes: '', issueTag: q.physicalIssue === 'Yes' ? q.issueTag : 'none' }));
+  const selected = useMemo(() => enriched.find((s) => s.id === selectedId) || null, [enriched, selectedId]);
+  const todayKey = localDateKey();
+  const checkedIn = enriched.filter((s) => s.logs.some((l) => l.date === todayKey)).length;
+  const counts = {
+    good: enriched.filter((s) => s.tone === 'good').length,
+    moderate: enriched.filter((s) => s.tone === 'moderate').length,
+    risk: enriched.filter((s) => s.tone === 'risk').length,
+  };
+  const atRisk = useMemo(() => enriched.filter((s) => s.tone !== 'good').sort((a, b) => a.metrics.wellbeing - b.metrics.wellbeing), [enriched]);
+  const frequentIssues = useMemo(() => {
+    const map = {};
+    logs.forEach((l) => { if (l.issueTag && l.issueTag !== 'none') map[l.issueTag] = (map[l.issueTag] || 0) + 1; });
+    return Object.entries(map).filter(([, n]) => n >= 2).sort((a, b) => b[1] - a[1]).slice(0, 5);
+  }, [logs]);
+  const repeatedIssueStudents = useMemo(() => enriched.filter((s) => {
+    const c = {};
+    s.logs.forEach((l) => { if (l.issueTag !== 'none') c[l.issueTag] = (c[l.issueTag] || 0) + 1; });
+    return Object.values(c).some((n) => n >= 3);
+  }), [enriched]);
+
+  useEffect(() => {
+    if (!selected) return;
+    const existing = selected.logs.find((l) => l.date === quick.date);
+    setQuick((q) => existing
+      ? { ...q, overallStatus: existing.overallStatus, issueToday: existing.issueToday, issueTag: existing.issueTag, notes: existing.notes || '' }
+      : { ...q, overallStatus: 'good', issueToday: 'no', issueTag: 'none', notes: '' });
+    // Only re-seed when the student or date changes, not on every log refresh.
+  }, [selectedId, quick.date]);
+
+  const saveQuickEntry = async () => {
+    if (!selected) return;
+    setSavingQuick(true);
+    try {
+      const res = await fetch(`${API_BASE}/api/health-records/logs/bulk`, {
+        method: 'POST',
+        headers: authHeaders(),
+        body: JSON.stringify({ date: quick.date, entries: [{ studentId: selected.id, overallStatus: quick.overallStatus, issueToday: quick.issueToday, issueTag: quick.issueToday === 'no' ? 'none' : quick.issueTag, notes: quick.notes }] }),
+      });
+      const payload = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(payload?.error || 'Unable to save entry');
+      toast.success(`Health entry saved for ${selected.name}`);
+      refresh();
+    } catch (err) {
+      toast.error(err.message);
+    } finally {
+      setSavingQuick(false);
+    }
   };
 
-  const saveIntervention = () => {
-    if (!selectedStudent) return;
-    const entry = { type: action.type, date: new Date().toISOString().slice(0, 10), followUpDate: action.followUpDate, description: action.notes };
-    setStudents((prev) =>
-      prev.map((s) => {
-        if (s.id !== selectedStudent.id) return s;
-        return {
-          ...s,
-          interventions: [entry, ...(s.interventions || [])],
-          confidentialNotes: action.privateNote && action.notes ? [{ date: entry.date, note: action.notes }, ...(s.confidentialNotes || [])] : s.confidentialNotes,
-        };
-      })
-    );
-    setAction({ type: 'Talked to student', followUpDate: '', notes: '', privateNote: false });
+  const saveIntervention = async () => {
+    if (!selected) return;
+    setSavingAction(true);
+    try {
+      const res = await fetch(`${API_BASE}/api/health-records/interventions`, { method: 'POST', headers: authHeaders(), body: JSON.stringify({ studentId: selected.id, ...action }) });
+      const payload = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(payload?.error || 'Unable to save action');
+      toast.success('Action saved');
+      setAction({ type: 'Talked to student', followUpDate: '', notes: '', confidential: false });
+      refresh();
+    } catch (err) {
+      toast.error(err.message);
+    } finally {
+      setSavingAction(false);
+    }
   };
 
-  const trendData = useMemo(() => {
-    if (!selectedStudent) return { mood: [], attendance: [], behavior: [] };
-    const limit = Number(range);
-    const logs = [...selectedStudent.logs].slice(0, limit).reverse();
-    return {
-      mood: logs.map((l) => moodScores[l.mood] || 50),
-      attendance: logs.map((l) => (l.attendance ? 100 : 20)),
-      behavior: logs.map((l) => l.behaviorScore || 60),
-    };
-  }, [selectedStudent, range]);
-  const today = new Date();
-  const todayKey = today.toISOString().slice(0, 10);
-  const checkedInCount = enriched.filter((student) => student.logs.some((log) => log.date === todayKey)).length;
-  const pendingCount = Math.max(enriched.length - checkedInCount, 0);
-  const atRiskCount = emotionalInsights.atRisk.length;
-  const healthCounts = {
-    good: enriched.filter((student) => student.metrics.status === 'Good').length,
-    moderate: enriched.filter((student) => student.metrics.status === 'Risk').length,
-    risk: enriched.filter((student) => student.metrics.status === 'Critical').length,
-  };
-  const toneFor = (score) => score >= 70 ? 'green' : score >= 40 ? 'yellow' : 'red';
-  const toneStyles = {
-    green: { bar: 'border-l-[#16a34a]', avatar: 'bg-[#dcfce7] text-[#16a34a]', score: 'bg-[#dcfce7] text-[#16a34a]', dot: 'bg-[#16a34a]', badge: 'bg-[#dcfce7] text-[#16a34a]' },
-    yellow: { bar: 'border-l-[#d97706]', avatar: 'bg-[#fef3c7] text-[#d97706]', score: 'bg-[#fef3c7] text-[#d97706]', dot: 'bg-[#d97706]', badge: 'bg-[#fef3c7] text-[#d97706]' },
-    red: { bar: 'border-l-[#dc2626]', avatar: 'bg-[#fecaca] text-[#dc2626]', score: 'bg-[#fecaca] text-[#dc2626]', dot: 'bg-[#dc2626]', badge: 'bg-[#fecaca] text-[#dc2626]' },
-  };
-  const initials = (name) => String(name || 'Student').split(' ').map((part) => part[0]).join('').slice(0, 2).toUpperCase();
+  const trend = useMemo(() => {
+    if (!selected) return [];
+    const from = localDateKey(new Date(Date.now() - (range - 1) * 86400000));
+    const points = [...selected.logs].filter((l) => l.date >= from).reverse();
+    return [
+      { label: 'Mood', color: '#2563eb', points: points.map((l) => l.mood ?? STATUS_SCORE[l.overallStatus]) },
+      { label: 'Health', color: '#10b981', points: points.map((l) => Math.max(0, STATUS_SCORE[l.overallStatus] - (ISSUE_PENALTY[l.issueToday] || 0))) },
+      { label: 'Behavior', color: '#f97316', points: points.map((l) => l.behavior ?? selected.baseline) },
+    ];
+  }, [selected, range]);
+
+  const total = enriched.length || 1;
+  const stats = [
+    { value: enriched.length, label: 'Students', hint: 'Total in this class', icon: Users, card: 'border-blue-100 bg-blue-50/50', iconBox: 'bg-blue-100 text-blue-600' },
+    { value: checkedIn, label: 'Checked In', hint: 'Health entry submitted', icon: CheckCircle2, card: 'border-emerald-100 bg-emerald-50/50', iconBox: 'bg-emerald-100 text-emerald-600' },
+    { value: Math.max(enriched.length - checkedIn, 0), label: 'Pending', hint: 'Yet to submit', icon: Clock, card: 'border-amber-100 bg-amber-50/50', iconBox: 'bg-amber-100 text-amber-500' },
+    { value: counts.risk, label: 'At Risk', hint: 'Score 0 – 39', icon: AlertTriangle, card: 'border-rose-100 bg-rose-50/50', iconBox: 'bg-rose-100 text-rose-600', valueCls: 'text-rose-700' },
+  ];
+
+  const metricCards = selected ? [
+    { label: 'Mood', value: selected.metrics.mood, icon: Smile, iconCls: 'text-emerald-500' },
+    { label: 'Behavior', value: selected.metrics.behavior, icon: Users, iconCls: 'text-blue-600' },
+    { label: 'Health', value: selected.metrics.health, icon: Heart, iconCls: 'text-rose-500' },
+    { label: 'Wellbeing', value: selected.metrics.wellbeing, icon: Leaf, iconCls: 'text-emerald-600' },
+  ] : [];
+
+  const panelCls = 'rounded-xl border border-[#eef2f7] bg-white p-4 shadow-[0_2px_10px_rgba(0,20,30,0.03)]';
 
   return (
-    <Motion.div
-      initial={{ opacity: 0, y: 18 }}
-      animate={{ opacity: 1, y: 0 }}
-      transition={{ duration: 0.45, ease: [0.16, 1, 0.3, 1] }}
-      className="mx-auto w-full max-w-[1100px] rounded-[2rem] border border-[#e2e8ee] bg-white p-5 text-[#0b1a33] shadow-[0_4px_20px_rgba(0,20,30,0.05)] transition-shadow hover:shadow-[0_8px_32px_rgba(0,20,30,0.07)] sm:p-8"
-    >
-      <div className="w-full">
-        <div className="mb-7 grid grid-cols-2 gap-3 lg:grid-cols-4">
-          {[
-            { label: 'Students', value: enriched.length, icon: User, color: 'bg-[#eff6ff] text-[#2563eb]' },
-            { label: 'Checked In', value: checkedInCount, icon: CheckCircle2, color: 'bg-[#ecfdf5] text-[#16a34a]' },
-            { label: 'Pending', value: pendingCount, icon: Calendar, color: 'bg-[#fffbeb] text-[#d97706]' },
-            { label: 'At Risk', value: atRiskCount, icon: AlertCircle, color: 'bg-[#fef2f2] text-[#dc2626]' },
-          ].map((stat, index) => (
-            <Motion.div key={stat.label} initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: index * 0.06 }} className="flex items-center gap-3 rounded-2xl border border-[#edf2f7] bg-white p-4 shadow-sm transition hover:-translate-y-0.5 hover:shadow-md">
-              <div className={'flex size-10 items-center justify-center rounded-xl ' + stat.color}><stat.icon className="size-4" /></div>
-              <div><p className="text-2xl font-bold leading-none">{stat.value}</p><p className="mt-1 text-[10px] uppercase tracking-[0.03em] text-slate-400">{stat.label}</p></div>
-            </Motion.div>
+    <Motion.div initial={{ opacity: 0, y: 14 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.4 }} className="mx-auto w-full max-w-[1400px] space-y-4 rounded-2xl border border-[#eaedf0] bg-[#fbfcff] p-4 text-[#14234b] shadow-[0_4px_20px_rgba(0,20,30,0.05)] sm:p-5">
+      <header className="flex flex-wrap items-start justify-between gap-3">
+        <div className="flex items-center gap-3">
+          <span className="flex size-11 items-center justify-center rounded-xl bg-blue-50 text-blue-600"><HeartPulse className="size-6" /></span>
+          <div>
+            <h1 className="text-xl font-bold">Student Health &amp; Wellbeing</h1>
+            <p className="text-xs text-[#4a5a85]">Track students' mood, behavior, health and overall wellbeing.</p>
+          </div>
+        </div>
+        <div className="flex gap-2">
+          <button type="button" onClick={refresh} disabled={loadingStudents} className="inline-flex items-center gap-1.5 rounded-lg border border-blue-200 bg-white px-3 py-2 text-xs font-semibold text-blue-600 hover:bg-blue-50 disabled:opacity-50">
+            {loadingStudents ? <Loader2 className="size-3.5 animate-spin" /> : <RefreshCcw className="size-3.5" />} Refresh
+          </button>
+          <button type="button" onClick={() => setBulkOpen(true)} disabled={loadingStudents || !enriched.length} className="inline-flex items-center gap-1.5 rounded-lg bg-blue-600 px-3 py-2 text-xs font-semibold text-white hover:bg-blue-700 disabled:opacity-50">
+            <Plus className="size-3.5" /> Add Entries
+          </button>
+        </div>
+      </header>
+
+      <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-[repeat(4,minmax(0,1fr))_minmax(0,1.2fr)]">
+        {stats.map(({ value, label, hint, icon: Icon, card, iconBox, valueCls }) => (
+          <div key={label} className={`flex items-center gap-3 rounded-xl border p-3 ${card}`}>
+            <span className={`flex size-11 shrink-0 items-center justify-center rounded-lg ${iconBox}`}><Icon className="size-5" /></span>
+            <div className="min-w-0">
+              <p className={`text-xl font-bold leading-tight ${valueCls || ''}`}>{loadingStudents ? '–' : value}</p>
+              <p className="text-xs font-medium text-[#2a3a60]">{label}</p>
+              <p className="truncate text-[10px] text-[#6a7896]">{hint}</p>
+            </div>
+          </div>
+        ))}
+        <div className="flex flex-col justify-center gap-1.5 rounded-xl border border-[#eef2f7] bg-white p-3 sm:col-span-2 xl:col-span-1">
+          {[['Good (70–100)', counts.good, 'bg-emerald-500'], ['Moderate (40–69)', counts.moderate, 'bg-amber-400'], ['At Risk (0–39)', counts.risk, 'bg-rose-500']].map(([label, n, color]) => (
+            <div key={label} className="flex items-center gap-2 text-[11px]">
+              <span className={`size-2 rounded-full ${color}`} />
+              <span className="w-24 shrink-0 text-[#2a3a60]">{label}</span>
+              <div className="h-1.5 flex-1 overflow-hidden rounded-full bg-slate-100"><div className={`h-full rounded-full ${color}`} style={{ width: `${(n / total) * 100}%` }} /></div>
+              <span className="w-6 text-right text-[#2a3a60]">{n}</span>
+            </div>
           ))}
         </div>
+      </div>
 
-        <Motion.div
-          initial={{ opacity: 0, y: 8 }}
-          animate={{ opacity: 1, y: 0 }}
-          transition={{ delay: 0.22, duration: 0.3 }}
-          className="mb-6 flex flex-wrap items-center gap-4 rounded-full border border-[#edf2f7] bg-[#fafbfc] px-4 py-2 text-[11px] font-medium text-slate-500"
-        >
-          <span className="inline-flex items-center gap-1.5"><span className="size-2.5 rounded-full bg-[#16a34a]" /> Good (70-100)</span>
-          <span className="inline-flex items-center gap-1.5"><span className="size-2.5 rounded-full bg-[#d97706]" /> Moderate (40-69)</span>
-          <span className="inline-flex items-center gap-1.5"><span className="size-2.5 rounded-full bg-[#dc2626]" /> At Risk (0-39)</span>
-          <span className="ml-auto flex items-center gap-3 text-slate-400"><span className="text-[#16a34a]">● {healthCounts.good}</span><span className="text-[#d97706]">● {healthCounts.moderate}</span><span className="text-[#dc2626]">● {healthCounts.risk}</span></span>
-        </Motion.div>
-
-        <div className="grid gap-6 lg:grid-cols-[minmax(0,1fr)_340px]">
-          <Motion.section layout initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.28, duration: 0.35 }} className="rounded-2xl border border-[#edf2f7] bg-[#fafbfc] p-4 shadow-sm sm:p-5">
-            <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
-              <h2 className="flex items-center gap-2 text-sm font-semibold"><span className="text-blue-600">▦</span> Student Directory</h2>
-              <div className="flex flex-wrap gap-1.5">
-                <button type="button" onClick={() => setStatusFilter('all')} className={'rounded-full border px-3 py-1 text-[10px] font-medium ' + (statusFilter === 'all' ? 'border-blue-200 bg-blue-50 text-blue-600' : 'border-transparent bg-slate-50 text-slate-400')}>All Years</button>
-                <button type="button" onClick={() => setSelectedClass('')} className="rounded-full border border-transparent bg-slate-50 px-3 py-1 text-[10px] font-medium text-slate-400">All Classes</button>
-                <button type="button" onClick={() => setSelectedSection('')} className="rounded-full border border-transparent bg-slate-50 px-3 py-1 text-[10px] font-medium text-slate-400">All Sections</button>
-                <button type="button" onClick={() => setStatusFilter('critical')} className={'rounded-full border px-3 py-1 text-[10px] font-medium ' + (statusFilter === 'critical' ? 'border-red-200 bg-red-50 text-red-600' : 'border-transparent bg-slate-50 text-slate-400')}>Recent Issue</button>
-              </div>
+      <div className="grid gap-4 lg:grid-cols-[minmax(0,420px)_minmax(0,1fr)]">
+        {/* Student Directory */}
+        <section className={`${panelCls} flex flex-col`}>
+          <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
+            <h2 className="text-sm font-bold">Student Directory</h2>
+            <div className="relative min-w-[160px] flex-1 sm:max-w-[220px]">
+              <Search className="pointer-events-none absolute left-3 top-1/2 size-3.5 -translate-y-1/2 text-slate-400" />
+              <input value={search} onChange={(e) => setSearch(e.target.value)} placeholder="Search student..." className="w-full rounded-lg border border-[#e2e8f0] py-2 pl-8 pr-3 text-xs outline-none focus:border-blue-300" />
             </div>
+          </div>
+          <div className="mb-3 grid grid-cols-2 gap-2 sm:grid-cols-4">
+            <SelectBox value={selectedSession} onChange={(e) => setSelectedSession(e.target.value)}><option value="">All Years</option>{sessionOptions.map((o) => <option key={o} value={o}>{o}</option>)}</SelectBox>
+            <SelectBox value={selectedClass} onChange={(e) => setSelectedClass(e.target.value)}><option value="">All Classes</option>{classOptions.map((o) => <option key={o} value={o}>{o}</option>)}</SelectBox>
+            <SelectBox value={selectedSection} onChange={(e) => setSelectedSection(e.target.value)}><option value="">All Sections</option>{sectionOptions.map((o) => <option key={o} value={o}>{o}</option>)}</SelectBox>
+            <SelectBox value={statusFilter} onChange={(e) => setStatusFilter(e.target.value)}><option value="all">All Status</option><option value="good">Good</option><option value="moderate">Moderate</option><option value="risk">At Risk</option></SelectBox>
+          </div>
 
-            <div className="relative mb-3">
-              <Search className="absolute left-3 top-1/2 size-3.5 -translate-y-1/2 text-slate-300" />
-              <input value={search} onChange={(event) => setSearch(event.target.value)} placeholder="Search student..." className="w-full rounded-full border border-[#edf2f7] bg-[#fafbfc] py-2 pl-9 pr-3 text-xs outline-none transition focus:border-blue-500 focus:bg-white focus:ring-2 focus:ring-blue-500/10" />
-            </div>
-
-            <div className="mb-3 grid grid-cols-1 gap-2 sm:grid-cols-3">
-              <select value={selectedSession} onChange={(event) => setSelectedSession(event.target.value)} className="rounded-full border border-[#edf2f7] bg-[#fafbfc] px-3 py-2 text-xs outline-none"><option value="">All Years</option>{sessionOptions.map((option) => <option key={option} value={option}>{option}</option>)}</select>
-              <select value={selectedClass} onChange={(event) => setSelectedClass(event.target.value)} className="rounded-full border border-[#edf2f7] bg-[#fafbfc] px-3 py-2 text-xs outline-none"><option value="">All Classes</option>{classOptions.map((option) => <option key={option} value={option}>{option}</option>)}</select>
-              <select value={selectedSection} onChange={(event) => setSelectedSection(event.target.value)} className="rounded-full border border-[#edf2f7] bg-[#fafbfc] px-3 py-2 text-xs outline-none"><option value="">All Sections</option>{sectionOptions.map((option) => <option key={option} value={option}>{option}</option>)}</select>
-            </div>
-
-            <div className="mb-3 flex flex-wrap gap-2">
-              <select value={statusFilter} onChange={(event) => setStatusFilter(event.target.value)} className="rounded-full border border-[#edf2f7] bg-[#fafbfc] px-3 py-1.5 text-[11px] outline-none"><option value="all">All Status</option><option value="good">Good</option><option value="risk">Risk</option><option value="critical">Critical</option></select>
-              <select value={sortBy} onChange={(event) => setSortBy(event.target.value)} className="rounded-full border border-[#edf2f7] bg-[#fafbfc] px-3 py-1.5 text-[11px] outline-none"><option value="recent">Recent issue</option><option value="lowest">Lowest wellbeing</option></select>
-            </div>
-
-            <div className="max-h-[430px] space-y-1 overflow-y-auto pr-1">
-              {loadingStudents && <div className="p-5 text-center text-sm text-slate-400">Loading students...</div>}
-              {loadError && <div className="rounded-xl bg-red-50 p-3 text-xs text-red-600">{loadError}</div>}
-              {!loadingStudents && !directory.length && !loadError && <div className="p-8 text-center text-sm text-slate-400">No students match the current filters.</div>}
-              <AnimatePresence initial={false}>
-                {directory.map((student, index) => {
-                  const tone = toneFor(student.metrics.wellbeingScore);
-                  const styles = toneStyles[tone];
+          <div className="flex-1 overflow-x-auto">
+            <table className="w-full text-xs">
+              <thead className="bg-[#f3f6fd] text-left text-[11px] font-semibold text-[#2a3a60]">
+                <tr><th className="w-8 px-2 py-2 text-center">#</th><th className="px-2 py-2">Student</th><th className="px-2 py-2 text-center">Score</th><th className="px-2 py-2 text-center">Status</th></tr>
+              </thead>
+              <tbody>
+                {loadingStudents && <tr><td colSpan={4} className="py-10 text-center text-slate-400"><Loader2 className="mx-auto size-5 animate-spin text-blue-500" /></td></tr>}
+                {!loadingStudents && loadError && <tr><td colSpan={4} className="p-3"><div className="rounded-lg bg-rose-50 p-3 text-rose-600">{loadError}</div></td></tr>}
+                {!loadingStudents && !loadError && !pageRows.length && <tr><td colSpan={4} className="py-10 text-center text-slate-400">No students match the current filters.</td></tr>}
+                {!loadingStudents && pageRows.map((s, i) => {
+                  const t = TONE[s.tone];
+                  const active = s.id === selectedId;
                   return (
-                    <Motion.button key={student.id} layout initial={{ opacity: 0, x: -8 }} animate={{ opacity: 1, x: 0 }} exit={{ opacity: 0, x: 8 }} transition={{ delay: index * 0.035 }} type="button" onClick={() => setSelectedId(student.id)} className={'flex w-full items-center justify-between rounded-xl border-l-4 px-3 py-2 text-left transition hover:translate-x-0.5 hover:bg-slate-50 ' + styles.bar + (selectedId === student.id ? ' bg-blue-50 ring-1 ring-blue-200' : '')}>
-                      <span className="flex min-w-0 items-center gap-2.5"><span className={'flex size-8 shrink-0 items-center justify-center rounded-full text-[10px] font-semibold ' + styles.avatar}>{initials(student.name)}</span><span className="min-w-0"><span className="block truncate text-xs font-medium">{student.name}</span><span className="block text-[10px] text-slate-400">{student.className} · Roll {student.roll || '—'} · Sec {student.section || '—'}</span></span></span>
-                      <span className="flex items-center gap-1.5"><span className={'size-2.5 rounded-full ' + styles.dot} /><span className={'rounded-full px-2 py-0.5 text-[10px] font-semibold ' + styles.score}>{student.metrics.wellbeingScore}</span>{tone === 'red' && <span className="rounded-full border border-red-200 bg-red-50 px-2 py-0.5 text-[9px] font-bold uppercase text-red-600">Risk</span>}</span>
-                    </Motion.button>
+                    <tr key={s.id} onClick={() => setSelectedId(s.id)} className={`cursor-pointer border-t border-[#eef2f7] transition ${active ? 'bg-blue-50/70 outline outline-1 -outline-offset-1 outline-blue-200' : 'hover:bg-[#fafbff]'}`}>
+                      <td className="px-2 py-2 text-center text-[#4a5a85]">{pageStart + i + 1}</td>
+                      <td className="px-2 py-2">
+                        <div className="flex items-center gap-2">
+                          <Avatar name={s.name} profilePic={s.profilePic} className="size-8 text-[11px]" />
+                          <div className="min-w-0">
+                            <p className="truncate font-semibold">{s.name}</p>
+                            <p className="text-[10px] text-[#6a7896]">{s.className} · Roll {s.roll || '—'}</p>
+                          </div>
+                        </div>
+                      </td>
+                      <td className="px-2 py-2 text-center"><span className={`inline-block min-w-[36px] rounded-md px-1.5 py-1 font-semibold ${t.score}`}>{s.metrics.wellbeing}</span></td>
+                      <td className="px-2 py-2 text-center"><span className={`inline-flex items-center gap-1 rounded-md px-2 py-1 text-[10.5px] font-medium ${t.pill}`}>{s.tone === 'risk' && <span className="size-1.5 rounded-full bg-rose-500" />}{t.label}</span></td>
+                    </tr>
                   );
                 })}
+              </tbody>
+            </table>
+          </div>
+          <div className="mt-3 flex flex-wrap items-center justify-between gap-2 text-[11px] text-[#4a5a85]">
+            <p>Showing {directory.length ? pageStart + 1 : 0} to {Math.min(pageStart + PAGE_SIZE, directory.length)} of {directory.length} students</p>
+            <Pager page={currentPage} totalPages={totalPages} onPage={setPage} />
+          </div>
+        </section>
+
+        {/* Student detail */}
+        <section className={`${panelCls} space-y-4`}>
+          {!selected ? (
+            <div className="flex min-h-[300px] items-center justify-center text-sm text-slate-400">{loadingStudents ? 'Loading…' : 'Select a student to view wellbeing.'}</div>
+          ) : (
+            <>
+              <div className="flex flex-wrap items-center justify-between gap-3">
+                <div className="flex items-center gap-3">
+                  <Avatar name={selected.name} profilePic={selected.profilePic} className="size-12 text-base" />
+                  <div>
+                    <h2 className="text-lg font-bold">{selected.name}</h2>
+                    <p className="text-xs text-[#6a7896]">{selected.className} · Roll {selected.roll || '—'} · Sec {selected.section || '—'}</p>
+                  </div>
+                </div>
+                <button type="button" onClick={() => setTab('entries')} className="inline-flex items-center gap-1.5 rounded-lg border border-blue-200 bg-blue-50/50 px-3 py-2 text-xs font-semibold text-blue-600 hover:bg-blue-50"><FileText className="size-3.5" /> View Full Report</button>
+              </div>
+
+              <div className="flex gap-1 overflow-x-auto rounded-xl border border-[#eef2f7] bg-white p-1">
+                {TABS.map(({ key, label, icon: Icon }) => (
+                  <button key={key} type="button" onClick={() => setTab(key)} className={`inline-flex flex-1 shrink-0 items-center justify-center gap-1.5 whitespace-nowrap rounded-lg px-3 py-2 text-xs font-medium transition ${tab === key ? 'bg-blue-600 text-white shadow-sm' : 'text-[#2a3a60] hover:bg-slate-50'}`}><Icon className="size-3.5" />{label}</button>
+                ))}
+              </div>
+
+              <div className="grid grid-cols-2 gap-3 xl:grid-cols-4">
+                {metricCards.map(({ label, value, icon: Icon, iconCls }) => (
+                  <div key={label} className="rounded-xl border border-[#eef2f7] bg-white p-3">
+                    <div className="flex items-center gap-3">
+                      <Icon className={`size-6 ${iconCls}`} />
+                      <div><p className="text-[11px] text-[#4a5a85]">{label}</p><p className="text-lg font-bold leading-tight">{value}</p></div>
+                    </div>
+                    <div className="mt-2 h-1.5 overflow-hidden rounded-full bg-slate-100"><div className={`h-full rounded-full ${TONE[toneOf(value)].bar}`} style={{ width: `${value}%` }} /></div>
+                  </div>
+                ))}
+              </div>
+              {!selected.metrics.hasData && <p className="-mt-2 text-[10.5px] text-slate-400">No health entries yet — scores are estimated from attendance until the first entry is saved.</p>}
+
+              <AnimatePresence mode="wait" initial={false}>
+                <Motion.div key={tab} initial={{ opacity: 0, y: 6 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: -4 }} transition={{ duration: 0.18 }}>
+                  {tab === 'overview' && (
+                    <div className="grid gap-4 xl:grid-cols-[minmax(0,1.4fr)_minmax(0,1fr)]">
+                      <div className={panelCls}>
+                        <div className="mb-4 flex flex-wrap items-start justify-between gap-2">
+                          <div className="flex items-start gap-2.5">
+                            <span className="flex size-9 items-center justify-center rounded-lg bg-blue-50 text-blue-600"><ClipboardList className="size-4" /></span>
+                            <div><h3 className="text-sm font-bold">Quick Health Entry</h3><p className="text-[11px] text-[#6a7896]">Mark today's health and wellbeing status.</p></div>
+                          </div>
+                          <label className="flex items-center gap-2 rounded-lg border border-[#e2e8f0] px-2.5 py-1.5 text-xs">
+                            <Calendar className="size-3.5 text-slate-500" />
+                            <input type="date" value={quick.date} max={localDateKey()} onChange={(e) => e.target.value && setQuick((q) => ({ ...q, date: e.target.value }))} className="bg-transparent text-xs outline-none" />
+                          </label>
+                        </div>
+
+                        <p className="mb-1.5 text-xs font-medium">Overall Status</p>
+                        <div className="mb-4 grid grid-cols-3 gap-2">
+                          {STATUS_OPTIONS.map(({ value, label, icon: Icon, active, idle }) => (
+                            <button key={value} type="button" onClick={() => setQuick((q) => ({ ...q, overallStatus: value }))} className={`inline-flex items-center gap-2 rounded-lg border px-3 py-2 text-xs font-medium transition ${quick.overallStatus === value ? `${active} ring-1 ring-current/20` : idle}`}><Icon className="size-4" />{label}</button>
+                          ))}
+                        </div>
+
+                        <p className="mb-1.5 text-xs font-medium">Any Issue Today?</p>
+                        <div className="mb-4 flex gap-6">
+                          {ISSUE_TODAY_OPTIONS.map((o) => (
+                            <label key={o.value} className="flex cursor-pointer items-center gap-2 text-xs">
+                              <input type="radio" name="issueToday" checked={quick.issueToday === o.value} onChange={() => setQuick((q) => ({ ...q, issueToday: o.value, issueTag: o.value === 'no' ? 'none' : q.issueTag }))} className="size-4 accent-blue-600" />{o.label}
+                            </label>
+                          ))}
+                        </div>
+
+                        <p className="mb-1.5 text-xs font-medium">If Yes, Select Issue</p>
+                        <div className="mb-4 flex flex-wrap gap-2">
+                          {ISSUE_TAGS.map((o) => {
+                            const on = (quick.issueToday === 'no' ? 'none' : quick.issueTag) === o.value;
+                            return (
+                              <button key={o.value} type="button" disabled={quick.issueToday === 'no' && o.value !== 'none'} onClick={() => setQuick((q) => ({ ...q, issueTag: o.value }))} className={`inline-flex items-center gap-1.5 rounded-lg border px-3 py-1.5 text-[11px] transition disabled:opacity-40 ${on ? 'border-blue-400 bg-blue-50 font-semibold text-blue-600' : 'border-slate-200 bg-slate-50 text-[#2a3a60] hover:bg-slate-100'}`}>{on && <CheckCircle2 className="size-3.5" />}{o.label}</button>
+                            );
+                          })}
+                        </div>
+
+                        <p className="mb-1.5 text-xs font-medium">Short Notes (Optional)</p>
+                        <textarea value={quick.notes} maxLength={NOTE_LIMIT} onChange={(e) => setQuick((q) => ({ ...q, notes: e.target.value }))} placeholder="Write a short note..." rows={3} className="w-full resize-none rounded-lg border border-[#e2e8f0] px-3 py-2 text-xs outline-none focus:border-blue-300" />
+                        <p className="mb-3 text-right text-[10px] text-slate-400">{quick.notes.length}/{NOTE_LIMIT}</p>
+                        <button type="button" onClick={saveQuickEntry} disabled={savingQuick} className="inline-flex w-full items-center justify-center gap-2 rounded-lg bg-blue-600 px-4 py-2.5 text-xs font-semibold text-white hover:bg-blue-700 disabled:opacity-60">
+                          {savingQuick ? <Loader2 className="size-4 animate-spin" /> : <Save className="size-4" />} Save in 1 click
+                        </button>
+                      </div>
+
+                      <div className="space-y-4">
+                        <div className={panelCls}>
+                          <div className="mb-2 flex items-start justify-between gap-2">
+                            <div className="flex items-center gap-2.5">
+                              <span className="flex size-9 items-center justify-center rounded-lg bg-rose-50 text-rose-600"><AlertTriangle className="size-4" /></span>
+                              <div><h3 className="text-sm font-bold">At Risk Students</h3><p className="text-xs text-rose-600">{atRisk.length} students</p></div>
+                            </div>
+                            <button type="button" onClick={() => setStatusFilter('risk')} className="rounded-lg border border-blue-200 px-2.5 py-1 text-[11px] font-semibold text-blue-600 hover:bg-blue-50">View All</button>
+                          </div>
+                          {atRisk.length ? (
+                            <>
+                              <ul className="divide-y divide-[#eef2f7] text-xs">
+                                {atRisk.slice(0, 5).map((s, i) => (
+                                  <li key={s.id}>
+                                    <button type="button" onClick={() => setSelectedId(s.id)} className="flex w-full items-center gap-3 py-1.5 text-left hover:bg-slate-50">
+                                      <span className="w-4 text-[#6a7896]">{i + 1}</span>
+                                      <span className="flex-1 truncate font-medium">{s.name}</span>
+                                      <span className={`rounded-md px-1.5 py-0.5 text-[11px] font-semibold ${s.tone === 'risk' ? 'bg-rose-50 text-rose-600' : 'bg-amber-50 text-amber-600'}`}>{s.metrics.wellbeing}</span>
+                                    </button>
+                                  </li>
+                                ))}
+                              </ul>
+                              {atRisk.length > 5 && <button type="button" onClick={() => setStatusFilter('risk')} className="mt-2 inline-flex items-center gap-1 text-[11px] font-semibold text-blue-600">View all {atRisk.length} at-risk students <ArrowRight className="size-3" /></button>}
+                            </>
+                          ) : <p className="text-xs text-slate-400">No at-risk students.</p>}
+                        </div>
+
+                        <div className={panelCls}>
+                          <div className="flex items-start gap-2.5">
+                            <span className="flex size-9 items-center justify-center rounded-lg bg-violet-50 text-violet-600"><Activity className="size-4" /></span>
+                            <div className="min-w-0 flex-1">
+                              <h3 className="text-sm font-bold">Frequent Issues</h3>
+                              {frequentIssues.length ? (
+                                <div className="mt-2 flex flex-wrap gap-1.5">{frequentIssues.map(([k, n]) => <span key={k} className="rounded-md bg-slate-50 px-2 py-1 text-[11px] text-[#2a3a60]">{ISSUE_LABEL[k] || k}: <strong>{n}</strong></span>)}</div>
+                              ) : (
+                                <div className="mt-1"><p className="text-xs text-[#2a3a60]">No frequent issues</p><p className="text-[10.5px] text-slate-400">There are no repeated issues reported in the last 30 days.</p></div>
+                              )}
+                            </div>
+                          </div>
+                        </div>
+
+                        <div className={panelCls}>
+                          <div className="flex items-start gap-2.5">
+                            <span className="flex size-9 items-center justify-center rounded-lg bg-amber-50 text-amber-500"><Bell className="size-4" /></span>
+                            <div className="min-w-0 flex-1">
+                              <h3 className="mb-2 text-sm font-bold">Smart Alert</h3>
+                              {repeatedIssueStudents.length ? (
+                                <div className="flex items-start gap-2 rounded-lg border border-rose-200 bg-rose-50 p-2.5 text-[11px] text-rose-700"><AlertTriangle className="mt-0.5 size-4 shrink-0" /><div><p className="font-semibold">Repeated issue detected (3+ times)</p><p>{repeatedIssueStudents.slice(0, 3).map((s) => s.name).join(', ')}{repeatedIssueStudents.length > 3 ? ` +${repeatedIssueStudents.length - 3} more` : ''}</p></div></div>
+                              ) : (
+                                <div className="flex items-start gap-2 rounded-lg border border-emerald-200 bg-emerald-50 p-2.5 text-[11px] text-emerald-800"><Shield className="mt-0.5 size-4 shrink-0 text-emerald-600" /><div><p className="font-semibold">No repeated critical pattern.</p><p className="text-emerald-700/80">All students are within normal range.</p></div></div>
+                              )}
+                            </div>
+                          </div>
+                        </div>
+                      </div>
+                    </div>
+                  )}
+
+                  {tab === 'entries' && (
+                    <div className={panelCls}>
+                      <h3 className="mb-3 flex items-center gap-2 text-sm font-bold"><Calendar className="size-4 text-blue-600" /> Health entries · last 30 days</h3>
+                      {selected.logs.length ? (
+                        <div className="overflow-x-auto">
+                          <table className="w-full text-xs">
+                            <thead className="bg-[#f3f6fd] text-left text-[11px] font-semibold text-[#2a3a60]"><tr><th className="px-3 py-2">Date</th><th className="px-3 py-2">Status</th><th className="px-3 py-2">Issue</th><th className="px-3 py-2">Mood</th><th className="px-3 py-2">Behavior</th><th className="px-3 py-2">Notes</th></tr></thead>
+                            <tbody>
+                              {selected.logs.map((l) => {
+                                const opt = STATUS_OPTIONS.find((o) => o.value === l.overallStatus);
+                                return (
+                                  <tr key={l._id || l.date} className="border-t border-[#eef2f7]">
+                                    <td className="px-3 py-2">{formatDate(l.date)}</td>
+                                    <td className="px-3 py-2"><span className={`rounded-md border px-2 py-0.5 text-[11px] font-medium ${opt?.active || ''}`}>{opt?.label}</span></td>
+                                    <td className="px-3 py-2">{l.issueToday === 'no' ? 'No' : `${l.issueToday === 'maybe' ? 'Maybe' : 'Yes'} · ${ISSUE_LABEL[l.issueTag] || '—'}`}</td>
+                                    <td className="px-3 py-2">{l.mood ?? '—'}</td>
+                                    <td className="px-3 py-2">{l.behavior ?? '—'}</td>
+                                    <td className="px-3 py-2 text-[#4a5a85]">{l.notes || '—'}</td>
+                                  </tr>
+                                );
+                              })}
+                            </tbody>
+                          </table>
+                        </div>
+                      ) : <p className="py-6 text-center text-xs text-slate-400">No health entries recorded in the last 30 days.</p>}
+                    </div>
+                  )}
+
+                  {tab === 'trends' && (
+                    <div className={`${panelCls} space-y-3`}>
+                      <div className="flex flex-wrap items-center justify-between gap-2">
+                        <div className="flex gap-3 text-[11px]">{trend.map((s) => <span key={s.label} className="inline-flex items-center gap-1.5"><span className="size-2 rounded-full" style={{ background: s.color }} />{s.label}</span>)}</div>
+                        <div className="flex gap-1">{[7, 30].map((d) => <button key={d} type="button" onClick={() => setRange(d)} className={`rounded-lg px-3 py-1 text-[11px] font-medium ${range === d ? 'bg-blue-600 text-white' : 'bg-slate-100 text-[#2a3a60]'}`}>{d} days</button>)}</div>
+                      </div>
+                      {trend[0]?.points.length > 1 ? <TrendGraph series={trend} /> : <p className="py-6 text-center text-xs text-slate-400">At least two entries in this range are needed to draw a trend.</p>}
+                    </div>
+                  )}
+
+                  {tab === 'parent' && (
+                    <div className={`${panelCls} text-xs text-[#4a5a85]`}>
+                      <h3 className="mb-2 flex items-center gap-2 text-sm font-bold text-[#14234b]"><MessageCircle className="size-4 text-blue-600" /> Parent Feedback</h3>
+                      <p>No parent feedback has been shared for {selected.name} yet.</p>
+                    </div>
+                  )}
+
+                  {tab === 'intervention' && (
+                    <div className={`${panelCls} space-y-3`}>
+                      <div className="grid gap-2 sm:grid-cols-2">
+                        <SelectBox value={action.type} onChange={(e) => setAction((a) => ({ ...a, type: e.target.value }))}><option>Talked to student</option><option>Informed parent</option><option>Sent to counselor</option></SelectBox>
+                        <label className="flex items-center gap-2 rounded-lg border border-[#e2e8f0] px-3 py-1.5 text-xs"><span className="text-slate-500">Follow-up</span><input type="date" value={action.followUpDate} onChange={(e) => setAction((a) => ({ ...a, followUpDate: e.target.value }))} className="flex-1 bg-transparent outline-none" /></label>
+                      </div>
+                      <textarea value={action.notes} maxLength={1000} onChange={(e) => setAction((a) => ({ ...a, notes: e.target.value }))} rows={3} placeholder="Action notes..." className="w-full resize-none rounded-lg border border-[#e2e8f0] px-3 py-2 text-xs outline-none focus:border-blue-300" />
+                      <div className="flex flex-wrap items-center justify-between gap-2">
+                        <label className="flex items-center gap-2 text-xs text-[#4a5a85]"><input type="checkbox" checked={action.confidential} onChange={(e) => setAction((a) => ({ ...a, confidential: e.target.checked }))} className="accent-blue-600" /> Confidential note</label>
+                        <button type="button" onClick={saveIntervention} disabled={savingAction} className="inline-flex items-center gap-1.5 rounded-lg bg-blue-600 px-4 py-2 text-xs font-semibold text-white hover:bg-blue-700 disabled:opacity-60">{savingAction ? <Loader2 className="size-3.5 animate-spin" /> : <Save className="size-3.5" />} Save Action</button>
+                      </div>
+                      <div className="space-y-2">
+                        {selected.interventions.filter((a) => !a.confidential).map((a) => (
+                          <div key={a._id} className="rounded-lg border border-[#eef2f7] bg-slate-50 p-2.5 text-xs">
+                            <p className="font-semibold">{a.type} <span className="font-normal text-slate-500">· {formatDate(a.date)}{a.followUpDate ? ` · Follow-up ${formatDate(a.followUpDate)}` : ''}</span></p>
+                            {a.notes && <p className="mt-0.5 text-[#4a5a85]">{a.notes}</p>}
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+
+                  {tab === 'confidential' && (
+                    <div className={`${panelCls} text-xs`}>
+                      <h3 className="mb-2 flex items-center gap-2 text-sm font-bold"><Lock className="size-4 text-blue-600" /> Confidential Notes</h3>
+                      {selected.interventions.some((a) => a.confidential) ? selected.interventions.filter((a) => a.confidential).map((a) => (
+                        <div key={a._id} className="mb-2 rounded-lg bg-slate-50 p-2.5"><p className="text-[10.5px] text-slate-500">{formatDate(a.date)} · {a.type}</p><p className="mt-0.5">{a.notes || '—'}</p></div>
+                      )) : <p className="text-slate-400">No confidential notes yet.</p>}
+                    </div>
+                  )}
+                </Motion.div>
               </AnimatePresence>
-            </div>
-          </Motion.section>
-
-          <aside className="space-y-4">
-            {selectedStudent ? (
-              <Motion.section layout initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.34, duration: 0.35 }} className="relative overflow-hidden rounded-2xl border border-[#edf2f7] bg-white p-4 shadow-sm">
-                <div className="absolute inset-x-0 top-0 h-1 bg-gradient-to-r from-red-600 via-amber-500 to-green-600" />
-                <div className="mb-4 flex items-center gap-3 border-b border-slate-100 pb-3">
-                  <span className={'flex size-11 items-center justify-center rounded-full text-sm font-semibold ' + toneStyles[toneFor(selectedStudent.metrics.wellbeingScore)].avatar}>{initials(selectedStudent.name)}</span>
-                  <div className="min-w-0"><h3 className="truncate text-sm font-semibold">{selectedStudent.name}</h3><p className="text-[10px] text-slate-400">{selectedStudent.className} · Roll {selectedStudent.roll || '—'} · Sec {selectedStudent.section || '—'}</p></div>
-                  <span className={'ml-auto rounded-full px-2.5 py-1 text-[9px] font-semibold uppercase ' + statusClass(selectedStudent.metrics.status)}>{selectedStudent.metrics.status}</span>
-                </div>
-                <div className="grid grid-cols-2 gap-2">
-                  {[
-                    { label: 'Mood', value: selectedStudent.metrics.moodScore, color: 'text-blue-600' },
-                    { label: 'Behavior', value: selectedStudent.metrics.behaviorScore, color: 'text-violet-600' },
-                    { label: 'Health', value: selectedStudent.metrics.healthScore, color: 'text-green-600' },
-                  ].map((metric) => <div key={metric.label} className="rounded-xl bg-slate-50 p-2 text-center"><p className={'text-base font-bold ' + metric.color}>{metric.value}</p><p className="text-[9px] uppercase text-slate-400">{metric.label}</p></div>)}
-                  <div className={'col-span-2 rounded-xl p-3 text-center ' + toneStyles[toneFor(selectedStudent.metrics.wellbeingScore)].badge}><p className="text-2xl font-bold">{selectedStudent.metrics.wellbeingScore}</p><p className="text-[9px] uppercase text-slate-600">Wellbeing</p></div>
-                </div>
-              </Motion.section>
-            ) : <div className="rounded-2xl border border-dashed border-slate-200 bg-white p-8 text-center text-sm text-slate-400">Select a student to view wellbeing.</div>}
-
-            <Motion.section layout initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.4, duration: 0.35 }} className="rounded-2xl border border-[#edf2f7] bg-white p-4 shadow-sm">
-              <h4 className="mb-2 flex items-center gap-2 text-xs font-semibold"><Heart className="size-3.5 text-blue-600" /> Quick Health Entry</h4>
-              <div className="mb-2 flex flex-wrap gap-1.5">
-                {[
-                  { label: 'Good', value: 'High', active: 'bg-[#16a34a] text-white border-transparent' },
-                  { label: 'Moderate', value: 'Medium', active: 'bg-[#d97706] text-white border-transparent' },
-                  { label: 'At Risk', value: 'Low', active: 'bg-[#dc2626] text-white border-transparent' },
-                ].map((entry) => <button key={entry.label} type="button" onClick={() => setQuick((previous) => ({ ...previous, energy: entry.value }))} className={'rounded-full border px-3 py-1 text-[10px] font-medium transition ' + (quick.energy === entry.value ? entry.active : 'border-slate-200 text-slate-400')}>{entry.label}</button>)}
-              </div>
-              <div className="mb-2 flex flex-wrap gap-1.5">
-                {['No', 'Yes', 'Maybe'].map((value) => <button key={value} type="button" onClick={() => setQuick((previous) => ({ ...previous, physicalIssue: value === 'Maybe' ? 'No' : value }))} className={'rounded-full border px-3 py-1 text-[10px] font-medium ' + ((quick.physicalIssue === value || (value === 'Maybe' && quick.physicalIssue === 'No')) ? 'border-blue-500 bg-blue-50 text-blue-600' : 'border-slate-200 text-slate-400')}>{value}</button>)}
-              </div>
-              <div className="mb-2 flex flex-wrap gap-1.5">{['none', 'Headache', 'Fatigue'].map((value) => <button key={value} type="button" onClick={() => setQuick((previous) => ({ ...previous, issueTag: value.toLowerCase() }))} className={'rounded-full border px-3 py-1 text-[10px] font-medium ' + (quick.issueTag.toLowerCase() === value.toLowerCase() ? 'border-blue-500 bg-blue-50 text-blue-600' : 'border-slate-200 text-slate-400')}>{value}</button>)}</div>
-              <textarea value={quick.notes} onChange={(event) => setQuick((previous) => ({ ...previous, notes: event.target.value }))} placeholder="Short notes..." className="mb-2 min-h-10 w-full resize-y rounded-xl border border-[#edf2f7] bg-[#fafbfc] px-3 py-2 text-xs outline-none focus:border-blue-500" />
-              <button type="button" onClick={saveQuickEntry} disabled={!selectedStudent} className="inline-flex w-full items-center justify-center gap-2 rounded-full bg-gradient-to-r from-blue-600 to-violet-600 px-4 py-2 text-xs font-semibold text-white shadow-lg shadow-blue-600/20 disabled:opacity-50"><CheckCircle2 className="size-3.5" /> Save in 1 click</button>
-            </Motion.section>
-
-            <Motion.section layout initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.46, duration: 0.35 }} className="rounded-2xl border border-[#edf2f7] bg-white p-4 shadow-sm">
-              <h4 className="mb-2 flex items-center gap-2 text-xs font-semibold"><AlertCircle className="size-3.5 text-red-600" /> At Risk Students</h4>
-              <div className="flex flex-wrap gap-1.5">{emotionalInsights.atRisk.map((student) => <button type="button" key={student.id} onClick={() => setSelectedId(student.id)} className="rounded-full border border-slate-200 bg-[#fafbfc] px-2.5 py-1 text-[10px] text-slate-600 hover:bg-slate-100">{student.name.split(' ').slice(0, 2).join(' ')} <span className={student.metrics.status === 'Critical' ? 'font-semibold text-red-600' : 'font-semibold text-amber-600'}>{student.metrics.wellbeingScore}</span></button>)}{!emotionalInsights.atRisk.length && <span className="text-xs text-slate-400">No at-risk students.</span>}</div>
-            </Motion.section>
-
-            <Motion.section layout initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.52, duration: 0.35 }} className="rounded-2xl border border-[#edf2f7] bg-white p-4 shadow-sm">
-              <h4 className="mb-1 flex items-center gap-2 text-xs font-semibold"><Activity className="size-3.5 text-amber-500" /> Frequent Issues</h4>
-              {emotionalInsights.frequentIssues.length ? <div className="flex flex-wrap gap-1.5">{emotionalInsights.frequentIssues.map(([issue, count]) => <span key={issue} className="rounded-full bg-slate-50 px-2.5 py-1 text-[10px] text-slate-600">{issue}: {count}</span>)}</div> : <p className="flex items-center gap-1.5 text-xs text-slate-300"><CheckCircle2 className="size-3.5 text-green-600" /> No frequent issues</p>}
-            </Motion.section>
-          </aside>
-        </div>
-
-        {selectedStudent && (
-          <Motion.section layout initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.58, duration: 0.35 }} className="mt-6 rounded-2xl border border-[#edf2f7] bg-white p-4 shadow-sm sm:p-5">
-            <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
-              <div><h2 className="text-sm font-semibold">Student wellbeing details</h2><p className="mt-0.5 text-xs text-slate-400">{selectedStudent.name} · {selectedStudent.className}</p></div>
-              <div className="flex flex-wrap gap-1.5">
-                {['overview', 'trends', 'parent', 'intervention', 'confidential', 'daily'].map((item) => <button key={item} type="button" onClick={() => setTab(item)} className={'rounded-full px-3 py-1.5 text-[10px] font-medium capitalize transition ' + (tab === item ? 'bg-blue-100 text-blue-700' : 'bg-slate-100 text-slate-600 hover:bg-slate-200')}>{item}</button>)}
-              </div>
-            </div>
-            <AnimatePresence mode="wait" initial={false}>
-              <Motion.div key={tab} initial={{ opacity: 0, y: 6 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: -5 }}>
-                {tab === 'overview' && <div className="grid gap-3 md:grid-cols-2"><div className="rounded-xl border border-slate-100 bg-slate-50 p-4"><h4 className="mb-1 text-xs font-semibold">Smart Alert</h4><p className="text-xs text-slate-600">{selectedStudent.metrics.autoAlert ? 'Repeated issue detected 3+ times. Auto alert raised.' : 'No repeated critical pattern.'}</p></div><div className="rounded-xl border border-slate-100 bg-slate-50 p-4"><h4 className="mb-1 text-xs font-semibold">Emotional Insights</h4><p className="text-xs text-slate-600">At-risk students: <strong>{emotionalInsights.atRisk.length}</strong></p><div className="mt-2 flex flex-wrap gap-1.5">{emotionalInsights.frequentIssues.map(([issue, count]) => <span key={issue} className="rounded-full bg-white px-2 py-1 text-[10px] text-slate-500">{issue}: {count}</span>)}</div></div></div>}
-                {tab === 'trends' && <div className="space-y-3"><div className="flex gap-1.5"><button type="button" onClick={() => setRange('7')} className={'rounded-full px-3 py-1 text-[10px] ' + (range === '7' ? 'bg-blue-100 text-blue-700' : 'bg-slate-100')}>7 days</button><button type="button" onClick={() => setRange('30')} className={'rounded-full px-3 py-1 text-[10px] ' + (range === '30' ? 'bg-blue-100 text-blue-700' : 'bg-slate-100')}>30 days</button></div><TrendGraph pointsA={trendData.mood} /><TrendGraph pointsA={trendData.attendance} pointsB={trendData.mood} colorA="#10b981" colorB="#2563eb" /><TrendGraph pointsA={trendData.behavior} colorA="#f97316" /></div>}
-                {tab === 'parent' && <div className="rounded-xl bg-slate-50 p-4 text-xs text-slate-600"><h4 className="mb-2 flex items-center gap-2 font-semibold text-slate-800"><MessageCircle className="size-3.5" /> Parent Feedback</h4><p>Home behavior: {selectedStudent.parentFeedback.homeBehavior}</p><p>Sleep/screen time: {selectedStudent.parentFeedback.sleepScreen}</p><p>Emotional state: {selectedStudent.parentFeedback.emotionalState}</p></div>}
-                {tab === 'intervention' && <div className="space-y-3"><div className="grid gap-2 md:grid-cols-2"><select value={action.type} onChange={(event) => setAction((previous) => ({ ...previous, type: event.target.value }))} className="rounded-xl border border-slate-200 px-3 py-2 text-xs"><option>Talked to student</option><option>Informed parent</option><option>Sent to counselor</option></select><input type="date" value={action.followUpDate} onChange={(event) => setAction((previous) => ({ ...previous, followUpDate: event.target.value }))} className="rounded-xl border border-slate-200 px-3 py-2 text-xs" /></div><textarea value={action.notes} onChange={(event) => setAction((previous) => ({ ...previous, notes: event.target.value }))} className="w-full rounded-xl border border-slate-200 px-3 py-2 text-xs" rows={3} placeholder="Action notes..." /><label className="flex items-center gap-2 text-xs text-slate-600"><input type="checkbox" checked={action.privateNote} onChange={(event) => setAction((previous) => ({ ...previous, privateNote: event.target.checked }))} /> Private note</label><button type="button" onClick={saveIntervention} className="rounded-full bg-blue-600 px-4 py-2 text-xs font-semibold text-white">Save Action</button>{selectedStudent.interventions?.map((item, index) => <div key={item.date + index} className="rounded-xl border border-slate-100 bg-slate-50 p-2 text-xs text-slate-600">{item.date} · {item.type}{item.followUpDate ? ' · Follow-up: ' + item.followUpDate : ''}<div className="mt-1 text-slate-500">{item.description}</div></div>)}</div>}
-                {tab === 'confidential' && <div className="rounded-xl bg-slate-50 p-4 text-xs text-slate-600"><h4 className="mb-2 flex items-center gap-2 font-semibold text-slate-800"><Shield className="size-3.5" /> Confidential Notes</h4>{selectedStudent.confidentialNotes?.length ? selectedStudent.confidentialNotes.map((item, index) => <div key={item.date + index} className="mb-1 rounded-lg bg-white p-2">{item.date} · {item.note}</div>) : 'No confidential notes yet.'}</div>}
-                {tab === 'daily' && <div className="max-h-56 space-y-2 overflow-y-auto"><h4 className="flex items-center gap-2 text-xs font-semibold"><Calendar className="size-3.5" /> Daily Logs</h4>{selectedStudent.logs.map((item, index) => <div key={item.date + index} className="rounded-xl border border-slate-100 bg-slate-50 p-2 text-xs text-slate-600">{item.date} · Energy {item.energy} · Physical issue {item.physicalIssue}<div>Mood: {item.mood} · {item.notes || 'No notes'}</div></div>)}</div>}
-              </Motion.div>
-            </AnimatePresence>
-          </Motion.section>
-        )}
+            </>
+          )}
+        </section>
       </div>
+
+      <BulkEntryModal open={bulkOpen} onClose={() => setBulkOpen(false)} students={directory} onSaved={refresh} />
     </Motion.div>
   );
-
 };
-
-const MetricCard = ({ label, value, icon }) => (
-  <div className="border rounded-xl p-3 bg-slate-50">
-    <div className="flex items-center gap-2 text-slate-600 text-xs">{icon}<span>{label}</span></div>
-    <div className="text-xl font-semibold text-slate-900 mt-1">{value}</div>
-  </div>
-);
 
 export default HealthUpdatesAdvanced;

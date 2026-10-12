@@ -102,6 +102,7 @@ module.exports = function registerRoutes(app, { generalApiLimiter, authApiLimite
   app.use('/api/help-seeking', require('./helpSeekingRoutes'));
   app.use('/api/learning-style', require('./learningStyleRoutes'));
   app.use('/api/belonging', require('./belongingRoutes'));
+  app.use('/api/health-records', writeHeavyApiLimiter, require('./healthRecordRoutes'));
   app.use('/api/practice', require('./practiceRoutes'));
   app.use('/api/practice-papers', writeHeavyApiLimiter, require('./practicePaperRoutes'));
   app.use('/api/practice-sections', writeHeavyApiLimiter, require('./practiceSectionRoutes'));

@@ -10,6 +10,7 @@ import {
   Play, CheckCircle, XCircle, ArrowRight, ArrowUp, Lightbulb, Star,
   Activity, TrendingUp as TrendingUpIcon, Gauge, HandHelping, Heart, Sparkle,
   GraduationCap as GraduationCapIcon, Download, Flag, ArrowUpDown, MoreHorizontal, BarChart2, Trash2, LayoutGrid as LayoutGridIcon, MessageSquare as MessageIcon,
+  MessageCircle, Trophy, Image as ImageIcon, PencilLine,
 } from 'lucide-react';
 import { cachedFetch, invalidateTeacherAnalytics } from '../utils/teacherAnalyticsCache';
 
@@ -572,10 +573,11 @@ const StudentAnalyticsPortal = () => {
 
   // Teacher-facing social/belonging — students least engaged with the Alcove
   // peer community first. See backend/services/belongingService.js.
-  const fetchBelonging = useCallback(async () => {
+  const fetchBelonging = useCallback(async (sinceDays = 30) => {
+    const days = typeof sinceDays === 'number' ? sinceDays : 30;
     setLoadingBelonging(true);
     try {
-      const res = await cachedFetch(`${API_BASE}/api/belonging/class`, { headers: authHeaders() });
+      const res = await cachedFetch(`${API_BASE}/api/belonging/class?sinceDays=${days}`, { headers: authHeaders() });
       if (res.ok) { const d = await res.json(); setBelongingData(d.data || []); }
     } catch { /* silent */ } finally { setLoadingBelonging(false); }
   }, []);
@@ -1551,84 +1553,264 @@ const HelpSeekingTab = ({ data: initialData, loading: initialLoading, onFetch, c
 // backend/services/belongingService.js.
 // ═════════════════════════════════════════════════════════════════════════════
 const BELONGING_BAND_META = {
-  isolated: { label: 'Isolated', cls: 'bg-slate-100 text-slate-600', badge: 'border-slate-200 bg-slate-50' },
-  low: { label: 'Getting involved', cls: 'bg-amber-100 text-amber-700', badge: 'border-amber-200 bg-amber-50' },
-  moderate: { label: 'Active', cls: 'bg-sky-100 text-sky-700', badge: 'border-sky-200 bg-sky-50' },
-  active: { label: 'Community champion', cls: 'bg-emerald-100 text-emerald-700', badge: 'border-emerald-200 bg-emerald-50' },
+  isolated: { label: 'Isolated', cls: 'bg-rose-50 text-rose-600', dot: 'bg-rose-500' },
+  low: { label: 'Getting involved', cls: 'bg-amber-50 text-amber-700', dot: 'bg-amber-500' },
+  moderate: { label: 'Active', cls: 'bg-sky-50 text-sky-700', dot: 'bg-sky-500' },
+  active: { label: 'Champion', cls: 'bg-emerald-50 text-emerald-700', dot: 'bg-emerald-500' },
 };
+const BELONGING_AVATAR_COLORS = [
+  'bg-rose-100 text-rose-600', 'bg-sky-100 text-sky-600', 'bg-emerald-100 text-emerald-600',
+  'bg-violet-100 text-violet-600', 'bg-amber-100 text-amber-600', 'bg-pink-100 text-pink-600',
+];
+const BELONGING_RANGES = [
+  { value: 7, label: 'Last 7 Days' },
+  { value: 30, label: 'Last 30 Days' },
+  { value: 90, label: 'Last 90 Days' },
+  { value: 365, label: 'Last 12 Months' },
+];
 
 const BelongingTab = ({ data, loading, onFetch }) => {
+  const [query, setQuery] = useState('');
+  const [status, setStatus] = useState('all');
+  const [days, setDays] = useState(30);
+  const [pageSize, setPageSize] = useState(10);
+  const [page, setPage] = useState(1);
+  const [detail, setDetail] = useState(null);
+  const closeDetail = useCallback(() => setDetail(null), []);
+
   const isolated = data.filter((s) => s.band === 'isolated').length;
   const active = data.filter((s) => s.band === 'active' || s.band === 'moderate').length;
 
+  const filtered = useMemo(() => {
+    const q = query.trim().toLowerCase();
+    return data.filter((s) => {
+      if (status !== 'all' && s.band !== status) return false;
+      if (!q) return true;
+      return (s.name || '').toLowerCase().includes(q) || String(s.roll ?? '').toLowerCase().includes(q);
+    });
+  }, [data, query, status]);
+
+  const totalPages = Math.max(1, Math.ceil(filtered.length / pageSize));
+  const currentPage = Math.min(page, totalPages);
+  const start = (currentPage - 1) * pageSize;
+  const rows = filtered.slice(start, start + pageSize);
+
+  useEffect(() => { setPage(1); }, [query, status, pageSize, data]);
+
+  const pageNumbers = useMemo(() => {
+    if (totalPages <= 7) return Array.from({ length: totalPages }, (_, i) => i + 1);
+    const set = new Set([1, totalPages, currentPage - 1, currentPage, currentPage + 1].filter((n) => n >= 1 && n <= totalPages));
+    if (currentPage <= 3) [2, 3, 4, 5].forEach((n) => set.add(n));
+    const sorted = [...set].sort((a, b) => a - b);
+    const out = [];
+    sorted.forEach((n, i) => { if (i && n - sorted[i - 1] > 1) out.push('…'); out.push(n); });
+    return out;
+  }, [totalPages, currentPage]);
+
+  const changeDays = (value) => { setDays(value); onFetch(value); };
+
+  const stats = [
+    { value: isolated, label: 'Isolated', hint: 'Students with no or very low activity', icon: Users, card: 'border-rose-100 bg-rose-50/60', iconBox: 'bg-rose-100 text-rose-500', bar: 'bg-rose-500' },
+    { value: active, label: 'Active / champion', hint: 'Students with consistent participation', icon: Trophy, card: 'border-emerald-100 bg-emerald-50/60', iconBox: 'bg-emerald-100 text-emerald-600' },
+    { value: data.length, label: 'Total Students', hint: 'In this class', icon: MessageCircle, card: 'border-sky-100 bg-sky-50/60', iconBox: 'bg-sky-100 text-sky-600' },
+  ];
+
   return (
-    <div className="space-y-6 rounded-[2rem] border border-[#eaedf0] bg-white p-5 shadow-[0_4px_20px_rgba(0,20,30,0.06)] sm:p-8">
-      <header className="flex flex-wrap items-center justify-between gap-3">
-        <div>
-          <h2 className="flex items-center gap-2 text-xl font-semibold tracking-[-0.01em] text-[#1a2e3f]">
-            <span className="flex size-8 items-center justify-center rounded-full bg-rose-100 text-rose-600"><Heart className="size-4" /></span>
-            Social / Belonging
-          </h2>
-          <p className="mt-1 text-xs text-[#5a7a8e]">Participation in the Alcove peer community — posts, comments, likes. Least engaged first.</p>
+    <div className="space-y-4 rounded-2xl border border-[#eaedf0] bg-white p-4 shadow-[0_4px_20px_rgba(0,20,30,0.05)] sm:p-5">
+      <header className="flex flex-wrap items-start justify-between gap-3">
+        <div className="flex items-center gap-3">
+          <span className="flex size-10 items-center justify-center rounded-xl bg-indigo-50 text-indigo-600"><Users className="size-5" /></span>
+          <div>
+            <h2 className="text-lg font-bold text-[#14234b]">Social / Belonging</h2>
+            <p className="text-xs text-[#4a5a85]">Participation in the Alcove peer community — posts, comments, likes. Least engaged first.</p>
+          </div>
         </div>
-        <button onClick={onFetch} disabled={loading} className="inline-flex items-center gap-1.5 rounded-full border border-[#e2e8ee] bg-[#f8fafc] px-4 py-1.5 text-xs font-semibold text-[#3a5a6e] hover:bg-[#edf1f5] disabled:opacity-50">
-          {loading ? <Loader2 className="w-3 h-3 animate-spin" /> : <RefreshCcw className="w-3 h-3" />} Refresh
+        <button onClick={() => onFetch(days)} disabled={loading} className="inline-flex items-center gap-1.5 rounded-lg border border-blue-200 bg-blue-50/50 px-3 py-1.5 text-xs font-semibold text-blue-600 hover:bg-blue-50 disabled:opacity-50">
+          {loading ? <Loader2 className="size-3.5 animate-spin" /> : <RefreshCcw className="size-3.5" />} Refresh
         </button>
       </header>
 
-      {!loading && data.length > 0 && (
-        <div className="grid grid-cols-2 gap-3">
-          <div className="rounded-[1.2rem] border border-slate-200 bg-slate-50 p-3 text-center text-slate-600">
-            <p className="text-2xl font-bold">{isolated}</p>
-            <p className="mt-0.5 text-[10px] font-semibold uppercase tracking-wide opacity-80">Isolated</p>
+      <div className="grid gap-3 sm:grid-cols-3">
+        {stats.map(({ value, label, hint, icon: Icon, card, iconBox }) => (
+          <div key={label} className={`flex items-center gap-3 rounded-xl border p-3 ${card}`}>
+            <span className={`flex size-10 shrink-0 items-center justify-center rounded-lg ${iconBox}`}><Icon className="size-5" /></span>
+            <div className="min-w-0">
+              <p className="text-xl font-bold leading-tight text-[#14234b]">{loading ? '–' : value}</p>
+              <p className="text-xs font-medium text-[#2a3a60]">{label}</p>
+              <p className="truncate text-[10px] text-[#6a7896]">{hint}</p>
+            </div>
           </div>
-          <div className="rounded-[1.2rem] border border-emerald-200 bg-emerald-50 p-3 text-center text-emerald-700">
-            <p className="text-2xl font-bold">{active}</p>
-            <p className="mt-0.5 text-[10px] font-semibold uppercase tracking-wide opacity-80">Active / champion</p>
-          </div>
+        ))}
+      </div>
+
+      <div className="flex flex-wrap gap-2">
+        <div className="relative min-w-[200px] flex-1">
+          <Search className="pointer-events-none absolute left-3 top-1/2 size-3.5 -translate-y-1/2 text-[#6a7896]" />
+          <input
+            value={query}
+            onChange={(e) => setQuery(e.target.value)}
+            placeholder="Search student by name or roll number..."
+            className="w-full rounded-lg border border-[#e2e8f0] bg-white py-2 pl-8 pr-3 text-xs text-[#14234b] outline-none focus:border-blue-300"
+          />
         </div>
-      )}
+        <div className="relative">
+          <Users className="pointer-events-none absolute left-3 top-1/2 size-3.5 -translate-y-1/2 text-[#4a5a85]" />
+          <select value={status} onChange={(e) => setStatus(e.target.value)} className="appearance-none rounded-lg border border-[#e2e8f0] bg-white py-2 pl-8 pr-8 text-xs font-medium text-[#14234b] outline-none">
+            <option value="all">All Status</option>
+            {Object.entries(BELONGING_BAND_META).map(([k, m]) => <option key={k} value={k}>{m.label}</option>)}
+          </select>
+          <ChevronDown className="pointer-events-none absolute right-2.5 top-1/2 size-3.5 -translate-y-1/2 text-[#4a5a85]" />
+        </div>
+        <div className="relative">
+          <Calendar className="pointer-events-none absolute left-3 top-1/2 size-3.5 -translate-y-1/2 text-[#4a5a85]" />
+          <select value={days} onChange={(e) => changeDays(Number(e.target.value))} className="appearance-none rounded-lg border border-[#e2e8f0] bg-white py-2 pl-8 pr-8 text-xs font-medium text-[#14234b] outline-none">
+            {BELONGING_RANGES.map((r) => <option key={r.value} value={r.value}>{r.label}</option>)}
+          </select>
+          <ChevronDown className="pointer-events-none absolute right-2.5 top-1/2 size-3.5 -translate-y-1/2 text-[#4a5a85]" />
+        </div>
+      </div>
 
       {loading ? (
-        <div className="flex min-h-[280px] flex-col items-center justify-center gap-2 text-sm text-[#5a7a8e]">
-          <Loader2 className="size-7 animate-spin text-[#3a7a94]" /> Loading community data…
+        <div className="flex min-h-[200px] flex-col items-center justify-center gap-2 text-xs text-[#5a7a8e]">
+          <Loader2 className="size-6 animate-spin text-blue-500" /> Loading community data…
         </div>
       ) : data.length === 0 ? (
-        <div className="flex min-h-[280px] flex-col items-center justify-center rounded-[1.4rem] bg-[#f8fafc] text-center">
-          <Heart className="mb-2 size-10 text-[#8fa8b8]" />
-          <h3 className="text-base font-semibold text-[#1a2e3f]">No community activity yet</h3>
-          <p className="mt-1 text-sm text-[#5a7a8e]">Nobody in this class has posted, commented, or reacted on Alcove yet.</p>
+        <div className="flex min-h-[200px] flex-col items-center justify-center rounded-xl bg-[#f8fafc] text-center">
+          <Heart className="mb-2 size-8 text-[#8fa8b8]" />
+          <h3 className="text-sm font-semibold text-[#1a2e3f]">No community activity yet</h3>
+          <p className="mt-1 text-xs text-[#5a7a8e]">Nobody in this class has posted, commented, or reacted on Alcove yet.</p>
         </div>
       ) : (
-        <div className="grid gap-4 md:grid-cols-2">
-          {data.map((s, i) => {
-            const meta = BELONGING_BAND_META[s.band] || BELONGING_BAND_META.isolated;
-            return (
-              <Motion.article
-                key={s.studentId || i}
-                initial={{ opacity: 0, y: 10 }}
-                animate={{ opacity: 1, y: 0 }}
-                transition={{ delay: i * 0.045 }}
-                whileHover={{ y: -2 }}
-                className={`rounded-[1.4rem] border p-4 transition hover:shadow-[0_2px_12px_rgba(0,20,30,0.06)] sm:p-5 ${meta.badge}`}
-              >
-                <div className="mb-3 flex items-start justify-between gap-3">
-                  <div>
-                    <p className="text-sm font-semibold text-[#1a2e3f]">{s.name || 'Unknown student'}</p>
-                    <p className="mt-0.5 text-[10px] text-[#5a7a8e]">{s.roll ? `Roll ${s.roll}` : ''}</p>
-                  </div>
-                  <span className={`shrink-0 rounded-full px-2.5 py-1 text-[10px] font-bold uppercase tracking-wide ${meta.cls}`}>{meta.label}</span>
-                </div>
-                <div className="flex flex-wrap gap-x-5 gap-y-1 border-t border-black/5 pt-3 text-xs text-[#3a5a6e]">
-                  <span>Posts: <strong>{s.postsAuthored}</strong></span>
-                  <span>Comments: <strong>{s.commentsAuthored}</strong></span>
-                  <span>Likes received: <strong>{s.likesReceived}</strong></span>
-                </div>
-              </Motion.article>
-            );
-          })}
-        </div>
+        <>
+          <div className="overflow-x-auto rounded-xl border border-[#eef2f7]">
+            <table className="w-full min-w-[760px] text-xs">
+              <thead className="bg-[#f3f6fd] text-left text-[11px] font-semibold text-[#2a3a60]">
+                <tr>
+                  <th className="px-3 py-2.5 text-center">#</th>
+                  <th className="px-3 py-2.5">Student</th>
+                  <th className="px-3 py-2.5">Status</th>
+                  <th className="px-3 py-2.5">Posts</th>
+                  <th className="px-3 py-2.5">Comments</th>
+                  <th className="px-3 py-2.5">Likes Received</th>
+                  <th className="px-3 py-2.5">Top Topic</th>
+                  <th className="px-3 py-2.5">Action</th>
+                </tr>
+              </thead>
+              <tbody>
+                {rows.length === 0 && (
+                  <tr><td colSpan={8} className="px-3 py-8 text-center text-[#6a7896]">No students match these filters.</td></tr>
+                )}
+                {rows.map((s, i) => {
+                  const meta = BELONGING_BAND_META[s.band] || BELONGING_BAND_META.isolated;
+                  const key = s.studentId || `${start + i}`;
+                  const name = s.name || 'Unknown student';
+                  const avatar = BELONGING_AVATAR_COLORS[(name.charCodeAt(0) || 0) % BELONGING_AVATAR_COLORS.length];
+                  return (
+                      <tr key={key} className="border-t border-[#eef2f7] hover:bg-[#fafbff]">
+                        <td className="px-3 py-2 text-center text-[#4a5a85]">{start + i + 1}</td>
+                        <td className="px-3 py-2">
+                          <div className="flex items-center gap-2.5">
+                            <StudentPhoto student={{ name, profilePic: s.profilePic }} className="size-8 text-sm" fallbackClass={avatar} />
+                            <div>
+                              <p className="font-semibold text-[#14234b]">{name}</p>
+                              {s.roll ? <p className="text-[10px] text-[#6a7896]">Roll {s.roll}</p> : null}
+                            </div>
+                          </div>
+                        </td>
+                        <td className="px-3 py-2">
+                          <span className={`inline-flex items-center gap-1.5 rounded-md px-2 py-0.5 text-[11px] font-medium ${meta.cls}`}>
+                            <span className={`size-1.5 rounded-full ${meta.dot}`} />{meta.label}
+                          </span>
+                        </td>
+                        <td className="px-3 py-2"><span className="inline-flex items-center gap-1.5 font-medium text-[#14234b]"><FileText className="size-3.5 text-blue-500" />{s.postsAuthored ?? 0}</span></td>
+                        <td className="px-3 py-2"><span className="inline-flex items-center gap-1.5 font-medium text-[#14234b]"><MessageIcon className="size-3.5 text-emerald-500" />{s.commentsAuthored ?? 0}</span></td>
+                        <td className="px-3 py-2"><span className="inline-flex items-center gap-1.5 font-medium text-[#14234b]"><Heart className="size-3.5 text-rose-500" />{s.likesReceived ?? 0}</span></td>
+                        <td className="px-3 py-2 text-[#6a7896]">Top: {s.topTopic || '—'}</td>
+                        <td className="px-3 py-2">
+                          <button onClick={() => setDetail(s)} className="inline-flex items-center gap-1.5 rounded-lg border border-blue-200 bg-blue-50/50 px-2.5 py-1 text-[11px] font-semibold text-blue-600 hover:bg-blue-50">
+                            <Eye className="size-3.5" /> View Details
+                          </button>
+                        </td>
+                      </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          </div>
+
+          <div className="flex flex-wrap items-center justify-between gap-3 text-xs text-[#4a5a85]">
+            <p>Showing {filtered.length ? start + 1 : 0} to {Math.min(start + pageSize, filtered.length)} of {filtered.length} students</p>
+            <div className="flex flex-wrap items-center gap-3">
+              <label className="flex items-center gap-2">
+                Rows per page
+                <select value={pageSize} onChange={(e) => setPageSize(Number(e.target.value))} className="rounded-lg border border-[#e2e8f0] bg-white px-2 py-1 text-xs outline-none">
+                  {[10, 20, 50].map((n) => <option key={n} value={n}>{n}</option>)}
+                </select>
+              </label>
+              <div className="flex items-center gap-1">
+                <button onClick={() => setPage(currentPage - 1)} disabled={currentPage === 1} className="flex size-7 items-center justify-center rounded-md border border-[#e2e8f0] bg-white disabled:opacity-40"><ChevronLeft className="size-3.5" /></button>
+                {pageNumbers.map((n, idx) => n === '…' ? (
+                  <span key={`e${idx}`} className="px-1">…</span>
+                ) : (
+                  <button key={n} onClick={() => setPage(n)} className={`flex size-7 items-center justify-center rounded-md border text-xs ${n === currentPage ? 'border-blue-600 bg-blue-600 font-semibold text-white' : 'border-[#e2e8f0] bg-white text-[#2a3a60] hover:bg-[#f3f6fd]'}`}>{n}</button>
+                ))}
+                <button onClick={() => setPage(currentPage + 1)} disabled={currentPage === totalPages} className="flex size-7 items-center justify-center rounded-md border border-[#e2e8f0] bg-white text-blue-600 disabled:opacity-40"><ChevronRight className="size-3.5" /></button>
+              </div>
+            </div>
+          </div>
+        </>
       )}
+
+      <ModalShell open={Boolean(detail)} onClose={closeDetail} label="Belonging details" width="max-w-md">
+        {detail && (() => {
+          const meta = BELONGING_BAND_META[detail.band] || BELONGING_BAND_META.isolated;
+          const name = detail.name || 'Unknown student';
+          const avatar = BELONGING_AVATAR_COLORS[(name.charCodeAt(0) || 0) % BELONGING_AVATAR_COLORS.length];
+          return (
+            <>
+              <div className="flex items-start justify-between gap-3 border-b border-slate-100 px-5 py-4">
+                <div className="flex items-center gap-3">
+                  <StudentPhoto student={{ name, profilePic: detail.profilePic }} className="size-11 text-base" fallbackClass={avatar} />
+                  <div>
+                    <h3 className="text-[15px] font-bold text-slate-900">{name}</h3>
+                    <p className="text-[11.5px] text-slate-500">Roll {detail.roll ?? '—'} · last {detail.sinceDays ?? days} days</p>
+                    <span className={`mt-1 inline-flex items-center gap-1.5 rounded-md px-2 py-0.5 text-[11px] font-medium ${meta.cls}`}><span className={`size-1.5 rounded-full ${meta.dot}`} />{meta.label}</span>
+                  </div>
+                </div>
+                <button type="button" onClick={closeDetail} aria-label="Close" className="rounded-lg p-1.5 text-slate-400 hover:bg-slate-100 hover:text-slate-700"><X className="size-4" /></button>
+              </div>
+              <div className="space-y-4 p-5">
+                <div className="grid grid-cols-2 gap-2">
+                  {[
+                    ['Posts', detail.postsAuthored ?? 0, FileText, 'text-blue-500'],
+                    ['Comments', detail.commentsAuthored ?? 0, MessageIcon, 'text-emerald-500'],
+                    ['Likes received', detail.likesReceived ?? 0, Heart, 'text-rose-500'],
+                    ['Likes given', detail.likesGiven ?? 0, Heart, 'text-pink-400'],
+                  ].map(([k, v, Icon, c]) => (
+                    <div key={k} className="flex items-center gap-2.5 rounded-lg bg-slate-50 px-3 py-2">
+                      <Icon className={`size-4 ${c}`} />
+                      <div>
+                        <p className="text-[10.5px] text-slate-500">{k}</p>
+                        <p className="text-[15px] font-bold text-slate-900">{v}</p>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+                <div>
+                  <div className="mb-1 flex justify-between text-[11.5px]">
+                    <span className="font-medium text-slate-600">Belonging score</span>
+                    <span className="font-bold text-slate-900">{detail.belongingScore ?? 0}/100</span>
+                  </div>
+                  <div className="h-1.5 overflow-hidden rounded-full bg-slate-100">
+                    <div className={`h-full rounded-full ${meta.dot}`} style={{ width: `${Math.min(100, detail.belongingScore || 0)}%` }} />
+                  </div>
+                </div>
+                <p className="text-[11px] text-slate-500">Top topic: {detail.topTopic || '—'}</p>
+              </div>
+            </>
+          );
+        })()}
+      </ModalShell>
     </div>
   );
 };
@@ -1638,84 +1820,269 @@ const BelongingTab = ({ data, loading, onFetch }) => {
 // preference. See backend/services/learningStyleService.js.
 // ═════════════════════════════════════════════════════════════════════════════
 const LEARNING_STYLE_TAB_META = {
-  visual: { label: 'Visual', emoji: '🖼️', cls: 'bg-violet-100 text-violet-700' },
-  reading: { label: 'Reading', emoji: '📖', cls: 'bg-sky-100 text-sky-700' },
-  'hands-on': { label: 'Hands-on', emoji: '✍️', cls: 'bg-amber-100 text-amber-700' },
-  listening: { label: 'Guided/Verbal', emoji: '💬', cls: 'bg-emerald-100 text-emerald-700' },
+  visual: { label: 'Visual', hint: 'Prefer videos, images, diagrams', icon: ImageIcon, pill: 'bg-rose-50 text-rose-600', card: 'border-rose-100 bg-rose-50/60', iconBox: 'bg-rose-100 text-rose-500', bar: 'bg-rose-500' },
+  reading: { label: 'Reading', hint: 'Prefer notes, text, e-books', icon: BookOpen, pill: 'bg-blue-50 text-blue-600', card: 'border-blue-100 bg-blue-50/60', iconBox: 'bg-blue-100 text-blue-600', bar: 'bg-blue-500' },
+  'hands-on': { label: 'Hands-on', hint: 'Prefer practice, interactive tasks', icon: PencilLine, pill: 'bg-amber-50 text-amber-700', card: 'border-amber-100 bg-amber-50/60', iconBox: 'bg-amber-100 text-amber-500', bar: 'bg-amber-500' },
+  listening: { label: 'Guided/Verbal', hint: 'Prefer explanations, discussions', icon: MessageCircle, pill: 'bg-violet-50 text-violet-600', card: 'border-violet-100 bg-violet-50/60', iconBox: 'bg-violet-100 text-violet-600', bar: 'bg-violet-500' },
 };
+const LEARNING_STYLE_DATA_FILTERS = [
+  { value: 'all', label: 'All Students' },
+  { value: 'available', label: 'Style detected' },
+  { value: 'insufficient', label: 'Not enough data' },
+];
 
 const LearningStyleTab = ({ data, loading, onFetch }) => {
   const distribution = data?.distribution || {};
-  const students = data?.students || [];
-  const classified = students.filter((s) => s.dataStatus === 'available');
+  const students = useMemo(() => data?.students || [], [data]);
+  const [query, setQuery] = useState('');
+  const [style, setStyle] = useState('all');
+  const [dataFilter, setDataFilter] = useState('all');
+  const [pageSize, setPageSize] = useState(10);
+  const [page, setPage] = useState(1);
+  const [detail, setDetail] = useState(null);
+  const closeDetail = useCallback(() => setDetail(null), []);
+
+  const filtered = useMemo(() => {
+    const q = query.trim().toLowerCase();
+    return students.filter((s) => {
+      const available = s.dataStatus === 'available';
+      if (style !== 'all' && (!available || s.detectedStyle !== style)) return false;
+      if (dataFilter === 'available' && !available) return false;
+      if (dataFilter === 'insufficient' && available) return false;
+      if (!q) return true;
+      return (s.name || '').toLowerCase().includes(q) || String(s.roll ?? '').toLowerCase().includes(q);
+    });
+  }, [students, query, style, dataFilter]);
+
+  const totalPages = Math.max(1, Math.ceil(filtered.length / pageSize));
+  const currentPage = Math.min(page, totalPages);
+  const start = (currentPage - 1) * pageSize;
+  const rows = filtered.slice(start, start + pageSize);
+
+  useEffect(() => { setPage(1); }, [query, style, dataFilter, pageSize, students]);
+
+  const pageNumbers = useMemo(() => {
+    if (totalPages <= 7) return Array.from({ length: totalPages }, (_, i) => i + 1);
+    const set = new Set([1, totalPages, currentPage - 1, currentPage, currentPage + 1].filter((n) => n >= 1 && n <= totalPages));
+    if (currentPage <= 3) [2, 3, 4, 5].forEach((n) => set.add(n));
+    const sorted = [...set].sort((a, b) => a - b);
+    const out = [];
+    sorted.forEach((n, i) => { if (i && n - sorted[i - 1] > 1) out.push('…'); out.push(n); });
+    return out;
+  }, [totalPages, currentPage]);
 
   return (
-    <div className="space-y-6 rounded-[2rem] border border-[#eaedf0] bg-white p-5 shadow-[0_4px_20px_rgba(0,20,30,0.06)] sm:p-8">
-      <header className="flex flex-wrap items-center justify-between gap-3">
-        <div>
-          <h2 className="flex items-center gap-2 text-xl font-semibold tracking-[-0.01em] text-[#1a2e3f]">
-            <span className="flex size-8 items-center justify-center rounded-full bg-violet-100 text-violet-600"><Sparkle className="size-4" /></span>
-            Learning Style
-          </h2>
-          <p className="mt-1 text-xs text-[#5a7a8e]">Detected content-format preference, from which tutor modes each student actually uses most.</p>
+    <div className="space-y-4 rounded-2xl border border-[#eaedf0] bg-white p-4 shadow-[0_4px_20px_rgba(0,20,30,0.05)] sm:p-5">
+      <header className="flex flex-wrap items-start justify-between gap-3">
+        <div className="flex items-center gap-3">
+          <span className="flex size-10 items-center justify-center rounded-xl bg-blue-50 text-blue-600"><GraduationCapIcon className="size-5" /></span>
+          <div>
+            <h2 className="text-lg font-bold text-[#14234b]">Learning Style</h2>
+            <p className="text-xs text-[#4a5a85]">Detected content-format preference, from which tutor modes each student actually uses most.</p>
+          </div>
         </div>
-        <button onClick={onFetch} disabled={loading} className="inline-flex items-center gap-1.5 rounded-full border border-[#e2e8ee] bg-[#f8fafc] px-4 py-1.5 text-xs font-semibold text-[#3a5a6e] hover:bg-[#edf1f5] disabled:opacity-50">
-          {loading ? <Loader2 className="w-3 h-3 animate-spin" /> : <RefreshCcw className="w-3 h-3" />} Refresh
+        <button onClick={() => onFetch()} disabled={loading} className="inline-flex items-center gap-1.5 rounded-lg border border-blue-200 bg-blue-50/50 px-3 py-1.5 text-xs font-semibold text-blue-600 hover:bg-blue-50 disabled:opacity-50">
+          {loading ? <Loader2 className="size-3.5 animate-spin" /> : <RefreshCcw className="size-3.5" />} Refresh
         </button>
       </header>
 
-      {!loading && students.length > 0 && (
-        <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
-          {Object.entries(LEARNING_STYLE_TAB_META).map(([key, meta]) => (
-            <div key={key} className={`rounded-[1.2rem] border border-transparent p-3 text-center ${meta.cls}`}>
-              <p className="text-2xl font-bold">{distribution[key] || 0}</p>
-              <p className="mt-0.5 text-[10px] font-semibold uppercase tracking-wide opacity-80">{meta.emoji} {meta.label}</p>
+      <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+        {Object.entries(LEARNING_STYLE_TAB_META).map(([key, { label, hint, icon: Icon, card, iconBox }]) => (
+          <div key={key} className={`flex items-center gap-3 rounded-xl border p-3 ${card}`}>
+            <span className={`flex size-10 shrink-0 items-center justify-center rounded-lg ${iconBox}`}><Icon className="size-5" /></span>
+            <div className="min-w-0">
+              <p className="text-xl font-bold leading-tight text-[#14234b]">{loading ? '–' : distribution[key] || 0}</p>
+              <p className="text-xs font-medium text-[#2a3a60]">{label}</p>
+              <p className="truncate text-[10px] text-[#6a7896]">{hint}</p>
             </div>
-          ))}
+          </div>
+        ))}
+      </div>
+
+      <div className="flex flex-wrap gap-2">
+        <div className="relative min-w-[200px] flex-1">
+          <Search className="pointer-events-none absolute left-3 top-1/2 size-3.5 -translate-y-1/2 text-[#6a7896]" />
+          <input
+            value={query}
+            onChange={(e) => setQuery(e.target.value)}
+            placeholder="Search student by name or roll number..."
+            className="w-full rounded-lg border border-[#e2e8f0] bg-white py-2 pl-8 pr-3 text-xs text-[#14234b] outline-none focus:border-blue-300"
+          />
         </div>
-      )}
+        <div className="relative">
+          <GraduationCapIcon className="pointer-events-none absolute left-3 top-1/2 size-3.5 -translate-y-1/2 text-[#4a5a85]" />
+          <select value={style} onChange={(e) => setStyle(e.target.value)} className="appearance-none rounded-lg border border-[#e2e8f0] bg-white py-2 pl-8 pr-8 text-xs font-medium text-[#14234b] outline-none">
+            <option value="all">All Learning Styles</option>
+            {Object.entries(LEARNING_STYLE_TAB_META).map(([k, m]) => <option key={k} value={k}>{m.label}</option>)}
+          </select>
+          <ChevronDown className="pointer-events-none absolute right-2.5 top-1/2 size-3.5 -translate-y-1/2 text-[#4a5a85]" />
+        </div>
+        <div className="relative">
+          <Calendar className="pointer-events-none absolute left-3 top-1/2 size-3.5 -translate-y-1/2 text-[#4a5a85]" />
+          <select value={dataFilter} onChange={(e) => setDataFilter(e.target.value)} className="appearance-none rounded-lg border border-[#e2e8f0] bg-white py-2 pl-8 pr-8 text-xs font-medium text-[#14234b] outline-none">
+            {LEARNING_STYLE_DATA_FILTERS.map((f) => <option key={f.value} value={f.value}>{f.label}</option>)}
+          </select>
+          <ChevronDown className="pointer-events-none absolute right-2.5 top-1/2 size-3.5 -translate-y-1/2 text-[#4a5a85]" />
+        </div>
+      </div>
 
       {loading ? (
-        <div className="flex min-h-[280px] flex-col items-center justify-center gap-2 text-sm text-[#5a7a8e]">
-          <Loader2 className="size-7 animate-spin text-[#3a7a94]" /> Loading learning-style data…
+        <div className="flex min-h-[200px] flex-col items-center justify-center gap-2 text-xs text-[#5a7a8e]">
+          <Loader2 className="size-6 animate-spin text-blue-500" /> Loading learning-style data…
         </div>
-      ) : classified.length === 0 ? (
-        <div className="flex min-h-[280px] flex-col items-center justify-center rounded-[1.4rem] bg-[#f8fafc] text-center">
-          <Sparkle className="mb-2 size-10 text-[#8fa8b8]" />
-          <h3 className="text-base font-semibold text-[#1a2e3f]">Not enough data yet</h3>
-          <p className="mt-1 text-sm text-[#5a7a8e]">Students need more tutor sessions before a style can be detected.</p>
+      ) : students.length === 0 ? (
+        <div className="flex min-h-[200px] flex-col items-center justify-center rounded-xl bg-[#f8fafc] text-center">
+          <Sparkle className="mb-2 size-8 text-[#8fa8b8]" />
+          <h3 className="text-sm font-semibold text-[#1a2e3f]">Not enough data yet</h3>
+          <p className="mt-1 text-xs text-[#5a7a8e]">Students need more tutor sessions before a style can be detected.</p>
         </div>
       ) : (
-        <div className="grid gap-4 md:grid-cols-2">
-          {classified.map((s, i) => {
-            const meta = LEARNING_STYLE_TAB_META[s.detectedStyle] || LEARNING_STYLE_TAB_META.visual;
-            return (
-              <Motion.article
-                key={s.studentId || i}
-                initial={{ opacity: 0, y: 10 }}
-                animate={{ opacity: 1, y: 0 }}
-                transition={{ delay: i * 0.045 }}
-                whileHover={{ y: -2 }}
-                className="rounded-[1.4rem] border border-violet-100 bg-violet-50/40 p-4 transition hover:shadow-[0_2px_12px_rgba(0,20,30,0.06)] sm:p-5"
-              >
-                <div className="mb-3 flex items-start justify-between gap-3">
-                  <div>
-                    <p className="text-sm font-semibold text-[#1a2e3f]">{s.name || 'Unknown student'}</p>
-                    <p className="mt-0.5 text-[10px] text-[#5a7a8e]">{s.roll ? `Roll ${s.roll}` : ''}</p>
-                  </div>
-                  <span className={`shrink-0 rounded-full px-2.5 py-1 text-[10px] font-bold uppercase tracking-wide ${meta.cls}`}>{meta.emoji} {meta.label}</span>
-                </div>
-                <div className="flex flex-wrap gap-x-5 gap-y-1 border-t border-black/5 pt-3 text-xs text-[#3a5a6e]">
-                  <span>Confidence: <strong>{s.confidence}%</strong></span>
-                  {s.selfReported && (
-                    <span>Self-reported: <strong>{s.selfReported}</strong> {s.agreesWithSelfReport === false ? '(mismatch)' : ''}</span>
-                  )}
-                </div>
-              </Motion.article>
-            );
-          })}
-        </div>
+        <>
+          <div className="overflow-x-auto rounded-xl border border-[#eef2f7]">
+            <table className="w-full min-w-[720px] text-xs">
+              <thead className="bg-[#f3f6fd] text-left text-[11px] font-semibold text-[#2a3a60]">
+                <tr>
+                  <th className="px-3 py-2.5 text-center">#</th>
+                  <th className="px-3 py-2.5">Student</th>
+                  <th className="px-3 py-2.5">Roll</th>
+                  <th className="px-3 py-2.5">Learning Style</th>
+                  <th className="px-3 py-2.5">Confidence</th>
+                  <th className="px-3 py-2.5 text-center">Action</th>
+                </tr>
+              </thead>
+              <tbody>
+                {rows.length === 0 && (
+                  <tr><td colSpan={6} className="px-3 py-8 text-center text-[#6a7896]">No students match these filters.</td></tr>
+                )}
+                {rows.map((s, i) => {
+                  const available = s.dataStatus === 'available';
+                  const meta = available ? LEARNING_STYLE_TAB_META[s.detectedStyle] : null;
+                  const key = s.studentId || `${start + i}`;
+                  const name = s.name || 'Unknown student';
+                  const avatar = BELONGING_AVATAR_COLORS[(name.charCodeAt(0) || 0) % BELONGING_AVATAR_COLORS.length];
+                  const StyleIcon = meta?.icon;
+                  return (
+                      <tr key={key} className="border-t border-[#eef2f7] hover:bg-[#fafbff]">
+                        <td className="px-3 py-2 text-center text-[#4a5a85]">{start + i + 1}</td>
+                        <td className="px-3 py-2">
+                          <div className="flex items-center gap-2.5">
+                            <StudentPhoto student={{ name, profilePic: s.profilePic }} className="size-8 text-sm" fallbackClass={avatar} />
+                            <p className="font-semibold text-[#14234b]">{name}</p>
+                          </div>
+                        </td>
+                        <td className="px-3 py-2 text-[#4a5a85]">{s.roll ?? '—'}</td>
+                        <td className="px-3 py-2">
+                          {meta ? (
+                            <span className={`inline-flex items-center gap-1.5 rounded-md px-2 py-1 text-[11px] font-semibold ${meta.pill}`}>
+                              <StyleIcon className="size-3.5" />{meta.label}
+                            </span>
+                          ) : (
+                            <span className="inline-flex items-center gap-1.5 rounded-md bg-slate-50 px-2 py-0.5 text-[11px] text-[#6a7896]">
+                              <span className="size-1.5 rounded-full bg-slate-400" />Not enough data
+                            </span>
+                          )}
+                        </td>
+                        <td className="px-3 py-2">
+                          {available ? (
+                            <div className="flex items-center gap-2">
+                              <span className="w-8 font-semibold text-[#14234b]">{s.confidence}%</span>
+                              <div className="h-1.5 w-28 overflow-hidden rounded-full bg-slate-100">
+                                <div className="h-full rounded-full bg-blue-600" style={{ width: `${Math.min(100, s.confidence || 0)}%` }} />
+                              </div>
+                            </div>
+                          ) : <span className="text-[#6a7896]">—</span>}
+                        </td>
+                        <td className="px-3 py-2 text-center">
+                          <button onClick={() => setDetail(s)} className="inline-flex items-center gap-1.5 rounded-lg border border-blue-200 bg-blue-50/50 px-2.5 py-1 text-[11px] font-semibold text-blue-600 hover:bg-blue-50">
+                            <Eye className="size-3.5" /> View Details
+                          </button>
+                        </td>
+                      </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          </div>
+
+          <div className="flex flex-wrap items-center justify-between gap-3 text-xs text-[#4a5a85]">
+            <p>Showing {filtered.length ? start + 1 : 0} to {Math.min(start + pageSize, filtered.length)} of {filtered.length} students</p>
+            <div className="flex flex-wrap items-center gap-3">
+              <label className="flex items-center gap-2">
+                Rows per page
+                <select value={pageSize} onChange={(e) => setPageSize(Number(e.target.value))} className="rounded-lg border border-[#e2e8f0] bg-white px-2 py-1 text-xs outline-none">
+                  {[10, 20, 50].map((n) => <option key={n} value={n}>{n}</option>)}
+                </select>
+              </label>
+              <div className="flex items-center gap-1">
+                <button onClick={() => setPage(currentPage - 1)} disabled={currentPage === 1} className="flex size-7 items-center justify-center rounded-md border border-[#e2e8f0] bg-white disabled:opacity-40"><ChevronLeft className="size-3.5" /></button>
+                {pageNumbers.map((n, idx) => n === '…' ? (
+                  <span key={`e${idx}`} className="px-1">…</span>
+                ) : (
+                  <button key={n} onClick={() => setPage(n)} className={`flex size-7 items-center justify-center rounded-md border text-xs ${n === currentPage ? 'border-blue-600 bg-blue-600 font-semibold text-white' : 'border-[#e2e8f0] bg-white text-[#2a3a60] hover:bg-[#f3f6fd]'}`}>{n}</button>
+                ))}
+                <button onClick={() => setPage(currentPage + 1)} disabled={currentPage === totalPages} className="flex size-7 items-center justify-center rounded-md border border-[#e2e8f0] bg-white text-blue-600 disabled:opacity-40"><ChevronRight className="size-3.5" /></button>
+              </div>
+            </div>
+          </div>
+        </>
       )}
+
+      <ModalShell open={Boolean(detail)} onClose={closeDetail} label="Learning style details" width="max-w-md">
+        {detail && (() => {
+          const available = detail.dataStatus === 'available';
+          const meta = available ? LEARNING_STYLE_TAB_META[detail.detectedStyle] : null;
+          const MetaIcon = meta?.icon;
+          const name = detail.name || 'Unknown student';
+          const avatar = BELONGING_AVATAR_COLORS[(name.charCodeAt(0) || 0) % BELONGING_AVATAR_COLORS.length];
+          const total = Object.keys(LEARNING_STYLE_TAB_META).reduce((sum, k) => sum + (detail.counts?.[k] || 0), 0);
+          return (
+            <>
+              <div className="flex items-start justify-between gap-3 border-b border-slate-100 px-5 py-4">
+                <div className="flex items-center gap-3">
+                  <StudentPhoto student={{ name, profilePic: detail.profilePic }} className="size-11 text-base" fallbackClass={avatar} />
+                  <div>
+                    <h3 className="text-[15px] font-bold text-slate-900">{name}</h3>
+                    <p className="text-[11.5px] text-slate-500">Roll {detail.roll ?? '—'} · {detail.sampleSize ?? 0} tutor sessions</p>
+                    {meta ? (
+                      <span className={`mt-1 inline-flex items-center gap-1.5 rounded-md px-2 py-0.5 text-[11px] font-semibold ${meta.pill}`}><MetaIcon className="size-3.5" />{meta.label} · {detail.confidence}%</span>
+                    ) : (
+                      <span className="mt-1 inline-flex items-center gap-1.5 rounded-md bg-slate-50 px-2 py-0.5 text-[11px] text-slate-500"><span className="size-1.5 rounded-full bg-slate-400" />Not enough data</span>
+                    )}
+                  </div>
+                </div>
+                <button type="button" onClick={closeDetail} aria-label="Close" className="rounded-lg p-1.5 text-slate-400 hover:bg-slate-100 hover:text-slate-700"><X className="size-4" /></button>
+              </div>
+              <div className="space-y-3 p-5">
+                <p className="text-[11.5px] font-semibold text-slate-700">Tutor mode usage by style</p>
+                {Object.entries(LEARNING_STYLE_TAB_META).map(([k, m]) => {
+                  const count = detail.counts?.[k] || 0;
+                  const pct = total ? Math.round((count / total) * 100) : 0;
+                  const Icon = m.icon;
+                  return (
+                    <div key={k}>
+                      <div className="mb-1 flex items-center justify-between text-[11.5px]">
+                        <span className="inline-flex items-center gap-1.5 text-slate-600"><Icon className="size-3.5" />{m.label}</span>
+                        <span className="font-semibold text-slate-900">{count} <span className="font-normal text-slate-400">({pct}%)</span></span>
+                      </div>
+                      <div className="h-1.5 overflow-hidden rounded-full bg-slate-100">
+                        <div className={`h-full rounded-full ${m.bar}`} style={{ width: `${pct}%` }} />
+                      </div>
+                    </div>
+                  );
+                })}
+                {detail.selfReported && (
+                  <p className={`rounded-lg px-3 py-2 text-[11.5px] ${detail.agreesWithSelfReport === false ? 'bg-amber-50 text-amber-700' : 'bg-slate-50 text-slate-600'}`}>
+                    Self-reported style: <strong>{detail.selfReported}</strong>{detail.agreesWithSelfReport === false ? ' — differs from detected usage' : ''}
+                  </p>
+                )}
+                {!available && (
+                  <p className="text-[11px] text-slate-500">More tutor sessions are needed before a style can be detected.</p>
+                )}
+              </div>
+            </>
+          );
+        })()}
+      </ModalShell>
     </div>
   );
 };
@@ -1895,7 +2262,7 @@ const ProgressTab = ({
         <section className="rounded-2xl border border-slate-100 bg-white p-4 shadow-sm">
           <div className="mb-2 flex items-center justify-between">
             <h2 className="flex items-center gap-3 text-[16px] font-semibold text-slate-900">
-              <span className="flex h-9 w-9 items-center justify-center rounded-xl bg-red-50"><AlertTriangle className="size-5 fill-red-500 text-white" /></span>
+              <span className="flex h-9 w-9 items-center justify-center rounded-full bg-red-500"><AlertTriangle className="size-5 fill-white text-white" /></span>
               Needs Support
             </h2>
             <span className="rounded-full bg-red-50 px-3 py-1 text-xs font-semibold text-slate-800">{supportStudents.length}</span>
@@ -2904,14 +3271,14 @@ const photoUrlOf = (student) => {
   return p.secure_url || p.url || '';
 };
 
-const StudentPhoto = ({ student, className = 'size-9 text-sm' }) => {
+const StudentPhoto = ({ student, className = 'size-9 text-sm', fallbackClass = 'bg-red-100 text-red-600' }) => {
   const [failed, setFailed] = useState(false);
   const src = photoUrlOf(student);
   if (src && !failed) {
     return <img src={src} alt="" loading="lazy" onError={() => setFailed(true)} className={`shrink-0 rounded-full object-cover ${className}`} />;
   }
   return (
-    <div className={`flex shrink-0 items-center justify-center rounded-full bg-red-100 font-bold text-red-600 ${className}`}>
+    <div className={`flex shrink-0 items-center justify-center rounded-full font-bold ${fallbackClass} ${className}`}>
       {String(student?.name || 'S').charAt(0).toUpperCase()}
     </div>
   );
@@ -3271,9 +3638,9 @@ const MisconceptionsTab = ({ data, loading, filters, setFilters, onFetch, aiRepo
 // CLASS GAPS TAB
 // ═════════════════════════════════════════════════════════════════════════════
 const GAP_LEVELS = {
-  critical: { label: 'Critical', range: '< 40% mastery', dot: 'bg-red-500', pill: 'bg-red-50 text-red-600', bar: 'bg-red-500', text: 'text-red-600', color: '#ef4444' },
-  high: { label: 'High', range: '40% – 60% mastery', dot: 'bg-orange-500', pill: 'bg-orange-50 text-orange-600', bar: 'bg-orange-500', text: 'text-orange-600', color: '#f97316' },
-  medium: { label: 'Medium', range: '60% – 75% mastery', dot: 'bg-amber-400', pill: 'bg-amber-50 text-amber-600', bar: 'bg-amber-400', text: 'text-amber-600', color: '#fbbf24' },
+  critical: { label: 'Critical', range: '< 40% mastery', dot: 'bg-white', pill: 'bg-red-500 text-white', bar: 'bg-red-500', text: 'text-red-600', color: '#ef4444' },
+  high: { label: 'High', range: '40% – 60% mastery', dot: 'bg-white', pill: 'bg-orange-500 text-white', bar: 'bg-orange-500', text: 'text-orange-600', color: '#f97316' },
+  medium: { label: 'Medium', range: '60% – 75% mastery', dot: 'bg-white', pill: 'bg-amber-500 text-white', bar: 'bg-amber-400', text: 'text-amber-600', color: '#fbbf24' },
 };
 
 const ClassGapsTab = ({ data, loading, onFetch, healthyTopics = 0, classLabel }) => {
@@ -3382,7 +3749,7 @@ const ClassGapsTab = ({ data, loading, onFetch, healthyTopics = 0, classLabel })
           <div className="overflow-x-auto p-3">
             <table className="w-full min-w-[760px] text-left">
               <thead>
-                <tr className="bg-slate-50 text-[11.5px] text-slate-500">
+                <tr className="bg-slate-100 text-[11.5px] text-slate-500">
                   <th className="w-10 rounded-l-lg px-3 py-2 text-center font-medium">#</th>
                   <th className="px-3 py-2 font-medium">Subject</th>
                   <th className="px-3 py-2 font-medium">Topic</th>
@@ -3399,7 +3766,7 @@ const ClassGapsTab = ({ data, loading, onFetch, healthyTopics = 0, classLabel })
                     <tr key={`${g.subject}-${g.topicTitle}-${i}`} className="border-b border-slate-100 last:border-0">
                       <td className="px-3 py-2 text-center text-[12px] text-slate-500">{i + 1}</td>
                       <td className="px-3 py-2">
-                        <span className="inline-flex items-center gap-1.5 rounded-lg bg-blue-50 px-2.5 py-1 text-[12px] font-medium text-blue-700"><BookOpen className="size-3.5" /> {g.subject || '—'}</span>
+                        <span className="inline-flex items-center gap-1.5 rounded-full bg-blue-50 px-2.5 py-1 text-[12px] font-medium text-blue-700"><BookOpen className="size-3.5" /> {g.subject || '—'}</span>
                       </td>
                       <td className="px-3 py-2">
                         <p className="text-[12.5px] font-semibold text-slate-900">{g.topicTitle}</p>
@@ -3421,8 +3788,8 @@ const ClassGapsTab = ({ data, loading, onFetch, healthyTopics = 0, classLabel })
                         <p className={`text-[11px] ${g.studentsBelow50 ? 'text-red-500' : 'text-slate-500'}`}>{g.studentsBelow50} below 50%</p>
                       </td>
                       <td className="px-3 py-2">
-                        <button type="button" onClick={() => setDetail(g)} className="inline-flex items-center gap-1 rounded-lg border border-blue-100 px-2.5 py-1.5 text-[11.5px] font-semibold text-blue-600 transition hover:bg-blue-50">
-                          View Details <ArrowRight className="size-3.5" />
+                        <button type="button" onClick={() => setDetail(g)} className="inline-flex items-center gap-1 rounded-full border border-blue-100 bg-blue-600 text-white px-2.5 py-1.5 text-[11.5px] font-semibold text-blue-600 transition hover:bg-blue-700">
+                          Details <ArrowRight className="size-3.5" />
                         </button>
                       </td>
                     </tr>

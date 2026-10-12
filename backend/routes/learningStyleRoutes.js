@@ -27,6 +27,7 @@ router.get('/class', authTeacher, teacherAnalyticsCache.cache, async (req, res) 
       ...row,
       name: byId.get(String(row.studentId))?.name,
       roll: byId.get(String(row.studentId))?.roll,
+      profilePic: byId.get(String(row.studentId))?.profilePic,
     }));
     return res.json({ success: true, data: { ...summary, students: studentsWithNames } });
   } catch (err) {
