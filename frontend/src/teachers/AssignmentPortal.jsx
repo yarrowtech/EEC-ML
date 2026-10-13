@@ -60,6 +60,8 @@ const makeClassSlug = (className, sectionName) =>
   `${String(className || '').trim()}-${String(sectionName || '').trim()}`
     .toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '');
 
+import QuizBuilder, { quizTotalMarks, toQuizPayload, validateQuiz } from './QuizBuilder';
+
 const AssignmentPortal = ({ view = 'manage', notificationCount = 0, siblingNotificationCount = 0 }) => {
   const navigate = useNavigate();
   const location = useLocation();
@@ -129,6 +131,7 @@ const AssignmentPortal = ({ view = 'manage', notificationCount = 0, siblingNotif
     topicTitle: "",
     subTopicTitle: "",
     timeLimit: "",
+    quizSections: [],
     publishDate: "",
     lateSubmissions: false,
     lateSubmissionCutoff: "",
@@ -775,13 +778,24 @@ const AssignmentPortal = ({ view = 'manage', notificationCount = 0, siblingNotif
       setError('No active academic session found. Please ask admin to activate a session first.');
       return;
     }
+    const isQuiz = newAssignment.type === 'Quiz';
+    if (isQuiz) {
+      const quizProblem = validateQuiz(newAssignment.quizSections || []);
+      if (quizProblem) {
+        setError(quizProblem);
+        return;
+      }
+    }
     try {
       setLoading(true);
       setError('');
       const payload = {
         ...newAssignment,
         academicYearId: activeSessionId,
-        sessionName: activeSessionName
+        sessionName: activeSessionName,
+        quizSections: isQuiz ? toQuizPayload(newAssignment.quizSections) : undefined,
+        marks: isQuiz ? quizTotalMarks(newAssignment.quizSections) : newAssignment.marks,
+        submissionFormat: isQuiz ? 'text' : newAssignment.submissionFormat,
       };
       const response = await axios.post(
         `${API_BASE_URL}/api/assignment/teacher/create`,
@@ -817,6 +831,7 @@ const AssignmentPortal = ({ view = 'manage', notificationCount = 0, siblingNotif
           topicTitle: "",
           subTopicTitle: "",
           timeLimit: "",
+          quizSections: [],
           publishDate: "",
           lateSubmissions: false,
           lateSubmissionCutoff: "",
@@ -2213,7 +2228,7 @@ const CreateAssignmentModal = ({
   /* ── glass card shell ── */
   const cardCls = inline
     ? 'w-full rounded-[2rem] border border-white/50 bg-white/[0.72] backdrop-blur-[18px] [box-shadow:0_20px_50px_rgba(0,20,40,0.08),0_8px_24px_rgba(0,20,40,0.04),inset_0_1px_0_rgba(255,255,255,0.6)] px-10 pt-9 pb-11'
-    : 'w-full max-w-2xl rounded-[2rem] border border-white/50 bg-white/[0.72] backdrop-blur-[18px] [box-shadow:0_20px_50px_rgba(0,20,40,0.08),0_8px_24px_rgba(0,20,40,0.04),inset_0_1px_0_rgba(255,255,255,0.6)] max-h-[90vh] overflow-y-auto px-8 pt-8 pb-10';
+    : `w-full ${newAssignment.type === 'Quiz' ? 'max-w-4xl' : 'max-w-2xl'} rounded-[2rem] border border-white/50 bg-white/[0.72] backdrop-blur-[18px] [box-shadow:0_20px_50px_rgba(0,20,40,0.08),0_8px_24px_rgba(0,20,40,0.04),inset_0_1px_0_rgba(255,255,255,0.6)] max-h-[90vh] overflow-y-auto px-8 pt-8 pb-10`;
 
   const inner = (
     <div className={cardCls}>
@@ -2398,6 +2413,13 @@ const CreateAssignmentModal = ({
           </div>
         </div>
 
+        {newAssignment.type === 'Quiz' && (
+          <QuizBuilder
+            sections={newAssignment.quizSections || []}
+            onChange={(quizSections) => setNewAssignment((prev) => ({ ...prev, quizSections, marks: quizTotalMarks(quizSections) || prev.marks }))}
+          />
+        )}
+
         {/* ── Row 5: Due Date | Publish Date ── */}
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-5 mb-5">
           <div>
@@ -2417,13 +2439,15 @@ const CreateAssignmentModal = ({
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-5 mb-5">
           <div>
             <label className={FL}>Total Marks <span className="text-red-500">*</span></label>
-            <input name="marks" value={newAssignment.marks} onChange={handleChange}
-              type="number" min="1" placeholder="100" className={FI} required />
+            <input name="marks" value={newAssignment.type === 'Quiz' ? quizTotalMarks(newAssignment.quizSections || []) : newAssignment.marks} onChange={handleChange}
+              type="number" min="1" placeholder="100" className={`${FI} ${newAssignment.type === 'Quiz' ? 'cursor-not-allowed opacity-70' : ''}`} readOnly={newAssignment.type === 'Quiz'} required />
+            {newAssignment.type === 'Quiz' && <p className="mt-1 text-[10px]" style={{ color: '#a5b9cc' }}>Calculated from the quiz questions</p>}
           </div>
           <div>
-            <label className={FL}>Time Limit <span className={FH}>Optional</span></label>
+            <label className={FL}>Time Limit (minutes) <span className={FH}>Optional</span></label>
             <input name="timeLimit" value={newAssignment.timeLimit || ''} onChange={handleChange}
-              type="text" placeholder="e.g., 45 min" className={FI} />
+              type="number" min="1" max="600" placeholder="e.g., 45" className={FI} />
+            {newAssignment.type === 'Quiz' && <p className="mt-1 text-[10px]" style={{ color: '#a5b9cc' }}>The quiz auto-submits when time runs out</p>}
           </div>
         </div>
 

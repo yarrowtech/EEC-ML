@@ -191,7 +191,10 @@ const Assignment = ({ assignmentType }) => {
           score: assignment.score,
           feedback: assignment.feedback,
           teacherName: assignment.teacherId?.name,
-          attachments: assignment.attachments || []
+          attachments: assignment.attachments || [],
+          isQuiz: Boolean(assignment.isQuiz),
+          quizQuestionCount: assignment.quizQuestionCount || 0,
+          timeLimit: assignment.timeLimit || null
         };
       });
 
@@ -1373,7 +1376,18 @@ const Assignment = ({ assignmentType }) => {
                       </div>
                     )}
 
-                    {!isSubmitted && !isGraded && (
+                    {!isSubmitted && !isGraded && a.isQuiz && (
+                      <button
+                        type="button"
+                        onClick={() => navigate(`/student/quiz/${a.id}`)}
+                        className="flex w-full items-center justify-center gap-2.5 rounded-2xl bg-violet-600 px-6 py-4 text-base font-bold text-white shadow-lg shadow-violet-600/30 transition-all duration-200 hover:bg-violet-700"
+                      >
+                        <SendHorizonal className="h-5 w-5" />
+                        Start Quiz ({a.quizQuestionCount} questions{a.timeLimit ? `, ${a.timeLimit} min` : ''})
+                      </button>
+                    )}
+
+                    {!isSubmitted && !isGraded && !a.isQuiz && (
                       submitSuccess ? (
                         <button
                           type="button"

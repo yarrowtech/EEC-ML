@@ -40,6 +40,9 @@ const submissionSchema = new mongoose.Schema({
   aiEvaluation: { type: mongoose.Schema.Types.Mixed, default: null },
   publishedByTeacher: { type: Boolean, default: false },
   publishedAt: { type: Date, default: null },
+  quizAnswers: { type: mongoose.Schema.Types.Mixed, default: null },
+  quizResult: { type: mongoose.Schema.Types.Mixed, default: null }, // { autoScore, objectiveMarks, pendingMarks, breakdown }
+  integrityEvents: { type: mongoose.Schema.Types.Mixed, default: null }, // { tabSwitches, fullscreenExits, copyAttempts }
   submissionHash: { type: String, default: '' }, // SHA-256 of submissionText for plagiarism detection
   similarSubmissions: [{ type: mongoose.Schema.Types.ObjectId, ref: 'StudentUser' }],
 });

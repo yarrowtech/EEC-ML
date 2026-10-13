@@ -2238,7 +2238,7 @@ router.get('/student/smart-learning-map', authStudent, async (req, res) => {
     const [materials, papers, assignments, standaloneMaterials] = await Promise.all([
       TeachingMaterial.find(materialFilter).sort({ publishedAt: -1, createdAt: -1 }).lean(),
       PracticePaper.find(paperFilter).sort({ publishedAt: -1, createdAt: -1 }).lean(),
-      Assignment.find(assignmentFilter).sort({ dueDate: -1, createdAt: -1 }).lean(),
+      Assignment.find(assignmentFilter).select('-quizSections').sort({ dueDate: -1, createdAt: -1 }).lean(),
       TeachingMaterial.find(standaloneMaterialFilter).sort({ publishedAt: -1, createdAt: -1 }).lean(),
     ]);
 
@@ -2718,7 +2718,7 @@ router.get('/student/smart-learning-overview', authStudent, async (req, res) => 
         publishedForStudentPortal: true,
         ...(campusId ? { campusId } : {}),
         ...(legacyScope ? legacyScope : studentScope),
-      }).lean(),
+      }).select('-quizSections').lean(),
       StudentProgress.findOne({ schoolId, studentId }).lean(),
     ]);
 
