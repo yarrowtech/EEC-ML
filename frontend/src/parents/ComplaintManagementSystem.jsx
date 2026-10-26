@@ -60,6 +60,7 @@ const fmtDate = (v) => {
   return !v || Number.isNaN(d.getTime()) ? '' : d.toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' });
 };
 
+
 const statusChip = (status) => {
   if (status === 'resolved') return <span className="inline-flex items-center gap-1 rounded-full bg-green-600 px-2.5 py-0.5 text-[11px] font-medium text-white"><CheckCircle2 size={12} /> Resolved</span>;
   if (status === 'in_progress') return <span className="inline-flex items-center gap-1 rounded-full bg-amber-600 px-2.5 py-0.5 text-[11px] font-medium text-amber-700"><Clock3 size={12} /> In Progress</span>;
@@ -80,6 +81,288 @@ const resolveAssignee = (complaint) => {
   );
 };
 
+// Memoized form modal component - completely isolated from parent re-renders
+const CreateComplaintModal = React.memo(({
+  isOpen,
+  onClose,
+  children,
+  onSubmitSuccess,
+  createRef,
+  formatStudentDisplay,
+}) => {
+  const [form, setForm] = useState({
+    title: '',
+    description: '',
+    category: CATEGORY_OPTIONS[0],
+    priority: 'medium',
+    studentId: children.length > 0 ? children[0]?.studentId || '' : '',
+    customCategory: '',
+  });
+  const [submitting, setSubmitting] = useState(false);
+  const [submissionError, setSubmissionError] = useState('');
+  const titleInputRef = useRef(null);
+
+  const isOtherCategory = form.category === 'Other';
+  const isAcademicCategory = (form.category || '').toLowerCase().includes('academic');
+  const selectedChild = children.find((c) => String(c.studentId) === String(form.studentId)) || null;
+  const childLine = (c) => [c.studentCode || c.username || c.admissionNumber ? `ID: ${c.studentCode || c.username || c.admissionNumber}` : '', c.section ? `Section: ${c.section}` : '']
+    .filter(Boolean).join(' • ');
+
+  const handleTitleChange = React.useCallback((e) => {
+    setForm((prev) => ({ ...prev, title: e.target.value }));
+  }, []);
+
+  const handleDescriptionChange = React.useCallback((e) => {
+    setForm((prev) => ({ ...prev, description: e.target.value }));
+  }, []);
+
+  const handleCategoryChange = React.useCallback((category) => {
+    setForm((prev) => ({ ...prev, category }));
+  }, []);
+
+  const handlePriorityChange = React.useCallback((priority) => {
+    setForm((prev) => ({ ...prev, priority }));
+  }, []);
+
+  const handleCustomCategoryChange = React.useCallback((e) => {
+    setForm((prev) => ({ ...prev, customCategory: e.target.value }));
+  }, []);
+
+  const handleStudentChange = React.useCallback((studentId) => {
+    setForm((prev) => ({ ...prev, studentId }));
+  }, []);
+
+  const handleFormSubmit = async (event) => {
+    event.preventDefault();
+    if (!form.title.trim() || !form.description.trim()) {
+      setSubmissionError('Title and description are required.');
+      return;
+    }
+    if (isOtherCategory && !form.customCategory.trim()) {
+      setSubmissionError('Please type the category for "Other".');
+      return;
+    }
+    if (isAcademicCategory && children.length > 0 && !form.studentId) {
+      setSubmissionError('Select a child so the complaint can reach the class teacher.');
+      return;
+    }
+
+    setSubmitting(true);
+    setSubmissionError('');
+    try {
+      const { customCategory, ...payload } = form;
+      if (isOtherCategory) payload.category = customCategory.trim().slice(0, CUSTOM_CATEGORY_MAX);
+      if (!payload.studentId) delete payload.studentId;
+
+      const token = localStorage.getItem('token');
+      const navigate = useNavigate?.() || {};
+      const data = await parentApiJson('/api/parent/auth/complaints', {
+        method: 'POST',
+        body: JSON.stringify(payload),
+      }, navigate);
+
+      onSubmitSuccess(data);
+      onClose();
+    } catch (err) {
+      setSubmissionError(err.message || 'Unable to submit complaint');
+    } finally {
+      setSubmitting(false);
+    }
+  };
+
+  if (!isOpen) return null;
+
+  return (
+    <motion.form
+      ref={createRef}
+      tabIndex={-1}
+      role="dialog"
+      aria-modal="true"
+      aria-labelledby="complaint-create-title"
+      onSubmit={handleFormSubmit}
+      initial={{ opacity: 0, y: 40 }}
+      animate={{ opacity: 1, y: 0 }}
+      exit={{ opacity: 0, y: 40 }}
+      transition={{ duration: 0.22 }}
+      className="relative flex max-h-[92dvh] w-full flex-col rounded-t-2xl bg-white pb-[env(safe-area-inset-bottom)] shadow-2xl outline-none sm:w-auto sm:max-w-lg sm:rounded-2xl sm:pb-0 lg:max-w-2xl"
+    >
+      <div className="flex items-start justify-between gap-3 border-b border-slate-100 px-4 py-3">
+        <div className="flex min-w-0 items-center gap-2.5">
+          <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-violet-600 text-white"><Plus size={18} /></span>
+          <div className="min-w-0">
+            <h2 id="complaint-create-title" className="text-sm font-bold text-[#0b1446] sm:text-base">Submit new complaint</h2>
+            <p className="text-[11px] text-slate-500">Tell us about the issue and we will get back to you.</p>
+          </div>
+        </div>
+        <button type="button" onClick={onClose} aria-label="Close" className="shrink-0 rounded-lg p-1.5 text-slate-400 hover:bg-slate-100"><X size={16} /></button>
+      </div>
+
+      <div className="min-h-0 flex-1 overflow-y-auto p-4">
+        <div className="grid gap-3 lg:grid-cols-2">
+          <div className="space-y-3">
+            <div>
+              <label htmlFor="complaint-title" className="mb-1 block text-xs font-medium text-[#0b1446]">Title <span className="text-rose-500">*</span></label>
+              <input
+                id="complaint-title"
+                ref={titleInputRef}
+                type="text"
+                autoFocus
+                maxLength={120}
+                value={form.title}
+                onChange={handleTitleChange}
+                className={INPUT}
+                placeholder="Enter a short title for your complaint (e.g., App Issue, Fee Query)"
+              />
+            </div>
+
+            <div>
+              <p className="mb-1 text-xs font-medium text-[#0b1446]">Category <span className="text-rose-500">*</span></p>
+              <div className="flex flex-wrap gap-1.5" role="radiogroup" aria-label="Category">
+                {CATEGORY_OPTIONS.map((option) => {
+                  const Icon = CATEGORY_ICONS[option] || MoreHorizontal;
+                  const active = form.category === option;
+                  return (
+                    <button
+                      key={option}
+                      type="button"
+                      role="radio"
+                      aria-checked={active}
+                      onClick={() => handleCategoryChange(option)}
+                      className={`inline-flex items-center gap-1.5 rounded-full border px-2.5 py-1.5 text-xs font-medium transition ${active ? 'border-violet-500 bg-violet-50 text-violet-700 ring-1 ring-violet-200' : 'border-slate-200 bg-white text-[#0b1446] hover:bg-slate-50'}`}
+                    >
+                      <Icon size={15} className="text-violet-600" /> {option}
+                    </button>
+                  );
+                })}
+              </div>
+              {isOtherCategory ? (
+                <input
+                  id="complaint-custom-category"
+                  maxLength={CUSTOM_CATEGORY_MAX}
+                  value={form.customCategory}
+                  onChange={handleCustomCategoryChange}
+                  placeholder="Type the category (e.g. Canteen, Safety)"
+                  aria-label="Custom category"
+                  className={`${INPUT} mt-2`}
+                />
+              ) : null}
+              <p className="mt-1.5 text-[11px] text-slate-500">
+                {isAcademicCategory
+                  ? "Academic complaints are routed directly to your child's class teacher."
+                  : "Other categories are sent to the school administration team."}
+              </p>
+            </div>
+          </div>
+
+          <div className="space-y-3">
+            <div>
+              <label htmlFor="complaint-details" className="mb-1 block text-xs font-medium text-[#0b1446]">Details <span className="text-rose-500">*</span></label>
+              <div className="relative">
+                <textarea
+                  id="complaint-details"
+                  rows={3}
+                  maxLength={DETAILS_MAX}
+                  value={form.description}
+                  onChange={handleDescriptionChange}
+                  className={`${INPUT} resize-none pb-5`}
+                  placeholder="Describe your issue in detail..."
+                />
+                <span className="pointer-events-none absolute bottom-2 right-2.5 text-[10px] text-slate-400">{form.description.length}/{DETAILS_MAX}</span>
+              </div>
+            </div>
+
+            <div>
+              <p className="mb-1 text-xs font-medium text-[#0b1446]">Priority <span className="text-rose-500">*</span></p>
+              <div className="flex flex-wrap gap-1.5" role="radiogroup" aria-label="Priority">
+                {PRIORITY_OPTIONS.map((option) => {
+                  const active = form.priority === option.value;
+                  const tone = PRIORITY_TONE[option.value];
+                  return (
+                    <button
+                      key={option.value}
+                      type="button"
+                      role="radio"
+                      aria-checked={active}
+                      onClick={() => handlePriorityChange(option.value)}
+                      className={`inline-flex items-center gap-1.5 rounded-full border px-3 py-1.5 text-xs font-medium transition ${tone.chip} ${active ? `ring-2 ${tone.ring}` : ''}`}
+                    >
+                      <span className={`flex h-3.5 w-3.5 items-center justify-center rounded-full ${tone.dot}`}>
+                        {active ? <Check size={9} className="text-white" strokeWidth={4} /> : null}
+                      </span>
+                      {option.label}
+                    </button>
+                  );
+                })}
+              </div>
+            </div>
+
+            {children.length > 0 && (
+              <div>
+                <label htmlFor="complaint-child" className="mb-1 block text-xs font-medium text-[#0b1446]">
+                  Related child {isAcademicCategory ? '(required for academic issues)' : '(optional)'}
+                </label>
+                <div className="relative flex items-center gap-2.5 rounded-lg border border-slate-200 px-2.5 py-1.5">
+                  {selectedChild?.profilePic ? (
+                    <img src={selectedChild.profilePic} alt="" className="h-8 w-8 shrink-0 rounded-full object-cover" />
+                  ) : (
+                    <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-violet-50 text-xs font-bold text-violet-600">
+                      {String(selectedChild?.name || 'C').charAt(0).toUpperCase()}
+                    </span>
+                  )}
+                  <div className="min-w-0 flex-1">
+                    <p className="truncate text-sm font-bold text-[#0b1446]">{selectedChild?.name || 'Select child'}</p>
+                    {selectedChild ? <p className="truncate text-[11px] text-slate-500">{childLine(selectedChild)}</p> : null}
+                  </div>
+                  <ChevronDown size={16} className="shrink-0 text-slate-500" />
+                  <select
+                    id="complaint-child"
+                    value={form.studentId}
+                    onChange={(e) => handleStudentChange(e.target.value)}
+                    className="absolute inset-0 cursor-pointer opacity-0"
+                  >
+                    {!isAcademicCategory ? <option value="">No specific child</option> : null}
+                    {children.map((child) => (
+                      <option key={child.studentId} value={child.studentId}>
+                        {formatStudentDisplay({
+                          name: child.name,
+                          username: child.username,
+                          studentCode: child.studentCode,
+                          admissionNumber: child.admissionNumber,
+                          studentId: child.studentId,
+                          roll: child.roll || child.rollNo || child.rollNumber,
+                          section: child.section,
+                        })}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+              </div>
+            )}
+          </div>
+        </div>
+      </div>
+
+      <div className="border-t border-slate-100 px-4 py-3">
+        {submissionError && (
+          <p role="alert" className="mb-2 flex items-center gap-2 text-xs text-rose-600"><AlertCircle size={14} /> {submissionError}</p>
+        )}
+        <div className="flex flex-col-reverse gap-2 sm:flex-row sm:justify-end">
+          <button type="button" onClick={onClose} className="rounded-full border border-slate-200 px-4 py-2.5 text-sm font-semibold text-slate-700 transition hover:bg-slate-50">Cancel</button>
+          <motion.button
+            type="submit"
+            disabled={submitting}
+            whileTap={{ scale: 0.99 }}
+            className="flex items-center justify-center gap-2 rounded-full bg-violet-600 px-5 py-2.5 text-sm font-semibold text-white transition hover:bg-violet-700 disabled:opacity-60"
+          >
+            {submitting ? <Loader2 size={16} className="animate-spin" /> : <Send size={16} />}
+            {submitting ? 'Submitting…' : 'Submit'}
+          </motion.button>
+        </div>
+      </div>
+    </motion.form>
+  );
+});
+
 const ComplaintManagementSystem = () => {
   const navigate = useNavigate();
   const [complaints, setComplaints] = useState([]);
@@ -96,6 +379,7 @@ const ComplaintManagementSystem = () => {
   const createRef = useDialog(showCreate, () => setShowCreate(false));
   const [filterOpen, setFilterOpen] = useState(false);
   const [logPage, setLogPage] = useState(1);
+  const titleInputRef = React.useRef(null);
   const filterRef = useRef(null);
 
   // Close the status filter menu on outside click / Esc.
@@ -162,6 +446,30 @@ const ComplaintManagementSystem = () => {
       studentId: prev.studentId || children[0].studentId || '',
     }));
   }, [isAcademicCategory, children]);
+
+  const handleTitleChange = React.useCallback((e) => {
+    setForm((prev) => ({ ...prev, title: e.target.value }));
+  }, []);
+
+  const handleDescriptionChange = React.useCallback((e) => {
+    setForm((prev) => ({ ...prev, description: e.target.value }));
+  }, []);
+
+  const handleCategoryChange = React.useCallback((category) => {
+    setForm((prev) => ({ ...prev, category }));
+  }, []);
+
+  const handlePriorityChange = React.useCallback((priority) => {
+    setForm((prev) => ({ ...prev, priority }));
+  }, []);
+
+  const handleCustomCategoryChange = React.useCallback((e) => {
+    setForm((prev) => ({ ...prev, customCategory: e.target.value }));
+  }, []);
+
+  const handleStudentChange = React.useCallback((studentId) => {
+    setForm((prev) => ({ ...prev, studentId }));
+  }, []);
 
   const handleFormSubmit = async (event) => {
     event.preventDefault();
@@ -545,21 +853,18 @@ const ComplaintManagementSystem = () => {
       {createPortal(
         <AnimatePresence>
           {showCreate && (
-            <motion.div className="fixed inset-0 z-[100] flex items-end justify-center sm:items-center sm:p-4" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}>
+            <motion.div className="fixed inset-0 z-[100] flex items-center justify-center p-4" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}>
               <div className="absolute inset-0 bg-black/50 backdrop-blur-[2px]" onClick={() => setShowCreate(false)} aria-hidden="true" />
-              <motion.form
-                ref={createRef}
-                tabIndex={-1}
-                role="dialog"
-                aria-modal="true"
-                aria-labelledby="complaint-create-title"
-                onSubmit={handleFormSubmit}
-                initial={{ opacity: 0, y: 40 }}
-                animate={{ opacity: 1, y: 0 }}
-                exit={{ opacity: 0, y: 40 }}
-                transition={{ duration: 0.22 }}
-                className="relative flex max-h-[92dvh] w-full flex-col rounded-t-2xl bg-white pb-[env(safe-area-inset-bottom)] shadow-2xl outline-none sm:max-w-lg sm:rounded-2xl sm:pb-0 lg:max-w-2xl"
-              >
+              <CreateComplaintModal
+                isOpen={showCreate}
+                onClose={() => setShowCreate(false)}
+                children={children}
+                createRef={createRef}
+                formatStudentDisplay={formatStudentDisplay}
+                onSubmitSuccess={(data) => {
+                  setComplaints((prev) => [data, ...prev]);
+                }}
+              />
                 <div className="flex items-start justify-between gap-3 border-b border-slate-100 px-4 py-3">
                   <div className="flex min-w-0 items-center gap-2.5">
                     <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-violet-600 text-white"><Plus size={18} /></span>
@@ -577,10 +882,12 @@ const ComplaintManagementSystem = () => {
                         <label htmlFor="complaint-title" className="mb-1 block text-xs font-medium text-[#0b1446]">Title <span className="text-rose-500">*</span></label>
                         <input
                           id="complaint-title"
+                          ref={titleInputRef}
                           type="text"
+                          autoFocus
                           maxLength={120}
                           value={form.title}
-                          onChange={(e) => setForm((prev) => ({ ...prev, title: e.target.value }))}
+                          onChange={handleTitleChange}
                           className={INPUT}
                           placeholder="Enter a short title for your complaint (e.g., App Issue, Fee Query)"
                         />
@@ -598,7 +905,7 @@ const ComplaintManagementSystem = () => {
                                 type="button"
                                 role="radio"
                                 aria-checked={active}
-                                onClick={() => setForm((prev) => ({ ...prev, category: option }))}
+                                onClick={() => handleCategoryChange(option)}
                                 className={`inline-flex items-center gap-1.5 rounded-full border px-2.5 py-1.5 text-xs font-medium transition ${active ? 'border-violet-500 bg-violet-50 text-violet-700 ring-1 ring-violet-200' : 'border-slate-200 bg-white text-[#0b1446] hover:bg-slate-50'}`}
                               >
                                 <Icon size={15} className="text-violet-600" /> {option}
@@ -612,7 +919,7 @@ const ComplaintManagementSystem = () => {
                             autoFocus
                             maxLength={CUSTOM_CATEGORY_MAX}
                             value={form.customCategory}
-                            onChange={(e) => setForm((prev) => ({ ...prev, customCategory: e.target.value }))}
+                            onChange={handleCustomCategoryChange}
                             placeholder="Type the category (e.g. Canteen, Safety)"
                             aria-label="Custom category"
                             className={`${INPUT} mt-2`}
@@ -635,7 +942,7 @@ const ComplaintManagementSystem = () => {
                             rows={3}
                             maxLength={DETAILS_MAX}
                             value={form.description}
-                            onChange={(e) => setForm((prev) => ({ ...prev, description: e.target.value }))}
+                            onChange={handleDescriptionChange}
                             className={`${INPUT} resize-none pb-5`}
                             placeholder="Describe your issue in detail..."
                           />
@@ -655,7 +962,7 @@ const ComplaintManagementSystem = () => {
                                 type="button"
                                 role="radio"
                                 aria-checked={active}
-                                onClick={() => setForm((prev) => ({ ...prev, priority: option.value }))}
+                                onClick={() => handlePriorityChange(option.value)}
                                 className={`inline-flex items-center gap-1.5 rounded-full border px-3 py-1.5 text-xs font-medium transition ${tone.chip} ${active ? `ring-2 ${tone.ring}` : ''}`}
                               >
                                 <span className={`flex h-3.5 w-3.5 items-center justify-center rounded-full ${tone.dot}`}>
@@ -689,7 +996,7 @@ const ComplaintManagementSystem = () => {
                             <select
                               id="complaint-child"
                               value={form.studentId}
-                              onChange={(e) => setForm((prev) => ({ ...prev, studentId: e.target.value }))}
+                              onChange={(e) => handleStudentChange(e.target.value)}
                               className="absolute inset-0 cursor-pointer opacity-0"
                             >
                               {!isAcademicCategory ? <option value="">No specific child</option> : null}
@@ -733,7 +1040,6 @@ const ComplaintManagementSystem = () => {
                     </motion.button>
                   </div>
                 </div>
-              </motion.form>
             </motion.div>
           )}
         </AnimatePresence>,
