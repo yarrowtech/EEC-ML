@@ -96,7 +96,7 @@ const portalNavigation = [
   { icon: Clock, label: 'Timetable', path: `${PORTAL_BASE}/timetable` },
   { icon: Bell, label: 'Notifications', path: `${PORTAL_BASE}/notifications` },
   { icon: ClipboardCheck, label: 'Exam Duty', path: `${PORTAL_BASE}/exam-duty` },
-  { icon: Library, label: 'Academic Alcove', path: `${PORTAL_BASE}/resource-library` },
+  { icon: Library, label: 'Community Wall', path: `${PORTAL_BASE}/community-wall` },
   { icon: Brain, label: 'Lesson Plan', path: `${PORTAL_BASE}/lesson-plan` },
   //{ icon: Brain, label: 'AI Tools', path: `${PORTAL_BASE}/ai-tools` },
   //{ icon: Activity, label: 'Live Monitor', path: `${PORTAL_BASE}/live-monitor` },
@@ -220,7 +220,7 @@ const resolveTeacherNotificationPath = (notification) => {
   if (blob.includes('result') || blob.includes('exam')) return '/teacher/result-management';
   if (blob.includes('meeting') || blob.includes('parent')) return '/teacher/parent-meetings';
   if (blob.includes('feedback')) return '/teacher/feedback';
-  if (blob.includes('wall') || blob.includes('alcove') || blob.includes('problem library')) return '/teacher/academic-alcove';
+  if (blob.includes('wall') || blob.includes('alcove') || blob.includes('problem library')) return '/teacher/community-wall';
   if (blob.includes('chat') || blob.includes('message')) return '/teacher/chat';
   if (blob.includes('health') || blob.includes('wellbeing')) return '/teacher/health-updates';
   return '/teacher/dashboard';
@@ -348,7 +348,7 @@ const teacherNotificationModuleKeyForPath = (path) => {
   if (value.includes('/teaching/')) return 'lesson-plan';
   if (value.includes('calendar')) return 'timetable';
   if (value.includes('timetable')) return 'timetable';
-  if (value.includes('resource-library')) return 'resource-library';
+  if (value.includes('community-wall') || value.includes('resource-library')) return 'resource-library';
   if (value.includes('lesson-plan')) return 'lesson-plan';
   if (value.includes('ai-tools')) return 'ai-tools';
   if (value.includes('live-monitor')) return 'live-monitor';
@@ -2507,7 +2507,8 @@ const TeacherPortalShell = () => {
                 />
                 <Route path="exam-duty" element={<TeacherExamDutyList />} />
                 <Route path="exam-duty/:notificationId" element={<TeacherExamDuty />} />
-                <Route path="resource-library" element={<TeacherAlcove />} />
+                <Route path="community-wall" element={<TeacherAlcove />} />
+                <Route path="resource-library" element={<Navigate to="/teacher/community-wall" replace />} />
                 <Route path="lesson-plan" element={<AIPoweredTeaching />} />
                 <Route path="tryout" element={<TryoutManagement />} />
                 <Route path="ai-tools" element={<TeacherAIToolsPanel />} />
@@ -2531,7 +2532,7 @@ const TeacherPortalShell = () => {
                 <Route path="smart-teaching/lesson-planner-wizard" element={<Navigate to={buildClassPath('current', 'teaching/lesson-planner-wizard')} replace />} />
                 <Route path="ai-center" element={<Navigate to="/teacher/lesson-plan" replace />} />
                 <Route path="ai-powered-teaching" element={<Navigate to="/teacher/lesson-plan" replace />} />
-                <Route path="academic-alcove" element={<Navigate to="/teacher/resource-library" replace />} />
+                <Route path="academic-alcove" element={<Navigate to="/teacher/community-wall" replace />} />
                 <Route path="ai-learning/:studentId/:subject" element={<Navigate to={buildClassPath('current', 'students')} replace />} />
                 <Route path="parent-meetings" element={<Navigate to={buildClassPath('current', 'communication/parent-meetings')} replace />} />
                 <Route path="assignments" element={<Navigate to={buildClassPath('current', 'assignments/manage')} replace />} />

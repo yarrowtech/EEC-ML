@@ -442,7 +442,7 @@ const TeacherDashboard = () => {
               { label: 'PTM', icon: Users, to: '/teacher/ptm' },
               { label: 'Student Chat', icon: MessageSquare, to: '/teacher/classes/current/communication/chat' },
               { label: 'Excuse Letters', icon: FileText, to: '/teacher/classes/current/communication/excuse-letters' },
-              { label: 'Academic Alcove', icon: BookOpen, to: '/teacher/resource-library' },
+              { label: 'Community Wall', icon: BookOpen, to: '/teacher/community-wall' },
             ].map((item) => {
               const Icon = item.icon;
               return (

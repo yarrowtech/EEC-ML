@@ -10,6 +10,78 @@ const teacherAuth = require('../middleware/authTeacher');
 const authAnyUser = require('../middleware/authAnyUser');
 const authStudent = require('../middleware/authStudent');
 const { logStudentPortalEvent, logStudentPortalError } = require('../utils/studentPortalLogger');
+const multer = require('multer');
+const { uploadBufferToCloudinary } = require('../utils/cloudinaryUpload');
+
+const POST_IMAGE_MAX_BYTES = 5 * 1024 * 1024;
+const POST_IMAGE_MAX_COUNT = 4;
+const POST_IMAGE_MIME_TYPES = new Set(['image/jpeg', 'image/png', 'image/webp', 'image/gif']);
+const postImageUpload = multer({
+  storage: multer.memoryStorage(),
+  limits: { fileSize: POST_IMAGE_MAX_BYTES, files: POST_IMAGE_MAX_COUNT },
+  fileFilter: (_req, file, cb) => {
+    if (POST_IMAGE_MIME_TYPES.has(file.mimetype)) return cb(null, true);
+    return cb(new multer.MulterError('LIMIT_UNEXPECTED_FILE', 'images'));
+  },
+}).array('images', POST_IMAGE_MAX_COUNT);
+
+// Multer only engages on multipart requests, so JSON posts pass straight through.
+const withPostImages = (req, res, next) => postImageUpload(req, res, (err) => {
+  if (!err) return next();
+  if (err instanceof multer.MulterError) {
+    if (err.code === 'LIMIT_FILE_SIZE') return res.status(413).json({ error: 'Each photo must be 5MB or smaller.' });
+    if (err.code === 'LIMIT_FILE_COUNT') return res.status(400).json({ error: `You can attach up to ${POST_IMAGE_MAX_COUNT} photos.` });
+    return res.status(400).json({ error: 'Photos must be JPG, PNG, WebP or GIF.' });
+  }
+  return next(err);
+});
+
+// Multipart fields arrive as strings; JSON bodies arrive already parsed.
+const parseJsonField = (value, fallback) => {
+  if (value === undefined || value === null || value === '') return fallback;
+  if (typeof value !== 'string') return value;
+  try { return JSON.parse(value); } catch { return fallback; }
+};
+
+const normalizePoll = (rawPoll) => {
+  const poll = parseJsonField(rawPoll, null);
+  if (!poll || typeof poll !== 'object') return undefined;
+  const question = String(poll.question || '').trim();
+  const options = (Array.isArray(poll.options) ? poll.options : [])
+    .map((option) => String(typeof option === 'string' ? option : option?.text || '').trim())
+    .filter(Boolean)
+    .slice(0, 6);
+  if (!question || options.length < 2) return undefined;
+  return { question, options: options.map((text) => ({ text, votes: [] })) };
+};
+
+const serializePoll = (poll, actorKey) => {
+  if (!poll?.question || !Array.isArray(poll.options) || poll.options.length === 0) return null;
+  let myVote = -1;
+  const options = poll.options.map((option, index) => {
+    const votes = Array.isArray(option.votes) ? option.votes : [];
+    if (votes.includes(actorKey)) myVote = index;
+    return { text: option.text, voteCount: votes.length };
+  });
+  return {
+    question: poll.question,
+    options,
+    totalVotes: options.reduce((sum, option) => sum + option.voteCount, 0),
+    myVote,
+    isClosed: isPollClosed(poll),
+    closesAt: poll.closesAt || null,
+  };
+};
+
+function isPollClosed(poll) {
+  return Boolean(poll?.closed) || Boolean(poll?.closesAt && new Date(poll.closesAt) <= new Date());
+}
+
+const isPostAuthor = (req, post) => {
+  const authorRef = postAuthorRef(post);
+  const currentType = normalizeUserType(req.userType || req.user?.userType || req.user?.type);
+  return authorRef.type === currentType && authorRef.id === String(req.user?.id || '');
+};
 
 const resolveSchoolId = (req, res) => {
   const schoolId = req.schoolId || req.user?.schoolId || null;
@@ -58,7 +130,7 @@ const resolveProfilePics = async (refs = []) => {
 
 const postAuthorRef = (post) => {
   const type = normalizeUserType(post?.authorType || 'teacher');
-  const id = type === 'teacher' ? (post?.author?._id || post?.author) : post?.authorUserId;
+  const id = type === 'teacher' ? (post?.author?._id || post?.author || post?.authorUserId) : post?.authorUserId;
   return { type, id: id ? String(id) : '' };
 };
 
@@ -125,22 +197,39 @@ const resolveViewerProfiles = async (viewerKeys = []) => {
 };
 
 // Create a new post (Teacher only)
-router.post('/posts', teacherAuth, async (req, res) => {
+router.post('/posts', teacherAuth, withPostImages, async (req, res) => {
   // #swagger.tags = ['Alcove']
   try {
     const schoolId = resolveSchoolId(req, res);
     if (!schoolId) return;
-    const { title, subject, chapter, difficulty = 'medium', problemText, solutionText, tags = [], highlighted = false } = req.body;
+    const { title, subject, chapter, difficulty = 'medium', problemText = '', solutionText, highlighted = false } = req.body;
+    const tags = (parseJsonField(req.body.tags, []) || []).map((tag) => String(tag).trim()).filter(Boolean);
+    const poll = normalizePoll(req.body.poll);
+    const files = Array.isArray(req.files) ? req.files : [];
+    if (!String(problemText).trim() && !files.length && !poll) {
+      return res.status(400).json({ error: 'Write something, add a photo, or create a poll.' });
+    }
+    const images = await Promise.all(files.map(async (file) => {
+      const result = await uploadBufferToCloudinary(file.buffer, {
+        folder: 'alcove_posts',
+        resource_type: 'image',
+        context: { schoolId: String(schoolId) },
+      });
+      return { url: result?.secure_url || '', publicId: result?.public_id || '' };
+    }));
+    const fallbackTitle = String(problemText).trim().split('\n')[0] || poll?.question || 'Photo post';
     const teacherName = await resolveAuthorName(req, 'Teacher');
     const post = await AlcovePost.create({
       schoolId,
-      title,
-      subject,
-      chapter,
+      title: String(title || fallbackTitle).trim().slice(0, 160),
+      subject: String(subject || 'General').trim(),
+      chapter: String(chapter || 'General').trim(),
       difficulty,
-      problemText,
+      problemText: String(problemText).trim(),
       solutionText: solutionText || '',
       tags,
+      images: images.filter((image) => image.url),
+      poll,
       highlighted,
       author: req.user?.id || undefined,
       authorUserId: String(req.user?.id || ''),
@@ -227,6 +316,10 @@ router.get('/posts', authAnyUser, async (req, res) => {
         filter.authorUserId = String(req.user?.id || '');
       }
     }
+    const actorKey = buildActorKey(req);
+    if (String(req.query.liked || '').toLowerCase() === 'true') filter.likedBy = actorKey;
+    if (String(req.query.saved || '').toLowerCase() === 'true') filter.savedBy = actorKey;
+    if (String(req.query.hasPoll || '').toLowerCase() === 'true') filter['poll.question'] = { $gt: '' };
 
     const skip = (Number(page) - 1) * Number(limit);
     const [posts, total] = await Promise.all([
@@ -238,7 +331,6 @@ router.get('/posts', authAnyUser, async (req, res) => {
         .lean(),
       AlcovePost.countDocuments(filter),
     ]);
-    const actorKey = buildActorKey(req);
     const currentUserType = normalizeUserType(req.userType || req.user?.userType || req.user?.type);
     const answeredPostIds = currentUserType === 'student' && posts.length
       ? new Set(
@@ -270,6 +362,8 @@ router.get('/posts', authAnyUser, async (req, res) => {
       return {
         ...post,
         authorPhoto: authorPics.get(`${authorRef.type}:${authorRef.id}`) || '',
+        poll: serializePoll(post.poll, actorKey),
+        isSaved: (Array.isArray(post.savedBy) ? post.savedBy : []).includes(actorKey),
         authorName:
           post?.authorName
           || post?.author?.name
@@ -341,6 +435,8 @@ router.get('/posts/:id', authAnyUser, async (req, res) => {
       likeCount: likedBy.length,
       isLiked: likedBy.includes(actorKey),
       viewCount: Number(post.viewCount) || 0,
+      poll: serializePoll(post.poll, actorKey),
+      isSaved: (Array.isArray(post.savedBy) ? post.savedBy : []).includes(actorKey),
     });
   } catch (err) {
     res.status(400).json({ error: err.message });
@@ -440,6 +536,149 @@ router.patch('/posts/:id', teacherAuth, async (req, res) => {
     );
     if (!post) return res.status(404).json({ error: 'Not found' });
     res.json(post);
+  } catch (err) {
+    res.status(400).json({ error: err.message });
+  }
+});
+
+// Poll vote (any logged-in user): picking the current choice again clears the vote.
+router.post('/posts/:id/vote', authAnyUser, async (req, res) => {
+  // #swagger.tags = ['Alcove']
+  try {
+    const schoolId = resolveSchoolId(req, res);
+    if (!schoolId) return;
+    const optionIndex = Number(req.body?.optionIndex);
+    const post = await AlcovePost.findOne({ _id: req.params.id, schoolId });
+    if (!post) return res.status(404).json({ error: 'Not found' });
+    const options = post.poll?.options || [];
+    if (!post.poll?.question || !Number.isInteger(optionIndex) || optionIndex < 0 || optionIndex >= options.length) {
+      return res.status(400).json({ error: 'Invalid poll option' });
+    }
+    if (isPollClosed(post.poll)) return res.status(409).json({ error: 'This poll is closed' });
+    const actorKey = buildActorKey(req);
+    const hadThisVote = options[optionIndex].votes.includes(actorKey);
+    options.forEach((option) => {
+      option.votes = option.votes.filter((key) => key !== actorKey);
+      option.voteLog = (option.voteLog || []).filter((entry) => entry.key !== actorKey);
+    });
+    if (!hadThisVote) {
+      options[optionIndex].votes.push(actorKey);
+      options[optionIndex].voteLog.push({ key: actorKey, at: new Date() });
+    }
+    await post.save();
+    res.json({ poll: serializePoll(post.poll, actorKey) });
+  } catch (err) {
+    res.status(400).json({ error: err.message });
+  }
+});
+
+// Save / unsave a post for the current user.
+router.post('/posts/:id/save', authAnyUser, async (req, res) => {
+  // #swagger.tags = ['Alcove']
+  try {
+    const schoolId = resolveSchoolId(req, res);
+    if (!schoolId) return;
+    const actorKey = buildActorKey(req);
+    const post = await AlcovePost.findOne({ _id: req.params.id, schoolId }).select('savedBy');
+    if (!post) return res.status(404).json({ error: 'Not found' });
+    const saved = !post.savedBy.includes(actorKey);
+    await AlcovePost.updateOne(
+      { _id: req.params.id, schoolId },
+      saved ? { $addToSet: { savedBy: actorKey } } : { $pull: { savedBy: actorKey } }
+    );
+    res.json({ saved });
+  } catch (err) {
+    res.status(400).json({ error: err.message });
+  }
+});
+
+// Poll voters, grouped by option. Only the post's author may see who voted.
+router.get('/posts/:id/poll-voters', authAnyUser, async (req, res) => {
+  // #swagger.tags = ['Alcove']
+  try {
+    const schoolId = resolveSchoolId(req, res);
+    if (!schoolId) return;
+    const post = await AlcovePost.findOne({ _id: req.params.id, schoolId }).select('author authorUserId authorType poll').lean();
+    if (!post) return res.status(404).json({ error: 'Not found' });
+    if (!isPostAuthor(req, post)) {
+      return res.status(403).json({ error: 'Only the poll author can see voters' });
+    }
+    const options = post.poll?.options || [];
+    const keys = [...new Set(options.flatMap((option) => option.votes || []))];
+    const idsByType = { student: [], teacher: [] };
+    keys.forEach((key) => {
+      const [type, id] = String(key).split(':');
+      if (idsByType[type] && id) idsByType[type].push(id);
+    });
+    const [students, teachers] = await Promise.all([
+      idsByType.student.length ? StudentUser.find({ _id: { $in: idsByType.student } }).select('_id name username profilePic grade section').lean() : [],
+      idsByType.teacher.length ? TeacherUser.find({ _id: { $in: idsByType.teacher } }).select('_id name username employeeCode profilePic').lean() : [],
+    ]);
+    const profiles = new Map();
+    students.forEach((s) => profiles.set(`student:${s._id}`, {
+      id: String(s._id), userType: 'student', name: s.name || s.username || 'Student',
+      photo: s.profilePic || '', grade: String(s.grade || ''), section: String(s.section || ''),
+    }));
+    teachers.forEach((t) => profiles.set(`teacher:${t._id}`, {
+      id: String(t._id), userType: 'teacher', name: t.name || t.username || t.employeeCode || 'Teacher',
+      photo: t.profilePic || '',
+    }));
+    const fallbackProfile = (key) => {
+      const [type, id] = String(key).split(':');
+      return { id, userType: type || 'user', name: type === 'parent' ? 'Parent' : 'User', photo: '' };
+    };
+    res.json({
+      question: post.poll?.question || '',
+      isClosed: isPollClosed(post.poll),
+      closed: Boolean(post.poll?.closed),
+      closesAt: post.poll?.closesAt || null,
+      options: options.map((option) => {
+        const votedAt = new Map((option.voteLog || []).map((entry) => [entry.key, entry.at]));
+        return {
+          text: option.text,
+          voters: (option.votes || []).map((key) => ({
+            ...(profiles.get(key) || fallbackProfile(key)),
+            votedAt: votedAt.get(key) || null,
+          })),
+        };
+      }),
+    });
+  } catch (err) {
+    res.status(400).json({ error: err.message });
+  }
+});
+
+// Close a poll now, schedule it to close, or reopen it (author only).
+// Body: { action: 'close' | 'schedule' | 'reopen', closesAt?: ISO date }
+router.patch('/posts/:id/poll', authAnyUser, async (req, res) => {
+  // #swagger.tags = ['Alcove']
+  try {
+    const schoolId = resolveSchoolId(req, res);
+    if (!schoolId) return;
+    const post = await AlcovePost.findOne({ _id: req.params.id, schoolId });
+    if (!post) return res.status(404).json({ error: 'Not found' });
+    if (!post.poll?.question) return res.status(400).json({ error: 'This post has no poll' });
+    if (!isPostAuthor(req, post)) return res.status(403).json({ error: 'Only the poll author can change it' });
+
+    const { action, closesAt } = req.body || {};
+    if (action === 'close') {
+      post.poll.closed = true;
+      post.poll.closesAt = null;
+    } else if (action === 'schedule') {
+      const when = new Date(closesAt);
+      if (Number.isNaN(when.getTime()) || when <= new Date()) {
+        return res.status(400).json({ error: 'Pick a closing time in the future' });
+      }
+      post.poll.closed = false;
+      post.poll.closesAt = when;
+    } else if (action === 'reopen') {
+      post.poll.closed = false;
+      post.poll.closesAt = null;
+    } else {
+      return res.status(400).json({ error: 'Unknown action' });
+    }
+    await post.save();
+    res.json({ poll: serializePoll(post.poll, buildActorKey(req)) });
   } catch (err) {
     res.status(400).json({ error: err.message });
   }
