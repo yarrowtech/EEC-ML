@@ -18,6 +18,8 @@ import {
   BookOpen,
   Folder,
   ChevronDown,
+  ChevronLeft,
+  ChevronRight,
   Monitor,
   Calculator,
   FlaskConical,
@@ -712,14 +714,49 @@ const CommunityWall = ({ role = 'teacher' }) => {
     window.scrollTo({ top: 0, behavior: 'smooth' });
   };
 
-  const subjectCounts = useMemo(() => {
+  // Subjects that actually have posts, busiest first. Only recomputed from the unfiltered
+  // feed, so the tiles stay put while a subject filter is applied.
+  const [subjectCounts, setSubjectCounts] = useState([]);
+  useEffect(() => {
+    if (filters.subject || filters.search || viewMode !== 'wall') return;
     const counts = new Map();
     problems.forEach((problem) => {
-      const key = String(problem.subject || '').toLowerCase();
-      counts.set(key, (counts.get(key) || 0) + 1);
+      const name = String(problem.subject || '').trim();
+      if (!name || name.toLowerCase() === 'general') return;
+      const key = name.toLowerCase();
+      counts.set(key, { name: counts.get(key)?.name || name, count: (counts.get(key)?.count || 0) + 1 });
     });
-    return SUBJECTS.map((subject) => ({ ...subject, count: counts.get(subject.name.toLowerCase()) || 0 }));
-  }, [problems]);
+    setSubjectCounts([...counts.values()]
+      .sort((a, b) => b.count - a.count || a.name.localeCompare(b.name))
+      .map((entry) => {
+        const known = SUBJECTS.find((subject) => subject.name.toLowerCase() === entry.name.toLowerCase());
+        return { ...entry, icon: known?.icon || BookOpen, tone: known?.tone || 'bg-slate-100 text-slate-600' };
+      }));
+  }, [problems, filters.subject, filters.search, viewMode]);
+
+  // Same pattern as the admin dashboard's Quick Actions: a 2×2 page of tiles,
+  // edge arrows that only show when there's more to scroll to, and page dots.
+  const subjectScrollRef = React.useRef(null);
+  const [subjectScroll, setSubjectScroll] = useState({ canLeft: false, canRight: false, page: 0 });
+  const updateSubjectScroll = () => {
+    const el = subjectScrollRef.current;
+    if (!el) return;
+    setSubjectScroll({
+      canLeft: el.scrollLeft > 4,
+      canRight: el.scrollLeft + el.clientWidth < el.scrollWidth - 4,
+      page: Math.round(el.scrollLeft / (el.clientWidth || 1)),
+    });
+  };
+  const scrollSubjects = (direction) => {
+    const el = subjectScrollRef.current;
+    el?.scrollBy({ left: direction * el.clientWidth, behavior: 'smooth' });
+  };
+  useEffect(() => {
+    updateSubjectScroll();
+    window.addEventListener('resize', updateSubjectScroll);
+    return () => window.removeEventListener('resize', updateSubjectScroll);
+  }, [subjectCounts.length]);
+  const subjectPages = Math.ceil(subjectCounts.length / 4);
 
   const popularTags = useMemo(() => {
     const counts = new Map();
@@ -830,9 +867,10 @@ const CommunityWall = ({ role = 'teacher' }) => {
         </main>
 
         {/* Right rail */}
-        <aside className="hidden space-y-3 self-start xl:sticky xl:top-4 xl:block xl:max-h-[calc(100vh-2rem)] xl:overflow-y-auto [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
-          <section className="rounded-xl border border-slate-200 bg-white p-3.5 shadow-sm">
-            <h2 className="mb-3 text-[14px] font-semibold text-slate-900">Community Overview</h2>
+        {/* Pinned while the feed scrolls; it never scrolls itself. */}
+        <aside className="hidden space-y-2.5 self-start overflow-hidden xl:sticky xl:top-4 xl:block">
+          <section className="rounded-xl border border-slate-200 bg-white px-3 py-2.5 shadow-sm">
+            <h2 className="mb-2 text-[14px] font-semibold text-slate-900">Community Overview</h2>
             <div className="grid grid-cols-2 gap-2">
               <OverviewStat icon={ThumbsUp} tone="bg-blue-50 text-blue-600" value={hubStats.liked} label="Liked Posts" active={navView === 'liked'} onClick={() => selectSection('liked')} />
               <OverviewStat icon={Bookmark} tone="bg-amber-50 text-amber-500" value={hubStats.saved} label="Saved Posts" active={navView === 'saved'} onClick={() => selectSection('saved')} />
@@ -841,52 +879,80 @@ const CommunityWall = ({ role = 'teacher' }) => {
             </div>
           </section>
 
-          <section className="rounded-xl border border-slate-200 bg-white p-3.5 shadow-sm">
-            <div className="mb-2 flex items-center justify-between">
+          <section className="rounded-xl border border-slate-200 bg-white px-3 py-2.5 shadow-sm">
+            <div className="mb-2">
               <h2 className="text-[14px] font-semibold text-slate-900">Trending Subjects</h2>
-              <button type="button" onClick={() => setFilters((prev) => ({ ...prev, subject: '' }))} className="text-[12px] font-medium text-blue-600 hover:underline">View all</button>
+              <p className="text-[11px] text-slate-500">Tap a subject to filter posts</p>
             </div>
-            <div className="space-y-0.5">
-              {subjectCounts.map((subject) => {
-                const Icon = subject.icon;
-                return (
-                  <button key={subject.name} type="button" onClick={() => setFilters((prev) => ({ ...prev, subject: subject.name }))} className="flex w-full items-center gap-3 rounded-lg px-1.5 py-1.5 text-left hover:bg-slate-50">
-                    <span className={`flex h-7 w-7 items-center justify-center rounded-md ${subject.tone}`}><Icon size={14} /></span>
-                    <span className="flex-1 text-[13px] text-slate-800">{subject.name}</span>
-                    <span className="text-[11px] text-slate-500">{subject.count} posts</span>
-                  </button>
-                );
-              })}
-            </div>
+            {subjectCounts.length === 0 ? (
+              <p className="text-[12px] text-slate-500">Subjects appear once posts are tagged with one.</p>
+            ) : (
+              <>
+                <div className="relative">
+                  {subjectScroll.canLeft && (
+                    <button type="button" aria-label="Scroll subjects left" onClick={() => scrollSubjects(-1)} className="absolute -left-1.5 top-1/2 z-10 flex h-7 w-7 -translate-y-1/2 items-center justify-center rounded-full border border-slate-200 bg-white text-slate-600 shadow-md transition hover:bg-slate-50">
+                      <ChevronLeft size={15} />
+                    </button>
+                  )}
+                  <div
+                    ref={subjectScrollRef}
+                    onScroll={updateSubjectScroll}
+                    className={`grid snap-x grid-flow-col auto-cols-[calc(50%-0.25rem)] gap-2 overflow-x-auto scroll-smooth px-0.5 py-0.5 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden ${subjectCounts.length > 2 ? 'grid-rows-2' : 'grid-rows-1'}`}
+                  >
+                    {subjectCounts.map((subject) => {
+                      const Icon = subject.icon;
+                      const active = filters.subject.toLowerCase() === subject.name.toLowerCase();
+                      return (
+                        <button
+                          key={subject.name}
+                          type="button"
+                          title={active ? 'Show all subjects' : `Show ${subject.name} posts`}
+                          onClick={() => setFilters((prev) => ({ ...prev, subject: active ? '' : subject.name }))}
+                          className={`group flex snap-start flex-col items-center justify-center gap-1 rounded-2xl border bg-white px-2 py-2 text-center shadow-sm transition-all hover:-translate-y-0.5 hover:shadow-md ${active ? 'border-blue-500 bg-blue-50/60' : 'border-slate-100 hover:border-slate-200'}`}
+                        >
+                          <span className={`flex h-8 w-8 shrink-0 items-center justify-center rounded-full transition-transform group-hover:scale-105 ${subject.tone}`}><Icon size={17} /></span>
+                          <span className="line-clamp-1 w-full text-[12px] font-semibold leading-tight text-slate-700">{subject.name}</span>
+                          <span className="text-[10px] text-slate-500">{subject.count} post{subject.count === 1 ? '' : 's'}</span>
+                        </button>
+                      );
+                    })}
+                  </div>
+                  {subjectScroll.canRight && (
+                    <button type="button" aria-label="Scroll subjects right" onClick={() => scrollSubjects(1)} className="absolute -right-1.5 top-1/2 z-10 flex h-7 w-7 -translate-y-1/2 items-center justify-center rounded-full border border-slate-200 bg-white text-slate-600 shadow-md transition hover:bg-slate-50">
+                      <ChevronRight size={15} />
+                    </button>
+                  )}
+                </div>
+                {subjectPages > 1 && (
+                  <div className="mt-2 flex items-center justify-center gap-1.5">
+                    {Array.from({ length: subjectPages }).map((_, index) => (
+                      <button
+                        key={index}
+                        type="button"
+                        aria-label={`Go to subjects page ${index + 1}`}
+                        onClick={() => subjectScrollRef.current?.scrollTo({ left: index * subjectScrollRef.current.clientWidth, behavior: 'smooth' })}
+                        className={`h-1.5 rounded-full transition-all duration-300 ${subjectScroll.page === index ? 'w-5 bg-indigo-500' : 'w-1.5 bg-slate-300'}`}
+                      />
+                    ))}
+                  </div>
+                )}
+              </>
+            )}
           </section>
 
-          <section className="rounded-xl border border-slate-200 bg-white p-3.5 shadow-sm">
-            <div className="mb-2.5 flex items-center justify-between">
-              <h2 className="text-[14px] font-semibold text-slate-900">Popular Tags</h2>
-              <button type="button" className="text-[12px] font-medium text-blue-600 hover:underline">View all</button>
-            </div>
-            <div className="flex flex-wrap gap-1.5">
-              {popularTags.length === 0
-                ? <span className="text-[12px] text-slate-500">Tags appear after posts are added.</span>
-                : popularTags.map((tag) => (
-                  <button key={tag} type="button" onClick={() => setFilters((prev) => ({ ...prev, search: tag }))} className="rounded-md bg-indigo-50 px-2 py-1 text-[11px] font-medium text-indigo-700 hover:bg-indigo-100">#{tag}</button>
-                ))}
-            </div>
-          </section>
-
-          <section className="rounded-xl border border-slate-200 bg-white p-3.5 shadow-sm">
-            <div className="mb-2.5 flex items-center gap-2">
+          <section className="rounded-xl border border-slate-200 bg-white px-3 py-2.5 shadow-sm">
+            <div className="mb-2 flex items-center gap-2">
               <ShieldCheck size={18} className="text-blue-600" />
               <h2 className="text-[14px] font-semibold text-slate-900">Community Guidelines</h2>
             </div>
-            <ul className="space-y-2">
+            <ul className="space-y-1.5">
               {GUIDELINES.map((item) => (
                 <li key={item} className="flex items-center gap-2.5 text-[13px] text-slate-700">
                   <span className="flex h-5 w-5 items-center justify-center rounded-full bg-emerald-50 text-emerald-600"><Check size={12} /></span>{item}
                 </li>
               ))}
             </ul>
-            <button type="button" className="mt-3 inline-flex items-center gap-1 text-[12px] font-medium text-blue-600 hover:underline">Learn more <ArrowRight size={13} /></button>
+            {/* <button type="button" className="mt-2 inline-flex items-center gap-1 text-[12px] font-medium text-blue-600 hover:underline">Learn more <ArrowRight size={13} /></button> */}
           </section>
         </aside>
       </div>
@@ -940,12 +1006,12 @@ const CommunityWall = ({ role = 'teacher' }) => {
 };
 
 const OverviewStat = ({ icon, tone, value, label, active, onClick }) => (
-  <button type="button" onClick={onClick} className={`flex items-center gap-2.5 rounded-lg border p-2.5 text-left transition hover:border-blue-200 hover:bg-blue-50/40 ${active ? 'border-blue-500 bg-blue-50/60' : 'border-slate-100'}`}>
-    <span className={`flex h-8 w-8 shrink-0 items-center justify-center rounded-lg ${tone}`}>{React.createElement(icon, { size: 16 })}</span>
-    <div className="min-w-0 flex-1">
-      <p className="text-[16px] font-bold leading-none text-slate-900">{value}</p>
-      <p className="mt-1 truncate text-[11px] text-slate-500">{label}</p>
-    </div>
+  <button type="button" onClick={onClick} className={`flex flex-col items-center gap-1 rounded-lg border px-2 py-2 text-center transition hover:border-blue-200 hover:bg-blue-50/40 ${active ? 'border-blue-500 bg-blue-50/60' : 'border-slate-100'}`}>
+    <span className="flex items-center justify-center gap-2">
+      <span className={`flex h-7 w-7 shrink-0 items-center justify-center rounded-lg ${tone}`}>{React.createElement(icon, { size: 15 })}</span>
+      <span className="text-[18px] font-bold leading-none text-slate-900">{value}</span>
+    </span>
+    <span className="w-full truncate text-[11px] font-medium text-slate-500">{label}</span>
   </button>
 );
 
