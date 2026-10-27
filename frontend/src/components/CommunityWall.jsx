@@ -589,6 +589,7 @@ const CommunityWall = ({ role = 'teacher' }) => {
 
   const [createOpen, setCreateOpen] = useState(false); // false | 'text' | 'photo' | 'poll'
   const [lightboxImage, setLightboxImage] = useState(null);
+  const [likersPost, setLikersPost] = useState(null); // post whose likers are shown
   const [profile, setProfile] = useState(() => ({ name: readUserName(), photo: '', id: '', userType: '' }));
   const userName = profile.name;
 
@@ -853,6 +854,7 @@ const CommunityWall = ({ role = 'teacher' }) => {
                     onVote={handleVote}
                     isOwn={isOwnPost(problem)}
                     onSeen={recordView}
+                    onShowLikers={setLikersPost}
                     canDelete={isOwnPost(problem) || canModerate}
                     onImageOpen={setLightboxImage}
                     formatTimeAgo={formatTimeAgo}
@@ -974,6 +976,7 @@ const CommunityWall = ({ role = 'teacher' }) => {
             onSave={handleSaveProblem}
             onVote={handleVote}
             onImageOpen={setLightboxImage}
+            onShowLikers={setLikersPost}
             userName={userName}
             userPhoto={profile.photo}
             formatTimeAgo={formatTimeAgo}
@@ -1000,6 +1003,10 @@ const CommunityWall = ({ role = 'teacher' }) => {
 
       <AnimatePresence>
         {lightboxImage && <ImageLightbox src={lightboxImage} onClose={() => setLightboxImage(null)} />}
+      </AnimatePresence>
+
+      <AnimatePresence>
+        {likersPost && <LikersModal post={likersPost} authHeaders={authHeaders} onClose={() => setLikersPost(null)} />}
       </AnimatePresence>
     </div>
   );
@@ -1361,7 +1368,7 @@ const RemovedPostCard = ({ problem }) => (
 
 const DiscussionCard = (props) => (props.problem.removal?.at ? <RemovedPostCard problem={props.problem} /> : <LiveDiscussionCard {...props} />);
 
-const LiveDiscussionCard = ({ problem, index, onOpen, onLike, onSave, onDelete, onVote, canDelete, onImageOpen, onSeen, formatTimeAgo }) => {
+const LiveDiscussionCard = ({ problem, index, onOpen, onLike, onSave, onDelete, onVote, canDelete, onImageOpen, onSeen, onShowLikers, formatTimeAgo }) => {
   const roleLine = authorRoleLine(problem);
   // A post counts as viewed once at least half of it has been on screen.
   const cardRef = React.useRef(null);
@@ -1404,9 +1411,14 @@ const LiveDiscussionCard = ({ problem, index, onOpen, onLike, onSave, onDelete, 
       </div>
 
       <div className="mt-2.5 flex items-center gap-5 border-t border-slate-100 pt-2 text-[12px] text-slate-600">
-        <button type="button" onClick={() => onLike(problem.id)} className={`inline-flex items-center gap-1.5 hover:text-blue-600 ${problem.isLiked ? 'text-blue-600' : ''}`}>
-          <ThumbsUp size={15} className={problem.isLiked ? 'fill-current' : ''} />{problem.likes}
-        </button>
+        <span className={`inline-flex items-center gap-1.5 ${problem.isLiked ? 'text-blue-600' : ''}`}>
+          <button type="button" title={problem.isLiked ? 'Unlike' : 'Like'} onClick={() => onLike(problem.id)} className="hover:text-blue-600">
+            <ThumbsUp size={15} className={problem.isLiked ? 'fill-current' : ''} />
+          </button>
+          <button type="button" title="See who liked this" disabled={!problem.likes} onClick={() => onShowLikers?.(problem)} className="hover:underline disabled:cursor-default disabled:no-underline">
+            {problem.likes}
+          </button>
+        </span>
         <button type="button" onClick={() => onOpen(problem)} className={`inline-flex items-center gap-1.5 hover:text-blue-600 ${problem.comments > 0 ? 'text-blue-600' : ''}`}>
           <MessageSquare size={15} />{problem.comments}
         </button>
@@ -1498,7 +1510,66 @@ const commentRoleTag = (comment) => {
   return null;
 };
 
-const CommentsModal = ({ problem, comments, loading, commentText, setCommentText, posting, onPost, onDeleteComment, me, isPostOwner, onLike, onSave, onVote, onImageOpen, userName, userPhoto, formatTimeAgo, onClose }) => {
+const LikersModal = ({ post, authHeaders, onClose }) => {
+  const [likers, setLikers] = useState(null);
+  const [error, setError] = useState('');
+
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      try {
+        const res = await fetch(`${API}/api/alcove/posts/${post.id}/likers`, { headers: authHeaders() });
+        const body = await res.json().catch(() => ({}));
+        if (!res.ok) throw new Error(body.error || 'Could not load likes');
+        if (!cancelled) setLikers(Array.isArray(body.likers) ? body.likers : []);
+      } catch (err) {
+        if (!cancelled) setError(err.message);
+      }
+    })();
+    return () => { cancelled = true; };
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [post.id, post.likes]);
+
+  useEffect(() => {
+    const onKey = (event) => { if (event.key === 'Escape') { event.stopPropagation(); onClose(); } };
+    window.addEventListener('keydown', onKey, true);
+    return () => window.removeEventListener('keydown', onKey, true);
+  }, [onClose]);
+
+  return (
+    <Motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} className="fixed inset-0 z-230 flex items-center justify-center bg-slate-900/50 p-3" onClick={onClose}>
+      <Motion.div initial={{ opacity: 0, scale: 0.97 }} animate={{ opacity: 1, scale: 1 }} exit={{ opacity: 0, scale: 0.97 }} className="flex max-h-[70vh] w-full max-w-sm flex-col overflow-hidden rounded-xl bg-white shadow-2xl" onClick={(event) => event.stopPropagation()}>
+        <div className="relative flex items-center justify-center border-b border-slate-200 px-4 py-3">
+          <h3 className="inline-flex items-center gap-1.5 text-[15px] font-semibold text-slate-900">
+            <span className="flex h-5 w-5 items-center justify-center rounded-full bg-blue-600 text-white"><ThumbsUp size={11} /></span>
+            Liked by {likers ? likers.length : post.likes}
+          </h3>
+          <button type="button" onClick={onClose} className="absolute right-3 flex h-8 w-8 items-center justify-center rounded-full bg-slate-100 text-slate-600 hover:bg-slate-200"><X size={16} /></button>
+        </div>
+        <div className="flex-1 overflow-y-auto px-2 py-1.5">
+          {error && <p className="m-2 rounded-lg bg-rose-50 p-2.5 text-[12px] text-rose-600">{error}</p>}
+          {!likers && !error && <div className="py-8 text-center text-[13px] text-slate-500"><Loader2 className="mr-2 inline h-4 w-4 animate-spin" />Loading...</div>}
+          {likers && likers.length === 0 && <p className="py-8 text-center text-[13px] text-slate-500">No likes yet.</p>}
+          {likers && likers.length > 0 && (
+            <ul>
+              {likers.map((liker) => (
+                <li key={`${liker.userType}:${liker.id}`} className="flex items-center gap-2.5 rounded-lg px-2 py-2 hover:bg-slate-50">
+                  <Avatar initials={initialsOf(liker.name)} src={liker.photo} size="sm" />
+                  <div className="min-w-0 flex-1">
+                    <p className="truncate text-[13px] font-semibold text-slate-900">{liker.name}</p>
+                    <p className="truncate text-[11px] text-slate-500">{voterRoleLine(liker)}</p>
+                  </div>
+                </li>
+              ))}
+            </ul>
+          )}
+        </div>
+      </Motion.div>
+    </Motion.div>
+  );
+};
+
+const CommentsModal = ({ problem, comments, loading, commentText, setCommentText, posting, onPost, onDeleteComment, me, isPostOwner, onLike, onSave, onVote, onImageOpen, onShowLikers, userName, userPhoto, formatTimeAgo, onClose }) => {
   const listEndRef = React.useRef(null);
   const inputRef = React.useRef(null);
   const [replyTo, setReplyTo] = useState(null); // { id, name }
@@ -1592,7 +1663,7 @@ const CommentsModal = ({ problem, comments, loading, commentText, setCommentText
               {tags.map((tag) => <span key={tag} className="rounded bg-slate-100 px-2 py-0.5 text-[11px] text-slate-600">#{tag}</span>)}
             </div>
             <div className="mt-2.5 flex items-center justify-between text-[12px] text-slate-500">
-              <span className="inline-flex items-center gap-1"><span className="flex h-4 w-4 items-center justify-center rounded-full bg-blue-600 text-white"><ThumbsUp className='text-white' size={9} /></span>{problem.likes}</span>
+              <button type="button" title="See who liked this" disabled={!problem.likes} onClick={() => onShowLikers?.(problem)} className="inline-flex items-center gap-1 hover:underline disabled:cursor-default disabled:no-underline"><span className="flex h-4 w-4 items-center justify-center rounded-full bg-blue-600 text-white"><ThumbsUp className='text-white' size={9} /></span>{problem.likes}</button>
               <span>{comments.length} comments • {problem.views} views</span>
             </div>
           </div>
