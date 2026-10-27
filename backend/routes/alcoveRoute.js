@@ -6,12 +6,15 @@ const AlcoveSubmission = require('../models/AlcoveSubmission');
 const StudentUser = require('../models/StudentUser');
 const TeacherUser = require('../models/TeacherUser');
 const ParentUser = require('../models/ParentUser');
+const Admin = require('../models/Admin');
+const School = require('../models/School');
 const teacherAuth = require('../middleware/authTeacher');
 const authAnyUser = require('../middleware/authAnyUser');
 const authStudent = require('../middleware/authStudent');
 const { logStudentPortalEvent, logStudentPortalError } = require('../utils/studentPortalLogger');
 const ClassModel = require('../models/Class');
 const SectionModel = require('../models/Section');
+const AcademicYear = require('../models/AcademicYear');
 const multer = require('multer');
 const { uploadBufferToCloudinary } = require('../utils/cloudinaryUpload');
 
@@ -100,17 +103,71 @@ const resolveAudience = async (rawAudience, schoolId) => {
   };
 };
 
-// Teachers see everything; students see school-wide posts plus posts for their own class-section;
-// other users see school-wide posts only.
+// Teachers and admins see everything; students see school-wide posts plus posts for their own
+// class-section; parents see school-wide posts plus posts for their children's class-sections.
 const buildAudienceFilter = async (req) => {
   const userType = normalizeUserType(req.userType || req.user?.userType || req.user?.type);
-  if (userType === 'teacher') return null;
+  const meId = String(req.user?.id || '');
+  const notRemovedOrMine = {
+    $or: [
+      { 'removal.at': null },
+      { authorUserId: meId, authorType: userType },
+      ...(userType === 'teacher' && /^[a-f0-9]{24}$/i.test(meId) ? [{ author: meId }] : []),
+    ],
+  };
+  if (userType === 'teacher' || userType === 'admin') return notRemovedOrMine;
   const visible = [{ audience: { $ne: 'classes' } }];
   if (userType === 'student') {
     const student = await StudentUser.findById(req.user?.id).select('grade section').lean();
     if (student?.grade) visible.push({ audienceKeys: audienceKey(student.grade, student.section) });
   }
-  return { $or: visible };
+  if (userType === 'parent') {
+    const parent = await ParentUser.findById(req.user?.id).select('childrenIds').lean();
+    const childIds = Array.isArray(parent?.childrenIds) ? parent.childrenIds : [];
+    if (childIds.length) {
+      const children = await StudentUser.find({ _id: { $in: childIds } }).select('grade section').lean();
+      const keys = children.filter((child) => child.grade).map((child) => audienceKey(child.grade, child.section));
+      if (keys.length) visible.push({ audienceKeys: { $in: keys } });
+    }
+  }
+  return { $and: [{ $or: visible }, notRemovedOrMine] };
+};
+
+// keys: actor keys (`<userType>:<id>`) → Map(key → { id, userType, name, photo, grade?, section? })
+const loadUserProfiles = async (keys = []) => {
+  const idsByType = { student: new Set(), teacher: new Set(), parent: new Set(), admin: new Set() };
+  keys.forEach((key) => {
+    const [type, id] = String(key || '').split(':');
+    const normalizedType = normalizeUserType(type);
+    if (idsByType[normalizedType] && /^[a-f0-9]{24}$/i.test(String(id || ''))) idsByType[normalizedType].add(id);
+  });
+  const find = (Model, ids, fields) => (ids.size ? Model.find({ _id: { $in: [...ids] } }).select(fields).lean() : []);
+  const [students, teachers, parents, admins] = await Promise.all([
+    find(StudentUser, idsByType.student, '_id name username profilePic grade section'),
+    find(TeacherUser, idsByType.teacher, '_id name username employeeCode profilePic'),
+    find(ParentUser, idsByType.parent, '_id name username'),
+    find(Admin, idsByType.admin, '_id name username avatar schoolId'),
+  ]);
+  const profiles = new Map();
+  students.forEach((u) => profiles.set(`student:${u._id}`, {
+    id: String(u._id), userType: 'student', name: u.name || u.username || 'Student',
+    photo: u.profilePic || '', grade: String(u.grade || ''), section: String(u.section || ''),
+  }));
+  teachers.forEach((u) => profiles.set(`teacher:${u._id}`, {
+    id: String(u._id), userType: 'teacher', name: u.name || u.username || u.employeeCode || 'Teacher', photo: u.profilePic || '',
+  }));
+  parents.forEach((u) => profiles.set(`parent:${u._id}`, {
+    id: String(u._id), userType: 'parent', name: u.name || u.username || 'Parent', photo: '',
+  }));
+  // School admins post on behalf of the school, so they show the school logo.
+  const schoolIds = [...new Set(admins.map((u) => String(u.schoolId || '')).filter(Boolean))];
+  const schools = schoolIds.length ? await School.find({ _id: { $in: schoolIds } }).select('_id logo').lean() : [];
+  const logoBySchool = new Map(schools.map((school) => [String(school._id), school.logo?.secure_url || '']));
+  admins.forEach((u) => profiles.set(`admin:${u._id}`, {
+    id: String(u._id), userType: 'admin', name: u.name || u.username || 'School Admin',
+    photo: logoBySchool.get(String(u.schoolId || '')) || u.avatar || '',
+  }));
+  return profiles;
 };
 
 function isPollClosed(poll) {
@@ -148,23 +205,18 @@ const resolveAuthorName = async (req, fallback = 'Anonymous') => {
     const teacher = await TeacherUser.findById(userId).select('name username employeeCode').lean();
     return (teacher?.name || teacher?.username || teacher?.employeeCode || fallback).trim();
   }
+  if (userType === 'parent' || userType === 'admin') {
+    const profile = (await loadUserProfiles([`${userType}:${userId}`])).get(`${userType}:${userId}`);
+    if (profile?.name) return profile.name.trim();
+  }
   return String(req.user?.username || fallback).trim();
 };
 
-// refs: [{ type: 'student' | 'teacher', id }] → Map(`${type}:${id}` → profilePic)
+// refs: [{ type, id }] → Map(`${type}:${id}` → photo URL)
 const resolveProfilePics = async (refs = []) => {
-  const idsByType = { student: new Set(), teacher: new Set() };
-  refs.forEach(({ type, id }) => {
-    const normalizedType = normalizeUserType(type);
-    if (id && idsByType[normalizedType]) idsByType[normalizedType].add(String(id));
-  });
-  const [students, teachers] = await Promise.all([
-    idsByType.student.size ? StudentUser.find({ _id: { $in: [...idsByType.student] } }).select('_id profilePic').lean() : [],
-    idsByType.teacher.size ? TeacherUser.find({ _id: { $in: [...idsByType.teacher] } }).select('_id profilePic').lean() : [],
-  ]);
+  const profiles = await loadUserProfiles(refs.map(({ type, id }) => `${normalizeUserType(type)}:${id}`));
   const pics = new Map();
-  students.forEach((item) => { if (item.profilePic) pics.set(`student:${item._id}`, item.profilePic); });
-  teachers.forEach((item) => { if (item.profilePic) pics.set(`teacher:${item._id}`, item.profilePic); });
+  profiles.forEach((profile, key) => { if (profile.photo) pics.set(key, profile.photo); });
   return pics;
 };
 
@@ -236,8 +288,8 @@ const resolveViewerProfiles = async (viewerKeys = []) => {
     .filter(Boolean);
 };
 
-// Create a new post (Teacher only)
-router.post('/posts', teacherAuth, withPostImages, async (req, res) => {
+// Create a new post (any signed-in user; only teachers and admins may limit the audience to classes)
+router.post('/posts', authAnyUser, withPostImages, async (req, res) => {
   // #swagger.tags = ['Alcove']
   try {
     const schoolId = resolveSchoolId(req, res);
@@ -249,9 +301,15 @@ router.post('/posts', teacherAuth, withPostImages, async (req, res) => {
     if (!String(problemText).trim() && !files.length && !poll) {
       return res.status(400).json({ error: 'Write something, add a photo, or create a poll.' });
     }
+    const authorType = normalizeUserType(req.userType || req.user?.userType || req.user?.type);
+    if (!['teacher', 'admin', 'student', 'parent'].includes(authorType)) {
+      return res.status(403).json({ error: 'Your account cannot post here' });
+    }
     let audienceFields;
     try {
-      audienceFields = await resolveAudience(req.body.audience, schoolId);
+      audienceFields = authorType === 'teacher' || authorType === 'admin'
+        ? await resolveAudience(req.body.audience, schoolId)
+        : await resolveAudience(null, schoolId);
     } catch (audienceErr) {
       return res.status(400).json({ error: audienceErr.message });
     }
@@ -264,7 +322,10 @@ router.post('/posts', teacherAuth, withPostImages, async (req, res) => {
       return { url: result?.secure_url || '', publicId: result?.public_id || '' };
     }));
     const fallbackTitle = String(problemText).trim().split('\n')[0] || poll?.question || 'Photo post';
-    const teacherName = await resolveAuthorName(req, 'Teacher');
+    const authorName = await resolveAuthorName(req, authorType === 'admin' ? 'School Admin' : 'User');
+    const studentMeta = authorType === 'student'
+      ? await StudentUser.findById(req.user?.id).select('grade section').lean()
+      : null;
     const post = await AlcovePost.create({
       schoolId,
       title: String(title || fallbackTitle).trim().slice(0, 160),
@@ -278,11 +339,13 @@ router.post('/posts', teacherAuth, withPostImages, async (req, res) => {
       poll,
       ...audienceFields,
       highlighted,
-      author: req.user?.id || undefined,
+      author: authorType === 'teacher' ? (req.user?.id || undefined) : undefined,
       authorUserId: String(req.user?.id || ''),
-      authorType: 'teacher',
-      authorName: teacherName || 'Teacher',
-      isStudentPosted: false,
+      authorType,
+      authorName: authorName || 'User',
+      authorGrade: String(studentMeta?.grade || ''),
+      authorSection: String(studentMeta?.section || ''),
+      isStudentPosted: authorType === 'student',
     });
     res.status(201).json(post);
   } catch (err) {
@@ -325,6 +388,55 @@ router.post('/posts/student', authStudent, async (req, res) => {
   }
 });
 
+// Class-sections an admin can target: the active academic year's classes
+// (or every class when no year is marked active).
+router.get('/audience-classes', authAnyUser, async (req, res) => {
+  // #swagger.tags = ['Alcove']
+  try {
+    if (normalizeUserType(req.userType || req.user?.userType || req.user?.type) !== 'admin') {
+      return res.status(403).json({ error: 'Admins only' });
+    }
+    const schoolId = resolveSchoolId(req, res);
+    if (!schoolId) return;
+    const activeYear = await AcademicYear.findOne({ schoolId, isActive: true }).select('_id').lean();
+    const classFilter = { schoolId };
+    if (activeYear) classFilter.$or = [{ academicYearId: activeYear._id }, { academicYearId: null }, { academicYearId: { $exists: false } }];
+    const classes = await ClassModel.find(classFilter).select('_id name order').sort({ order: 1, name: 1 }).lean();
+    const sections = classes.length
+      ? await SectionModel.find({ schoolId, classId: { $in: classes.map((c) => c._id) } }).select('_id name classId').sort({ name: 1 }).lean()
+      : [];
+    const classById = new Map(classes.map((c) => [String(c._id), c]));
+    res.json(sections.map((section) => ({
+      classId: String(section.classId),
+      sectionId: String(section._id),
+      className: classById.get(String(section.classId))?.name || '',
+      sectionName: section.name,
+    })));
+  } catch (err) {
+    res.status(400).json({ error: err.message });
+  }
+});
+
+// Current user's wall identity (any role)
+router.get('/me', authAnyUser, async (req, res) => {
+  // #swagger.tags = ['Alcove']
+  try {
+    const userType = normalizeUserType(req.userType || req.user?.userType || req.user?.type);
+    const id = String(req.user?.id || '');
+    const profile = (await loadUserProfiles([`${userType}:${id}`])).get(`${userType}:${id}`);
+    res.json({
+      id,
+      userType,
+      name: profile?.name || req.user?.name || req.user?.username || 'User',
+      photo: profile?.photo || '',
+      grade: profile?.grade || '',
+      section: profile?.section || '',
+    });
+  } catch (err) {
+    res.status(400).json({ error: err.message });
+  }
+});
+
 // List posts with filters/search/pagination
 router.get('/posts', authAnyUser, async (req, res) => {
   // #swagger.tags = ['Alcove']
@@ -361,6 +473,7 @@ router.get('/posts', authAnyUser, async (req, res) => {
         filter.author = req.user?.id;
       } else {
         filter.authorUserId = String(req.user?.id || '');
+        if (currentUserType === 'admin' || currentUserType === 'parent') filter.authorType = currentUserType;
       }
     }
     const actorKey = buildActorKey(req);
@@ -369,6 +482,8 @@ router.get('/posts', authAnyUser, async (req, res) => {
     if (String(req.query.hasPoll || '').toLowerCase() === 'true') filter['poll.question'] = { $gt: '' };
     const audienceFilter = await buildAudienceFilter(req);
     if (audienceFilter) filter.$and = [...(filter.$and || []), audienceFilter];
+    // Posts removed by an admin only appear in their author's own list (My Contributions).
+    if (String(mine || '').toLowerCase() !== 'true') filter['removal.at'] = null;
 
     const skip = (Number(page) - 1) * Number(limit);
     const [posts, total] = await Promise.all([
@@ -412,7 +527,7 @@ router.get('/posts', authAnyUser, async (req, res) => {
         ...post,
         authorPhoto: authorPics.get(`${authorRef.type}:${authorRef.id}`) || '',
         poll: serializePoll(post.poll, actorKey),
-        isSaved: (Array.isArray(post.savedBy) ? post.savedBy : []).includes(actorKey),
+        isSaved: (Array.isArray(post.savedBy) ? post.savedBy : []).includes(actorKey), saveCount: Array.isArray(post.savedBy) ? post.savedBy.length : 0,
         authorName:
           post?.authorName
           || post?.author?.name
@@ -486,7 +601,7 @@ router.get('/posts/:id', authAnyUser, async (req, res) => {
       isLiked: likedBy.includes(actorKey),
       viewCount: Number(post.viewCount) || 0,
       poll: serializePoll(post.poll, actorKey),
-      isSaved: (Array.isArray(post.savedBy) ? post.savedBy : []).includes(actorKey),
+      isSaved: (Array.isArray(post.savedBy) ? post.savedBy : []).includes(actorKey), saveCount: Array.isArray(post.savedBy) ? post.savedBy.length : 0,
     });
   } catch (err) {
     res.status(400).json({ error: err.message });
@@ -636,7 +751,7 @@ router.post('/posts/:id/save', authAnyUser, async (req, res) => {
       { _id: req.params.id, schoolId },
       saved ? { $addToSet: { savedBy: actorKey } } : { $pull: { savedBy: actorKey } }
     );
-    res.json({ saved });
+    res.json({ saved, saveCount: Math.max(0, post.savedBy.length + (saved ? 1 : -1)) });
   } catch (err) {
     res.status(400).json({ error: err.message });
   }
@@ -655,24 +770,7 @@ router.get('/posts/:id/poll-voters', authAnyUser, async (req, res) => {
     }
     const options = post.poll?.options || [];
     const keys = [...new Set(options.flatMap((option) => option.votes || []))];
-    const idsByType = { student: [], teacher: [] };
-    keys.forEach((key) => {
-      const [type, id] = String(key).split(':');
-      if (idsByType[type] && id) idsByType[type].push(id);
-    });
-    const [students, teachers] = await Promise.all([
-      idsByType.student.length ? StudentUser.find({ _id: { $in: idsByType.student } }).select('_id name username profilePic grade section').lean() : [],
-      idsByType.teacher.length ? TeacherUser.find({ _id: { $in: idsByType.teacher } }).select('_id name username employeeCode profilePic').lean() : [],
-    ]);
-    const profiles = new Map();
-    students.forEach((s) => profiles.set(`student:${s._id}`, {
-      id: String(s._id), userType: 'student', name: s.name || s.username || 'Student',
-      photo: s.profilePic || '', grade: String(s.grade || ''), section: String(s.section || ''),
-    }));
-    teachers.forEach((t) => profiles.set(`teacher:${t._id}`, {
-      id: String(t._id), userType: 'teacher', name: t.name || t.username || t.employeeCode || 'Teacher',
-      photo: t.profilePic || '',
-    }));
+    const profiles = await loadUserProfiles(keys);
     const fallbackProfile = (key) => {
       const [type, id] = String(key).split(':');
       return { id, userType: type || 'user', name: type === 'parent' ? 'Parent' : 'User', photo: '' };
@@ -734,12 +832,39 @@ router.patch('/posts/:id/poll', authAnyUser, async (req, res) => {
   }
 });
 
-// Delete a post (Teacher/admin)
-router.delete('/posts/:id', teacherAuth, async (req, res) => {
+// Delete a post: its author, or a school admin (moderation)
+router.delete('/posts/:id', authAnyUser, async (req, res) => {
   // #swagger.tags = ['Alcove']
   try {
     const schoolId = resolveSchoolId(req, res);
     if (!schoolId) return;
+    const existing = await AlcovePost.findOne({ _id: req.params.id, schoolId }).select('author authorUserId authorType').lean();
+    if (!existing) return res.status(404).json({ error: 'Not found' });
+    const isAdmin = normalizeUserType(req.userType || req.user?.userType || req.user?.type) === 'admin';
+    const isAuthor = isPostAuthor(req, existing);
+    if (!isAdmin && !isAuthor) {
+      return res.status(403).json({ error: 'You can only delete your own posts' });
+    }
+    if (isAdmin && !isAuthor) {
+      // Moderation: wipe everything about the post but keep a stub so its author learns why.
+      const remarks = String(req.body?.remarks || '').trim().slice(0, 1000);
+      if (!remarks) return res.status(400).json({ error: 'Please add remarks for the author' });
+      await AlcovePost.updateOne({ _id: req.params.id, schoolId }, {
+        $set: {
+          removal: {
+            at: new Date(),
+            byUserId: String(req.user?.id || ''),
+            byName: await resolveAuthorName(req, 'School Admin'),
+            remarks,
+          },
+          problemText: '', solutionText: '', tags: [], images: [],
+          likedBy: [], savedBy: [], viewedBy: [], viewCount: 0,
+        },
+        $unset: { poll: 1 },
+      });
+      await AlcoveComment.deleteMany({ post: req.params.id, schoolId });
+      return res.json({ ok: true, removed: true });
+    }
     const post = await AlcovePost.findOneAndDelete({ _id: req.params.id, schoolId });
     if (!post) return res.status(404).json({ error: 'Not found' });
     await AlcoveComment.deleteMany({ post: req.params.id, schoolId });
@@ -818,8 +943,15 @@ router.post('/posts/:id/comments', authAnyUser, async (req, res) => {
   try {
     const schoolId = resolveSchoolId(req, res);
     if (!schoolId) return;
-    const { text, authorName } = req.body;
+    const { text, authorName, parentId } = req.body;
     if (!text || !text.trim()) return res.status(400).json({ error: 'Text is required' });
+    let parentComment = null;
+    if (parentId) {
+      const parent = await AlcoveComment.findOne({ _id: parentId, post: req.params.id, schoolId }).select('_id parentComment').lean();
+      if (!parent) return res.status(404).json({ error: 'The comment you replied to no longer exists' });
+      // Replying to a reply attaches to the same thread.
+      parentComment = parent.parentComment || parent._id;
+    }
     const resolvedAuthorName = authorName?.trim() || await resolveAuthorName(req);
     const isStudentAuthor = String(req.userType || '').toLowerCase() === 'student';
     const studentMeta = isStudentAuthor
@@ -830,8 +962,9 @@ router.post('/posts/:id/comments', authAnyUser, async (req, res) => {
       post: req.params.id,
       text: text.trim(),
       authorId: req.user?.id || undefined,
-      authorType: req.userType || 'unknown',
+      authorType: ['student', 'teacher', 'parent', 'admin'].includes(normalizeUserType(req.userType)) ? normalizeUserType(req.userType) : 'unknown',
       authorName: resolvedAuthorName || 'Anonymous',
+      parentComment,
       authorGrade: String(studentMeta?.grade || ''),
       authorSection: String(studentMeta?.section || ''),
     });
@@ -871,15 +1004,21 @@ router.delete('/posts/:id/comments/:commentId', authAnyUser, async (req, res) =>
     const comment = await AlcoveComment.findOne({ _id: req.params.commentId, schoolId, post: req.params.id });
     if (!comment) return res.status(404).json({ error: 'Not found' });
 
-    const isAdmin = req.userType === 'Admin';
-    const isTeacher = req.userType === 'teacher';
-    const isAuthor = comment.authorId && req.user?.id && comment.authorId === req.user.id;
-    if (!isAdmin && !isTeacher && !isAuthor) {
-      return res.status(403).json({ error: 'Forbidden' });
+    // The comment's author, the post's author, or a school admin may delete it.
+    const currentType = normalizeUserType(req.userType || req.user?.userType || req.user?.type);
+    const isAdmin = currentType === 'admin';
+    const isAuthor = Boolean(comment.authorId && req.user?.id && String(comment.authorId) === String(req.user.id)
+      && (!comment.authorType || comment.authorType === 'unknown' || normalizeUserType(comment.authorType) === currentType));
+    const post = await AlcovePost.findOne({ _id: req.params.id, schoolId }).select('author authorUserId authorType').lean();
+    const isPostOwner = Boolean(post && isPostAuthor(req, post));
+    if (!isAdmin && !isAuthor && !isPostOwner) {
+      return res.status(403).json({ error: 'You can only delete your own comments' });
     }
 
+    // Deleting a comment also removes its replies.
+    const { deletedCount: replyCount } = await AlcoveComment.deleteMany({ parentComment: comment._id, schoolId });
     await comment.deleteOne();
-    res.json({ ok: true });
+    res.json({ ok: true, deleted: 1 + (replyCount || 0) });
   } catch (err) {
     res.status(400).json({ error: err.message });
   }

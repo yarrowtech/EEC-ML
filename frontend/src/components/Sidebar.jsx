@@ -36,7 +36,7 @@ const MENU_ITEMS = [
       { id: 'assignments', name: 'Assignments', icon: FileText },
       { id: 'long-answer', name: 'Long Answer', icon: ClipboardCheck },
       { id: 'assignments-journal', name: 'Journal', icon: NotebookPen },
-      { id: 'assignments-academic-alcove', name: 'Class Wall', icon: Target },
+      { id: 'assignments-academic-alcove', name: 'Community Wall', icon: Target },
       { id: 'results', name: 'Results', icon: BarChart3 },
       { id: 'mastery', name: 'Mastery Progress', icon: Zap },
       //{ id: 'error-analysis', name: 'Error Analysis', icon: ClipboardCheck },

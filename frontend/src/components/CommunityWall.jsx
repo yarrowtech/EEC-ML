@@ -18,8 +18,6 @@ import {
   BookOpen,
   Folder,
   ChevronDown,
-  ChevronLeft,
-  ChevronRight,
   Monitor,
   Calculator,
   FlaskConical,
@@ -51,15 +49,13 @@ import {
   MessageSquareText
 } from 'lucide-react';
 import Swal from 'sweetalert2';
-import { useSearchParams } from 'react-router-dom';
-import { COMMUNITY_WALL_CHANGED_EVENT, subscribeWallChanges } from '../hooks/useCommunityWallUnread';
 
 const SUBJECTS = [
-  { name: 'Computer', icon: Monitor, tone: 'bg-blue-500 text-white' },
-  { name: 'Mathematics', icon: Calculator, tone: 'bg-rose-500 text-white' },
-  { name: 'Science', icon: FlaskConical, tone: 'bg-emerald-500 text-white' },
-  { name: 'English', icon: BookA, tone: 'bg-violet-500 text-white' },
-  { name: 'Social Science', icon: Landmark, tone: 'bg-orange-500 text-white' },
+  { name: 'Computer', icon: Monitor, tone: 'bg-blue-50 text-blue-600' },
+  { name: 'Mathematics', icon: Calculator, tone: 'bg-rose-50 text-rose-500' },
+  { name: 'Science', icon: FlaskConical, tone: 'bg-emerald-50 text-emerald-600' },
+  { name: 'English', icon: BookA, tone: 'bg-violet-50 text-violet-600' },
+  { name: 'Social Science', icon: Landmark, tone: 'bg-orange-50 text-orange-500' },
 ];
 
 const GUIDELINES = ['Be respectful and helpful', 'Share accurate information', 'Use clear explanations', 'Give credit where applicable'];
@@ -250,16 +246,6 @@ const CommunityWall = ({ role = 'teacher' }) => {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [viewMode, navView, filters.subject, filters.difficulty, filters.search]);
 
-  // Someone else posted or a post was removed: reload the list that's on screen right away.
-  const reloadVisibleRef = React.useRef(() => {});
-  reloadVisibleRef.current = () => {
-    if (viewMode === 'my-problems') fetchMyProblems();
-    else if (viewMode === 'wall') fetchProblems();
-  };
-  useEffect(() => subscribeWallChanges((payload) => {
-    if (payload?.type === 'post-created' || payload?.type === 'post-removed') reloadVisibleRef.current();
-  }), []);
-
   const handleCreateProblem = async () => {
     if (!newProblem.title || !newProblem.subject || !newProblem.problemText) return;
 
@@ -370,7 +356,6 @@ const CommunityWall = ({ role = 'teacher' }) => {
       const res = await fetch(`${API}/api/alcove/posts/${problemId}/view`, { method: 'POST', headers: authHeaders() });
       if (!res.ok) return;
       const { viewCount } = await res.json();
-      window.dispatchEvent(new Event(COMMUNITY_WALL_CHANGED_EVENT));
       const applyViews = (problem) => (problem.id === problemId ? { ...problem, views: Number(viewCount) || 0 } : problem);
       setProblems((prev) => prev.map(applyViews));
       setMyProblems((prev) => prev.map(applyViews));
@@ -379,34 +364,6 @@ const CommunityWall = ({ role = 'teacher' }) => {
       viewedPostIds.current.delete(problemId);
     }
   };
-
-  const [searchParams, setSearchParams] = useSearchParams();
-  const linkedPostId = searchParams.get('post');
-  const clearLinkedPost = () => {
-    if (!searchParams.get('post')) return;
-    const next = new URLSearchParams(searchParams);
-    next.delete('post');
-    setSearchParams(next, { replace: true });
-  };
-  useEffect(() => {
-    if (!linkedPostId) return;
-    let cancelled = false;
-    (async () => {
-      try {
-        const res = await fetch(`${API}/api/alcove/posts/${linkedPostId}`, { headers: authHeaders() });
-        if (!res.ok) throw new Error(res.status === 404 ? 'This post is no longer available.' : 'Could not open the post.');
-        const post = await res.json();
-        if (!cancelled) openProblemDetails(mapApiPostToUi(post));
-      } catch (err) {
-        if (!cancelled) {
-          Swal.fire({ icon: 'info', title: 'Post unavailable', text: err.message, timer: 2200, showConfirmButton: false });
-          clearLinkedPost();
-        }
-      }
-    })();
-    return () => { cancelled = true; };
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [linkedPostId]);
 
   const openProblemDetails = async (problem) => {
     recordView(problem.id);
@@ -630,7 +587,6 @@ const CommunityWall = ({ role = 'teacher' }) => {
 
   const [createOpen, setCreateOpen] = useState(false); // false | 'text' | 'photo' | 'poll'
   const [lightboxImage, setLightboxImage] = useState(null);
-  const [likersPost, setLikersPost] = useState(null); // post whose likers are shown
   const [profile, setProfile] = useState(() => ({ name: readUserName(), photo: '', id: '', userType: '' }));
   const userName = profile.name;
 
@@ -756,49 +712,14 @@ const CommunityWall = ({ role = 'teacher' }) => {
     window.scrollTo({ top: 0, behavior: 'smooth' });
   };
 
-  // Subjects that actually have posts, busiest first. Only recomputed from the unfiltered
-  // feed, so the tiles stay put while a subject filter is applied.
-  const [subjectCounts, setSubjectCounts] = useState([]);
-  useEffect(() => {
-    if (filters.subject || filters.search || viewMode !== 'wall') return;
+  const subjectCounts = useMemo(() => {
     const counts = new Map();
     problems.forEach((problem) => {
-      const name = String(problem.subject || '').trim();
-      if (!name || name.toLowerCase() === 'general') return;
-      const key = name.toLowerCase();
-      counts.set(key, { name: counts.get(key)?.name || name, count: (counts.get(key)?.count || 0) + 1 });
+      const key = String(problem.subject || '').toLowerCase();
+      counts.set(key, (counts.get(key) || 0) + 1);
     });
-    setSubjectCounts([...counts.values()]
-      .sort((a, b) => b.count - a.count || a.name.localeCompare(b.name))
-      .map((entry) => {
-        const known = SUBJECTS.find((subject) => subject.name.toLowerCase() === entry.name.toLowerCase());
-        return { ...entry, icon: known?.icon || BookOpen, tone: known?.tone || 'bg-slate-100 text-slate-600' };
-      }));
-  }, [problems, filters.subject, filters.search, viewMode]);
-
-  // Same pattern as the admin dashboard's Quick Actions: a 2×2 page of tiles,
-  // edge arrows that only show when there's more to scroll to, and page dots.
-  const subjectScrollRef = React.useRef(null);
-  const [subjectScroll, setSubjectScroll] = useState({ canLeft: false, canRight: false, page: 0 });
-  const updateSubjectScroll = () => {
-    const el = subjectScrollRef.current;
-    if (!el) return;
-    setSubjectScroll({
-      canLeft: el.scrollLeft > 4,
-      canRight: el.scrollLeft + el.clientWidth < el.scrollWidth - 4,
-      page: Math.round(el.scrollLeft / (el.clientWidth || 1)),
-    });
-  };
-  const scrollSubjects = (direction) => {
-    const el = subjectScrollRef.current;
-    el?.scrollBy({ left: direction * el.clientWidth, behavior: 'smooth' });
-  };
-  useEffect(() => {
-    updateSubjectScroll();
-    window.addEventListener('resize', updateSubjectScroll);
-    return () => window.removeEventListener('resize', updateSubjectScroll);
-  }, [subjectCounts.length]);
-  const subjectPages = Math.ceil(subjectCounts.length / 4);
+    return SUBJECTS.map((subject) => ({ ...subject, count: counts.get(subject.name.toLowerCase()) || 0 }));
+  }, [problems]);
 
   const popularTags = useMemo(() => {
     const counts = new Map();
@@ -895,7 +816,6 @@ const CommunityWall = ({ role = 'teacher' }) => {
                     onVote={handleVote}
                     isOwn={isOwnPost(problem)}
                     onSeen={recordView}
-                    onShowLikers={setLikersPost}
                     canDelete={isOwnPost(problem) || canModerate}
                     onImageOpen={setLightboxImage}
                     formatTimeAgo={formatTimeAgo}
@@ -910,92 +830,63 @@ const CommunityWall = ({ role = 'teacher' }) => {
         </main>
 
         {/* Right rail */}
-        {/* Pinned while the feed scrolls; it never scrolls itself. */}
-        <aside className="hidden space-y-2.5 self-start overflow-hidden xl:sticky xl:top-4 xl:block">
-          <section className="rounded-xl border border-slate-200 bg-white px-3 py-2.5 shadow-sm">
-            <h2 className="mb-2 text-[14px] font-semibold text-slate-900">Community Overview</h2>
+        <aside className="hidden space-y-3 self-start xl:sticky xl:top-4 xl:block xl:max-h-[calc(100vh-2rem)] xl:overflow-y-auto [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
+          <section className="rounded-xl border border-slate-200 bg-white p-3.5 shadow-sm">
+            <h2 className="mb-3 text-[14px] font-semibold text-slate-900">Community Overview</h2>
             <div className="grid grid-cols-2 gap-2">
-              <OverviewStat icon={ThumbsUp} tone="bg-blue-500 text-white" value={hubStats.liked} label="Liked Posts" active={navView === 'liked'} onClick={() => selectSection('liked')} />
-              <OverviewStat icon={Bookmark} tone="bg-amber-500 text-white" value={hubStats.saved} label="Saved Posts" active={navView === 'saved'} onClick={() => selectSection('saved')} />
-              <OverviewStat icon={Pencil} tone="bg-emerald-500 text-white" value={hubStats.mine} label="My Contributions" active={navView === 'mine'} onClick={() => selectSection('mine')} />
-              <OverviewStat icon={BarChart3} tone="bg-indigo-500 text-white" value={hubStats.polls} label="Poll Results" active={navView === 'polls'} onClick={() => selectSection('polls')} />
+              <OverviewStat icon={ThumbsUp} tone="bg-blue-50 text-blue-600" value={hubStats.liked} label="Liked Posts" active={navView === 'liked'} onClick={() => selectSection('liked')} />
+              <OverviewStat icon={Bookmark} tone="bg-amber-50 text-amber-500" value={hubStats.saved} label="Saved Posts" active={navView === 'saved'} onClick={() => selectSection('saved')} />
+              <OverviewStat icon={Pencil} tone="bg-emerald-50 text-emerald-600" value={hubStats.mine} label="My Contributions" active={navView === 'mine'} onClick={() => selectSection('mine')} />
+              <OverviewStat icon={BarChart3} tone="bg-indigo-50 text-indigo-600" value={hubStats.polls} label="Poll Results" active={navView === 'polls'} onClick={() => selectSection('polls')} />
             </div>
           </section>
 
-          <section className="rounded-xl border border-slate-200 bg-white px-3 py-2.5 shadow-sm">
-            <div className="mb-2">
+          <section className="rounded-xl border border-slate-200 bg-white p-3.5 shadow-sm">
+            <div className="mb-2 flex items-center justify-between">
               <h2 className="text-[14px] font-semibold text-slate-900">Trending Subjects</h2>
-              <p className="text-[11px] text-slate-500">Tap a subject to filter posts</p>
+              <button type="button" onClick={() => setFilters((prev) => ({ ...prev, subject: '' }))} className="text-[12px] font-medium text-blue-600 hover:underline">View all</button>
             </div>
-            {subjectCounts.length === 0 ? (
-              <p className="text-[12px] text-slate-500">Subjects appear once posts are tagged with one.</p>
-            ) : (
-              <>
-                <div className="relative">
-                  {subjectScroll.canLeft && (
-                    <button type="button" aria-label="Scroll subjects left" onClick={() => scrollSubjects(-1)} className="absolute -left-1.5 top-1/2 z-10 flex h-7 w-7 -translate-y-1/2 items-center justify-center rounded-full border border-slate-200 bg-white text-slate-600 shadow-md transition hover:bg-slate-50">
-                      <ChevronLeft size={15} />
-                    </button>
-                  )}
-                  <div
-                    ref={subjectScrollRef}
-                    onScroll={updateSubjectScroll}
-                    className={`grid snap-x grid-flow-col auto-cols-[calc(50%-0.25rem)] gap-2 overflow-x-auto scroll-smooth px-0.5 py-0.5 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden ${subjectCounts.length > 2 ? 'grid-rows-2' : 'grid-rows-1'}`}
-                  >
-                    {subjectCounts.map((subject) => {
-                      const Icon = subject.icon;
-                      const active = filters.subject.toLowerCase() === subject.name.toLowerCase();
-                      return (
-                        <button
-                          key={subject.name}
-                          type="button"
-                          title={active ? 'Show all subjects' : `Show ${subject.name} posts`}
-                          onClick={() => setFilters((prev) => ({ ...prev, subject: active ? '' : subject.name }))}
-                          className={`group flex snap-start flex-col items-center justify-center gap-1 rounded-2xl border bg-white px-2 py-2 text-center shadow-sm transition-all hover:-translate-y-0.5 hover:shadow-md ${active ? 'border-blue-500 bg-blue-50/60' : 'border-slate-100 hover:border-slate-200'}`}
-                        >
-                          <span className={`flex h-8 w-8 shrink-0 items-center justify-center rounded-full transition-transform group-hover:scale-105 ${subject.tone}`}><Icon size={17} /></span>
-                          <span className="line-clamp-1 w-full text-[12px] font-semibold leading-tight text-slate-700">{subject.name}</span>
-                          <span className="text-[10px] text-slate-500">{subject.count} post{subject.count === 1 ? '' : 's'}</span>
-                        </button>
-                      );
-                    })}
-                  </div>
-                  {subjectScroll.canRight && (
-                    <button type="button" aria-label="Scroll subjects right" onClick={() => scrollSubjects(1)} className="absolute -right-1.5 top-1/2 z-10 flex h-7 w-7 -translate-y-1/2 items-center justify-center rounded-full border border-slate-200 bg-white text-slate-600 shadow-md transition hover:bg-slate-50">
-                      <ChevronRight size={15} />
-                    </button>
-                  )}
-                </div>
-                {subjectPages > 1 && (
-                  <div className="mt-2 flex items-center justify-center gap-1.5">
-                    {Array.from({ length: subjectPages }).map((_, index) => (
-                      <button
-                        key={index}
-                        type="button"
-                        aria-label={`Go to subjects page ${index + 1}`}
-                        onClick={() => subjectScrollRef.current?.scrollTo({ left: index * subjectScrollRef.current.clientWidth, behavior: 'smooth' })}
-                        className={`h-1.5 rounded-full transition-all duration-300 ${subjectScroll.page === index ? 'w-5 bg-indigo-500' : 'w-1.5 bg-slate-300'}`}
-                      />
-                    ))}
-                  </div>
-                )}
-              </>
-            )}
+            <div className="space-y-0.5">
+              {subjectCounts.map((subject) => {
+                const Icon = subject.icon;
+                return (
+                  <button key={subject.name} type="button" onClick={() => setFilters((prev) => ({ ...prev, subject: subject.name }))} className="flex w-full items-center gap-3 rounded-lg px-1.5 py-1.5 text-left hover:bg-slate-50">
+                    <span className={`flex h-7 w-7 items-center justify-center rounded-md ${subject.tone}`}><Icon size={14} /></span>
+                    <span className="flex-1 text-[13px] text-slate-800">{subject.name}</span>
+                    <span className="text-[11px] text-slate-500">{subject.count} posts</span>
+                  </button>
+                );
+              })}
+            </div>
           </section>
 
-          <section className="rounded-xl border border-slate-200 bg-white px-3 py-2.5 shadow-sm">
-            <div className="mb-2 flex items-center gap-2">
-              <ShieldCheck size={18} className="text-white fill-blue-600" />
+          <section className="rounded-xl border border-slate-200 bg-white p-3.5 shadow-sm">
+            <div className="mb-2.5 flex items-center justify-between">
+              <h2 className="text-[14px] font-semibold text-slate-900">Popular Tags</h2>
+              <button type="button" className="text-[12px] font-medium text-blue-600 hover:underline">View all</button>
+            </div>
+            <div className="flex flex-wrap gap-1.5">
+              {popularTags.length === 0
+                ? <span className="text-[12px] text-slate-500">Tags appear after posts are added.</span>
+                : popularTags.map((tag) => (
+                  <button key={tag} type="button" onClick={() => setFilters((prev) => ({ ...prev, search: tag }))} className="rounded-md bg-indigo-50 px-2 py-1 text-[11px] font-medium text-indigo-700 hover:bg-indigo-100">#{tag}</button>
+                ))}
+            </div>
+          </section>
+
+          <section className="rounded-xl border border-slate-200 bg-white p-3.5 shadow-sm">
+            <div className="mb-2.5 flex items-center gap-2">
+              <ShieldCheck size={18} className="text-blue-600" />
               <h2 className="text-[14px] font-semibold text-slate-900">Community Guidelines</h2>
             </div>
-            <ul className="space-y-1.5">
+            <ul className="space-y-2">
               {GUIDELINES.map((item) => (
                 <li key={item} className="flex items-center gap-2.5 text-[13px] text-slate-700">
-                  <span className="flex h-5 w-5 items-center justify-center rounded-full bg-emerald-50 bg-green-700 text-white"><Check size={12} /></span>{item}
+                  <span className="flex h-5 w-5 items-center justify-center rounded-full bg-emerald-50 text-emerald-600"><Check size={12} /></span>{item}
                 </li>
               ))}
             </ul>
-            {/* <button type="button" className="mt-2 inline-flex items-center gap-1 text-[12px] font-medium text-blue-600 hover:underline">Learn more <ArrowRight size={13} /></button> */}
+            <button type="button" className="mt-3 inline-flex items-center gap-1 text-[12px] font-medium text-blue-600 hover:underline">Learn more <ArrowRight size={13} /></button>
           </section>
         </aside>
       </div>
@@ -1017,11 +908,10 @@ const CommunityWall = ({ role = 'teacher' }) => {
             onSave={handleSaveProblem}
             onVote={handleVote}
             onImageOpen={setLightboxImage}
-            onShowLikers={setLikersPost}
             userName={userName}
             userPhoto={profile.photo}
             formatTimeAgo={formatTimeAgo}
-            onClose={() => { setDetailProblem(null); clearLinkedPost(); }}
+            onClose={() => setDetailProblem(null)}
           />
         )}
       </AnimatePresence>
@@ -1045,21 +935,17 @@ const CommunityWall = ({ role = 'teacher' }) => {
       <AnimatePresence>
         {lightboxImage && <ImageLightbox src={lightboxImage} onClose={() => setLightboxImage(null)} />}
       </AnimatePresence>
-
-      <AnimatePresence>
-        {likersPost && <LikersModal post={likersPost} authHeaders={authHeaders} onClose={() => setLikersPost(null)} />}
-      </AnimatePresence>
     </div>
   );
 };
 
 const OverviewStat = ({ icon, tone, value, label, active, onClick }) => (
-  <button type="button" onClick={onClick} className={`flex flex-col items-center gap-1 rounded-lg border px-2 py-2 text-center transition hover:border-blue-200 hover:bg-blue-50/40 ${active ? 'border-blue-500 bg-blue-50/60' : 'border-slate-100'}`}>
-    <span className="flex items-center justify-center gap-2">
-      <span className={`flex h-7 w-7 shrink-0 items-center justify-center rounded-full ${tone}`}>{React.createElement(icon, { size: 15 })}</span>
-      <span className="text-[18px] font-bold leading-none text-slate-900">{value}</span>
-    </span>
-    <span className="w-full truncate text-[11px] font-medium text-slate-500">{label}</span>
+  <button type="button" onClick={onClick} className={`flex items-center gap-2.5 rounded-lg border p-2.5 text-left transition hover:border-blue-200 hover:bg-blue-50/40 ${active ? 'border-blue-500 bg-blue-50/60' : 'border-slate-100'}`}>
+    <span className={`flex h-8 w-8 shrink-0 items-center justify-center rounded-lg ${tone}`}>{React.createElement(icon, { size: 16 })}</span>
+    <div className="min-w-0 flex-1">
+      <p className="text-[16px] font-bold leading-none text-slate-900">{value}</p>
+      <p className="mt-1 truncate text-[11px] text-slate-500">{label}</p>
+    </div>
   </button>
 );
 
@@ -1409,7 +1295,7 @@ const RemovedPostCard = ({ problem }) => (
 
 const DiscussionCard = (props) => (props.problem.removal?.at ? <RemovedPostCard problem={props.problem} /> : <LiveDiscussionCard {...props} />);
 
-const LiveDiscussionCard = ({ problem, index, onOpen, onLike, onSave, onDelete, onVote, canDelete, onImageOpen, onSeen, onShowLikers, formatTimeAgo }) => {
+const LiveDiscussionCard = ({ problem, index, onOpen, onLike, onSave, onDelete, onVote, canDelete, onImageOpen, onSeen, formatTimeAgo }) => {
   const roleLine = authorRoleLine(problem);
   // A post counts as viewed once at least half of it has been on screen.
   const cardRef = React.useRef(null);
@@ -1435,7 +1321,7 @@ const LiveDiscussionCard = ({ problem, index, onOpen, onLike, onSave, onDelete, 
         <div className="min-w-0 flex-1">
           <div className="flex flex-wrap items-center gap-2">
             <p className="text-[13px] font-semibold text-slate-900">{problem.teacherName}</p>
-            <span className="inline-flex items-center gap-1 rounded-full bg-amber-500 px-1.5 py-0.5 text-[10px] font-medium text-white"><Star size={10} className="fill-white text-white" />Top Contributor</span>
+            <span className="inline-flex items-center gap-1 rounded bg-amber-50 px-1.5 py-0.5 text-[10px] font-medium text-amber-700"><Star size={10} className="fill-amber-400 text-amber-400" />Top Contributor</span>
           </div>
           <p className="flex flex-wrap items-center text-[11px] text-slate-500">{roleLine}<span className="mx-1">•</span>{formatTimeAgo(problem.timestamp)}<span className="mx-1">•</span><AudienceBadge problem={problem} /></p>
         </div>
@@ -1452,14 +1338,9 @@ const LiveDiscussionCard = ({ problem, index, onOpen, onLike, onSave, onDelete, 
       </div>
 
       <div className="mt-2.5 flex items-center gap-5 border-t border-slate-100 pt-2 text-[12px] text-slate-600">
-        <span className={`inline-flex items-center gap-1.5 ${problem.isLiked ? 'text-blue-600' : ''}`}>
-          <button type="button" title={problem.isLiked ? 'Unlike' : 'Like'} onClick={() => onLike(problem.id)} className="hover:text-blue-600">
-            <ThumbsUp size={15} className={problem.isLiked ? 'fill-current' : ''} />
-          </button>
-          <button type="button" title="See who liked this" disabled={!problem.likes} onClick={() => onShowLikers?.(problem)} className="hover:underline disabled:cursor-default disabled:no-underline">
-            {problem.likes}
-          </button>
-        </span>
+        <button type="button" onClick={() => onLike(problem.id)} className={`inline-flex items-center gap-1.5 hover:text-blue-600 ${problem.isLiked ? 'text-blue-600' : ''}`}>
+          <ThumbsUp size={15} className={problem.isLiked ? 'fill-current' : ''} />{problem.likes}
+        </button>
         <button type="button" onClick={() => onOpen(problem)} className={`inline-flex items-center gap-1.5 hover:text-blue-600 ${problem.comments > 0 ? 'text-blue-600' : ''}`}>
           <MessageSquare size={15} />{problem.comments}
         </button>
@@ -1541,76 +1422,17 @@ const EmptyKnowledgeState = ({ onCreate }) => <div className="rounded-3xl border
 
 const commentRoleTag = (comment) => {
   const type = String(comment?.authorType || '').toLowerCase();
-  if (type === 'teacher') return { label: 'Teacher', tone: 'bg-violet-500 text-white' };
-  if (type === 'admin') return { label: 'School Admin', tone: 'bg-blue-500 text-white' };
-  if (type === 'parent') return { label: 'Parent', tone: 'bg-amber-500 text-white' };
+  if (type === 'teacher') return { label: 'Teacher', tone: 'bg-violet-100 text-violet-700' };
+  if (type === 'admin') return { label: 'School Admin', tone: 'bg-blue-100 text-blue-700' };
+  if (type === 'parent') return { label: 'Parent', tone: 'bg-amber-100 text-amber-700' };
   if (type === 'student') {
     const placement = comment.authorGrade ? ` • ${classSectionLabel(comment.authorGrade, comment.authorSection)}` : '';
-    return { label: `Student${placement}`, tone: 'bg-emerald-500 text-white' };
+    return { label: `Student${placement}`, tone: 'bg-emerald-100 text-emerald-700' };
   }
   return null;
 };
 
-const LikersModal = ({ post, authHeaders, onClose }) => {
-  const [likers, setLikers] = useState(null);
-  const [error, setError] = useState('');
-
-  useEffect(() => {
-    let cancelled = false;
-    (async () => {
-      try {
-        const res = await fetch(`${API}/api/alcove/posts/${post.id}/likers`, { headers: authHeaders() });
-        const body = await res.json().catch(() => ({}));
-        if (!res.ok) throw new Error(body.error || 'Could not load likes');
-        if (!cancelled) setLikers(Array.isArray(body.likers) ? body.likers : []);
-      } catch (err) {
-        if (!cancelled) setError(err.message);
-      }
-    })();
-    return () => { cancelled = true; };
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [post.id, post.likes]);
-
-  useEffect(() => {
-    const onKey = (event) => { if (event.key === 'Escape') { event.stopPropagation(); onClose(); } };
-    window.addEventListener('keydown', onKey, true);
-    return () => window.removeEventListener('keydown', onKey, true);
-  }, [onClose]);
-
-  return (
-    <Motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} className="fixed inset-0 z-230 flex items-center justify-center bg-slate-900/50 p-3" onClick={onClose}>
-      <Motion.div initial={{ opacity: 0, scale: 0.97 }} animate={{ opacity: 1, scale: 1 }} exit={{ opacity: 0, scale: 0.97 }} className="flex max-h-[70vh] w-full max-w-sm flex-col overflow-hidden rounded-xl bg-white shadow-2xl" onClick={(event) => event.stopPropagation()}>
-        <div className="relative flex items-center justify-center border-b border-slate-200 px-4 py-3">
-          <h3 className="inline-flex items-center gap-1.5 text-[15px] font-semibold text-slate-900">
-            <span className="flex h-5 w-5 items-center justify-center rounded-full bg-blue-600 text-white"><ThumbsUp size={11} /></span>
-            Liked by {likers ? likers.length : post.likes}
-          </h3>
-          <button type="button" onClick={onClose} className="absolute right-3 flex h-8 w-8 items-center justify-center rounded-full bg-slate-100 text-slate-600 hover:bg-slate-200"><X size={16} /></button>
-        </div>
-        <div className="flex-1 overflow-y-auto px-2 py-1.5">
-          {error && <p className="m-2 rounded-lg bg-rose-50 p-2.5 text-[12px] text-rose-600">{error}</p>}
-          {!likers && !error && <div className="py-8 text-center text-[13px] text-slate-500"><Loader2 className="mr-2 inline h-4 w-4 animate-spin" />Loading...</div>}
-          {likers && likers.length === 0 && <p className="py-8 text-center text-[13px] text-slate-500">No likes yet.</p>}
-          {likers && likers.length > 0 && (
-            <ul>
-              {likers.map((liker) => (
-                <li key={`${liker.userType}:${liker.id}`} className="flex items-center gap-2.5 rounded-lg px-2 py-2 hover:bg-slate-50">
-                  <Avatar initials={initialsOf(liker.name)} src={liker.photo} size="sm" />
-                  <div className="min-w-0 flex-1">
-                    <p className="truncate text-[13px] font-semibold text-slate-900">{liker.name}</p>
-                    <p className="truncate text-[11px] text-slate-500">{voterRoleLine(liker)}</p>
-                  </div>
-                </li>
-              ))}
-            </ul>
-          )}
-        </div>
-      </Motion.div>
-    </Motion.div>
-  );
-};
-
-const CommentsModal = ({ problem, comments, loading, commentText, setCommentText, posting, onPost, onDeleteComment, me, isPostOwner, onLike, onSave, onVote, onImageOpen, onShowLikers, userName, userPhoto, formatTimeAgo, onClose }) => {
+const CommentsModal = ({ problem, comments, loading, commentText, setCommentText, posting, onPost, onDeleteComment, me, isPostOwner, onLike, onSave, onVote, onImageOpen, userName, userPhoto, formatTimeAgo, onClose }) => {
   const listEndRef = React.useRef(null);
   const inputRef = React.useRef(null);
   const [replyTo, setReplyTo] = useState(null); // { id, name }
@@ -1655,8 +1477,7 @@ const CommentsModal = ({ problem, comments, loading, commentText, setCommentText
         <div className="min-w-0">
           <div className="inline-block max-w-full rounded-2xl bg-slate-100 px-3 py-2">
             <p className="text-[12px] font-semibold leading-4 text-slate-900">{comment.authorName || 'User'}</p>
-            {/* Block-level so it sits flush under the name instead of on a full-height text line. */}
-            {roleTag && <span className={`block w-fit rounded-full px-1 text-[8px] font-medium leading-3 ${roleTag.tone}`}>{roleTag.label}</span>}
+            {roleTag && <span className={`inline-block rounded-sm px-1 text-[8px] font-medium leading-3 ${roleTag.tone}`}>{roleTag.label}</span>}
             <ExpandableText text={comment.text} className="" textClass="text-slate-800" bgClass="bg-slate-100" />
           </div>
           <div className="mt-0.5 flex items-center gap-3 pl-3 text-[11px]">
@@ -1705,7 +1526,7 @@ const CommentsModal = ({ problem, comments, loading, commentText, setCommentText
               {tags.map((tag) => <span key={tag} className="rounded bg-slate-100 px-2 py-0.5 text-[11px] text-slate-600">#{tag}</span>)}
             </div>
             <div className="mt-2.5 flex items-center justify-between text-[12px] text-slate-500">
-              <button type="button" title="See who liked this" disabled={!problem.likes} onClick={() => onShowLikers?.(problem)} className="inline-flex items-center gap-1 hover:underline disabled:cursor-default disabled:no-underline"><span className="flex h-4 w-4 items-center justify-center rounded-full bg-blue-600 text-white"><ThumbsUp className='text-white' size={9} /></span>{problem.likes}</button>
+              <span className="inline-flex items-center gap-1"><span className="flex h-4 w-4 items-center justify-center rounded-full bg-blue-600 text-white"><ThumbsUp className='text-white' size={9} /></span>{problem.likes}</span>
               <span>{comments.length} comments • {problem.views} views</span>
             </div>
           </div>

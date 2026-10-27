@@ -25,7 +25,8 @@ import {
   FileBadge,
   Plus,
   Eye,
-  UserX
+  UserX,
+  MessagesSquare
 } from 'lucide-react';
 
 export const ADMIN_MENU_ITEMS = [
@@ -85,6 +86,11 @@ export const ADMIN_MENU_ITEMS = [
     icon: CalendarDays,
     label: 'Holiday List',
     path: '/admin/holidays'
+  },
+  {
+    icon: MessagesSquare,
+    label: 'Community Wall',
+    path: '/admin/community-wall'
   },
   {
     icon: GraduationCap,
@@ -207,7 +213,7 @@ export const ADMIN_MENU_SECTIONS = [
   },
   { section: 'STUDENTS', items: ['Students', 'Parents', 'Student Promotion', 'Leave & Left Students'] },
   { section: 'FEES MANAGEMENT', items: ['Create Fees', 'Fees Collection', 'Fee Receipts'] },
-  { section: 'COMMUNICATION', items: ['Notices', 'Holiday List'] },
+  { section: 'COMMUNICATION', items: ['Notices', 'Holiday List', 'Community Wall'] },
   { section: 'CAMPUS', items: ['Floor & Rooms'] },
   { section: 'HUMAN RESOURCES', items: ['HR'] },
   { section: 'SUPPORT', items: ['Support'] },
