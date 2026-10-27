@@ -1,41 +1,76 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import { AnimatePresence, motion as Motion } from 'framer-motion';
-import { 
-  BookOpen, 
-  Search as SearchIcon, 
-  MessageSquare, 
-  Heart, 
-  PlusCircle,
+import {
+  Search as SearchIcon,
+  MessageSquare,
   Edit3,
   Eye,
-  Share2,
-  Save,
-  FileText,
-  Target,
-  Lightbulb,
   Brain,
-  CheckCircle,
-  Clock,
-  Tag,
+  CheckCircle2,
   Bookmark,
-  MoreVertical,
-  Download,
-  Users,
   X,
   Loader2,
-  Trophy,
-  Flame,
-  GitFork,
   Sparkles,
-  PenLine,
-  MessageCircle,
-  TrendingUp,
-  CheckCircle2,
-  Layers,
   UserCheck,
-  ChevronRight
+  Home,
+  Compass,
+  Pencil,
+  BookOpen,
+  Folder,
+  ChevronDown,
+  Monitor,
+  Calculator,
+  FlaskConical,
+  BookA,
+  Landmark,
+  LayoutGrid,
+  Bell,
+  Plus,
+  Image as ImageIcon,
+  Link2,
+  FileText,
+  BarChart3,
+  ThumbsUp,
+  Send,
+  Star,
+  Activity,
+  Users,
+  ShieldCheck,
+  Check,
+  ArrowRight,
+  ArrowUpDown,
+  GraduationCap,
+  MessageSquareText
 } from 'lucide-react';
 import Swal from 'sweetalert2';
+
+const SUBJECTS = [
+  { name: 'Computer', icon: Monitor, tone: 'bg-blue-50 text-blue-600' },
+  { name: 'Mathematics', icon: Calculator, tone: 'bg-rose-50 text-rose-500' },
+  { name: 'Science', icon: FlaskConical, tone: 'bg-emerald-50 text-emerald-600' },
+  { name: 'English', icon: BookA, tone: 'bg-violet-50 text-violet-600' },
+  { name: 'Social Science', icon: Landmark, tone: 'bg-orange-50 text-orange-500' },
+];
+
+const GUIDELINES = ['Be respectful and helpful', 'Share accurate information', 'Use clear explanations', 'Give credit where applicable'];
+
+const readUserName = () => {
+  for (const key of ['teacherUser', 'user', 'userData']) {
+    try {
+      const parsed = JSON.parse(localStorage.getItem(key) || 'null');
+      const name = parsed?.name || parsed?.fullName || parsed?.username;
+      if (name) return String(name);
+    } catch {
+      // ignore malformed storage
+    }
+  }
+  return 'Teacher';
+};
+
+const initialsOf = (name) => {
+  const parts = String(name || '').trim().split(/\s+/).filter(Boolean);
+  return ((parts[0]?.[0] || 'T') + (parts[1]?.[0] || '')).toUpperCase();
+};
 
 const API = import.meta.env.VITE_API_URL;
 
@@ -107,7 +142,8 @@ const TeacherAlcove = () => {
       saves: 0,
       isLiked: Boolean(post.isLiked),
       isSaved: false,
-      views: Number(post.viewCount) || 0
+      views: Number(post.viewCount) || 0,
+      authorPhoto: post?.authorPhoto || ''
     };
   };
 
@@ -435,197 +471,224 @@ const TeacherAlcove = () => {
     return `${Math.floor(diffInMinutes / 1440)}d ago`;
   };
 
-  const filteredProblems = problems;
+  const [navView] = useState('home'); // 'home' | 'discover' | 'mine' | 'saved' | 'library'
+  const [feedTab, setFeedTab] = useState('all'); // 'all' | 'questions' | 'solutions' | 'following'
+  const [sortBy, setSortBy] = useState('latest');
+  const [composerText, setComposerText] = useState('');
+  const userName = useMemo(readUserName, []);
 
   const hubStats = useMemo(() => {
     const source = viewMode === 'my-problems' ? myProblems : problems;
     return {
       discussions: source.length,
       answers: source.reduce((sum, item) => sum + Number(item.comments || 0), 0),
-      saves: source.reduce((sum, item) => sum + Number(item.saves || 0), 0),
+      active: source.filter((item) => Number(item.comments || 0) > 0).length,
       views: source.reduce((sum, item) => sum + Number(item.views || 0), 0),
     };
   }, [myProblems, problems, viewMode]);
 
-  const trendingTopics = useMemo(() => {
+  const subjectCounts = useMemo(() => {
     const counts = new Map();
     problems.forEach((problem) => {
-      [problem.subject, problem.chapter, ...(problem.tags || [])].filter(Boolean).forEach((topic) => {
-        counts.set(topic, (counts.get(topic) || 0) + 1);
-      });
+      const key = String(problem.subject || '').toLowerCase();
+      counts.set(key, (counts.get(key) || 0) + 1);
     });
-    return Array.from(counts.entries())
-      .map(([label, count]) => ({ label, count }))
-      .sort((a, b) => b.count - a.count)
-      .slice(0, 8);
+    return SUBJECTS.map((subject) => ({ ...subject, count: counts.get(subject.name.toLowerCase()) || 0 }));
   }, [problems]);
 
-  const topContributors = useMemo(() => {
-    const contributors = new Map();
+  const popularTags = useMemo(() => {
+    const counts = new Map();
     problems.forEach((problem) => {
-      const key = problem.teacherName || 'Contributor';
-      const current = contributors.get(key) || { name: key, avatar: problem.teacherAvatar || 'T', posts: 0, score: 0 };
-      contributors.set(key, {
-        ...current,
-        posts: current.posts + 1,
-        score: current.score + Number(problem.likes || 0) + Number(problem.comments || 0) * 2 + Number(problem.views || 0),
+      [problem.chapter, ...(problem.tags || [])].filter(Boolean).forEach((tag) => {
+        counts.set(tag, (counts.get(tag) || 0) + 1);
       });
     });
-    return Array.from(contributors.values()).sort((a, b) => b.score - a.score).slice(0, 5);
+    return Array.from(counts.entries()).sort((a, b) => b[1] - a[1]).slice(0, 10).map(([tag]) => tag);
   }, [problems]);
 
-  const collections = useMemo(() => {
-    const subjects = Array.from(new Set(problems.map((problem) => problem.subject).filter(Boolean))).slice(0, 4);
-    const defaults = ['Algebra Mastery', 'Olympiad Archive', 'Revision Set', 'Physics Numericals'];
-    return (subjects.length ? subjects : defaults).map((subject, index) => ({
-      title: defaults[index] || `${subject} Collection`,
-      subject,
-      count: problems.filter((problem) => problem.subject === subject || (problem.tags || []).includes(subject)).length || Math.max(3, index + 4),
-      accent: ['bg-indigo-500', 'bg-emerald-500', 'bg-amber-500', 'bg-rose-500'][index % 4],
-    }));
-  }, [problems]);
+  const activeProblems = useMemo(() => {
+    let list = viewMode === 'my-problems' ? myProblems : problems;
+    if (navView === 'saved') list = list.filter((item) => item.isSaved);
+    if (feedTab === 'questions') list = list.filter((item) => !item.solutionText);
+    if (feedTab === 'solutions') list = list.filter((item) => item.solutionText);
+    if (feedTab === 'following') list = list.filter((item) => item.isLiked || item.isSaved);
+    const sorted = [...list];
+    if (sortBy === 'popular' || navView === 'discover') {
+      sorted.sort((a, b) => (b.likes + b.comments * 2 + b.views) - (a.likes + a.comments * 2 + a.views));
+    } else {
+      sorted.sort((a, b) => b.timestamp - a.timestamp);
+    }
+    return sorted;
+  }, [viewMode, myProblems, problems, navView, feedTab, sortBy]);
 
-  const activeProblems = viewMode === 'my-problems' ? myProblems : filteredProblems;
+  const openCreate = (title = '') => {
+    setEditingProblemId(null);
+    setNewProblem({ ...emptyProblem, title });
+    setViewMode('create');
+  };
 
   return (
-    <div className="min-h-screen bg-slate-100 p-3 sm:p-5 lg:p-6">
-      <div className="mx-auto max-w-[1500px] space-y-5">
-        <Motion.section initial={{ opacity: 0, y: 12 }} animate={{ opacity: 1, y: 0 }} className="overflow-hidden rounded-3xl border border-slate-200 bg-slate-950 text-white shadow-xl shadow-slate-300/50">
-          <div className="relative p-5 sm:p-7">
-            <div className="absolute inset-0 bg-[radial-gradient(circle_at_top_right,rgba(14,165,233,0.45),transparent_34%),radial-gradient(circle_at_bottom_left,rgba(99,102,241,0.55),transparent_38%),linear-gradient(135deg,#0f172a,#111827)]" />
-            <div className="relative flex flex-col gap-6 xl:flex-row xl:items-end xl:justify-between">
-              <div>
-                <div className="inline-flex items-center gap-2 rounded-full border border-white/10 bg-white/10 px-3 py-1.5 text-xs font-semibold text-cyan-100 backdrop-blur">
-                  <GitFork size={14} /> Collaborative Academic Network
+    <div className="min-h-screen bg-slate-50 text-slate-800">
+      <div className="mx-auto grid max-w-[1280px] gap-4 px-4 py-4 xl:grid-cols-[minmax(0,1fr)_300px]">
+        {/* Feed */}
+        <main className="min-w-0 space-y-3">
+          <AnimatePresence mode="wait">
+            {viewMode === 'create' ? (
+              <Motion.div key="editor" initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: -10 }}>
+                <KnowledgeEditor
+                  newProblem={newProblem}
+                  setNewProblem={setNewProblem}
+                  editingProblemId={editingProblemId}
+                  submitting={submitting}
+                  onCancel={() => { setEditingProblemId(null); setNewProblem(emptyProblem); setViewMode(navView === 'mine' || navView === 'library' ? 'my-problems' : 'wall'); }}
+                  onSubmit={handleCreateProblem}
+                  addHint={addHint}
+                  updateHint={updateHint}
+                  removeHint={removeHint}
+                  addTag={addTag}
+                  removeTag={removeTag}
+                />
+              </Motion.div>
+            ) : (
+              <Motion.div key="feed" initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: -10 }} className="space-y-3">
+                {/* Composer */}
+                <section className="rounded-xl border border-slate-200 bg-white p-3.5 shadow-sm">
+                  <div className="flex gap-3">
+                    <Avatar initials={initialsOf(userName)} size="lg" />
+                    <div className="min-w-0 flex-1">
+                      <input
+                        value={composerText}
+                        onChange={(event) => setComposerText(event.target.value)}
+                        onKeyDown={(event) => { if (event.key === 'Enter' && composerText.trim()) { openCreate(composerText.trim()); setComposerText(''); } }}
+                        placeholder="Share a question, idea, or solution..."
+                        className="w-full rounded-lg border border-slate-200 px-3 py-2 text-[13px] outline-none focus:border-blue-300"
+                      />
+                      <div className="mt-2.5 flex flex-wrap items-center gap-2">
+                        {[{ label: 'Photo', icon: ImageIcon }, { label: 'Link', icon: Link2 }, { label: 'File', icon: FileText }, { label: 'Poll', icon: BarChart3 }].map((item) => {
+                          const Icon = item.icon;
+                          return (
+                            <button key={item.label} type="button" onClick={() => openCreate(composerText.trim())} className="inline-flex items-center gap-1.5 rounded-lg border border-slate-200 px-3 py-1.5 text-[12px] font-medium text-slate-700 hover:bg-slate-50">
+                              <Icon size={14} />{item.label}
+                            </button>
+                          );
+                        })}
+                        <button type="button" onClick={() => { openCreate(composerText.trim()); setComposerText(''); }} className="ml-auto rounded-lg bg-blue-600 px-5 py-1.5 text-[13px] font-semibold text-white hover:bg-blue-700">Post</button>
+                      </div>
+                    </div>
+                  </div>
+                </section>
+
+                {/* Tabs */}
+                <div className="flex items-center justify-between border-b border-slate-200 px-1">
+                  <div className="flex gap-1 overflow-x-auto">
+                    {[{ id: 'all', label: 'All Posts' }, { id: 'questions', label: 'Questions' }, { id: 'solutions', label: 'Solutions' }, { id: 'following', label: 'Following' }].map((tab) => (
+                      <button key={tab.id} type="button" onClick={() => setFeedTab(tab.id)} className={`-mb-px shrink-0 border-b-2 px-3 py-2 text-[13px] font-medium transition ${feedTab === tab.id ? 'border-blue-600 text-blue-700' : 'border-transparent text-slate-600 hover:text-slate-900'}`}>
+                        {tab.label}
+                      </button>
+                    ))}
+                  </div>
+                  <button type="button" onClick={() => setSortBy((prev) => (prev === 'latest' ? 'popular' : 'latest'))} className="inline-flex items-center gap-1.5 px-2 py-2 text-[13px] text-slate-600 hover:text-slate-900">
+                    {sortBy === 'latest' ? 'Latest' : 'Popular'} <ArrowUpDown size={13} />
+                  </button>
                 </div>
-                <h1 className="mt-4 text-3xl font-semibold tracking-tight sm:text-5xl">Knowledge Hub</h1>
-                <p className="mt-3 max-w-3xl text-sm leading-6 text-slate-300">
-                  Discover problem discussions, share solutions, mentor students, and build reusable academic knowledge with your school community.
-                </p>
-                <div className="mt-5 flex flex-wrap gap-2">
-                  {['Teacher picks', 'Accepted solutions', 'Markdown-ready', 'AI assisted'].map((item) => (
-                    <span key={item} className="rounded-full border border-white/10 bg-white/10 px-3 py-1.5 text-xs font-semibold text-white/90">{item}</span>
-                  ))}
-                </div>
-              </div>
-              <div className="grid min-w-[280px] gap-3 sm:grid-cols-2">
-                <HubHeroMetric label="Discussions" value={hubStats.discussions} />
-                <HubHeroMetric label="Community answers" value={hubStats.answers} />
-              </div>
+
+                {loading && Array.from({ length: 3 }).map((_, index) => <div key={index} className="h-36 animate-pulse rounded-xl border border-slate-200 bg-white" />)}
+                {!loading && activeProblems.map((problem, index) => (
+                  <DiscussionCard
+                    key={problem.id}
+                    problem={problem}
+                    index={index}
+                    onOpen={openProblemDetails}
+                    onLike={handleLikeProblem}
+                    onSave={handleSaveProblem}
+                    onEdit={startEditProblem}
+                    onDelete={handleDeleteProblem}
+                    canManage={viewMode === 'my-problems'}
+                    formatTimeAgo={formatTimeAgo}
+                  />
+                ))}
+                {!loading && activeProblems.length === 0 && <EmptyKnowledgeState onCreate={() => openCreate()} />}
+              </Motion.div>
+            )}
+          </AnimatePresence>
+        </main>
+
+        {/* Right rail */}
+        <aside className="hidden space-y-3 self-start xl:sticky xl:top-4 xl:block xl:max-h-[calc(100vh-2rem)] xl:overflow-y-auto [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
+          <section className="rounded-xl border border-slate-200 bg-white p-3.5 shadow-sm">
+            <h2 className="mb-3 text-[14px] font-semibold text-slate-900">Community Overview</h2>
+            <div className="grid grid-cols-2 gap-2">
+              <OverviewStat icon={MessageSquareText} tone="bg-blue-50 text-blue-600" value={hubStats.discussions} label="Discussions" />
+              <OverviewStat icon={Users} tone="bg-indigo-50 text-indigo-600" value={hubStats.answers} label="Community answers" />
+              <OverviewStat icon={Activity} tone="bg-emerald-50 text-emerald-600" value={hubStats.active} label="Active threads" />
+              <OverviewStat icon={Eye} tone="bg-amber-50 text-amber-500" value={hubStats.views} label="Knowledge views" />
             </div>
-          </div>
-        </Motion.section>
+          </section>
 
-        <div className="grid gap-4 md:grid-cols-4">
-          <CommunityStat icon={MessageCircle} label="Problem discussions" value={hubStats.discussions} sub="Discover feed" tone="from-blue-500 to-indigo-500" />
-          <CommunityStat icon={CheckCircle2} label="Shared answers" value={hubStats.answers} sub="Thread activity" tone="from-emerald-500 to-teal-500" />
-          <CommunityStat icon={Bookmark} label="Saved posts" value={hubStats.saves} sub="Personal library" tone="from-amber-500 to-orange-500" />
-          <CommunityStat icon={Eye} label="Knowledge views" value={hubStats.views} sub="Community reach" tone="from-violet-500 to-fuchsia-500" />
-        </div>
-
-        <section className="rounded-3xl border border-slate-200 bg-white p-4 shadow-sm">
-          <div className="flex flex-col gap-4 xl:flex-row xl:items-center xl:justify-between">
-            <div className="flex gap-1 overflow-x-auto rounded-2xl border border-slate-200 bg-slate-50 p-1">
-              {[
-                { id: 'wall', label: 'Discover Feed', icon: TrendingUp },
-                { id: 'create', label: editingProblemId ? 'Edit Workspace' : 'Solution Workspace', icon: PenLine },
-                { id: 'my-problems', label: 'My Contributions', icon: UserCheck },
-              ].map((tab) => {
-                const Icon = tab.icon;
+          <section className="rounded-xl border border-slate-200 bg-white p-3.5 shadow-sm">
+            <div className="mb-2 flex items-center justify-between">
+              <h2 className="text-[14px] font-semibold text-slate-900">Trending Subjects</h2>
+              <button type="button" onClick={() => setFilters((prev) => ({ ...prev, subject: '' }))} className="text-[12px] font-medium text-blue-600 hover:underline">View all</button>
+            </div>
+            <div className="space-y-0.5">
+              {subjectCounts.map((subject) => {
+                const Icon = subject.icon;
                 return (
-                  <button key={tab.id} type="button" onClick={() => { if (tab.id === 'create' && viewMode !== 'create') { setEditingProblemId(null); setNewProblem(emptyProblem); } setViewMode(tab.id); }} className={`inline-flex shrink-0 items-center gap-2 rounded-xl px-3 py-2 text-xs font-semibold transition ${viewMode === tab.id ? 'bg-white text-slate-950 shadow-sm' : 'text-slate-500 hover:text-slate-800'}`}>
-                    <Icon size={15} />{tab.label}
+                  <button key={subject.name} type="button" onClick={() => setFilters((prev) => ({ ...prev, subject: subject.name }))} className="flex w-full items-center gap-3 rounded-lg px-1.5 py-1.5 text-left hover:bg-slate-50">
+                    <span className={`flex h-7 w-7 items-center justify-center rounded-md ${subject.tone}`}><Icon size={14} /></span>
+                    <span className="flex-1 text-[13px] text-slate-800">{subject.name}</span>
+                    <span className="text-[11px] text-slate-500">{subject.count} posts</span>
                   </button>
                 );
               })}
             </div>
+          </section>
 
-            {viewMode !== 'create' && (
-              <div className="flex flex-col gap-2 lg:flex-row lg:items-center">
-                <div className="relative lg:w-80">
-                  <SearchIcon className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />
-                  <input value={filters.search} onChange={(event) => setFilters((prev) => ({ ...prev, search: event.target.value }))} placeholder="Search discussions, tags, solutions" className="w-full rounded-2xl border border-slate-200 bg-slate-50 py-2.5 pl-9 pr-3 text-sm outline-none transition focus:border-indigo-300 focus:bg-white focus:ring-4 focus:ring-indigo-100" />
-                </div>
-                <select value={filters.subject} onChange={(event) => setFilters((prev) => ({ ...prev, subject: event.target.value }))} className="rounded-2xl border border-slate-200 bg-white px-3 py-2.5 text-sm text-slate-700 outline-none focus:border-indigo-300 focus:ring-4 focus:ring-indigo-100">
-                  <option value="">All subjects</option>
-                  <option value="Mathematics">Mathematics</option>
-                  <option value="Physics">Physics</option>
-                  <option value="Chemistry">Chemistry</option>
-                  <option value="Biology">Biology</option>
-                </select>
-                <select value={filters.difficulty} onChange={(event) => setFilters((prev) => ({ ...prev, difficulty: event.target.value }))} className="rounded-2xl border border-slate-200 bg-white px-3 py-2.5 text-sm text-slate-700 outline-none focus:border-indigo-300 focus:ring-4 focus:ring-indigo-100">
-                  <option value="">All levels</option>
-                  <option value="easy">Easy</option>
-                  <option value="medium">Medium</option>
-                  <option value="hard">Hard</option>
-                </select>
-              </div>
-            )}
-          </div>
-        </section>
+          <section className="rounded-xl border border-slate-200 bg-white p-3.5 shadow-sm">
+            <div className="mb-2.5 flex items-center justify-between">
+              <h2 className="text-[14px] font-semibold text-slate-900">Popular Tags</h2>
+              <button type="button" className="text-[12px] font-medium text-blue-600 hover:underline">View all</button>
+            </div>
+            <div className="flex flex-wrap gap-1.5">
+              {popularTags.length === 0
+                ? <span className="text-[12px] text-slate-500">Tags appear after posts are added.</span>
+                : popularTags.map((tag) => (
+                  <button key={tag} type="button" onClick={() => setFilters((prev) => ({ ...prev, search: tag }))} className="rounded-md bg-indigo-50 px-2 py-1 text-[11px] font-medium text-indigo-700 hover:bg-indigo-100">#{tag}</button>
+                ))}
+            </div>
+          </section>
 
-        <div className="grid gap-5 xl:grid-cols-[minmax(0,1fr)_360px]">
-          <main className="min-w-0 space-y-5">
-            <AnimatePresence mode="wait">
-              {viewMode === 'create' ? (
-                <Motion.div key="editor" initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: -10 }}>
-                  <KnowledgeEditor
-                    newProblem={newProblem}
-                    setNewProblem={setNewProblem}
-                    editingProblemId={editingProblemId}
-                    submitting={submitting}
-                    onCancel={() => { setEditingProblemId(null); setNewProblem(emptyProblem); setViewMode('wall'); }}
-                    onSubmit={handleCreateProblem}
-                    addHint={addHint}
-                    updateHint={updateHint}
-                    removeHint={removeHint}
-                    addTag={addTag}
-                    removeTag={removeTag}
-                  />
-                </Motion.div>
-              ) : (
-                <Motion.div key="feed" initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: -10 }} className="space-y-4">
-                  <FeedHeader viewMode={viewMode} loading={loading} count={activeProblems.length} onCreate={() => { setEditingProblemId(null); setNewProblem(emptyProblem); setViewMode('create'); }} />
-                  {loading && Array.from({ length: 3 }).map((_, index) => <div key={index} className="h-56 animate-pulse rounded-3xl border border-slate-200 bg-white" />)}
-                  {!loading && activeProblems.map((problem, index) => (
-                    <DiscussionCard
-                      key={problem.id}
-                      problem={problem}
-                      index={index}
-                      onOpen={openProblemDetails}
-                      onLike={handleLikeProblem}
-                      onSave={handleSaveProblem}
-                      onEdit={startEditProblem}
-                      onDelete={handleDeleteProblem}
-                      canManage={viewMode === 'my-problems'}
-                      formatTimeAgo={formatTimeAgo}
-                    />
-                  ))}
-                  {!loading && activeProblems.length === 0 && <EmptyKnowledgeState onCreate={() => setViewMode('create')} />}
-                </Motion.div>
-              )}
-            </AnimatePresence>
-          </main>
-
-          <aside className="space-y-5 xl:sticky xl:top-20 xl:self-start">
-            <CommunityPanel contributors={topContributors} topics={trendingTopics} />
-            <CollectionsPanel collections={collections} />
-            <AiAssistPanel />
-          </aside>
-        </div>
+          <section className="rounded-xl border border-slate-200 bg-white p-3.5 shadow-sm">
+            <div className="mb-2.5 flex items-center gap-2">
+              <ShieldCheck size={18} className="text-blue-600" />
+              <h2 className="text-[14px] font-semibold text-slate-900">Community Guidelines</h2>
+            </div>
+            <ul className="space-y-2">
+              {GUIDELINES.map((item) => (
+                <li key={item} className="flex items-center gap-2.5 text-[13px] text-slate-700">
+                  <span className="flex h-5 w-5 items-center justify-center rounded-full bg-emerald-50 text-emerald-600"><Check size={12} /></span>{item}
+                </li>
+              ))}
+            </ul>
+            <button type="button" className="mt-3 inline-flex items-center gap-1 text-[12px] font-medium text-blue-600 hover:underline">Learn more <ArrowRight size={13} /></button>
+          </section>
+        </aside>
       </div>
 
       <AnimatePresence>
         {detailProblem && (
-          <DiscussionModal
-            problem={detailProblem}
+          <CommentsModal
+            problem={{ ...detailProblem, ...([...problems, ...myProblems].find((item) => item.id === detailProblem.id) || {}), comments: detailProblem.comments, views: detailProblem.views }}
             comments={detailComments}
-            viewers={detailViewers}
             loading={detailLoading}
             commentText={detailCommentText}
             setCommentText={setDetailCommentText}
             posting={postingDetailComment}
             onPost={submitDetailComment}
+            onLike={handleLikeProblem}
+            onSave={handleSaveProblem}
+            userName={userName}
+            formatTimeAgo={formatTimeAgo}
             onClose={() => setDetailProblem(null)}
           />
         )}
@@ -634,107 +697,72 @@ const TeacherAlcove = () => {
   );
 };
 
-const HubHeroMetric = ({ label, value }) => (
-  <Motion.div whileHover={{ y: -2 }} className="rounded-2xl border border-white/10 bg-white/10 p-4 backdrop-blur">
-    <p className="text-[11px] font-bold uppercase tracking-[0.16em] text-cyan-100">{label}</p>
-    <p className="mt-2 text-3xl font-semibold text-white">{value}</p>
-  </Motion.div>
-);
-
-const CommunityStat = ({ icon, label, value, sub, tone }) => (
-  <Motion.div whileHover={{ y: -3, scale: 1.01 }} className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm hover:shadow-lg hover:shadow-slate-200/70">
-    <div className="flex items-start justify-between">
-      <div className={`flex h-10 w-10 items-center justify-center rounded-xl bg-linear-to-br ${tone} text-white shadow-lg`}>{React.createElement(icon, { size: 18 })}</div>
-      <span className="rounded-full bg-slate-100 px-2 py-0.5 text-[10px] font-bold text-slate-500">Live</span>
+const OverviewStat = ({ icon, tone, value, label }) => (
+  <div className="flex items-center gap-2.5 rounded-lg border border-slate-100 p-2.5">
+    <span className={`flex h-8 w-8 shrink-0 items-center justify-center rounded-lg ${tone}`}>{React.createElement(icon, { size: 16 })}</span>
+    <div className="min-w-0 flex-1">
+      <div className="flex items-center justify-between gap-1">
+        <p className="text-[16px] font-bold leading-none text-slate-900">{value}</p>
+        <span className="rounded bg-emerald-50 px-1.5 py-0.5 text-[9px] font-semibold text-emerald-600">Live</span>
+      </div>
+      <p className="mt-1 truncate text-[11px] text-slate-500">{label}</p>
     </div>
-    <p className="mt-4 text-2xl font-semibold text-slate-950">{value}</p>
-    <p className="mt-1 text-xs font-semibold text-slate-500">{label}</p>
-    <p className="mt-1 text-[11px] text-slate-400">{sub}</p>
-  </Motion.div>
-);
-
-const FeedHeader = ({ viewMode, loading, count, onCreate }) => (
-  <div className="flex flex-col gap-3 rounded-3xl border border-slate-200 bg-white p-5 shadow-sm sm:flex-row sm:items-center sm:justify-between">
-    <div>
-      <p className="text-xs font-semibold uppercase tracking-[0.16em] text-indigo-600">{viewMode === 'my-problems' ? 'My Contributions' : 'Discover Feed'}</p>
-      <h2 className="mt-1 text-xl font-semibold text-slate-950">{viewMode === 'my-problems' ? 'Your academic contributions' : 'Active academic discussions'}</h2>
-      <p className="mt-1 text-sm text-slate-500">{loading ? 'Loading community knowledge...' : `${count} thread${count === 1 ? '' : 's'} available`}</p>
-    </div>
-    <button onClick={onCreate} className="inline-flex items-center justify-center gap-2 rounded-2xl bg-slate-950 px-4 py-2.5 text-sm font-semibold text-white hover:bg-slate-800">
-      <PlusCircle size={16} /> Start Discussion
-    </button>
   </div>
 );
 
 const DiscussionCard = ({ problem, index, onOpen, onLike, onSave, onEdit, onDelete, canManage, formatTimeAgo }) => {
   const solved = Number(problem.comments || 0) > 0 && problem.solutionText;
+  const isTeacher = problem.authorType === 'teacher';
+  const roleLine = isTeacher
+    ? 'Teacher'
+    : [problem.authorGrade ? `Class ${problem.authorGrade}` : '', 'Student'].filter(Boolean).join(' • ');
+  const difficultyClass = problem.difficulty === 'easy'
+    ? 'bg-emerald-50 text-emerald-700'
+    : problem.difficulty === 'hard' ? 'bg-rose-50 text-rose-600' : 'bg-blue-50 text-blue-700';
+  const tags = [problem.subject, problem.chapter, ...(problem.tags || [])].filter(Boolean).filter((tag, i, arr) => arr.indexOf(tag) === i).slice(0, 4);
+
   return (
-    <Motion.article initial={{ opacity: 0, y: 14 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: index * 0.035 }} whileHover={{ y: -2 }} className="rounded-3xl border border-slate-200 bg-white p-5 shadow-sm transition-shadow hover:shadow-xl hover:shadow-slate-200/70">
-      <div className="flex gap-4">
-        <div className="hidden w-16 shrink-0 space-y-2 text-center sm:block">
-          <VoteStat value={problem.likes} label="likes" active={problem.isLiked} />
-          <VoteStat value={problem.comments} label="answers" active={solved} />
-          <VoteStat value={problem.views} label="views" />
-        </div>
+    <Motion.article initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: index * 0.03 }} className="rounded-xl border border-slate-200 bg-white px-4 pb-2.5 pt-3.5 shadow-sm transition-shadow hover:shadow-md">
+      <div className="flex items-start gap-3">
+        <Avatar initials={problem.teacherAvatar} src={problem.authorPhoto} />
         <div className="min-w-0 flex-1">
-          <div className="flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
-            <div className="min-w-0">
-              <div className="mb-2 flex flex-wrap items-center gap-2">
-                {solved && <Badge tone="emerald" icon={CheckCircle2} label="Accepted solution" />}
-                {problem.authorType === 'teacher' ? <Badge tone="indigo" icon={UserCheck} label="Teacher response" /> : <Badge tone="cyan" icon={Users} label="Student thread" />}
-                <Badge tone="slate" icon={Clock} label={formatTimeAgo(problem.timestamp)} />
-              </div>
-              <button onClick={() => onOpen(problem)} className="text-left text-xl font-semibold leading-snug text-slate-950 hover:text-indigo-700">{problem.title}</button>
-              <p className="mt-2 line-clamp-3 text-sm leading-6 text-slate-600">{problem.problemText}</p>
-            </div>
-            <div className="flex items-center gap-2">
-              <Avatar initials={problem.teacherAvatar} />
-              <div className="min-w-0">
-                <p className="truncate text-xs font-semibold text-slate-800">{problem.teacherName}</p>
-                <p className="text-[11px] text-slate-400">Top Contributor</p>
-              </div>
-            </div>
+          <div className="flex flex-wrap items-center gap-2">
+            <p className="text-[13px] font-semibold text-slate-900">{problem.teacherName}</p>
+            <span className="inline-flex items-center gap-1 rounded bg-amber-50 px-1.5 py-0.5 text-[10px] font-medium text-amber-700"><Star size={10} className="fill-amber-400 text-amber-400" />Top Contributor</span>
           </div>
-
-          <div className="mt-4 flex flex-wrap gap-2">
-            <TagPill label={problem.subject || 'General'} />
-            <TagPill label={problem.chapter || 'Discussion'} />
-            <DifficultyPill difficulty={problem.difficulty} />
-            {(problem.tags || []).slice(0, 4).map((tag) => <TagPill key={tag} label={tag} muted />)}
-          </div>
-
-          {problem.solutionText && (
-            <div className="mt-4 rounded-2xl border border-emerald-100 bg-emerald-50 p-4">
-              <div className="mb-2 flex items-center gap-2 text-xs font-bold uppercase tracking-[0.12em] text-emerald-700"><CheckCircle size={14} />Highlighted explanation</div>
-              <p className="line-clamp-3 whitespace-pre-line text-sm leading-6 text-emerald-950">{problem.solutionText}</p>
-            </div>
-          )}
-
-          <div className="mt-4 flex flex-wrap items-center justify-between gap-3 border-t border-slate-100 pt-4">
-            <div className="flex flex-wrap items-center gap-2">
-              <ActionButton active={problem.isLiked} icon={Heart} label={`${problem.likes} Like`} onClick={() => onLike(problem.id)} />
-              <ActionButton icon={MessageSquare} label={`${problem.comments} Discuss`} onClick={() => onOpen(problem)} />
-              <ActionButton active={problem.isSaved} icon={Bookmark} label={problem.isSaved ? 'Saved' : 'Save'} onClick={() => onSave(problem.id)} />
-              <ActionButton icon={Sparkles} label="AI summarize" onClick={() => onOpen(problem)} />
-            </div>
-            <div className="flex items-center gap-2">
-              {canManage && <button onClick={() => onEdit(problem)} className="rounded-xl border border-slate-200 px-3 py-2 text-xs font-semibold text-slate-600 hover:bg-slate-50"><Edit3 size={14} className="mr-1 inline" />Edit</button>}
-              {canManage && <button onClick={() => onDelete(problem.id)} className="rounded-xl border border-red-200 px-3 py-2 text-xs font-semibold text-red-600 hover:bg-red-50">Delete</button>}
-              <button onClick={() => onOpen(problem)} className="inline-flex items-center gap-1 rounded-xl bg-slate-950 px-3 py-2 text-xs font-semibold text-white hover:bg-slate-800">Open thread <ChevronRight size={14} /></button>
-            </div>
-          </div>
+          <p className="text-[11px] text-slate-500">{roleLine} <span className="mx-1">•</span>{formatTimeAgo(problem.timestamp)}</p>
         </div>
+        <div className="flex items-center gap-2">
+          {solved && <span className="inline-flex items-center gap-1 rounded bg-emerald-500 px-2 py-0.5 text-[10px] font-semibold text-white"><Star size={10} />Accepted Solution</span>}
+          {isTeacher && <span className="rounded bg-violet-100 px-2 py-0.5 text-[10px] font-medium text-violet-700">Teacher response</span>}
+          {canManage && <button type="button" onClick={() => onEdit(problem)} className="rounded-md p-1 text-slate-500 hover:bg-slate-100" title="Edit"><Edit3 size={14} /></button>}
+          {canManage && <button type="button" onClick={() => onDelete(problem.id)} className="rounded-md p-1 text-red-500 hover:bg-red-50" title="Delete"><X size={14} /></button>}
+        </div>
+      </div>
+
+      <button type="button" onClick={() => onOpen(problem)} className="mt-2 block text-left text-[16px] font-semibold leading-snug text-slate-900 hover:text-blue-700">{problem.title}</button>
+      <p className="mt-1 line-clamp-2 text-[13px] leading-5 text-slate-600">{problem.problemText}</p>
+
+      <div className="mt-2 flex flex-wrap gap-1.5">
+        {tags.map((tag) => <span key={tag} className="rounded bg-slate-100 px-2 py-0.5 text-[11px] text-slate-600">#{tag}</span>)}
+        <span className={`rounded px-2 py-0.5 text-[11px] font-medium capitalize ${difficultyClass}`}>{problem.difficulty}</span>
+      </div>
+
+      <div className="mt-2.5 flex items-center gap-5 border-t border-slate-100 pt-2 text-[12px] text-slate-600">
+        <button type="button" onClick={() => onLike(problem.id)} className={`inline-flex items-center gap-1.5 hover:text-blue-600 ${problem.isLiked ? 'text-blue-600' : ''}`}>
+          <ThumbsUp size={15} className={problem.isLiked ? 'fill-current' : ''} />{problem.likes}
+        </button>
+        <button type="button" onClick={() => onOpen(problem)} className={`inline-flex items-center gap-1.5 hover:text-blue-600 ${problem.comments > 0 ? 'text-blue-600' : ''}`}>
+          <MessageSquare size={15} />{problem.comments}
+        </button>
+        <span className="inline-flex items-center gap-1.5"><Eye size={15} />{problem.views}</span>
+        <button type="button" onClick={() => onSave(problem.id)} className={`ml-auto inline-flex items-center gap-1.5 hover:text-blue-600 ${problem.isSaved ? 'text-blue-600' : ''}`}>
+          <Bookmark size={15} className={problem.isSaved ? 'fill-current' : ''} />{problem.isSaved ? 'Saved' : 'Save'}
+        </button>
       </div>
     </Motion.article>
   );
 };
-
-const VoteStat = ({ value, label, active }) => (
-  <div className={`rounded-2xl border px-2 py-2 ${active ? 'border-emerald-200 bg-emerald-50 text-emerald-700' : 'border-slate-200 bg-slate-50 text-slate-500'}`}>
-    <p className="text-sm font-bold">{value}</p>
-    <p className="text-[10px] font-semibold uppercase">{label}</p>
-  </div>
-);
 
 const Badge = ({ tone, icon, label }) => {
   const tones = {
@@ -746,20 +774,14 @@ const Badge = ({ tone, icon, label }) => {
   return <span className={`inline-flex items-center gap-1 rounded-full border px-2 py-1 text-[11px] font-bold ${tones[tone]}`}>{React.createElement(icon, { size: 12 })}{label}</span>;
 };
 
-const TagPill = ({ label, muted }) => <span className={`rounded-full px-2.5 py-1 text-xs font-semibold ${muted ? 'bg-slate-100 text-slate-500' : 'bg-indigo-50 text-indigo-700'}`}>#{label}</span>;
-
-const DifficultyPill = ({ difficulty }) => {
-  const classes = difficulty === 'easy' ? 'bg-emerald-50 text-emerald-700' : difficulty === 'hard' ? 'bg-rose-50 text-rose-700' : 'bg-amber-50 text-amber-700';
-  return <span className={`rounded-full px-2.5 py-1 text-xs font-semibold capitalize ${classes}`}>{difficulty}</span>;
+const Avatar = ({ initials, src, size }) => {
+  const [broken, setBroken] = useState(false);
+  const sizeClass = size === 'lg' ? 'h-10 w-10 text-[13px]' : size === 'sm' ? 'h-8 w-8 text-[11px]' : 'h-9 w-9 text-[12px]';
+  if (src && !broken) {
+    return <img src={src} alt={initials} onError={() => setBroken(true)} className={`shrink-0 rounded-full object-cover ${sizeClass}`} />;
+  }
+  return <div className={`flex shrink-0 items-center justify-center rounded-full bg-indigo-100 font-semibold text-indigo-700 ${sizeClass}`}>{initials}</div>;
 };
-
-const ActionButton = ({ icon, label, onClick, active }) => (
-  <button onClick={onClick} className={`inline-flex items-center gap-2 rounded-xl border px-3 py-2 text-xs font-semibold transition ${active ? 'border-indigo-200 bg-indigo-50 text-indigo-700' : 'border-slate-200 text-slate-600 hover:bg-slate-50'}`}>
-    {React.createElement(icon, { size: 14, className: active ? 'fill-current' : '' })}{label}
-  </button>
-);
-
-const Avatar = ({ initials }) => <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-2xl bg-linear-to-br from-indigo-500 to-cyan-500 text-xs font-bold text-white shadow-sm">{initials}</div>;
 
 const KnowledgeEditor = ({ newProblem, setNewProblem, editingProblemId, submitting, onCancel, onSubmit, addHint, updateHint, removeHint, addTag, removeTag }) => (
   <section className="rounded-3xl border border-slate-200 bg-white p-5 shadow-sm">
@@ -810,27 +832,106 @@ const TextAreaField = ({ label, value, onChange, rows, placeholder }) => <label 
 
 const EmptyKnowledgeState = ({ onCreate }) => <div className="rounded-3xl border border-slate-200 bg-white p-10 text-center shadow-sm"><Brain className="mx-auto h-12 w-12 text-slate-300" /><h3 className="mt-4 text-lg font-semibold text-slate-900">No discussions found</h3><p className="mt-2 text-sm text-slate-500">Try another filter or start a new academic thread.</p><button onClick={onCreate} className="mt-5 rounded-2xl bg-slate-950 px-5 py-2.5 text-sm font-semibold text-white">Start Discussion</button></div>;
 
-const CommunityPanel = ({ contributors, topics }) => <section className="rounded-3xl border border-slate-200 bg-white p-4 shadow-sm"><div className="mb-4 flex items-center gap-2"><Flame size={17} className="text-orange-500" /><h2 className="text-sm font-semibold text-slate-950">Community Insights</h2></div><div className="space-y-3"><p className="text-xs font-bold uppercase tracking-[0.14em] text-slate-400">Top contributors</p>{contributors.length === 0 ? <p className="text-sm text-slate-500">No contributors yet.</p> : contributors.map((item) => <div key={item.name} className="flex items-center gap-3 rounded-2xl bg-slate-50 p-3"><Avatar initials={item.avatar} /><div className="min-w-0 flex-1"><p className="truncate text-xs font-semibold text-slate-800">{item.name}</p><p className="text-[11px] text-slate-400">{item.posts} posts · {item.score} reputation</p></div><Trophy size={15} className="text-amber-500" /></div>)}<div className="border-t border-slate-100 pt-3"><p className="mb-2 text-xs font-bold uppercase tracking-[0.14em] text-slate-400">Trending topics</p><div className="flex flex-wrap gap-2">{topics.length === 0 ? <span className="text-sm text-slate-500">Topics appear after posts are added.</span> : topics.map((topic) => <span key={topic.label} className="rounded-full bg-slate-100 px-2.5 py-1 text-xs font-semibold text-slate-600">#{topic.label} · {topic.count}</span>)}</div></div></div></section>;
+const CommentsModal = ({ problem, comments, loading, commentText, setCommentText, posting, onPost, onLike, onSave, userName, formatTimeAgo, onClose }) => {
+  const listEndRef = React.useRef(null);
+  useEffect(() => {
+    listEndRef.current?.scrollIntoView({ behavior: 'smooth', block: 'end' });
+  }, [comments.length]);
+  useEffect(() => {
+    const onKey = (event) => { if (event.key === 'Escape') onClose(); };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, [onClose]);
 
-const CollectionsPanel = ({ collections }) => <section className="rounded-3xl border border-slate-200 bg-white p-4 shadow-sm"><div className="mb-4 flex items-center gap-2"><Layers size={17} className="text-indigo-600" /><h2 className="text-sm font-semibold text-slate-950">Collaborative Collections</h2></div><div className="space-y-2">{collections.map((collection) => <div key={collection.title} className="rounded-2xl border border-slate-100 p-3"><div className="flex items-center gap-3"><span className={`h-9 w-1.5 rounded-full ${collection.accent}`} /><div><p className="text-sm font-semibold text-slate-900">{collection.title}</p><p className="text-xs text-slate-400">{collection.count} reusable resources · {collection.subject}</p></div></div></div>)}</div></section>;
+  const tags = [problem.subject, problem.chapter, ...(problem.tags || [])].filter(Boolean).filter((tag, i, arr) => arr.indexOf(tag) === i).slice(0, 4);
 
-const AiAssistPanel = () => <section className="rounded-3xl border border-cyan-100 bg-cyan-50 p-4 shadow-sm"><div className="mb-3 flex items-center gap-2"><Sparkles size={17} className="text-cyan-700" /><h2 className="text-sm font-semibold text-cyan-950">AI Assist Layer</h2></div><div className="space-y-2">{['Summarize Discussion', 'Suggest Tags', 'Improve Formatting', 'Simplify Explanation', 'Generate Hint Suggestions'].map((item) => <button key={item} className="w-full rounded-2xl bg-white px-3 py-2 text-left text-xs font-semibold text-cyan-800 shadow-sm hover:bg-cyan-100">{item}</button>)}</div></section>;
+  return (
+    <Motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} className="fixed inset-0 z-220 flex items-center justify-center bg-slate-900/60 p-3" onClick={onClose}>
+      <Motion.div initial={{ opacity: 0, y: 16, scale: 0.98 }} animate={{ opacity: 1, y: 0, scale: 1 }} exit={{ opacity: 0, y: 12, scale: 0.98 }} transition={{ type: 'spring', stiffness: 280, damping: 26 }} className="flex max-h-[90vh] w-full max-w-[640px] flex-col overflow-hidden rounded-xl bg-white shadow-2xl" onClick={(event) => event.stopPropagation()}>
+        <div className="relative flex items-center justify-center border-b border-slate-200 px-4 py-3">
+          <h3 className="text-[15px] font-semibold text-slate-900">{problem.teacherName}&apos;s Post</h3>
+          <button type="button" onClick={onClose} className="absolute right-3 flex h-8 w-8 items-center justify-center rounded-full bg-slate-100 text-slate-600 hover:bg-slate-200"><X size={16} /></button>
+        </div>
 
-const DiscussionModal = ({ problem, comments, viewers, loading, commentText, setCommentText, posting, onPost, onClose }) => (
-  <Motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} className="fixed inset-0 z-[220] flex items-center justify-center bg-slate-950/50 p-4 backdrop-blur-sm" onClick={onClose}>
-    <Motion.div initial={{ opacity: 0, y: 18, scale: 0.98 }} animate={{ opacity: 1, y: 0, scale: 1 }} exit={{ opacity: 0, y: 14, scale: 0.98 }} transition={{ type: 'spring', stiffness: 260, damping: 24 }} className="max-h-[88vh] w-full max-w-4xl overflow-hidden rounded-3xl border border-slate-200 bg-white shadow-2xl" onClick={(event) => event.stopPropagation()}>
-      <div className="flex items-start justify-between gap-4 border-b border-slate-100 p-5"><div><div className="mb-2 flex flex-wrap gap-2"><Badge tone="indigo" icon={MessageSquare} label="Discussion thread" /><Badge tone="emerald" icon={CheckCircle2} label="Teacher-reviewed" /></div><h3 className="text-xl font-semibold text-slate-950">{problem.title}</h3><p className="mt-1 text-sm text-slate-500">{problem.subject} · {problem.chapter} · {problem.teacherName}</p></div><button onClick={onClose} className="rounded-2xl border border-slate-200 p-2 text-slate-500 hover:bg-slate-50"><X size={18} /></button></div>
-      <div className="grid max-h-[calc(88vh-92px)] overflow-y-auto lg:grid-cols-[minmax(0,1fr)_280px]"><main className="space-y-5 p-5"><div className="rounded-2xl border border-slate-200 bg-slate-50 p-4"><p className="whitespace-pre-line text-sm leading-6 text-slate-700">{problem.problemText}</p></div>{problem.solutionText && <div className="rounded-2xl border border-emerald-100 bg-emerald-50 p-4"><p className="mb-2 text-xs font-bold uppercase tracking-[0.14em] text-emerald-700">Accepted solution candidate</p><p className="whitespace-pre-line text-sm leading-6 text-emerald-950">{problem.solutionText}</p></div>}<div><h4 className="mb-3 text-sm font-semibold text-slate-950">Collaborative discussion</h4>{loading ? <div className="py-8 text-center text-sm text-slate-500"><Loader2 className="mr-2 inline h-4 w-4 animate-spin" />Loading thread...</div> : <div className="space-y-3">{comments.length === 0 ? <p className="rounded-2xl bg-slate-50 p-4 text-sm text-slate-500">No replies yet. Start the discussion.</p> : comments.map((comment, index) => <ThreadReply key={comment._id || index} comment={comment} problem={problem} depth={index > 0 ? 1 : 0} />)}</div>}<div className="mt-4 flex gap-2"><input value={commentText} onChange={(event) => setCommentText(event.target.value)} placeholder="Add a teacher response, hint, or clarification..." className="flex-1 rounded-2xl border border-slate-200 px-3 py-2.5 text-sm outline-none focus:border-indigo-300 focus:ring-4 focus:ring-indigo-100" /><button onClick={onPost} disabled={posting || !commentText.trim()} className="rounded-2xl bg-slate-950 px-4 py-2.5 text-sm font-semibold text-white disabled:cursor-not-allowed disabled:opacity-40">{posting ? 'Posting...' : 'Reply'}</button></div></div></main><aside className="border-t border-slate-100 bg-slate-50 p-5 lg:border-l lg:border-t-0"><div className="grid grid-cols-3 gap-2 lg:grid-cols-1"><InfoMetric label="Replies" value={comments.length} /><InfoMetric label="Viewers" value={viewers.length} /><InfoMetric label="Likes" value={problem.likes} /></div><div className="mt-5 rounded-2xl bg-white p-4"><p className="text-sm font-semibold text-slate-900">AI context actions</p><div className="mt-3 space-y-2">{['Summarize thread', 'Extract hints', 'Simplify answer'].map((item) => <button key={item} className="w-full rounded-xl bg-cyan-50 px-3 py-2 text-left text-xs font-semibold text-cyan-800">{item}</button>)}</div></div></aside></div>
+        <div className="flex-1 overflow-y-auto">
+          <div className="px-4 pt-3">
+            <div className="flex items-center gap-2.5">
+              <Avatar initials={problem.teacherAvatar} src={problem.authorPhoto} />
+              <div>
+                <p className="text-[13px] font-semibold text-slate-900">{problem.teacherName}</p>
+                <p className="text-[11px] text-slate-500">{problem.authorType === 'teacher' ? 'Teacher' : 'Student'} • {formatTimeAgo(problem.timestamp)}</p>
+              </div>
+            </div>
+            <h4 className="mt-2.5 text-[16px] font-semibold text-slate-900">{problem.title}</h4>
+            <p className="mt-1 whitespace-pre-line text-[13px] leading-5 text-slate-700">{problem.problemText}</p>
+            {problem.solutionText && (
+              <div className="mt-2.5 rounded-lg border border-emerald-100 bg-emerald-50 p-2.5">
+                <p className="mb-1 text-[11px] font-semibold text-emerald-700">Solution</p>
+                <p className="whitespace-pre-line text-[13px] leading-5 text-emerald-950">{problem.solutionText}</p>
+              </div>
+            )}
+            <div className="mt-2 flex flex-wrap gap-1.5">
+              {tags.map((tag) => <span key={tag} className="rounded bg-slate-100 px-2 py-0.5 text-[11px] text-slate-600">#{tag}</span>)}
+            </div>
+            <div className="mt-2.5 flex items-center justify-between text-[12px] text-slate-500">
+              <span className="inline-flex items-center gap-1"><span className="flex h-4 w-4 items-center justify-center rounded-full bg-blue-600 text-white"><ThumbsUp size={9} /></span>{problem.likes}</span>
+              <span>{comments.length} comments • {problem.views} views</span>
+            </div>
+          </div>
+
+          <div className="mx-4 mt-2 grid grid-cols-3 border-y border-slate-200 py-1 text-[13px] font-medium text-slate-600">
+            <button type="button" onClick={() => onLike(problem.id)} className={`inline-flex items-center justify-center gap-1.5 rounded-md py-1.5 hover:bg-slate-100 ${problem.isLiked ? 'text-blue-600' : ''}`}><ThumbsUp size={16} className={problem.isLiked ? 'fill-current' : ''} />Like</button>
+            <button type="button" onClick={() => document.getElementById('alcove-comment-input')?.focus()} className="inline-flex items-center justify-center gap-1.5 rounded-md py-1.5 hover:bg-slate-100"><MessageSquare size={16} />Comment</button>
+            <button type="button" onClick={() => onSave(problem.id)} className={`inline-flex items-center justify-center gap-1.5 rounded-md py-1.5 hover:bg-slate-100 ${problem.isSaved ? 'text-blue-600' : ''}`}><Bookmark size={16} className={problem.isSaved ? 'fill-current' : ''} />{problem.isSaved ? 'Saved' : 'Save'}</button>
+          </div>
+
+          <div className="space-y-3 px-4 py-3">
+            {loading ? (
+              <div className="py-6 text-center text-[13px] text-slate-500"><Loader2 className="mr-2 inline h-4 w-4 animate-spin" />Loading comments...</div>
+            ) : comments.length === 0 ? (
+              <p className="py-6 text-center text-[13px] text-slate-500">No comments yet. Be the first to comment.</p>
+            ) : comments.map((comment, index) => {
+              const isTeacher = String(comment?.authorType || '').toLowerCase() === 'teacher';
+              return (
+                <div key={comment._id || index} className="flex gap-2">
+                  <Avatar initials={initialsOf(comment.authorName || 'User')} src={comment.authorPhoto} size="sm" />
+                  <div className="min-w-0">
+                    <div className="inline-block max-w-full rounded-2xl bg-slate-100 px-3 py-2">
+                      <p className="flex items-center gap-1.5 text-[12px] font-semibold text-slate-900">
+                        {comment.authorName || 'User'}
+                        {isTeacher && <span className="rounded bg-violet-100 px-1.5 py-px text-[9px] font-medium text-violet-700">Teacher</span>}
+                      </p>
+                      <p className="whitespace-pre-wrap wrap-break-word text-[13px] leading-5 text-slate-800">{comment.text}</p>
+                    </div>
+                    <p className="mt-0.5 pl-3 text-[11px] text-slate-500">{comment.createdAt ? formatTimeAgo(new Date(comment.createdAt)) : ''}</p>
+                  </div>
+                </div>
+              );
+            })}
+            <div ref={listEndRef} />
+          </div>
+        </div>
+
+        <div className="flex items-center gap-2 border-t border-slate-200 px-4 py-2.5">
+          <Avatar initials={initialsOf(userName)} size="sm" />
+          <div className="flex flex-1 items-center rounded-full bg-slate-100 pr-1">
+            <input
+              id="alcove-comment-input"
+              autoFocus
+              value={commentText}
+              onChange={(event) => setCommentText(event.target.value)}
+              onKeyDown={(event) => { if (event.key === 'Enter' && !event.shiftKey) { event.preventDefault(); if (!posting && commentText.trim()) onPost(); } }}
+              placeholder={`Comment as ${userName}...`}
+              className="flex-1 bg-transparent px-3 py-2 text-[13px] outline-none"
+            />
+            <button type="button" onClick={onPost} disabled={posting || !commentText.trim()} className="flex h-8 w-8 items-center justify-center rounded-full text-blue-600 hover:bg-blue-50 disabled:cursor-not-allowed disabled:text-slate-400">
+              {posting ? <Loader2 size={16} className="animate-spin" /> : <Send size={16} />}
+            </button>
+          </div>
+        </div>
+      </Motion.div>
     </Motion.div>
-  </Motion.div>
-);
-
-const ThreadReply = ({ comment, problem, depth }) => {
-  const isAuthor = String(comment?.authorName || '').trim().toLowerCase() === String(problem?.authorName || problem?.teacherName || '').trim().toLowerCase();
-  const isTeacher = String(comment?.authorType || '').toLowerCase() === 'teacher';
-  return <Motion.div initial={{ opacity: 0, x: depth ? 10 : 0 }} animate={{ opacity: 1, x: 0 }} className={`rounded-2xl border p-3 ${depth ? 'ml-5 border-slate-200 bg-white' : 'border-slate-200 bg-white'} ${isTeacher ? 'ring-1 ring-indigo-100' : ''}`}><div className="mb-1 flex items-center justify-between gap-3"><div className="flex items-center gap-2"><Avatar initials={(comment.authorName || 'U').slice(0, 2).toUpperCase()} /><p className="text-sm font-semibold text-slate-800">{comment.authorName || 'User'}</p>{isAuthor && <Badge tone="emerald" icon={CheckCircle2} label="Author" />}{isTeacher && <Badge tone="indigo" icon={UserCheck} label="Teacher" />}</div><p className="text-[11px] text-slate-400">{comment.createdAt ? new Date(comment.createdAt).toLocaleString() : ''}</p></div><p className="whitespace-pre-wrap pl-12 text-sm leading-6 text-slate-600">{comment.text}</p></Motion.div>;
+  );
 };
-
-const InfoMetric = ({ label, value }) => <div className="rounded-2xl bg-white p-3 text-center"><p className="text-lg font-semibold text-slate-950">{value}</p><p className="text-[11px] font-bold uppercase tracking-[0.12em] text-slate-400">{label}</p></div>;
 
 export default TeacherAlcove;

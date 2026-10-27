@@ -39,6 +39,29 @@ const resolveAuthorName = async (req, fallback = 'Anonymous') => {
   return String(req.user?.username || fallback).trim();
 };
 
+// refs: [{ type: 'student' | 'teacher', id }] → Map(`${type}:${id}` → profilePic)
+const resolveProfilePics = async (refs = []) => {
+  const idsByType = { student: new Set(), teacher: new Set() };
+  refs.forEach(({ type, id }) => {
+    const normalizedType = normalizeUserType(type);
+    if (id && idsByType[normalizedType]) idsByType[normalizedType].add(String(id));
+  });
+  const [students, teachers] = await Promise.all([
+    idsByType.student.size ? StudentUser.find({ _id: { $in: [...idsByType.student] } }).select('_id profilePic').lean() : [],
+    idsByType.teacher.size ? TeacherUser.find({ _id: { $in: [...idsByType.teacher] } }).select('_id profilePic').lean() : [],
+  ]);
+  const pics = new Map();
+  students.forEach((item) => { if (item.profilePic) pics.set(`student:${item._id}`, item.profilePic); });
+  teachers.forEach((item) => { if (item.profilePic) pics.set(`teacher:${item._id}`, item.profilePic); });
+  return pics;
+};
+
+const postAuthorRef = (post) => {
+  const type = normalizeUserType(post?.authorType || 'teacher');
+  const id = type === 'teacher' ? (post?.author?._id || post?.author) : post?.authorUserId;
+  return { type, id: id ? String(id) : '' };
+};
+
 const resolveViewerProfiles = async (viewerKeys = []) => {
   const studentIds = [];
   const teacherIds = [];
@@ -239,11 +262,14 @@ router.get('/posts', authAnyUser, async (req, res) => {
       })
     );
     const statsByPostId = new Map(stats.map((entry) => [entry.postId, entry]));
+    const authorPics = await resolveProfilePics(posts.map(postAuthorRef));
     const items = posts.map((post) => {
       const stat = statsByPostId.get(String(post._id)) || { commentCount: 0, submissionCount: 0 };
       const likedBy = Array.isArray(post.likedBy) ? post.likedBy : [];
+      const authorRef = postAuthorRef(post);
       return {
         ...post,
+        authorPhoto: authorPics.get(`${authorRef.type}:${authorRef.id}`) || '',
         authorName:
           post?.authorName
           || post?.author?.name
@@ -456,8 +482,13 @@ router.get('/posts/:id/comments', authAnyUser, async (req, res) => {
       ? await StudentUser.find({ _id: { $in: missingStudentMetaIds } }).select('_id grade section').lean()
       : [];
     const studentMeta = new Map(students.map((student) => [String(student._id), student]));
+    const authorPics = await resolveProfilePics(items.map((comment) => ({ type: comment?.authorType, id: comment?.authorId })));
 
-    const enrichedItems = items.map((comment) => {
+    const enrichedItems = items.map((rawComment) => {
+      const comment = {
+        ...rawComment,
+        authorPhoto: authorPics.get(`${normalizeUserType(rawComment?.authorType)}:${rawComment?.authorId}`) || '',
+      };
       if (String(comment?.authorType || '').toLowerCase() !== 'student') return comment;
       if (comment?.authorGrade && comment?.authorSection) return comment;
       const profile = studentMeta.get(String(comment.authorId));
@@ -515,7 +546,11 @@ router.post('/posts/:id/comments', authAnyUser, async (req, res) => {
       authorGrade: String(studentMeta?.grade || ''),
       authorSection: String(studentMeta?.section || ''),
     });
-    res.status(201).json(comment);
+    const authorPics = await resolveProfilePics([{ type: comment.authorType, id: comment.authorId }]);
+    res.status(201).json({
+      ...comment.toObject(),
+      authorPhoto: authorPics.get(`${normalizeUserType(comment.authorType)}:${comment.authorId}`) || '',
+    });
     logStudentPortalEvent(req, {
       feature: 'academic_alcove',
       action: 'comment.create',
