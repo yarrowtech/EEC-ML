@@ -39,7 +39,7 @@ const AlcovePostSchema = new mongoose.Schema(
     tags: [{ type: String, trim: true }],
     author: { type: mongoose.Schema.Types.ObjectId, ref: 'TeacherUser' },
     authorUserId: { type: String, default: '' },
-    authorType: { type: String, enum: ['student', 'teacher', 'parent', 'unknown'], default: 'teacher' },
+    authorType: { type: String, enum: ['student', 'teacher', 'parent', 'admin', 'unknown'], default: 'teacher' },
     authorName: { type: String, trim: true, default: 'Teacher' },
     authorGrade: { type: String, default: '' },
     authorSection: { type: String, default: '' },
@@ -56,6 +56,14 @@ const AlcovePostSchema = new mongoose.Schema(
     ],
     // Lowercased `grade|section` pairs, matched against StudentUser.grade/section.
     audienceKeys: { type: [String], default: [], index: true },
+    // Set when a school admin removes someone else's post. The post's content is wiped and only
+    // its author still sees it, as a "removed by the school admin" notice with the remarks.
+    removal: {
+      at: { type: Date, default: null },
+      byUserId: { type: String, default: '' },
+      byName: { type: String, default: '' },
+      remarks: { type: String, default: '' },
+    },
     likedBy: [{ type: String, default: [] }],
     savedBy: [{ type: String, default: [] }],
     viewedBy: [{ type: String, default: [] }],

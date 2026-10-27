@@ -25,7 +25,7 @@ const TeacherFeedback = lazy(() => import('./TeacherFeedback'));
 const StudentChat = lazy(() => import('./StudentChat'));
 const ExcuseLetter = lazy(() => import('./ExcuseLetter'));
 const LearningHub = lazy(() => import('./LearningHub'));
-const AcademicAlcove = lazy(() => import('./AcademicAlcove'));
+const CommunityWall = lazy(() => import('./CommunityWall'));
 const StudentWellbeing = lazy(() => import('./StudentWellbeing'));
 const LessonPlanStatusView = lazy(() => import('./LessonPlanStatusView'));
 const StudentExamsView = lazy(() => import('./StudentExamsView'));
@@ -55,7 +55,7 @@ const VIEW_TITLES = {
   assignments: 'Assignments',
   'long-answer': 'Long Answer',
   'assignments-journal': 'Journal',
-  'assignments-academic-alcove': 'Academic Alcove',
+  'assignments-academic-alcove': 'Community Wall',
   'study-materials': 'Study Materials',
   'practice-papers': 'Practice Papers',
   'my-paths': 'My Paths',
@@ -258,7 +258,7 @@ const DashboardContent = () => {
     assignments: (props) => <AssignmentView {...props} defaultType="school" />,
     'long-answer': LongAnswerAssessment,
     'assignments-journal': (props) => <AssignmentView {...props} ref={journalRef} defaultType="journal" />,
-    'assignments-academic-alcove': (props) => <AcademicAlcove {...props} />,
+    'assignments-academic-alcove': () => <CommunityWall role="student" />,
     'study-materials': LearningHub,
     'practice-papers': LearningHub,
     'my-paths': LearningHub,
