@@ -43,6 +43,19 @@ const AlcovePostSchema = new mongoose.Schema(
     authorName: { type: String, trim: true, default: 'Teacher' },
     authorGrade: { type: String, default: '' },
     authorSection: { type: String, default: '' },
+    // Who can see the post: the whole school, or only students of the listed class-sections.
+    audience: { type: String, enum: ['school', 'classes'], default: 'school' },
+    audienceClasses: [
+      {
+        _id: false,
+        classId: { type: mongoose.Schema.Types.ObjectId, ref: 'Class' },
+        sectionId: { type: mongoose.Schema.Types.ObjectId, ref: 'Section' },
+        grade: { type: String, default: '' },
+        section: { type: String, default: '' },
+      },
+    ],
+    // Lowercased `grade|section` pairs, matched against StudentUser.grade/section.
+    audienceKeys: { type: [String], default: [], index: true },
     likedBy: [{ type: String, default: [] }],
     savedBy: [{ type: String, default: [] }],
     viewedBy: [{ type: String, default: [] }],

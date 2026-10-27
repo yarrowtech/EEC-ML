@@ -34,6 +34,7 @@ import {
   Send,
   Hash,
   ArrowLeft,
+  Globe,
   Lock,
   CalendarClock,
   MoreHorizontal,
@@ -84,6 +85,13 @@ const formatDateTime = (value) => {
 const toLocalInputValue = (date) => {
   const pad = (n) => String(n).padStart(2, '0');
   return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())}T${pad(date.getHours())}:${pad(date.getMinutes())}`;
+};
+
+// "5" + "A" -> "Class 5 - A"; leaves names that already start with "Class" alone.
+const classSectionLabel = (grade, section) => {
+  const name = String(grade || '').trim();
+  const base = /^class/i.test(name) ? name : `Class ${name}`;
+  return section ? `${base} - ${section}` : base;
 };
 
 const initialsOf = (name) => {
@@ -165,7 +173,9 @@ const TeacherAlcove = () => {
       views: Number(post.viewCount) || 0,
       authorPhoto: post?.authorPhoto || '',
       images: Array.isArray(post.images) ? post.images.map((image) => image?.url).filter(Boolean) : [],
-      poll: post.poll || null
+      poll: post.poll || null,
+      audience: post.audience === 'classes' ? 'classes' : 'school',
+      audienceClasses: Array.isArray(post.audienceClasses) ? post.audienceClasses : []
     };
   };
 
@@ -528,12 +538,40 @@ const TeacherAlcove = () => {
     loadProfile();
   }, []);
 
-  const createPost = async ({ text, images, poll, tags }) => {
+  // Class-sections this teacher teaches, offered as post audiences.
+  const [classOptions, setClassOptions] = useState([]);
+  useEffect(() => {
+    const loadClasses = async () => {
+      try {
+        const res = await fetch(`${API}/api/teacher/dashboard/allocations`, { headers: authHeaders() });
+        if (!res.ok) return;
+        const items = await res.json().catch(() => []);
+        const seen = new Map();
+        (Array.isArray(items) ? items : []).forEach((item) => {
+          const sectionId = String(item?.sectionId?._id || item?.sectionId || '');
+          const className = item?.classId?.name || item?.className || '';
+          const sectionName = item?.sectionId?.name || item?.sectionName || '';
+          if (!sectionId || !className || seen.has(sectionId)) return;
+          seen.set(sectionId, {
+            classId: String(item?.classId?._id || item?.classId || ''),
+            sectionId,
+            label: classSectionLabel(className, sectionName),
+          });
+        });
+        setClassOptions([...seen.values()].sort((a, b) => a.label.localeCompare(b.label, undefined, { numeric: true })));
+      } catch { /* audience picker falls back to school only */ }
+    };
+    loadClasses();
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  const createPost = async ({ text, images, poll, tags, audience }) => {
     const tagSubject = SUBJECTS.find((subject) => tags.some((tag) => tag.toLowerCase() === subject.name.replace(/\s+/g, '').toLowerCase()));
     const form = new FormData();
     form.append('problemText', text);
     form.append('subject', tagSubject?.name || 'General');
     form.append('tags', JSON.stringify(tags));
+    form.append('audience', JSON.stringify(audience));
     if (poll) form.append('poll', JSON.stringify(poll));
     images.forEach((file) => form.append('images', file));
     const res = await fetch(`${API}/api/alcove/posts`, { method: 'POST', headers: authHeaders(), body: form });
@@ -802,6 +840,7 @@ const TeacherAlcove = () => {
             userName={userName}
             userPhoto={profile.photo}
             tagSuggestions={tagSuggestions}
+            classOptions={classOptions}
             onSubmit={createPost}
             onClose={() => setCreateOpen(false)}
           />
@@ -1136,6 +1175,12 @@ const ExpandableText = ({ text }) => {
   );
 };
 
+const AudienceBadge = ({ problem }) => {
+  if (problem.audience !== 'classes') return <span title="School community" className="inline-flex"><Globe size={11} /></span>;
+  const labels = problem.audienceClasses.map((entry) => classSectionLabel(entry.grade, entry.section));
+  return <span title={labels.join(', ')} className="inline-flex items-center gap-1"><Users size={11} />{labels.length === 1 ? labels[0] : `${labels.length} classes`}</span>;
+};
+
 const DiscussionCard = ({ problem, index, onOpen, onLike, onSave, onDelete, onVote, isOwn, onImageOpen, formatTimeAgo }) => {
   const isTeacher = problem.authorType === 'teacher';
   const roleLine = isTeacher
@@ -1152,7 +1197,7 @@ const DiscussionCard = ({ problem, index, onOpen, onLike, onSave, onDelete, onVo
             <p className="text-[13px] font-semibold text-slate-900">{problem.teacherName}</p>
             <span className="inline-flex items-center gap-1 rounded bg-amber-50 px-1.5 py-0.5 text-[10px] font-medium text-amber-700"><Star size={10} className="fill-amber-400 text-amber-400" />Top Contributor</span>
           </div>
-          <p className="text-[11px] text-slate-500">{roleLine} <span className="mx-1">•</span>{formatTimeAgo(problem.timestamp)}</p>
+          <p className="flex flex-wrap items-center text-[11px] text-slate-500">{roleLine}<span className="mx-1">•</span>{formatTimeAgo(problem.timestamp)}<span className="mx-1">•</span><AudienceBadge problem={problem} /></p>
         </div>
         {isOwn && <PostMenu onDelete={() => onDelete(problem.id)} />}
       </div>
@@ -1349,8 +1394,22 @@ const CommentsModal = ({ problem, comments, loading, commentText, setCommentText
 
 const extractHashtags = (text) => Array.from(new Set((String(text).match(/#[\p{L}\p{N}_]+/gu) || []).map((tag) => tag.slice(1))));
 
-const CreatePostModal = ({ initialAction, userName, userPhoto, tagSuggestions, onSubmit, onClose }) => {
+const AudienceRow = ({ icon, title, subtitle, checked, disabled, onClick }) => (
+  <button type="button" disabled={disabled} onClick={onClick} className="flex w-full items-center gap-3 rounded-md px-1.5 py-1.5 text-left hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-50">
+    <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-slate-100 text-slate-700">{React.createElement(icon, { size: 15 })}</span>
+    <span className="min-w-0 flex-1">
+      <span className="block text-[13px] font-semibold text-slate-900">{title}</span>
+      <span className="block text-[11px] text-slate-500">{subtitle}</span>
+    </span>
+    <span className={`flex h-4 w-4 items-center justify-center rounded-full border-2 ${checked ? 'border-blue-600' : 'border-slate-400'}`}>{checked && <span className="h-2 w-2 rounded-full bg-blue-600" />}</span>
+  </button>
+);
+
+const CreatePostModal = ({ initialAction, userName, userPhoto, tagSuggestions, classOptions = [], onSubmit, onClose }) => {
   const [text, setText] = useState('');
+  const [audienceType, setAudienceType] = useState('school'); // 'school' | 'classes'
+  const [audienceSections, setAudienceSections] = useState([]); // sectionIds
+  const [audienceOpen, setAudienceOpen] = useState(false);
   const [images, setImages] = useState([]); // [{ file, preview }]
   const [pollOpen, setPollOpen] = useState(initialAction === 'poll');
   const [poll, setPoll] = useState({ question: '', options: ['', ''] });
@@ -1416,7 +1475,17 @@ const CreatePostModal = ({ initialAction, userName, userPhoto, tagSuggestions, o
   const pollOptions = poll.options.map((option) => option.trim()).filter(Boolean);
   const pollValid = pollOpen && poll.question.trim() && pollOptions.length >= 2;
   const pollIncomplete = pollOpen && !pollValid && (poll.question.trim() || pollOptions.length > 0);
-  const canPost = !submitting && !pollIncomplete && (text.trim() || images.length || pollValid);
+  const audienceIncomplete = audienceType === 'classes' && audienceSections.length === 0;
+  const canPost = !submitting && !pollIncomplete && !audienceIncomplete && (text.trim() || images.length || pollValid);
+  const selectedClasses = classOptions.filter((option) => audienceSections.includes(option.sectionId));
+  const audienceLabel = audienceType === 'school'
+    ? 'School community'
+    : selectedClasses.length === 0 ? 'Choose classes'
+      : selectedClasses.length === 1 ? selectedClasses[0].label
+        : `${selectedClasses.length} classes`;
+  const toggleSection = (sectionId) => setAudienceSections((prev) => (
+    prev.includes(sectionId) ? prev.filter((id) => id !== sectionId) : [...prev, sectionId]
+  ));
 
   const handleSubmit = async () => {
     if (!canPost) return;
@@ -1427,6 +1496,9 @@ const CreatePostModal = ({ initialAction, userName, userPhoto, tagSuggestions, o
         images: images.map((image) => image.file),
         poll: pollValid ? { question: poll.question.trim(), options: pollOptions } : null,
         tags: extractHashtags(text),
+        audience: audienceType === 'classes'
+          ? { type: 'classes', classes: selectedClasses.map(({ classId, sectionId }) => ({ classId, sectionId })) }
+          : { type: 'school' },
       });
     } catch (err) {
       await Swal.fire({ icon: 'error', title: 'Post failed', text: err.message || 'Could not create post' });
@@ -1450,9 +1522,47 @@ const CreatePostModal = ({ initialAction, userName, userPhoto, tagSuggestions, o
             <Avatar initials={initialsOf(userName)} src={userPhoto} size="lg" />
             <div>
               <p className="text-[14px] font-semibold text-slate-900">{userName}</p>
-              <span className="mt-0.5 inline-flex items-center gap-1 rounded-md bg-slate-100 px-2 py-0.5 text-[11px] font-semibold text-slate-700"><Users size={11} />School community</span>
+              <button type="button" onClick={() => setAudienceOpen((prev) => !prev)} className="mt-0.5 inline-flex items-center gap-1 rounded-md bg-slate-100 px-2 py-0.5 text-[11px] font-semibold text-slate-700 hover:bg-slate-200">
+                {audienceType === 'school' ? <Globe size={11} /> : <Users size={11} />}{audienceLabel}<ChevronDown size={11} className={`transition ${audienceOpen ? 'rotate-180' : ''}`} />
+              </button>
             </div>
           </div>
+
+          {audienceOpen && (
+            <div className="mt-2.5 rounded-lg border border-slate-200 p-2">
+              <p className="px-1.5 pb-1.5 text-[11px] font-semibold uppercase tracking-wide text-slate-400">Who can see your post?</p>
+              <AudienceRow
+                icon={Globe}
+                title="School community"
+                subtitle="Everyone in your school"
+                checked={audienceType === 'school'}
+                onClick={() => { setAudienceType('school'); setAudienceOpen(false); }}
+              />
+              <AudienceRow
+                icon={Users}
+                title="My classes"
+                subtitle={classOptions.length ? 'Only students of the classes you pick, plus teachers' : 'No assigned classes found'}
+                checked={audienceType === 'classes'}
+                disabled={!classOptions.length}
+                onClick={() => setAudienceType('classes')}
+              />
+              {audienceType === 'classes' && classOptions.length > 0 && (
+                <div className="ml-10 mt-1 space-y-0.5 border-l border-slate-200 pl-3">
+                  <button type="button" onClick={() => setAudienceSections(audienceSections.length === classOptions.length ? [] : classOptions.map((o) => o.sectionId))} className="mb-1 text-[11px] font-semibold text-blue-600 hover:underline">
+                    {audienceSections.length === classOptions.length ? 'Clear all' : 'Select all'}
+                  </button>
+                  {classOptions.map((option) => (
+                    <label key={option.sectionId} className="flex cursor-pointer items-center gap-2 rounded-md px-1.5 py-1 text-[13px] text-slate-700 hover:bg-slate-50">
+                      <input type="checkbox" checked={audienceSections.includes(option.sectionId)} onChange={() => toggleSection(option.sectionId)} className="h-3.5 w-3.5 accent-blue-600" />
+                      {option.label}
+                    </label>
+                  ))}
+                  {audienceIncomplete && <p className="text-[11px] text-amber-600">Pick at least one class.</p>}
+                  <button type="button" disabled={audienceIncomplete} onClick={() => setAudienceOpen(false)} className="mt-1 rounded-md bg-blue-600 px-3 py-1 text-[12px] font-semibold text-white hover:bg-blue-700 disabled:opacity-40">Done</button>
+                </div>
+              )}
+            </div>
+          )}
 
           <div className="relative">
             <textarea
