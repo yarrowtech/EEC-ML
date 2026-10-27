@@ -10,6 +10,8 @@ const teacherAuth = require('../middleware/authTeacher');
 const authAnyUser = require('../middleware/authAnyUser');
 const authStudent = require('../middleware/authStudent');
 const { logStudentPortalEvent, logStudentPortalError } = require('../utils/studentPortalLogger');
+const ClassModel = require('../models/Class');
+const SectionModel = require('../models/Section');
 const multer = require('multer');
 const { uploadBufferToCloudinary } = require('../utils/cloudinaryUpload');
 
@@ -71,6 +73,44 @@ const serializePoll = (poll, actorKey) => {
     isClosed: isPollClosed(poll),
     closesAt: poll.closesAt || null,
   };
+};
+
+const audienceKey = (grade, section) => `${String(grade || '').trim().toLowerCase()}|${String(section || '').trim().toLowerCase()}`;
+
+// Resolves the requested sections against real Class/Section docs of this school,
+// so names on the post always match what students carry in grade/section.
+const resolveAudience = async (rawAudience, schoolId) => {
+  const audience = parseJsonField(rawAudience, null);
+  if (!audience || audience.type !== 'classes') return { audience: 'school', audienceClasses: [], audienceKeys: [] };
+  const sectionIds = [...new Set((Array.isArray(audience.classes) ? audience.classes : [])
+    .map((entry) => String(entry?.sectionId || ''))
+    .filter((id) => /^[a-f0-9]{24}$/i.test(id)))];
+  if (!sectionIds.length) throw new Error('Pick at least one class to share with');
+  const sections = await SectionModel.find({ _id: { $in: sectionIds }, schoolId }).select('_id name classId').lean();
+  const classes = await ClassModel.find({ _id: { $in: sections.map((s) => s.classId) }, schoolId }).select('_id name').lean();
+  const classById = new Map(classes.map((c) => [String(c._id), c]));
+  const audienceClasses = sections
+    .filter((s) => classById.has(String(s.classId)))
+    .map((s) => ({ classId: s.classId, sectionId: s._id, grade: classById.get(String(s.classId)).name, section: s.name }));
+  if (!audienceClasses.length) throw new Error('Selected classes were not found');
+  return {
+    audience: 'classes',
+    audienceClasses,
+    audienceKeys: audienceClasses.map((entry) => audienceKey(entry.grade, entry.section)),
+  };
+};
+
+// Teachers see everything; students see school-wide posts plus posts for their own class-section;
+// other users see school-wide posts only.
+const buildAudienceFilter = async (req) => {
+  const userType = normalizeUserType(req.userType || req.user?.userType || req.user?.type);
+  if (userType === 'teacher') return null;
+  const visible = [{ audience: { $ne: 'classes' } }];
+  if (userType === 'student') {
+    const student = await StudentUser.findById(req.user?.id).select('grade section').lean();
+    if (student?.grade) visible.push({ audienceKeys: audienceKey(student.grade, student.section) });
+  }
+  return { $or: visible };
 };
 
 function isPollClosed(poll) {
@@ -209,6 +249,12 @@ router.post('/posts', teacherAuth, withPostImages, async (req, res) => {
     if (!String(problemText).trim() && !files.length && !poll) {
       return res.status(400).json({ error: 'Write something, add a photo, or create a poll.' });
     }
+    let audienceFields;
+    try {
+      audienceFields = await resolveAudience(req.body.audience, schoolId);
+    } catch (audienceErr) {
+      return res.status(400).json({ error: audienceErr.message });
+    }
     const images = await Promise.all(files.map(async (file) => {
       const result = await uploadBufferToCloudinary(file.buffer, {
         folder: 'alcove_posts',
@@ -230,6 +276,7 @@ router.post('/posts', teacherAuth, withPostImages, async (req, res) => {
       tags,
       images: images.filter((image) => image.url),
       poll,
+      ...audienceFields,
       highlighted,
       author: req.user?.id || undefined,
       authorUserId: String(req.user?.id || ''),
@@ -320,6 +367,8 @@ router.get('/posts', authAnyUser, async (req, res) => {
     if (String(req.query.liked || '').toLowerCase() === 'true') filter.likedBy = actorKey;
     if (String(req.query.saved || '').toLowerCase() === 'true') filter.savedBy = actorKey;
     if (String(req.query.hasPoll || '').toLowerCase() === 'true') filter['poll.question'] = { $gt: '' };
+    const audienceFilter = await buildAudienceFilter(req);
+    if (audienceFilter) filter.$and = [...(filter.$and || []), audienceFilter];
 
     const skip = (Number(page) - 1) * Number(limit);
     const [posts, total] = await Promise.all([
@@ -410,7 +459,8 @@ router.get('/posts/:id', authAnyUser, async (req, res) => {
   try {
     const schoolId = resolveSchoolId(req, res);
     if (!schoolId) return;
-    const post = await AlcovePost.findOne({ _id: req.params.id, schoolId })
+    const audienceFilter = await buildAudienceFilter(req);
+    const post = await AlcovePost.findOne({ _id: req.params.id, schoolId, ...(audienceFilter || {}) })
       .populate('author', 'name username employeeCode')
       .lean();
     if (!post) return res.status(404).json({ error: 'Not found' });
