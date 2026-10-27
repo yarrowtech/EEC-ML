@@ -65,7 +65,7 @@ const StudentHealthReport = () => {
             ) : (
               <div className="mt-4 space-y-3">
                 {data.observations.map((item) => (
-                  <article key={item.id} className="rounded-xl border border-slate-200 p-4">
+                  <article key={item.id || item._id || item.recordedAt} className="rounded-xl border border-slate-200 p-4">
                     <div className="flex flex-wrap items-center justify-between gap-2">
                       <p className="font-semibold text-slate-900">{item.teacherName}</p>
                       <span className="text-xs text-slate-500">{item.recordedAt ? new Date(item.recordedAt).toLocaleDateString() : ''}</span>

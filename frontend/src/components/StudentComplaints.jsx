@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useMemo, useState } from 'react';
+import React, { useCallback, useEffect, useState } from 'react';
 import { AlertCircle, Loader2, Send } from 'lucide-react';
 
 const API_BASE = (import.meta.env.VITE_API_URL || 'http://localhost:5000').replace(/\/$/, '');
@@ -11,14 +11,14 @@ const StudentComplaints = () => {
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState('');
 
-  const headers = useMemo(() => ({
+  const buildHeaders = () => ({
     'Content-Type': 'application/json',
     Authorization: `Bearer ${localStorage.getItem('token')}`,
-  }), []);
+  });
 
   const loadComplaints = useCallback(async () => {
     try {
-      const response = await fetch(`${API_BASE}/api/student/auth/complaints`, { headers });
+      const response = await fetch(`${API_BASE}/api/student/auth/complaints`, { headers: buildHeaders() });
       const payload = await response.json();
       if (!response.ok) throw new Error(payload?.error || 'Unable to load complaints');
       setComplaints(Array.isArray(payload?.complaints) ? payload.complaints : []);
@@ -27,7 +27,7 @@ const StudentComplaints = () => {
     } finally {
       setLoading(false);
     }
-  }, [headers]);
+  }, []);
 
   useEffect(() => { loadComplaints(); }, [loadComplaints]);
 
@@ -37,7 +37,7 @@ const StudentComplaints = () => {
     setError('');
     try {
       const response = await fetch(`${API_BASE}/api/student/auth/complaints`, {
-        method: 'POST', headers, body: JSON.stringify(form),
+        method: 'POST', headers: buildHeaders(), body: JSON.stringify(form),
       });
       const payload = await response.json();
       if (!response.ok) throw new Error(payload?.error || 'Unable to submit complaint');
@@ -67,7 +67,7 @@ const StudentComplaints = () => {
         </form>
         <section className="rounded-2xl border border-slate-200 bg-white p-5">
           <h2 className="font-bold text-slate-900">My tickets</h2>
-          {loading ? <p className="mt-5 text-sm text-slate-500">Loading tickets...</p> : complaints.length === 0 ? <p className="mt-5 text-sm text-slate-500">No complaints submitted.</p> : <div className="mt-4 space-y-3">{complaints.map((item) => <article key={item.id} className="rounded-xl border border-slate-200 p-4"><div className="flex items-start justify-between gap-3"><div><p className="font-bold text-slate-900">{item.title}</p><p className="mt-1 text-xs text-slate-500">{item.ticketNumber} · Assigned to {item.owner}</p></div><span className="rounded-full bg-indigo-50 px-2.5 py-1 text-xs font-bold capitalize text-indigo-700">{String(item.status).replace('_', ' ')}</span></div><p className="mt-3 text-sm text-slate-600">{item.description}</p>{item.resolutionNotes && <p className="mt-3 rounded-lg bg-emerald-50 p-3 text-sm text-emerald-800">Resolution: {item.resolutionNotes}</p>}</article>)}</div>}
+          {loading ? <p className="mt-5 text-sm text-slate-500">Loading tickets...</p> : complaints.length === 0 ? <p className="mt-5 text-sm text-slate-500">No complaints submitted.</p> : <div className="mt-4 space-y-3">{complaints.map((item) => <article key={item.id || item._id || item.ticketNumber} className="rounded-xl border border-slate-200 p-4"><div className="flex items-start justify-between gap-3"><div><p className="font-bold text-slate-900">{item.title}</p><p className="mt-1 text-xs text-slate-500">{item.ticketNumber} · Assigned to {item.owner}</p></div><span className="rounded-full bg-indigo-50 px-2.5 py-1 text-xs font-bold capitalize text-indigo-700">{String(item.status).replace('_', ' ')}</span></div><p className="mt-3 text-sm text-slate-600">{item.description}</p>{item.resolutionNotes && <p className="mt-3 rounded-lg bg-emerald-50 p-3 text-sm text-emerald-800">Resolution: {item.resolutionNotes}</p>}</article>)}</div>}
         </section>
       </div>
     </div>

@@ -1403,6 +1403,34 @@ const Routines = ({ setShowAdminHeader }) => {
 
   /* ── save cell ── */
   const saveCellData = async (classId, sectionId, day, periodData) => {
+    // Clash detection (`dayConflicts`) was previously display-only — it only
+    // warned *after* a save, via a banner computed from already-persisted
+    // data. Nothing stopped an admin from double-booking the same teacher
+    // into two different classes at the same time slot. Check here, before
+    // the request goes out, and make the admin confirm if so.
+    if (!periodData.clear && periodData.subject !== 'Break' && periodData.teacher) {
+      const names = periodData.teacher.split(/[&,]/).map(t => t.trim().toUpperCase()).filter(Boolean);
+      const clashingRows = classSectionRows.filter(row => {
+        if (String(row.classId) === String(classId) && String(row.sectionId || '') === String(sectionId || '')) return false;
+        const cell = getCell(row.classId, row.sectionId, day, periodData.startTime);
+        if (!cell || !cell.teacher || cell.teacher === '-' || cell.isBreak) return false;
+        const cellNames = cell.teacher.split(/[&,]/).map(t => t.trim().toUpperCase()).filter(Boolean);
+        return cellNames.some(n => names.includes(n));
+      });
+      if (clashingRows.length > 0) {
+        const clashList = clashingRows.map(row => `${row.className}${row.sectionName ? ' - ' + row.sectionName : ''}`).join(', ');
+        const confirm = await Swal.fire({
+          icon: 'warning',
+          title: 'Teacher already scheduled',
+          html: `<strong>${periodData.teacher}</strong> is already assigned to <strong>${clashList}</strong> at this same time slot.<br/>Save anyway?`,
+          showCancelButton: true,
+          confirmButtonText: 'Save anyway',
+          confirmButtonColor: '#ef4444',
+          cancelButtonColor: '#6b7280',
+        });
+        if (!confirm.isConfirmed) return;
+      }
+    }
     setSaving(true);
     try {
       const r = routines.find(rt =>

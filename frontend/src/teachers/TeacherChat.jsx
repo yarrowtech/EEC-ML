@@ -956,9 +956,12 @@ const TeacherChat = () => {
 
   const activeThread = useMemo(() => threads.find(t => String(t._id) === activeThreadId), [threads, activeThreadId]);
 
+  const [authToken, setAuthToken] = useState(() => localStorage.getItem('token'));
+
   useEffect(() => {
     const disconnectSocket = () => {
       socketRef.current?.disconnect();
+      setAuthToken(localStorage.getItem('token'));
     };
     const handleStorage = (event) => {
       if (event.key === 'token' || event.key === null) {
@@ -1120,11 +1123,18 @@ const TeacherChat = () => {
   }, [activeThreadId]);
 
   // ── Bootstrap ─────────────────────────────────────────────────────────────
+  // Re-runs whenever the stored token changes (not just on mount), so a
+  // logout/login swap on the same tab re-authenticates the socket and
+  // refetches threads for the new account instead of keeping the previous
+  // teacher's chat data.
   useEffect(() => {
-    const token = localStorage.getItem('token');
+    const token = authToken;
     if (!token) return;
 
     let mounted = true;
+    meRef.current = null;
+    setMe(null);
+    setThreads([]);
 
     const hintedMeId = localStorage.getItem(LAST_TEACHER_CHAT_ME_KEY);
     if (hintedMeId) {
@@ -1204,10 +1214,14 @@ const TeacherChat = () => {
       const isIncomingForMe = !isSameId(msg.senderId, meRef.current?.id);
       let optimisticTextForMine = '';
       setMessages(prev => {
-        if (activeThreadIdRef.current !== threadId) return prev;
-        // Sender already has an optimistic copy — replace it, don't append
+        if (String(activeThreadIdRef.current) !== threadId) return prev;
+        // Sender already has an optimistic copy — replace it, don't append.
+        // Use the FIRST still-pending optimistic entry (not the last): acks
+        // arrive in the same order messages were sent, so matching FIFO
+        // avoids swapping text/ids between two messages sent back-to-back
+        // before the first one's ack returns.
         if (isSameId(msg.senderId, meRef.current?.id)) {
-          const optIdx = prev.findLastIndex(m => m._optimistic);
+          const optIdx = prev.findIndex(m => m._optimistic);
           if (optIdx !== -1) {
             optimisticTextForMine = String(prev[optIdx]?.text || '').trim();
             const next = [...prev];
@@ -1237,7 +1251,7 @@ const TeacherChat = () => {
               ...t,
               lastMessage: previewText || optimisticTextForMine || sanitizePreviewText(t.lastMessage),
               lastMessageAt: msg.createdAt,
-              unreadCount: activeThreadIdRef.current === threadId ? 0 : (t.unreadCount || 0) + 1,
+              unreadCount: isActiveThread ? 0 : (t.unreadCount || 0) + 1,
             }
           : t
       ));
@@ -1253,7 +1267,8 @@ const TeacherChat = () => {
       if (!threadId || String(activeThreadIdRef.current) !== threadId) return;
       setMessages((prev) => {
         if (prev.some((item) => String(item?._id) === String(msg?._id))) return prev;
-        const optimisticIndex = prev.findLastIndex((item) => item?._optimistic && isSameId(item.senderId, msg.senderId));
+        // FIFO match, same reasoning as the `new-message` handler above.
+        const optimisticIndex = prev.findIndex((item) => item?._optimistic && isSameId(item.senderId, msg.senderId));
         if (optimisticIndex === -1) return [...prev, msg];
         const next = [...prev];
         next[optimisticIndex] = msg;
@@ -1342,7 +1357,7 @@ const TeacherChat = () => {
       mounted = false;
       socket.disconnect();
     };
-  }, [decryptForUI, decryptThreadPreview, hydrateEncryptedThreadPreviews]);
+  }, [authToken, decryptForUI, decryptThreadPreview, hydrateEncryptedThreadPreviews]);
 
   // Catch up through REST when a reverse proxy, reconnect, or multi-process
   // deployment causes a Socket.IO event to be missed.
@@ -1611,7 +1626,7 @@ const TeacherChat = () => {
     if (!text || !activeThreadId) return;
     setDraft('');
 
-    const optimisticId = `opt-${Date.now()}`;
+    const optimisticId = `opt-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
     const optimistic = {
       _id: optimisticId,
       threadId: activeThreadId,

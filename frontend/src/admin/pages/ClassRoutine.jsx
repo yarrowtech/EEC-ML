@@ -288,6 +288,25 @@ const ClassRoutine = () => {
       setManageError('Teacher, subject, class and section are required');
       return;
     }
+    // This page has no conflict check at all before saving — unlike
+    // Routines.jsx (actual period scheduling), there's no time-of-day
+    // concept here, but the same (teacher, subject, class, section)
+    // allocation could still silently be created twice with no warning.
+    const duplicate = allocations.find((item) => {
+      if (editingAllocationId && String(item._id) === String(editingAllocationId)) return false;
+      const itemTeacherId = item.teacherId?._id || item.teacherId || '';
+      const itemSubjectId = item.subjectId?._id || item.subjectId || '';
+      const itemClassId = item.classId?._id || item.classId || '';
+      const itemSectionId = item.sectionId?._id || item.sectionId || '';
+      return String(itemTeacherId) === String(teacherId)
+        && String(itemSubjectId) === String(subjectId)
+        && String(itemClassId) === String(classId)
+        && String(itemSectionId) === String(sectionId);
+    });
+    if (duplicate) {
+      setManageError('This teacher is already allocated to this subject for this class/section.');
+      return;
+    }
     try {
       setManageError('');
       const method = editingAllocationId ? 'PUT' : 'POST';

@@ -455,6 +455,8 @@ const NoticeBoard = () => {
             },
           });
           setExamGroups(Array.isArray(examData) ? examData : []);
+        } else {
+          setExamGroups([]);
         }
       } catch (err) {
         console.error('Failed to fetch notices:', err);
@@ -543,6 +545,13 @@ const NoticeBoard = () => {
   useEffect(() => {
     setCurrentPage(1);
   }, [activeCategory, sortBy, searchQuery]);
+
+  // The notice list can shrink after a refetch (expired/hidden notices dropped),
+  // which can leave `currentPage` pointing past the new last page — clamp it
+  // back instead of silently rendering an empty page.
+  useEffect(() => {
+    setCurrentPage((page) => Math.min(page, totalPages));
+  }, [totalPages]);
 
   const paginatedNotices = useMemo(() => {
     const start = (currentPage - 1) * NOTICE_PAGE_SIZE;

@@ -94,13 +94,21 @@ const PracticePaperBuilder = ({
 
   useEffect(() => {
     if (normalizedSubjectOptions.length === 0) return;
-    const selected = normalizedSubjectOptions.find((subject) => (
+    const currentMatch = normalizedSubjectOptions.find((subject) => (
       (selectedSubjectId && subject.id === String(selectedSubjectId))
       || (selectedSubjectName && subject.name.toLowerCase() === selectedSubjectName.toLowerCase())
-    )) || normalizedSubjectOptions[0];
+    ));
+    // The parent can re-render with a new `subjectOptions` array reference
+    // (e.g. after a refetch) even when its actual contents haven't changed —
+    // if the teacher's current pick is still present in the new list, leave
+    // it alone instead of re-deriving/overwriting it. Only fall back to the
+    // first option when there's genuinely no selection yet, or the
+    // previously-selected subject no longer exists in the new list.
+    if (currentMatch) return;
+    const selected = normalizedSubjectOptions[0];
     setSelectedSubjectId(selected.id);
     setSelectedSubjectName(selected.name);
-  }, [subjectOptions]);
+  }, [subjectOptions, selectedSubjectId, selectedSubjectName]);
 
   // Only published plans are selectable because students can only access
   // published lesson content in Smart Learning.

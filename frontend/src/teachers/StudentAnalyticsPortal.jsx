@@ -85,6 +85,13 @@ const StudentAnalyticsPortal = () => {
   const { classId = 'current' } = useParams();
   const classLabel = formatClassLabel(classId);
   const { grade: ctxGrade, section: ctxSection } = parseClassSlug(classId);
+  // Navigating between classes (`:classId` route param) reuses this same
+  // component instance — it doesn't remount. Without tracking the active
+  // class, a still-in-flight fetch started for the PREVIOUS class can resolve
+  // after the teacher has already switched and silently overwrite the new
+  // class's analytics with the old class's data.
+  const activeClassIdRef = useRef(classId);
+  useEffect(() => { activeClassIdRef.current = classId; }, [classId]);
   // Tab strip arrow scrolling
   const tabStripRef = useRef(null);
   const [tabScroll, setTabScroll] = useState({ left: false, right: false });
@@ -254,6 +261,7 @@ const StudentAnalyticsPortal = () => {
   // FETCH WEAK STUDENTS — server-side composite at-risk scoring
   // ─────────────────────────────────────────────────────────────────────────
   const fetchWeakStudents = useCallback(async () => {
+    const scope = classId;
     try {
       setLoadingWeak(true);
       const params = new URLSearchParams();
@@ -265,18 +273,20 @@ const StudentAnalyticsPortal = () => {
       const res = await cachedFetch(`${API_BASE}/api/teacher-analytics/at-risk?${params}`, {
         headers: authHeaders(),
       });
+      if (activeClassIdRef.current !== scope) return;
       if (res.ok) {
         const payload = await res.json();
+        if (activeClassIdRef.current !== scope) return;
         setWeakStudents(payload.data || []);
       } else {
         setWeakStudents([]);
       }
     } catch {
-      setWeakStudents([]);
+      if (activeClassIdRef.current === scope) setWeakStudents([]);
     } finally {
-      setLoadingWeak(false);
+      if (activeClassIdRef.current === scope) setLoadingWeak(false);
     }
-  }, [interventionFilters]);
+  }, [classId, ctxGrade, ctxSection, interventionFilters]);
 
   const fetchInterventionLogs = useCallback(async () => {
     try {
@@ -476,6 +486,7 @@ const StudentAnalyticsPortal = () => {
   // FETCH: MISCONCEPTIONS
   // ─────────────────────────────────────────────────────────────────────────
   const fetchMisconceptions = useCallback(async () => {
+    const scope = classId;
     setLoadingMisconceptions(true);
     try {
       const params = new URLSearchParams();
@@ -483,9 +494,13 @@ const StudentAnalyticsPortal = () => {
       if (ctxSection) params.set('section', ctxSection);
       if (misconceptionFilters.subject) params.set('subject', misconceptionFilters.subject);
       const res = await cachedFetch(`${API_BASE}/api/teacher-analytics/misconceptions?${params}`, { headers: authHeaders() });
-      if (res.ok) { const d = await res.json(); setMisconceptions(d.data || []); }
-    } catch { /* silent */ } finally { setLoadingMisconceptions(false); }
-  }, [misconceptionFilters]);
+      if (res.ok) {
+        const d = await res.json();
+        if (activeClassIdRef.current !== scope) return;
+        setMisconceptions(d.data || []);
+      }
+    } catch { /* silent */ } finally { if (activeClassIdRef.current === scope) setLoadingMisconceptions(false); }
+  }, [classId, ctxGrade, ctxSection, misconceptionFilters]);
 
   const generateAIMisconceptionReport = async () => {
     if (!misconceptions.length) { return; }
@@ -511,6 +526,7 @@ const StudentAnalyticsPortal = () => {
   // FETCH: CLASS GAPS
   // ─────────────────────────────────────────────────────────────────────────
   const fetchClassGaps = useCallback(async () => {
+    const scope = classId;
     setLoadingGaps(true);
     try {
       const params = new URLSearchParams();
@@ -518,23 +534,32 @@ const StudentAnalyticsPortal = () => {
       if (ctxSection) params.set('section', ctxSection);
       if (gapFilters.subject) params.set('subject', gapFilters.subject);
       const res = await cachedFetch(`${API_BASE}/api/teacher-analytics/class-gaps?${params}`, { headers: authHeaders() });
-      if (res.ok) { const d = await res.json(); setClassGaps(d.data || []); setClassGapsHealthy(Number(d.healthyTopics) || 0); }
-    } catch { /* silent */ } finally { setLoadingGaps(false); }
-  }, [gapFilters]);
+      if (res.ok) {
+        const d = await res.json();
+        if (activeClassIdRef.current !== scope) return;
+        setClassGaps(d.data || []); setClassGapsHealthy(Number(d.healthyTopics) || 0);
+      }
+    } catch { /* silent */ } finally { if (activeClassIdRef.current === scope) setLoadingGaps(false); }
+  }, [classId, ctxGrade, ctxSection, gapFilters]);
 
   // ─────────────────────────────────────────────────────────────────────────
   // FETCH: 7-DAY FORECAST
   // ─────────────────────────────────────────────────────────────────────────
   const fetchForecast7d = useCallback(async () => {
+    const scope = classId;
     setLoadingForecast(true);
     try {
       const params = new URLSearchParams();
       if (ctxGrade) params.set('className', ctxGrade);
       if (ctxSection) params.set('section', ctxSection);
       const res = await cachedFetch(`${API_BASE}/api/teacher-analytics/at-risk-7day?${params}`, { headers: authHeaders() });
-      if (res.ok) { const d = await res.json(); setForecast7d(d.data || []); }
-    } catch { /* silent */ } finally { setLoadingForecast(false); }
-  }, [forecastFilters]);
+      if (res.ok) {
+        const d = await res.json();
+        if (activeClassIdRef.current !== scope) return;
+        setForecast7d(d.data || []);
+      }
+    } catch { /* silent */ } finally { if (activeClassIdRef.current === scope) setLoadingForecast(false); }
+  }, [classId, ctxGrade, ctxSection, forecastFilters]);
 
   // Retrospective backtest of the underlying score-forecast engine — surfaces how
   // accurate last week's predictions actually were, instead of leaving the
@@ -549,6 +574,7 @@ const StudentAnalyticsPortal = () => {
   // Teacher-facing confidence calibration — which students most over/under-rate
   // themselves relative to actual mastery. See backend/routes/confidenceRoutes.js.
   const fetchConfidence = useCallback(async () => {
+    const scope = classId;
     setLoadingConfidence(true);
     try {
       const params = new URLSearchParams();
@@ -557,9 +583,13 @@ const StudentAnalyticsPortal = () => {
       params.set('all', '1');
       params.set('days', '7');
       const res = await cachedFetch(`${API_BASE}/api/confidence/class?${params}`, { headers: authHeaders() });
-      if (res.ok) { const d = await res.json(); setConfidenceData(d.data || []); }
-    } catch { /* silent */ } finally { setLoadingConfidence(false); }
-  }, []);
+      if (res.ok) {
+        const d = await res.json();
+        if (activeClassIdRef.current !== scope) return;
+        setConfidenceData(d.data || []);
+      }
+    } catch { /* silent */ } finally { if (activeClassIdRef.current === scope) setLoadingConfidence(false); }
+  }, [classId, ctxGrade, ctxSection]);
 
   // Teacher-facing help-seeking behaviour — how often each student proactively
   // reaches for Homework Help / signals they're stuck. See helpSeekingService.js.
@@ -596,6 +626,7 @@ const StudentAnalyticsPortal = () => {
   // FETCH: MASTERY ALL STUDENTS
   // ─────────────────────────────────────────────────────────────────────────
   const fetchMasteryAll = useCallback(async () => {
+    const scope = classId;
     setMasteryAllLoading(true);
     try {
       const params = new URLSearchParams();
@@ -603,21 +634,27 @@ const StudentAnalyticsPortal = () => {
       if (ctxSection) params.set('section', ctxSection);
       if (masteryAllFilters.subject) params.set('subject', masteryAllFilters.subject);
       const res = await cachedFetch(`${API_BASE}/api/teacher-analytics/student-mastery-all?${params}`, { headers: authHeaders() });
-      if (res.ok) { const d = await res.json(); setMasteryAllData(d.data || []); }
-    } catch { /* silent */ } finally { setMasteryAllLoading(false); }
-  }, [masteryAllFilters]);
+      if (res.ok) {
+        const d = await res.json();
+        if (activeClassIdRef.current !== scope) return;
+        setMasteryAllData(d.data || []);
+      }
+    } catch { /* silent */ } finally { if (activeClassIdRef.current === scope) setMasteryAllLoading(false); }
+  }, [classId, ctxGrade, ctxSection, masteryAllFilters]);
 
   const fetchMlScores = useCallback(async () => {
+    const scope = classId;
     setMlLoading(true);
     try {
       const params = new URLSearchParams();
       if (ctxGrade) params.set('className', ctxGrade);
       if (ctxSection) params.set('section', ctxSection);
       const res = await cachedFetch(`${API_BASE}/api/ml/class/scores?${params}`, { headers: authHeaders() });
+      if (activeClassIdRef.current !== scope) return;
       if (res.ok) { const d = await res.json(); setMlClassData(d.data || []); }
       else setMlClassData([]);
-    } catch { setMlClassData([]); } finally { setMlLoading(false); }
-  }, [ctxGrade, ctxSection]);
+    } catch { if (activeClassIdRef.current === scope) setMlClassData([]); } finally { if (activeClassIdRef.current === scope) setMlLoading(false); }
+  }, [classId, ctxGrade, ctxSection]);
 
   // ─────────────────────────────────────────────────────────────────────────
   // FILTERED DATA
@@ -3025,12 +3062,19 @@ const StudentDetailModal = ({ student, onClose }) => {
     });
     return [...map.values()]
       .map((g) => {
-        const obtained = g.subjects.reduce((s, e) => s + (e.marks == null ? 0 : Number(e.marks) || 0), 0);
-        const max = g.subjects.reduce((s, e) => s + (Number(e.maxMarks) || 0), 0);
+        // Only count subjects that have actually been graded — mixing a full
+        // max-marks denominator with a partial (still-grading) numerator
+        // under-reports the percentage for a result set that isn't fully
+        // graded yet (e.g. 2 of 5 subjects marked shows as if the student
+        // scored near-zero on the other 3, instead of "pending").
+        const gradedSubjects = g.subjects.filter((e) => e.marks != null);
+        const obtained = gradedSubjects.reduce((s, e) => s + (Number(e.marks) || 0), 0);
+        const max = gradedSubjects.reduce((s, e) => s + (Number(e.maxMarks) || 0), 0);
         const percentage = max > 0 ? Math.round((obtained / max) * 100) : null;
+        const isFullyGraded = gradedSubjects.length === g.subjects.length;
         const result = g.subjects.some((e) => e.status === 'fail') ? 'fail'
           : g.subjects.every((e) => e.status === 'absent') ? 'absent' : 'pass';
-        return { ...g, subjects: [...g.subjects].sort((a, b) => String(a.subject).localeCompare(String(b.subject))), obtained, max, percentage, result };
+        return { ...g, subjects: [...g.subjects].sort((a, b) => String(a.subject).localeCompare(String(b.subject))), obtained, max, percentage, isFullyGraded, result };
       })
       .sort((a, b) => new Date(b.date || 0) - new Date(a.date || 0));
   })();
@@ -3178,7 +3222,10 @@ const StudentDetailModal = ({ student, onClose }) => {
                             <td className="px-3 py-2 font-medium text-slate-800">{g.title}{g.term && g.term !== g.title ? <span className="ml-1 text-[11px] font-normal text-slate-400">{g.term}</span> : null}</td>
                             <td className="px-3 py-2 text-slate-600">{g.subjects.length}</td>
                             <td className={`px-3 py-2 font-semibold ${tone(g.percentage)}`}>{g.obtained}/{g.max}</td>
-                            <td className={`px-3 py-2 font-semibold ${tone(g.percentage)}`}>{fmtPct(g.percentage)}</td>
+                            <td className={`px-3 py-2 font-semibold ${tone(g.percentage)}`}>
+                              {fmtPct(g.percentage)}
+                              {!g.isFullyGraded && <span className="ml-1 text-[11px] font-normal text-slate-400">(partial)</span>}
+                            </td>
                             <td className="px-3 py-2"><span className={`rounded-md px-2 py-0.5 text-[11px] font-medium capitalize ${statusBadge(g.result)}`}>{g.result}</span></td>
                           </tr>
                         ))}
@@ -3221,7 +3268,10 @@ const StudentDetailModal = ({ student, onClose }) => {
                           <tr>
                             <td className="px-3 py-2">Total</td>
                             <td className={`px-3 py-2 ${tone(activeExam.percentage)}`}>{activeExam.obtained}/{activeExam.max}</td>
-                            <td className={`px-3 py-2 ${tone(activeExam.percentage)}`}>{fmtPct(activeExam.percentage)}</td>
+                            <td className={`px-3 py-2 ${tone(activeExam.percentage)}`}>
+                              {fmtPct(activeExam.percentage)}
+                              {!activeExam.isFullyGraded && <span className="ml-1 text-[11px] font-normal text-slate-400">(partial)</span>}
+                            </td>
                             <td colSpan={2} className="px-3 py-2"><span className={`rounded-md px-2 py-0.5 text-[11px] font-medium capitalize ${statusBadge(activeExam.result)}`}>{activeExam.result}</span></td>
                           </tr>
                         </tfoot>

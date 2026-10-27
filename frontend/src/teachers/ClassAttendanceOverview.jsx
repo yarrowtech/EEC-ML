@@ -159,27 +159,35 @@ const ClassAttendanceOverview = () => {
   const ready = Boolean(className && sectionName);
 
   // Selected month + previous month (for the "from last month" delta).
-  const load = useCallback(async () => {
-    if (!ready) return;
+  // Rapid month/class/subject switching can otherwise let a stale response
+  // land after a newer one — matches the `cancelled` guard already used by
+  // every other effect in this file.
+  const load = useCallback((onCancelCheck) => {
+    if (!ready) return Promise.resolve();
     setLoading(true);
     setError('');
-    try {
-      const [cur, prev] = await Promise.all([
-        fetchClassMonth({ className, section: sectionName, month, subject, withSession: true }),
-        fetchClassMonth({ className, section: sectionName, month: shiftMonth(month, -1), subject }).catch(() => null),
-      ]);
+    return Promise.all([
+      fetchClassMonth({ className, section: sectionName, month, subject, withSession: true }),
+      fetchClassMonth({ className, section: sectionName, month: shiftMonth(month, -1), subject }).catch(() => null),
+    ]).then(([cur, prev]) => {
+      if (onCancelCheck?.()) return;
       setStudents(Array.isArray(cur.students) ? cur.students : []);
       setPrevStudents(Array.isArray(prev?.students) ? prev.students : []);
       setSubjectOptions(Array.isArray(cur?.options?.subjects) ? cur.options.subjects : []);
-    } catch (err) {
+    }).catch((err) => {
+      if (onCancelCheck?.()) return;
       setError(err.message || 'Failed to load attendance');
       setStudents([]);
-    } finally {
-      setLoading(false);
-    }
+    }).finally(() => {
+      if (!onCancelCheck?.()) setLoading(false);
+    });
   }, [ready, className, sectionName, month, subject]);
 
-  useEffect(() => { load(); }, [load]);
+  useEffect(() => {
+    let cancelled = false;
+    load(() => cancelled);
+    return () => { cancelled = true; };
+  }, [load]);
 
   // Subject-wise attendance: one request per allocated subject.
   useEffect(() => {

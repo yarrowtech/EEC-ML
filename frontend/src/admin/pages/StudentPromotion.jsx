@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback, useMemo } from "react";
+import React, { useState, useEffect, useCallback, useMemo, useRef } from "react";
 import { motion as Motion, AnimatePresence } from "framer-motion";
 import { useNavigate } from "react-router-dom";
 import { readCache, writeCache } from "../../utils/swrCache";
@@ -234,6 +234,13 @@ const StudentPromotion = ({ setShowAdminHeader, section = "promotion", onShowLef
   const [selectedStudentIds, setSelectedStudentIds] = useState([]);
   const [loadingPreview, setLoadingPreview] = useState(false);
   const [promoting, setPromoting] = useState(false);
+  // Promotion is an irreversible bulk mutation — a stale preview response
+  // (from before the admin changed class/section/year, or from a previous
+  // Preview click) must never be allowed to populate `previewStudents` /
+  // `selectedStudentIds` after a newer request has started, since the
+  // promote action sends the CURRENT class/year labels alongside whatever
+  // student ids happen to be selected.
+  const previewRequestIdRef = useRef(0);
 
   const [promotionMode, setPromotionMode] = useState("bulk");
   const [minPromotionPercentage, setMinPromotionPercentage] = useState(50);
@@ -378,6 +385,7 @@ const StudentPromotion = ({ setShowAdminHeader, section = "promotion", onShowLef
   // Class select handler
   // ──────────────────────────────────────────────────────────
   const handleFromClassChange = (e) => {
+    previewRequestIdRef.current += 1; // invalidate any in-flight preview
     const selectedId = e.target.value;
     const cls = classes.find((c) => c._id === selectedId);
     setFromClassId(selectedId);
@@ -388,6 +396,7 @@ const StudentPromotion = ({ setShowAdminHeader, section = "promotion", onShowLef
   };
 
   const handleFromAcademicYearChange = (e) => {
+    previewRequestIdRef.current += 1; // invalidate any in-flight preview
     const selectedId = e.target.value;
     const selectedYear = academicYears.find((y) => String(y._id) === String(selectedId));
     setFromAcademicYearId(selectedId);
@@ -427,6 +436,8 @@ const StudentPromotion = ({ setShowAdminHeader, section = "promotion", onShowLef
       Swal.fire({ icon: "warning", title: "Select Source Class", text: "Please select the class to promote from.", confirmButtonColor: "#6366f1" });
       return;
     }
+    const requestId = ++previewRequestIdRef.current;
+    const isStale = () => previewRequestIdRef.current !== requestId;
     setLoadingPreview(true);
     setPreviewStudents([]);
     setSelectedStudentIds([]);
@@ -449,6 +460,7 @@ const StudentPromotion = ({ setShowAdminHeader, section = "promotion", onShowLef
         body: JSON.stringify(body),
       });
       const data = await res.json();
+      if (isStale()) return;
       if (res.ok) {
         const students = (data.students || []).filter(
           (s) => !["Leaving", "Left"].includes(String(s?.status || ""))
@@ -490,9 +502,10 @@ const StudentPromotion = ({ setShowAdminHeader, section = "promotion", onShowLef
         Swal.fire({ icon: "error", title: "Error", text: data.error || "Failed to load students.", confirmButtonColor: "#6366f1" });
       }
     } catch {
+      if (isStale()) return;
       Swal.fire({ icon: "error", title: "Network Error", text: "Could not reach server.", confirmButtonColor: "#6366f1" });
     } finally {
-      setLoadingPreview(false);
+      if (!isStale()) setLoadingPreview(false);
     }
   };
 

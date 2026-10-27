@@ -190,6 +190,19 @@ const StudentFeeDetails = ({ setShowAdminHeader }) => {
       setActionMessage({ type: 'error', text: 'Enter amount' });
       return;
     }
+    const enteredAmount = Number(paymentForm.amount || 0);
+    if (!Number.isFinite(enteredAmount) || enteredAmount <= 0) {
+      setActionMessage({ type: 'error', text: 'Enter a valid amount' });
+      return;
+    }
+    // Only the online (Razorpay) path had this check — a cash/UPI/bank/card
+    // receipt could otherwise be recorded for more than is actually owed,
+    // with no client-side feedback and relying entirely on the backend to
+    // catch it (if it does at all).
+    if (totals.balance > 0 && enteredAmount > totals.balance) {
+      setActionMessage({ type: 'error', text: `Amount cannot exceed the outstanding balance of ${formatCurrency(totals.balance)}` });
+      return;
+    }
     if (paymentForm.method === 'razorpay') {
       await handleRazorpayPayment();
       return;

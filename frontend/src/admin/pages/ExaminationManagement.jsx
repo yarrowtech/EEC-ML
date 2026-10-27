@@ -2575,7 +2575,7 @@ const ExaminationManagement = ({ setShowAdminHeader }) => {
         doc.setFontSize(8);
 
         doc.text(
-          "2025-2026",
+          yearName || "—",
           pageWidth / 2,
           y + 14 + (addressLines.length * 7.5 * 1.3) + 4,
           {
@@ -3831,11 +3831,21 @@ const ExaminationManagement = ({ setShowAdminHeader }) => {
     setDeleteStatusText(`Deleting ${batch.title} for ${batch.groups.length} class${batch.groups.length !== 1 ? 'es' : ''}/section${batch.groups.length !== 1 ? 's' : ''}…`);
     setIsDeleting(true);
     try {
-      await Promise.all(batch.groups.map((g) =>
-        fetch(`${API_BASE}/api/exam/groups/${g._id}`, { method: 'DELETE', headers: authH() }).finally(bump)
+      const results = await Promise.all(batch.groups.map((g) =>
+        fetch(`${API_BASE}/api/exam/groups/${g._id}`, { method: 'DELETE', headers: authH() })
+          .then(async (res) => ({ ok: res.ok, group: g, error: res.ok ? null : (await res.json().catch(() => ({})))?.error }))
+          .catch(() => ({ ok: false, group: g, error: null }))
+          .finally(bump)
       ));
+      const failed = results.filter((r) => !r.ok);
       setDeleteProgress(100);
-      toast.success('Exam deleted');
+      if (failed.length === 0) {
+        toast.success('Exam deleted');
+      } else if (failed.length === results.length) {
+        toast.error('Failed to delete exam');
+      } else {
+        toast.error(`Deleted ${results.length - failed.length} of ${results.length} — ${failed.length} failed. ${failed[0].error || ''}`.trim());
+      }
       setMoreMenuOpen(false);
       await loadGroups();
     } catch {

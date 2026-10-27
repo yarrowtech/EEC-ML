@@ -234,6 +234,13 @@ const NoticeManagement = ({ setShowAdminHeader, viewMode = 'view' }) => {
     setCurrentPage(1);
   }, [activeCategory, sortBy, searchQuery]);
 
+  // The notice list can shrink after a delete/bulk-delete, which can leave
+  // `currentPage` pointing past the new last page — clamp it back instead of
+  // silently rendering an empty page with an out-of-range pager.
+  useEffect(() => {
+    setCurrentPage((page) => Math.min(page, totalPages));
+  }, [totalPages]);
+
   // ── Bulk selection ──
   const isProtectedNotice = (notice) =>
     String(notice?.createdByType || '').toLowerCase() === 'super_admin'

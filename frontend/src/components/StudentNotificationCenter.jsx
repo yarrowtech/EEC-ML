@@ -276,8 +276,8 @@ const StudentNotificationCenter = () => {
                   <p className="text-[11px] font-bold uppercase tracking-wider text-slate-400">{dateLabel}</p>
                 </div>
                 <div className="divide-y divide-slate-50">
-                  {items.map((n) => {
-                    const id = String(n?._id || n?.id || n?.title || Math.random());
+                  {items.map((n, itemIdx) => {
+                    const id = String(n?._id || n?.id || n?.title || `${dateLabel}-${itemIdx}`);
                     return (
                       <NotificationRow
                         key={id}

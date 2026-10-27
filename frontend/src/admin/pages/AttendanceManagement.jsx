@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useMemo, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { UserCheck, Search, Calendar, Download, Users, Clock, Loader2 } from 'lucide-react';
 import * as XLSX from 'xlsx';
 
@@ -39,6 +39,11 @@ const AttendanceManagement = ({ setShowAdminHeader }) => {
     setShowAdminHeader(false);
   }, [setShowAdminHeader]);
 
+  // Rapid date/month changes can leave two requests in flight; without this
+  // guard, a slower response for an earlier date can resolve after a newer
+  // one and silently overwrite `allRows` with attendance for the wrong date.
+  const loadAttendanceRequestIdRef = useRef(0);
+
   const loadAttendance = useCallback(async () => {
     const token = localStorage.getItem('token');
     if (!token) {
@@ -46,6 +51,9 @@ const AttendanceManagement = ({ setShowAdminHeader }) => {
       setLoading(false);
       return;
     }
+
+    const requestId = ++loadAttendanceRequestIdRef.current;
+    const isStale = () => loadAttendanceRequestIdRef.current !== requestId;
 
     setLoading(true);
     setError('');
@@ -66,6 +74,7 @@ const AttendanceManagement = ({ setShowAdminHeader }) => {
       if (!response.ok) {
         throw new Error(data?.error || 'Failed to load attendance');
       }
+      if (isStale()) return;
 
       const rows = Array.isArray(data?.students)
         ? data.students.map((student) => {
@@ -93,9 +102,10 @@ const AttendanceManagement = ({ setShowAdminHeader }) => {
 
       setAllRows(rows);
     } catch (err) {
+      if (isStale()) return;
       setError(err.message || 'Unable to load attendance data');
     } finally {
-      setLoading(false);
+      if (!isStale()) setLoading(false);
     }
   }, [selectedDate, selectedMonth]);
 
@@ -150,9 +160,19 @@ const AttendanceManagement = ({ setShowAdminHeader }) => {
     [filteredRows]
   );
 
+  // Per-student sequence guard: toggling the same student's status twice in
+  // quick succession (e.g. present → absent → present) fires two requests,
+  // and whichever happens to resolve LAST wins — which may not be the one
+  // the admin clicked last. Track a sequence number per student so only the
+  // most-recently-issued request for that student is allowed to apply.
+  const attendanceToggleSeqRef = useRef({});
+
   const upsertAttendance = async (studentId, status) => {
     const token = localStorage.getItem('token');
     if (!token) return;
+
+    const seq = (attendanceToggleSeqRef.current[studentId] = (attendanceToggleSeqRef.current[studentId] || 0) + 1);
+    const isStale = () => attendanceToggleSeqRef.current[studentId] !== seq;
 
     setSavingStudentId(studentId);
     setError('');
@@ -174,6 +194,7 @@ const AttendanceManagement = ({ setShowAdminHeader }) => {
       if (!response.ok) {
         throw new Error(data?.error || 'Failed to save attendance');
       }
+      if (isStale()) return;
 
       setAllRows((prev) =>
         prev.map((item) =>
@@ -189,9 +210,10 @@ const AttendanceManagement = ({ setShowAdminHeader }) => {
       );
       setSuccess('Attendance updated');
     } catch (err) {
+      if (isStale()) return;
       setError(err.message || 'Could not update attendance');
     } finally {
-      setSavingStudentId('');
+      if (!isStale()) setSavingStudentId('');
     }
   };
 

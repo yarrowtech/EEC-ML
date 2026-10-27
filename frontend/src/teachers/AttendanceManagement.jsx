@@ -4,7 +4,7 @@
  * or duplication is prohibited without prior written permission.
  */
 
-import React, { useCallback, useEffect, useMemo, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useOutletContext } from 'react-router-dom';
 import {
   Calendar,
@@ -48,6 +48,23 @@ const toAbsoluteAssetUrl = (value) => {
   if (/^(https?:)?\/\//i.test(raw) || raw.startsWith('data:') || raw.startsWith('blob:')) return raw;
   if (raw.startsWith('/')) return `${API_BASE}${raw}`;
   return `${API_BASE}/${raw.replace(/^\/+/, '')}`;
+};
+
+// `toISOString()` is UTC — for any timezone ahead of UTC (e.g. IST, UTC+5:30),
+// the UTC date is still "yesterday" for the first few hours of the local day,
+// which would mis-lock/mis-label attendance for that whole window. Build the
+// date string from local Y/M/D instead.
+const toLocalDateString = (date) => {
+  const year = date.getFullYear();
+  const month = String(date.getMonth() + 1).padStart(2, '0');
+  const day = String(date.getDate()).padStart(2, '0');
+  return `${year}-${month}-${day}`;
+};
+
+const toLocalMonthString = (date) => {
+  const year = date.getFullYear();
+  const month = String(date.getMonth() + 1).padStart(2, '0');
+  return `${year}-${month}`;
 };
 
 const escapePrintHtml = (value) => String(value ?? '')
@@ -98,9 +115,9 @@ const StudentAvatar = ({ student, toneClass }) => {
 
 const AttendanceManagement = () => {
   const { className: contextClassName, sectionName: contextSectionName } = useOutletContext() || {};
-  const [selectedDate, setSelectedDate] = useState(new Date().toISOString().slice(0, 10));
+  const [selectedDate, setSelectedDate] = useState(toLocalDateString(new Date()));
   const [nowTick, setNowTick] = useState(() => Date.now());
-  const [selectedMonth, setSelectedMonth] = useState(new Date().toISOString().slice(0, 7));
+  const [selectedMonth, setSelectedMonth] = useState(toLocalMonthString(new Date()));
   const [selectedSession, setSelectedSession] = useState('');
   const [selectedClass, setSelectedClass] = useState('');
   const [selectedSection, setSelectedSection] = useState('');
@@ -131,7 +148,7 @@ const AttendanceManagement = () => {
     () => Boolean(selectedSession && selectedClass && selectedSection),
     [selectedSession, selectedClass, selectedSection]
   );
-  const todayDateString = useMemo(() => new Date(nowTick).toISOString().slice(0, 10), [nowTick]);
+  const todayDateString = useMemo(() => toLocalDateString(new Date(nowTick)), [nowTick]);
   const attendanceLockReason = useMemo(() => {
     const now = new Date(nowTick);
     const selected = new Date(`${selectedDate}T00:00:00`);
@@ -149,6 +166,14 @@ const AttendanceManagement = () => {
   }, [nowTick, selectedDate]);
   const isAttendanceLocked = Boolean(attendanceLockReason);
 
+  // Rapid class/section switching fires a new fetch before the previous one
+  // resolves. Without this guard, a stale response for the OLD class could
+  // land after the new class's response and overwrite `students`/
+  // `attendanceData` with the old roster — while `selectedClass`/
+  // `selectedSection` already reflect the new class, so `saveAttendance`
+  // would submit the old class's students under the new class's label.
+  const loadRequestIdRef = useRef(0);
+
   const loadAttendance = useCallback(async () => {
     const token = localStorage.getItem('token');
     if (!token) {
@@ -156,6 +181,9 @@ const AttendanceManagement = () => {
       setLoading(false);
       return;
     }
+
+    const requestId = ++loadRequestIdRef.current;
+    const isStale = () => loadRequestIdRef.current !== requestId;
 
     setLoading(true);
     setError('');
@@ -182,6 +210,7 @@ const AttendanceManagement = () => {
       if (!res.ok) {
         throw new Error(data?.error || 'Failed to load attendance');
       }
+      if (isStale()) return;
 
       const nextStudents = Array.isArray(data.students) ? data.students : [];
       const sortedStudents = [...nextStudents].sort((a, b) => {
@@ -207,9 +236,10 @@ const AttendanceManagement = () => {
       });
       setAttendanceData(nextState);
     } catch (err) {
+      if (isStale()) return;
       setError(err.message || 'Unable to load attendance data');
     } finally {
-      setLoading(false);
+      if (!isStale()) setLoading(false);
     }
   }, [selectedMonth, selectedDate, selectedSession, selectedClass, selectedSection, subject, isSubstituteMode, searchTerm, hasRequiredHierarchyFilters]);
 

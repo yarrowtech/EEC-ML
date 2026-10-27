@@ -375,7 +375,13 @@ const resolveTeacherStatus = (teacher, todayCheckedInTeacherIds, todayApprovedLe
   return 'Absent';
 };
 
+const BULK_JOB_POLL_INTERVAL_MS = 900;
+const BULK_JOB_MAX_POLL_ATTEMPTS = 200; // ~3 minutes at the interval above
+
 const Teachers = ({ setShowAdminHeader }) => {
+  const isMountedRef = useRef(true);
+  useEffect(() => () => { isMountedRef.current = false; }, []);
+
   const [activeTab, setActiveTab] = useState('teachers');
   const [searchTerm, setSearchTerm] = useState('');
   const [filterStatus, setFilterStatus] = useState('All');
@@ -541,14 +547,22 @@ const Teachers = ({ setShowAdminHeader }) => {
     const dayKey = getTodayCacheDateKey();
     if (!token) return `${TEACHERS_CACHE_PREFIX}_anonymous_${dayKey}`;
     try {
-      const base64 = token.split('.')[1]?.replace(/-/g, '+').replace(/_/g, '/');
-      const payload = JSON.parse(atob(base64));
+      // Base64url payloads aren't always a multiple of 4 chars — missing the
+      // re-padding step here (unlike HR.jsx's equivalent) made `atob` throw
+      // on a legitimately-valid token, falling back to a single shared
+      // `_fallback_` cache key that any admin hitting this path would also
+      // land on, leaking one admin's cached teacher list to another.
+      const base64 = token.split('.')[1]?.replace(/-/g, '+').replace(/_/g, '/') || '';
+      const padded = base64 + '='.repeat((4 - (base64.length % 4)) % 4);
+      const payload = JSON.parse(atob(padded));
       const adminId = payload?.id || 'unknown';
       const schoolId = payload?.schoolId || 'school';
       const campusId = payload?.campusId || 'campus';
       return `${TEACHERS_CACHE_PREFIX}_${adminId}_${schoolId}_${campusId}_${dayKey}`;
     } catch {
-      return `${TEACHERS_CACHE_PREFIX}_fallback_${dayKey}`;
+      // Scope the fallback to this token (not shared across sessions) so a
+      // genuinely undecodable token still can't collide with another admin.
+      return `${TEACHERS_CACHE_PREFIX}_fallback_${token.slice(-16)}_${dayKey}`;
     }
   };
 
@@ -578,7 +592,16 @@ const Teachers = ({ setShowAdminHeader }) => {
     }
   };
 
+  // A 30s auto-refresh interval runs concurrently with manual/CRUD-triggered
+  // calls to this function (every add/edit/delete re-fetches). Without this
+  // guard, a slower in-flight response (e.g. the interval's) can resolve
+  // after a newer one (e.g. right after an edit) and silently clobber the
+  // just-edited data with stale state.
+  const fetchTeachersRequestIdRef = useRef(0);
+
   const fetchTeachers = async ({ useCache = false } = {}) => {
+    const requestId = ++fetchTeachersRequestIdRef.current;
+    const isStale = () => fetchTeachersRequestIdRef.current !== requestId;
     if (useCache) {
       const cached = readTeachersCache();
       if (cached?.teachers?.length) {
@@ -704,6 +727,7 @@ const Teachers = ({ setShowAdminHeader }) => {
       isPrincipal: principalEmailSet.has(String(teacher.email || '').trim().toLowerCase()),
       status: resolveTeacherStatus(teacher, todayCheckedInTeacherIds, todayApprovedLeaveTeacherIds)
     }));
+    if (isStale()) return;
     setTeachers(normalized);
     writeTeachersCache(normalized);
   };
@@ -1383,25 +1407,35 @@ const Teachers = ({ setShowAdminHeader }) => {
       setTeacherBulkArchiveJob({ total: jobTotal, processed: 0, archived: 0, mode: 'archive' });
 
       let data;
-      for (; ;) {
-        await new Promise((resolve) => setTimeout(resolve, 900));
+      let attempts = 0;
+      while (isMountedRef.current && attempts < BULK_JOB_MAX_POLL_ATTEMPTS) {
+        attempts += 1;
+        await new Promise((resolve) => setTimeout(resolve, BULK_JOB_POLL_INTERVAL_MS));
+        if (!isMountedRef.current) break;
         const statusRes = await fetch(`${API_BASE}/api/admin/users/teachers/bulk/archive/status/${jobId}`, {
           headers: { authorization: `Bearer ${localStorage.getItem('token')}` },
         });
         if (!statusRes.ok) continue;
         data = await statusRes.json().catch(() => null);
         if (!data) continue;
-        setTeacherBulkArchiveJob({
-          total: data.total || jobTotal,
-          processed: data.processed || 0,
-          archived: data.archived || 0,
-          mode: 'archive',
-        });
+        if (isMountedRef.current) {
+          setTeacherBulkArchiveJob({
+            total: data.total || jobTotal,
+            processed: data.processed || 0,
+            archived: data.archived || 0,
+            mode: 'archive',
+          });
+        }
         if (data.status === 'completed' || data.status === 'failed') break;
       }
 
+      if (!isMountedRef.current) return;
+
       setTeacherBulkArchiveJob(null);
 
+      if (!data || (data.status !== 'completed' && data.status !== 'failed')) {
+        throw new Error('Bulk archive is taking longer than expected — check back shortly.');
+      }
       if (data.status === 'failed') {
         throw new Error(data.error || 'Bulk archive failed');
       }
@@ -1412,10 +1446,12 @@ const Teachers = ({ setShowAdminHeader }) => {
       setArchivedTeacherCount((prev) => prev + (data?.archived ?? ids.length));
       toast.success(`${data?.archived ?? ids.length} teacher(s) archived.`);
     } catch (error) {
-      toast.error(error.message || 'Unable to archive teachers');
+      if (isMountedRef.current) toast.error(error.message || 'Unable to archive teachers');
     } finally {
-      setIsBulkArchiving(false);
-      setTeacherBulkArchiveJob(null);
+      if (isMountedRef.current) {
+        setIsBulkArchiving(false);
+        setTeacherBulkArchiveJob(null);
+      }
     }
   };
 
@@ -1446,25 +1482,39 @@ const Teachers = ({ setShowAdminHeader }) => {
       const jobTotal = startData.total || ids.length;
       setTeacherBulkDeleteJob({ total: jobTotal, processed: 0, deleted: 0 });
 
+      // Bounded by a mounted-check (stop polling if the admin navigates away
+      // from this page) and a max-attempts cap (stop if the job gets stuck
+      // or the status endpoint keeps failing) — this previously had neither,
+      // so it could poll forever.
       let data;
-      for (; ;) {
-        await new Promise((resolve) => setTimeout(resolve, 900));
+      let attempts = 0;
+      while (isMountedRef.current && attempts < BULK_JOB_MAX_POLL_ATTEMPTS) {
+        attempts += 1;
+        await new Promise((resolve) => setTimeout(resolve, BULK_JOB_POLL_INTERVAL_MS));
+        if (!isMountedRef.current) break;
         const statusRes = await fetch(`${API_BASE}/api/admin/users/teachers/bulk/status/${jobId}`, {
           headers: { authorization: `Bearer ${localStorage.getItem('token')}` },
         });
         if (!statusRes.ok) continue;
         data = await statusRes.json().catch(() => null);
         if (!data) continue;
-        setTeacherBulkDeleteJob({
-          total: data.total || jobTotal,
-          processed: data.processed || 0,
-          deleted: data.deleted || 0,
-        });
+        if (isMountedRef.current) {
+          setTeacherBulkDeleteJob({
+            total: data.total || jobTotal,
+            processed: data.processed || 0,
+            deleted: data.deleted || 0,
+          });
+        }
         if (data.status === 'completed' || data.status === 'failed') break;
       }
 
+      if (!isMountedRef.current) return;
+
       setTeacherBulkDeleteJob(null);
 
+      if (!data || (data.status !== 'completed' && data.status !== 'failed')) {
+        throw new Error('Bulk delete is taking longer than expected — check back shortly.');
+      }
       if (data.status === 'failed') {
         throw new Error(data.error || 'Bulk delete failed');
       }
@@ -1477,10 +1527,12 @@ const Teachers = ({ setShowAdminHeader }) => {
       // refetch reflects the deletion immediately.
       fetchTeachers({ useCache: false }).catch(console.error);
     } catch (error) {
-      toast.error(error.message || 'Unable to delete teachers');
+      if (isMountedRef.current) toast.error(error.message || 'Unable to delete teachers');
     } finally {
-      setIsBulkDeleting(false);
-      setTeacherBulkDeleteJob(null);
+      if (isMountedRef.current) {
+        setIsBulkDeleting(false);
+        setTeacherBulkDeleteJob(null);
+      }
     }
   };
 

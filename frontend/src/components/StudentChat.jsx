@@ -914,9 +914,12 @@ const StudentChat = ({ onChatOpenChange } = {}) => {
     return () => onChatOpenChange?.(false);
   }, [activeThreadId, onChatOpenChange]);
 
+  const [authToken, setAuthToken] = useState(() => localStorage.getItem('token'));
+
   useEffect(() => {
     const disconnectSocket = () => {
       socketRef.current?.disconnect();
+      setAuthToken(localStorage.getItem('token'));
     };
     const handleStorage = (event) => {
       if (event.key === 'token' || event.key === null) {
@@ -990,10 +993,16 @@ const StudentChat = ({ onChatOpenChange } = {}) => {
   }, [decryptForUI]);
 
   // ── Bootstrap ─────────────────────────────────────────────────────────────
+  // Re-runs whenever the stored token changes (not just on mount), so a
+  // logout/login swap on the same tab re-authenticates the socket and refetches
+  // threads for the new account instead of keeping the previous student's data.
   useEffect(() => {
-    const token = localStorage.getItem('token');
+    const token = authToken;
     if (!token) return;
     let mounted = true;
+    meRef.current = null;
+    setMe(null);
+    setThreads([]);
 
     const hintedMeId = localStorage.getItem(LAST_STUDENT_CHAT_ME_KEY);
     if (hintedMeId) {
@@ -1099,7 +1108,7 @@ const StudentChat = ({ onChatOpenChange } = {}) => {
       });
       setThreads(prev => prev.map(t =>
         String(t._id) === threadId
-          ? { ...t, lastMessage: msg.text, lastMessageAt: msg.createdAt, unreadCount: activeThreadIdRef.current === threadId ? 0 : (t.unreadCount || 0) + 1 }
+          ? { ...t, lastMessage: msg.text, lastMessageAt: msg.createdAt, unreadCount: isActiveThread ? 0 : (t.unreadCount || 0) + 1 }
           : t
       ));
 
@@ -1226,7 +1235,7 @@ const StudentChat = ({ onChatOpenChange } = {}) => {
       mounted = false;
       socket.disconnect();
     };
-  }, [decryptForUI, decryptThreadPreview, hydrateEncryptedThreadPreviews]);
+  }, [authToken, decryptForUI, decryptThreadPreview, hydrateEncryptedThreadPreviews]);
 
   // REST catch-up prevents a missed Socket.IO event from requiring a browser
   // refresh. This is also a safety net for EC2 deployments where a proxy or
