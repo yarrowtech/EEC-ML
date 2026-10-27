@@ -634,6 +634,28 @@ router.post('/posts/:id/view', authAnyUser, async (req, res) => {
   }
 });
 
+// People who liked a post, with name, photo and role (students also carry class/section).
+router.get('/posts/:id/likers', authAnyUser, async (req, res) => {
+  // #swagger.tags = ['Alcove']
+  try {
+    const schoolId = resolveSchoolId(req, res);
+    if (!schoolId) return;
+    const audienceFilter = await buildAudienceFilter(req);
+    const post = await AlcovePost.findOne({ _id: req.params.id, schoolId, ...(audienceFilter || {}) }).select('likedBy').lean();
+    if (!post) return res.status(404).json({ error: 'Not found' });
+    const keys = Array.isArray(post.likedBy) ? post.likedBy : [];
+    const profiles = await loadUserProfiles(keys);
+    // Newest likes first; likedBy is appended to in order.
+    const likers = [...keys].reverse().map((key) => {
+      const [type, id] = String(key).split(':');
+      return profiles.get(key) || { id, userType: type || 'user', name: type === 'parent' ? 'Parent' : 'User', photo: '' };
+    });
+    res.json({ likers });
+  } catch (err) {
+    res.status(400).json({ error: err.message });
+  }
+});
+
 // Get viewers for a post (any authenticated user)
 router.get('/posts/:id/viewers', authAnyUser, async (req, res) => {
   // #swagger.tags = ['Alcove']
