@@ -2,7 +2,7 @@ import { useEffect, useState } from 'react';
 import { motion } from 'framer-motion';
 import {
   CheckCircle2, Clipboard, Edit3, Eye, EyeOff, ExternalLink, Loader2, Lock,
-  Send, ShieldCheck, Trash2, Save, XCircle, Info,
+  Send, ShieldCheck, Trash2, XCircle, Info,
   Edit,
 } from 'lucide-react';
 import toast from 'react-hot-toast';
@@ -177,10 +177,6 @@ export default function PaymentGatewaySettings({ setShowAdminHeader }) {
       setConfirmDisconnect(false);
       toast.success('Credentials disconnected');
     } catch (err) { toast.error(err.message); }
-  };
-
-  const handleSaveAll = async () => {
-    toast.success('Changes saved and applied to the selected environment.');
   };
 
   if (gateway.loading) {
@@ -435,32 +431,26 @@ export default function PaymentGatewaySettings({ setShowAdminHeader }) {
       </div>
 
       {/* ─── Bottom bar ─── */}
-      <div className="mt-5 border-t border-gray-200 bg-white px-4 py-3">
-        <div className="mx-auto flex max-w-5xl items-center justify-between">
-          <p className="flex items-center gap-1.5 text-sm text-gray-500">
-            <Info size={14} className="text-blue-500" /> Your changes will be saved and applied to the selected environment.
-          </p>
-          <div className="flex items-center gap-3">
-            {connected && (
-              <button
-                type="button"
-                onClick={() => setConfirmDisconnect(true)}
-                disabled={gateway.disconnecting}
-                className="inline-flex items-center gap-1.5 rounded-xl border border-red-200 px-5 py-2.5 text-sm font-semibold text-red-600 hover:bg-red-50"
-              >
-                {gateway.disconnecting ? <Loader2 size={14} className="animate-spin" /> : <Trash2 size={14} />} Disconnect
-              </button>
-            )}
+      {/* Credential edits are saved by the "Edit credentials" modal itself
+          (handleSave → gateway.save) — there's no separate staged/draft
+          change at this level to commit, so the only real action here is
+          disconnecting. A "Save changes" button here previously just showed
+          a success toast with no save call behind it, falsely implying it
+          had applied something. */}
+      {connected && (
+        <div className="mt-5 border-t border-gray-200 bg-white px-4 py-3">
+          <div className="mx-auto flex max-w-5xl items-center justify-end">
             <button
               type="button"
-              onClick={handleSaveAll}
-              className="inline-flex items-center gap-1.5 rounded-xl bg-blue-600 px-5 py-2.5 text-sm font-semibold text-white shadow-sm hover:bg-blue-700"
+              onClick={() => setConfirmDisconnect(true)}
+              disabled={gateway.disconnecting}
+              className="inline-flex items-center gap-1.5 rounded-xl border border-red-200 px-5 py-2.5 text-sm font-semibold text-red-600 hover:bg-red-50"
             >
-              <Save size={14} /> Save changes
+              {gateway.disconnecting ? <Loader2 size={14} className="animate-spin" /> : <Trash2 size={14} />} Disconnect
             </button>
           </div>
         </div>
-      </div>
+      )}
 
       {/* ─── Edit credentials modal ─── */}
       <CredentialEditModal

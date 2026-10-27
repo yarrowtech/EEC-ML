@@ -287,8 +287,16 @@ const Support = ({ setShowAdminHeader }) => {
     );
   };
 
+  // Switching role or editing the search box fast can have two requests in
+  // flight; without this guard a slower, stale response (for the previous
+  // role/query) can resolve after a newer one and silently replace the list
+  // — risking an admin resetting the wrong user's password.
+  const passwordResetRequestIdRef = useRef(0);
+
   const fetchPasswordResetUsers = useCallback(async (role, search) => {
     if (typeof window === 'undefined') return;
+    const requestId = ++passwordResetRequestIdRef.current;
+    const isStale = () => passwordResetRequestIdRef.current !== requestId;
     const token = window.localStorage.getItem('token');
     if (!token) { setPasswordResetUsers([]); return; }
     setPasswordResetLoadingUsers(true);
@@ -298,11 +306,13 @@ const Support = ({ setShowAdminHeader }) => {
       const res = await fetch(`${API_BASE}/api/admin/users/password-reset/users?${query}`, { headers: { authorization: `Bearer ${token}` } });
       const data = await res.json().catch(() => ({}));
       if (!res.ok) throw new Error(data?.error || 'Unable to fetch users');
+      if (isStale()) return;
       setPasswordResetUsers(Array.isArray(data?.users) ? data.users : []);
     } catch (error) {
+      if (isStale()) return;
       setPasswordResetUsers([]);
       setStatusBanner({ type: 'error', title: 'Unable to load users.', description: error.message || 'Please retry.' });
-    } finally { setPasswordResetLoadingUsers(false); }
+    } finally { if (!isStale()) setPasswordResetLoadingUsers(false); }
   }, []);
 
   useEffect(() => {

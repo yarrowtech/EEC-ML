@@ -315,8 +315,6 @@ const Result = ({ setShowAdminHeader }) => {
   const [loadingStudents, setLoadingStudents] = useState(false);
 
   const [searchTerm, setSearchTerm]     = useState('');
-  const [selectedClass]   = useState('');
-  const [selectedSection] = useState('');
   const filterSubject = 'all';
 
   const [showAddResult, setShowAddResult]   = useState(false);
@@ -459,10 +457,6 @@ const Result = ({ setShowAdminHeader }) => {
       if (!r.ok) throw new Error();
       const all = await r.json();
       let filtered = Array.isArray(all) ? all : [];
-      if (!forceAll && selectedClass) {
-        const nc = normalizeClass(selectedClass); const ns = normSec(selectedSection);
-        filtered = filtered.filter(s => normalizeClass(s.grade||s.class||'') === nc && (selectedSection ? normSec(s.section||'') === ns : true));
-      }
       const map = new Map(); const seen = new Set();
       filtered.forEach(s => {
         const id = String(s._id||s.id||'');
@@ -475,7 +469,6 @@ const Result = ({ setShowAdminHeader }) => {
   };
 
   useEffect(() => { fetchResults(); fetchExams(); fetchExamGroups(); fetchAcademicSetup(); }, []);
-  useEffect(() => { if (selectedClass) fetchStudentsByClass(); }, [selectedClass, selectedSection]);
 
   const handleTogglePublish = async (id, val) => {
     try {
@@ -1013,12 +1006,8 @@ const Result = ({ setShowAdminHeader }) => {
     const subj = (r.examId?.subject||'').toLowerCase();
     const q = searchTerm.toLowerCase();
     const resultSession = getResultSession(r);
-    const resultClass = normalizeClass(r?.studentId?.grade || r?.studentId?.class || '');
-    const selectedClassNormalized = normalizeClass(selectedClass);
     return (!q || name.includes(q) || subj.includes(q)) &&
       (!examSessionFilter || resultSession === examSessionFilter) &&
-      (!selectedClass || resultClass === selectedClassNormalized) &&
-      (!selectedSection || normSec(r?.studentId?.section || '') === normSec(selectedSection)) &&
       (filterSubject === 'all' || r.examId?.subject === filterSubject);
   });
 

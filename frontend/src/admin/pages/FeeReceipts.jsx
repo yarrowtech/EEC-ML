@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useState } from 'react';
+import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import {
   AlertCircle,
@@ -81,7 +81,15 @@ const FeeReceipts = ({ setShowAdminHeader }) => {
 
   useEffect(() => { setPage(1); }, [debouncedSearch, filters]);
 
+  // `FeesCollection.jsx`'s equivalent fetch already solved this exact race
+  // with a request-id guard; this file never got the same fix. Rapid
+  // filter/search/page changes can otherwise let a stale response overwrite
+  // `items`/`total`/`totalAmount` with data for a different filter/page.
+  const fetchReceiptsRequestIdRef = useRef(0);
+
   const fetchReceipts = useCallback(async () => {
+    const requestId = ++fetchReceiptsRequestIdRef.current;
+    const isStale = () => fetchReceiptsRequestIdRef.current !== requestId;
     setLoading(true);
     setError('');
     try {
@@ -93,13 +101,15 @@ const FeeReceipts = ({ setShowAdminHeader }) => {
       const res = await fetch(`${API_BASE}/api/fees/admin/receipts?${params}`, { headers: authHeaders() });
       const data = await res.json().catch(() => ({}));
       if (!res.ok) throw new Error(data?.error || 'Unable to load receipts');
+      if (isStale()) return;
       setItems(Array.isArray(data.items) ? data.items : []);
       setTotal(Number(data.total || 0));
       setTotalAmount(Number(data?.totals?.amount || 0));
     } catch (err) {
+      if (isStale()) return;
       setError(err.message || 'Unable to load receipts');
     } finally {
-      setLoading(false);
+      if (!isStale()) setLoading(false);
     }
   }, [page, debouncedSearch, filters]);
 

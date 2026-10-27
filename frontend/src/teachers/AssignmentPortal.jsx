@@ -988,8 +988,12 @@ const AssignmentPortal = ({ view = 'manage', notificationCount = 0, siblingNotif
       setSaveError('Please enter a valid mark (≥ 0).');
       return;
     }
-    if (numMarks > selected.totalMarks) {
-      setSaveError(`Marks cannot exceed ${selected.totalMarks}.`);
+    // `numMarks > undefined` is always false, so a submission record missing
+    // `totalMarks` would otherwise let any mark through unchecked (e.g.
+    // 500/50) — treat a missing/invalid max as 0 so the bound still applies.
+    const maxMarks = Number(selected.totalMarks);
+    if (!Number.isFinite(maxMarks) || numMarks > maxMarks) {
+      setSaveError(`Marks cannot exceed ${Number.isFinite(maxMarks) ? maxMarks : 0}.`);
       return;
     }
     setSaving(true);
