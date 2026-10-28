@@ -83,7 +83,8 @@ const AdminHeader = ({ adminUser, onOpenMobileSidebar, onLogoutRequest, notifica
   });
 
   useEffect(() => {
-    syncNotifications(notifications);
+    // Wall posts already arrive as web push, so keep them out of the desktop-alert bridge.
+    syncNotifications(notifications.filter((item) => !item?.isCommunityPost));
   }, [notifications, syncNotifications]);
 
   const timeAgo = (val) => {

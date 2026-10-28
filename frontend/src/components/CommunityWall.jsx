@@ -51,13 +51,15 @@ import {
   MessageSquareText
 } from 'lucide-react';
 import Swal from 'sweetalert2';
+import { useSearchParams } from 'react-router-dom';
+import { COMMUNITY_WALL_CHANGED_EVENT, subscribeWallChanges } from '../hooks/useCommunityWallUnread';
 
 const SUBJECTS = [
-  { name: 'Computer', icon: Monitor, tone: 'bg-blue-50 text-blue-600' },
-  { name: 'Mathematics', icon: Calculator, tone: 'bg-rose-50 text-rose-500' },
-  { name: 'Science', icon: FlaskConical, tone: 'bg-emerald-50 text-emerald-600' },
-  { name: 'English', icon: BookA, tone: 'bg-violet-50 text-violet-600' },
-  { name: 'Social Science', icon: Landmark, tone: 'bg-orange-50 text-orange-500' },
+  { name: 'Computer', icon: Monitor, tone: 'bg-blue-500 text-white' },
+  { name: 'Mathematics', icon: Calculator, tone: 'bg-rose-500 text-white' },
+  { name: 'Science', icon: FlaskConical, tone: 'bg-emerald-500 text-white' },
+  { name: 'English', icon: BookA, tone: 'bg-violet-500 text-white' },
+  { name: 'Social Science', icon: Landmark, tone: 'bg-orange-500 text-white' },
 ];
 
 const GUIDELINES = ['Be respectful and helpful', 'Share accurate information', 'Use clear explanations', 'Give credit where applicable'];
@@ -248,6 +250,16 @@ const CommunityWall = ({ role = 'teacher' }) => {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [viewMode, navView, filters.subject, filters.difficulty, filters.search]);
 
+  // Someone else posted or a post was removed: reload the list that's on screen right away.
+  const reloadVisibleRef = React.useRef(() => {});
+  reloadVisibleRef.current = () => {
+    if (viewMode === 'my-problems') fetchMyProblems();
+    else if (viewMode === 'wall') fetchProblems();
+  };
+  useEffect(() => subscribeWallChanges((payload) => {
+    if (payload?.type === 'post-created' || payload?.type === 'post-removed') reloadVisibleRef.current();
+  }), []);
+
   const handleCreateProblem = async () => {
     if (!newProblem.title || !newProblem.subject || !newProblem.problemText) return;
 
@@ -358,6 +370,7 @@ const CommunityWall = ({ role = 'teacher' }) => {
       const res = await fetch(`${API}/api/alcove/posts/${problemId}/view`, { method: 'POST', headers: authHeaders() });
       if (!res.ok) return;
       const { viewCount } = await res.json();
+      window.dispatchEvent(new Event(COMMUNITY_WALL_CHANGED_EVENT));
       const applyViews = (problem) => (problem.id === problemId ? { ...problem, views: Number(viewCount) || 0 } : problem);
       setProblems((prev) => prev.map(applyViews));
       setMyProblems((prev) => prev.map(applyViews));
@@ -366,6 +379,34 @@ const CommunityWall = ({ role = 'teacher' }) => {
       viewedPostIds.current.delete(problemId);
     }
   };
+
+  const [searchParams, setSearchParams] = useSearchParams();
+  const linkedPostId = searchParams.get('post');
+  const clearLinkedPost = () => {
+    if (!searchParams.get('post')) return;
+    const next = new URLSearchParams(searchParams);
+    next.delete('post');
+    setSearchParams(next, { replace: true });
+  };
+  useEffect(() => {
+    if (!linkedPostId) return;
+    let cancelled = false;
+    (async () => {
+      try {
+        const res = await fetch(`${API}/api/alcove/posts/${linkedPostId}`, { headers: authHeaders() });
+        if (!res.ok) throw new Error(res.status === 404 ? 'This post is no longer available.' : 'Could not open the post.');
+        const post = await res.json();
+        if (!cancelled) openProblemDetails(mapApiPostToUi(post));
+      } catch (err) {
+        if (!cancelled) {
+          Swal.fire({ icon: 'info', title: 'Post unavailable', text: err.message, timer: 2200, showConfirmButton: false });
+          clearLinkedPost();
+        }
+      }
+    })();
+    return () => { cancelled = true; };
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [linkedPostId]);
 
   const openProblemDetails = async (problem) => {
     recordView(problem.id);
@@ -874,10 +915,10 @@ const CommunityWall = ({ role = 'teacher' }) => {
           <section className="rounded-xl border border-slate-200 bg-white px-3 py-2.5 shadow-sm">
             <h2 className="mb-2 text-[14px] font-semibold text-slate-900">Community Overview</h2>
             <div className="grid grid-cols-2 gap-2">
-              <OverviewStat icon={ThumbsUp} tone="bg-blue-50 text-blue-600" value={hubStats.liked} label="Liked Posts" active={navView === 'liked'} onClick={() => selectSection('liked')} />
-              <OverviewStat icon={Bookmark} tone="bg-amber-50 text-amber-500" value={hubStats.saved} label="Saved Posts" active={navView === 'saved'} onClick={() => selectSection('saved')} />
-              <OverviewStat icon={Pencil} tone="bg-emerald-50 text-emerald-600" value={hubStats.mine} label="My Contributions" active={navView === 'mine'} onClick={() => selectSection('mine')} />
-              <OverviewStat icon={BarChart3} tone="bg-indigo-50 text-indigo-600" value={hubStats.polls} label="Poll Results" active={navView === 'polls'} onClick={() => selectSection('polls')} />
+              <OverviewStat icon={ThumbsUp} tone="bg-blue-500 text-white" value={hubStats.liked} label="Liked Posts" active={navView === 'liked'} onClick={() => selectSection('liked')} />
+              <OverviewStat icon={Bookmark} tone="bg-amber-500 text-white" value={hubStats.saved} label="Saved Posts" active={navView === 'saved'} onClick={() => selectSection('saved')} />
+              <OverviewStat icon={Pencil} tone="bg-emerald-500 text-white" value={hubStats.mine} label="My Contributions" active={navView === 'mine'} onClick={() => selectSection('mine')} />
+              <OverviewStat icon={BarChart3} tone="bg-indigo-500 text-white" value={hubStats.polls} label="Poll Results" active={navView === 'polls'} onClick={() => selectSection('polls')} />
             </div>
           </section>
 
@@ -944,13 +985,13 @@ const CommunityWall = ({ role = 'teacher' }) => {
 
           <section className="rounded-xl border border-slate-200 bg-white px-3 py-2.5 shadow-sm">
             <div className="mb-2 flex items-center gap-2">
-              <ShieldCheck size={18} className="text-blue-600" />
+              <ShieldCheck size={18} className="text-white fill-blue-600" />
               <h2 className="text-[14px] font-semibold text-slate-900">Community Guidelines</h2>
             </div>
             <ul className="space-y-1.5">
               {GUIDELINES.map((item) => (
                 <li key={item} className="flex items-center gap-2.5 text-[13px] text-slate-700">
-                  <span className="flex h-5 w-5 items-center justify-center rounded-full bg-emerald-50 text-emerald-600"><Check size={12} /></span>{item}
+                  <span className="flex h-5 w-5 items-center justify-center rounded-full bg-emerald-50 bg-green-700 text-white"><Check size={12} /></span>{item}
                 </li>
               ))}
             </ul>
@@ -980,7 +1021,7 @@ const CommunityWall = ({ role = 'teacher' }) => {
             userName={userName}
             userPhoto={profile.photo}
             formatTimeAgo={formatTimeAgo}
-            onClose={() => setDetailProblem(null)}
+            onClose={() => { setDetailProblem(null); clearLinkedPost(); }}
           />
         )}
       </AnimatePresence>
@@ -1015,7 +1056,7 @@ const CommunityWall = ({ role = 'teacher' }) => {
 const OverviewStat = ({ icon, tone, value, label, active, onClick }) => (
   <button type="button" onClick={onClick} className={`flex flex-col items-center gap-1 rounded-lg border px-2 py-2 text-center transition hover:border-blue-200 hover:bg-blue-50/40 ${active ? 'border-blue-500 bg-blue-50/60' : 'border-slate-100'}`}>
     <span className="flex items-center justify-center gap-2">
-      <span className={`flex h-7 w-7 shrink-0 items-center justify-center rounded-lg ${tone}`}>{React.createElement(icon, { size: 15 })}</span>
+      <span className={`flex h-7 w-7 shrink-0 items-center justify-center rounded-full ${tone}`}>{React.createElement(icon, { size: 15 })}</span>
       <span className="text-[18px] font-bold leading-none text-slate-900">{value}</span>
     </span>
     <span className="w-full truncate text-[11px] font-medium text-slate-500">{label}</span>
@@ -1394,7 +1435,7 @@ const LiveDiscussionCard = ({ problem, index, onOpen, onLike, onSave, onDelete, 
         <div className="min-w-0 flex-1">
           <div className="flex flex-wrap items-center gap-2">
             <p className="text-[13px] font-semibold text-slate-900">{problem.teacherName}</p>
-            <span className="inline-flex items-center gap-1 rounded bg-amber-50 px-1.5 py-0.5 text-[10px] font-medium text-amber-700"><Star size={10} className="fill-amber-400 text-amber-400" />Top Contributor</span>
+            <span className="inline-flex items-center gap-1 rounded-full bg-amber-500 px-1.5 py-0.5 text-[10px] font-medium text-white"><Star size={10} className="fill-white text-white" />Top Contributor</span>
           </div>
           <p className="flex flex-wrap items-center text-[11px] text-slate-500">{roleLine}<span className="mx-1">•</span>{formatTimeAgo(problem.timestamp)}<span className="mx-1">•</span><AudienceBadge problem={problem} /></p>
         </div>
@@ -1500,12 +1541,12 @@ const EmptyKnowledgeState = ({ onCreate }) => <div className="rounded-3xl border
 
 const commentRoleTag = (comment) => {
   const type = String(comment?.authorType || '').toLowerCase();
-  if (type === 'teacher') return { label: 'Teacher', tone: 'bg-violet-100 text-violet-700' };
-  if (type === 'admin') return { label: 'School Admin', tone: 'bg-blue-100 text-blue-700' };
-  if (type === 'parent') return { label: 'Parent', tone: 'bg-amber-100 text-amber-700' };
+  if (type === 'teacher') return { label: 'Teacher', tone: 'bg-violet-500 text-white' };
+  if (type === 'admin') return { label: 'School Admin', tone: 'bg-blue-500 text-white' };
+  if (type === 'parent') return { label: 'Parent', tone: 'bg-amber-500 text-white' };
   if (type === 'student') {
     const placement = comment.authorGrade ? ` • ${classSectionLabel(comment.authorGrade, comment.authorSection)}` : '';
-    return { label: `Student${placement}`, tone: 'bg-emerald-100 text-emerald-700' };
+    return { label: `Student${placement}`, tone: 'bg-emerald-500 text-white' };
   }
   return null;
 };
@@ -1614,7 +1655,8 @@ const CommentsModal = ({ problem, comments, loading, commentText, setCommentText
         <div className="min-w-0">
           <div className="inline-block max-w-full rounded-2xl bg-slate-100 px-3 py-2">
             <p className="text-[12px] font-semibold leading-4 text-slate-900">{comment.authorName || 'User'}</p>
-            {roleTag && <span className={`inline-block rounded-sm px-1 text-[8px] font-medium leading-3 ${roleTag.tone}`}>{roleTag.label}</span>}
+            {/* Block-level so it sits flush under the name instead of on a full-height text line. */}
+            {roleTag && <span className={`block w-fit rounded-full px-1 text-[8px] font-medium leading-3 ${roleTag.tone}`}>{roleTag.label}</span>}
             <ExpandableText text={comment.text} className="" textClass="text-slate-800" bgClass="bg-slate-100" />
           </div>
           <div className="mt-0.5 flex items-center gap-3 pl-3 text-[11px]">

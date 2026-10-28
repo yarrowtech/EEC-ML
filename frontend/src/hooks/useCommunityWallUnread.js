@@ -28,20 +28,9 @@ const acquireSocket = () => {
 const releaseSocket = () => {
   socketUsers = Math.max(0, socketUsers - 1);
   if (socketUsers === 0 && sharedSocket) {
-    sharedSocket.disconnect?.();
+    sharedSocket.disconnect();
     sharedSocket = null;
   }
-};
-
-// Listen to any server push event on the shared socket. Returns an unsubscribe function.
-export const subscribeSocketEvent = (event, handler) => {
-  const socket = acquireSocket();
-  if (!socket) return () => {};
-  socket.on?.(event, handler);
-  return () => {
-    socket.off?.(event, handler);
-    releaseSocket();
-  };
 };
 
 // For screens that aren't badges (the wall feed itself): calls onChange(payload) whenever
@@ -49,9 +38,9 @@ export const subscribeSocketEvent = (event, handler) => {
 export const subscribeWallChanges = (onChange) => {
   const socket = acquireSocket();
   if (!socket) return () => {};
-  socket.on?.('community-wall:changed', onChange);
+  socket.on('community-wall:changed', onChange);
   return () => {
-    socket.off?.('community-wall:changed', onChange);
+    socket.off('community-wall:changed', onChange);
     releaseSocket();
   };
 };
@@ -94,9 +83,9 @@ const useCommunityWallUnread = ({ enabled = true, wallPath }) => {
     window.addEventListener(COMMUNITY_WALL_CHANGED_EVENT, onChanged);
     document.addEventListener('visibilitychange', onVisible);
     const socket = acquireSocket();
-    socket?.on?.('community-wall:changed', onChanged);
+    socket?.on('community-wall:changed', onChanged);
     return () => {
-      socket?.off?.('community-wall:changed', onChanged);
+      socket?.off('community-wall:changed', onChanged);
       releaseSocket();
       clearInterval(timer);
       window.removeEventListener(COMMUNITY_WALL_CHANGED_EVENT, onChanged);
