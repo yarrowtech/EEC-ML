@@ -178,6 +178,13 @@ const resolveNotificationPath = (notification, userType) => {
   const type = normalizeString(notification?.type || notification?.typeLabel || '');
   const content = normalizeString(`${notification?.title || ''} ${notification?.message || ''}`);
 
+  // Parent-teacher meetings open the meetings page, whatever words the topic contains.
+  if (normalizeString(notification?.typeLabel) === 'parent_teacher_meeting') {
+    if (userType === 'Parent') return '/parents/ptm';
+    if (userType === 'Student') return '/student/meetings';
+    if (userType === 'Teacher') return '/teacher/ptm';
+  }
+
   if (userType === 'Student') {
     if (content.includes('attendance')) return '/student/attendance';
     if (content.includes('achievement')) return '/student/achievements';

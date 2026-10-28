@@ -30,7 +30,7 @@ const AdminLayout = ({
   const communityUnread = useCommunityWallUnread({ enabled: !isSuperAdmin, wallPath: WALL_PATH });
   const notificationState = useMemo(() => ({
     ...baseNotificationState,
-    notifications: [...communityUnread.bellItems, ...(baseNotificationState.notifications || [])],
+    notifications: [...communityUnread.bellItems, ...(baseNotificationState.notifications || [])].sort((a, b) => new Date(b?.createdAt || 0) - new Date(a?.createdAt || 0)),
     unreadCount: (baseNotificationState.unreadCount || 0) + communityUnread.count,
     // Opening the post marks it read, so a click needs no separate call.
     markRead: (id, ...rest) => (String(id).startsWith('community-post-')
