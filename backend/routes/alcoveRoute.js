@@ -17,6 +17,19 @@ const SectionModel = require('../models/Section');
 const AcademicYear = require('../models/AcademicYear');
 const multer = require('multer');
 const { uploadBufferToCloudinary } = require('../utils/cloudinaryUpload');
+const { sendCommunityPostPush } = require('../utils/webPushService');
+const socketRegistry = require('../utils/socketRegistry');
+
+// Tell every open portal tab in the school to refresh its wall badge/bell right away.
+// Each client re-asks /unread, so audience rules stay on the server.
+const emitWallChanged = (schoolId, payload = {}) => {
+  try {
+    socketRegistry.get()?.to(`school:${schoolId}`).emit('community-wall:changed', payload);
+  } catch (_err) {
+    // realtime refresh is best-effort; clients also poll
+  }
+};
+const { logger } = require('../utils/logger');
 
 const POST_IMAGE_MAX_BYTES = 5 * 1024 * 1024;
 const POST_IMAGE_MAX_COUNT = 4;
@@ -348,6 +361,10 @@ router.post('/posts', authAnyUser, withPostImages, async (req, res) => {
       isStudentPosted: authorType === 'student',
     });
     res.status(201).json(post);
+    emitWallChanged(schoolId, { type: 'post-created', postId: String(post._id) });
+    // Fire-and-forget: notify the post's audience on their devices.
+    sendCommunityPostPush({ post: post.toObject(), authorName: post.authorName })
+      .catch((pushErr) => logger.warn({ err: pushErr, postId: String(post._id) }, 'community wall push failed'));
   } catch (err) {
     res.status(400).json({ error: err.message });
   }
@@ -412,6 +429,88 @@ router.get('/audience-classes', authAnyUser, async (req, res) => {
       className: classById.get(String(section.classId))?.name || '',
       sectionName: section.name,
     })));
+  } catch (err) {
+    res.status(400).json({ error: err.message });
+  }
+});
+
+const UNREAD_WINDOW_DAYS = 30;
+
+// Unread = visible to me, not mine, not removed, posted in the last 30 days,
+// and neither viewed nor dismissed by me.
+const buildUnreadFilter = async (req, schoolId) => {
+  const actorKey = buildActorKey(req);
+  const userType = normalizeUserType(req.userType || req.user?.userType || req.user?.type);
+  const meId = String(req.user?.id || '');
+  const audienceFilter = await buildAudienceFilter(req);
+  return {
+    schoolId,
+    'removal.at': null,
+    createdAt: { $gte: new Date(Date.now() - UNREAD_WINDOW_DAYS * 24 * 60 * 60 * 1000) },
+    viewedBy: { $ne: actorKey },
+    seenBy: { $ne: actorKey },
+    $and: [
+      { $nor: [{ authorUserId: meId, authorType: userType }, ...(userType === 'teacher' && /^[a-f0-9]{24}$/i.test(meId) ? [{ author: meId }] : [])] },
+      ...(audienceFilter ? [audienceFilter] : []),
+    ],
+  };
+};
+
+// Unread wall posts for the sidebar badge and the notification bell.
+router.get('/unread', authAnyUser, async (req, res) => {
+  // #swagger.tags = ['Alcove']
+  try {
+    const schoolId = resolveSchoolId(req, res);
+    if (!schoolId) return;
+    const filter = await buildUnreadFilter(req, schoolId);
+    // Recent posts for the bell, read ones included; only the count is unread-only.
+    const { viewedBy: _viewed, seenBy: _seen, ...recentFilter } = filter;
+    const actorKey = buildActorKey(req);
+    const [count, posts] = await Promise.all([
+      AlcovePost.countDocuments(filter),
+      AlcovePost.find(recentFilter)
+        .select('_id title problemText poll images authorName authorType authorUserId author createdAt viewedBy seenBy')
+        .sort({ createdAt: -1 })
+        .limit(15)
+        .lean(),
+    ]);
+    const pics = await resolveProfilePics(posts.map(postAuthorRef));
+    res.json({
+      count,
+      items: posts.map((post) => {
+        const ref = postAuthorRef(post);
+        const text = String(post.problemText || '').replace(/\s+/g, ' ').trim();
+        return {
+          postId: String(post._id),
+          isRead: (post.viewedBy || []).includes(actorKey) || (post.seenBy || []).includes(actorKey),
+          authorName: post.authorName || 'Someone',
+          authorPhoto: pics.get(`${ref.type}:${ref.id}`) || '',
+          preview: text
+            ? (text.length > 120 ? `${text.slice(0, 117)}...` : text)
+            : post.poll?.question ? `Poll: ${post.poll.question}` : (post.images?.length ? 'Shared a photo' : post.title || 'New post'),
+          createdAt: post.createdAt,
+        };
+      }),
+    });
+  } catch (err) {
+    res.status(400).json({ error: err.message });
+  }
+});
+
+// Mark wall posts as seen without opening them. Body: { postIds: [...] } or { all: true }.
+router.post('/unread/seen', authAnyUser, async (req, res) => {
+  // #swagger.tags = ['Alcove']
+  try {
+    const schoolId = resolveSchoolId(req, res);
+    if (!schoolId) return;
+    const filter = await buildUnreadFilter(req, schoolId);
+    if (!req.body?.all) {
+      const ids = (Array.isArray(req.body?.postIds) ? req.body.postIds : []).map(String).filter((id) => /^[a-f0-9]{24}$/i.test(id));
+      if (!ids.length) return res.json({ ok: true, updated: 0 });
+      filter._id = { $in: ids };
+    }
+    const result = await AlcovePost.updateMany(filter, { $addToSet: { seenBy: buildActorKey(req) } });
+    res.json({ ok: true, updated: result.modifiedCount || 0 });
   } catch (err) {
     res.status(400).json({ error: err.message });
   }
@@ -885,6 +984,7 @@ router.delete('/posts/:id', authAnyUser, async (req, res) => {
         $unset: { poll: 1 },
       });
       await AlcoveComment.deleteMany({ post: req.params.id, schoolId });
+      emitWallChanged(schoolId, { type: 'post-removed', postId: String(req.params.id) });
       return res.json({ ok: true, removed: true });
     }
     const post = await AlcovePost.findOneAndDelete({ _id: req.params.id, schoolId });

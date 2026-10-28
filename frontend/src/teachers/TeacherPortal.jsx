@@ -80,6 +80,7 @@ import TeacherAchievements from './TeacherAchievements';
 import TeacherAlcove from './TeacherAlcove';
 import TryoutManagement from '../components/TryoutManagement';
 import { useDesktopNotificationBridge } from '../hooks/useDesktopNotificationBridge';
+import useCommunityWallUnread from '../hooks/useCommunityWallUnread';
 import DesktopNotificationPermissionModal from '../components/DesktopNotificationPermissionModal';
 import NotificationPopover from '../components/NotificationPopover';
 import ExamRoutineTable from '../components/ExamRoutineTable';
@@ -1810,9 +1811,15 @@ const TeacherPortalShell = () => {
       }));
     return [...notifications, ...fallbackItems];
   }, [assignmentSubmissionNotifications, moduleSeenState, notifications]);
+  // Unread Community Wall posts ride along in the bell and badge the sidebar item.
+  const communityUnread = useCommunityWallUnread({ wallPath: '/teacher/community-wall' });
+  const bellNotificationItems = useMemo(
+    () => [...communityUnread.bellItems, ...notificationItems],
+    [communityUnread.bellItems, notificationItems]
+  );
   const unreadCount = useMemo(
-    () => notificationItems.filter((item) => !item?.isRead).length,
-    [notificationItems]
+    () => bellNotificationItems.filter((item) => !item?.isRead).length,
+    [bellNotificationItems]
   );
 
   const fetchNotifs = useCallback(async () => {
@@ -1931,6 +1938,7 @@ const TeacherPortalShell = () => {
   const markAllRead = useCallback(async () => {
     const token = localStorage.getItem('token');
     if (!token) return;
+    communityUnread.markAllSeen();
     setNotifications((prev) => prev.map((item) => ({ ...item, isRead: true })));
     const submissionIds = assignmentSubmissionNotifications.map(notificationId).filter(Boolean);
     if (submissionIds.length > 0) {
@@ -1953,10 +1961,15 @@ const TeacherPortalShell = () => {
       setNotifError(err.message || 'Failed to mark all as read');
       await fetchNotifs();
     }
-  }, [fetchNotifs, navigate]);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [fetchNotifs, navigate, communityUnread.markAllSeen]);
 
   const dismissHeaderNotification = useCallback(async (id) => {
     if (!id) return;
+    if (String(id).startsWith('community-post-')) {
+      communityUnread.markPostSeen(String(id).slice('community-post-'.length));
+      return;
+    }
     const token = localStorage.getItem('token');
     if (!token) return;
     if (isAssignmentSubmissionNotification({ id })) {
@@ -2115,7 +2128,7 @@ const TeacherPortalShell = () => {
                 notifications,
                 item.label === 'Notifications' ? 'notifications' : teacherNotificationModuleKeyForPath(item.path),
                 moduleSeenState,
-              );
+              ) + (item.path.endsWith('/community-wall') ? communityUnread.count : 0);
               const badge = notificationCount > 0 && (
                 <span
                   data-testid={`teacher-module-notification-${teacherNotificationModuleKeyForPath(item.path)}`}
@@ -2213,7 +2226,7 @@ const TeacherPortalShell = () => {
                   <AnimatePresence>
                     {showNotifications && (
                       <NotificationPopover
-                        notifications={notificationItems}
+                        notifications={bellNotificationItems}
                         unreadCount={unreadCount}
                         loading={notifLoading}
                         error={notifError}
@@ -2221,6 +2234,11 @@ const TeacherPortalShell = () => {
                         onDismissNotification={dismissHeaderNotification}
                         formatTime={timeAgo}
                         onOpenNotification={async (notification) => {
+                          if (notification?.isCommunityPost) {
+                            setShowNotifications(false);
+                            navigate(notification.path);
+                            return;
+                          }
                           const id = String(notification?._id || notification?.id || '');
                           if (!notification?.isRead) await markRead(id);
                           setShowNotifications(false);

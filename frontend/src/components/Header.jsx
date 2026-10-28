@@ -15,6 +15,7 @@ import { useStudentDashboard } from './StudentDashboardContext';
 import { useDesktopNotificationBridge } from '../hooks/useDesktopNotificationBridge';
 import DesktopNotificationPermissionModal from './DesktopNotificationPermissionModal';
 import NotificationPopover from './NotificationPopover';
+import useCommunityWallUnread from '../hooks/useCommunityWallUnread';
 import { AUTH_NOTICE, logoutAndRedirect } from '../utils/authSession';
 
 const Header = ({ sidebarOpen, setSidebarOpen, onOpenProfile }) => {
@@ -25,15 +26,31 @@ const Header = ({ sidebarOpen, setSidebarOpen, onOpenProfile }) => {
   const [showSearchSuggestions, setShowSearchSuggestions] = useState(false);
   const {
     profile,
-    notifications: allNotifications,
-    unreadNotificationCount: unreadCount,
+    notifications: baseNotifications,
+    unreadNotificationCount: baseUnreadCount,
     markNotificationAsRead: markAsRead,
-    markAllNotificationsAsRead: markAllAsRead,
-    dismissNotification,
+    markAllNotificationsAsRead: baseMarkAllAsRead,
+    dismissNotification: baseDismissNotification,
     notificationsLoading,
     notificationsError,
     markModuleVisited,
   } = useStudentDashboard();
+
+  // Unread Community Wall posts are shown in the bell alongside regular notifications.
+  const communityUnread = useCommunityWallUnread({ wallPath: '/student/assignments-academic-alcove' });
+  const allNotifications = useMemo(
+    () => [...communityUnread.bellItems, ...(baseNotifications || [])],
+    [communityUnread.bellItems, baseNotifications]
+  );
+  const unreadCount = (baseUnreadCount || 0) + communityUnread.count;
+  const markAllAsRead = (...args) => {
+    communityUnread.markAllSeen();
+    return baseMarkAllAsRead(...args);
+  };
+  const dismissNotification = (id, ...rest) => {
+    if (String(id).startsWith('community-post-')) return communityUnread.markPostSeen(String(id).slice('community-post-'.length));
+    return baseDismissNotification(id, ...rest);
+  };
 
   const notifRef = useRef(null);
   const profileRef = useRef(null);
@@ -98,8 +115,8 @@ const Header = ({ sidebarOpen, setSidebarOpen, onOpenProfile }) => {
   });
 
   useEffect(() => {
-    syncNotifications(allNotifications);
-  }, [allNotifications, syncNotifications]);
+    syncNotifications(baseNotifications);
+  }, [baseNotifications, syncNotifications]);
 
   // Toggle one dropdown, close the other
   const toggleNotifications = useCallback(async () => {
@@ -198,6 +215,11 @@ const Header = ({ sidebarOpen, setSidebarOpen, onOpenProfile }) => {
 
   // Handle notification click
   const handleNotificationClick = async (notification) => {
+    if (notification?.isCommunityPost) {
+      setShowNotifications(false);
+      navigate(notification.path);
+      return;
+    }
     if (!notification.isRead) {
       await markAsRead(notification._id);
     }

@@ -66,6 +66,9 @@ const AlcovePostSchema = new mongoose.Schema(
     },
     likedBy: [{ type: String, default: [] }],
     savedBy: [{ type: String, default: [] }],
+    // Users who dismissed the post's "new post" alert without opening it (bell "mark all read").
+    // A post is unread for a user until they view it or it lands here.
+    seenBy: [{ type: String, default: [] }],
     viewedBy: [{ type: String, default: [] }],
     viewCount: { type: Number, default: 0 },
     isStudentPosted: { type: Boolean, default: false },

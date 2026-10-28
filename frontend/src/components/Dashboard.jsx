@@ -26,6 +26,7 @@ const StudentChat = lazy(() => import('./StudentChat'));
 const ExcuseLetter = lazy(() => import('./ExcuseLetter'));
 const LearningHub = lazy(() => import('./LearningHub'));
 const CommunityWall = lazy(() => import('./CommunityWall'));
+const StudentCommunityWall = () => <CommunityWall role="student" />;
 const StudentWellbeing = lazy(() => import('./StudentWellbeing'));
 const LessonPlanStatusView = lazy(() => import('./LessonPlanStatusView'));
 const StudentExamsView = lazy(() => import('./StudentExamsView'));
@@ -258,7 +259,7 @@ const DashboardContent = () => {
     assignments: (props) => <AssignmentView {...props} defaultType="school" />,
     'long-answer': LongAnswerAssessment,
     'assignments-journal': (props) => <AssignmentView {...props} ref={journalRef} defaultType="journal" />,
-    'assignments-academic-alcove': () => <CommunityWall role="student" />,
+    'assignments-academic-alcove': StudentCommunityWall,
     'study-materials': LearningHub,
     'practice-papers': LearningHub,
     'my-paths': LearningHub,
