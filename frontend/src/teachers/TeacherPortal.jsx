@@ -80,7 +80,7 @@ import TeacherAchievements from './TeacherAchievements';
 import TeacherAlcove from './TeacherAlcove';
 import TryoutManagement from '../components/TryoutManagement';
 import { useDesktopNotificationBridge } from '../hooks/useDesktopNotificationBridge';
-import useCommunityWallUnread from '../hooks/useCommunityWallUnread';
+import useCommunityWallUnread, { subscribeSocketEvent } from '../hooks/useCommunityWallUnread';
 import DesktopNotificationPermissionModal from '../components/DesktopNotificationPermissionModal';
 import NotificationPopover from '../components/NotificationPopover';
 import ExamRoutineTable from '../components/ExamRoutineTable';
@@ -1814,7 +1814,7 @@ const TeacherPortalShell = () => {
   // Unread Community Wall posts ride along in the bell and badge the sidebar item.
   const communityUnread = useCommunityWallUnread({ wallPath: '/teacher/community-wall' });
   const bellNotificationItems = useMemo(
-    () => [...communityUnread.bellItems, ...notificationItems],
+    () => [...communityUnread.bellItems, ...notificationItems].sort((a, b) => new Date(b?.createdAt || 0) - new Date(a?.createdAt || 0)),
     [communityUnread.bellItems, notificationItems]
   );
   const unreadCount = useMemo(
@@ -1882,7 +1882,9 @@ const TeacherPortalShell = () => {
       if (document.visibilityState === 'visible') fetchNotifs();
     };
     document.addEventListener('visibilitychange', onVisible);
+    const unsubscribeSocket = subscribeSocketEvent('new_notification', () => fetchNotifs());
     return () => {
+      unsubscribeSocket();
       clearInterval(poll);
       document.removeEventListener('visibilitychange', onVisible);
     };
@@ -2427,7 +2429,7 @@ const TeacherPortalShell = () => {
                 ? 'h-full min-h-0'
                 : isAttendanceRoute
                   ? 'h-full min-h-0 overflow-y-auto overscroll-contain p-3 sm:p-6'
-                  : `min-h-full ${isDashboardRoute ? 'p-0' : 'p-3 sm:p-6'}`}>
+                  : `min-h-full ${isDashboardRoute ? 'p-0' : ''}`}>
               <Routes>
                 <Route index element={<Navigate to="/teacher/dashboard" replace />} />
                 <Route path="dashboard" element={<TeacherDashboard />} />
