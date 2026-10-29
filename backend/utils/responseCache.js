@@ -62,4 +62,8 @@ const parentFeesCache = createResponseCache({ ttlMs: 60 * 1000 });
 // the TTL bounds staleness from student activity recorded elsewhere.
 const teacherAnalyticsCache = createResponseCache({ ttlMs: 60 * 1000, maxEntries: 2000 });
 
-module.exports = { createResponseCache, parentAttendanceCache, userNotificationsCache, parentFeesCache, teacherAnalyticsCache };
+// Chat reads (me, contacts, thread list). Cleared by ChatThread/ChatMessage write hooks,
+// so socket-sent messages and read receipts invalidate it too.
+const chatCache = createResponseCache({ ttlMs: 30 * 1000, maxEntries: 3000 });
+
+module.exports = { createResponseCache, parentAttendanceCache, userNotificationsCache, parentFeesCache, teacherAnalyticsCache, chatCache };
