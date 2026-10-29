@@ -559,3 +559,9 @@ textarea:-webkit-autofill {
 @supports not selector(::-webkit-scrollbar) {
   .chat-scroll { scrollbar-width: thin; scrollbar-color: rgba(100, 116, 139, 0.45) transparent; }
 }
+
+/* Indeterminate top progress bar (Excuse Letters refresh). */
+@keyframes excuse-progress {
+  0% { transform: translateX(-100%); }
+  100% { transform: translateX(300%); }
+}

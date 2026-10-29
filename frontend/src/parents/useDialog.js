@@ -24,11 +24,15 @@ const FOCUSABLE = [
 export const useDialog = (open, onClose) => {
   const ref = useRef(null);
   const restoreRef = useRef(null);
+  // Callers usually pass an inline arrow, which is a new function every render. Reading it
+  // through a ref keeps the effect below from re-running (and stealing focus) on each keystroke.
+  const onCloseRef = useRef(onClose);
+  onCloseRef.current = onClose;
 
   const handleKeyDown = useCallback((event) => {
     if (event.key === 'Escape') {
       event.stopPropagation();
-      onClose?.();
+      onCloseRef.current?.();
       return;
     }
     if (event.key !== 'Tab' || !ref.current) return;
@@ -48,7 +52,7 @@ export const useDialog = (open, onClose) => {
       event.preventDefault();
       first.focus();
     }
-  }, [onClose]);
+  }, []);
 
   useEffect(() => {
     if (!open) return undefined;

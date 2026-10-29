@@ -204,6 +204,7 @@ const resolveTeacherNotificationPath = (notification) => {
   const message = String(notification?.message || '').toLowerCase();
   const type = String(notification?.type || notification?.typeLabel || '').toLowerCase();
   const blob = `${title} ${message} ${type}`;
+  if (String(notification?.typeLabel || '').toLowerCase().startsWith('excuse_letter')) return '/teacher/classes/current/communication/excuse-letters';
   if (blob.includes('substitute') || blob.includes('attendance')) return '/teacher/attendance';
   if (blob.includes('assignment_submission') || blob.includes('new submission') || blob.includes('submitted')) return '/teacher/evaluation';
   if (blob.includes('assignment')) return '/teacher/assignments';
@@ -835,6 +836,8 @@ const PlaceholderModule = ({ icon = FileText, title, description, actions = [], 
 
 const ClassesHub = () => {
   const navigate = useNavigate();
+  const { logo: schoolLogo, name: schoolName } = useTenant();
+  const [logoBroken, setLogoBroken] = useState(false);
   const [allocations, setAllocations] = useState([]);
   const [loading, setLoading] = useState(true);
   const [selectedClass, setSelectedClass] = useState('');
@@ -1006,8 +1009,11 @@ const ClassesHub = () => {
     >
       {/* Header */}
       <div className="mb-4 flex flex-col items-center text-center">
-        <div className="mb-2 flex h-12 w-12 items-center justify-center rounded-full bg-white text-blue-600 shadow-[0_6px_18px_rgba(37,99,235,0.18)]">
-          <BookOpen size={22} />
+        {/* School logo (falls back to the book icon if the school has none) */}
+        <div className="mb-2 flex h-14 w-14 items-center justify-center overflow-hidden rounded-full bg-white text-blue-600 shadow-[0_6px_18px_rgba(37,99,235,0.18)]">
+          {schoolLogo && !logoBroken
+            ? <img src={schoolLogo} alt={schoolName || 'School logo'} onError={() => setLogoBroken(true)} className="h-full w-full object-contain p-1" />
+            : <BookOpen size={22} />}
         </div>
         <h1 className="text-xl font-bold tracking-tight text-slate-900">Select Class</h1>
         <p className="mt-0.5 text-xs text-slate-500">Choose the class, section and subject to continue</p>

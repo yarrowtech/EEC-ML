@@ -178,6 +178,11 @@ const resolveNotificationPath = (notification, userType) => {
   const type = normalizeString(notification?.type || notification?.typeLabel || '');
   const content = normalizeString(`${notification?.title || ''} ${notification?.message || ''}`);
 
+  if (normalizeString(notification?.typeLabel).startsWith('excuse_letter')) {
+    if (userType === 'Teacher') return '/teacher/classes/current/communication/excuse-letters';
+    if (userType === 'Parent') return '/parents/excuse-letters';
+    if (userType === 'Student') return '/student/excuse-letter';
+  }
   // Parent-teacher meetings open the meetings page, whatever words the topic contains.
   if (normalizeString(notification?.typeLabel) === 'parent_teacher_meeting') {
     if (userType === 'Parent') return '/parents/ptm';
