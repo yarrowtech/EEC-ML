@@ -619,6 +619,7 @@ const ParentPortal = () => {
     const blob = `${title} ${message} ${type}`;
     // Meeting alerts carry free-text topics (e.g. "Academic progress"), so match them first.
     if (String(notification?.typeLabel || '').toLowerCase() === 'parent_teacher_meeting') return '/parents/ptm';
+    if (String(notification?.typeLabel || '').toLowerCase().startsWith('excuse_letter')) return '/parents/excuse-letters';
     if (String(notification?.typeLabel || '').toLowerCase().startsWith('feedback_')
       || String(notification?.eventType || '').startsWith('FEEDBACK_WINDOW')) return '/parents/teacher-feedback';
     if (blob.includes('analytics') || blob.includes('growth')) return '/parents/analytics';

@@ -85,6 +85,7 @@ const Header = ({ sidebarOpen, setSidebarOpen, onOpenProfile }) => {
 
   const resolveNotifPath = useCallback((notification) => {
     if (String(notification?.typeLabel || '').toLowerCase() === 'parent_teacher_meeting') return '/student/meetings';
+    if (String(notification?.typeLabel || '').toLowerCase().startsWith('excuse_letter')) return '/student/excuse-letter';
     // Teacher-feedback window alerts/notices open the feedback form.
     if (String(notification?.typeLabel || '').toLowerCase().startsWith('feedback_')
       || String(notification?.eventType || '').startsWith('FEEDBACK_WINDOW')) return '/student/teacherfeedback';
