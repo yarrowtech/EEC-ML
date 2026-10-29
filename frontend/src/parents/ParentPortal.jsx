@@ -44,6 +44,7 @@ import './parentPortalDesign.css';
 import TenantContext from '../context/TenantContext';
 import { parentApiJson } from './parentApi';
 import NavChildSwitcher from './NavChildSwitcher';
+import { subscribeSocketEvent } from '../hooks/useCommunityWallUnread';
 
 const ParentDashboard = lazy(() => import('./ParentDashboard'));
 const ChildGrowthAnalytics = lazy(() => import('./ChildGrowthAnalytics'));
@@ -546,7 +547,9 @@ const ParentPortal = () => {
       if (document.visibilityState === 'visible') fetchNotifs();
     };
     document.addEventListener('visibilitychange', onVisible);
+    const unsubscribeSocket = subscribeSocketEvent('new_notification', () => fetchNotifs());
     return () => {
+      unsubscribeSocket();
       clearInterval(poll);
       document.removeEventListener('visibilitychange', onVisible);
     };
@@ -614,6 +617,9 @@ const ParentPortal = () => {
     const message = String(notification?.message || '').toLowerCase();
     const type = String(notification?.type || notification?.typeLabel || '').toLowerCase();
     const blob = `${title} ${message} ${type}`;
+    // Meeting alerts carry free-text topics (e.g. "Academic progress"), so match them first.
+    if (String(notification?.typeLabel || '').toLowerCase() === 'parent_teacher_meeting') return '/parents/ptm';
+    if (String(notification?.typeLabel || '').toLowerCase().startsWith('excuse_letter')) return '/parents/excuse-letters';
     if (String(notification?.typeLabel || '').toLowerCase().startsWith('feedback_')
       || String(notification?.eventType || '').startsWith('FEEDBACK_WINDOW')) return '/parents/teacher-feedback';
     if (blob.includes('analytics') || blob.includes('growth')) return '/parents/analytics';

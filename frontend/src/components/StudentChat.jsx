@@ -1389,6 +1389,24 @@ const StudentChat = ({ onChatOpenChange } = {}) => {
     }
   }, [decryptForUI, me?.id]);
 
+  // Opened from a chat notification: /...chat?thread=<id> selects that conversation.
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search);
+    const wanted = params.get('thread');
+    if (!wanted || !threads.some((thread) => String(thread?._id) === wanted)) return;
+    params.delete('thread');
+    const query = params.toString();
+    window.history.replaceState(window.history.state, '', `${window.location.pathname}${query ? `?${query}` : ''}`);
+    if (String(activeThreadId || '') !== wanted) selectThread(wanted);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [threads, selectThread]);
+
+  // Lets the portal-wide message notifier skip the conversation that's already on screen.
+  useEffect(() => {
+    window.__chatActiveThreadId = activeThreadId ? String(activeThreadId) : null;
+    return () => { window.__chatActiveThreadId = null; };
+  }, [activeThreadId]);
+
   const startConversation = useCallback(async (contact) => {
     setShowContacts(false);
     setContactQuery('');
@@ -1594,7 +1612,7 @@ const StudentChat = ({ onChatOpenChange } = {}) => {
     : activePresence?.online
     ? 'Online'
     : activePresence
-    ? (activePresence.lastSeen ? `Offline · last seen ${formatLastSeen(activePresence.lastSeen)}` : 'Offline')
+    ? (activePresence.lastSeen ? `Last seen ${formatLastSeen(activePresence.lastSeen)}` : '')
     : (activeParticipantType === 'group'
       ? 'Group'
       : (activeTeacher?.subject || activeTeacher?.subjects?.[0] || 'Teacher'));

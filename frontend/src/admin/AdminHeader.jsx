@@ -83,7 +83,8 @@ const AdminHeader = ({ adminUser, onOpenMobileSidebar, onLogoutRequest, notifica
   });
 
   useEffect(() => {
-    syncNotifications(notifications);
+    // Wall posts already arrive as web push, so keep them out of the desktop-alert bridge.
+    syncNotifications(notifications.filter((item) => !item?.isCommunityPost));
   }, [notifications, syncNotifications]);
 
   const timeAgo = (val) => {
@@ -121,6 +122,7 @@ const AdminHeader = ({ adminUser, onOpenMobileSidebar, onLogoutRequest, notifica
       { label: 'Student Promotion', hint: 'Promote students to next class', path: '/admin/promotion', keys: ['promotion', 'promote'] },
       { label: 'Notices',         hint: 'Notifications & notices',       path: '/admin/notices/view',    keys: ['notice', 'notification'] },
       { label: 'Holidays',        hint: 'Holiday calendar',              path: '/admin/holidays',       keys: ['holiday'] },
+      { label: 'Community Wall',  hint: 'Posts, polls & discussions',    path: '/admin/community-wall', keys: ['community', 'wall', 'post', 'poll'] },
       { label: 'Settings',        hint: 'Account & app settings',        path: '/admin/settings',       keys: ['setting', 'profile'] },
     ];
     if (isSuperAdmin) return baseTargets;

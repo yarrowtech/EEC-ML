@@ -80,6 +80,8 @@ import TeacherAchievements from './TeacherAchievements';
 import TeacherAlcove from './TeacherAlcove';
 import TryoutManagement from '../components/TryoutManagement';
 import { useDesktopNotificationBridge } from '../hooks/useDesktopNotificationBridge';
+import useCommunityWallUnread, { subscribeSocketEvent } from '../hooks/useCommunityWallUnread';
+import usePortalChatNotifier from '../hooks/usePortalChatNotifier';
 import DesktopNotificationPermissionModal from '../components/DesktopNotificationPermissionModal';
 import NotificationPopover from '../components/NotificationPopover';
 import ExamRoutineTable from '../components/ExamRoutineTable';
@@ -94,9 +96,10 @@ const portalNavigation = [
   { icon: Users, label: 'Classes & Work', path: `${PORTAL_BASE}/classes` },
   { icon: CalendarDays, label: 'Calendar', path: `${PORTAL_BASE}/calendar` },
   { icon: Clock, label: 'Timetable', path: `${PORTAL_BASE}/timetable` },
-  { icon: Bell, label: 'Notifications', path: `${PORTAL_BASE}/notifications` },
+  // Notifications live in the header bell; no sidebar entry.
+  // { icon: Bell, label: 'Notifications', path: `${PORTAL_BASE}/notifications` },
   { icon: ClipboardCheck, label: 'Exam Duty', path: `${PORTAL_BASE}/exam-duty` },
-  { icon: Library, label: 'Academic Alcove', path: `${PORTAL_BASE}/resource-library` },
+  { icon: Library, label: 'Community Wall', path: `${PORTAL_BASE}/community-wall` },
   { icon: Brain, label: 'Lesson Plan', path: `${PORTAL_BASE}/lesson-plan` },
   //{ icon: Brain, label: 'AI Tools', path: `${PORTAL_BASE}/ai-tools` },
   //{ icon: Activity, label: 'Live Monitor', path: `${PORTAL_BASE}/live-monitor` },
@@ -202,6 +205,8 @@ const resolveTeacherNotificationPath = (notification) => {
   const message = String(notification?.message || '').toLowerCase();
   const type = String(notification?.type || notification?.typeLabel || '').toLowerCase();
   const blob = `${title} ${message} ${type}`;
+  if (String(notification?.typeLabel || '').toLowerCase().startsWith('excuse_letter')) return '/teacher/classes/current/communication/excuse-letters';
+  if (String(notification?.typeLabel || '').toLowerCase() === 'teacher_leave_reviewed') return '/teacher/settings?tab=leave';
   if (blob.includes('substitute') || blob.includes('attendance')) return '/teacher/attendance';
   if (blob.includes('assignment_submission') || blob.includes('new submission') || blob.includes('submitted')) return '/teacher/evaluation';
   if (blob.includes('assignment')) return '/teacher/assignments';
@@ -220,7 +225,7 @@ const resolveTeacherNotificationPath = (notification) => {
   if (blob.includes('result') || blob.includes('exam')) return '/teacher/result-management';
   if (blob.includes('meeting') || blob.includes('parent')) return '/teacher/parent-meetings';
   if (blob.includes('feedback')) return '/teacher/feedback';
-  if (blob.includes('wall') || blob.includes('alcove') || blob.includes('problem library')) return '/teacher/academic-alcove';
+  if (blob.includes('wall') || blob.includes('alcove') || blob.includes('problem library')) return '/teacher/community-wall';
   if (blob.includes('chat') || blob.includes('message')) return '/teacher/chat';
   if (blob.includes('health') || blob.includes('wellbeing')) return '/teacher/health-updates';
   return '/teacher/dashboard';
@@ -348,7 +353,7 @@ const teacherNotificationModuleKeyForPath = (path) => {
   if (value.includes('/teaching/')) return 'lesson-plan';
   if (value.includes('calendar')) return 'timetable';
   if (value.includes('timetable')) return 'timetable';
-  if (value.includes('resource-library')) return 'resource-library';
+  if (value.includes('community-wall') || value.includes('resource-library')) return 'resource-library';
   if (value.includes('lesson-plan')) return 'lesson-plan';
   if (value.includes('ai-tools')) return 'ai-tools';
   if (value.includes('live-monitor')) return 'live-monitor';
@@ -833,6 +838,8 @@ const PlaceholderModule = ({ icon = FileText, title, description, actions = [], 
 
 const ClassesHub = () => {
   const navigate = useNavigate();
+  const { logo: schoolLogo, name: schoolName } = useTenant();
+  const [logoBroken, setLogoBroken] = useState(false);
   const [allocations, setAllocations] = useState([]);
   const [loading, setLoading] = useState(true);
   const [selectedClass, setSelectedClass] = useState('');
@@ -1004,8 +1011,11 @@ const ClassesHub = () => {
     >
       {/* Header */}
       <div className="mb-4 flex flex-col items-center text-center">
-        <div className="mb-2 flex h-12 w-12 items-center justify-center rounded-full bg-white text-blue-600 shadow-[0_6px_18px_rgba(37,99,235,0.18)]">
-          <BookOpen size={22} />
+        {/* School logo (falls back to the book icon if the school has none) */}
+        <div className="mb-2 flex h-14 w-14 items-center justify-center overflow-hidden rounded-full bg-white text-blue-600 shadow-[0_6px_18px_rgba(37,99,235,0.18)]">
+          {schoolLogo && !logoBroken
+            ? <img src={schoolLogo} alt={schoolName || 'School logo'} onError={() => setLogoBroken(true)} className="h-full w-full object-contain p-1" />
+            : <BookOpen size={22} />}
         </div>
         <h1 className="text-xl font-bold tracking-tight text-slate-900">Select Class</h1>
         <p className="mt-0.5 text-xs text-slate-500">Choose the class, section and subject to continue</p>
@@ -1328,7 +1338,7 @@ const ClassWorkspace = ({ notifications = [], seenState = {} }) => {
   ) : null);
 
   return (
-    <div className="mx-auto max-w-[1240px] space-y-3">
+    <div className={`mx-auto max-w-[1240px] space-y-3 ${rel === 'overview/analytics' ? 'p-3 sm:p-5 lg:p-6' : ''}`}>
 
       {/* ── Header: back · title · switch class · date ── */}
       <div className="flex flex-wrap items-center gap-3">
@@ -1634,6 +1644,8 @@ const HeaderClock = () => {
 const TeacherPortalShell = () => {
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
+  // Chat needs the width: collapse the main sidebar while it's open, restore it after.
+  const sidebarBeforeChatRef = useRef(null);
   const [showLogoutConfirm, setShowLogoutConfirm] = useState(false);
   // Self-contained mobile profile popover (My Profile / Sign out) — deliberately
   // independent of `sidebarOpen`/the drawer, so logout stays reachable even if
@@ -1643,6 +1655,22 @@ const TeacherPortalShell = () => {
   const location = useLocation();
   const navigate = useNavigate();
   const isChatRoute = location.pathname.includes('/communication/chat');
+  usePortalChatNotifier({
+    navigate,
+    chatPath: '/teacher/classes/current/communication/chat',
+    isChatPath: (path) => path.includes('/communication/chat'),
+    meStorageKey: 'teacher_chat_me_id_v1',
+  });
+  // Chat needs the width: collapse the main sidebar while it is open, restore it after.
+  useEffect(() => {
+    if (isChatRoute) {
+      if (sidebarBeforeChatRef.current === null) sidebarBeforeChatRef.current = sidebarCollapsed;
+      setSidebarCollapsed(true);
+    } else if (sidebarBeforeChatRef.current !== null) {
+      setSidebarCollapsed(sidebarBeforeChatRef.current);
+      sidebarBeforeChatRef.current = null;
+    }
+  }, [isChatRoute]);
   const isDashboardRoute = location.pathname === '/teacher/dashboard' || location.pathname === '/teacher';
   const isSmartPlannerRoute = location.pathname.includes('/teaching/lesson-planner') || location.pathname === '/teacher/lesson-plan';
   const isAttendanceRoute = location.pathname.includes('/students/attendance') || location.pathname.includes('/overview/attendance');
@@ -1672,9 +1700,25 @@ const TeacherPortalShell = () => {
     };
   }, [sidebarOpen]);
 
-  const isItemActive = useCallback((path) =>
-    location.pathname === path || location.pathname.startsWith(`${path}/`),
-    [location.pathname]);
+  // Sidebar shortcuts (Chat, Student Feedback, Excuse Letters) point at
+  // `classes/current/...` but the URL carries the real class (`classes/5-a/...`),
+  // so match any class id there — and when one of them matches, "Classes & Work"
+  // must not light up as well.
+  const isItemActive = useCallback((path) => {
+    const current = location.pathname.replace(/\/$/, '');
+    const matches = (target) => current === target || current.startsWith(`${target}/`);
+    const shortcutPattern = (target) => {
+      const m = target.match(/^(.*\/classes\/)current(\/.+)$/);
+      return m ? new RegExp(`^${m[1]}[^/]+${m[2]}(?:/|$)`) : null;
+    };
+    const pattern = shortcutPattern(path);
+    if (pattern) return pattern.test(current);
+    if (path === `${PORTAL_BASE}/classes`) {
+      const onShortcut = portalNavigation.some((item) => shortcutPattern(item.path)?.test(current));
+      if (onShortcut) return false;
+    }
+    return matches(path);
+  }, [location.pathname]);
 
   const handleLogout = () => {
     setShowLogoutConfirm(true);
@@ -1810,9 +1854,15 @@ const TeacherPortalShell = () => {
       }));
     return [...notifications, ...fallbackItems];
   }, [assignmentSubmissionNotifications, moduleSeenState, notifications]);
+  // Unread Community Wall posts ride along in the bell and badge the sidebar item.
+  const communityUnread = useCommunityWallUnread({ wallPath: '/teacher/community-wall' });
+  const bellNotificationItems = useMemo(
+    () => [...communityUnread.bellItems, ...notificationItems].sort((a, b) => new Date(b?.createdAt || 0) - new Date(a?.createdAt || 0)),
+    [communityUnread.bellItems, notificationItems]
+  );
   const unreadCount = useMemo(
-    () => notificationItems.filter((item) => !item?.isRead).length,
-    [notificationItems]
+    () => bellNotificationItems.filter((item) => !item?.isRead).length,
+    [bellNotificationItems]
   );
 
   const fetchNotifs = useCallback(async () => {
@@ -1875,7 +1925,9 @@ const TeacherPortalShell = () => {
       if (document.visibilityState === 'visible') fetchNotifs();
     };
     document.addEventListener('visibilitychange', onVisible);
+    const unsubscribeSocket = subscribeSocketEvent('new_notification', () => fetchNotifs());
     return () => {
+      unsubscribeSocket();
       clearInterval(poll);
       document.removeEventListener('visibilitychange', onVisible);
     };
@@ -1931,6 +1983,7 @@ const TeacherPortalShell = () => {
   const markAllRead = useCallback(async () => {
     const token = localStorage.getItem('token');
     if (!token) return;
+    communityUnread.markAllSeen();
     setNotifications((prev) => prev.map((item) => ({ ...item, isRead: true })));
     const submissionIds = assignmentSubmissionNotifications.map(notificationId).filter(Boolean);
     if (submissionIds.length > 0) {
@@ -1953,10 +2006,15 @@ const TeacherPortalShell = () => {
       setNotifError(err.message || 'Failed to mark all as read');
       await fetchNotifs();
     }
-  }, [fetchNotifs, navigate]);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [fetchNotifs, navigate, communityUnread.markAllSeen]);
 
   const dismissHeaderNotification = useCallback(async (id) => {
     if (!id) return;
+    if (String(id).startsWith('community-post-')) {
+      communityUnread.markPostSeen(String(id).slice('community-post-'.length));
+      return;
+    }
     const token = localStorage.getItem('token');
     if (!token) return;
     if (isAssignmentSubmissionNotification({ id })) {
@@ -2115,7 +2173,7 @@ const TeacherPortalShell = () => {
                 notifications,
                 item.label === 'Notifications' ? 'notifications' : teacherNotificationModuleKeyForPath(item.path),
                 moduleSeenState,
-              );
+              ) + (item.path.endsWith('/community-wall') ? communityUnread.count : 0);
               const badge = notificationCount > 0 && (
                 <span
                   data-testid={`teacher-module-notification-${teacherNotificationModuleKeyForPath(item.path)}`}
@@ -2213,7 +2271,7 @@ const TeacherPortalShell = () => {
                   <AnimatePresence>
                     {showNotifications && (
                       <NotificationPopover
-                        notifications={notificationItems}
+                        notifications={bellNotificationItems}
                         unreadCount={unreadCount}
                         loading={notifLoading}
                         error={notifError}
@@ -2221,6 +2279,11 @@ const TeacherPortalShell = () => {
                         onDismissNotification={dismissHeaderNotification}
                         formatTime={timeAgo}
                         onOpenNotification={async (notification) => {
+                          if (notification?.isCommunityPost) {
+                            setShowNotifications(false);
+                            navigate(notification.path);
+                            return;
+                          }
                           const id = String(notification?._id || notification?.id || '');
                           if (!notification?.isRead) await markRead(id);
                           setShowNotifications(false);
@@ -2409,7 +2472,7 @@ const TeacherPortalShell = () => {
                 ? 'h-full min-h-0'
                 : isAttendanceRoute
                   ? 'h-full min-h-0 overflow-y-auto overscroll-contain p-3 sm:p-6'
-                  : `min-h-full ${isDashboardRoute ? 'p-0' : 'p-3 sm:p-6'}`}>
+                  : `min-h-full ${isDashboardRoute ? 'p-0' : ''}`}>
               <Routes>
                 <Route index element={<Navigate to="/teacher/dashboard" replace />} />
                 <Route path="dashboard" element={<TeacherDashboard />} />
@@ -2507,8 +2570,9 @@ const TeacherPortalShell = () => {
                 />
                 <Route path="exam-duty" element={<TeacherExamDutyList />} />
                 <Route path="exam-duty/:notificationId" element={<TeacherExamDuty />} />
-                <Route path="resource-library" element={<TeacherAlcove />} />
-                <Route path="lesson-plan" element={<AIPoweredTeaching />} />
+                <Route path="community-wall" element={<TeacherAlcove />} />
+                <Route path="resource-library" element={<Navigate to="/teacher/community-wall" replace />} />
+                <Route path="lesson-plan" element={<div className="p-3 sm:p-5 lg:p-6"><AIPoweredTeaching /></div>} />
                 <Route path="tryout" element={<TryoutManagement />} />
                 <Route path="ai-tools" element={<TeacherAIToolsPanel />} />
                 <Route path="live-monitor" element={<LiveExamMonitor />} />
@@ -2531,7 +2595,7 @@ const TeacherPortalShell = () => {
                 <Route path="smart-teaching/lesson-planner-wizard" element={<Navigate to={buildClassPath('current', 'teaching/lesson-planner-wizard')} replace />} />
                 <Route path="ai-center" element={<Navigate to="/teacher/lesson-plan" replace />} />
                 <Route path="ai-powered-teaching" element={<Navigate to="/teacher/lesson-plan" replace />} />
-                <Route path="academic-alcove" element={<Navigate to="/teacher/resource-library" replace />} />
+                <Route path="academic-alcove" element={<Navigate to="/teacher/community-wall" replace />} />
                 <Route path="ai-learning/:studentId/:subject" element={<Navigate to={buildClassPath('current', 'students')} replace />} />
                 <Route path="parent-meetings" element={<Navigate to={buildClassPath('current', 'communication/parent-meetings')} replace />} />
                 <Route path="assignments" element={<Navigate to={buildClassPath('current', 'assignments/manage')} replace />} />

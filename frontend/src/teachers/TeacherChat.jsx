@@ -1,8 +1,9 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { io } from 'socket.io-client';
+import { createPortal } from 'react-dom';
 import {
   MessageSquare, Send, Search, ChevronLeft,
-  Info, PlusCircle, X, Loader2, GraduationCap, Check, CheckCheck, User, Users, Palette, Lock, Link2, ExternalLink, Pencil, ChevronDown
+  Info, PlusCircle, X, Loader2, GraduationCap, Check, CheckCheck, User, Users, Palette, Lock, Link2, ExternalLink, Pencil, ChevronDown, Phone, Hash, Mail, MoreVertical
 } from 'lucide-react';
 import { decryptChatMessage, encryptChatMessage, ensureE2EEIdentity } from '../utils/chatE2EE';
 import { chatCacheKeys, readChatCache, writeChatCache } from '../utils/chatCache';
@@ -18,8 +19,9 @@ const resolveApiBaseUrl = () => {
 };
 
 const API_URL = resolveApiBaseUrl();
-const THREADS_CACHE_TTL_MS = 15 * 60 * 1000;
-const MESSAGES_CACHE_TTL_MS = 15 * 60 * 1000;
+// Cached chats show instantly and are refreshed in the background, so a long TTL is safe.
+const THREADS_CACHE_TTL_MS = 7 * 24 * 60 * 60 * 1000;
+const MESSAGES_CACHE_TTL_MS = 7 * 24 * 60 * 60 * 1000;
 const CONTACTS_CACHE_TTL_MS = 5 * 60 * 1000;
 const CHAT_EDIT_WINDOW_MS = Math.max(1000, Number(import.meta.env.VITE_CHAT_EDIT_WINDOW_MS || 15 * 60 * 1000));
 const LAST_TEACHER_CHAT_ME_KEY = 'teacher_chat_me_id_v1';
@@ -470,6 +472,44 @@ const MessageLinkPreview = ({ url, isMine, theme }) => {
   );
 };
 
+// Edit your own message in a centred modal (rendered at <body> so the chat layout can't clip it).
+const EditMessageModal = ({ draft, saving, theme, onChange, onCancel, onSave }) => {
+  const canSave = !saving && Boolean(String(draft || '').trim());
+  return createPortal(
+    <div className="fixed inset-0 z-[120] flex items-center justify-center bg-slate-900/40 p-4 backdrop-blur-[2px]" onMouseDown={(e) => { if (e.target === e.currentTarget && !saving) onCancel(); }}>
+      <div className="w-full max-w-md overflow-hidden rounded-2xl bg-white shadow-2xl" role="dialog" aria-modal="true" aria-labelledby="edit-message-title">
+        <div className="flex items-center justify-between border-b border-slate-100 px-5 py-3.5">
+          <h3 id="edit-message-title" className="flex items-center gap-2 text-[15px] font-bold text-slate-900"><Pencil className="h-4 w-4" style={{ color: theme.color }} />Edit message</h3>
+          <button type="button" onClick={onCancel} disabled={saving} className="flex h-8 w-8 items-center justify-center rounded-full text-slate-500 hover:bg-slate-100" aria-label="Close"><X className="h-4 w-4" /></button>
+        </div>
+        <div className="px-5 py-4">
+          <textarea
+            autoFocus
+            rows={4}
+            value={draft}
+            onChange={(e) => onChange(e.target.value)}
+            onFocus={(e) => { const end = e.target.value.length; e.target.setSelectionRange(end, end); }}
+            onKeyDown={(e) => {
+              if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); if (canSave) onSave(); }
+              if (e.key === 'Escape' && !saving) onCancel();
+            }}
+            className="w-full resize-none rounded-xl border border-slate-200 bg-slate-50 px-3.5 py-2.5 text-sm text-slate-900 outline-none focus:border-blue-400 focus:bg-white focus:ring-4 focus:ring-blue-500/10"
+            placeholder="Edit message..."
+          />
+          <p className="mt-1.5 text-[11px] text-slate-400">Enter to save · Shift + Enter for a new line · Esc to cancel</p>
+        </div>
+        <div className="flex justify-end gap-2 border-t border-slate-100 px-5 py-3">
+          <button type="button" onClick={onCancel} disabled={saving} className="rounded-lg bg-slate-100 px-4 py-2 text-sm font-semibold text-slate-700 hover:bg-slate-200">Cancel</button>
+          <button type="button" onClick={onSave} disabled={!canSave} className="inline-flex items-center gap-1.5 rounded-lg px-4 py-2 text-sm font-semibold text-white disabled:opacity-50" style={{ background: `linear-gradient(135deg, ${theme.color}, ${theme.hover})` }}>
+            {saving && <Loader2 className="h-4 w-4 animate-spin" />}{saving ? 'Sending…' : 'Send'}
+          </button>
+        </div>
+      </div>
+    </div>,
+    document.body
+  );
+};
+
 const ChatMessage = ({
   msg,
   isMine,
@@ -512,8 +552,50 @@ const ChatMessage = ({
   const links = useMemo(() => extractMessageLinks(fullText).slice(0, 2), [fullText]);
   const senderLabel = isMine ? 'You' : (msg?.senderName || fallbackSenderName || 'User');
 
+  // Hover actions for your own messages: a ⋯ button left of the bubble opens a small menu.
+  const [menuOpen, setMenuOpen] = useState(false);
+  const menuRef = useRef(null);
+  useEffect(() => {
+    if (!menuOpen) return undefined;
+    const onDown = (event) => { if (!menuRef.current?.contains(event.target)) setMenuOpen(false); };
+    const onKey = (event) => { if (event.key === 'Escape') setMenuOpen(false); };
+    document.addEventListener('mousedown', onDown);
+    document.addEventListener('keydown', onKey);
+    return () => {
+      document.removeEventListener('mousedown', onDown);
+      document.removeEventListener('keydown', onKey);
+    };
+  }, [menuOpen]);
+  const showActions = canEdit && !isEditing;
+
   return (
-  <div className={`flex ${isMine ? 'justify-end' : 'justify-start'} mb-3`}>
+  <div className={`group flex items-center gap-1.5 ${isMine ? 'justify-end' : 'justify-start'} mb-3`}>
+    {showActions && (
+      <div ref={menuRef} className="relative shrink-0">
+        <button
+          type="button"
+          onClick={() => setMenuOpen((open) => !open)}
+          className={`flex h-8 w-8 items-center justify-center rounded-full text-slate-500 transition hover:bg-black/5 focus:opacity-100 ${menuOpen ? 'bg-black/5 opacity-100' : 'opacity-0 group-hover:opacity-100'}`}
+          title="Message options"
+          aria-label="Message options"
+          aria-expanded={menuOpen}
+        >
+          <MoreVertical className="h-4 w-4" />
+        </button>
+        {menuOpen && (
+          <div className="absolute right-0 top-full z-20 mt-1 min-w-32 overflow-hidden rounded-xl border border-slate-100 bg-white py-1 shadow-xl">
+            <button
+              type="button"
+              onClick={() => { setMenuOpen(false); onStartEdit(); }}
+              className="flex w-full items-center gap-2 px-3 py-2 text-left text-sm text-slate-700 hover:bg-slate-50"
+            >
+              <Pencil className="h-3.5 w-3.5" />
+              Edit
+            </button>
+          </div>
+        )}
+      </div>
+    )}
     <div
       className={`relative max-w-[80%] w-fit rounded-[16px] px-4 py-2.5 text-sm leading-[1.5] shadow-sm
         ${isMine
@@ -529,50 +611,17 @@ const ChatMessage = ({
           {senderLabel}
         </div>
       )}
-      {isEditing ? (
-        <div className="space-y-2">
-          <textarea
-            rows={3}
-            value={editDraft}
-            onChange={(e) => onEditDraftChange(e.target.value)}
-            onKeyDown={(e) => {
-              if (e.key === 'Enter' && !e.shiftKey) {
-                e.preventDefault();
-                onEditSave();
-              }
-              if (e.key === 'Escape') onEditCancel();
-            }}
-            className={`w-full rounded-lg border px-2 py-1.5 text-sm resize-none focus:outline-none focus:ring-2 ${
-              isMine
-                ? 'bg-white/15 border-white/30 text-white placeholder-white/70 focus:ring-white/40'
-                : 'bg-white border-gray-200 text-gray-800 placeholder-gray-400 focus:ring-blue-200'
-            }`}
-            placeholder="Edit message..."
-          />
-          <div className="flex items-center justify-end gap-2">
-            <button
-              type="button"
-              onClick={onEditCancel}
-              className={`text-xs font-medium px-2.5 py-1 rounded-md ${
-                isMine ? 'text-white/90 hover:bg-white/15' : 'text-gray-600 hover:bg-gray-100'
-              }`}
-              disabled={editSaving}
-            >
-              Cancel
-            </button>
-            <button
-              type="button"
-              onClick={onEditSave}
-              className={`text-xs font-semibold px-2.5 py-1 rounded-md ${
-                isMine ? 'bg-white/20 text-white hover:bg-white/30' : 'bg-blue-100 text-blue-700 hover:bg-blue-200'
-              } disabled:opacity-50`}
-              disabled={editSaving || !String(editDraft || '').trim()}
-            >
-              {editSaving ? 'Saving...' : 'Save'}
-            </button>
-          </div>
-        </div>
-      ) : (
+      {isEditing && (
+        <EditMessageModal
+          draft={editDraft}
+          saving={editSaving}
+          theme={t}
+          onChange={onEditDraftChange}
+          onCancel={onEditCancel}
+          onSave={onEditSave}
+        />
+      )}
+      {(
         <>
           {links.map((url) => (
             <MessageLinkPreview key={url} url={url} isMine={isMine} theme={t} />
@@ -619,24 +668,6 @@ const ChatMessage = ({
               {expanded ? 'Read less' : 'Read more'}
             </button>
           )}
-          {canEdit && (
-            <div className="mt-2 flex justify-end">
-              <button
-                type="button"
-                onClick={onStartEdit}
-                className={`inline-flex items-center gap-1.5 rounded-md px-2 py-1 text-xs font-semibold transition-colors focus:outline-none focus:ring-2 ${
-                  isMine
-                    ? 'text-white/90 hover:bg-white/15 focus:ring-white/40'
-                    : 'text-blue-700 hover:bg-blue-100 focus:ring-blue-200'
-                }`}
-                title="Edit this message"
-                aria-label="Edit this message"
-              >
-                <Pencil className="h-3.5 w-3.5" />
-                <span>Edit</span>
-              </button>
-            </div>
-          )}
         </>
       )}
     </div>
@@ -665,7 +696,6 @@ const ConversationItem = ({ thread, isActive, onClick, typingName, theme }) => {
           name={name}
           className="h-11 w-11 text-sm"
           themeColor={t.color}
-          style={isActive ? { boxShadow: `0 0 0 2px white, 0 0 0 4px ${t.color}` } : {}}
         />
       </div>
       <div className="flex-1 min-w-0">
@@ -738,102 +768,97 @@ const UserAvatar = ({ src, name, className = '', themeColor = '#3b82f6', style =
   );
 };
 
-const ParticipantProfileModal = ({ open, loading, error, profile, profileType, onClose }) => {
-  if (!open) return null;
-  const isParentProfile = profileType === 'parent';
-  const studentRows = [
-    { icon: User, label: 'Student Name', value: profile?.studentName || 'N/A' },
-    { icon: Users, label: 'Parent Name', value: profile?.parentName || 'N/A' },
-    {
-      icon: GraduationCap,
-      label: 'Class & Section',
-      value: `${profile?.className || 'N/A'}${profile?.section && profile?.section !== 'N/A' ? ` - ${profile.section}` : ''}`
-    },
-    { icon: Info, label: 'Roll Number', value: profile?.rollNumber || 'N/A' },
-  ];
-  return (
-    <div
-      className="fixed inset-0 z-50 bg-black/40 backdrop-blur-sm flex items-center justify-center p-4"
-      onClick={onClose}
-    >
-      <div
-        className="w-full max-w-md bg-white rounded-2xl shadow-2xl border border-gray-100 overflow-hidden"
-        onClick={(event) => event.stopPropagation()}
-      >
-        <div className="px-5 py-4 border-b border-gray-100 flex items-center justify-between">
-          <h3 className="text-base font-semibold text-gray-900">
-            {isParentProfile ? 'Parent Profile' : 'Student Profile'}
-          </h3>
-          <button
-            onClick={onClose}
-            className="h-8 w-8 rounded-full hover:bg-gray-100 flex items-center justify-center"
-          >
-            <X className="h-4 w-4 text-gray-500" />
-          </button>
+const ContactRow = ({ icon: Icon, label, value }) => (
+  <div className="flex items-center gap-3 py-2">
+    <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-slate-100 text-slate-700"><Icon className="h-[18px] w-[18px]" /></span>
+    <div className="min-w-0">
+      <p className="text-[13px] font-semibold text-slate-900">{label}</p>
+      <p className="truncate text-[13px] text-slate-500">{value}</p>
+    </div>
+  </div>
+);
+
+const ContactInfoPanel = ({ open, isMobile, loading, error, profile, profileType, participant, roleLabel, presence, formatLastSeen, theme, onClose }) => {
+  const isParent = profileType === 'parent';
+  const name = participant?.name || profile?.studentName || profile?.parentName || 'Contact';
+  const statusText = presence?.online ? 'Online' : presence?.lastSeen ? `Last seen ${formatLastSeen(presence.lastSeen)}` : '';
+  const classLine = (cls, section) => `${/^class/i.test(String(cls || '')) ? cls : `Class ${cls || 'N/A'}`}${section && section !== 'N/A' ? ` ${section}` : ''}`;
+
+  useEffect(() => {
+    if (!open) return undefined;
+    const onKey = (event) => { if (event.key === 'Escape') onClose(); };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, [open, onClose]);
+
+  const body = (
+    <div className="flex h-full w-[340px] max-w-full flex-col bg-white">
+      <div className="flex items-center justify-between px-5 py-4">
+        <h3 className="text-[17px] font-bold text-slate-900">Contact Info</h3>
+        <button type="button" onClick={onClose} className="flex h-8 w-8 items-center justify-center rounded-full text-slate-500 hover:bg-slate-100" aria-label="Close contact info"><X className="h-5 w-5" /></button>
+      </div>
+      <div className="chat-scroll min-h-0 flex-1 overflow-y-auto px-5 pb-4">
+        <div className="flex flex-col items-center border-b border-slate-100 pb-4 text-center">
+          <div className="relative">
+            <UserAvatar src={participant?.avatar || profile?.photo} name={name} className="h-28 w-28 text-3xl" themeColor={theme.color} />
+            {presence?.online && <span className="absolute bottom-1.5 right-1.5 h-4 w-4 rounded-full border-[3px] border-white bg-emerald-500" aria-label="Online" />}
+          </div>
+          <p className="mt-3 text-[19px] font-bold text-slate-900">{name}</p>
+          <span className="mt-1 rounded-full bg-slate-100 px-3 py-0.5 text-[11px] font-semibold uppercase tracking-wide text-slate-600">{roleLabel}</span>
+          {statusText && <p className="mt-2 text-[12px] text-slate-500">{statusText}</p>}
         </div>
 
-        <div className="p-5">
-          {loading ? (
-            <div className="py-8 flex items-center justify-center text-sm text-gray-500">
-              <Loader2 className="h-4 w-4 animate-spin mr-2" />
-              Loading profile...
-            </div>
-          ) : error ? (
-            <div className="rounded-xl border border-rose-100 bg-rose-50 text-rose-700 px-4 py-3 text-sm">
-              {error}
-            </div>
-          ) : (
-            <div className="space-y-3">
-              {isParentProfile ? (
-                <>
-                  <div className="rounded-xl border border-gray-100 bg-gray-50 px-4 py-3">
-                    <div className="flex items-start gap-3">
-                      <div className="p-1.5 rounded-lg bg-blue-50 text-blue-600">
-                        <Users className="h-3.5 w-3.5" />
-                      </div>
-                      <div className="min-w-0">
-                        <p className="text-xs uppercase tracking-wide text-gray-500 font-semibold">Parent Name</p>
-                        <p className="text-sm text-gray-900 font-medium break-words">{profile?.parentName || 'N/A'}</p>
-                      </div>
-                    </div>
+        {loading ? (
+          <div className="flex items-center justify-center py-8 text-sm text-slate-500"><Loader2 className="mr-2 h-4 w-4 animate-spin" />Loading profile…</div>
+        ) : error ? (
+          <p className="mt-4 rounded-xl border border-rose-100 bg-rose-50 px-4 py-3 text-sm text-rose-700">{error}</p>
+        ) : profile && (
+          <div className="border-b border-slate-100 py-2">
+            {profile.phone && <ContactRow icon={Phone} label="Phone" value={profile.phone} />}
+            {!isParent && <ContactRow icon={GraduationCap} label="Class & Section" value={classLine(profile.className, profile.section)} />}
+            {!isParent && profile.rollNumber && profile.rollNumber !== 'N/A' && <ContactRow icon={Hash} label="Roll Number" value={profile.rollNumber} />}
+            {!isParent && profile.parentName && profile.parentName !== 'N/A' && <ContactRow icon={Users} label="Parent / Guardian" value={profile.parentName} />}
+            {profile.email && <ContactRow icon={Mail} label="Email" value={profile.email} />}
+            {isParent && (
+              <div className="py-2">
+                <p className="mb-1.5 text-[13px] font-semibold text-slate-900">Children</p>
+                {Array.isArray(profile.students) && profile.students.length > 0 ? profile.students.map((student) => (
+                  <div key={student.id} className="mb-1.5 rounded-lg bg-slate-50 px-3 py-2">
+                    <p className="text-[13px] font-semibold text-slate-800">{student.studentName}</p>
+                    <p className="text-[12px] text-slate-500">{classLine(student.className, student.section)} · Roll {student.rollNumber}</p>
                   </div>
-                  <div className="rounded-xl border border-gray-100 bg-gray-50 px-4 py-3">
-                    <p className="text-xs uppercase tracking-wide text-gray-500 font-semibold mb-2">Student Details</p>
-                    {Array.isArray(profile?.students) && profile.students.length > 0 ? (
-                      <div className="space-y-2">
-                        {profile.students.map((student) => (
-                          <div key={student.id} className="rounded-lg bg-white border border-gray-100 px-3 py-2">
-                            <p className="text-sm font-semibold text-gray-900">{student.studentName || 'Student'}</p>
-                            <p className="text-xs text-gray-600">
-                              {student.className || 'N/A'}{student.section && student.section !== 'N/A' ? ` - ${student.section}` : ''}
-                            </p>
-                            <p className="text-xs text-gray-500">Roll: {student.rollNumber || 'N/A'}</p>
-                          </div>
-                        ))}
-                      </div>
-                    ) : (
-                      <p className="text-xs text-gray-500">No linked students found.</p>
-                    )}
-                  </div>
-                </>
-              ) : studentRows.map((item) => (
-                <div key={item.label} className="rounded-xl border border-gray-100 bg-gray-50 px-4 py-3">
-                  <div className="flex items-start gap-3">
-                    <div className="p-1.5 rounded-lg bg-blue-50 text-blue-600">
-                      <item.icon className="h-3.5 w-3.5" />
-                    </div>
-                    <div className="min-w-0">
-                      <p className="text-xs uppercase tracking-wide text-gray-500 font-semibold">{item.label}</p>
-                      <p className="text-sm text-gray-900 font-medium break-words">{item.value}</p>
-                    </div>
-                  </div>
-                </div>
-              ))}
-            </div>
-          )}
+                )) : <p className="text-[12px] text-slate-500">No linked students found.</p>}
+              </div>
+            )}
+          </div>
+        )}
+      </div>
+      <div className="m-4 mt-0 flex items-start gap-3 rounded-xl border border-slate-100 bg-slate-50 p-3">
+        <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-violet-100 text-violet-600"><Lock className="h-4 w-4" /></span>
+        <div>
+          <p className="text-[13px] font-semibold text-slate-900">End-to-end encrypted</p>
+          <p className="text-[12px] text-slate-500">Messages are secured with end-to-end encryption.</p>
         </div>
       </div>
     </div>
+  );
+
+  if (isMobile) {
+    return (
+      <div className={`fixed inset-0 z-50 ${open ? '' : 'pointer-events-none'}`} aria-hidden={!open}>
+        <div className={`absolute inset-0 bg-black/30 transition-opacity duration-300 ${open ? 'opacity-100' : 'opacity-0'}`} onClick={onClose} />
+        <div className={`absolute right-0 top-0 h-full shadow-2xl transition-transform duration-300 ease-out ${open ? 'translate-x-0' : 'translate-x-full'}`}>{body}</div>
+      </div>
+    );
+  }
+  // Desktop: a column that grows in from the right edge, pushing the chat narrower.
+  return (
+    <aside
+      className={`h-full shrink-0 overflow-hidden border-l border-[#e9edf2] bg-white transition-[width,opacity] duration-300 ease-out ${open ? 'w-[340px] opacity-100' : 'w-0 border-l-0 opacity-0'}`}
+      aria-hidden={!open}
+    >
+      {body}
+    </aside>
   );
 };
 
@@ -929,11 +954,13 @@ const TeacherChat = () => {
   const [studentProfileError, setStudentProfileError] = useState('');
   const [studentProfile, setStudentProfile] = useState(null);
   const [profileType, setProfileType] = useState('student');
+  const [searchOpen, setSearchOpen] = useState(false);
+  const [messageSearch, setMessageSearch] = useState('');
   const [showGroupMembersModal, setShowGroupMembersModal] = useState(false);
   const [typingUsers, setTypingUsers] = useState({});
   const [presenceByUser, setPresenceByUser] = useState({});
   const [isMobileView, setIsMobileView] = useState(false);
-  const [wallpaperKey, setWallpaperKey]     = useState(() => localStorage.getItem('teacher_chat_wallpaper') || 'plain');
+  const [wallpaperKey, setWallpaperKey]     = useState(() => localStorage.getItem('teacher_chat_wallpaper') || 'doodle');
   const [themeKey, setThemeKey]             = useState(() => localStorage.getItem('teacher_chat_theme')     || 'blue');
   const [showChatSettings, setShowChatSettings] = useState(false);
   const [editingMessageId, setEditingMessageId] = useState('');
@@ -1114,6 +1141,8 @@ const TeacherChat = () => {
   }, [activeThread]);
 
   useEffect(() => {
+    setSearchOpen(false);
+    setMessageSearch('');
     setShowStudentProfileModal(false);
     setShowGroupMembersModal(false);
     setStudentProfile(null);
@@ -1148,6 +1177,9 @@ const TeacherChat = () => {
     const init = async () => {
       try {
         setSyncingThreads(true);
+        // Start the thread list now; it doesn't depend on the identity/key setup below.
+        const threadsRequest = apiFetch('/api/chat/threads');
+        threadsRequest.catch(() => {});
         const meData = await apiFetch('/api/chat/me');
         if (!mounted) return;
         setMe(meData);
@@ -1163,7 +1195,7 @@ const TeacherChat = () => {
           setThreads(cachedThreads);
           if (mounted) setLoadingThreads(false);
         }
-        const threadsData = await apiFetch('/api/chat/threads');
+        const threadsData = await threadsRequest;
         if (!mounted) return;
         const hydratedThreads = await Promise.all((Array.isArray(threadsData) ? threadsData : []).map((thread) => decryptThreadPreview(thread)));
         const hydratedWithFallback = await hydrateEncryptedThreadPreviews(hydratedThreads);
@@ -1479,7 +1511,10 @@ const TeacherChat = () => {
     socket?.emit('join-thread', { threadId });
     socket?.emit('mark-seen', { threadId });
     try {
-      const presenceRes = await apiFetch(`/api/chat/threads/${threadId}/presence`);
+      // Messages and presence load together; presence never blocks the messages.
+      const messagesRequest = apiFetch(`/api/chat/threads/${threadId}/messages`);
+      messagesRequest.catch(() => {});
+      const presenceRes = await apiFetch(`/api/chat/threads/${threadId}/presence`).catch(() => null);
       if (presenceRes?.presence && typeof presenceRes.presence === 'object') {
         setPresenceByUser((prev) => {
           const next = { ...prev };
@@ -1489,7 +1524,7 @@ const TeacherChat = () => {
           return next;
         });
       }
-      const msgs = await apiFetch(`/api/chat/threads/${threadId}/messages`);
+      const msgs = await messagesRequest;
       const decrypted = await Promise.all((Array.isArray(msgs) ? msgs : []).map((msg) => decryptForUI(msg)));
       const cachedById = new Map(
         (Array.isArray(cachedMessages) ? cachedMessages : []).map((msg) => [String(msg?._id || ''), msg])
@@ -1522,6 +1557,24 @@ const TeacherChat = () => {
       setLoadingMessages(false);
     }
   }, [decryptForUI, me?.id]);
+
+  // Opened from a chat notification: /...chat?thread=<id> selects that conversation.
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search);
+    const wanted = params.get('thread');
+    if (!wanted || !threads.some((thread) => String(thread?._id) === wanted)) return;
+    params.delete('thread');
+    const query = params.toString();
+    window.history.replaceState(window.history.state, '', `${window.location.pathname}${query ? `?${query}` : ''}`);
+    if (String(activeThreadId || '') !== wanted) selectThread(wanted);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [threads, selectThread]);
+
+  // Lets the portal-wide message notifier skip the conversation that's already on screen.
+  useEffect(() => {
+    window.__chatActiveThreadId = activeThreadId ? String(activeThreadId) : null;
+    return () => { window.__chatActiveThreadId = null; };
+  }, [activeThreadId]);
 
   // ── Start new conversation ─────────────────────────────────────────────────
   const startConversation = useCallback(async (contact) => {
@@ -1707,36 +1760,37 @@ const TeacherChat = () => {
       cancelEditMessage();
       return;
     }
-    setEditSaving(true);
+    if (text === String(current?.text || '').trim()) {
+      cancelEditMessage();
+      return;
+    }
+    const threadId = activeThreadId;
+    const previous = current;
+    const applyText = (value, extra = {}) => {
+      setMessages((prev) => prev.map((msg) => (String(msg._id) === messageId ? { ...msg, text: value, ...extra } : msg)));
+      setThreads((prev) => prev.map((thread) => (
+        String(thread?._id) === String(threadId) && isSameId(thread?.lastSenderId, me?.id)
+          ? { ...thread, lastMessage: sanitizePreviewText(value) || thread.lastMessage }
+          : thread
+      )));
+    };
+    // Optimistic: the bubble updates and the modal closes right away.
+    applyText(text, { isEdited: true });
+    setEditingMessageId('');
+    setEditDraft('');
     try {
-      const encrypted = await encryptChatMessage({
-        threadId: activeThreadId,
-        text,
-        myId: me?.id,
-        apiFetch,
-      });
-      const updated = await apiFetch(`/api/chat/threads/${activeThreadId}/messages/${messageId}`, {
+      const encrypted = await encryptChatMessage({ threadId, text, myId: me?.id, apiFetch });
+      const updated = await apiFetch(`/api/chat/threads/${threadId}/messages/${messageId}`, {
         method: 'PATCH',
         body: JSON.stringify({ text, encrypted: encrypted || undefined }),
       });
       const decrypted = await decryptForUI(updated);
-      setMessages((prev) =>
-        prev.map((msg) => (String(msg._id) === messageId ? { ...msg, ...decrypted } : msg))
-      );
-      setThreads((prev) =>
-        prev.map((thread) =>
-          String(thread?._id) === String(activeThreadId) &&
-          isSameId(thread?.lastSenderId, me?.id)
-            ? { ...thread, lastMessage: decrypted?.text || thread.lastMessage }
-            : thread
-        )
-      );
-      setEditingMessageId('');
-      setEditDraft('');
+      setMessages((prev) => prev.map((msg) => (String(msg._id) === messageId ? { ...msg, ...decrypted, text: decrypted?.text || text } : msg)));
     } catch {
-      // keep draft for retry
-    } finally {
-      setEditSaving(false);
+      // Put the original text back and reopen the editor with the new text so nothing is lost.
+      applyText(previous?.text || '', { isEdited: Boolean(previous?.isEdited) });
+      setEditingMessageId(messageId);
+      setEditDraft(text);
     }
   }, [editingMessageId, editDraft, activeThreadId, messages, me?.id, decryptForUI, cancelEditMessage]);
 
@@ -1800,24 +1854,19 @@ const TeacherChat = () => {
   const activeParticipantPresence = activeThread?.otherParticipant?.userId
     ? presenceByUser[String(activeThread.otherParticipant.userId)]
     : null;
+  const visibleMessages = messageSearch.trim()
+    ? messages.filter((msg) => String(msg?.text || '').toLowerCase().includes(messageSearch.trim().toLowerCase()))
+    : messages;
   const activeParticipantStatus = isTypingInActive
     ? `${isTypingInActive} is typing...`
     : activeParticipantPresence?.online
     ? 'Online'
     : activeParticipantPresence
-    ? (activeParticipantPresence.lastSeen ? `Offline · last seen ${formatLastSeen(activeParticipantPresence.lastSeen)}` : 'Offline')
+    ? (activeParticipantPresence.lastSeen ? `Last seen ${formatLastSeen(activeParticipantPresence.lastSeen)}` : activeParticipantLabel)
     : activeParticipantLabel;
 
   return (
     <>
-      <ParticipantProfileModal
-        open={showStudentProfileModal}
-        loading={studentProfileLoading}
-        error={studentProfileError}
-        profile={studentProfile}
-        profileType={profileType}
-        onClose={() => setShowStudentProfileModal(false)}
-      />
       <GroupMembersModal
         open={showGroupMembersModal}
         members={activeThread?.participants || []}
@@ -1836,7 +1885,7 @@ const TeacherChat = () => {
           });
         }}
       />
-      <div className="h-[100dvh] lg:h-full flex items-center justify-center bg-[#f4f6fa] p-0 sm:p-4 lg:p-5 overflow-hidden">
+      <div className="h-[100dvh] lg:h-full flex items-center justify-center bg-[#f4f6fa] p-0 sm:p-3 lg:p-3 overflow-hidden">
         <div className="w-full h-full sm:h-[calc(100dvh-2rem)] lg:h-full max-w-[1280px] max-h-[900px] flex overflow-hidden rounded-none sm:rounded-[28px] border border-white/70 bg-white shadow-[0_12px_40px_rgba(15,23,42,0.08)]">
       {/* ── Sidebar ── */}
       {showSidebar && (
@@ -1845,8 +1894,8 @@ const TeacherChat = () => {
           <div className="px-5 py-4 border-b border-[#e9edf2]">
             <div className="flex items-center justify-between mb-3">
               <div className="flex items-center gap-2.5">
-                <div className="h-9 w-9 rounded-xl flex items-center justify-center" style={{ backgroundColor: theme.lighter }}>
-                  <MessageSquare className="h-5 w-5" style={{ color: theme.color }} />
+                <div className="h-9 w-9 rounded-full flex items-center justify-center bg-[#3b82f6]">
+                  <MessageSquare className="h-5 w-5 text-white" />
                 </div>
                 <div>
                   <h1 className="font-bold text-[#0f172a] text-sm">Messages</h1>
@@ -1909,7 +1958,7 @@ const TeacherChat = () => {
                   <p className="mt-2 text-[11px] text-red-600">{contactError}</p>
                 )}
               </div>
-              <div className="flex-1 overflow-y-auto">
+              <div className="chat-scroll flex-1 overflow-y-auto">
                 {filteredContacts.length === 0 ? (
                   <div className="p-6 text-center text-sm text-gray-500">
                     {contacts.length === 0 ? 'No students found' : 'No results'}
@@ -1936,7 +1985,7 @@ const TeacherChat = () => {
                 </button>
               </div>
 
-              <div className="flex-1 overflow-y-auto p-4 space-y-5">
+              <div className="chat-scroll flex-1 overflow-y-auto p-4 space-y-5">
                 {/* Wallpaper Picker */}
                 <div>
                   <p className="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-3">Wallpaper</p>
@@ -2021,7 +2070,7 @@ const TeacherChat = () => {
           )}
 
           {/* Thread list */}
-          <div className="flex-1 overflow-y-auto">
+          <div className="chat-scroll flex-1 overflow-y-auto">
             {loadingThreads ? (
               <div className="flex items-center justify-center py-12">
                 <Loader2 className="h-5 w-5 text-amber-400 animate-spin" />
@@ -2083,7 +2132,7 @@ const TeacherChat = () => {
                   {totalUnreadCount > 99 ? '99+' : totalUnreadCount}
                 </span>
               )}
-              <span className="text-xs px-2 py-0.5 rounded-full bg-green-100 text-green-700 font-medium">Online</span>
+              <span className="text-xs px-2 py-0.5 rounded-full bg-green-600 text-white font-medium">Online</span>
             </div>
           </div>
         </div>
@@ -2091,6 +2140,7 @@ const TeacherChat = () => {
 
       {/* ── Main Chat Area ── */}
       {showMain && (
+        <div className="flex-1 flex h-full min-h-0 min-w-0">
         <div className="flex-1 flex flex-col h-full min-h-0 min-w-0 bg-white">
           {activeThreadId ? (
             <>
@@ -2120,7 +2170,6 @@ const TeacherChat = () => {
                       name={activeThread?.otherParticipant?.name || activeParticipantLabel}
                       className="h-11 w-11 text-sm hover:opacity-90 transition-opacity cursor-pointer"
                       themeColor={theme.color}
-                      style={{ boxShadow: `0 0 0 2px white, 0 0 0 4px ${theme.color}` }}
                     />
                   </button>
                   <div>
@@ -2142,28 +2191,57 @@ const TeacherChat = () => {
                     </div>
                   </div>
                 </div>
-                <button
-                  onClick={() => {
-                    if (String(activeThread?.threadType || '').toLowerCase() === 'group') {
-                      setShowGroupMembersModal(true);
-                      return;
-                    }
-                    openStudentProfile();
-                  }}
-                  className="h-8 w-8 rounded-lg flex items-center justify-center transition-colors hover:bg-gray-100"
-                  title={String(activeThread?.threadType || '').toLowerCase() === 'group' ? 'View group members' : 'View student profile'}
-                  onMouseEnter={e => { e.currentTarget.style.backgroundColor = theme.lighter; }}
-                  onMouseLeave={e => { e.currentTarget.style.backgroundColor = ''; }}
-                >
-                  <Info className="h-4 w-4 text-gray-400" />
-                </button>
+                <div className="flex shrink-0 items-center gap-1">
+                  <button
+                    type="button"
+                    onClick={() => { setSearchOpen((open) => !open); setMessageSearch(''); }}
+                    className={`flex h-10 w-10 items-center justify-center rounded-full transition-colors ${searchOpen ? 'bg-slate-100 text-slate-900' : 'text-slate-600 hover:bg-slate-100'}`}
+                    title="Search in conversation"
+                    aria-label="Search in conversation"
+                  >
+                    <Search className="h-5 w-5" />
+                  </button>
+                  <span className="mx-1.5 h-7 w-px bg-[#e9edf2]" aria-hidden="true" />
+                  <button
+                    type="button"
+                    onClick={() => {
+                      if (isGroupActiveThread) {
+                        setShowGroupMembersModal(true);
+                        return;
+                      }
+                      if (showStudentProfileModal) setShowStudentProfileModal(false);
+                      else openStudentProfile();
+                    }}
+                    className="flex h-10 w-10 items-center justify-center rounded-full transition-colors"
+                    style={{ backgroundColor: showStudentProfileModal ? theme.light : theme.lighter, color: theme.color }}
+                    title={isGroupActiveThread ? 'View group members' : 'Contact info'}
+                    aria-label={isGroupActiveThread ? 'View group members' : 'Contact info'}
+                  >
+                    <Info className="h-5 w-5" />
+                  </button>
+                </div>
               </div>
+              {searchOpen && (
+                <div className="flex shrink-0 items-center gap-2 border-b border-[#e9edf2] bg-white px-5 py-2">
+                  <Search className="h-4 w-4 text-slate-400" aria-hidden="true" />
+                  <input
+                    autoFocus
+                    value={messageSearch}
+                    onChange={(e) => setMessageSearch(e.target.value)}
+                    onKeyDown={(e) => { if (e.key === 'Escape') { setSearchOpen(false); setMessageSearch(''); } }}
+                    placeholder="Search messages…"
+                    className="flex-1 bg-transparent text-sm text-slate-800 outline-none placeholder:text-slate-400"
+                  />
+                  {messageSearch && <span className="text-xs text-slate-400">{visibleMessages.length} found</span>}
+                  <button type="button" onClick={() => { setSearchOpen(false); setMessageSearch(''); }} className="flex h-7 w-7 items-center justify-center rounded-full text-slate-500 hover:bg-slate-100" aria-label="Close search"><X className="h-4 w-4" /></button>
+                </div>
+              )}
 
               {/* Messages */}
               <div
                 ref={messagesContainerRef}
                 onScroll={handleMessagesScroll}
-                className="relative flex-1 min-h-0 overflow-y-auto overflow-x-hidden px-5 py-5 bg-[#fafcff]"
+                className="chat-scroll relative flex-1 min-h-0 overflow-y-auto overflow-x-hidden px-5 py-5 bg-[#fafcff]"
                 style={{ ...wallpaperStyle, backgroundColor: wallpaperKey === 'plain' ? '#fafcff' : undefined }}
               >
                 <div className="pointer-events-none absolute inset-0 opacity-30" style={{ backgroundImage: 'radial-gradient(#e9edf2 1px, transparent 1px)', backgroundSize: '24px 24px' }} aria-hidden="true" />
@@ -2186,15 +2264,18 @@ const TeacherChat = () => {
                   </div>
                 ) : (
                   <>
-                    {messages.map((msg, index) => {
+                    {messageSearch && visibleMessages.length === 0 && (
+                      <p className="py-10 text-center text-sm text-slate-500">No messages match “{messageSearch}”.</p>
+                    )}
+                    {visibleMessages.map((msg, index) => {
                       const currentTs = msg.createdAt || msg.ts;
-                      const prevTs = index > 0 ? (messages[index - 1].createdAt || messages[index - 1].ts) : null;
+                      const prevTs = index > 0 ? (visibleMessages[index - 1].createdAt || visibleMessages[index - 1].ts) : null;
                       const showDateSeparator = index === 0 || dayKey(currentTs) !== dayKey(prevTs);
                       return (
                         <React.Fragment key={msg._id}>
                           {showDateSeparator && (
                             <div className="flex justify-center my-3 relative z-[1]">
-                              <span className="text-[11px] px-4 py-1 rounded-full bg-white border border-[#e9edf2] text-[#475569] font-semibold tracking-wide">
+                              <span className="text-[12px] px-4 py-1 rounded-full bg-white text-[#0f172a] font-semibold shadow-sm">
                                 {formatDaySeparator(currentTs)}
                               </span>
                             </div>
@@ -2248,8 +2329,8 @@ const TeacherChat = () => {
 
               {/* Input */}
               <div className="border-t border-[#e9edf2] bg-white/90 backdrop-blur-md px-5 pt-4 pb-[calc(4rem+max(0.75rem,env(safe-area-inset-bottom)))] lg:py-4 flex-shrink-0 sticky bottom-0 z-20">
-                <div className="flex items-end gap-2">
-                  <div className="flex-1 bg-[#f4f6fa] rounded-full border-[1.5px] border-[#e9edf2] px-4 py-2.5 focus-within:border-blue-500 focus-within:ring-4 focus-within:ring-blue-500/10">
+                <div className="flex items-center gap-3">
+                  <div className="flex min-h-12 flex-1 items-center bg-[#f8fafc] rounded-full border border-[#e2e8f0] px-5 py-2 focus-within:border-blue-400 focus-within:ring-4 focus-within:ring-blue-500/10">
                     <textarea
                       rows={1}
                       value={draft}
@@ -2261,18 +2342,17 @@ const TeacherChat = () => {
                         }
                       }}
                       placeholder="Type a message..."
-                      className="w-full resize-none bg-transparent text-sm text-[#0f172a] caret-[#0f172a] focus:outline-none placeholder:text-[#94a3b8] min-h-[20px] max-h-28"
-                      style={{ color: '#111827', WebkitTextFillColor: '#111827' }}
+                      className="block w-full resize-none bg-transparent py-1 text-sm leading-5 text-[#0f172a] caret-[#0f172a] focus:outline-none placeholder:text-[#94a3b8] max-h-28"
                     />
                   </div>
                   <button
                     onClick={sendMessage}
                     disabled={!draft.trim()}
-                    className="h-[46px] min-w-[46px] px-3 rounded-full text-white flex items-center justify-center gap-1.5 disabled:opacity-40 disabled:cursor-not-allowed transition-all hover:scale-[1.02] active:scale-95 shrink-0 shadow-[0_2px_8px_rgba(37,99,235,0.2)]"
+                    aria-label="Send message"
+                    className="h-12 w-12 rounded-full text-white flex items-center justify-center disabled:opacity-40 disabled:cursor-not-allowed transition-all hover:scale-[1.04] active:scale-95 shrink-0 shadow-[0_4px_12px_rgba(37,99,235,0.3)]"
                     style={{ background: `linear-gradient(135deg, ${theme.color}, ${theme.hover})` }}
                   >
-                    <Send className="h-4 w-4" />
-                    <span className="hidden sm:inline text-sm font-semibold">Send</span>
+                    <Send className="h-5 w-5" />
                   </button>
                 </div>
               </div>
@@ -2298,6 +2378,21 @@ const TeacherChat = () => {
               </div>
             </div>
           )}
+        </div>
+        <ContactInfoPanel
+          open={Boolean(activeThreadId) && showStudentProfileModal}
+          isMobile={isMobileView}
+          loading={studentProfileLoading}
+          error={studentProfileError}
+          profile={studentProfile}
+          profileType={profileType}
+          participant={activeThread?.otherParticipant}
+          roleLabel={activeParticipantLabel}
+          presence={activeParticipantPresence}
+          formatLastSeen={formatLastSeen}
+          theme={theme}
+          onClose={() => setShowStudentProfileModal(false)}
+        />
         </div>
       )}
         </div>

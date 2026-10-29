@@ -38,6 +38,7 @@ const StudentPromotion = lazy(() => import('./pages/StudentPromotion'));
 const LeftStudents = lazy(() => import('./pages/LeftStudents'));
 const ReportCardManagement = lazy(() => import('./pages/ReportCardManagement'));
 const HolidayList = lazy(() => import('./pages/HolidayList'));
+const CommunityWall = lazy(() => import('../components/CommunityWall'));
 const TeacherFeedbackOverview = lazy(() => import('./pages/TeacherFeedbackOverview'));
 import { useNavigate } from 'react-router-dom';
 import { ADMIN_MENU_ITEMS, ADMIN_MENU_SECTIONS } from './adminConstants';
@@ -369,6 +370,7 @@ const AdminApp = () => {
           <Route path="notices/view" element={<NoticeManagement setShowAdminHeader={setShowAdminHeader} viewMode="view" />} />
           <Route path="notices/view/:noticeId" element={<NoticeDetail setShowAdminHeader={setShowAdminHeader} />} />
           <Route path="holidays" element={<HolidayList setShowAdminHeader={setShowAdminHeader} />} />
+          <Route path="community-wall" element={<CommunityWall role="admin" />} />
           <Route path="settings" element={<AdminSettings setShowAdminHeader={setShowAdminHeader} onSettingsUpdated={handleSettingsUpdated} />} />
           <Route path="settings/payment-gateway" element={<PaymentGatewaySettings setShowAdminHeader={setShowAdminHeader} />} />
           <Route path="promotion" element={<StudentPromotion setShowAdminHeader={setShowAdminHeader} />} />

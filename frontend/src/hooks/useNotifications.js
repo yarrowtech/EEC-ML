@@ -1,4 +1,5 @@
 import { useState, useEffect, useCallback, useRef } from 'react';
+import { subscribeSocketEvent } from './useCommunityWallUnread';
 
 const POLLING_INTERVAL = 45000; // 45 seconds
 
@@ -191,8 +192,12 @@ export const useNotifications = () => {
     };
     navigator.serviceWorker?.addEventListener?.('message', onServiceWorkerMessage);
 
+    // Instant refresh when the server says a notification was just created.
+    const unsubscribeSocket = subscribeSocketEvent('new_notification', () => fetchNotifications());
+
     // Cleanup on unmount
     return () => {
+      unsubscribeSocket();
       if (pollingIntervalRef.current) {
         clearInterval(pollingIntervalRef.current);
       }

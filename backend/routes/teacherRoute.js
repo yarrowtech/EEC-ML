@@ -361,9 +361,26 @@ router.get('/profile', authTeacher, async (req, res) => {
       return res.status(404).json({ error: 'Teacher not found' });
     }
 
+    // Extras for the My Work header: the school's cover photo and the classes this teacher has.
+    const TeacherAllocation = require('../models/TeacherAllocation');
+    const [coverAdmin, allocations] = await Promise.all([
+      teacher.schoolId
+        ? Admin.findOne({ schoolId: teacher.schoolId, coverImage: { $nin: [null, ''] } }).select('coverImage').lean()
+        : null,
+      TeacherAllocation.find({ teacherId: teacher._id, ...(teacher.schoolId ? { schoolId: teacher.schoolId } : {}) })
+        .populate('classId', 'name').populate('sectionId', 'name').select('classId sectionId').lean(),
+    ]);
+    const classLabels = [...new Set((allocations || [])
+      .map((a) => [a.classId?.name, a.sectionId?.name].filter(Boolean).join(' '))
+      .filter(Boolean))]
+      .map((label) => (/^class/i.test(label) ? label : `Class ${label}`))
+      .sort((x, y) => x.localeCompare(y, undefined, { numeric: true }));
+
     res.json({
       ...teacher,
       employeeId: teacher.username || teacher.employeeCode || '',
+      schoolCoverImage: coverAdmin?.coverImage || '',
+      classLabels,
     });
   } catch (err) {
     res.status(400).json({ error: err.message });
@@ -377,20 +394,23 @@ router.put('/profile', authTeacher, async (req, res) => {
       return res.status(403).json({ error: 'Forbidden - not a teacher' });
     }
 
+    // Identity (name, gender, DOB, blood group), department, joining date, photo,
+    // employee code and assignments are managed by the school (admin) only.
     const allowedUpdates = [
-      'name',
       'email',
       'mobile',
-      'subject',
-      'department',
-      'qualification',
-      'experience',
-      'joiningDate',
-      'address',
-      'emergencyContact',
-      'gender',
+      'alternatePhone',
       'pinCode',
-      // profilePic: managed by the school (admin) only
+      'address',
+      'permanentAddress',
+      'city',
+      'district',
+      'state',
+      'qualification',
+      'specialization',
+      'experience',
+      'emergencyContactName',
+      'emergencyContact',
     ];
 
     const payload = {};
@@ -399,6 +419,18 @@ router.put('/profile', authTeacher, async (req, res) => {
         payload[key] = req.body[key];
       }
     });
+
+    const phoneFields = { mobile: 'Phone', alternatePhone: 'Alternate phone', emergencyContact: 'Emergency contact phone' };
+    for (const [key, label] of Object.entries(phoneFields)) {
+      if (!Object.prototype.hasOwnProperty.call(payload, key)) continue;
+      const value = String(payload[key] ?? '').trim();
+      const optional = key !== 'mobile';
+      if (optional && !value) { payload[key] = ''; continue; }
+      if (!/^\d{10}$/.test(value)) {
+        return res.status(400).json({ error: `${label} must be a 10-digit number` });
+      }
+      payload[key] = value;
+    }
 
     const teacher = await TeacherUser.findByIdAndUpdate(
       req.user.id,

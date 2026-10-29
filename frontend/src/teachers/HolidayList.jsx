@@ -1,9 +1,10 @@
-import React, { useEffect, useMemo, useState } from 'react';
+import React, { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { jsPDF } from 'jspdf';
 import { AnimatePresence, motion as Motion } from 'framer-motion';
 import {
   Bell,
   BookOpenCheck,
+  Check,
   CalendarDays,
   CheckCircle2,
   ChevronLeft,
@@ -28,51 +29,51 @@ const EVENT_TYPES = {
   holiday: {
     label: 'Holidays',
     icon: CalendarDays,
-    chip: 'bg-amber-100 text-amber-700 border-amber-200',
-    dot: 'bg-amber-500',
-    soft: 'bg-amber-50 text-amber-800 border-amber-100',
+    chip: 'bg-[#dcf5e6] text-[#15803d]',
+    dot: 'bg-[#16a34a]',
+    soft: 'bg-[#e9f9ef] text-[#166534]',
   },
   exam: {
     label: 'Exams',
     icon: GraduationCap,
-    chip: 'bg-rose-100 text-rose-700 border-rose-200',
-    dot: 'bg-rose-500',
-    soft: 'bg-rose-50 text-rose-800 border-rose-100',
+    chip: 'bg-[#fde0e0] text-[#b91c1c]',
+    dot: 'bg-[#ef4444]',
+    soft: 'bg-[#fdecec] text-[#991b1b]',
   },
   assignment: {
     label: 'Assignments',
     icon: ClipboardList,
-    chip: 'bg-blue-100 text-blue-700 border-blue-200',
-    dot: 'bg-blue-500',
-    soft: 'bg-blue-50 text-blue-800 border-blue-100',
+    chip: 'bg-[#fdf0d2] text-[#b45309]',
+    dot: 'bg-[#f59e0b]',
+    soft: 'bg-[#fff6e0] text-[#92400e]',
   },
   meeting: {
     label: 'Meetings',
     icon: Users,
-    chip: 'bg-violet-100 text-violet-700 border-violet-200',
-    dot: 'bg-violet-500',
-    soft: 'bg-violet-50 text-violet-800 border-violet-100',
+    chip: 'bg-[#ece2fe] text-[#7e22ce]',
+    dot: 'bg-[#8b5cf6]',
+    soft: 'bg-[#f3ecff] text-[#6b21a8]',
   },
   school: {
     label: 'School Events',
     icon: Sparkles,
-    chip: 'bg-emerald-100 text-emerald-700 border-emerald-200',
-    dot: 'bg-emerald-500',
-    soft: 'bg-emerald-50 text-emerald-800 border-emerald-100',
+    chip: 'bg-[#dbe7fe] text-[#1d4ed8]',
+    dot: 'bg-[#2563eb]',
+    soft: 'bg-[#e8f0ff] text-[#1e3a8a]',
   },
   reminder: {
     label: 'Reminders',
     icon: Bell,
-    chip: 'bg-slate-100 text-slate-700 border-slate-200',
-    dot: 'bg-slate-500',
-    soft: 'bg-slate-50 text-slate-800 border-slate-100',
+    chip: 'bg-[#fce7f3] text-[#be185d]',
+    dot: 'bg-[#ec4899]',
+    soft: 'bg-[#fdf0f7] text-[#9d174d]',
   },
   teacher: {
     label: 'Teacher Events',
     icon: BookOpenCheck,
-    chip: 'bg-cyan-100 text-cyan-700 border-cyan-200',
-    dot: 'bg-cyan-500',
-    soft: 'bg-cyan-50 text-cyan-800 border-cyan-100',
+    chip: 'bg-[#efe4fd] text-[#7e22ce]',
+    dot: 'bg-[#a855f7]',
+    soft: 'bg-[#f6effe] text-[#6b21a8]',
   },
 };
 
@@ -167,21 +168,42 @@ const buildSeedEvents = (baseDate) => {
   ];
 };
 
+// Client cache: show the last calendar instantly, then refresh in the background.
+const CALENDAR_CACHE_KEY = 'teacher-calendar-cache-v1';
+const CALENDAR_CACHE_TTL = 10 * 60 * 1000;
+const readCalendarCache = () => {
+  try {
+    const raw = JSON.parse(localStorage.getItem(CALENDAR_CACHE_KEY) || 'null');
+    const owner = JSON.parse(localStorage.getItem('user') || '{}')?._id || localStorage.getItem('token')?.slice(-16) || '';
+    return raw && raw.owner === owner ? raw : null;
+  } catch { return null; }
+};
+const writeCalendarCache = (patch) => {
+  try {
+    const owner = JSON.parse(localStorage.getItem('user') || '{}')?._id || localStorage.getItem('token')?.slice(-16) || '';
+    const prev = readCalendarCache() || {};
+    localStorage.setItem(CALENDAR_CACHE_KEY, JSON.stringify({ ...prev, ...patch, owner, savedAt: Date.now() }));
+  } catch { /* storage full / private mode */ }
+};
+
 const HolidayList = () => {
-  const [holidays, setHolidays] = useState([]);
-  const [loading, setLoading] = useState(true);
+  const cached = useMemo(readCalendarCache, []);
+  const [holidays, setHolidays] = useState(() => cached?.holidays || []);
+  const [loading, setLoading] = useState(() => !cached);
   const [error, setError] = useState('');
   const [downloading, setDownloading] = useState(false);
-  const [schoolMeta, setSchoolMeta] = useState({ schoolName: 'School', schoolAddress: '', schoolLogo: '' });
+  const [schoolMeta, setSchoolMeta] = useState(() => cached?.schoolMeta || { schoolName: 'School', schoolAddress: '', schoolLogo: '' });
   const [activeDate, setActiveDate] = useState(new Date());
   const [viewMode, setViewMode] = useState('month');
   const [query, setQuery] = useState('');
   const [activeTypes, setActiveTypes] = useState(() => new Set(Object.keys(EVENT_TYPES)));
   const [selectedEvent, setSelectedEvent] = useState(null);
+  const [selectedDay, setSelectedDay] = useState(null);
 
   useEffect(() => {
     const load = async () => {
-      setLoading(true);
+      const fresh = cached && Date.now() - (cached.savedAt || 0) < CALENDAR_CACHE_TTL;
+      if (!cached) setLoading(true);
       setError('');
       try {
         const token = localStorage.getItem('token');
@@ -190,7 +212,11 @@ const HolidayList = () => {
         });
         const data = await res.json().catch(() => []);
         if (!res.ok) throw new Error(data?.error || 'Unable to load holidays');
-        setHolidays(Array.isArray(data) ? data : []);
+        const list = Array.isArray(data) ? data : [];
+        setHolidays(list);
+        writeCalendarCache({ holidays: list });
+        // School letterhead details rarely change — reuse them while the cache is fresh.
+        if (fresh && cached?.schoolMeta) return;
 
         const trySetMetaFromPayload = (payload) => {
           const source = payload?.teacher || payload || {};
@@ -198,7 +224,9 @@ const HolidayList = () => {
           const schoolAddress = source?.schoolAddress || source?.school?.address || source?.campusAddress || source?.address || '';
           const schoolLogo = source?.schoolLogo || source?.school?.logo?.secure_url || source?.school?.logo || '';
           if (schoolName || schoolAddress || schoolLogo) {
-            setSchoolMeta({ schoolName: schoolName || 'School', schoolAddress: schoolAddress || '', schoolLogo: schoolLogo || '' });
+            const meta = { schoolName: schoolName || 'School', schoolAddress: schoolAddress || '', schoolLogo: schoolLogo || '' };
+            setSchoolMeta(meta);
+            writeCalendarCache({ schoolMeta: meta });
             return true;
           }
           return false;
@@ -216,7 +244,7 @@ const HolidayList = () => {
 
         trySetMetaFromPayload(JSON.parse(localStorage.getItem('user') || '{}'));
       } catch (err) {
-        setError(err.message || 'Unable to load holidays');
+        if (!cached) setError(err.message || 'Unable to load holidays');
       } finally {
         setLoading(false);
       }
@@ -246,9 +274,14 @@ const HolidayList = () => {
   }, [activeTypes, allEvents, query]);
 
   const eventsByDay = useMemo(() => filteredEvents.reduce((acc, event) => {
-    const key = dateKey(new Date(event.startDate));
-    acc[key] = acc[key] || [];
-    acc[key].push(event);
+    const start = startOfDay(new Date(event.startDate));
+    const end = startOfDay(new Date(event.endDate || event.startDate));
+    const span = Math.min(62, Math.max(0, Math.round((end - start) / DAY_MS)));
+    for (let i = 0; i <= span; i += 1) {
+      const key = dateKey(addDays(start, i));
+      acc[key] = acc[key] || [];
+      acc[key].push(event);
+    }
     return acc;
   }, {}), [filteredEvents]);
 
@@ -261,7 +294,7 @@ const HolidayList = () => {
   }, [activeDate, viewMode]);
 
   const upcomingEvents = useMemo(() => filteredEvents.filter((event) => startOfDay(new Date(event.endDate || event.startDate)) >= startOfDay(new Date())).slice(0, 7), [filteredEvents]);
-  const agendaEvents = useMemo(() => filteredEvents.slice(0, 18), [filteredEvents]);
+  const agendaEvents = filteredEvents;
   const holidayHighlights = useMemo(() => holidayEvents.slice().sort((a, b) => new Date(a.startDate) - new Date(b.startDate)).slice(0, 6), [holidayEvents]);
 
   const categoryCounts = useMemo(() => Object.keys(EVENT_TYPES).map((type) => ({
@@ -388,129 +421,139 @@ const HolidayList = () => {
     }
   };
 
-  const changeMonth = (offset) => setActiveDate((prev) => new Date(prev.getFullYear(), prev.getMonth() + offset, 1));
+  const changeMonth = (offset) => setActiveDate((prev) => (viewMode === 'week'
+    ? addDays(prev, offset * 7)
+    : new Date(prev.getFullYear(), prev.getMonth() + offset, 1)));
   const monthLabel = activeDate.toLocaleDateString(undefined, { month: 'long', year: 'numeric' });
 
+  // Fit the page to the viewport (no page scroll): height = window minus where the page starts.
+  const pageRef = useRef(null);
+  const [pageHeight, setPageHeight] = useState(null);
+  useLayoutEffect(() => {
+    const measure = () => {
+      const top = pageRef.current?.getBoundingClientRect().top ?? 0;
+      setPageHeight(Math.max(520, window.innerHeight - Math.max(0, top)));
+    };
+    measure();
+    window.addEventListener('resize', measure);
+    return () => window.removeEventListener('resize', measure);
+  }, []);
+
   return (
-    <div className="min-h-screen bg-slate-100 p-3 sm:p-5 lg:p-6">
-      <div className="mx-auto max-w-[1500px] space-y-5">
-        <Motion.div initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
-          <div className="flex flex-col gap-4 xl:flex-row xl:items-center xl:justify-between">
-            <div>
-              <p className="text-xs font-semibold uppercase tracking-[0.2em] text-indigo-600">Teacher Calendar</p>
-              <h1 className="mt-2 text-2xl font-semibold text-slate-950 sm:text-3xl">Smart Scheduling Workspace</h1>
-              <p className="mt-2 max-w-3xl text-sm text-slate-500">A centralized calendar for holidays, exams, assignments, meetings, reminders, school events, and teacher planning.</p>
-            </div>
-            <div className="flex flex-wrap items-center gap-2">
-              <button type="button" onClick={handleDownloadPdf} disabled={loading || !holidays.length || downloading} className="inline-flex items-center gap-2 rounded-xl bg-slate-950 px-3 py-2 text-xs font-semibold text-white shadow-sm hover:bg-slate-800 disabled:cursor-not-allowed disabled:opacity-50">
-                {downloading ? <Loader2 size={15} className="animate-spin" /> : <Download size={15} />}
-                Export
-              </button>
-            </div>
+    <div ref={pageRef} className="flex flex-col overflow-hidden bg-[#f6f8fb] p-3 sm:p-4" style={pageHeight ? { height: pageHeight } : undefined}>
+      <div className="mx-auto flex min-h-0 w-full max-w-[1500px] flex-1 flex-col gap-3">
+        <div className="flex shrink-0 flex-wrap items-start justify-between gap-3">
+          <div>
+            <h1 className="text-[22px] font-bold leading-tight text-[#0f1b3d]">Teacher Calendar</h1>
+            <p className="text-[12px] text-[#64748b]">View all your important school events in one place.</p>
           </div>
-        </Motion.div>
+          <button type="button" onClick={handleDownloadPdf} disabled={loading || !holidays.length || downloading} className="inline-flex items-center gap-1.5 rounded-full bg-[#2563eb] px-3.5 py-2 text-[12px] font-semibold text-white shadow-[0_4px_12px_rgba(37,99,235,0.3)] transition hover:bg-[#1d4ed8] disabled:cursor-not-allowed disabled:opacity-50">
+            {downloading ? <Loader2 size={14} className="animate-spin" /> : <Download size={14} />}
+            Holiday List PDF
+          </button>
+        </div>
 
-        <div className="grid gap-5 xl:grid-cols-[minmax(0,1fr)_360px]">
-          <main className="space-y-5">
-            <div className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
-              <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
-                <div className="flex items-center gap-2">
-                  <button onClick={() => changeMonth(-1)} className="rounded-xl border border-slate-200 p-2 text-slate-600 hover:bg-slate-50" aria-label="Previous month"><ChevronLeft size={18} /></button>
-                  <button onClick={() => setActiveDate(new Date())} className="rounded-xl border border-slate-200 px-3 py-2 text-xs font-semibold text-slate-700 hover:bg-slate-50">Today</button>
-                  <button onClick={() => changeMonth(1)} className="rounded-xl border border-slate-200 p-2 text-slate-600 hover:bg-slate-50" aria-label="Next month"><ChevronRight size={18} /></button>
-                  <div className="ml-2 min-w-[170px] text-lg font-semibold text-slate-950">{monthLabel}</div>
-                </div>
-
-                <div className="flex flex-col gap-2 sm:flex-row sm:items-center">
-                  <div className="relative min-w-0 sm:w-64">
-                    <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />
-                    <input value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Search events" className="w-full rounded-xl border border-slate-200 bg-slate-50 py-2 pl-9 pr-3 text-sm outline-none transition focus:border-indigo-300 focus:bg-white focus:ring-4 focus:ring-indigo-100" />
-                  </div>
-                  <div className="inline-flex rounded-xl border border-slate-200 bg-slate-50 p-1">
-                    {['month', 'week', 'agenda'].map((mode) => (
-                      <button key={mode} onClick={() => setViewMode(mode)} className={`rounded-lg px-3 py-1.5 text-xs font-semibold capitalize transition ${viewMode === mode ? 'bg-white text-slate-950 shadow-sm' : 'text-slate-500 hover:text-slate-800'}`}>{mode}</button>
-                    ))}
-                  </div>
-                </div>
-              </div>
-
-              <div className="mt-4 flex flex-wrap gap-2">
-                {categoryCounts.map(({ type, count }) => {
-                  const config = EVENT_TYPES[type];
-                  const Icon = config.icon;
-                  const active = activeTypes.has(type);
-                  return (
-                    <button key={type} onClick={() => toggleType(type)} className={`inline-flex items-center gap-2 rounded-full border px-3 py-1.5 text-xs font-semibold transition ${active ? config.chip : 'border-slate-200 bg-white text-slate-400'}`}>
-                      <Icon size={13} />
-                      {config.label}
-                      <span className="rounded-full bg-white/70 px-1.5 text-[10px]">{count}</span>
-                    </button>
-                  );
-                })}
-              </div>
+        {/* Toolbar */}
+        <div className="flex shrink-0 flex-wrap items-center justify-between gap-3 rounded-xl border border-[#e6ebf2] bg-white px-3 py-2 shadow-[0_1px_3px_rgba(15,23,42,0.04)]">
+          <div className="flex items-center gap-2">
+            <button type="button" onClick={() => changeMonth(-1)} className="flex h-8 w-8 items-center justify-center rounded-full border border-[#e2e8f0] text-[#475569] hover:bg-slate-50" aria-label="Previous"><ChevronLeft size={17} /></button>
+            <button type="button" onClick={() => changeMonth(1)} className="flex h-8 w-8 items-center justify-center rounded-full border border-[#e2e8f0] text-[#475569] hover:bg-slate-50" aria-label="Next"><ChevronRight size={17} /></button>
+            <h2 className="ml-2 text-[18px] font-bold text-[#0f1b3d]">{monthLabel}</h2>
+          </div>
+          <div className="flex items-center gap-2">
+            <div className="flex overflow-hidden rounded-full border border-[#e2e8f0]">
+              {['month', 'week'].map((mode) => (
+                <button key={mode} type="button" onClick={() => setViewMode(mode)} className={`px-4 py-1.5 text-[12px] font-medium capitalize transition ${viewMode === mode ? 'bg-[#2563eb] text-white' : 'bg-white text-[#475569] hover:bg-slate-50'}`}>{mode}</button>
+              ))}
             </div>
+            <button type="button" onClick={() => setActiveDate(new Date())} className="rounded-full border border-[#e2e8f0] px-4 py-1.5 text-[12px] font-medium text-[#0f1b3d] hover:bg-slate-50">Today</button>
+          </div>
+        </div>
 
+        <div className="grid min-h-0 flex-1 grid-cols-1 gap-3 lg:grid-cols-[minmax(0,1fr)_240px]">
+          <main className="flex min-h-0 flex-col">
             {loading ? (
-              <div className="rounded-2xl border border-slate-200 bg-white p-8 text-sm text-slate-500"><Loader2 className="mr-2 inline h-4 w-4 animate-spin" />Loading calendar events...</div>
+              <div className="rounded-xl border border-[#e6ebf2] bg-white p-8 text-sm text-[#64748b]"><Loader2 className="mr-2 inline h-4 w-4 animate-spin" />Loading calendar events...</div>
             ) : error ? (
-              <div className="rounded-2xl border border-red-200 bg-red-50 p-5 text-sm text-red-700">{error}</div>
-            ) : viewMode === 'agenda' ? (
-              <AgendaTimeline events={agendaEvents} onSelect={setSelectedEvent} />
+              <div className="rounded-xl border border-red-200 bg-red-50 p-5 text-sm text-red-700">{error}</div>
             ) : (
-              <CalendarGrid days={visibleDays} activeDate={activeDate} eventsByDay={eventsByDay} viewMode={viewMode} onSelect={setSelectedEvent} />
+              <CalendarGrid days={visibleDays} activeDate={activeDate} eventsByDay={eventsByDay} viewMode={viewMode} onSelect={setSelectedEvent} onSelectDay={setSelectedDay} />
             )}
-
-            <HolidayHighlights holidays={holidayHighlights} />
           </main>
 
-          <aside className="space-y-5 xl:sticky xl:top-20 xl:self-start">
-            <UpcomingPanel events={upcomingEvents} onSelect={setSelectedEvent} />
-            <AgendaTimeline events={agendaEvents.slice(0, 8)} compact onSelect={setSelectedEvent} />
+          {/* Event filters */}
+          <aside className="flex min-h-0 flex-col rounded-xl border border-[#e6ebf2] bg-white p-3 shadow-[0_1px_3px_rgba(15,23,42,0.04)]">
+            <h3 className="text-[14px] font-bold text-[#0f1b3d]">Events</h3>
+            <div className="relative mt-2">
+              <Search className="absolute left-2.5 top-1/2 h-4 w-4 -translate-y-1/2 text-[#94a3b8]" />
+              <input value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Search events..." className="w-full rounded-full border border-[#e2e8f0] py-1.5 pl-8 pr-2 text-[12px] outline-none focus:border-[#93c5fd] focus:ring-2 focus:ring-[#2563eb]/10" />
+            </div>
+            <div className="mt-3 space-y-1">
+              {categoryCounts.map(({ type, count }) => {
+                const config = EVENT_TYPES[type];
+                return (
+                  <div key={type} className="flex w-full select-none items-center gap-2.5 rounded-lg px-2 py-1.5 text-[13px] text-[#0f1b3d]">
+                    <span className={`h-2.5 w-2.5 shrink-0 rounded-full ${config.dot}`} />
+                    <span className="flex-1">{config.label}</span>
+                    <span className={`rounded-full px-1.5 text-[10px] font-semibold ${config.chip}`}>{count}</span>
+                  </div>
+                );
+              })}
+            </div>
           </aside>
         </div>
       </div>
 
       <AnimatePresence>
         {selectedEvent && <EventDialog event={selectedEvent} onClose={() => setSelectedEvent(null)} />}
+        {selectedDay && <DayDialog day={selectedDay} events={eventsByDay[dateKey(selectedDay)] || []} onClose={() => setSelectedDay(null)} />}
       </AnimatePresence>
     </div>
   );
 };
 
-const CalendarGrid = ({ days, activeDate, eventsByDay, viewMode, onSelect }) => (
-  <Motion.div key={`${viewMode}-${activeDate.getMonth()}-${activeDate.getFullYear()}`} initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.22 }} className="overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm">
-    <div className="grid grid-cols-7 border-b border-slate-200 bg-slate-50 text-center text-[11px] font-bold uppercase tracking-[0.12em] text-slate-400">
-      {['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'].map((day) => <div key={day} className="px-2 py-3">{day}</div>)}
-    </div>
-    <div className="grid grid-cols-7">
-      {days.map((day) => {
-        const key = dateKey(day);
-        const dayEvents = eventsByDay[key] || [];
-        const outside = viewMode === 'month' && day.getMonth() !== activeDate.getMonth();
-        const today = key === dateKey(new Date());
-        return (
-          <Motion.div key={key} whileHover={{ scale: 1.005 }} className={`min-h-[118px] border-b border-r border-slate-100 p-2 transition ${outside ? 'bg-slate-50/70 text-slate-300' : 'bg-white text-slate-700'} ${today ? 'ring-1 ring-inset ring-indigo-300' : ''}`}>
-            <div className="flex items-center justify-between">
-              <span className={`flex h-7 w-7 items-center justify-center rounded-full text-xs font-bold ${today ? 'bg-indigo-600 text-white' : ''}`}>{day.getDate()}</span>
-              {dayEvents.length > 2 && <span className="text-[10px] font-semibold text-slate-400">+{dayEvents.length - 2}</span>}
+const DAY_HEADER_TONES = ['#ef4444', '#2563eb', '#9333ea', '#16a34a', '#f59e0b', '#14b8a6', '#ec4899'];
+
+const CalendarGrid = ({ days, activeDate, eventsByDay, viewMode, onSelect, onSelectDay }) => {
+  const rows = days.length / 7;
+  return (
+    <Motion.div key={`${viewMode}-${activeDate.getMonth()}-${activeDate.getFullYear()}`} initial={{ opacity: 0, y: 6 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.2 }} className="flex min-h-0 flex-1 flex-col overflow-hidden rounded-xl border border-[#e6ebf2] bg-white shadow-[0_1px_3px_rgba(15,23,42,0.04)]">
+      <div className="grid shrink-0 grid-cols-7 border-b border-[#eef2f7] text-center text-[12px] font-semibold">
+        {['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'].map((day, i) => (
+          <div key={day} className="py-2" style={{ color: DAY_HEADER_TONES[i], backgroundColor: `${DAY_HEADER_TONES[i]}12` }}>{day}</div>
+        ))}
+      </div>
+      <div className="grid min-h-0 flex-1 grid-cols-7" style={{ gridTemplateRows: `repeat(${rows}, minmax(0, 1fr))` }}>
+        {days.map((day) => {
+          const key = dateKey(day);
+          const dayEvents = eventsByDay[key] || [];
+          const outside = viewMode === 'month' && day.getMonth() !== activeDate.getMonth();
+          const isToday = key === dateKey(new Date());
+          const weekend = day.getDay() === 0;
+          const limit = viewMode === 'week' ? 8 : 2;
+          return (
+            <div key={key} role="button" tabIndex={0} onClick={() => onSelectDay(day)} onKeyDown={(e) => { if (e.key === 'Enter') onSelectDay(day); }} className={`flex min-h-0 cursor-pointer flex-col overflow-hidden border-b border-r border-[#eef2f7] p-1.5 transition hover:bg-[#f8fbff] [&:nth-child(7n)]:border-r-0 ${outside ? 'bg-[#fafbfc]' : weekend ? 'bg-[#fff8f8]' : 'bg-white'} ${isToday ? 'bg-[#f2f7ff]' : ''}`}>
+              <span className={`flex h-6 w-6 shrink-0 items-center justify-center rounded-full text-[12px] font-semibold ${isToday ? 'bg-[#2563eb] text-white' : outside ? 'text-[#cbd5e1]' : 'text-[#0f1b3d]'}`}>{day.getDate()}</span>
+              <div className="mt-0.5 min-h-0 space-y-1 overflow-hidden">
+                {dayEvents.slice(0, limit).map((event) => {
+                  const config = EVENT_TYPES[event.type];
+                  const done = isPastEvent(event);
+                  return (
+                    <button key={`${event.id}-${key}`} type="button" onClick={(e) => { e.stopPropagation(); onSelectDay(day); }} title={done ? `${event.title} (completed)` : event.title} className={`flex w-full items-center gap-1.5 rounded-md px-1.5 py-0.5 text-left text-[11px] font-medium transition hover:brightness-95 ${config.soft} ${outside || done ? 'opacity-60' : ''}`}>
+                      <span className={`h-2 w-2 shrink-0 rounded-full ${config.dot}`} />
+                      <span className={`truncate ${done ? 'line-through decoration-2' : ''}`}>{event.title}</span>
+                    </button>
+                  );
+                })}
+                {dayEvents.length > limit && <p className="pl-1 text-[10px] font-semibold text-[#64748b]">+{dayEvents.length - limit} more</p>}
+              </div>
             </div>
-            <div className="mt-2 space-y-1">
-              {dayEvents.slice(0, viewMode === 'week' ? 5 : 2).map((event) => {
-                const config = EVENT_TYPES[event.type];
-                return (
-                  <button key={event.id} onClick={() => onSelect(event)} className={`flex w-full items-center gap-1.5 truncate rounded-lg border px-2 py-1 text-left text-[11px] font-semibold ${config.soft} hover:shadow-sm`}>
-                    <span className={`h-1.5 w-1.5 shrink-0 rounded-full ${config.dot}`} />
-                    <span className="truncate">{event.title}</span>
-                  </button>
-                );
-              })}
-            </div>
-          </Motion.div>
-        );
-      })}
-    </div>
-  </Motion.div>
-);
+          );
+        })}
+      </div>
+    </Motion.div>
+  );
+};
 
 const UpcomingPanel = ({ events, onSelect }) => (
   <Motion.section initial={{ opacity: 0, x: 12 }} animate={{ opacity: 1, x: 0 }} className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
@@ -543,7 +586,7 @@ const EventRow = ({ event, index = 0, onSelect }) => {
 };
 
 const AgendaTimeline = ({ events, compact = false, onSelect }) => (
-  <section className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
+  <section className="chat-scroll min-h-0 flex-1 overflow-y-auto rounded-xl border border-[#e6ebf2] bg-white p-4 shadow-sm">
     <div className="mb-4 flex items-center gap-2">
       <Clock size={17} className="text-indigo-600" />
       <h2 className="text-sm font-semibold text-slate-950">Agenda Timeline</h2>
@@ -621,13 +664,64 @@ const EventDialog = ({ event, onClose }) => {
             </div>
           ))}
         </div>
-        <div className="mt-5 flex justify-end gap-2">
+        <div className="mt-5 flex justify-end">
           <button onClick={onClose} className="rounded-xl border border-slate-200 px-4 py-2 text-sm font-semibold text-slate-700 hover:bg-slate-50">Close</button>
-          <button className="inline-flex items-center gap-2 rounded-xl bg-slate-950 px-4 py-2 text-sm font-semibold text-white hover:bg-slate-800"><FileText size={15} />Open Details</button>
         </div>
       </Motion.div>
     </Motion.div>
   );
 };
+
+// Everything happening on one date — holidays and other events with full details.
+const DayDialog = ({ day, events, onClose }) => (
+  <Motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} className="fixed inset-0 z-[220] flex items-center justify-center bg-slate-950/40 p-4 backdrop-blur-sm" onClick={onClose}>
+    <Motion.div initial={{ opacity: 0, y: 18, scale: 0.98 }} animate={{ opacity: 1, y: 0, scale: 1 }} exit={{ opacity: 0, y: 12, scale: 0.98 }} transition={{ type: 'spring', stiffness: 260, damping: 24 }} className="flex max-h-[85vh] w-full max-w-lg flex-col overflow-hidden rounded-2xl bg-white shadow-2xl" onClick={(e) => e.stopPropagation()}>
+      <div className="flex shrink-0 items-start justify-between gap-3 bg-linear-to-r from-[#2563eb] to-[#9333ea] px-5 py-4 text-white">
+        <div>
+          <p className="text-[11px] font-semibold uppercase tracking-wide text-white/80">{day.toLocaleDateString(undefined, { weekday: 'long' })}</p>
+          <h2 className="text-[20px] font-bold">{day.toLocaleDateString(undefined, { day: 'numeric', month: 'long', year: 'numeric' })}</h2>
+          <p className="text-[12px] text-white/85">{events.length ? `${events.length} event${events.length === 1 ? '' : 's'}` : 'No events'}</p>
+        </div>
+        <button type="button" onClick={onClose} aria-label="Close" className="flex h-8 w-8 items-center justify-center rounded-full bg-white/15 text-lg leading-none hover:bg-white/25">×</button>
+      </div>
+      <div className="chat-scroll min-h-0 flex-1 space-y-3 overflow-y-auto p-4">
+        {events.length === 0 ? (
+          <div className="py-8 text-center">
+            <CalendarDays className="mx-auto h-10 w-10 text-[#cbd5e1]" />
+            <p className="mt-2 text-[14px] font-semibold text-[#0f1b3d]">Nothing scheduled</p>
+            <p className="text-[12px] text-[#64748b]">There are no holidays or events on this day.</p>
+          </div>
+        ) : events.map((event) => {
+          const config = EVENT_TYPES[event.type];
+          const Icon = config.icon;
+          const done = isPastEvent(event);
+          const days = getHolidayDuration(event.startDate, event.endDate);
+          const description = event.raw?.description || event.raw?.reason || event.raw?.notes || '';
+          return (
+            <div key={event.id} className={`rounded-xl p-3 ${config.soft}`}>
+              <div className="flex items-start gap-3">
+                <span className={`flex h-10 w-10 shrink-0 items-center justify-center rounded-full text-white ${config.dot}`}><Icon size={18} /></span>
+                <div className="min-w-0 flex-1">
+                  <div className="flex flex-wrap items-center gap-2">
+                    <span className={`rounded-full px-2 py-0.5 text-[10px] font-bold ${config.chip}`}>{config.label}</span>
+                    <span className={`rounded-full px-2 py-0.5 text-[10px] font-bold ${done ? 'bg-slate-200 text-slate-600' : 'bg-white text-[#16a34a]'}`}>{done ? 'Completed' : getCountdown(event)}</span>
+                  </div>
+                  <h3 className="mt-1.5 text-[15px] font-bold text-[#0f1b3d]">{event.title}</h3>
+                  {description && <p className="mt-1 text-[12px] text-[#475569]">{description}</p>}
+                </div>
+              </div>
+              <div className="mt-3 grid grid-cols-3 gap-2 text-[11px]">
+                <div className="rounded-lg bg-white/80 px-2 py-1.5"><p className="text-[#64748b]">Dates</p><p className="font-semibold text-[#0f1b3d]">{formatDateRange(event.startDate, event.endDate)}</p></div>
+                <div className="rounded-lg bg-white/80 px-2 py-1.5"><p className="text-[#64748b]">Duration</p><p className="font-semibold text-[#0f1b3d]">{days} day{days === 1 ? '' : 's'}</p></div>
+                <div className="rounded-lg bg-white/80 px-2 py-1.5"><p className="text-[#64748b]">Time</p><p className="font-semibold text-[#0f1b3d]">{event.time || 'All day'}</p></div>
+              </div>
+              {event.meta && event.type !== 'holiday' && <p className="mt-2 text-[11px] text-[#475569]">{event.meta}</p>}
+            </div>
+          );
+        })}
+      </div>
+    </Motion.div>
+  </Motion.div>
+);
 
 export default HolidayList;

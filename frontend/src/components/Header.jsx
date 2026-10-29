@@ -15,6 +15,8 @@ import { useStudentDashboard } from './StudentDashboardContext';
 import { useDesktopNotificationBridge } from '../hooks/useDesktopNotificationBridge';
 import DesktopNotificationPermissionModal from './DesktopNotificationPermissionModal';
 import NotificationPopover from './NotificationPopover';
+import useCommunityWallUnread from '../hooks/useCommunityWallUnread';
+import usePortalChatNotifier from '../hooks/usePortalChatNotifier';
 import { AUTH_NOTICE, logoutAndRedirect } from '../utils/authSession';
 
 const Header = ({ sidebarOpen, setSidebarOpen, onOpenProfile }) => {
@@ -25,15 +27,39 @@ const Header = ({ sidebarOpen, setSidebarOpen, onOpenProfile }) => {
   const [showSearchSuggestions, setShowSearchSuggestions] = useState(false);
   const {
     profile,
-    notifications: allNotifications,
-    unreadNotificationCount: unreadCount,
+    notifications: baseNotifications,
+    unreadNotificationCount: baseUnreadCount,
     markNotificationAsRead: markAsRead,
-    markAllNotificationsAsRead: markAllAsRead,
-    dismissNotification,
+    markAllNotificationsAsRead: baseMarkAllAsRead,
+    dismissNotification: baseDismissNotification,
     notificationsLoading,
     notificationsError,
     markModuleVisited,
   } = useStudentDashboard();
+
+  // Unread Community Wall posts are shown in the bell alongside regular notifications.
+  const communityUnread = useCommunityWallUnread({ wallPath: '/student/assignments-academic-alcove' });
+  const allNotifications = useMemo(
+    // Newest first across both sources, so wall posts don't sit on top of newer alerts.
+    () => [...communityUnread.bellItems, ...(baseNotifications || [])].sort((a, b) => new Date(b?.createdAt || 0) - new Date(a?.createdAt || 0)),
+    [communityUnread.bellItems, baseNotifications]
+  );
+  const unreadCount = (baseUnreadCount || 0) + communityUnread.count;
+  const markAllAsRead = (...args) => {
+    communityUnread.markAllSeen();
+    return baseMarkAllAsRead(...args);
+  };
+  const dismissNotification = (id, ...rest) => {
+    if (String(id).startsWith('community-post-')) return communityUnread.markPostSeen(String(id).slice('community-post-'.length));
+    return baseDismissNotification(id, ...rest);
+  };
+
+  usePortalChatNotifier({
+    navigate,
+    chatPath: '/student/chat',
+    isChatPath: (path) => path.startsWith('/student/chat'),
+    meStorageKey: 'student_chat_me_id_v1',
+  });
 
   const notifRef = useRef(null);
   const profileRef = useRef(null);
@@ -58,6 +84,8 @@ const Header = ({ sidebarOpen, setSidebarOpen, onOpenProfile }) => {
   }, []);
 
   const resolveNotifPath = useCallback((notification) => {
+    if (String(notification?.typeLabel || '').toLowerCase() === 'parent_teacher_meeting') return '/student/meetings';
+    if (String(notification?.typeLabel || '').toLowerCase().startsWith('excuse_letter')) return '/student/excuse-letter';
     // Teacher-feedback window alerts/notices open the feedback form.
     if (String(notification?.typeLabel || '').toLowerCase().startsWith('feedback_')
       || String(notification?.eventType || '').startsWith('FEEDBACK_WINDOW')) return '/student/teacherfeedback';
@@ -98,8 +126,8 @@ const Header = ({ sidebarOpen, setSidebarOpen, onOpenProfile }) => {
   });
 
   useEffect(() => {
-    syncNotifications(allNotifications);
-  }, [allNotifications, syncNotifications]);
+    syncNotifications(baseNotifications);
+  }, [baseNotifications, syncNotifications]);
 
   // Toggle one dropdown, close the other
   const toggleNotifications = useCallback(async () => {
@@ -198,6 +226,11 @@ const Header = ({ sidebarOpen, setSidebarOpen, onOpenProfile }) => {
 
   // Handle notification click
   const handleNotificationClick = async (notification) => {
+    if (notification?.isCommunityPost) {
+      setShowNotifications(false);
+      navigate(notification.path);
+      return;
+    }
     if (!notification.isRead) {
       await markAsRead(notification._id);
     }

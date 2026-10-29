@@ -14,6 +14,10 @@ const ExamResult = require('../models/ExamResult');
 const StudentProgress = require('../models/StudentProgress');
 const Assignment = require('../models/Assignment');
 const Timetable = require('../models/Timetable');
+// Registered for the routine's room → floor → building populate.
+require('../models/Room');
+require('../models/Floor');
+require('../models/Building');
 const Subject = require('../models/Subject');
 const ClassModel = require('../models/Class');
 const Section = require('../models/Section');
@@ -1878,6 +1882,7 @@ router.get('/routine', authTeacher, async (req, res) => {
       .populate('classId', 'name')
       .populate('sectionId', 'name')
       .populate('entries.subjectId', 'name')
+      .populate({ path: 'entries.roomId', select: 'roomNumber floorId', populate: { path: 'floorId', select: 'name buildingId', populate: { path: 'buildingId', select: 'name' } } })
       .lean();
 
     // Fallback for legacy records that may not have campusId set
@@ -1890,6 +1895,7 @@ router.get('/routine', authTeacher, async (req, res) => {
         .populate('classId', 'name')
         .populate('sectionId', 'name')
         .populate('entries.subjectId', 'name')
+      .populate({ path: 'entries.roomId', select: 'roomNumber floorId', populate: { path: 'floorId', select: 'name buildingId', populate: { path: 'buildingId', select: 'name' } } })
         .lean();
     }
 
@@ -1927,7 +1933,10 @@ router.get('/routine', authTeacher, async (req, res) => {
           className,
           sectionName,
           classLabel,
-          room: entry.room || 'TBA',
+          room: entry.room || entry.roomId?.roomNumber || 'TBA',
+          roomNumber: entry.roomId?.roomNumber || entry.room || '',
+          floor: entry.roomId?.floorId?.name || '',
+          building: entry.roomId?.floorId?.buildingId?.name || '',
           startTime: entry.startTime || '',
           endTime: entry.endTime || '',
           period: entry.period || null,

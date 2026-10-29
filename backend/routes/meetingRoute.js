@@ -13,6 +13,35 @@ const StudentUser = require('../models/StudentUser');
 const ParentUser = require('../models/ParentUser');
 const AcademicYear = require('../models/AcademicYear');
 const Notification = require('../models/Notification');
+const socketRegistry = require('../utils/socketRegistry');
+const TeacherUser = require('../models/TeacherUser');
+const Building = require('../models/Building');
+const Floor = require('../models/Floor');
+const Room = require('../models/Room');
+const Timetable = require('../models/Timetable');
+const ExamInvigilation = require('../models/ExamInvigilation');
+const Exam = require('../models/Exam');
+
+const MEETING_SLOT_MINUTES = 30;
+const toMinutes = (hhmm) => {
+  const match = String(hhmm || '').match(/^(\d{1,2}):(\d{2})/);
+  return match ? Number(match[1]) * 60 + Number(match[2]) : null;
+};
+const overlaps = (startA, endA, startB, endB) => startA < endB && startB < endA;
+const DAY_NAMES = ['sunday', 'monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday'];
+
+// Tell the meeting's student and parent (open tabs) to reload their meetings list.
+const emitMeetingChanged = (meeting, type) => {
+  try {
+    const io = socketRegistry.get();
+    if (!io || !meeting) return;
+    const payload = { type, meetingId: String(meeting._id) };
+    [meeting.studentId, meeting.parentId].filter(Boolean)
+      .forEach((userId) => io.to(`user:${String(userId?._id || userId)}`).emit('meeting:changed', payload));
+  } catch (_err) {
+    // realtime refresh is best-effort
+  }
+};
 const {
   buildTeacherAllocationScope,
   scopeAllowsRequest,
@@ -214,6 +243,195 @@ router.get('/teacher/student/:studentId/parent', authTeacher, async (req, res) =
 });
 
 // Teacher creates a meeting
+// Buildings → floors → rooms, each room flagged free/busy for a date + time.
+// A room is busy if a class period, an exam/invigilation or another meeting uses it then.
+router.get('/teacher/rooms', authTeacher, async (req, res) => {
+  try {
+    const schoolId = req.schoolId || req.teacher?.schoolId || null;
+    if (!schoolId) return res.status(400).json({ error: 'schoolId is required' });
+    const campusId = req.campusId || null;
+    const date = String(req.query.date || '').slice(0, 10);
+    const start = toMinutes(req.query.time);
+    const excludeMeetingId = String(req.query.excludeMeetingId || '');
+    const campusFilter = campusId ? { $or: [{ campusId }, { campusId: null }, { campusId: { $exists: false } }] } : {};
+
+    const [buildings, floors, rooms] = await Promise.all([
+      Building.find({ schoolId, isActive: { $ne: false }, ...campusFilter }).select('_id name code order').sort({ order: 1, name: 1 }).lean(),
+      Floor.find({ schoolId, isActive: { $ne: false }, ...campusFilter }).select('_id buildingId name floorCode order').sort({ order: 1, name: 1 }).lean(),
+      Room.find({ schoolId, isActive: { $ne: false }, ...campusFilter }).select('_id buildingId floorId roomNumber label capacity').sort({ roomNumber: 1 }).lean(),
+    ]);
+
+    const busy = new Map(); // roomId -> reason
+    if (/^\d{4}-\d{2}-\d{2}$/.test(date) && start !== null) {
+      const end = start + MEETING_SLOT_MINUTES;
+      const dayName = DAY_NAMES[new Date(`${date}T00:00:00`).getDay()];
+      const dayStart = new Date(`${date}T00:00:00`);
+      const dayEnd = new Date(`${date}T23:59:59.999`);
+      const [timetables, invigilations, exams, meetings] = await Promise.all([
+        Timetable.find({ schoolId, ...campusFilter, 'entries.roomId': { $ne: null } }).select('entries').lean(),
+        ExamInvigilation.find({ schoolId, date }).select('roomId startTime endTime').lean(),
+        Exam.find({ schoolId, date, roomId: { $ne: null } }).select('roomId time duration').lean(),
+        ParentMeeting.find({
+          schoolId,
+          roomId: { $ne: null },
+          status: { $ne: 'cancelled' },
+          meetingDate: { $gte: dayStart, $lte: dayEnd },
+          ...(excludeMeetingId ? { _id: { $ne: excludeMeetingId } } : {}),
+        }).select('roomId meetingTime').lean(),
+      ]);
+      timetables.forEach((tt) => (tt.entries || []).forEach((entry) => {
+        if (!entry.roomId || entry.isBreak) return;
+        const day = String(entry.dayOfWeek || '').toLowerCase();
+        if (!(day === dayName || day === dayName.slice(0, 3))) return;
+        const s = toMinutes(entry.startTime); const e = toMinutes(entry.endTime);
+        if (s !== null && e !== null && overlaps(start, end, s, e)) busy.set(String(entry.roomId), 'Class in session');
+      }));
+      invigilations.forEach((row) => {
+        const s = toMinutes(row.startTime); const e = toMinutes(row.endTime);
+        if (row.roomId && s !== null && e !== null && overlaps(start, end, s, e)) busy.set(String(row.roomId), 'Exam');
+      });
+      exams.forEach((exam) => {
+        const s = toMinutes(exam.time);
+        const e = s === null ? null : s + (Number(exam.duration) || 60);
+        if (s !== null && overlaps(start, end, s, e)) busy.set(String(exam.roomId), 'Exam');
+      });
+      meetings.forEach((m) => {
+        const s = toMinutes(m.meetingTime);
+        if (s !== null && overlaps(start, end, s, s + MEETING_SLOT_MINUTES)) busy.set(String(m.roomId), 'Another meeting');
+      });
+    }
+
+    res.json({
+      slotMinutes: MEETING_SLOT_MINUTES,
+      buildings: buildings.map((b) => ({
+        id: String(b._id),
+        name: b.name,
+        code: b.code,
+        floors: floors.filter((f) => String(f.buildingId) === String(b._id)).map((f) => ({
+          id: String(f._id),
+          name: f.name,
+          code: f.floorCode,
+          rooms: rooms.filter((r) => String(r.floorId) === String(f._id)).map((r) => ({
+            id: String(r._id),
+            roomNumber: r.roomNumber,
+            label: r.label || '',
+            capacity: r.capacity || 0,
+            available: !busy.has(String(r._id)),
+            reason: busy.get(String(r._id)) || '',
+          })),
+        })),
+      })),
+    });
+  } catch (err) {
+    console.error('Room availability error:', err);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// Schedule one meeting per student in a single request: scope, students and parents are
+// loaded once and everything is written in bulk, instead of 2 requests per student.
+router.post('/teacher/create-bulk', authTeacher, async (req, res) => {
+  try {
+    const schoolId = req.schoolId || req.teacher?.schoolId || null;
+    if (!schoolId) return res.status(400).json({ error: 'schoolId is required' });
+    const teacherId = req.teacher?.id || req.user?.id;
+    if (!teacherId) return res.status(400).json({ error: 'teacherId is required' });
+
+    const { studentIds, title, topic, description, meetingDate, meetingTime, meetingType, location, meetingLink, roomId } = req.body || {};
+    const ids = [...new Set((Array.isArray(studentIds) ? studentIds : []).map(String))].filter((id) => /^[a-f0-9]{24}$/i.test(id));
+    if (!ids.length || !title || !topic || !meetingDate || !meetingTime) {
+      return res.status(400).json({ error: 'Missing required fields' });
+    }
+
+    let roomDoc = null;
+    let resolvedLocation = String(location || '').trim();
+    if (roomId && (meetingType || 'In Person') === 'In Person') {
+      roomDoc = await Room.findOne({ _id: roomId, schoolId }).select('_id roomNumber label buildingId floorId').lean();
+      if (!roomDoc) return res.status(400).json({ error: 'Selected room was not found' });
+      const [building, floor] = await Promise.all([
+        Building.findById(roomDoc.buildingId).select('name').lean(),
+        Floor.findById(roomDoc.floorId).select('name').lean(),
+      ]);
+      resolvedLocation = [building?.name, floor?.name, `Room ${roomDoc.roomNumber}`].filter(Boolean).join(' · ');
+    }
+
+    const [scope, students, parents, teacher] = await Promise.all([
+      buildTeacherAllocationScope({ schoolId, campusId: req.campusId || null, teacherId }),
+      StudentUser.find({ _id: { $in: ids }, schoolId }).select('_id name grade section className sectionName').lean(),
+      ParentUser.find({ schoolId, childrenIds: { $in: ids } }).select('_id childrenIds').lean(),
+      TeacherUser.findById(teacherId).select('name').lean(),
+    ]);
+    const parentByStudent = new Map();
+    parents.forEach((parent) => (parent.childrenIds || []).forEach((childId) => {
+      if (!parentByStudent.has(String(childId))) parentByStudent.set(String(childId), parent._id);
+    }));
+
+    const skipped = [];
+    const docs = [];
+    students.forEach((student) => {
+      if (!studentIsWithinTeacherScope(student, scope)) { skipped.push({ studentId: String(student._id), reason: 'outside your classes' }); return; }
+      const parentId = parentByStudent.get(String(student._id));
+      if (!parentId) { skipped.push({ studentId: String(student._id), reason: 'no parent linked' }); return; }
+      docs.push(new ParentMeeting({
+        schoolId,
+        campusId: req.campusId || null,
+        teacherId,
+        parentId,
+        studentId: student._id,
+        title,
+        topic,
+        description: description || '',
+        meetingDate,
+        meetingTime,
+        meetingType: meetingType || 'In Person',
+        location: resolvedLocation,
+        roomId: roomDoc?._id || null,
+        meetingLink: meetingLink || '',
+        status: 'scheduled',
+      }));
+    });
+    if (!docs.length) return res.status(400).json({ error: 'None of the selected students could be scheduled', skipped });
+
+    const meetings = await ParentMeeting.insertMany(docs);
+    const studentById = new Map(students.map((s) => [String(s._id), s]));
+    const teacherName = teacher?.name || 'Your teacher';
+    const dateLabel = new Date(meetingDate).toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' });
+    const notifications = meetings.flatMap((meeting) => {
+      const student = studentById.get(String(meeting.studentId)) || {};
+      const common = {
+        schoolId,
+        campusId: null,
+        title: 'Parent-Teacher Meeting Scheduled',
+        createdByType: 'teacher',
+        createdByTeacherId: teacherId,
+        createdByName: teacherName,
+        type: 'announcement',
+        typeLabel: 'parent_teacher_meeting',
+        category: 'general',
+        priority: 'high',
+        className: String(student.grade || '').trim(),
+        sectionName: String(student.section || '').trim(),
+        relatedEntity: { entityType: 'meeting', entityId: meeting._id },
+      };
+      const where = meeting.meetingType === 'In Person' && meeting.location ? ` at ${meeting.location}` : ` (${meeting.meetingType})`;
+      return [
+        { ...common, audience: 'Parent', targetUserIds: [meeting.parentId],
+          message: `${teacherName} has scheduled a meeting with you on ${dateLabel} at ${meeting.meetingTime}${where}. Topic: ${meeting.topic}.` },
+        { ...common, audience: 'Student', targetUserIds: [meeting.studentId],
+          message: `${teacherName} has scheduled a meeting with your parent on ${dateLabel} at ${meeting.meetingTime}${where}. Topic: ${meeting.topic}.` },
+      ];
+    });
+    // insertMany fires the realtime hint + device push for each notification (see models/Notification.js).
+    await Notification.insertMany(notifications, { ordered: false })
+      .catch((notifErr) => console.error('Failed to create meeting notifications:', notifErr));
+
+    res.status(201).json({ message: 'Meetings scheduled', created: meetings.length, skipped });
+  } catch (err) {
+    console.error('Bulk create meeting error:', err);
+    res.status(500).json({ error: err.message });
+  }
+});
+
 router.post('/teacher/create', authTeacher, async (req, res) => {
   try {
     const {
@@ -296,6 +514,26 @@ router.post('/teacher/create', authTeacher, async (req, res) => {
         typeLabel: 'parent_teacher_meeting',
         category: 'general',
         priority: 'high',
+        relatedEntity: { entityType: 'meeting', entityId: meeting._id },
+        className: String(student.grade || '').trim(),
+        sectionName: String(student.section || '').trim(),
+      });
+      // The student is told too. Saving a Notification also pushes it to their devices
+      // (web push, works with the site closed) and pings open tabs over Socket.IO.
+      await Notification.create({
+        schoolId,
+        campusId: null,
+        title: 'Parent-Teacher Meeting Scheduled',
+        message: `Your teacher has scheduled a meeting with your parent on ${meetingDateLabel} at ${meeting.meetingTime}. Topic: ${meeting.topic}.`,
+        audience: 'Student',
+        targetUserIds: [student._id],
+        createdByType: 'teacher',
+        createdByTeacherId: teacherId,
+        type: 'announcement',
+        typeLabel: 'parent_teacher_meeting',
+        category: 'general',
+        priority: 'high',
+        relatedEntity: { entityType: 'meeting', entityId: meeting._id },
         className: String(student.grade || '').trim(),
         sectionName: String(student.section || '').trim(),
       });
@@ -332,8 +570,8 @@ router.get('/teacher/my-meetings', authTeacher, async (req, res) => {
     }
 
     const meetings = await ParentMeeting.find(filter)
-      .populate('studentId', 'name grade section roll')
-      .populate('parentId', 'name email mobile')
+      .populate('studentId', 'name grade section roll profilePic')
+      .populate('parentId', 'name email mobile profilePic')
       .sort({ meetingDate: -1, meetingTime: -1 });
 
     await ensureVideoRooms(meetings);
@@ -380,10 +618,25 @@ router.put('/teacher/update/:id', authTeacher, async (req, res) => {
     if (meetingType !== undefined) meeting.meetingType = meetingType;
     if (location !== undefined) meeting.location = location;
     if (meetingLink !== undefined) meeting.meetingLink = meetingLink;
+    if (req.body.roomId !== undefined) {
+      if (req.body.roomId && meeting.meetingType === 'In Person') {
+        const roomDoc = await Room.findOne({ _id: req.body.roomId, schoolId }).select('_id roomNumber buildingId floorId').lean();
+        if (!roomDoc) return res.status(400).json({ error: 'Selected room was not found' });
+        const [building, floor] = await Promise.all([
+          Building.findById(roomDoc.buildingId).select('name').lean(),
+          Floor.findById(roomDoc.floorId).select('name').lean(),
+        ]);
+        meeting.roomId = roomDoc._id;
+        meeting.location = [building?.name, floor?.name, `Room ${roomDoc.roomNumber}`].filter(Boolean).join(' · ');
+      } else {
+        meeting.roomId = null;
+      }
+    }
     if (status !== undefined) meeting.status = status;
     if (notes !== undefined) meeting.notes = notes;
 
     await meeting.save();
+    emitMeetingChanged(meeting, 'updated');
 
     res.json({ message: 'Meeting updated successfully', meeting });
   } catch (err) {
@@ -411,6 +664,11 @@ router.delete('/teacher/delete/:id', authTeacher, async (req, res) => {
     if (!meeting) {
       return res.status(404).json({ error: 'Meeting not found or unauthorized' });
     }
+
+    // A deleted meeting shouldn't linger in the student's or parent's bell either.
+    await Notification.deleteMany({ schoolId, 'relatedEntity.entityType': 'meeting', 'relatedEntity.entityId': meeting._id })
+      .catch((cleanupErr) => console.error('Failed to remove meeting notifications:', cleanupErr));
+    emitMeetingChanged(meeting, 'deleted');
 
     res.json({ message: 'Meeting deleted successfully' });
   } catch (err) {
