@@ -39,6 +39,7 @@ const StatCard = ({ stat, theme, loading }) => {
           {loading ? <span className="inline-block h-7 w-14 rounded-lg bg-gray-100 animate-pulse" /> : stat.value}
         </p>
         <p className={`mt-1 text-xs font-semibold text-[#64748b]`}>{stat.title}</p>
+        {stat.subtitle && <p className="mt-0.5 text-[10px] font-medium text-[#94a3b8]">{stat.subtitle}</p>}
       </div>
     </Link>
   );
@@ -126,6 +127,10 @@ const QuickStats = ({ square = false }) => {
         change: assignmentSummary.loading
           ? 'Loading…'
           : assignmentSummary.total > 0 ? `${assignmentSummary.evaluated} Evaluated` : 'No assignments',
+        // Anything not "not_submitted" counts as handed in (submitted, late, graded).
+        subtitle: !assignmentSummary.loading && assignmentSummary.total > 0
+          ? `${assignmentSummary.total - assignmentSummary.pending} of ${assignmentSummary.total} submitted`
+          : '',
         icon: FileText,
       },
       {

@@ -328,9 +328,9 @@ const Header = ({ sidebarOpen, setSidebarOpen, onOpenProfile }) => {
               button — over the bar on mobile, inline on desktop. */}
           <div
             className={mobileSearchOpen
-              // Mobile/tablet: covers the header bar. Desktop: opens inline
-              // between the school/date block and the icons, so those stay visible.
-              ? 'animate-header-search absolute inset-0 z-50 flex items-center gap-2 bg-white px-3 sm:px-5 lg:static lg:z-auto lg:mx-3 lg:max-w-xl lg:flex-1 lg:bg-transparent lg:px-0'
+              // Mobile/tablet: covers the header bar. Desktop: opens inline, pushed
+              // right so it sits directly beside the ✕ toggle; everything else stays visible.
+              ? 'animate-header-search absolute inset-0 z-50 flex items-center gap-2 bg-white px-3 sm:px-5 lg:static lg:z-auto lg:-mr-2 lg:ml-auto lg:w-[min(28rem,40vw)] lg:flex-none lg:bg-transparent lg:px-0'
               : 'hidden'}
           >
             <div className="relative flex-1">
@@ -420,7 +420,7 @@ const Header = ({ sidebarOpen, setSidebarOpen, onOpenProfile }) => {
             <button
               type="button"
               onClick={mobileSearchOpen ? closeMobileSearch : openMobileSearch}
-              className="relative flex h-[35px] w-[35px] items-center justify-center overflow-hidden rounded-xl transition-colors hover:bg-gray-100 active:scale-95"
+              className={`relative flex h-[35px] w-[35px] items-center justify-center overflow-hidden rounded-xl transition-colors hover:bg-gray-100 active:scale-95 ${mobileSearchOpen ? 'bg-gray-200' : ''}`}
               aria-label={mobileSearchOpen ? 'Close search' : 'Search pages'}
               aria-expanded={mobileSearchOpen}
             >
@@ -443,7 +443,8 @@ const Header = ({ sidebarOpen, setSidebarOpen, onOpenProfile }) => {
             {/* Notifications */}
             <div className="relative" ref={notifRef}>
               <button
-                className="relative p-2 rounded-xl hover:bg-gray-100 active:scale-95 transition-all"
+                className={`relative p-2 rounded-xl hover:bg-gray-100 active:scale-95 transition-all ${showNotifications ? 'bg-gray-200' : ''}`}
+                aria-expanded={showNotifications}
                 onClick={toggleNotifications}
                 aria-label="Notifications"
               >

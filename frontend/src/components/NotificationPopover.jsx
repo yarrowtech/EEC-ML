@@ -173,20 +173,33 @@ const NotificationPopover = ({
 
   return (
     <Motion.section
-      initial={{ opacity: 0, y: 10, scale: 0.98 }}
+      // Drops down out of the bell: grows from the top-right corner (where the
+      // bell is) with a small caret pointing back up at it.
+      initial={{ opacity: 0, y: -8, scale: 0.92 }}
       animate={{ opacity: 1, y: 0, scale: 1 }}
-      exit={{ opacity: 0, y: 6, scale: 0.985 }}
-      transition={{ duration: 0.25, ease: [0.16, 1, 0.3, 1] }}
+      exit={{ opacity: 0, y: -6, scale: 0.95 }}
+      transition={{ duration: 0.22, ease: [0.16, 1, 0.3, 1] }}
+      style={{ transformOrigin: 'top right' }}
       role="dialog"
       aria-label="Notifications"
       data-testid="notification-popover"
       data-dropdown
       className={embedded
         ? 'flex min-h-0 flex-1 flex-col overflow-hidden bg-white text-left'
-        : 'fixed inset-x-2 top-[calc(4.5rem+env(safe-area-inset-top))] z-[60] overflow-hidden rounded-2xl border border-slate-200 bg-white text-left shadow-[0_16px_48px_-12px_rgba(0,0,0,0.18),0_4px_12px_rgba(0,0,0,0.06)] sm:absolute sm:inset-x-auto sm:right-0 sm:top-full sm:z-50 sm:mt-2 sm:w-[min(380px,calc(100vw-1rem))]'}
+        : 'fixed inset-x-2 top-[calc(4.5rem+env(safe-area-inset-top))] z-[60] overflow-visible rounded-2xl border border-slate-200 bg-white text-left shadow-[0_16px_48px_-12px_rgba(0,0,0,0.18),0_4px_12px_rgba(0,0,0,0.06)] sm:absolute sm:inset-x-auto sm:right-0 sm:top-full sm:z-50 sm:mt-2 sm:w-[min(380px,calc(100vw-1rem))]'}
     >
+      {!embedded && (
+        <span
+          aria-hidden="true"
+          className="absolute -top-1.5 right-3 hidden h-3 w-3 rotate-45 rounded-tl-sm border-l border-t border-slate-200 bg-gray-100 sm:block"
+        />
+      )}
+
+      {/* Inner clip keeps rows inside the rounded corners while the caret
+          above is allowed to poke out of the panel. */}
+      <div className={embedded ? 'flex min-h-0 flex-1 flex-col' : 'overflow-hidden rounded-2xl'}>
       {/* Header */}
-      <header className="flex items-center gap-1.5 border-b border-slate-100 px-3.5 py-2.5">
+      <header className="flex items-center gap-1.5 border-b border-slate-200 bg-gray-100 px-3.5 py-2.5">
         {searchOpen ? (
           <div className="flex flex-1 items-center gap-2">
             <div className="relative flex-1">
@@ -198,14 +211,14 @@ const NotificationPopover = ({
                 onChange={(e) => setQuery(e.target.value)}
                 placeholder="Search notifications"
                 aria-label="Search notifications"
-                className="w-full rounded-full border border-slate-200 bg-slate-50 py-1.5 pl-8 pr-3 text-xs outline-none focus:border-blue-300 focus:bg-white focus:ring-2 focus:ring-blue-500/20"
+                className="w-full rounded-full border border-slate-200 bg-white py-1.5 pl-8 pr-3 text-xs outline-none focus:border-blue-300 focus:bg-white focus:ring-2 focus:ring-blue-500/20"
               />
             </div>
             <button
               type="button"
               onClick={() => { setSearchOpen(false); setQuery(''); }}
               aria-label="Close search"
-              className="flex h-7 w-7 items-center justify-center rounded-full bg-slate-100 text-slate-600 hover:bg-slate-200"
+              className="flex h-7 w-7 items-center justify-center rounded-full bg-white text-slate-600 shadow-sm hover:bg-slate-50"
             >
               <X size={14} />
             </button>
@@ -233,7 +246,7 @@ const NotificationPopover = ({
               type="button"
               onClick={() => setSearchOpen(true)}
               aria-label="Search notifications"
-              className="flex h-7 w-7 items-center justify-center rounded-full bg-slate-100 text-slate-700 hover:bg-slate-200"
+              className="flex h-7 w-7 items-center justify-center rounded-full bg-white text-slate-700 shadow-sm hover:bg-slate-50"
             >
               <Search size={14} />
             </button>
@@ -242,7 +255,7 @@ const NotificationPopover = ({
                 type="button"
                 onClick={onClose}
                 aria-label="Close notifications"
-                className="flex h-7 w-7 items-center justify-center rounded-full bg-slate-100 text-slate-700 hover:bg-slate-200"
+                className="flex h-7 w-7 items-center justify-center rounded-full bg-white text-slate-700 shadow-sm hover:bg-slate-50"
               >
                 <X size={14} />
               </button>
@@ -274,16 +287,17 @@ const NotificationPopover = ({
       </div>
 
       {footerLabel && onFooterClick && (
-        <div className="border-t border-slate-100 px-3 py-1.5">
+        <div className="border-t border-slate-200 bg-gray-100 px-3 py-1.5">
           <button
             type="button"
             onClick={onFooterClick}
-            className="w-full rounded-lg py-1.5 text-center text-xs font-semibold text-blue-600 transition hover:bg-blue-50"
+            className="w-full rounded-lg py-1.5 text-center text-xs font-semibold text-blue-600 transition hover:bg-white"
           >
             {footerLabel}
           </button>
         </div>
       )}
+      </div>
     </Motion.section>
   );
 };
