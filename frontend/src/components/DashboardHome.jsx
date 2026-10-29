@@ -1,14 +1,16 @@
-import React, { useMemo, useState, useEffect } from 'react';
+import React, { useMemo, useState, useEffect, useCallback } from 'react';
 import { Link } from 'react-router-dom';
 import { LineChart, Line, XAxis, YAxis, Tooltip as ReTooltip, Legend, ResponsiveContainer, CartesianGrid } from 'recharts';
-import { BookOpen, ClipboardList, CalendarDays, Compass } from 'lucide-react';
-import WelcomeCard from './WelcomeCard';
+import { motion as Motion, AnimatePresence } from 'framer-motion';
+import {
+  BookOpen, ClipboardList, CalendarDays, Compass, CalendarCheck, FileText,
+  Bell, MessageSquare, ChevronLeft, ChevronRight, Pause, Play, Clock,
+} from 'lucide-react';
 import CourseProgress from './CourseProgress';
 import AchievementCard from './AchievementCard';
 import CalendarWidget from './CalendarWidget';
 import QuickStats from './QuickStats';
 import RecommendationWidget from './RecommendationWidget';
-import PageHeader from './PageHeader';
 import EmptyState from './EmptyState';
 import { Skeleton } from './ui/skeleton';
 import { fetchCachedJson } from '../utils/studentApiCache';
@@ -52,6 +54,366 @@ const useCardData = (url, pick) => {
     return () => { alive = false; };
   }, [url, nonce]); // `pick` is a stable inline mapper per card — intentionally not a dep
   return { ...state, reload: () => setNonce((n) => n + 1) };
+};
+
+// ── Hero card ────────────────────────────────────────────────────────────
+const QUOTES = [
+  { text: 'Learning never exhausts the mind. Every new thing makes you stronger!' },
+  { text: 'Small steps every day add up to big results over time.' },
+  { text: 'Curiosity is the engine of achievement. Keep asking why.' },
+  { text: 'Mistakes are proof that you are trying. Keep going!' },
+  { text: 'The expert in anything was once a beginner.' },
+  { text: 'Knowledge is a treasure that follows its owner everywhere.' },
+  { text: 'Focus on progress, not perfection.' },
+  { text: "Don't watch the clock; do what it does — keep going!" },
+  { text: "Believe in yourself. You're capable of amazing things!" },
+  { text: 'Champions are made from desire, dream, and vision!' },
+];
+
+const getGreeting = () => {
+  const h = new Date().getHours();
+  if (h < 12) return 'Good Morning';
+  if (h < 17) return 'Good Afternoon';
+  return 'Good Evening';
+};
+
+const formatDate = () => new Date().toLocaleDateString('en-GB', {
+  day: '2-digit', month: 'short', year: 'numeric',
+});
+
+/** Campus "hero" illustration — a flat SVG stand-in for a real campus photo so
+ *  the hero card never depends on an uploaded asset being present. */
+const CampusIllustration = () => (
+  <svg viewBox="0 0 400 300" className="h-full w-full" preserveAspectRatio="xMidYMid slice" aria-hidden="true">
+    <rect width="400" height="300" fill="#eef2ff" />
+    <circle cx="300" cy="70" r="90" fill="#e0e7ff" />
+    <rect x="60" y="150" width="280" height="110" rx="4" fill="#ffffff" stroke="#c7d2fe" strokeWidth="2" />
+    <rect x="60" y="120" width="280" height="34" fill="#a5b4fc" />
+    <polygon points="50,150 200,100 350,150" fill="#818cf8" />
+    {Array.from({ length: 6 }).map((_, col) => (
+      <rect key={col} x={90 + col * 40} y={175} width="18" height="24" rx="2" fill="#c7d2fe" />
+    ))}
+    {Array.from({ length: 6 }).map((_, col) => (
+      <rect key={`b-${col}`} x={90 + col * 40} y={210} width="18" height="24" rx="2" fill="#c7d2fe" />
+    ))}
+    <rect x="186" y="210" width="28" height="48" rx="2" fill="#6366f1" />
+    <rect x="0" y="258" width="400" height="42" fill="#d9f99d" opacity="0.5" />
+    <circle cx="340" cy="235" r="22" fill="#86efac" opacity="0.7" />
+    <circle cx="40" cy="245" r="16" fill="#86efac" opacity="0.7" />
+  </svg>
+);
+
+const HeroCard = () => {
+  const { profile, loading } = useStudentDashboard();
+
+  const studentData = profile || {
+    name: 'Student', username: '', grade: '', section: '',
+    className: '', sectionName: '', rollNumber: '', roll: '',
+    campusName: '', campusType: '', profilePic: null,
+  };
+
+  const displayClass = studentData.className || studentData.grade || '';
+  const displaySection = studentData.sectionName || studentData.section || '';
+  const displayRoll = studentData.rollNumber || studentData.roll || '';
+  const displayCampus = studentData.campusName
+    ? (studentData.campusType ? `${studentData.campusName} (${studentData.campusType})` : studentData.campusName)
+    : '';
+
+  const profileImage = studentData.profilePic || studentData.avatar || '';
+  const hasProfileImage = typeof profileImage === 'string' && profileImage.trim() !== '';
+  const nameParts = (studentData.name || '').trim().split(/\s+/).filter(Boolean);
+  const initials = (nameParts.length >= 2
+    ? `${nameParts[0][0]}${nameParts[nameParts.length - 1][0]}`
+    : (nameParts[0]?.[0] || 'S')).toUpperCase();
+
+  const tags = [
+    displayClass ? `Class ${displayClass}` : null,
+    displaySection || null,
+    displayRoll ? `Roll ${displayRoll}` : null,
+    displayCampus || null,
+  ].filter(Boolean);
+
+  if (loading) {
+    return <Skeleton className="h-[280px] w-full rounded-[28px]" />;
+  }
+
+  return (
+    <Motion.div
+      initial={{ opacity: 0, y: 16 }}
+      animate={{ opacity: 1, y: 0 }}
+      transition={{ duration: 0.4, ease: [0.16, 1, 0.3, 1] }}
+      className="relative w-full overflow-hidden rounded-[28px] bg-white shadow-[0px_4px_20px_rgba(0,0,0,0.03),0px_1px_3px_rgba(0,0,0,0.05)]"
+    >
+      <div className="grid grid-cols-1 sm:grid-cols-2">
+        {/* Left: profile info */}
+        <div className="flex flex-col gap-3 p-6">
+          <div className="relative w-fit">
+            {hasProfileImage ? (
+              <img
+                src={profileImage}
+                alt=""
+                className="h-20 w-20 rounded-full border-[3px] border-gray-100 object-cover"
+                onError={(e) => { e.target.style.display = 'none'; }}
+              />
+            ) : (
+              <div className="flex h-20 w-20 items-center justify-center rounded-full border-2 border-gray-100 bg-[#eef2ff]">
+                <span className="select-none text-2xl font-bold text-[#4f46e5]">{initials}</span>
+              </div>
+            )}
+            <span className="absolute bottom-1 right-1 h-3.5 w-3.5 rounded-full border-2 border-white bg-emerald-400" />
+          </div>
+
+          <span className="w-fit rounded-full bg-[#eef2ff] px-3 py-1 text-xs font-semibold text-[#4f46e5]">
+            {formatDate()}
+          </span>
+
+          <div>
+            <h1 className="text-2xl font-bold leading-tight tracking-tight text-[#0f172a]">
+              {studentData.name || 'Student'}
+            </h1>
+            {studentData.username && (
+              <p className="mt-0.5 text-xs text-[#9ca3af]">ID: {studentData.username}</p>
+            )}
+          </div>
+
+          <span className="w-fit rounded-full bg-[#eef2ff] px-4 py-1.5 text-sm font-semibold text-[#4f46e5]">
+            {getGreeting()}
+          </span>
+
+          {tags.length > 0 && (
+            <div className="flex flex-wrap items-center gap-x-3 gap-y-1.5 pt-1">
+              {tags.map((tag) => (
+                <span key={tag} className="inline-flex items-center gap-1.5 text-xs font-medium text-[#4338ca]">
+                  <span className="h-1.5 w-1.5 shrink-0 rounded-full bg-[#6366f1]" />
+                  {tag}
+                </span>
+              ))}
+            </div>
+          )}
+        </div>
+
+        {/* Right: campus illustration */}
+        <div className="relative hidden min-h-[220px] sm:block">
+          <CampusIllustration />
+          <div className="pointer-events-none absolute inset-0 bg-linear-to-l from-transparent via-white/0 to-white/60" />
+        </div>
+      </div>
+    </Motion.div>
+  );
+};
+
+// ── Daily boost quote carousel ──────────────────────────────────────────
+const DailyBoost = () => {
+  const [current, setCurrent] = useState(0);
+  const [playing, setPlaying] = useState(true);
+  const [direction, setDirection] = useState(1);
+
+  const go = useCallback((step) => {
+    setDirection(step);
+    setCurrent((p) => (p + step + QUOTES.length) % QUOTES.length);
+  }, []);
+
+  useEffect(() => {
+    if (!playing) return;
+    const id = setInterval(() => go(1), 5000);
+    return () => clearInterval(id);
+  }, [playing, go]);
+
+  const quoteVariants = {
+    enter: (dir) => ({ opacity: 0, x: dir > 0 ? 24 : -24 }),
+    center: { opacity: 1, x: 0 },
+    exit: (dir) => ({ opacity: 0, x: dir > 0 ? -24 : 24 }),
+  };
+
+  return (
+    <div className="flex flex-wrap items-center gap-4 rounded-2xl bg-white p-4 shadow-sm">
+      <div className="flex shrink-0 items-center gap-2.5">
+        <span className="flex h-8 w-8 items-center justify-center rounded-lg bg-[#eef2ff] text-[#4f46e5]">⚡</span>
+        <span className="text-xs font-bold uppercase tracking-wide text-[#6b7280]">Daily Boost</span>
+      </div>
+
+      <div className="relative min-h-[24px] min-w-0 flex-1 overflow-hidden">
+        <AnimatePresence custom={direction} mode="wait">
+          <Motion.p
+            key={current}
+            custom={direction}
+            variants={quoteVariants}
+            initial="enter"
+            animate="center"
+            exit="exit"
+            transition={{ duration: 0.22, ease: 'easeInOut' }}
+            className="flex items-center gap-2 truncate text-sm text-[#374151]"
+          >
+            <BookOpen size={16} className="shrink-0 text-[#4f46e5]" />
+            {QUOTES[current].text}
+          </Motion.p>
+        </AnimatePresence>
+      </div>
+
+      <div className="flex shrink-0 items-center gap-1.5">
+        <button type="button" onClick={() => go(-1)} aria-label="Previous" className="flex h-8 w-8 items-center justify-center rounded-full border border-gray-200 text-gray-500 hover:bg-gray-50">
+          <ChevronLeft size={15} />
+        </button>
+        <button type="button" onClick={() => setPlaying((p) => !p)} aria-label={playing ? 'Pause' : 'Play'} className="flex h-8 w-8 items-center justify-center rounded-full border border-gray-200 text-gray-500 hover:bg-gray-50">
+          {playing ? <Pause size={14} /> : <Play size={14} />}
+        </button>
+        <button type="button" onClick={() => go(1)} aria-label="Next" className="flex h-8 w-8 items-center justify-center rounded-full border border-gray-200 text-gray-500 hover:bg-gray-50">
+          <ChevronRight size={15} />
+        </button>
+        <div className="ml-1 hidden items-center gap-1 sm:flex">
+          {QUOTES.map((_, i) => (
+            <span
+              key={i}
+              className="h-1.5 rounded-full transition-all"
+              style={{ width: i === current ? 16 : 6, backgroundColor: i === current ? '#4f46e5' : '#e5e7eb' }}
+            />
+          ))}
+        </div>
+      </div>
+    </div>
+  );
+};
+
+// ── Today's schedule ─────────────────────────────────────────────────────
+const dayOrder = ['sunday', 'monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday'];
+
+const normalizeValue = (value) => String(value ?? '').trim().toLowerCase();
+
+const isBreakSession = (session) =>
+  normalizeValue(session?.subject || session?.course || session?.title) === 'break';
+
+const TodaySchedule = ({ setActiveView }) => {
+  const { profile } = useStudentDashboard();
+  const { data: rawSchedule, loading, error, reload } = useCardData(
+    `${API_BASE}/api/student/auth/schedule`,
+    (r) => r?.data?.schedule || r?.data?.routine || r?.schedule || {}
+  );
+
+  const todaySessions = useMemo(() => {
+    if (!rawSchedule) return [];
+    const todayKey = dayOrder[new Date().getDay()];
+    const entries = Array.isArray(rawSchedule)
+      ? rawSchedule.filter((s) => normalizeValue(s.day || s.weekday || s.dayOfWeek) === todayKey)
+      : (rawSchedule[todayKey] || rawSchedule[todayKey?.charAt(0).toUpperCase() + todayKey?.slice(1)] || []);
+
+    const classValues = [profile?.className, profile?.grade].filter(Boolean).map(normalizeValue);
+    const sectionValues = [profile?.sectionName, profile?.section].filter(Boolean).map(normalizeValue);
+
+    const filtered = (Array.isArray(entries) ? entries : []).filter((entry) => {
+      const entryClass = normalizeValue(entry.className || entry.class || entry.grade || entry.standard);
+      const entrySection = normalizeValue(entry.sectionName || entry.section || entry.division);
+      const classOk = !entryClass || classValues.length === 0 || classValues.includes(entryClass);
+      const sectionOk = !entrySection || sectionValues.length === 0 || sectionValues.includes(entrySection);
+      return classOk && sectionOk;
+    });
+
+    return filtered
+      .slice()
+      .sort((a, b) => (Number(a.period) || 999) - (Number(b.period) || 999))
+      .slice(0, 6);
+  }, [rawSchedule, profile]);
+
+  return (
+    <div className="rounded-[28px] bg-white p-5 shadow-[0px_4px_20px_rgba(0,0,0,0.03),0px_1px_3px_rgba(0,0,0,0.05)]">
+      <div className="mb-4 flex items-center gap-2.5">
+        <span className="flex h-9 w-9 items-center justify-center rounded-xl bg-[#eef2ff] text-[#4f46e5]">
+          <CalendarDays size={18} />
+        </span>
+        <h2 className="text-base font-bold text-[#0f172a]">Today&apos;s Schedule</h2>
+      </div>
+
+      {error && <CardError label="Today's Schedule" onRetry={reload} />}
+
+      {!error && loading && (
+        <div className="space-y-3">
+          {Array.from({ length: 4 }).map((_, i) => <Skeleton key={i} className="h-10 w-full rounded-lg" />)}
+        </div>
+      )}
+
+      {!error && !loading && todaySessions.length === 0 && (
+        <p className="py-6 text-center text-sm text-gray-400">No classes scheduled for today.</p>
+      )}
+
+      {!error && !loading && todaySessions.length > 0 && (
+        <ol className="relative space-y-4 border-l-2 border-dashed border-gray-100 pl-5">
+          {todaySessions.map((session, i) => {
+            const subject = session.subject?.name || session.subject || session.course || session.title || 'Class';
+            const timeLabel = session.startTime || (session.time ? session.time.split('-')[0].trim() : '');
+            const isBreak = isBreakSession(session);
+            return (
+              <li key={`${subject}-${i}`} className="relative">
+                <span className={`absolute -left-[26px] top-1 h-2.5 w-2.5 rounded-full ring-4 ring-white ${isBreak ? 'bg-gray-300' : 'bg-[#6366f1]'}`} />
+                <div className="flex items-center justify-between gap-3">
+                  <div className="min-w-0">
+                    <p className="flex items-center gap-1.5 text-xs font-medium text-gray-400">
+                      <Clock size={11} /> {timeLabel || '—'}
+                    </p>
+                    <p className="truncate text-sm font-semibold text-[#0f172a]">{subject}</p>
+                  </div>
+                  <span className={`shrink-0 rounded-full px-2.5 py-1 text-[11px] font-bold ${isBreak ? 'bg-gray-100 text-gray-500' : 'bg-[#eef2ff] text-[#4f46e5]'}`}>
+                    {isBreak ? 'Break' : `Period ${session.period || i + 1}`}
+                  </span>
+                </div>
+              </li>
+            );
+          })}
+        </ol>
+      )}
+
+      <button
+        type="button"
+        onClick={() => setActiveView?.('routine')}
+        className="mt-4 flex w-full items-center justify-end gap-1 text-xs font-bold text-[#4f46e5] hover:underline"
+      >
+        View Full Timetable <ChevronRight size={14} />
+      </button>
+    </div>
+  );
+};
+
+// ── Quick links ───────────────────────────────────────────────────────────
+const QuickLinks = ({ setActiveView }) => {
+  const { unreadChatCount } = useStudentDashboard();
+
+  const links = [
+    { key: 'attendance', label: 'Attendance', icon: CalendarCheck, color: 'bg-emerald-50 text-emerald-600' },
+    { key: 'exams', label: 'Exams', icon: FileText, color: 'bg-indigo-50 text-indigo-600' },
+    { key: 'lesson-plan-status', label: 'Syllabus', icon: BookOpen, color: 'bg-sky-50 text-sky-600' },
+    { key: 'holidays', label: 'Holidays', icon: CalendarDays, color: 'bg-amber-50 text-amber-600' },
+    { key: 'noticeboard', label: 'Notice Board', icon: Bell, color: 'bg-rose-50 text-rose-600' },
+    { key: 'chat', label: 'Messages', icon: MessageSquare, color: 'bg-blue-50 text-blue-600', badge: unreadChatCount },
+  ];
+
+  return (
+    <div className="rounded-[28px] bg-white p-5 shadow-[0px_4px_20px_rgba(0,0,0,0.03),0px_1px_3px_rgba(0,0,0,0.05)]">
+      <div className="mb-4 flex items-center gap-2.5">
+        <span className="flex h-9 w-9 items-center justify-center rounded-xl bg-[#eef2ff] text-[#4f46e5]">
+          <Compass size={18} />
+        </span>
+        <h2 className="text-base font-bold text-[#0f172a]">Quick Links</h2>
+      </div>
+      <div className="grid grid-cols-3 gap-3">
+        {links.map(({ key, label, icon: Icon, color, badge }) => (
+          <button
+            key={key}
+            type="button"
+            onClick={() => setActiveView?.(key)}
+            className="relative flex flex-col items-center gap-2 rounded-2xl border border-gray-50 bg-gray-50/60 p-3 text-center transition-colors hover:bg-gray-100"
+          >
+            {badge > 0 && (
+              <span className="absolute right-2 top-2 flex h-4 min-w-4 items-center justify-center rounded-full bg-red-500 px-1 text-[10px] font-bold text-white">
+                {badge > 9 ? '9+' : badge}
+              </span>
+            )}
+            <span className={`flex h-9 w-9 items-center justify-center rounded-xl ${color}`}>
+              <Icon size={17} />
+            </span>
+            <span className="text-[11px] font-semibold leading-tight text-[#374151]">{label}</span>
+          </button>
+        ))}
+      </div>
+    </div>
+  );
 };
 
 const ProgressTrendChart = () => {
@@ -117,7 +479,26 @@ const ForgettingCurveChart = () => {
   );
 
   if (error) return <CardError label="Retention Forecast" onRetry={reload} />;
-  if (loading || !topics || !topics.length) return null;
+
+  if (loading) {
+    return (
+      <div className="rounded-2xl border border-violet-100 bg-gradient-to-br from-violet-50 to-purple-50 p-4 shadow-sm">
+        <Skeleton className="h-5 w-32" />
+      </div>
+    );
+  }
+
+  if (!topics || !topics.length) {
+    return (
+      <div className="rounded-2xl border border-violet-100 bg-gradient-to-br from-violet-50 to-purple-50 p-4 shadow-sm flex items-center justify-between gap-3">
+        <div>
+          <p className="text-sm font-bold text-[#0f172a]">Retention Forecast</p>
+          <p className="mt-0.5 text-xs text-[#64748b]">Available in a week</p>
+        </div>
+        <ChevronRight size={16} className="shrink-0 text-[#a78bfa]" />
+      </div>
+    );
+  }
 
   const tracked = [...topics]
     .sort((a, b) => (a.estimatedRetention ?? 100) - (b.estimatedRetention ?? 100))
@@ -515,23 +896,17 @@ const FlashcardStatsCard = () => {
   );
 };
 
-const TODAY_LABEL = new Date().toLocaleDateString('en-US', {
-  weekday: 'long', month: 'long', day: 'numeric',
-});
-
 /** Full-grid placeholder shown on the first load, before the dashboard data
  *  resolves — keeps the page shape stable instead of a staggered pop-in. */
 const DashboardSkeleton = () => (
   <div className="space-y-4 sm:space-y-6 p-4 sm:p-6" aria-hidden="true">
-    <Skeleton className="h-8 w-48" />
-    <Skeleton className="h-28 w-full rounded-2xl" />
-    <Skeleton className="h-20 w-full rounded-2xl" />
+    <div className="grid grid-cols-1 gap-4 sm:gap-6 lg:grid-cols-3">
+      <Skeleton className="h-[280px] rounded-[28px] lg:col-span-2" />
+      <Skeleton className="h-[280px] rounded-[28px]" />
+    </div>
+    <Skeleton className="h-16 w-full rounded-2xl" />
     <div className="grid grid-cols-2 gap-4 sm:grid-cols-4">
       {Array.from({ length: 4 }).map((_, i) => <Skeleton key={i} className="h-24 rounded-2xl" />)}
-    </div>
-    <div className="grid grid-cols-1 gap-4 sm:gap-6 lg:grid-cols-3">
-      <Skeleton className="h-64 rounded-2xl lg:col-span-2" />
-      <Skeleton className="h-64 rounded-2xl" />
     </div>
   </div>
 );
@@ -573,7 +948,7 @@ const FirstRunDashboard = () => (
   />
 );
 
-const DashboardHome = () => {
+const DashboardHome = ({ setActiveView }) => {
   const { loading, error, stats, recentAttendance, smartLearningReminders } = useStudentDashboard();
 
   const isNewStudent = useMemo(() => (
@@ -586,11 +961,14 @@ const DashboardHome = () => {
   if (loading) return <DashboardSkeleton />;
 
   return (
-    <div className="relative space-y-4 sm:space-y-6 p-4 sm:p-6">
-      <PageHeader eyebrow={TODAY_LABEL} title="Dashboard" />
-
-      {/* Welcome Section */}
-      <WelcomeCard />
+    <div className="relative space-y-4 p-4 sm:space-y-6 sm:p-6">
+      {/* Hero + Today's Schedule */}
+      <div className="grid grid-cols-1 gap-4 sm:gap-6 lg:grid-cols-3">
+        <div className="lg:col-span-2">
+          <HeroCard />
+        </div>
+        <TodaySchedule setActiveView={setActiveView} />
+      </div>
 
       {smartLearningReminders.length > 0 && (
         <section className="rounded-2xl border border-indigo-100 bg-indigo-50/70 p-4 shadow-sm" aria-label="Smart Learning reminders">
@@ -613,18 +991,26 @@ const DashboardHome = () => {
         <FirstRunDashboard />
       ) : (
         <>
+          {/* Daily boost + Quick Links */}
+          <div className="grid grid-cols-1 gap-4 sm:gap-6 lg:grid-cols-3">
+            <div className="space-y-4 sm:space-y-6 lg:col-span-2">
+              <DailyBoost />
+              <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+                <LearningStreakCard />
+                <ForgettingCurveChart />
+              </div>
+            </div>
+            <QuickLinks setActiveView={setActiveView} />
+          </div>
+
           {/* Streaks — attendance and learning activity, side by side so they
               read as two related metrics rather than a duplicated card. */}
           <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
             <StreakTracker />
-            <LearningStreakCard />
           </div>
 
           {/* Progress Trend */}
           <ProgressTrendChart />
-
-          {/* Forgetting curve — knowledge decay since last review, per topic */}
-          <ForgettingCurveChart />
 
           {/* Confidence calibration — self-rating vs. actual mastery, per topic */}
           <ConfidenceCalibrationCard />
