@@ -570,12 +570,24 @@ const ensureStudentAccessToThread = async (context, thread) => {
   return false;
 };
 
+// The teacher/student checks rebuild class allocations, which is slow; remember a
+// successful check for a couple of minutes so every message/edit/read doesn't redo it.
+const ACCESS_CACHE_TTL_MS = 2 * 60 * 1000;
+const accessCache = new Map(); // `${userType}:${userId}:${threadId}` -> expiresAt
 const ensureChatAccessToThread = async (context, thread) => {
   const user = context?.user || context;
   const userType = String(user?.userType || '').toLowerCase();
-  if (userType === 'student') return ensureStudentAccessToThread(context, thread);
-  if (userType === 'teacher') return ensureTeacherAccessToThread(context, thread);
-  return true;
+  if (userType !== 'student' && userType !== 'teacher') return true;
+  const key = `${userType}:${user?.id || ''}:${thread?._id || ''}`;
+  if ((accessCache.get(key) || 0) > Date.now()) return true;
+  const allowed = userType === 'student'
+    ? await ensureStudentAccessToThread(context, thread)
+    : await ensureTeacherAccessToThread(context, thread);
+  if (allowed) {
+    if (accessCache.size > 5000) accessCache.clear();
+    accessCache.set(key, Date.now() + ACCESS_CACHE_TTL_MS);
+  }
+  return allowed;
 };
 
 const ensureTeacherCanAccessStudent = async (req, studentOrId) => {

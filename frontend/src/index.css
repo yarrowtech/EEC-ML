@@ -548,3 +548,14 @@ textarea:-webkit-autofill {
     background: linear-gradient(to right, rgba(255, 255, 255, 0.95) 0%, rgba(15, 23, 42, 0.12) 35%, rgba(0, 0, 0, 0.2) 70%, rgba(0, 0, 0, 0.25) 100%);
   }
 }
+
+/* Slim chat scrollbars: thin rounded thumb, no up/down arrow buttons. */
+.chat-scroll::-webkit-scrollbar { width: 6px; height: 6px; }
+.chat-scroll::-webkit-scrollbar-button { display: none; width: 0; height: 0; }
+.chat-scroll::-webkit-scrollbar-track { background: transparent; }
+.chat-scroll::-webkit-scrollbar-thumb { background: rgba(100, 116, 139, 0.35); border-radius: 9999px; }
+.chat-scroll::-webkit-scrollbar-thumb:hover { background: rgba(100, 116, 139, 0.6); }
+/* Firefox (Chrome uses the ::-webkit rules above, which it ignores once scrollbar-width is set). */
+@supports not selector(::-webkit-scrollbar) {
+  .chat-scroll { scrollbar-width: thin; scrollbar-color: rgba(100, 116, 139, 0.45) transparent; }
+}

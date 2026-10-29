@@ -1,8 +1,9 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { io } from 'socket.io-client';
+import { createPortal } from 'react-dom';
 import {
   MessageSquare, Send, Search, ChevronLeft,
-  Info, PlusCircle, X, Loader2, GraduationCap, Check, CheckCheck, User, Users, Palette, Lock, Link2, ExternalLink, Pencil, ChevronDown, Phone, Hash, Mail
+  Info, PlusCircle, X, Loader2, GraduationCap, Check, CheckCheck, User, Users, Palette, Lock, Link2, ExternalLink, Pencil, ChevronDown, Phone, Hash, Mail, MoreVertical
 } from 'lucide-react';
 import { decryptChatMessage, encryptChatMessage, ensureE2EEIdentity } from '../utils/chatE2EE';
 import { chatCacheKeys, readChatCache, writeChatCache } from '../utils/chatCache';
@@ -471,6 +472,44 @@ const MessageLinkPreview = ({ url, isMine, theme }) => {
   );
 };
 
+// Edit your own message in a centred modal (rendered at <body> so the chat layout can't clip it).
+const EditMessageModal = ({ draft, saving, theme, onChange, onCancel, onSave }) => {
+  const canSave = !saving && Boolean(String(draft || '').trim());
+  return createPortal(
+    <div className="fixed inset-0 z-[120] flex items-center justify-center bg-slate-900/40 p-4 backdrop-blur-[2px]" onMouseDown={(e) => { if (e.target === e.currentTarget && !saving) onCancel(); }}>
+      <div className="w-full max-w-md overflow-hidden rounded-2xl bg-white shadow-2xl" role="dialog" aria-modal="true" aria-labelledby="edit-message-title">
+        <div className="flex items-center justify-between border-b border-slate-100 px-5 py-3.5">
+          <h3 id="edit-message-title" className="flex items-center gap-2 text-[15px] font-bold text-slate-900"><Pencil className="h-4 w-4" style={{ color: theme.color }} />Edit message</h3>
+          <button type="button" onClick={onCancel} disabled={saving} className="flex h-8 w-8 items-center justify-center rounded-full text-slate-500 hover:bg-slate-100" aria-label="Close"><X className="h-4 w-4" /></button>
+        </div>
+        <div className="px-5 py-4">
+          <textarea
+            autoFocus
+            rows={4}
+            value={draft}
+            onChange={(e) => onChange(e.target.value)}
+            onFocus={(e) => { const end = e.target.value.length; e.target.setSelectionRange(end, end); }}
+            onKeyDown={(e) => {
+              if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); if (canSave) onSave(); }
+              if (e.key === 'Escape' && !saving) onCancel();
+            }}
+            className="w-full resize-none rounded-xl border border-slate-200 bg-slate-50 px-3.5 py-2.5 text-sm text-slate-900 outline-none focus:border-blue-400 focus:bg-white focus:ring-4 focus:ring-blue-500/10"
+            placeholder="Edit message..."
+          />
+          <p className="mt-1.5 text-[11px] text-slate-400">Enter to save · Shift + Enter for a new line · Esc to cancel</p>
+        </div>
+        <div className="flex justify-end gap-2 border-t border-slate-100 px-5 py-3">
+          <button type="button" onClick={onCancel} disabled={saving} className="rounded-lg bg-slate-100 px-4 py-2 text-sm font-semibold text-slate-700 hover:bg-slate-200">Cancel</button>
+          <button type="button" onClick={onSave} disabled={!canSave} className="inline-flex items-center gap-1.5 rounded-lg px-4 py-2 text-sm font-semibold text-white disabled:opacity-50" style={{ background: `linear-gradient(135deg, ${theme.color}, ${theme.hover})` }}>
+            {saving && <Loader2 className="h-4 w-4 animate-spin" />}{saving ? 'Sending…' : 'Send'}
+          </button>
+        </div>
+      </div>
+    </div>,
+    document.body
+  );
+};
+
 const ChatMessage = ({
   msg,
   isMine,
@@ -513,8 +552,50 @@ const ChatMessage = ({
   const links = useMemo(() => extractMessageLinks(fullText).slice(0, 2), [fullText]);
   const senderLabel = isMine ? 'You' : (msg?.senderName || fallbackSenderName || 'User');
 
+  // Hover actions for your own messages: a ⋯ button left of the bubble opens a small menu.
+  const [menuOpen, setMenuOpen] = useState(false);
+  const menuRef = useRef(null);
+  useEffect(() => {
+    if (!menuOpen) return undefined;
+    const onDown = (event) => { if (!menuRef.current?.contains(event.target)) setMenuOpen(false); };
+    const onKey = (event) => { if (event.key === 'Escape') setMenuOpen(false); };
+    document.addEventListener('mousedown', onDown);
+    document.addEventListener('keydown', onKey);
+    return () => {
+      document.removeEventListener('mousedown', onDown);
+      document.removeEventListener('keydown', onKey);
+    };
+  }, [menuOpen]);
+  const showActions = canEdit && !isEditing;
+
   return (
-  <div className={`flex ${isMine ? 'justify-end' : 'justify-start'} mb-3`}>
+  <div className={`group flex items-center gap-1.5 ${isMine ? 'justify-end' : 'justify-start'} mb-3`}>
+    {showActions && (
+      <div ref={menuRef} className="relative shrink-0">
+        <button
+          type="button"
+          onClick={() => setMenuOpen((open) => !open)}
+          className={`flex h-8 w-8 items-center justify-center rounded-full text-slate-500 transition hover:bg-black/5 focus:opacity-100 ${menuOpen ? 'bg-black/5 opacity-100' : 'opacity-0 group-hover:opacity-100'}`}
+          title="Message options"
+          aria-label="Message options"
+          aria-expanded={menuOpen}
+        >
+          <MoreVertical className="h-4 w-4" />
+        </button>
+        {menuOpen && (
+          <div className="absolute right-0 top-full z-20 mt-1 min-w-32 overflow-hidden rounded-xl border border-slate-100 bg-white py-1 shadow-xl">
+            <button
+              type="button"
+              onClick={() => { setMenuOpen(false); onStartEdit(); }}
+              className="flex w-full items-center gap-2 px-3 py-2 text-left text-sm text-slate-700 hover:bg-slate-50"
+            >
+              <Pencil className="h-3.5 w-3.5" />
+              Edit
+            </button>
+          </div>
+        )}
+      </div>
+    )}
     <div
       className={`relative max-w-[80%] w-fit rounded-[16px] px-4 py-2.5 text-sm leading-[1.5] shadow-sm
         ${isMine
@@ -530,50 +611,17 @@ const ChatMessage = ({
           {senderLabel}
         </div>
       )}
-      {isEditing ? (
-        <div className="space-y-2">
-          <textarea
-            rows={3}
-            value={editDraft}
-            onChange={(e) => onEditDraftChange(e.target.value)}
-            onKeyDown={(e) => {
-              if (e.key === 'Enter' && !e.shiftKey) {
-                e.preventDefault();
-                onEditSave();
-              }
-              if (e.key === 'Escape') onEditCancel();
-            }}
-            className={`w-full rounded-lg border px-2 py-1.5 text-sm resize-none focus:outline-none focus:ring-2 ${
-              isMine
-                ? 'bg-white/15 border-white/30 text-white placeholder-white/70 focus:ring-white/40'
-                : 'bg-white border-gray-200 text-gray-800 placeholder-gray-400 focus:ring-blue-200'
-            }`}
-            placeholder="Edit message..."
-          />
-          <div className="flex items-center justify-end gap-2">
-            <button
-              type="button"
-              onClick={onEditCancel}
-              className={`text-xs font-medium px-2.5 py-1 rounded-md ${
-                isMine ? 'text-white/90 hover:bg-white/15' : 'text-gray-600 hover:bg-gray-100'
-              }`}
-              disabled={editSaving}
-            >
-              Cancel
-            </button>
-            <button
-              type="button"
-              onClick={onEditSave}
-              className={`text-xs font-semibold px-2.5 py-1 rounded-md ${
-                isMine ? 'bg-white/20 text-white hover:bg-white/30' : 'bg-blue-100 text-blue-700 hover:bg-blue-200'
-              } disabled:opacity-50`}
-              disabled={editSaving || !String(editDraft || '').trim()}
-            >
-              {editSaving ? 'Saving...' : 'Save'}
-            </button>
-          </div>
-        </div>
-      ) : (
+      {isEditing && (
+        <EditMessageModal
+          draft={editDraft}
+          saving={editSaving}
+          theme={t}
+          onChange={onEditDraftChange}
+          onCancel={onEditCancel}
+          onSave={onEditSave}
+        />
+      )}
+      {(
         <>
           {links.map((url) => (
             <MessageLinkPreview key={url} url={url} isMine={isMine} theme={t} />
@@ -619,24 +667,6 @@ const ChatMessage = ({
             >
               {expanded ? 'Read less' : 'Read more'}
             </button>
-          )}
-          {canEdit && (
-            <div className="mt-2 flex justify-end">
-              <button
-                type="button"
-                onClick={onStartEdit}
-                className={`inline-flex items-center gap-1.5 rounded-md px-2 py-1 text-xs font-semibold transition-colors focus:outline-none focus:ring-2 ${
-                  isMine
-                    ? 'text-white/90 hover:bg-white/15 focus:ring-white/40'
-                    : 'text-blue-700 hover:bg-blue-100 focus:ring-blue-200'
-                }`}
-                title="Edit this message"
-                aria-label="Edit this message"
-              >
-                <Pencil className="h-3.5 w-3.5" />
-                <span>Edit</span>
-              </button>
-            </div>
           )}
         </>
       )}
@@ -767,7 +797,7 @@ const ContactInfoPanel = ({ open, isMobile, loading, error, profile, profileType
         <h3 className="text-[17px] font-bold text-slate-900">Contact Info</h3>
         <button type="button" onClick={onClose} className="flex h-8 w-8 items-center justify-center rounded-full text-slate-500 hover:bg-slate-100" aria-label="Close contact info"><X className="h-5 w-5" /></button>
       </div>
-      <div className="min-h-0 flex-1 overflow-y-auto px-5 pb-4">
+      <div className="chat-scroll min-h-0 flex-1 overflow-y-auto px-5 pb-4">
         <div className="flex flex-col items-center border-b border-slate-100 pb-4 text-center">
           <div className="relative">
             <UserAvatar src={participant?.avatar || profile?.photo} name={name} className="h-28 w-28 text-3xl" themeColor={theme.color} />
@@ -1730,36 +1760,37 @@ const TeacherChat = () => {
       cancelEditMessage();
       return;
     }
-    setEditSaving(true);
+    if (text === String(current?.text || '').trim()) {
+      cancelEditMessage();
+      return;
+    }
+    const threadId = activeThreadId;
+    const previous = current;
+    const applyText = (value, extra = {}) => {
+      setMessages((prev) => prev.map((msg) => (String(msg._id) === messageId ? { ...msg, text: value, ...extra } : msg)));
+      setThreads((prev) => prev.map((thread) => (
+        String(thread?._id) === String(threadId) && isSameId(thread?.lastSenderId, me?.id)
+          ? { ...thread, lastMessage: sanitizePreviewText(value) || thread.lastMessage }
+          : thread
+      )));
+    };
+    // Optimistic: the bubble updates and the modal closes right away.
+    applyText(text, { isEdited: true });
+    setEditingMessageId('');
+    setEditDraft('');
     try {
-      const encrypted = await encryptChatMessage({
-        threadId: activeThreadId,
-        text,
-        myId: me?.id,
-        apiFetch,
-      });
-      const updated = await apiFetch(`/api/chat/threads/${activeThreadId}/messages/${messageId}`, {
+      const encrypted = await encryptChatMessage({ threadId, text, myId: me?.id, apiFetch });
+      const updated = await apiFetch(`/api/chat/threads/${threadId}/messages/${messageId}`, {
         method: 'PATCH',
         body: JSON.stringify({ text, encrypted: encrypted || undefined }),
       });
       const decrypted = await decryptForUI(updated);
-      setMessages((prev) =>
-        prev.map((msg) => (String(msg._id) === messageId ? { ...msg, ...decrypted } : msg))
-      );
-      setThreads((prev) =>
-        prev.map((thread) =>
-          String(thread?._id) === String(activeThreadId) &&
-          isSameId(thread?.lastSenderId, me?.id)
-            ? { ...thread, lastMessage: decrypted?.text || thread.lastMessage }
-            : thread
-        )
-      );
-      setEditingMessageId('');
-      setEditDraft('');
+      setMessages((prev) => prev.map((msg) => (String(msg._id) === messageId ? { ...msg, ...decrypted, text: decrypted?.text || text } : msg)));
     } catch {
-      // keep draft for retry
-    } finally {
-      setEditSaving(false);
+      // Put the original text back and reopen the editor with the new text so nothing is lost.
+      applyText(previous?.text || '', { isEdited: Boolean(previous?.isEdited) });
+      setEditingMessageId(messageId);
+      setEditDraft(text);
     }
   }, [editingMessageId, editDraft, activeThreadId, messages, me?.id, decryptForUI, cancelEditMessage]);
 
@@ -1927,7 +1958,7 @@ const TeacherChat = () => {
                   <p className="mt-2 text-[11px] text-red-600">{contactError}</p>
                 )}
               </div>
-              <div className="flex-1 overflow-y-auto">
+              <div className="chat-scroll flex-1 overflow-y-auto">
                 {filteredContacts.length === 0 ? (
                   <div className="p-6 text-center text-sm text-gray-500">
                     {contacts.length === 0 ? 'No students found' : 'No results'}
@@ -1954,7 +1985,7 @@ const TeacherChat = () => {
                 </button>
               </div>
 
-              <div className="flex-1 overflow-y-auto p-4 space-y-5">
+              <div className="chat-scroll flex-1 overflow-y-auto p-4 space-y-5">
                 {/* Wallpaper Picker */}
                 <div>
                   <p className="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-3">Wallpaper</p>
@@ -2039,7 +2070,7 @@ const TeacherChat = () => {
           )}
 
           {/* Thread list */}
-          <div className="flex-1 overflow-y-auto">
+          <div className="chat-scroll flex-1 overflow-y-auto">
             {loadingThreads ? (
               <div className="flex items-center justify-center py-12">
                 <Loader2 className="h-5 w-5 text-amber-400 animate-spin" />
@@ -2101,7 +2132,7 @@ const TeacherChat = () => {
                   {totalUnreadCount > 99 ? '99+' : totalUnreadCount}
                 </span>
               )}
-              <span className="text-xs px-2 py-0.5 rounded-full bg-green-100 text-green-700 font-medium">Online</span>
+              <span className="text-xs px-2 py-0.5 rounded-full bg-green-600 text-white font-medium">Online</span>
             </div>
           </div>
         </div>
@@ -2210,7 +2241,7 @@ const TeacherChat = () => {
               <div
                 ref={messagesContainerRef}
                 onScroll={handleMessagesScroll}
-                className="relative flex-1 min-h-0 overflow-y-auto overflow-x-hidden px-5 py-5 bg-[#fafcff]"
+                className="chat-scroll relative flex-1 min-h-0 overflow-y-auto overflow-x-hidden px-5 py-5 bg-[#fafcff]"
                 style={{ ...wallpaperStyle, backgroundColor: wallpaperKey === 'plain' ? '#fafcff' : undefined }}
               >
                 <div className="pointer-events-none absolute inset-0 opacity-30" style={{ backgroundImage: 'radial-gradient(#e9edf2 1px, transparent 1px)', backgroundSize: '24px 24px' }} aria-hidden="true" />
@@ -2299,7 +2330,7 @@ const TeacherChat = () => {
               {/* Input */}
               <div className="border-t border-[#e9edf2] bg-white/90 backdrop-blur-md px-5 pt-4 pb-[calc(4rem+max(0.75rem,env(safe-area-inset-bottom)))] lg:py-4 flex-shrink-0 sticky bottom-0 z-20">
                 <div className="flex items-center gap-3">
-                  <div className="flex-1 bg-[#f8fafc] rounded-full border border-[#e2e8f0] px-5 py-3 focus-within:border-blue-400 focus-within:ring-4 focus-within:ring-blue-500/10">
+                  <div className="flex min-h-12 flex-1 items-center bg-[#f8fafc] rounded-full border border-[#e2e8f0] px-5 py-2 focus-within:border-blue-400 focus-within:ring-4 focus-within:ring-blue-500/10">
                     <textarea
                       rows={1}
                       value={draft}
@@ -2311,8 +2342,7 @@ const TeacherChat = () => {
                         }
                       }}
                       placeholder="Type a message..."
-                      className="w-full resize-none bg-transparent text-sm text-[#0f172a] caret-[#0f172a] focus:outline-none placeholder:text-[#94a3b8] min-h-[20px] max-h-28"
-                      style={{ color: '#111827', WebkitTextFillColor: '#111827' }}
+                      className="block w-full resize-none bg-transparent py-1 text-sm leading-5 text-[#0f172a] caret-[#0f172a] focus:outline-none placeholder:text-[#94a3b8] max-h-28"
                     />
                   </div>
                   <button
