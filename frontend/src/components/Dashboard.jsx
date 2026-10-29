@@ -153,6 +153,16 @@ const normalizeViewFromPath = (pathname) => {
   return 'dashboard';
 };
 
+// View wrappers live at module level: defining them inline inside
+// DashboardContent made a brand-new component type on every render, so each
+// context update (notification / chat / reminder polling) unmounted and
+// remounted the whole page — the constant "refreshing" flash.
+const SchoolAssignmentView = (props) => <AssignmentView {...props} defaultType="school" />;
+const JournalAssignmentView = React.forwardRef((props, ref) => (
+  <AssignmentView {...props} ref={ref} defaultType="journal" />
+));
+JournalAssignmentView.displayName = 'JournalAssignmentView';
+
 // `useStudentDashboard()` only sees data from an ancestor `StudentDashboardProvider` —
 // it must be rendered as a child of the provider, not a sibling that merely
 // renders the provider itself. `Dashboard` (below) supplies that provider;
@@ -241,14 +251,14 @@ const DashboardContent = () => {
 
   // Define view components in an object for cleaner code
   const viewComponents = {
-    dashboard: (props) => <DashboardHome {...props} setActiveView={setActiveView} />,
-    home: (props) => <DashboardHome {...props} setActiveView={setActiveView} />,
+    dashboard: DashboardHome,
+    home: DashboardHome,
     learning: LearningHub,
     'smart-learning': LearningHub,
     'smart-learning-courses': LearningHub,
     'smart-learning-courses-reference': LearningHub,
     'smart-learning-tutor': LearningHub,
-    academics: (props) => <AssignmentView {...props} defaultType="school" />,
+    academics: SchoolAssignmentView,
     attendance: AttendanceView,
     routine: RoutineView,
     schedule: RoutineView,
@@ -256,9 +266,9 @@ const DashboardContent = () => {
     'admit-cards': AdmitCardsView,
     holidays: HolidayListView,
     'lesson-plan-status': LessonPlanStatusView,
-    assignments: (props) => <AssignmentView {...props} defaultType="school" />,
+    assignments: SchoolAssignmentView,
     'long-answer': LongAnswerAssessment,
-    'assignments-journal': (props) => <AssignmentView {...props} ref={journalRef} defaultType="journal" />,
+    'assignments-journal': JournalAssignmentView,
     'assignments-academic-alcove': StudentCommunityWall,
     'study-materials': LearningHub,
     'practice-papers': LearningHub,
@@ -298,6 +308,7 @@ const DashboardContent = () => {
       return (
         <Component
           key={pageKey}
+          ref={effectiveView === 'assignments-journal' ? journalRef : undefined}
           setActiveView={setActiveView}
           onChatOpenChange={setIsChatBoxOpen}
         />
@@ -309,7 +320,7 @@ const DashboardContent = () => {
 
   return (
     <>
-      <div className="min-h-screen w-full bg-gray-50 flex relative overflow-hidden">
+      <div className="min-h-screen w-full bg-gray-200/80 flex relative overflow-hidden">
         <Sidebar
           activeView={effectiveView}
           isOpen={sidebarOpen}

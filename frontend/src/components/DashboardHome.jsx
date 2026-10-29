@@ -79,17 +79,6 @@ const QUOTES = [
   { text: 'Champions are made from desire, dream, and vision!' },
 ];
 
-const getGreeting = () => {
-  const h = new Date().getHours();
-  if (h < 12) return 'Good Morning';
-  if (h < 17) return 'Good Afternoon';
-  return 'Good Evening';
-};
-
-const formatDate = () => new Date().toLocaleDateString('en-GB', {
-  day: '2-digit', month: 'short', year: 'numeric',
-});
-
 /** Campus "hero" illustration — a flat SVG stand-in for a real campus photo so
  *  the hero card never depends on an uploaded asset being present. */
 const CampusIllustration = () => (
@@ -113,7 +102,7 @@ const CampusIllustration = () => (
 );
 
 const HeroCard = () => {
-  const { profile, loading } = useStudentDashboard();
+  const { profile, classTeacher, loading } = useStudentDashboard();
 
   const studentData = profile || {
     name: 'Student', username: '', grade: '', section: '',
@@ -140,22 +129,26 @@ const HeroCard = () => {
     displaySection || null,
     displayRoll ? `Roll ${displayRoll}` : null,
     displayCampus || null,
+    classTeacher?.name ? `Class Teacher: ${classTeacher.name}` : null,
   ].filter(Boolean);
 
   if (loading) {
     return <Skeleton className="h-[280px] w-full rounded-[28px]" />;
   }
 
+  // With a cover photo the card goes dark so the details blend into the photo.
+  const hasCover = Boolean(profile?.schoolCoverImage);
+
   return (
     <Motion.div
       initial={{ opacity: 0, y: 16 }}
       animate={{ opacity: 1, y: 0 }}
       transition={{ duration: 0.4, ease: [0.16, 1, 0.3, 1] }}
-      className="relative w-full overflow-hidden rounded-[28px] bg-white shadow-[0px_4px_20px_rgba(0,0,0,0.03),0px_1px_3px_rgba(0,0,0,0.05)]"
+      className={`relative w-full overflow-hidden rounded-[28px] ${hasCover ? 'bg-black' : 'bg-white'} shadow-[0px_4px_20px_rgba(0,0,0,0.03),0px_1px_3px_rgba(0,0,0,0.05)]`}
     >
-      {profile?.schoolCoverImage && (
-        // Same treatment as the teacher/parent banners: photo fully clear on
-        // the right, blending only on its left edge into the card.
+      {hasCover && (
+        // Photo fully clear on the right, fading on its left edge into the
+        // black card behind the student details.
         <div
           aria-hidden="true"
           className="pointer-events-none absolute inset-y-0 right-0 hidden w-[75%] overflow-hidden sm:block"
@@ -165,7 +158,7 @@ const HeroCard = () => {
           }}
         >
           <div className="absolute inset-0 bg-cover bg-center" style={{ backgroundImage: `url(${profile.schoolCoverImage})` }} />
-          <div className="absolute inset-0 bg-linear-to-r from-black/60 from-0% via-black/25 via-35% to-transparent to-70%" />
+          <div className="absolute inset-0 bg-linear-to-r from-black from-0% via-black/40 via-35% to-transparent to-70%" />
         </div>
       )}
       <div className="relative z-10 grid grid-cols-1 sm:grid-cols-2">
@@ -187,28 +180,22 @@ const HeroCard = () => {
             <span className="absolute bottom-1 right-1 h-3.5 w-3.5 rounded-full border-2 border-white bg-emerald-400" />
           </div>
 
-          <span className="w-fit rounded-full bg-[#eef2ff] px-3 py-1 text-xs font-semibold text-[#4f46e5]">
-            {formatDate()}
-          </span>
 
           <div>
-            <h1 className="text-2xl font-bold leading-tight tracking-tight text-[#0f172a]">
+            <h1 className={`text-2xl font-bold leading-tight tracking-tight ${hasCover ? 'text-white' : 'text-[#0f172a]'}`}>
               {studentData.name || 'Student'}
             </h1>
             {studentData.username && (
-              <p className="mt-0.5 text-xs text-[#9ca3af]">ID: {studentData.username}</p>
+              <p className={`mt-0.5 text-xs ${hasCover ? 'text-white/70' : 'text-[#9ca3af]'}`}>ID: {studentData.username}</p>
             )}
           </div>
 
-          <span className="w-fit rounded-full bg-[#eef2ff] px-4 py-1.5 text-sm font-semibold text-[#4f46e5]">
-            {getGreeting()}
-          </span>
 
           {tags.length > 0 && (
             <div className="flex flex-wrap items-center gap-x-3 gap-y-1.5 pt-1">
               {tags.map((tag) => (
-                <span key={tag} className="inline-flex items-center gap-1.5 text-xs font-medium text-[#4338ca]">
-                  <span className="h-1.5 w-1.5 shrink-0 rounded-full bg-[#6366f1]" />
+                <span key={tag} className={`inline-flex items-center gap-1.5 text-xs font-medium ${hasCover ? 'text-white/90' : 'text-[#4338ca]'}`}>
+                  <span className={`h-1.5 w-1.5 shrink-0 rounded-full ${hasCover ? 'bg-white/80' : 'bg-[#6366f1]'}`} />
                   {tag}
                 </span>
               ))}
@@ -217,7 +204,7 @@ const HeroCard = () => {
         </div>
 
         {/* Right: campus illustration (only when the school has no cover photo) */}
-        {!profile?.schoolCoverImage && (
+        {!hasCover && (
           <div className="relative hidden min-h-[220px] sm:block">
             <CampusIllustration />
             <div className="pointer-events-none absolute inset-0 bg-linear-to-l from-transparent via-white/0 to-white/60" />
@@ -991,8 +978,9 @@ const DashboardHome = ({ setActiveView }) => {
     <div className="relative space-y-4 p-4 sm:space-y-6 sm:p-6">
       {/* Hero + Today's Schedule */}
       <div className="grid grid-cols-1 gap-4 sm:gap-6 lg:grid-cols-3">
-        <div className="lg:col-span-2">
+        <div className="space-y-4 sm:space-y-6 lg:col-span-2">
           <HeroCard />
+          <DailyBoost />
         </div>
         <TodaySchedule setActiveView={setActiveView} />
       </div>
@@ -1021,7 +1009,6 @@ const DashboardHome = ({ setActiveView }) => {
           {/* Daily boost + Quick Links */}
           <div className="grid grid-cols-1 gap-4 sm:gap-6 lg:grid-cols-3">
             <div className="space-y-4 sm:space-y-6 lg:col-span-2">
-              <DailyBoost />
               <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
                 <LearningStreakCard />
                 <ForgettingCurveChart />
