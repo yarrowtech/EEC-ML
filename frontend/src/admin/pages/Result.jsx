@@ -1363,7 +1363,11 @@ const Result = ({ setShowAdminHeader }) => {
 
         {bulkStep === 2 && (
           <div className="space-y-3">
+<<<<<<< HEAD
             <div className="rounded-xl border border-slate-200 overflow-hidden">
+=======
+            <div className="rounded-xl border border-slate-200 overflow-hidden h-[300px]">
+>>>>>>> fea56b34 (update result)
               <div className="flex flex-wrap items-center justify-between gap-2 px-4 py-2.5 bg-slate-50 border-b border-slate-200">
                 <p className="text-xs font-semibold text-slate-500 uppercase tracking-wide">Students ({searchedRows.length})</p>
                 <div className="flex items-center gap-2">
