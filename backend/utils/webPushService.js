@@ -377,7 +377,7 @@ const sendChatMessagePush = async ({ io, thread, message, senderId }) => {
       data: {
         kind: 'chat',
         threadId: String(thread._id),
-        path: CHAT_PATH_BY_TYPE[userType] || '/',
+        path: `${CHAT_PATH_BY_TYPE[userType] || '/'}?thread=${thread._id}`,
         userType,
       },
     });

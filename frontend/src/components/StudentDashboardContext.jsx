@@ -236,6 +236,8 @@ export const StudentDashboardProvider = ({ children }) => {
   useEffect(() => {
     fetchUnreadChatCount();
     const intervalId = window.setInterval(fetchUnreadChatCount, 15000);
+    const onChatMessage = () => fetchUnreadChatCount();
+    window.addEventListener('chat:new-message', onChatMessage);
     const onFocus = () => fetchUnreadChatCount();
     const onVisible = () => {
       if (document.visibilityState === 'visible') fetchUnreadChatCount();
@@ -246,6 +248,7 @@ export const StudentDashboardProvider = ({ children }) => {
       window.clearInterval(intervalId);
       window.removeEventListener('focus', onFocus);
       document.removeEventListener('visibilitychange', onVisible);
+      window.removeEventListener('chat:new-message', onChatMessage);
     };
   }, [fetchUnreadChatCount]);
 

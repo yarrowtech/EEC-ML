@@ -2,7 +2,7 @@ import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { io } from 'socket.io-client';
 import {
   MessageSquare, Send, Search, ChevronLeft,
-  Info, PlusCircle, X, Loader2, GraduationCap, Check, CheckCheck, User, Users, Palette, Lock, Link2, ExternalLink, Pencil, ChevronDown
+  Info, PlusCircle, X, Loader2, GraduationCap, Check, CheckCheck, User, Users, Palette, Lock, Link2, ExternalLink, Pencil, ChevronDown, Phone, Hash, Mail
 } from 'lucide-react';
 import { decryptChatMessage, encryptChatMessage, ensureE2EEIdentity } from '../utils/chatE2EE';
 import { chatCacheKeys, readChatCache, writeChatCache } from '../utils/chatCache';
@@ -18,8 +18,9 @@ const resolveApiBaseUrl = () => {
 };
 
 const API_URL = resolveApiBaseUrl();
-const THREADS_CACHE_TTL_MS = 15 * 60 * 1000;
-const MESSAGES_CACHE_TTL_MS = 15 * 60 * 1000;
+// Cached chats show instantly and are refreshed in the background, so a long TTL is safe.
+const THREADS_CACHE_TTL_MS = 7 * 24 * 60 * 60 * 1000;
+const MESSAGES_CACHE_TTL_MS = 7 * 24 * 60 * 60 * 1000;
 const CONTACTS_CACHE_TTL_MS = 5 * 60 * 1000;
 const CHAT_EDIT_WINDOW_MS = Math.max(1000, Number(import.meta.env.VITE_CHAT_EDIT_WINDOW_MS || 15 * 60 * 1000));
 const LAST_TEACHER_CHAT_ME_KEY = 'teacher_chat_me_id_v1';
@@ -665,7 +666,6 @@ const ConversationItem = ({ thread, isActive, onClick, typingName, theme }) => {
           name={name}
           className="h-11 w-11 text-sm"
           themeColor={t.color}
-          style={isActive ? { boxShadow: `0 0 0 2px white, 0 0 0 4px ${t.color}` } : {}}
         />
       </div>
       <div className="flex-1 min-w-0">
@@ -738,102 +738,97 @@ const UserAvatar = ({ src, name, className = '', themeColor = '#3b82f6', style =
   );
 };
 
-const ParticipantProfileModal = ({ open, loading, error, profile, profileType, onClose }) => {
-  if (!open) return null;
-  const isParentProfile = profileType === 'parent';
-  const studentRows = [
-    { icon: User, label: 'Student Name', value: profile?.studentName || 'N/A' },
-    { icon: Users, label: 'Parent Name', value: profile?.parentName || 'N/A' },
-    {
-      icon: GraduationCap,
-      label: 'Class & Section',
-      value: `${profile?.className || 'N/A'}${profile?.section && profile?.section !== 'N/A' ? ` - ${profile.section}` : ''}`
-    },
-    { icon: Info, label: 'Roll Number', value: profile?.rollNumber || 'N/A' },
-  ];
-  return (
-    <div
-      className="fixed inset-0 z-50 bg-black/40 backdrop-blur-sm flex items-center justify-center p-4"
-      onClick={onClose}
-    >
-      <div
-        className="w-full max-w-md bg-white rounded-2xl shadow-2xl border border-gray-100 overflow-hidden"
-        onClick={(event) => event.stopPropagation()}
-      >
-        <div className="px-5 py-4 border-b border-gray-100 flex items-center justify-between">
-          <h3 className="text-base font-semibold text-gray-900">
-            {isParentProfile ? 'Parent Profile' : 'Student Profile'}
-          </h3>
-          <button
-            onClick={onClose}
-            className="h-8 w-8 rounded-full hover:bg-gray-100 flex items-center justify-center"
-          >
-            <X className="h-4 w-4 text-gray-500" />
-          </button>
+const ContactRow = ({ icon: Icon, label, value }) => (
+  <div className="flex items-center gap-3 py-2">
+    <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-slate-100 text-slate-700"><Icon className="h-[18px] w-[18px]" /></span>
+    <div className="min-w-0">
+      <p className="text-[13px] font-semibold text-slate-900">{label}</p>
+      <p className="truncate text-[13px] text-slate-500">{value}</p>
+    </div>
+  </div>
+);
+
+const ContactInfoPanel = ({ open, isMobile, loading, error, profile, profileType, participant, roleLabel, presence, formatLastSeen, theme, onClose }) => {
+  const isParent = profileType === 'parent';
+  const name = participant?.name || profile?.studentName || profile?.parentName || 'Contact';
+  const statusText = presence?.online ? 'Online' : presence?.lastSeen ? `Last seen ${formatLastSeen(presence.lastSeen)}` : '';
+  const classLine = (cls, section) => `${/^class/i.test(String(cls || '')) ? cls : `Class ${cls || 'N/A'}`}${section && section !== 'N/A' ? ` ${section}` : ''}`;
+
+  useEffect(() => {
+    if (!open) return undefined;
+    const onKey = (event) => { if (event.key === 'Escape') onClose(); };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, [open, onClose]);
+
+  const body = (
+    <div className="flex h-full w-[340px] max-w-full flex-col bg-white">
+      <div className="flex items-center justify-between px-5 py-4">
+        <h3 className="text-[17px] font-bold text-slate-900">Contact Info</h3>
+        <button type="button" onClick={onClose} className="flex h-8 w-8 items-center justify-center rounded-full text-slate-500 hover:bg-slate-100" aria-label="Close contact info"><X className="h-5 w-5" /></button>
+      </div>
+      <div className="min-h-0 flex-1 overflow-y-auto px-5 pb-4">
+        <div className="flex flex-col items-center border-b border-slate-100 pb-4 text-center">
+          <div className="relative">
+            <UserAvatar src={participant?.avatar || profile?.photo} name={name} className="h-28 w-28 text-3xl" themeColor={theme.color} />
+            {presence?.online && <span className="absolute bottom-1.5 right-1.5 h-4 w-4 rounded-full border-[3px] border-white bg-emerald-500" aria-label="Online" />}
+          </div>
+          <p className="mt-3 text-[19px] font-bold text-slate-900">{name}</p>
+          <span className="mt-1 rounded-full bg-slate-100 px-3 py-0.5 text-[11px] font-semibold uppercase tracking-wide text-slate-600">{roleLabel}</span>
+          {statusText && <p className="mt-2 text-[12px] text-slate-500">{statusText}</p>}
         </div>
 
-        <div className="p-5">
-          {loading ? (
-            <div className="py-8 flex items-center justify-center text-sm text-gray-500">
-              <Loader2 className="h-4 w-4 animate-spin mr-2" />
-              Loading profile...
-            </div>
-          ) : error ? (
-            <div className="rounded-xl border border-rose-100 bg-rose-50 text-rose-700 px-4 py-3 text-sm">
-              {error}
-            </div>
-          ) : (
-            <div className="space-y-3">
-              {isParentProfile ? (
-                <>
-                  <div className="rounded-xl border border-gray-100 bg-gray-50 px-4 py-3">
-                    <div className="flex items-start gap-3">
-                      <div className="p-1.5 rounded-lg bg-blue-50 text-blue-600">
-                        <Users className="h-3.5 w-3.5" />
-                      </div>
-                      <div className="min-w-0">
-                        <p className="text-xs uppercase tracking-wide text-gray-500 font-semibold">Parent Name</p>
-                        <p className="text-sm text-gray-900 font-medium break-words">{profile?.parentName || 'N/A'}</p>
-                      </div>
-                    </div>
+        {loading ? (
+          <div className="flex items-center justify-center py-8 text-sm text-slate-500"><Loader2 className="mr-2 h-4 w-4 animate-spin" />Loading profile…</div>
+        ) : error ? (
+          <p className="mt-4 rounded-xl border border-rose-100 bg-rose-50 px-4 py-3 text-sm text-rose-700">{error}</p>
+        ) : profile && (
+          <div className="border-b border-slate-100 py-2">
+            {profile.phone && <ContactRow icon={Phone} label="Phone" value={profile.phone} />}
+            {!isParent && <ContactRow icon={GraduationCap} label="Class & Section" value={classLine(profile.className, profile.section)} />}
+            {!isParent && profile.rollNumber && profile.rollNumber !== 'N/A' && <ContactRow icon={Hash} label="Roll Number" value={profile.rollNumber} />}
+            {!isParent && profile.parentName && profile.parentName !== 'N/A' && <ContactRow icon={Users} label="Parent / Guardian" value={profile.parentName} />}
+            {profile.email && <ContactRow icon={Mail} label="Email" value={profile.email} />}
+            {isParent && (
+              <div className="py-2">
+                <p className="mb-1.5 text-[13px] font-semibold text-slate-900">Children</p>
+                {Array.isArray(profile.students) && profile.students.length > 0 ? profile.students.map((student) => (
+                  <div key={student.id} className="mb-1.5 rounded-lg bg-slate-50 px-3 py-2">
+                    <p className="text-[13px] font-semibold text-slate-800">{student.studentName}</p>
+                    <p className="text-[12px] text-slate-500">{classLine(student.className, student.section)} · Roll {student.rollNumber}</p>
                   </div>
-                  <div className="rounded-xl border border-gray-100 bg-gray-50 px-4 py-3">
-                    <p className="text-xs uppercase tracking-wide text-gray-500 font-semibold mb-2">Student Details</p>
-                    {Array.isArray(profile?.students) && profile.students.length > 0 ? (
-                      <div className="space-y-2">
-                        {profile.students.map((student) => (
-                          <div key={student.id} className="rounded-lg bg-white border border-gray-100 px-3 py-2">
-                            <p className="text-sm font-semibold text-gray-900">{student.studentName || 'Student'}</p>
-                            <p className="text-xs text-gray-600">
-                              {student.className || 'N/A'}{student.section && student.section !== 'N/A' ? ` - ${student.section}` : ''}
-                            </p>
-                            <p className="text-xs text-gray-500">Roll: {student.rollNumber || 'N/A'}</p>
-                          </div>
-                        ))}
-                      </div>
-                    ) : (
-                      <p className="text-xs text-gray-500">No linked students found.</p>
-                    )}
-                  </div>
-                </>
-              ) : studentRows.map((item) => (
-                <div key={item.label} className="rounded-xl border border-gray-100 bg-gray-50 px-4 py-3">
-                  <div className="flex items-start gap-3">
-                    <div className="p-1.5 rounded-lg bg-blue-50 text-blue-600">
-                      <item.icon className="h-3.5 w-3.5" />
-                    </div>
-                    <div className="min-w-0">
-                      <p className="text-xs uppercase tracking-wide text-gray-500 font-semibold">{item.label}</p>
-                      <p className="text-sm text-gray-900 font-medium break-words">{item.value}</p>
-                    </div>
-                  </div>
-                </div>
-              ))}
-            </div>
-          )}
+                )) : <p className="text-[12px] text-slate-500">No linked students found.</p>}
+              </div>
+            )}
+          </div>
+        )}
+      </div>
+      <div className="m-4 mt-0 flex items-start gap-3 rounded-xl border border-slate-100 bg-slate-50 p-3">
+        <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-violet-100 text-violet-600"><Lock className="h-4 w-4" /></span>
+        <div>
+          <p className="text-[13px] font-semibold text-slate-900">End-to-end encrypted</p>
+          <p className="text-[12px] text-slate-500">Messages are secured with end-to-end encryption.</p>
         </div>
       </div>
     </div>
+  );
+
+  if (isMobile) {
+    return (
+      <div className={`fixed inset-0 z-50 ${open ? '' : 'pointer-events-none'}`} aria-hidden={!open}>
+        <div className={`absolute inset-0 bg-black/30 transition-opacity duration-300 ${open ? 'opacity-100' : 'opacity-0'}`} onClick={onClose} />
+        <div className={`absolute right-0 top-0 h-full shadow-2xl transition-transform duration-300 ease-out ${open ? 'translate-x-0' : 'translate-x-full'}`}>{body}</div>
+      </div>
+    );
+  }
+  // Desktop: a column that grows in from the right edge, pushing the chat narrower.
+  return (
+    <aside
+      className={`h-full shrink-0 overflow-hidden border-l border-[#e9edf2] bg-white transition-[width,opacity] duration-300 ease-out ${open ? 'w-[340px] opacity-100' : 'w-0 border-l-0 opacity-0'}`}
+      aria-hidden={!open}
+    >
+      {body}
+    </aside>
   );
 };
 
@@ -929,11 +924,13 @@ const TeacherChat = () => {
   const [studentProfileError, setStudentProfileError] = useState('');
   const [studentProfile, setStudentProfile] = useState(null);
   const [profileType, setProfileType] = useState('student');
+  const [searchOpen, setSearchOpen] = useState(false);
+  const [messageSearch, setMessageSearch] = useState('');
   const [showGroupMembersModal, setShowGroupMembersModal] = useState(false);
   const [typingUsers, setTypingUsers] = useState({});
   const [presenceByUser, setPresenceByUser] = useState({});
   const [isMobileView, setIsMobileView] = useState(false);
-  const [wallpaperKey, setWallpaperKey]     = useState(() => localStorage.getItem('teacher_chat_wallpaper') || 'plain');
+  const [wallpaperKey, setWallpaperKey]     = useState(() => localStorage.getItem('teacher_chat_wallpaper') || 'doodle');
   const [themeKey, setThemeKey]             = useState(() => localStorage.getItem('teacher_chat_theme')     || 'blue');
   const [showChatSettings, setShowChatSettings] = useState(false);
   const [editingMessageId, setEditingMessageId] = useState('');
@@ -1114,6 +1111,8 @@ const TeacherChat = () => {
   }, [activeThread]);
 
   useEffect(() => {
+    setSearchOpen(false);
+    setMessageSearch('');
     setShowStudentProfileModal(false);
     setShowGroupMembersModal(false);
     setStudentProfile(null);
@@ -1148,6 +1147,9 @@ const TeacherChat = () => {
     const init = async () => {
       try {
         setSyncingThreads(true);
+        // Start the thread list now; it doesn't depend on the identity/key setup below.
+        const threadsRequest = apiFetch('/api/chat/threads');
+        threadsRequest.catch(() => {});
         const meData = await apiFetch('/api/chat/me');
         if (!mounted) return;
         setMe(meData);
@@ -1163,7 +1165,7 @@ const TeacherChat = () => {
           setThreads(cachedThreads);
           if (mounted) setLoadingThreads(false);
         }
-        const threadsData = await apiFetch('/api/chat/threads');
+        const threadsData = await threadsRequest;
         if (!mounted) return;
         const hydratedThreads = await Promise.all((Array.isArray(threadsData) ? threadsData : []).map((thread) => decryptThreadPreview(thread)));
         const hydratedWithFallback = await hydrateEncryptedThreadPreviews(hydratedThreads);
@@ -1479,7 +1481,10 @@ const TeacherChat = () => {
     socket?.emit('join-thread', { threadId });
     socket?.emit('mark-seen', { threadId });
     try {
-      const presenceRes = await apiFetch(`/api/chat/threads/${threadId}/presence`);
+      // Messages and presence load together; presence never blocks the messages.
+      const messagesRequest = apiFetch(`/api/chat/threads/${threadId}/messages`);
+      messagesRequest.catch(() => {});
+      const presenceRes = await apiFetch(`/api/chat/threads/${threadId}/presence`).catch(() => null);
       if (presenceRes?.presence && typeof presenceRes.presence === 'object') {
         setPresenceByUser((prev) => {
           const next = { ...prev };
@@ -1489,7 +1494,7 @@ const TeacherChat = () => {
           return next;
         });
       }
-      const msgs = await apiFetch(`/api/chat/threads/${threadId}/messages`);
+      const msgs = await messagesRequest;
       const decrypted = await Promise.all((Array.isArray(msgs) ? msgs : []).map((msg) => decryptForUI(msg)));
       const cachedById = new Map(
         (Array.isArray(cachedMessages) ? cachedMessages : []).map((msg) => [String(msg?._id || ''), msg])
@@ -1522,6 +1527,24 @@ const TeacherChat = () => {
       setLoadingMessages(false);
     }
   }, [decryptForUI, me?.id]);
+
+  // Opened from a chat notification: /...chat?thread=<id> selects that conversation.
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search);
+    const wanted = params.get('thread');
+    if (!wanted || !threads.some((thread) => String(thread?._id) === wanted)) return;
+    params.delete('thread');
+    const query = params.toString();
+    window.history.replaceState(window.history.state, '', `${window.location.pathname}${query ? `?${query}` : ''}`);
+    if (String(activeThreadId || '') !== wanted) selectThread(wanted);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [threads, selectThread]);
+
+  // Lets the portal-wide message notifier skip the conversation that's already on screen.
+  useEffect(() => {
+    window.__chatActiveThreadId = activeThreadId ? String(activeThreadId) : null;
+    return () => { window.__chatActiveThreadId = null; };
+  }, [activeThreadId]);
 
   // ── Start new conversation ─────────────────────────────────────────────────
   const startConversation = useCallback(async (contact) => {
@@ -1800,24 +1823,19 @@ const TeacherChat = () => {
   const activeParticipantPresence = activeThread?.otherParticipant?.userId
     ? presenceByUser[String(activeThread.otherParticipant.userId)]
     : null;
+  const visibleMessages = messageSearch.trim()
+    ? messages.filter((msg) => String(msg?.text || '').toLowerCase().includes(messageSearch.trim().toLowerCase()))
+    : messages;
   const activeParticipantStatus = isTypingInActive
     ? `${isTypingInActive} is typing...`
     : activeParticipantPresence?.online
     ? 'Online'
     : activeParticipantPresence
-    ? (activeParticipantPresence.lastSeen ? `Offline · last seen ${formatLastSeen(activeParticipantPresence.lastSeen)}` : 'Offline')
+    ? (activeParticipantPresence.lastSeen ? `Last seen ${formatLastSeen(activeParticipantPresence.lastSeen)}` : activeParticipantLabel)
     : activeParticipantLabel;
 
   return (
     <>
-      <ParticipantProfileModal
-        open={showStudentProfileModal}
-        loading={studentProfileLoading}
-        error={studentProfileError}
-        profile={studentProfile}
-        profileType={profileType}
-        onClose={() => setShowStudentProfileModal(false)}
-      />
       <GroupMembersModal
         open={showGroupMembersModal}
         members={activeThread?.participants || []}
@@ -1836,7 +1854,7 @@ const TeacherChat = () => {
           });
         }}
       />
-      <div className="h-[100dvh] lg:h-full flex items-center justify-center bg-[#f4f6fa] p-0 sm:p-4 lg:p-5 overflow-hidden">
+      <div className="h-[100dvh] lg:h-full flex items-center justify-center bg-[#f4f6fa] p-0 sm:p-3 lg:p-3 overflow-hidden">
         <div className="w-full h-full sm:h-[calc(100dvh-2rem)] lg:h-full max-w-[1280px] max-h-[900px] flex overflow-hidden rounded-none sm:rounded-[28px] border border-white/70 bg-white shadow-[0_12px_40px_rgba(15,23,42,0.08)]">
       {/* ── Sidebar ── */}
       {showSidebar && (
@@ -1845,8 +1863,8 @@ const TeacherChat = () => {
           <div className="px-5 py-4 border-b border-[#e9edf2]">
             <div className="flex items-center justify-between mb-3">
               <div className="flex items-center gap-2.5">
-                <div className="h-9 w-9 rounded-xl flex items-center justify-center" style={{ backgroundColor: theme.lighter }}>
-                  <MessageSquare className="h-5 w-5" style={{ color: theme.color }} />
+                <div className="h-9 w-9 rounded-full flex items-center justify-center bg-[#3b82f6]">
+                  <MessageSquare className="h-5 w-5 text-white" />
                 </div>
                 <div>
                   <h1 className="font-bold text-[#0f172a] text-sm">Messages</h1>
@@ -2091,6 +2109,7 @@ const TeacherChat = () => {
 
       {/* ── Main Chat Area ── */}
       {showMain && (
+        <div className="flex-1 flex h-full min-h-0 min-w-0">
         <div className="flex-1 flex flex-col h-full min-h-0 min-w-0 bg-white">
           {activeThreadId ? (
             <>
@@ -2120,7 +2139,6 @@ const TeacherChat = () => {
                       name={activeThread?.otherParticipant?.name || activeParticipantLabel}
                       className="h-11 w-11 text-sm hover:opacity-90 transition-opacity cursor-pointer"
                       themeColor={theme.color}
-                      style={{ boxShadow: `0 0 0 2px white, 0 0 0 4px ${theme.color}` }}
                     />
                   </button>
                   <div>
@@ -2142,22 +2160,51 @@ const TeacherChat = () => {
                     </div>
                   </div>
                 </div>
-                <button
-                  onClick={() => {
-                    if (String(activeThread?.threadType || '').toLowerCase() === 'group') {
-                      setShowGroupMembersModal(true);
-                      return;
-                    }
-                    openStudentProfile();
-                  }}
-                  className="h-8 w-8 rounded-lg flex items-center justify-center transition-colors hover:bg-gray-100"
-                  title={String(activeThread?.threadType || '').toLowerCase() === 'group' ? 'View group members' : 'View student profile'}
-                  onMouseEnter={e => { e.currentTarget.style.backgroundColor = theme.lighter; }}
-                  onMouseLeave={e => { e.currentTarget.style.backgroundColor = ''; }}
-                >
-                  <Info className="h-4 w-4 text-gray-400" />
-                </button>
+                <div className="flex shrink-0 items-center gap-1">
+                  <button
+                    type="button"
+                    onClick={() => { setSearchOpen((open) => !open); setMessageSearch(''); }}
+                    className={`flex h-10 w-10 items-center justify-center rounded-full transition-colors ${searchOpen ? 'bg-slate-100 text-slate-900' : 'text-slate-600 hover:bg-slate-100'}`}
+                    title="Search in conversation"
+                    aria-label="Search in conversation"
+                  >
+                    <Search className="h-5 w-5" />
+                  </button>
+                  <span className="mx-1.5 h-7 w-px bg-[#e9edf2]" aria-hidden="true" />
+                  <button
+                    type="button"
+                    onClick={() => {
+                      if (isGroupActiveThread) {
+                        setShowGroupMembersModal(true);
+                        return;
+                      }
+                      if (showStudentProfileModal) setShowStudentProfileModal(false);
+                      else openStudentProfile();
+                    }}
+                    className="flex h-10 w-10 items-center justify-center rounded-full transition-colors"
+                    style={{ backgroundColor: showStudentProfileModal ? theme.light : theme.lighter, color: theme.color }}
+                    title={isGroupActiveThread ? 'View group members' : 'Contact info'}
+                    aria-label={isGroupActiveThread ? 'View group members' : 'Contact info'}
+                  >
+                    <Info className="h-5 w-5" />
+                  </button>
+                </div>
               </div>
+              {searchOpen && (
+                <div className="flex shrink-0 items-center gap-2 border-b border-[#e9edf2] bg-white px-5 py-2">
+                  <Search className="h-4 w-4 text-slate-400" aria-hidden="true" />
+                  <input
+                    autoFocus
+                    value={messageSearch}
+                    onChange={(e) => setMessageSearch(e.target.value)}
+                    onKeyDown={(e) => { if (e.key === 'Escape') { setSearchOpen(false); setMessageSearch(''); } }}
+                    placeholder="Search messages…"
+                    className="flex-1 bg-transparent text-sm text-slate-800 outline-none placeholder:text-slate-400"
+                  />
+                  {messageSearch && <span className="text-xs text-slate-400">{visibleMessages.length} found</span>}
+                  <button type="button" onClick={() => { setSearchOpen(false); setMessageSearch(''); }} className="flex h-7 w-7 items-center justify-center rounded-full text-slate-500 hover:bg-slate-100" aria-label="Close search"><X className="h-4 w-4" /></button>
+                </div>
+              )}
 
               {/* Messages */}
               <div
@@ -2186,15 +2233,18 @@ const TeacherChat = () => {
                   </div>
                 ) : (
                   <>
-                    {messages.map((msg, index) => {
+                    {messageSearch && visibleMessages.length === 0 && (
+                      <p className="py-10 text-center text-sm text-slate-500">No messages match “{messageSearch}”.</p>
+                    )}
+                    {visibleMessages.map((msg, index) => {
                       const currentTs = msg.createdAt || msg.ts;
-                      const prevTs = index > 0 ? (messages[index - 1].createdAt || messages[index - 1].ts) : null;
+                      const prevTs = index > 0 ? (visibleMessages[index - 1].createdAt || visibleMessages[index - 1].ts) : null;
                       const showDateSeparator = index === 0 || dayKey(currentTs) !== dayKey(prevTs);
                       return (
                         <React.Fragment key={msg._id}>
                           {showDateSeparator && (
                             <div className="flex justify-center my-3 relative z-[1]">
-                              <span className="text-[11px] px-4 py-1 rounded-full bg-white border border-[#e9edf2] text-[#475569] font-semibold tracking-wide">
+                              <span className="text-[12px] px-4 py-1 rounded-full bg-white text-[#0f172a] font-semibold shadow-sm">
                                 {formatDaySeparator(currentTs)}
                               </span>
                             </div>
@@ -2248,8 +2298,8 @@ const TeacherChat = () => {
 
               {/* Input */}
               <div className="border-t border-[#e9edf2] bg-white/90 backdrop-blur-md px-5 pt-4 pb-[calc(4rem+max(0.75rem,env(safe-area-inset-bottom)))] lg:py-4 flex-shrink-0 sticky bottom-0 z-20">
-                <div className="flex items-end gap-2">
-                  <div className="flex-1 bg-[#f4f6fa] rounded-full border-[1.5px] border-[#e9edf2] px-4 py-2.5 focus-within:border-blue-500 focus-within:ring-4 focus-within:ring-blue-500/10">
+                <div className="flex items-center gap-3">
+                  <div className="flex-1 bg-[#f8fafc] rounded-full border border-[#e2e8f0] px-5 py-3 focus-within:border-blue-400 focus-within:ring-4 focus-within:ring-blue-500/10">
                     <textarea
                       rows={1}
                       value={draft}
@@ -2268,11 +2318,11 @@ const TeacherChat = () => {
                   <button
                     onClick={sendMessage}
                     disabled={!draft.trim()}
-                    className="h-[46px] min-w-[46px] px-3 rounded-full text-white flex items-center justify-center gap-1.5 disabled:opacity-40 disabled:cursor-not-allowed transition-all hover:scale-[1.02] active:scale-95 shrink-0 shadow-[0_2px_8px_rgba(37,99,235,0.2)]"
+                    aria-label="Send message"
+                    className="h-12 w-12 rounded-full text-white flex items-center justify-center disabled:opacity-40 disabled:cursor-not-allowed transition-all hover:scale-[1.04] active:scale-95 shrink-0 shadow-[0_4px_12px_rgba(37,99,235,0.3)]"
                     style={{ background: `linear-gradient(135deg, ${theme.color}, ${theme.hover})` }}
                   >
-                    <Send className="h-4 w-4" />
-                    <span className="hidden sm:inline text-sm font-semibold">Send</span>
+                    <Send className="h-5 w-5" />
                   </button>
                 </div>
               </div>
@@ -2298,6 +2348,21 @@ const TeacherChat = () => {
               </div>
             </div>
           )}
+        </div>
+        <ContactInfoPanel
+          open={Boolean(activeThreadId) && showStudentProfileModal}
+          isMobile={isMobileView}
+          loading={studentProfileLoading}
+          error={studentProfileError}
+          profile={studentProfile}
+          profileType={profileType}
+          participant={activeThread?.otherParticipant}
+          roleLabel={activeParticipantLabel}
+          presence={activeParticipantPresence}
+          formatLastSeen={formatLastSeen}
+          theme={theme}
+          onClose={() => setShowStudentProfileModal(false)}
+        />
         </div>
       )}
         </div>

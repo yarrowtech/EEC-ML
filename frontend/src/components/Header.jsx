@@ -16,6 +16,7 @@ import { useDesktopNotificationBridge } from '../hooks/useDesktopNotificationBri
 import DesktopNotificationPermissionModal from './DesktopNotificationPermissionModal';
 import NotificationPopover from './NotificationPopover';
 import useCommunityWallUnread from '../hooks/useCommunityWallUnread';
+import usePortalChatNotifier from '../hooks/usePortalChatNotifier';
 import { AUTH_NOTICE, logoutAndRedirect } from '../utils/authSession';
 
 const Header = ({ sidebarOpen, setSidebarOpen, onOpenProfile }) => {
@@ -52,6 +53,13 @@ const Header = ({ sidebarOpen, setSidebarOpen, onOpenProfile }) => {
     if (String(id).startsWith('community-post-')) return communityUnread.markPostSeen(String(id).slice('community-post-'.length));
     return baseDismissNotification(id, ...rest);
   };
+
+  usePortalChatNotifier({
+    navigate,
+    chatPath: '/student/chat',
+    isChatPath: (path) => path.startsWith('/student/chat'),
+    meStorageKey: 'student_chat_me_id_v1',
+  });
 
   const notifRef = useRef(null);
   const profileRef = useRef(null);

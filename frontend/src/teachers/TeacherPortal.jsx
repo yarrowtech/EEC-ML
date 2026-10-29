@@ -81,6 +81,7 @@ import TeacherAlcove from './TeacherAlcove';
 import TryoutManagement from '../components/TryoutManagement';
 import { useDesktopNotificationBridge } from '../hooks/useDesktopNotificationBridge';
 import useCommunityWallUnread, { subscribeSocketEvent } from '../hooks/useCommunityWallUnread';
+import usePortalChatNotifier from '../hooks/usePortalChatNotifier';
 import DesktopNotificationPermissionModal from '../components/DesktopNotificationPermissionModal';
 import NotificationPopover from '../components/NotificationPopover';
 import ExamRoutineTable from '../components/ExamRoutineTable';
@@ -1635,6 +1636,8 @@ const HeaderClock = () => {
 const TeacherPortalShell = () => {
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
+  // Chat needs the width: collapse the main sidebar while it's open, restore it after.
+  const sidebarBeforeChatRef = useRef(null);
   const [showLogoutConfirm, setShowLogoutConfirm] = useState(false);
   // Self-contained mobile profile popover (My Profile / Sign out) — deliberately
   // independent of `sidebarOpen`/the drawer, so logout stays reachable even if
@@ -1644,6 +1647,22 @@ const TeacherPortalShell = () => {
   const location = useLocation();
   const navigate = useNavigate();
   const isChatRoute = location.pathname.includes('/communication/chat');
+  usePortalChatNotifier({
+    navigate,
+    chatPath: '/teacher/classes/current/communication/chat',
+    isChatPath: (path) => path.includes('/communication/chat'),
+    meStorageKey: 'teacher_chat_me_id_v1',
+  });
+  // Chat needs the width: collapse the main sidebar while it is open, restore it after.
+  useEffect(() => {
+    if (isChatRoute) {
+      if (sidebarBeforeChatRef.current === null) sidebarBeforeChatRef.current = sidebarCollapsed;
+      setSidebarCollapsed(true);
+    } else if (sidebarBeforeChatRef.current !== null) {
+      setSidebarCollapsed(sidebarBeforeChatRef.current);
+      sidebarBeforeChatRef.current = null;
+    }
+  }, [isChatRoute]);
   const isDashboardRoute = location.pathname === '/teacher/dashboard' || location.pathname === '/teacher';
   const isSmartPlannerRoute = location.pathname.includes('/teaching/lesson-planner') || location.pathname === '/teacher/lesson-plan';
   const isAttendanceRoute = location.pathname.includes('/students/attendance') || location.pathname.includes('/overview/attendance');
