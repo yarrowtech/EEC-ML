@@ -8,6 +8,7 @@ import { useLocation, useNavigate } from 'react-router-dom';
 import toast from 'react-hot-toast';
 import { AUTH_NOTICE, consumeAuthNotice, purgeStaleSessionCaches } from '../utils/authSession';
 import { useTenant } from '../context/TenantContext';
+import { prefetchStudentDashboard } from '../utils/studentDashboardPrefetch';
 
 const API_BASE = (import.meta.env.VITE_API_URL || '').replace(/\/$/, '');
 
@@ -345,6 +346,7 @@ const LoginForm = () => {
       purgeStaleSessionCaches();
       localStorage.setItem('token', data.token);
       localStorage.setItem('userType', data.userType);
+      if (data.userType === 'Student') prefetchStudentDashboard();
       await refreshBranding();
 
       // Persist Remember Me — store username + expiry

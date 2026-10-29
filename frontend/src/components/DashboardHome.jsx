@@ -13,10 +13,11 @@ import QuickStats from './QuickStats';
 import RecommendationWidget from './RecommendationWidget';
 import EmptyState from './EmptyState';
 import { Skeleton } from './ui/skeleton';
-import { fetchCachedJson } from '../utils/studentApiCache';
+import { fetchCachedJson, peekCachedJson } from '../utils/studentApiCache';
+import { STUDENT_API_BASE, STUDENT_DASHBOARD_TTL_MS } from '../utils/studentDashboardPrefetch';
 import { useStudentDashboard } from './StudentDashboardContext';
 
-const API_BASE = (import.meta.env.VITE_API_URL || 'http://localhost:5000').replace(/\/+$/, '');
+const API_BASE = STUDENT_API_BASE;
 
 /** Small inline "this widget failed to load" card with a retry affordance, so a
  *  backend error on a dashboard analytics endpoint is visible instead of the
@@ -38,18 +39,26 @@ const CardError = ({ onRetry, label }) => (
 /** Fetch-with-state hook for the dashboard cards: tracks loading + error and
  *  exposes a reload() the CardError button calls. */
 const useCardData = (url, pick) => {
-  const [state, setState] = useState({ data: null, loading: true, error: false });
+  // Seed from the last cached payload (even if stale) so cards paint instantly;
+  // the effect below then revalidates in the background.
+  const [state, setState] = useState(() => {
+    const cached = peekCachedJson(url);
+    return cached
+      ? { data: pick(cached), loading: false, error: false }
+      : { data: null, loading: true, error: false };
+  });
   const [nonce, setNonce] = useState(0);
   useEffect(() => {
     let alive = true;
-    setState((s) => ({ ...s, loading: true, error: false }));
-    fetchCachedJson(url, { ttlMs: 5 * 60 * 1000, forceRefresh: nonce > 0 })
+    setState((s) => (s.data != null ? { ...s, error: false } : { ...s, loading: true, error: false }));
+    fetchCachedJson(url, { ttlMs: STUDENT_DASHBOARD_TTL_MS, forceRefresh: nonce > 0 })
       .then((r) => { if (alive) setState({ data: pick(r), loading: false, error: false }); })
       .catch((err) => {
         if (!alive) return;
         // An auth failure is already being handled globally — don't also show a retry card.
         if (err?.code === 'expired') return;
-        setState({ data: null, loading: false, error: true });
+        // Keep showing last-known data on a transient failure.
+        setState((s) => (s.data != null ? { ...s, loading: false } : { data: null, loading: false, error: true }));
       });
     return () => { alive = false; };
   }, [url, nonce]); // `pick` is a stable inline mapper per card — intentionally not a dep
@@ -144,7 +153,22 @@ const HeroCard = () => {
       transition={{ duration: 0.4, ease: [0.16, 1, 0.3, 1] }}
       className="relative w-full overflow-hidden rounded-[28px] bg-white shadow-[0px_4px_20px_rgba(0,0,0,0.03),0px_1px_3px_rgba(0,0,0,0.05)]"
     >
-      <div className="grid grid-cols-1 sm:grid-cols-2">
+      {profile?.schoolCoverImage && (
+        // Same treatment as the teacher/parent banners: photo fully clear on
+        // the right, blending only on its left edge into the card.
+        <div
+          aria-hidden="true"
+          className="pointer-events-none absolute inset-y-0 right-0 hidden w-[75%] overflow-hidden sm:block"
+          style={{
+            maskImage: 'linear-gradient(to right, transparent 0%, black 18%)',
+            WebkitMaskImage: 'linear-gradient(to right, transparent 0%, black 18%)',
+          }}
+        >
+          <div className="absolute inset-0 bg-cover bg-center" style={{ backgroundImage: `url(${profile.schoolCoverImage})` }} />
+          <div className="absolute inset-0 bg-linear-to-r from-black/60 from-0% via-black/25 via-35% to-transparent to-70%" />
+        </div>
+      )}
+      <div className="relative z-10 grid grid-cols-1 sm:grid-cols-2">
         {/* Left: profile info */}
         <div className="flex flex-col gap-3 p-6">
           <div className="relative w-fit">
@@ -192,11 +216,13 @@ const HeroCard = () => {
           )}
         </div>
 
-        {/* Right: campus illustration */}
-        <div className="relative hidden min-h-[220px] sm:block">
-          <CampusIllustration />
-          <div className="pointer-events-none absolute inset-0 bg-linear-to-l from-transparent via-white/0 to-white/60" />
-        </div>
+        {/* Right: campus illustration (only when the school has no cover photo) */}
+        {!profile?.schoolCoverImage && (
+          <div className="relative hidden min-h-[220px] sm:block">
+            <CampusIllustration />
+            <div className="pointer-events-none absolute inset-0 bg-linear-to-l from-transparent via-white/0 to-white/60" />
+          </div>
+        )}
       </div>
     </Motion.div>
   );
@@ -475,7 +501,8 @@ const forgettingCurvePoints = (intervalDays, maxDays) => Array.from({ length: ma
 const ForgettingCurveChart = () => {
   const { data: topics, loading, error, reload } = useCardData(
     `${API_BASE}/api/spaced-repetition/retention`,
-    (r) => (r?.data || []).slice()
+    // Endpoint returns { success, data: [...] }; tolerate a bare array too.
+    (r) => (Array.isArray(r?.data?.data) ? r.data.data : Array.isArray(r?.data) ? r.data : []).slice()
   );
 
   if (error) return <CardError label="Retention Forecast" onRetry={reload} />;
@@ -762,7 +789,7 @@ const StreakTracker = () => {
           const isLeave = record.status === 'leave';
           return (
             <div
-              key={record.date || i}
+              key={`${record.date || ''}-${i}`}
               title={`${new Date(record.date).toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' })} — ${record.status}`}
               className={`h-7 w-7 rounded-full border-2 flex items-center justify-center text-xs font-bold transition-all ${
                 isPresent

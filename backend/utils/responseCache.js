@@ -14,6 +14,15 @@ const createResponseCache = ({ ttlMs = 30 * 1000, maxEntries = 1000 } = {}) => {
 
   const clear = () => store.clear();
 
+  // Drop only one user's entries (keys start with their id).
+  const clearUser = (userId) => {
+    if (!userId) return;
+    const prefix = `${userId}:`;
+    for (const key of store.keys()) {
+      if (key.startsWith(prefix)) store.delete(key);
+    }
+  };
+
   // GET middleware (place after auth): serve a fresh hit, else capture 200s.
   const cache = (req, res, next) => {
     const key = keyOf(req);
@@ -43,7 +52,18 @@ const createResponseCache = ({ ttlMs = 30 * 1000, maxEntries = 1000 } = {}) => {
     return next();
   };
 
-  return { cache, clear, invalidateOnWrite };
+  // app.use(...) middleware: a successful non-GET by an authenticated user
+  // clears that user's entries only (req.user is set by route-level auth by
+  // the time the response finishes).
+  const invalidateUserOnWrite = (req, res, next) => {
+    if (req.method === 'GET' || req.method === 'HEAD' || req.method === 'OPTIONS') return next();
+    res.on('finish', () => {
+      if (res.statusCode < 400) clearUser(req.user?.id || req.userId);
+    });
+    return next();
+  };
+
+  return { cache, clear, clearUser, invalidateOnWrite, invalidateUserOnWrite };
 };
 
 // Shared cache for the parent attendance screen (attendance, holidays,
@@ -69,4 +89,9 @@ const chatCache = createResponseCache({ ttlMs: 30 * 1000, maxEntries: 3000 });
 // Holiday calendar reads. Cleared by Holiday model write hooks, so admin edits show at once.
 const holidayCache = createResponseCache({ ttlMs: 5 * 60 * 1000 });
 
-module.exports = { createResponseCache, parentAttendanceCache, userNotificationsCache, parentFeesCache, teacherAnalyticsCache, chatCache, holidayCache };
+// Student dashboard reads (profile/stats, schedule, class teacher, exam results,
+// analytics cards). Keyed per student; any write by that student clears their
+// entries, and the TTL bounds staleness from writes by teachers/admins.
+const studentDashboardCache = createResponseCache({ ttlMs: 60 * 1000, maxEntries: 20000 });
+
+module.exports = { createResponseCache, studentDashboardCache, parentAttendanceCache, userNotificationsCache, parentFeesCache, teacherAnalyticsCache, chatCache, holidayCache };

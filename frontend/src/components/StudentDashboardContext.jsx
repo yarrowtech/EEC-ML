@@ -1,6 +1,7 @@
 import React, { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState } from 'react';
 import { clearCacheEntry, readCacheEntry, writeCacheEntry } from '../utils/studentCache';
-import { fetchCachedJson } from '../utils/studentApiCache';
+import { fetchCachedJson, peekCachedJson } from '../utils/studentApiCache';
+import { STUDENT_API_BASE, STUDENT_DASHBOARD_TTL_MS } from '../utils/studentDashboardPrefetch';
 import { AUTH_NOTICE, logoutAndRedirect } from '../utils/authSession';
 import { useNotifications } from '../hooks/useNotifications';
 import {
@@ -28,9 +29,34 @@ const StudentDashboardContext = createContext({
   refresh: () => {},
 });
 
-const DASHBOARD_CACHE_KEY = 'studentDashboardCacheV1';
+const DASHBOARD_CACHE_KEY = 'studentDashboardCacheV2';
 const DASHBOARD_CACHE_TTL_MS = 2 * 60 * 1000;
-const STUDENT_API_CACHE_TTL_MS = 5 * 60 * 1000;
+const STUDENT_API_CACHE_TTL_MS = STUDENT_DASHBOARD_TTL_MS;
+const DASHBOARD_URL = `${STUDENT_API_BASE}/api/student/auth/dashboard`;
+const CLASS_TEACHER_URL = `${STUDENT_API_BASE}/api/student/auth/class-teacher`;
+
+const toDashboardData = (payload, classTeacher = null) => ({
+  profile: payload?.profile || null,
+  classTeacher,
+  stats: payload?.stats || null,
+  course: payload?.course || null,
+  recentAttendance: payload?.recentAttendance || [],
+});
+
+// Payloads cached before the backend added schoolCoverImage must be refetched,
+// otherwise the hero card keeps showing the placeholder until the TTL runs out.
+const isCurrentDashboardShape = (payload) =>
+  Boolean(payload?.profile && Object.prototype.hasOwnProperty.call(payload.profile, 'schoolCoverImage'));
+
+// Last-known dashboard (session cache, else the persistent API cache — which
+// the login prefetch fills) so the screen paints without a spinner.
+const readInitialDashboard = () => {
+  const session = readCacheEntry(DASHBOARD_CACHE_KEY)?.data;
+  if (session) return session;
+  const api = peekCachedJson(DASHBOARD_URL);
+  if (!api?.data || !isCurrentDashboardShape(api.data)) return null;
+  return toDashboardData(api.data, peekCachedJson(CLASS_TEACHER_URL)?.data?.teacher || null);
+};
 
 const emptyData = {
   profile: null,
@@ -41,8 +67,9 @@ const emptyData = {
 };
 
 export const StudentDashboardProvider = ({ children }) => {
-  const initialCachedEntryRef = useRef(readCacheEntry(DASHBOARD_CACHE_KEY));
-  const initialCachedData = initialCachedEntryRef.current?.data || null;
+  const initialCachedEntryRef = useRef(undefined);
+  if (initialCachedEntryRef.current === undefined) initialCachedEntryRef.current = readInitialDashboard();
+  const initialCachedData = initialCachedEntryRef.current;
   const [loading, setLoading] = useState(!initialCachedData);
   const [error, setError] = useState('');
   const [data, setData] = useState(initialCachedData || emptyData);
@@ -75,9 +102,11 @@ export const StudentDashboardProvider = ({ children }) => {
         Authorization: `Bearer ${token}`,
         'Content-Type': 'application/json',
       };
-      const dashboardResult = await fetchCachedJson(`${import.meta.env.VITE_API_URL}/api/student/auth/dashboard`, {
+      const cachedDashboard = peekCachedJson(DASHBOARD_URL);
+      const staleShape = cachedDashboard?.data && !isCurrentDashboardShape(cachedDashboard.data);
+      const dashboardResult = await fetchCachedJson(DASHBOARD_URL, {
         ttlMs: STUDENT_API_CACHE_TTL_MS,
-        forceRefresh,
+        forceRefresh: forceRefresh || staleShape,
         fetchOptions: {
           signal: controller.signal,
           headers,
@@ -85,20 +114,14 @@ export const StudentDashboardProvider = ({ children }) => {
       });
 
       const payload = dashboardResult?.data || {};
-      const nextData = {
-        profile: payload.profile || null,
-        classTeacher: null,
-        stats: payload.stats || null,
-        course: payload.course || null,
-        recentAttendance: payload.recentAttendance || [],
-      };
+      const nextData = toDashboardData(payload, peekCachedJson(CLASS_TEACHER_URL)?.data?.teacher || null);
       writeCacheEntry(DASHBOARD_CACHE_KEY, nextData, DASHBOARD_CACHE_TTL_MS);
       if (!isMountedRef.current) return;
       setData(nextData);
 
       // Class-teacher metadata is secondary. Do not delay the dashboard when
       // this endpoint is slow or unavailable.
-      fetchCachedJson(`${import.meta.env.VITE_API_URL}/api/student/auth/class-teacher`, {
+      fetchCachedJson(CLASS_TEACHER_URL, {
         ttlMs: STUDENT_API_CACHE_TTL_MS,
         fetchOptions: {
           signal: controller.signal,

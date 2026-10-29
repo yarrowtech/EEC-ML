@@ -6,6 +6,8 @@ import { fetchCachedJson } from '../../utils/studentApiCache';
 
 jest.mock('../../utils/studentApiCache', () => ({
   fetchCachedJson: jest.fn(),
+  peekCachedJson: jest.fn(() => undefined),
+  prefetchJson: jest.fn(),
 }));
 
 jest.mock('../../utils/studentCache', () => ({

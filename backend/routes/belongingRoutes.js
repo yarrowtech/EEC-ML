@@ -1,5 +1,6 @@
 const express = require('express');
 const router = express.Router();
+const { studentDashboardCache } = require('../utils/responseCache');
 const { teacherAnalyticsCache } = require('../utils/responseCache');
 router.use(teacherAnalyticsCache.invalidateOnWrite);
 const authStudent = require('../middleware/authStudent');
@@ -8,7 +9,7 @@ const { scopedStudents } = require('../utils/analyticsScope');
 const { computeStudentBelongingScore, getClassBelongingSummary } = require('../services/belongingService');
 
 // GET /api/belonging/me — student's own social/belonging score
-router.get('/me', authStudent, async (req, res) => {
+router.get('/me', authStudent, studentDashboardCache.cache, async (req, res) => {
   try {
     const profile = await computeStudentBelongingScore({ studentId: req.user?.id, schoolId: req.schoolId });
     return res.json({ success: true, data: profile });

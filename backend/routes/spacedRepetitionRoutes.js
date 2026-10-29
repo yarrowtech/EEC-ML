@@ -1,5 +1,6 @@
 const express = require('express');
 const router = express.Router();
+const { studentDashboardCache } = require('../utils/responseCache');
 const authStudent = require('../middleware/authStudent');
 const SpacedRepetitionSchedule = require('../models/SpacedRepetitionSchedule');
 
@@ -118,7 +119,7 @@ router.get('/all', authStudent, async (req, res) => {
 // GET /api/spaced-repetition/retention
 // Returns a lightweight forgetting-curve view for the student's scheduled topics.
 // This is an estimate for prioritisation, not a calibrated probability.
-router.get('/retention', authStudent, async (req, res) => {
+router.get('/retention', authStudent, studentDashboardCache.cache, async (req, res) => {
   try {
     const studentId = req.user?.id;
     const schoolId = req.schoolId;

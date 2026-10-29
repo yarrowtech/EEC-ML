@@ -1,5 +1,6 @@
 const express = require('express');
 const router = express.Router();
+const { studentDashboardCache } = require('../utils/responseCache');
 const { teacherAnalyticsCache } = require('../utils/responseCache');
 router.use(teacherAnalyticsCache.invalidateOnWrite);
 const authStudent = require('../middleware/authStudent');
@@ -25,7 +26,7 @@ router.post('/checkin', authStudent, async (req, res) => {
 });
 
 // GET /api/confidence/profile?subject= — student's own calibration history
-router.get('/profile', authStudent, async (req, res) => {
+router.get('/profile', authStudent, studentDashboardCache.cache, async (req, res) => {
   try {
     const profile = await getStudentCalibrationProfile({
       studentId: req.user?.id, schoolId: req.schoolId, subject: req.query.subject,

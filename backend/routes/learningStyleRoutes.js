@@ -1,5 +1,6 @@
 const express = require('express');
 const router = express.Router();
+const { studentDashboardCache } = require('../utils/responseCache');
 const { teacherAnalyticsCache } = require('../utils/responseCache');
 router.use(teacherAnalyticsCache.invalidateOnWrite);
 const authStudent = require('../middleware/authStudent');
@@ -8,7 +9,7 @@ const { scopedStudents } = require('../utils/analyticsScope');
 const { detectStudentLearningStyle, getClassLearningStyleSummary } = require('../services/learningStyleService');
 
 // GET /api/learning-style/me — student's own detected vs. self-reported style
-router.get('/me', authStudent, async (req, res) => {
+router.get('/me', authStudent, studentDashboardCache.cache, async (req, res) => {
   try {
     const profile = await detectStudentLearningStyle({ studentId: req.user?.id, schoolId: req.schoolId });
     return res.json({ success: true, data: profile });

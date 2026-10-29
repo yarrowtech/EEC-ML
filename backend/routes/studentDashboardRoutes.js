@@ -1,5 +1,6 @@
 const express = require('express');
 const router = express.Router();
+const { studentDashboardCache } = require('../utils/responseCache');
 const mongoose = require('mongoose');
 const authStudent = require('../middleware/authStudent');
 const MasteryScore = require('../models/MasteryScore');
@@ -50,7 +51,7 @@ function applySpacedRepetition(record, gotIt) {
 }
 
 // GET /api/student-dashboard/mastery-topics
-router.get('/mastery-topics', authStudent, async (req, res) => {
+router.get('/mastery-topics', authStudent, studentDashboardCache.cache, async (req, res) => {
   try {
     const studentId = req.user.id;
     const schoolId = req.schoolId;
@@ -73,7 +74,7 @@ router.get('/mastery-topics', authStudent, async (req, res) => {
 });
 
 // GET /api/student-dashboard/learning-streak
-router.get('/learning-streak', authStudent, async (req, res) => {
+router.get('/learning-streak', authStudent, studentDashboardCache.cache, async (req, res) => {
   try {
     const studentId = req.user.id;
     const schoolId = req.schoolId;
@@ -120,7 +121,7 @@ router.get('/learning-streak', authStudent, async (req, res) => {
 });
 
 // GET /api/student-dashboard/time-by-subject
-router.get('/time-by-subject', authStudent, async (req, res) => {
+router.get('/time-by-subject', authStudent, studentDashboardCache.cache, async (req, res) => {
   try {
     const studentId = new mongoose.Types.ObjectId(req.user.id);
     const schoolId = req.schoolId;
@@ -157,7 +158,7 @@ router.post('/flashcard-result', authStudent, async (req, res) => {
 });
 
 // GET /api/student-dashboard/flashcard-stats
-router.get('/flashcard-stats', authStudent, async (req, res) => {
+router.get('/flashcard-stats', authStudent, studentDashboardCache.cache, async (req, res) => {
   try {
     const studentId = req.user.id;
     const schoolId = req.schoolId;

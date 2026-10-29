@@ -1,6 +1,7 @@
 const express = require('express');
 const { computeSessionAttendance, summarizeStudentAttendance } = require('../utils/sessionAttendance');
 const router = express.Router();
+const { studentDashboardCache } = require('../utils/responseCache');
 const mongoose = require('mongoose');
 const StudentUser = require('../models/StudentUser');
 const { isLoginBlockedStudentStatus, STUDENT_BLOCKED_MESSAGE } = require('../utils/studentStatus');
@@ -27,6 +28,7 @@ const StudentObservation = require('../models/StudentObservation');
 const StudentEnrollmentDraft = require('../models/StudentEnrollmentDraft');
 const Wellbeing = require('../models/Wellbeing');
 const Principal = require('../models/Principal');
+const Admin = require('../models/Admin');
 const bcrypt = require('bcryptjs');
 const jwt = require('jsonwebtoken');
 const adminAuth = require('../middleware/adminAuth');
@@ -1237,7 +1239,7 @@ router.post('/complaints', authStudent, async (req, res) => {
 });
 
 // Get class teacher for logged-in student
-router.get('/class-teacher', authStudent, async (req, res) => {
+router.get('/class-teacher', authStudent, studentDashboardCache.cache, async (req, res) => {
   // #swagger.tags = ['Students']
   try {
     const escapeRegex = (value = '') => String(value).replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
@@ -1422,7 +1424,7 @@ router.get('/class-teacher', authStudent, async (req, res) => {
 });
 
 // Get Student Dashboard Data (stats, courses, etc.)
-router.get('/dashboard', authStudent, async (req, res) => {
+router.get('/dashboard', authStudent, studentDashboardCache.cache, async (req, res) => {
   // #swagger.tags = ['Students']
   try {
     logStudentPortalEvent(req, {
@@ -1456,9 +1458,13 @@ router.get('/dashboard', authStudent, async (req, res) => {
       },
     ]);
 
-    const student = studentAgg
-      ? await StudentUser.populate(studentAgg, { path: 'schoolId', select: 'name code address logo' })
-      : null;
+    // Populate + the attendance-date read are independent — run them together.
+    const [student, attendanceDoc] = studentAgg
+      ? await Promise.all([
+          StudentUser.populate(studentAgg, { path: 'schoolId', select: 'name code address logo' }),
+          StudentUser.findById(req.user.id).select('attendance.date attendance.status').lean(),
+        ])
+      : [null, null];
 
     if (!student) {
       logStudentPortalEvent(req, {
@@ -1474,12 +1480,34 @@ router.get('/dashboard', authStudent, async (req, res) => {
 
     // Attendance over the active session (school days, not just marked days) —
     // same calculation the parent dashboard uses.
-    const attendanceDoc = await StudentUser.findById(req.user.id).select('attendance.date attendance.status').lean();
-    const sessionAttendance = await computeSessionAttendance({
-      attendance: attendanceDoc?.attendance || [],
-      schoolId: student.schoolId?._id || student.schoolId,
-      campusId: student.campusId || null,
-    });
+    const schoolInfo = extractSchoolInfo(student.schoolId);
+    // Principal's name for document headers (exam routine PDFs, etc.) — same
+    // school-wide-with-campus-override lookup used for report card signatories.
+    // NOTE: student.schoolId was replaced by the populated School doc above —
+    // use schoolInfo.id (the raw ObjectId) here, not student.schoolId itself.
+    const principalFilter = student.campusId
+      ? {
+          schoolId: schoolInfo?.id,
+          $or: [{ campusId: student.campusId }, { campusId: null }, { campusId: { $exists: false } }],
+        }
+      : { schoolId: schoolInfo?.id };
+    const [sessionAttendance, principal, coverAdmin] = await Promise.all([
+      computeSessionAttendance({
+        attendance: attendanceDoc?.attendance || [],
+        schoolId: student.schoolId?._id || student.schoolId,
+        campusId: student.campusId || null,
+      }),
+      schoolInfo?.id
+        ? Principal.findOne(principalFilter)
+            .sort({ updatedAt: -1, createdAt: -1 })
+            .select('name')
+            .lean()
+        : null,
+      // School cover photo (set by the admin on the settings page) for the hero card.
+      schoolInfo?.id
+        ? Admin.findOne({ schoolId: schoolInfo.id, coverImage: { $nin: [null, ''] } }).select('coverImage').lean()
+        : null,
+    ]);
     const totalAttendance = sessionAttendance.schoolDays;
     const presentDays = sessionAttendance.presentDays;
     const attendancePercentage = sessionAttendance.percentage;
@@ -1491,24 +1519,6 @@ router.get('/dashboard', authStudent, async (req, res) => {
 
     const courseInfo = null;
 
-    const schoolInfo = extractSchoolInfo(student.schoolId);
-
-    // Principal's name for document headers (exam routine PDFs, etc.) — same
-    // school-wide-with-campus-override lookup used for report card signatories.
-    // NOTE: student.schoolId was replaced by the populated School doc above —
-    // use schoolInfo.id (the raw ObjectId) here, not student.schoolId itself.
-    const principalFilter = student.campusId
-      ? {
-          schoolId: schoolInfo?.id,
-          $or: [{ campusId: student.campusId }, { campusId: null }, { campusId: { $exists: false } }],
-        }
-      : { schoolId: schoolInfo?.id };
-    const principal = schoolInfo?.id
-      ? await Principal.findOne(principalFilter)
-          .sort({ updatedAt: -1, createdAt: -1 })
-          .select('name')
-          .lean()
-      : null;
 
     const dashboardData = {
       profile: {
@@ -1531,6 +1541,7 @@ router.get('/dashboard', authStudent, async (req, res) => {
         schoolName: schoolInfo?.name || '',
         schoolAddress: schoolInfo?.address || '',
         schoolLogo: schoolInfo?.logo || null,
+        schoolCoverImage: coverAdmin?.coverImage || '',
         principalName: String(principal?.name || '').trim(),
         onboardingCompleted: student.onboardingCompleted || false,
         learningPreferences: student.learningPreferences || { subjects: [], learningStyle: '' },
@@ -2135,7 +2146,7 @@ router.get('/results', authStudent, async (req, res) => {
 });
 
 // Get Student Schedule/Routine
-router.get('/schedule', authStudent, async (req, res) => {
+router.get('/schedule', authStudent, studentDashboardCache.cache, async (req, res) => {
   // #swagger.tags = ['Students']
   try {
     logStudentPortalEvent(req, {

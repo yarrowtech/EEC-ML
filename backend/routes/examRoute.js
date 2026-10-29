@@ -631,6 +631,7 @@ const resolveResultScore = ({ marks, status, examMaxMarks, requireMarks = true }
 
 
 const router = express.Router();
+const { studentDashboardCache } = require('../utils/responseCache');
 const { createResponseCache } = require('../utils/responseCache');
 // Parent exam schedule: 60s per-parent cache; any exam write here clears it.
 const parentScheduleCache = createResponseCache({ ttlMs: 60 * 1000 });
@@ -2265,7 +2266,7 @@ router.get("/results/admin", adminAuth, async (req, res) => {
 });
 
 // Student fetch their results
-router.get("/results/me", authStudent, async (req, res) => {
+router.get("/results/me", authStudent, studentDashboardCache.cache, async (req, res) => {
   // #swagger.tags = ['Exams']
     try {
         const schoolId = req.schoolId || req.user?.schoolId || null;

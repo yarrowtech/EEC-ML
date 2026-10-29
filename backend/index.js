@@ -242,6 +242,8 @@ app.get('/', (_req, res) => res.send('B2B Api is Running'));
 app.get('/health', (_req, res) => res.json({ ok: true }));
 
 // ── Routes ────────────────────────────────────────────────────────────────────
+// Any successful write by a user clears that user's cached dashboard reads.
+app.use(require('./utils/responseCache').studentDashboardCache.invalidateUserOnWrite);
 registerRoutes(app, {
   generalApiLimiter: limiters.general,
   authApiLimiter: limiters.auth,

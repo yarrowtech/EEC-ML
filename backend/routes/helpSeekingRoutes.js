@@ -1,5 +1,6 @@
 const express = require('express');
 const router = express.Router();
+const { studentDashboardCache } = require('../utils/responseCache');
 const { teacherAnalyticsCache } = require('../utils/responseCache');
 router.use(teacherAnalyticsCache.invalidateOnWrite);
 const authStudent = require('../middleware/authStudent');
@@ -8,7 +9,7 @@ const { scopedStudents } = require('../utils/analyticsScope');
 const { getStudentHelpSeekingProfile, getClassHelpSeekingSummary } = require('../services/helpSeekingService');
 
 // GET /api/help-seeking/profile — student's own help-seeking summary
-router.get('/profile', authStudent, async (req, res) => {
+router.get('/profile', authStudent, studentDashboardCache.cache, async (req, res) => {
   try {
     const profile = await getStudentHelpSeekingProfile({ studentId: req.user?.id, schoolId: req.schoolId });
     return res.json({ success: true, data: profile });
