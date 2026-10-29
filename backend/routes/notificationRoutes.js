@@ -17,6 +17,45 @@ const { initializeWebPush } = require('../utils/webPushService');
 const { EVENTS, publishNotice } = require('../services/communicationService');
 const { logStudentPortalEvent, logStudentPortalError } = require('../utils/studentPortalLogger');
 const { userNotificationsCache } = require('../utils/responseCache');
+const Admin = require('../models/Admin');
+const School = require('../models/School');
+
+const photoUrl = (value) => {
+  if (!value) return '';
+  if (typeof value === 'string') return value;
+  return value.secure_url || value.url || '';
+};
+
+// Attach the poster's photo (senderAvatar) so the bell can show who posted:
+// teacher → their profile photo; admin → their avatar, else the school logo.
+// One batched lookup per model, not one per notification.
+const attachSenderAvatars = async (items) => {
+  const ids = (list) => [...new Set(list.filter(Boolean).map(String))];
+  const teacherIds = ids(items.map((n) => n.createdByTeacherId));
+  const adminIds = ids(items.filter((n) => !n.createdByTeacherId && !n.createdByParentId).map((n) => n.createdBy));
+  const schoolIds = ids(items.map((n) => n.schoolId));
+
+  const [teachers, admins, schools] = await Promise.all([
+    teacherIds.length ? TeacherUser.find({ _id: { $in: teacherIds } }).select('profilePic name').lean() : [],
+    adminIds.length ? Admin.find({ _id: { $in: adminIds } }).select('avatar name').lean() : [],
+    schoolIds.length ? School.find({ _id: { $in: schoolIds } }).select('logo name').lean() : [],
+  ]);
+  const byId = (list) => new Map(list.map((doc) => [String(doc._id), doc]));
+  const teacherMap = byId(teachers);
+  const adminMap = byId(admins);
+  const schoolMap = byId(schools);
+
+  return items.map((n) => {
+    let senderAvatar = '';
+    if (n.createdByTeacherId) {
+      senderAvatar = photoUrl(teacherMap.get(String(n.createdByTeacherId))?.profilePic);
+    } else if (!n.createdByParentId) {
+      senderAvatar = photoUrl(adminMap.get(String(n.createdBy))?.avatar)
+        || photoUrl(schoolMap.get(String(n.schoolId))?.logo);
+    }
+    return senderAvatar ? { ...n, senderAvatar } : n;
+  });
+};
 
 const router = express.Router();
 router.use(userNotificationsCache.invalidateOnWrite);
@@ -812,7 +851,7 @@ router.get('/user', authAnyUser, userNotificationsCache.cache, async (req, res) 
     }
 
     // Add isRead flag for each notification
-    const itemsWithReadStatus = items.map(item => ({
+    const itemsWithReadStatus = (await attachSenderAvatars(items)).map(item => ({
       ...item,
       isRead: hasUserEntry(item.readBy, userId)
     }));

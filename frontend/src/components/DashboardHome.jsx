@@ -1,16 +1,12 @@
-import React, { useMemo, useState, useEffect, useCallback } from 'react';
+import React, { useMemo, useState, useEffect, useCallback, useRef } from 'react';
 import { Link } from 'react-router-dom';
 import { LineChart, Line, XAxis, YAxis, Tooltip as ReTooltip, Legend, ResponsiveContainer, CartesianGrid } from 'recharts';
 import { motion as Motion, AnimatePresence } from 'framer-motion';
 import {
   BookOpen, ClipboardList, CalendarDays, Compass, CalendarCheck, FileText,
-  Bell, MessageSquare, ChevronLeft, ChevronRight, Pause, Play, Clock,
+  Bell, MessageSquare, ChevronLeft, ChevronRight, Pause, Play, Clock, MapPin,
 } from 'lucide-react';
-import CourseProgress from './CourseProgress';
-import AchievementCard from './AchievementCard';
-import CalendarWidget from './CalendarWidget';
 import QuickStats from './QuickStats';
-import RecommendationWidget from './RecommendationWidget';
 import EmptyState from './EmptyState';
 import { Skeleton } from './ui/skeleton';
 import { fetchCachedJson, peekCachedJson } from '../utils/studentApiCache';
@@ -125,15 +121,14 @@ const HeroCard = () => {
     : (nameParts[0]?.[0] || 'S')).toUpperCase();
 
   const tags = [
-    displayClass ? `Class ${displayClass}` : null,
-    displaySection || null,
+    displayClass ? `Class ${displayClass}${displaySection ? ` - ${displaySection}` : ''}` : (displaySection || null),
     displayRoll ? `Roll ${displayRoll}` : null,
     displayCampus || null,
     classTeacher?.name ? `Class Teacher: ${classTeacher.name}` : null,
   ].filter(Boolean);
 
   if (loading) {
-    return <Skeleton className="h-[280px] w-full rounded-[28px]" />;
+    return <Skeleton className="h-[280px] w-full rounded-2xl" />;
   }
 
   // With a cover photo the card goes dark so the details blend into the photo.
@@ -144,7 +139,7 @@ const HeroCard = () => {
       initial={{ opacity: 0, y: 16 }}
       animate={{ opacity: 1, y: 0 }}
       transition={{ duration: 0.4, ease: [0.16, 1, 0.3, 1] }}
-      className={`relative w-full overflow-hidden rounded-[28px] ${hasCover ? 'bg-black' : 'bg-white'} shadow-[0px_4px_20px_rgba(0,0,0,0.03),0px_1px_3px_rgba(0,0,0,0.05)]`}
+      className={`relative flex h-full w-full flex-col overflow-hidden rounded-2xl ${hasCover ? 'bg-black' : 'bg-white'} shadow-[0px_4px_20px_rgba(0,0,0,0.03),0px_1px_3px_rgba(0,0,0,0.05)]`}
     >
       {hasCover && (
         // Photo fully clear on the right, fading on its left edge into the
@@ -161,9 +156,25 @@ const HeroCard = () => {
           <div className="absolute inset-0 bg-linear-to-r from-black from-0% via-black/40 via-35% to-transparent to-70%" />
         </div>
       )}
-      <div className="relative z-10 grid grid-cols-1 sm:grid-cols-2">
-        {/* Left: profile info */}
-        <div className="flex flex-col gap-3 p-6">
+      {hasCover && (
+        // Mobile: the cover photo fills the whole card; only the content block
+        // below gets a dark backing.
+        <div
+          aria-hidden="true"
+          className="pointer-events-none absolute inset-0 bg-cover bg-center sm:hidden"
+          style={{ backgroundImage: `url(${profile.schoolCoverImage})` }}
+        >
+          {/* Black shade rising from the bottom edge, fading out toward the top */}
+          <div className="absolute inset-0 bg-linear-to-t from-black/85 via-black/40 to-transparent" />
+        </div>
+      )}
+      <div className="relative z-10 grid flex-1 grid-cols-1 sm:grid-cols-2">
+        {/* Left: profile info — centred on mobile, left-aligned from sm up */}
+        <div
+          className={`flex flex-col items-center gap-3 p-6 text-center sm:items-start sm:text-left ${
+            hasCover ? 'max-sm:m-3 max-sm:rounded-2xl max-sm:bg-black/60 max-sm:p-5 max-sm:backdrop-blur-[2px]' : ''
+          }`}
+        >
           <div className="relative w-fit">
             {hasProfileImage ? (
               <img
@@ -180,7 +191,6 @@ const HeroCard = () => {
             <span className="absolute bottom-1 right-1 h-3.5 w-3.5 rounded-full border-2 border-white bg-emerald-400" />
           </div>
 
-
           <div>
             <h1 className={`text-2xl font-bold leading-tight tracking-tight ${hasCover ? 'text-white' : 'text-[#0f172a]'}`}>
               {studentData.name || 'Student'}
@@ -188,14 +198,19 @@ const HeroCard = () => {
             {studentData.username && (
               <p className={`mt-0.5 text-xs ${hasCover ? 'text-white/70' : 'text-[#9ca3af]'}`}>ID: {studentData.username}</p>
             )}
+            {studentData.academicYear && (
+              <p className={`mt-0.5 text-xs font-medium ${hasCover ? 'text-white/80' : 'text-[#64748b]'}`}>
+                Academic Year {studentData.academicYear}
+              </p>
+            )}
           </div>
 
-
           {tags.length > 0 && (
-            <div className="flex flex-wrap items-center gap-x-3 gap-y-1.5 pt-1">
-              {tags.map((tag) => (
+            <div className="flex flex-wrap items-center justify-center gap-x-3 gap-y-1.5 pt-1 sm:justify-start">
+              {tags.map((tag, index) => (
                 <span key={tag} className={`inline-flex items-center gap-1.5 text-xs font-medium ${hasCover ? 'text-white/90' : 'text-[#4338ca]'}`}>
-                  <span className={`h-1.5 w-1.5 shrink-0 rounded-full ${hasCover ? 'bg-white/80' : 'bg-[#6366f1]'}`} />
+                  {/* No dot before the first tag (the class) */}
+                  {index > 0 && <span className={`h-1.5 w-1.5 shrink-0 rounded-full ${hasCover ? 'bg-white/80' : 'bg-[#6366f1]'}`} />}
                   {tag}
                 </span>
               ))}
@@ -211,12 +226,18 @@ const HeroCard = () => {
           </div>
         )}
       </div>
+      {/* Daily Boost sits inside the card; over the photo a soft bottom shade keeps the white text readable. */}
+      <div className={`relative z-10 px-6 pb-4 pt-2 ${hasCover ? 'bg-linear-to-t from-black/70 to-transparent' : ''}`}>
+        <DailyBoost dark={hasCover} />
+      </div>
     </Motion.div>
   );
 };
 
 // ── Daily boost quote carousel ──────────────────────────────────────────
-const DailyBoost = () => {
+/** Rotating quote strip. Rendered inside the hero card (no own background);
+ *  `dark` switches to light text for the black cover-photo card. */
+const DailyBoost = ({ dark = false }) => {
   const [current, setCurrent] = useState(0);
   const [playing, setPlaying] = useState(true);
   const [direction, setDirection] = useState(1);
@@ -239,13 +260,24 @@ const DailyBoost = () => {
   };
 
   return (
-    <div className="flex flex-wrap items-center gap-4 rounded-2xl bg-white p-4 shadow-sm">
-      <div className="flex shrink-0 items-center gap-2.5">
-        <span className="flex h-8 w-8 items-center justify-center rounded-lg bg-[#eef2ff] text-[#4f46e5]">⚡</span>
-        <span className="text-xs font-bold uppercase tracking-wide text-[#6b7280]">Daily Boost</span>
+    <div className="flex flex-col items-center gap-2 sm:flex-row sm:flex-wrap sm:gap-3">
+      <div className="hidden shrink-0 items-center gap-2.5 sm:flex">
+        <span className={`hidden h-7 w-7 items-center justify-center rounded-lg sm:flex ${dark ? 'bg-white/15' : 'bg-[#eef2ff] text-[#4f46e5]'}`}>⚡</span>
+        {/* <span className={`text-xs font-bold uppercase tracking-wide ${dark ? 'text-white/70' : 'text-[#6b7280]'}`}>Daily Boost</span> */}
       </div>
 
-      <div className="relative min-h-[24px] min-w-0 flex-1 overflow-hidden">
+      {/* Every quote is laid out invisibly in the same grid cell, so the box is
+          always as tall as the longest quote and never jumps between slides. */}
+      <div className="relative grid w-full min-w-0 overflow-hidden sm:w-auto sm:flex-1">
+        {QUOTES.map((quote) => (
+          <p
+            key={quote.text}
+            aria-hidden="true"
+            className="invisible col-start-1 row-start-1 text-center text-sm leading-snug sm:text-left"
+          >
+            {quote.text}
+          </p>
+        ))}
         <AnimatePresence custom={direction} mode="wait">
           <Motion.p
             key={current}
@@ -255,33 +287,23 @@ const DailyBoost = () => {
             animate="center"
             exit="exit"
             transition={{ duration: 0.22, ease: 'easeInOut' }}
-            className="flex items-center gap-2 truncate text-sm text-[#374151]"
+            className={`col-start-1 row-start-1 self-center text-center text-sm leading-snug sm:text-left ${dark ? 'text-white' : 'text-[#374151]'}`}
           >
-            <BookOpen size={16} className="shrink-0 text-[#4f46e5]" />
             {QUOTES[current].text}
           </Motion.p>
         </AnimatePresence>
       </div>
 
-      <div className="flex shrink-0 items-center gap-1.5">
-        <button type="button" onClick={() => go(-1)} aria-label="Previous" className="flex h-8 w-8 items-center justify-center rounded-full border border-gray-200 text-gray-500 hover:bg-gray-50">
+      <div className="flex shrink-0 items-center justify-center gap-1.5">
+        <button type="button" onClick={() => go(-1)} aria-label="Previous" className={`flex h-7 w-7 items-center justify-center rounded-full border ${dark ? 'border-white/30 text-white hover:bg-white/10' : 'border-gray-200 text-gray-500 hover:bg-gray-50'}`}>
           <ChevronLeft size={15} />
         </button>
-        <button type="button" onClick={() => setPlaying((p) => !p)} aria-label={playing ? 'Pause' : 'Play'} className="flex h-8 w-8 items-center justify-center rounded-full border border-gray-200 text-gray-500 hover:bg-gray-50">
+        <button type="button" onClick={() => setPlaying((p) => !p)} aria-label={playing ? 'Pause' : 'Play'} className={`flex h-7 w-7 items-center justify-center rounded-full border ${dark ? 'border-white/30 text-white hover:bg-white/10' : 'border-gray-200 text-gray-500 hover:bg-gray-50'}`}>
           {playing ? <Pause size={14} /> : <Play size={14} />}
         </button>
-        <button type="button" onClick={() => go(1)} aria-label="Next" className="flex h-8 w-8 items-center justify-center rounded-full border border-gray-200 text-gray-500 hover:bg-gray-50">
+        <button type="button" onClick={() => go(1)} aria-label="Next" className={`flex h-7 w-7 items-center justify-center rounded-full border ${dark ? 'border-white/30 text-white hover:bg-white/10' : 'border-gray-200 text-gray-500 hover:bg-gray-50'}`}>
           <ChevronRight size={15} />
         </button>
-        <div className="ml-1 hidden items-center gap-1 sm:flex">
-          {QUOTES.map((_, i) => (
-            <span
-              key={i}
-              className="h-1.5 rounded-full transition-all"
-              style={{ width: i === current ? 16 : 6, backgroundColor: i === current ? '#4f46e5' : '#e5e7eb' }}
-            />
-          ))}
-        </div>
       </div>
     </div>
   );
@@ -294,6 +316,34 @@ const normalizeValue = (value) => String(value ?? '').trim().toLowerCase();
 
 const isBreakSession = (session) =>
   normalizeValue(session?.subject || session?.course || session?.title) === 'break';
+
+const SCHEDULE_PREVIEW_COUNT = 3;
+
+// "HH:MM" / "H:MM AM" → minutes since midnight (null if unparseable).
+const toMinutes = (value) => {
+  const match = String(value || '').trim().match(/^(\d{1,2}):(\d{2})\s*(am|pm)?$/i);
+  if (!match) return null;
+  let hours = Number(match[1]);
+  const meridiem = match[3]?.toLowerCase();
+  if (meridiem === 'pm' && hours < 12) hours += 12;
+  if (meridiem === 'am' && hours === 12) hours = 0;
+  return hours * 60 + Number(match[2]);
+};
+
+// minutes since midnight → "10:00 am"
+const formatClock = (minutes) => {
+  if (minutes === null) return '';
+  const h24 = Math.floor(minutes / 60) % 24;
+  const mm = String(minutes % 60).padStart(2, '0');
+  const h12 = h24 % 12 || 12;
+  return `${h12}:${mm} ${h24 < 12 ? 'am' : 'pm'}`;
+};
+
+const sessionStartMinutes = (session) =>
+  toMinutes(session.startTime || (session.time ? session.time.split('-')[0] : ''));
+
+const sessionEndMinutes = (session) =>
+  toMinutes(session.endTime || (session.time ? session.time.split('-')[1] : ''));
 
 const TodaySchedule = ({ setActiveView }) => {
   const { profile } = useStudentDashboard();
@@ -322,17 +372,48 @@ const TodaySchedule = ({ setActiveView }) => {
 
     return filtered
       .slice()
-      .sort((a, b) => (Number(a.period) || 999) - (Number(b.period) || 999))
-      .slice(0, 6);
+      .sort((a, b) => (Number(a.period) || 999) - (Number(b.period) || 999));
   }, [rawSchedule, profile]);
 
+  // Show the first few periods; "More" reveals the rest inside a scrollable list.
+  const [expanded, setExpanded] = useState(false);
+  const listRef = useRef(null);
+  const hiddenCount = Math.max(0, todaySessions.length - SCHEDULE_PREVIEW_COUNT);
+  const visibleSessions = expanded ? todaySessions : todaySessions.slice(0, SCHEDULE_PREVIEW_COUNT);
+  // Height of the collapsed list. When expanded the list is capped to it and
+  // scrolls, so the card (and the cards beside it in the row) never grow.
+  const [collapsedHeight, setCollapsedHeight] = useState(null);
+
+  // Current time in minutes, refreshed every minute so periods flip to
+  // "Completed" while the dashboard stays open.
+  const [nowMinutes, setNowMinutes] = useState(() => {
+    const d = new Date();
+    return d.getHours() * 60 + d.getMinutes();
+  });
+  useEffect(() => {
+    const id = setInterval(() => {
+      const d = new Date();
+      setNowMinutes(d.getHours() * 60 + d.getMinutes());
+    }, 60 * 1000);
+    return () => clearInterval(id);
+  }, []);
+
+  const toggleExpanded = () => {
+    if (!expanded && listRef.current) setCollapsedHeight(listRef.current.offsetHeight);
+    setExpanded((v) => !v);
+  };
+
+  useEffect(() => {
+    if (!expanded || !listRef.current) return;
+    const nextItem = listRef.current.children[SCHEDULE_PREVIEW_COUNT];
+    if (nextItem) listRef.current.scrollTo({ top: nextItem.offsetTop, behavior: 'smooth' });
+  }, [expanded]);
+
   return (
-    <div className="rounded-[28px] bg-white p-5 shadow-[0px_4px_20px_rgba(0,0,0,0.03),0px_1px_3px_rgba(0,0,0,0.05)]">
-      <div className="mb-4 flex items-center gap-2.5">
-        <span className="flex h-9 w-9 items-center justify-center rounded-xl bg-[#eef2ff] text-[#4f46e5]">
-          <CalendarDays size={18} />
-        </span>
-        <h2 className="text-base font-bold text-[#0f172a]">Today&apos;s Schedule</h2>
+    <div className="flex h-full flex-col rounded-2xl bg-white p-4 shadow-sm">
+      <div className="-mx-4 -mt-4 mb-3 flex items-center gap-2 rounded-t-2xl border-b border-gray-100 bg-gray-100 px-4 py-3">
+        <CalendarDays size={16} className="text-[#4f46e5]" aria-hidden="true" />
+        <h2 className="text-sm font-bold text-[#0f172a]">Today&apos;s Schedule</h2>
       </div>
 
       {error && <CardError label="Today's Schedule" onRetry={reload} />}
@@ -348,11 +429,28 @@ const TodaySchedule = ({ setActiveView }) => {
       )}
 
       {!error && !loading && todaySessions.length > 0 && (
-        <ol className="relative space-y-4 border-l-2 border-dashed border-gray-100 pl-5">
-          {todaySessions.map((session, i) => {
+        <ol
+          ref={listRef}
+          className={`relative space-y-4 border-l-2 border-dashed border-gray-300 pl-5 ${expanded ? 'overflow-y-auto pr-1' : ''}`}
+          style={expanded && collapsedHeight ? { maxHeight: collapsedHeight } : undefined}
+        >
+          {visibleSessions.map((session, i) => {
             const subject = session.subject?.name || session.subject || session.course || session.title || 'Class';
-            const timeLabel = session.startTime || (session.time ? session.time.split('-')[0].trim() : '');
+            const startLabel = formatClock(sessionStartMinutes(session));
+            const endLabel = formatClock(sessionEndMinutes(session));
+            const timeLabel = startLabel && endLabel
+              ? `${startLabel} - ${endLabel}`
+              : (startLabel || endLabel || session.time || '');
+            const teacherName = isBreakSession(session) ? '' : String(session.instructor || session.teacher?.name || session.teacherName || '').trim();
+            const showTeacher = teacherName && !['-', 'tba'].includes(teacherName.toLowerCase());
             const isBreak = isBreakSession(session);
+            const endMinutes = sessionEndMinutes(session);
+            const isCompleted = endMinutes !== null && nowMinutes >= endMinutes;
+            const location = isBreak ? '' : [
+              session.building,
+              session.floor,
+              session.room ? `Room ${session.room}` : '',
+            ].filter(Boolean).join(' · ');
             return (
               <li key={`${subject}-${i}`} className="relative">
                 <span className={`absolute -left-[26px] top-1 h-2.5 w-2.5 rounded-full ring-4 ring-white ${isBreak ? 'bg-gray-300' : 'bg-[#6366f1]'}`} />
@@ -361,10 +459,25 @@ const TodaySchedule = ({ setActiveView }) => {
                     <p className="flex items-center gap-1.5 text-xs font-medium text-gray-400">
                       <Clock size={11} /> {timeLabel || '—'}
                     </p>
-                    <p className="truncate text-sm font-semibold text-[#0f172a]">{subject}</p>
+                    <p className="flex min-w-0 items-center gap-1.5">
+                      <span className="truncate text-sm font-semibold text-[#0f172a]">{subject}</span>
+                      {showTeacher && (
+                        <>
+                          <span className="h-3 w-px shrink-0 bg-gray-300" aria-hidden="true" />
+                          <span className="truncate text-[11px] font-medium text-gray-500">{teacherName}</span>
+                        </>
+                      )}
+                    </p>
+                    {location && (
+                      <p className="flex items-center gap-1 truncate text-[11px] text-gray-500">
+                        <MapPin size={11} className="shrink-0" /> {location}
+                      </p>
+                    )}
                   </div>
-                  <span className={`shrink-0 rounded-full px-2.5 py-1 text-[11px] font-bold ${isBreak ? 'bg-gray-100 text-gray-500' : 'bg-[#eef2ff] text-[#4f46e5]'}`}>
-                    {isBreak ? 'Break' : `Period ${session.period || i + 1}`}
+                  <span className={`shrink-0 rounded-full px-2.5 py-1 text-[11px] font-bold ${
+                    isCompleted ? 'bg-emerald-500 text-white' : isBreak ? 'bg-gray-500 text-gray-100' : 'bg-[#4f46e5] text-white'
+                  }`}>
+                    {isCompleted ? 'Completed' : isBreak ? 'Break' : `Period ${session.period || i + 1}`}
                   </span>
                 </div>
               </li>
@@ -373,37 +486,77 @@ const TodaySchedule = ({ setActiveView }) => {
         </ol>
       )}
 
-      <button
-        type="button"
-        onClick={() => setActiveView?.('routine')}
-        className="mt-4 flex w-full items-center justify-end gap-1 text-xs font-bold text-[#4f46e5] hover:underline"
-      >
-        View Full Timetable <ChevronRight size={14} />
-      </button>
+      <div className="mt-auto flex items-center justify-between gap-2 pt-4">
+        {hiddenCount > 0 ? (
+          <button
+            type="button"
+            onClick={toggleExpanded}
+            aria-expanded={expanded}
+            className="rounded-full bg-[#eef2ff] px-3 py-1 text-xs font-bold text-[#4f46e5] hover:bg-[#e0e7ff]"
+          >
+            {expanded ? 'Show less' : `+${hiddenCount} more`}
+          </button>
+        ) : <span />}
+        <button
+          type="button"
+          onClick={() => setActiveView?.('routine')}
+          className="flex items-center gap-1 text-xs font-bold text-[#4f46e5] hover:underline"
+        >
+          Full Timetable <ChevronRight size={14} />
+        </button>
+      </div>
     </div>
   );
 };
 
 // ── Quick links ───────────────────────────────────────────────────────────
+// ── Smart Learning reminders (missed / unfinished work) ─────────────────
+const SmartLearningReminders = ({ reminders }) => (
+  <section className="flex h-full flex-col rounded-2xl bg-white p-4 shadow-sm" aria-label="Smart Learning reminders">
+    <div className="-mx-4 -mt-4 flex items-center justify-between gap-2 rounded-t-2xl border-b border-gray-100 bg-gray-100 px-4 py-3">
+      <p className="text-sm font-bold text-[#0f172a]">Smart Learning reminders</p>
+      <Link to="/student/smart-learning-courses" className="text-xs font-bold text-indigo-600 hover:text-indigo-700">Open</Link>
+    </div>
+    {reminders.length === 0 ? (
+      <p className="mt-3 text-xs text-[#8e9aaf]">All caught up — nothing missed. 🎉</p>
+    ) : (
+      <ul className="mt-2 divide-y divide-gray-100">
+        {reminders.slice(0, 4).map((reminder) => (
+          <li key={reminder.id}>
+            <Link to={reminder.path} className="flex items-center justify-between gap-3 py-2.5 hover:opacity-80">
+              <div className="min-w-0">
+                <p className="truncate text-[11px] font-semibold uppercase tracking-wide text-[#8e9aaf]">{reminder.subject || 'General'}</p>
+                <p className="truncate text-sm font-semibold text-[#0f172a]">{reminder.topic || reminder.title}</p>
+              </div>
+              <div className="flex shrink-0 items-center gap-1.5">
+                <span className="rounded-full bg-indigo-600 px-2 py-0.5 text-[10px] font-bold text-white">{reminder.kind}</span>
+                <ChevronRight size={16} className="text-[#8e9aaf]" aria-hidden="true" />
+              </div>
+            </Link>
+          </li>
+        ))}
+      </ul>
+    )}
+  </section>
+);
+
 const QuickLinks = ({ setActiveView }) => {
   const { unreadChatCount } = useStudentDashboard();
 
   const links = [
-    { key: 'attendance', label: 'Attendance', icon: CalendarCheck, color: 'bg-emerald-50 text-emerald-600' },
-    { key: 'exams', label: 'Exams', icon: FileText, color: 'bg-indigo-50 text-indigo-600' },
-    { key: 'lesson-plan-status', label: 'Syllabus', icon: BookOpen, color: 'bg-sky-50 text-sky-600' },
-    { key: 'holidays', label: 'Holidays', icon: CalendarDays, color: 'bg-amber-50 text-amber-600' },
-    { key: 'noticeboard', label: 'Notice Board', icon: Bell, color: 'bg-rose-50 text-rose-600' },
-    { key: 'chat', label: 'Messages', icon: MessageSquare, color: 'bg-blue-50 text-blue-600', badge: unreadChatCount },
+    { key: 'attendance', label: 'Attendance', icon: CalendarCheck, color: 'bg-emerald-600' },
+    { key: 'exams', label: 'Exams', icon: FileText, color: 'bg-blue-600' },
+    { key: 'lesson-plan-status', label: 'Syllabus', icon: BookOpen, color: 'bg-sky-500' },
+    { key: 'holidays', label: 'Holidays', icon: CalendarDays, color: 'bg-amber-500' },
+    { key: 'noticeboard', label: 'Notice Board', icon: Bell, color: 'bg-red-600' },
+    { key: 'chat', label: 'Messages', icon: MessageSquare, color: 'bg-indigo-600', badge: unreadChatCount },
   ];
 
   return (
-    <div className="rounded-[28px] bg-white p-5 shadow-[0px_4px_20px_rgba(0,0,0,0.03),0px_1px_3px_rgba(0,0,0,0.05)]">
-      <div className="mb-4 flex items-center gap-2.5">
-        <span className="flex h-9 w-9 items-center justify-center rounded-xl bg-[#eef2ff] text-[#4f46e5]">
-          <Compass size={18} />
-        </span>
-        <h2 className="text-base font-bold text-[#0f172a]">Quick Links</h2>
+    <div className="flex h-full flex-col rounded-2xl bg-white p-4 shadow-sm">
+      <div className="-mx-4 -mt-4 mb-3 flex items-center gap-2 rounded-t-2xl border-b border-gray-100 bg-gray-100 px-4 py-3">
+        <Compass size={16} className="text-[#4f46e5]" aria-hidden="true" />
+        <h2 className="text-sm font-bold text-[#0f172a]">Quick Links</h2>
       </div>
       <div className="grid grid-cols-3 gap-3">
         {links.map(({ key, label, icon: Icon, color, badge }) => (
@@ -418,8 +571,8 @@ const QuickLinks = ({ setActiveView }) => {
                 {badge > 9 ? '9+' : badge}
               </span>
             )}
-            <span className={`flex h-9 w-9 items-center justify-center rounded-xl ${color}`}>
-              <Icon size={17} />
+            <span className={`flex h-12 w-12 items-center justify-center rounded-xl text-white shadow-md ${color}`}>
+              <Icon size={24} />
             </span>
             <span className="text-[11px] font-semibold leading-tight text-[#374151]">{label}</span>
           </button>
@@ -471,83 +624,6 @@ const ProgressTrendChart = () => {
             dot={{ r: 4, fill: '#b45309', strokeWidth: 0 }}
             activeDot={{ r: 6 }}
           />
-        </LineChart>
-      </ResponsiveContainer>
-    </div>
-  );
-};
-
-// Same exponential-decay formula the backend uses for /api/spaced-repetition/retention
-// (see estimateRetention in spacedRepetitionRoutes.js) — swept over a day range to draw
-// an actual curve instead of the single-point snapshot the API returns.
-const FORGETTING_CURVE_COLORS = ['#dc2626', '#d97706', '#059669'];
-const forgettingCurvePoints = (intervalDays, maxDays) => Array.from({ length: maxDays + 1 }, (_, day) => ({
-  day, retention: Math.round(100 * Math.pow(0.9, day / (intervalDays || 1))),
-}));
-
-const ForgettingCurveChart = () => {
-  const { data: topics, loading, error, reload } = useCardData(
-    `${API_BASE}/api/spaced-repetition/retention`,
-    // Endpoint returns { success, data: [...] }; tolerate a bare array too.
-    (r) => (Array.isArray(r?.data?.data) ? r.data.data : Array.isArray(r?.data) ? r.data : []).slice()
-  );
-
-  if (error) return <CardError label="Retention Forecast" onRetry={reload} />;
-
-  if (loading) {
-    return (
-      <div className="rounded-2xl border border-violet-100 bg-gradient-to-br from-violet-50 to-purple-50 p-4 shadow-sm">
-        <Skeleton className="h-5 w-32" />
-      </div>
-    );
-  }
-
-  if (!topics || !topics.length) {
-    return (
-      <div className="rounded-2xl border border-violet-100 bg-gradient-to-br from-violet-50 to-purple-50 p-4 shadow-sm flex items-center justify-between gap-3">
-        <div>
-          <p className="text-sm font-bold text-[#0f172a]">Retention Forecast</p>
-          <p className="mt-0.5 text-xs text-[#64748b]">Available in a week</p>
-        </div>
-        <ChevronRight size={16} className="shrink-0 text-[#a78bfa]" />
-      </div>
-    );
-  }
-
-  const tracked = [...topics]
-    .sort((a, b) => (a.estimatedRetention ?? 100) - (b.estimatedRetention ?? 100))
-    .slice(0, 3);
-  const maxDays = Math.max(21, ...tracked.map((t) => Math.ceil(t.daysSinceReview || 0) + 3));
-
-  const chartData = Array.from({ length: maxDays + 1 }, (_, day) => {
-    const point = { day };
-    tracked.forEach((t) => {
-      point[t.topicTitle || t.subject] = forgettingCurvePoints(t.intervalDays, maxDays)[day].retention;
-    });
-    return point;
-  });
-
-  return (
-    <div className="rounded-2xl border border-violet-100 bg-gradient-to-br from-violet-50 to-purple-50 p-4 shadow-sm">
-      <p className="mb-1 text-sm font-bold text-[#0f172a]">Retention Forecast</p>
-      <p className="mb-3 text-xs text-[#64748b]">Estimated memory decay since your last review of each topic</p>
-      <ResponsiveContainer width="100%" height={180}>
-        <LineChart data={chartData} margin={{ top: 4, right: 8, left: -20, bottom: 0 }}>
-          <CartesianGrid strokeDasharray="3 3" stroke="#e9d5ff" />
-          <XAxis dataKey="day" tick={{ fontSize: 10, fill: '#7c3aed' }} label={{ value: 'Days since review', position: 'insideBottom', offset: -2, fontSize: 10, fill: '#7c3aed' }} />
-          <YAxis tick={{ fontSize: 10, fill: '#7c3aed' }} domain={[0, 100]} />
-          <ReTooltip contentStyle={{ borderRadius: 8, fontSize: 12, border: '1px solid #e9d5ff' }} formatter={(v) => [`${v}%`, 'Retention']} />
-          <Legend wrapperStyle={{ fontSize: 11 }} />
-          {tracked.map((t, i) => (
-            <Line
-              key={t.topicTitle || t.subject || i}
-              type="monotone"
-              dataKey={t.topicTitle || t.subject}
-              stroke={FORGETTING_CURVE_COLORS[i % FORGETTING_CURVE_COLORS.length]}
-              strokeWidth={2.5}
-              dot={false}
-            />
-          ))}
         </LineChart>
       </ResponsiveContainer>
     </div>
@@ -637,51 +713,6 @@ const LearningStyleCard = () => {
   );
 };
 
-const BELONGING_BAND_META = {
-  isolated: { label: 'Just getting started', color: 'text-slate-600 bg-slate-100' },
-  low: { label: 'Getting involved', color: 'text-amber-700 bg-amber-100' },
-  moderate: { label: 'Active in the community', color: 'text-sky-700 bg-sky-100' },
-  active: { label: 'Community champion', color: 'text-emerald-700 bg-emerald-100' },
-};
-
-// Social / belonging — participation in the Alcove peer community (posts,
-// comments, likes) as a light-touch nudge toward staying connected with
-// classmates. See backend/services/belongingService.js.
-const BelongingCard = () => {
-  const { data: profile, loading, error, reload } = useCardData(
-    `${API_BASE}/api/belonging/me`,
-    (r) => r?.data || null
-  );
-
-  if (error) return <CardError label="Community" onRetry={reload} />;
-  if (loading || !profile) return null;
-
-  const meta = BELONGING_BAND_META[profile.band] || BELONGING_BAND_META.isolated;
-
-  return (
-    <div className="rounded-2xl border border-fuchsia-100 bg-gradient-to-br from-fuchsia-50 to-pink-50 p-4 shadow-sm">
-      <div className="mb-3 flex items-center justify-between">
-        <p className="text-sm font-bold text-[#0f172a]">Community</p>
-        <span className={`rounded-full px-2 py-0.5 text-[10px] font-bold ${meta.color}`}>{meta.label}</span>
-      </div>
-      <div className="grid grid-cols-3 gap-2 text-center">
-        <div className="rounded-lg bg-white/70 px-2 py-2">
-          <p className="text-lg font-bold text-[#0f172a]">{profile.postsAuthored}</p>
-          <p className="text-[10px] text-[#8e9aaf]">Posts</p>
-        </div>
-        <div className="rounded-lg bg-white/70 px-2 py-2">
-          <p className="text-lg font-bold text-[#0f172a]">{profile.commentsAuthored}</p>
-          <p className="text-[10px] text-[#8e9aaf]">Comments</p>
-        </div>
-        <div className="rounded-lg bg-white/70 px-2 py-2">
-          <p className="text-lg font-bold text-[#0f172a]">{profile.likesReceived}</p>
-          <p className="text-[10px] text-[#8e9aaf]">Likes received</p>
-        </div>
-      </div>
-    </div>
-  );
-};
-
 // Help-seeking behaviour — how often the student reaches for Homework Help,
 // the quiz misconception explainer, or signals they're stuck, in their own
 // words ("I don't know" etc). See backend/services/helpSeekingService.js.
@@ -715,140 +746,6 @@ const HelpSeekingCard = () => {
       {profile.topSubjects?.length > 0 && (
         <p className="mt-2 text-[11px] text-[#64748b]">Most often in {profile.topSubjects[0].subject}</p>
       )}
-    </div>
-  );
-};
-
-const computeStreak = (recentAttendance) => {
-  if (!Array.isArray(recentAttendance) || recentAttendance.length === 0) return 0;
-  const sorted = [...recentAttendance].sort((a, b) => new Date(b.date) - new Date(a.date));
-  let streak = 0;
-  for (const record of sorted) {
-    if (record.status === 'present') streak++;
-    else break;
-  }
-  return streak;
-};
-
-const STREAK_MILESTONES = [3, 5, 7, 10];
-
-const StreakTracker = () => {
-  const { recentAttendance, stats, loading } = useStudentDashboard();
-  const streak = useMemo(() => computeStreak(recentAttendance), [recentAttendance]);
-  const nextMilestone = STREAK_MILESTONES.find((m) => m > streak) || null;
-  const attPct = stats?.attendancePercentage ?? null;
-
-  if (loading) return null;
-  if (!recentAttendance?.length) return null;
-
-  const dots = recentAttendance
-    .slice()
-    .sort((a, b) => new Date(a.date) - new Date(b.date))
-    .slice(-7);
-
-  const streakLabel = streak === 0
-    ? 'Start your streak today!'
-    : streak === 1
-    ? '1 day streak 🔥'
-    : `${streak} day streak 🔥`;
-
-  return (
-    <div className="rounded-2xl border border-amber-100 bg-gradient-to-br from-amber-50 to-orange-50 p-4 flex flex-col sm:flex-row sm:items-center gap-3 shadow-sm">
-      {/* Streak badge */}
-      <div className="flex items-center gap-3">
-        <div className="flex h-14 w-14 shrink-0 items-center justify-center rounded-2xl bg-gradient-to-br from-amber-100 to-orange-100 border border-amber-200">
-          <span className="text-2xl leading-none select-none">{streak >= 7 ? '🏆' : streak >= 3 ? '🔥' : '✨'}</span>
-        </div>
-        <div>
-          <p className="text-lg font-bold leading-tight text-[#0f172a]">{streakLabel}</p>
-          <p className="text-xs text-[#64748b]">
-            {nextMilestone
-              ? `${nextMilestone - streak} more day${nextMilestone - streak !== 1 ? 's' : ''} to reach ${nextMilestone}-day milestone`
-              : 'Incredible consistency! Keep it up!'}
-          </p>
-        </div>
-      </div>
-
-      {/* Day dots */}
-      <div className="flex items-center gap-1.5 sm:ml-auto">
-        {dots.map((record, i) => {
-          const isPresent = record.status === 'present';
-          const isLeave = record.status === 'leave';
-          return (
-            <div
-              key={`${record.date || ''}-${i}`}
-              title={`${new Date(record.date).toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' })} — ${record.status}`}
-              className={`h-7 w-7 rounded-full border-2 flex items-center justify-center text-xs font-bold transition-all ${
-                isPresent
-                  ? 'bg-emerald-100 border-emerald-200 text-emerald-700'
-                  : isLeave
-                  ? 'bg-blue-200 border-blue-300 text-blue-700'
-                  : 'bg-white border-red-200 text-red-400'
-              }`}
-            >
-              {isPresent ? '✓' : isLeave ? 'L' : '✗'}
-            </div>
-          );
-        })}
-        {attPct !== null && (
-          <span className="ml-1 rounded-full bg-amber-100 border border-amber-200 px-2.5 py-1 text-xs font-bold text-amber-800">
-            {attPct}%
-          </span>
-        )}
-      </div>
-    </div>
-  );
-};
-
-const tierColor = (score) => score >= 80 ? 'bg-emerald-200' : score >= 60 ? 'bg-amber-200' : 'bg-red-200';
-const tierText = (score) => score >= 80 ? 'text-emerald-700' : score >= 60 ? 'text-amber-700' : 'text-red-600';
-
-const MasteryTopicsCard = () => {
-  const { data, loading, error, reload } = useCardData(
-    `${API_BASE}/api/student-dashboard/mastery-topics`,
-    (r) => r?.data?.data || []
-  );
-  if (error) return <CardError label="Topic Mastery" onRetry={reload} />;
-  if (loading || !data || !data.length) return null;
-  return (
-    <div className="rounded-2xl border border-amber-100 bg-white p-4 shadow-sm">
-      <p className="mb-3 text-sm font-bold text-[#0f172a]">Topic Mastery</p>
-      <div className="space-y-2">
-        {data.slice(0, 6).map((t) => (
-          <div key={t.topicId}>
-            <div className="flex justify-between text-xs text-[#64748b] mb-1">
-              <span className="truncate max-w-[65%] font-medium">{t.topicTitle}</span>
-              <div className="flex items-center gap-2">
-                <span className="text-[10px] text-[#8e9aaf]">{t.subject}</span>
-                <span className={`font-bold ${tierText(t.score)}`}>{t.score}%</span>
-              </div>
-            </div>
-            <div className="h-1.5 rounded-full bg-gray-100 overflow-hidden">
-              <div className={`h-full rounded-full ${tierColor(t.score)}`} style={{ width: `${t.score}%` }} />
-            </div>
-          </div>
-        ))}
-      </div>
-    </div>
-  );
-};
-
-const LearningStreakCard = () => {
-  const { data, error, reload } = useCardData(
-    `${API_BASE}/api/student-dashboard/learning-streak`,
-    (r) => r?.data?.data || null
-  );
-  if (error) return <CardError label="Learning streak" onRetry={reload} />;
-  if (!data) return null;
-  return (
-    <div className="rounded-2xl border border-amber-100 bg-gradient-to-br from-amber-50 to-orange-50 px-4 py-3 shadow-sm flex items-center gap-3">
-      <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl bg-gradient-to-br from-amber-100 to-orange-100 border border-amber-200">
-        <span className="text-lg leading-none">{data.streak >= 7 ? '🏆' : data.streak >= 3 ? '⚡' : '📖'}</span>
-      </div>
-      <div>
-        <p className="text-sm font-bold text-[#0f172a]">{data.streak} day learning streak</p>
-        <p className="text-xs text-[#64748b]">{data.totalActiveDays} active days total</p>
-      </div>
     </div>
   );
 };
@@ -913,10 +810,10 @@ const FlashcardStatsCard = () => {
 /** Full-grid placeholder shown on the first load, before the dashboard data
  *  resolves — keeps the page shape stable instead of a staggered pop-in. */
 const DashboardSkeleton = () => (
-  <div className="space-y-4 sm:space-y-6 p-4 sm:p-6" aria-hidden="true">
-    <div className="grid grid-cols-1 gap-4 sm:gap-6 lg:grid-cols-3">
-      <Skeleton className="h-[280px] rounded-[28px] lg:col-span-2" />
-      <Skeleton className="h-[280px] rounded-[28px]" />
+  <div className="space-y-3 p-3" aria-hidden="true">
+    <div className="grid grid-cols-1 gap-3 lg:grid-cols-3">
+      <Skeleton className="h-[280px] rounded-2xl lg:col-span-2" />
+      <Skeleton className="h-[280px] rounded-2xl" />
     </div>
     <Skeleton className="h-16 w-full rounded-2xl" />
     <div className="grid grid-cols-2 gap-4 sm:grid-cols-4">
@@ -974,53 +871,28 @@ const DashboardHome = ({ setActiveView }) => {
 
   if (loading) return <DashboardSkeleton />;
 
+  // 12px (p-3 / gap-3) everywhere — the same inset the floating sidebar and
+  // header use, so every card edge lines up with them.
   return (
-    <div className="relative space-y-4 p-4 sm:space-y-6 sm:p-6">
+    <div className="relative space-y-3 p-3">
       {/* Hero + Today's Schedule */}
-      <div className="grid grid-cols-1 gap-4 sm:gap-6 lg:grid-cols-3">
-        <div className="space-y-4 sm:space-y-6 lg:col-span-2">
+      <div className="grid grid-cols-1 gap-3 lg:grid-cols-3">
+        <div className="lg:col-span-2">
           <HeroCard />
-          <DailyBoost />
         </div>
-        <TodaySchedule setActiveView={setActiveView} />
+        {/* 2×2 stat cards stretch to the hero card's height */}
+        <QuickStats square />
       </div>
-
-      {smartLearningReminders.length > 0 && (
-        <section className="rounded-2xl border border-indigo-100 bg-indigo-50/70 p-4 shadow-sm" aria-label="Smart Learning reminders">
-          <div className="flex flex-wrap items-center justify-between gap-3">
-            <div>
-              <p className="text-sm font-bold text-indigo-950">Smart Learning reminders</p>
-              <p className="mt-1 text-xs text-indigo-700">You have unfinished learning work to pick up.</p>
-            </div>
-            <Link to="/student/smart-learning-courses" className="rounded-lg bg-indigo-600 px-3 py-2 text-xs font-bold text-white hover:bg-indigo-700">Open Smart Learning</Link>
-          </div>
-          <div className="mt-3 flex flex-wrap gap-2">
-            {smartLearningReminders.slice(0, 3).map((reminder) => (
-              <span key={reminder.id} className="rounded-full bg-white px-3 py-1.5 text-xs font-semibold text-indigo-800">{reminder.kind}: {reminder.title}</span>
-            ))}
-          </div>
-        </section>
-      )}
 
       {isNewStudent ? (
         <FirstRunDashboard />
       ) : (
         <>
-          {/* Daily boost + Quick Links */}
-          <div className="grid grid-cols-1 gap-4 sm:gap-6 lg:grid-cols-3">
-            <div className="space-y-4 sm:space-y-6 lg:col-span-2">
-              <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
-                <LearningStreakCard />
-                <ForgettingCurveChart />
-              </div>
-            </div>
+          {/* Smart Learning reminders + streak + Quick Links */}
+          <div className="grid grid-cols-1 gap-3 md:grid-cols-2 lg:grid-cols-3">
+            <SmartLearningReminders reminders={smartLearningReminders} />
+            <TodaySchedule setActiveView={setActiveView} />
             <QuickLinks setActiveView={setActiveView} />
-          </div>
-
-          {/* Streaks — attendance and learning activity, side by side so they
-              read as two related metrics rather than a duplicated card. */}
-          <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
-            <StreakTracker />
           </div>
 
           {/* Progress Trend */}
@@ -1032,34 +904,13 @@ const DashboardHome = ({ setActiveView }) => {
           {/* Learning style — detected content-format preference vs. self-report */}
           <LearningStyleCard />
 
-          {/* Social / belonging — Alcove peer community participation */}
-          <BelongingCard />
-
           {/* Help-seeking behaviour — the student's own pattern */}
           <HelpSeekingCard />
 
-          {/* Quick Stats */}
-          <QuickStats />
-
           {/* Learning-analytics cards — each renders only when it has data */}
-          <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
-            <MasteryTopicsCard />
+          <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3">
             <TimeBySubjectCard />
             <FlashcardStatsCard />
-          </div>
-
-          <div className="grid grid-cols-1 gap-4 sm:gap-6 lg:grid-cols-3">
-            {/* Main Content - Left 2 columns */}
-            <div className="space-y-4 sm:space-y-6 lg:col-span-2">
-              <CourseProgress />
-              <AchievementCard />
-            </div>
-
-            {/* Sidebar - Right 1 column */}
-            <div className="space-y-4 sm:space-y-6">
-              <RecommendationWidget />
-              <CalendarWidget />
-            </div>
           </div>
         </>
       )}

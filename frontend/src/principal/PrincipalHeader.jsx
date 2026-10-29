@@ -5,15 +5,14 @@ import {
   Menu,
   User,
   LogOut,
-  AlertTriangle,
   Clock,
   Calendar,
   ChevronDown,
   X,
-  ChevronRight,
   UserCog,
   ArrowLeftRight,
 } from 'lucide-react';
+import NotificationPopover from '../components/NotificationPopover';
 import { useNavigate } from 'react-router-dom';
 import { AUTH_NOTICE, logoutAndRedirect, switchAccount } from '../utils/authSession';
 import { PRINCIPAL_MENU_ITEMS } from './principalConstants';
@@ -98,7 +97,6 @@ const PrincipalHeader = ({ sidebarOpen, setSidebarOpen, notifications, principal
   const initialsLabel = initials.toUpperCase();
 
   const unreadNotifications = notifications.filter((n) => !n.read);
-  const urgentNotifications = unreadNotifications.filter((n) => n.priority === 'high');
   const totalNotifications = unreadNotifications.length;
 
   // A principal who also teaches can switch back to the teacher portal.
@@ -248,77 +246,24 @@ const PrincipalHeader = ({ sidebarOpen, setSidebarOpen, notifications, principal
             </button>
 
             {showNotifications && (
-              <div className="absolute right-0 z-50 mt-2 w-80 overflow-hidden rounded-lg border border-slate-200 bg-white shadow-xl">
-                <div className="border-b border-slate-100 bg-slate-50 p-4">
-                  <div className="flex items-center justify-between">
-                    <h3 className="font-semibold text-slate-900">Notifications</h3>
-                    <div className="flex items-center gap-2">
-                      {urgentNotifications.length > 0 && (
-                        <span className="rounded-full bg-rose-100 px-2 py-1 text-xs text-rose-700">
-                          {urgentNotifications.length} urgent
-                        </span>
-                      )}
-                    </div>
-                  </div>
-                </div>
-
-                <div className="max-h-96 overflow-y-auto">
-                  {notifications.length > 0 ? (
-                    notifications.slice(0, 5).map((notification) => (
-                      <div
-                        key={notification.id}
-                        className="cursor-pointer border-b border-slate-100 p-4 transition-colors hover:bg-slate-50"
-                        onClick={() => {
-                          setShowNotifications(false);
-                          navigate('/principal/notifications');
-                        }}
-                      >
-                        <div className="flex items-start gap-3">
-                          <div
-                            className={`mt-0.5 flex-shrink-0 rounded-full p-2 ${
-                              notification.priority === 'high'
-                                ? 'bg-rose-100 text-rose-600'
-                                : 'bg-amber-100 text-amber-600'
-                            }`}
-                          >
-                            <AlertTriangle className="h-4 w-4" />
-                          </div>
-                          <div className="min-w-0 flex-1">
-                            <div className="flex items-start justify-between">
-                              <p className="text-sm font-medium text-slate-900">{notification.title}</p>
-                              <span className="ml-2 whitespace-nowrap text-xs text-slate-500">
-                                {notification.timestamp}
-                              </span>
-                            </div>
-                            <p className="mt-1 line-clamp-2 text-sm text-slate-600">{notification.message}</p>
-                          </div>
-                        </div>
-                      </div>
-                    ))
-                  ) : (
-                    <div className="p-6 text-center text-slate-500">
-                      <Bell className="mx-auto mb-2 h-8 w-8 text-slate-300" />
-                      <p className="text-sm">No new notifications</p>
-                      <p className="mt-1 text-xs text-slate-400">You&apos;re all caught up!</p>
-                    </div>
-                  )}
-                </div>
-
-                {notifications.length > 5 && (
-                  <div className="border-t border-slate-100 bg-slate-50 p-3 text-center">
-                    <button
-                      className="flex w-full items-center justify-center gap-1 text-sm font-medium text-slate-700 hover:text-slate-900"
-                      onClick={() => {
-                        setShowNotifications(false);
-                        navigate('/principal/notifications');
-                      }}
-                    >
-                      View All Notifications
-                      <ChevronRight className="h-4 w-4" />
-                    </button>
-                  </div>
-                )}
-              </div>
+              <NotificationPopover
+                notifications={(notifications || []).map((n) => ({
+                  ...n,
+                  createdAt: n.createdAt || n.date,
+                  timeLabel: n.timestamp,
+                  isRead: Boolean(n.isRead ?? n.read),
+                }))}
+                unreadCount={totalNotifications}
+                onOpenNotification={() => {
+                  setShowNotifications(false);
+                  navigate('/principal/notifications');
+                }}
+                footerLabel="View all notifications"
+                onFooterClick={() => {
+                  setShowNotifications(false);
+                  navigate('/principal/notifications');
+                }}
+              />
             )}
           </div>
 

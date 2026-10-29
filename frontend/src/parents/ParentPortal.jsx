@@ -21,7 +21,6 @@ import {
   Menu,
   ChevronRight,
   ChevronDown,
-  CheckCheck,
   Home,
   LogOut,
   BarChart2,
@@ -35,6 +34,7 @@ import {
   FolderOpen,
   Search,
 } from 'lucide-react';
+import NotificationPopover from '../components/NotificationPopover';
 import { useDesktopNotificationBridge } from '../hooks/useDesktopNotificationBridge';
 import DesktopNotificationPermissionModal from '../components/DesktopNotificationPermissionModal';
 import { useChatMessageNotifier } from './useChatMessageNotifier';
@@ -45,6 +45,7 @@ import TenantContext from '../context/TenantContext';
 import { parentApiJson } from './parentApi';
 import NavChildSwitcher from './NavChildSwitcher';
 import { subscribeSocketEvent } from '../hooks/useCommunityWallUnread';
+import { readCachedNotifications, writeCachedNotifications } from '../utils/notificationCache';
 
 const ParentDashboard = lazy(() => import('./ParentDashboard'));
 const ChildGrowthAnalytics = lazy(() => import('./ChildGrowthAnalytics'));
@@ -305,8 +306,10 @@ const ParentPortal = () => {
   const [parentProfile, setParentProfile] = useState(null);
   const [profileOpen, setProfileOpen] = useState(false);
   const [showNotifications, setShowNotifications] = useState(false);
-  const [notifications, setNotifications] = useState([]);
+  // Seed from the client cache so the bell opens instantly; polling refreshes it.
+  const [notifications, setNotifications] = useState(() => readCachedNotifications('parent-bell') || []);
   const [notifLoading, setNotifLoading] = useState(false);
+  const hasNotifsRef = useRef(notifications.length > 0);
   const [notifError, setNotifError] = useState('');
   const [showLogoutConfirm, setShowLogoutConfirm] = useState(false);
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
@@ -511,7 +514,7 @@ const ParentPortal = () => {
       setNotifications([]);
       return;
     }
-    setNotifLoading(true);
+    if (!hasNotifsRef.current) setNotifLoading(true);
     setNotifError('');
     try {
       const res = await apiFetch(`${API_BASE}/api/notifications/user?kind=notification`, {
@@ -525,14 +528,15 @@ const ParentPortal = () => {
       const data = await res.json().catch(() => []);
       if (!res.ok) throw new Error(data?.error || 'Failed to load notifications');
       const all = Array.isArray(data) ? data : [];
-      setNotifications(
-        all
-          .sort((a, b) => new Date(b?.createdAt || 0) - new Date(a?.createdAt || 0))
-          .slice(0, 20)
-      );
+      const latest = all
+        .sort((a, b) => new Date(b?.createdAt || 0) - new Date(a?.createdAt || 0))
+        .slice(0, 20);
+      setNotifications(latest);
+      hasNotifsRef.current = latest.length > 0;
+      writeCachedNotifications(latest, 'parent-bell');
     } catch (err) {
-      setNotifError(err.message || 'Failed to load notifications');
-      setNotifications([]);
+      // Keep the cached list on a transient failure; only surface the error when empty.
+      if (!hasNotifsRef.current) setNotifError(err.message || 'Failed to load notifications');
     } finally {
       setNotifLoading(false);
     }
@@ -1046,50 +1050,22 @@ const ParentPortal = () => {
                   )}
                 </button>
                 {isDesktop && showNotifications && (
-                  <section ref={notificationsRef} aria-label="Notifications panel" className="absolute right-0 top-full z-50 mt-2 w-96 overflow-hidden rounded-2xl border border-violet-100 bg-white shadow-2xl">
-                    <div className="flex items-center justify-between border-b border-gray-100 px-4 py-3">
-                      <div className="flex items-center gap-2">
-                        <Bell size={15} className="text-violet-600" />
-                        <span className="text-sm font-bold text-gray-900">Notifications</span>
-                        {unreadCount > 0 && <span className="rounded-full bg-violet-100 px-1.5 py-0.5 text-[10px] font-bold text-violet-700">{unreadCount}</span>}
-                      </div>
-                      {unreadCount > 0 && (
-                        <button type="button" onClick={markAllRead} className="inline-flex items-center gap-1 text-[11px] font-semibold text-violet-600 hover:text-violet-800">
-                          <CheckCheck size={12} /> Mark all read
-                        </button>
-                      )}
-                    </div>
-                    <div className="max-h-[60dvh] divide-y divide-gray-100 overflow-y-auto overscroll-contain" aria-live="polite">
-                      {notifLoading && <p className="px-4 py-5 text-center text-xs text-gray-500">Loading notifications…</p>}
-                      {!notifLoading && notifError && <p role="alert" className="px-4 py-4 text-xs text-red-600">{notifError}</p>}
-                      {!notifLoading && !notifError && notifications.length === 0 && <p className="px-4 py-5 text-center text-xs text-gray-500">No notifications yet</p>}
-                      {!notifLoading && !notifError && notifications.map((notification) => {
-                        const id = String(notification?._id || notification?.id || '');
-                        const isRead = Boolean(notification?.isRead);
-                        return (
-                          <button
-                            key={id || notification?.title}
-                            type="button"
-                            onClick={async () => {
-                              await markRead(id);
-                              setShowNotifications(false);
-                              navigate(resolveNotifPath(notification));
-                            }}
-                            className={`w-full px-4 py-3 text-left transition hover:bg-violet-50 ${isRead ? 'bg-white' : 'bg-violet-50/60'}`}
-                          >
-                            <span className="flex items-start gap-2">
-                              <span className={`mt-1.5 h-1.5 w-1.5 shrink-0 rounded-full ${isRead ? 'bg-gray-200' : 'bg-violet-500'}`} />
-                              <span className="min-w-0">
-                                <span className="block truncate text-sm font-semibold text-gray-800">{notification?.title || 'Notification'}</span>
-                                {notification?.message && <span className="mt-0.5 block line-clamp-2 text-xs text-gray-500">{formatNotificationMessage(notification.message)}</span>}
-                                <span className="mt-1 block text-[10px] text-gray-400">{timeAgo(notification?.createdAt)}</span>
-                              </span>
-                            </span>
-                          </button>
-                        );
-                      })}
-                    </div>
-                  </section>
+                  <div ref={notificationsRef}>
+                    <NotificationPopover
+                    notifications={notifications.map((n) => ({ ...n, message: n?.message ? formatNotificationMessage(n.message) : n?.message }))}
+                    unreadCount={unreadCount}
+                    loading={notifLoading}
+                    error={notifError}
+                    onMarkAllRead={markAllRead}
+                    onMarkRead={(id) => markRead(id)}
+                    onOpenNotification={async (notification) => {
+                      const id = String(notification?._id || notification?.id || '');
+                      if (id && !notification?.isRead) await markRead(id);
+                      setShowNotifications(false);
+                      navigate(resolveNotifPath(notification));
+                    }}
+                    />
+                  </div>
                 )}
               </div>
 
@@ -1513,51 +1489,22 @@ const ParentPortal = () => {
               transition={{ type: 'spring', stiffness: 380, damping: 34 }}
             >
               <div className="mx-auto mt-2 h-1 w-9 shrink-0 rounded-full bg-slate-200" aria-hidden="true" />
-              <div className="flex items-center justify-between border-b border-slate-100 px-5 py-4">
-                <div className="flex items-center gap-2">
-                  <Bell size={16} className="text-violet-600" />
-                  <span className="text-sm font-bold text-slate-900">Notifications</span>
-                  {unreadCount > 0 && <span className="rounded-full bg-violet-100 px-1.5 py-0.5 text-[10px] font-bold text-violet-700">{unreadCount}</span>}
-                </div>
-                <div className="flex items-center gap-3">
-                  {unreadCount > 0 && (
-                    <button type="button" onClick={markAllRead} className="inline-flex items-center gap-1 text-[11px] font-semibold text-violet-600">
-                      <CheckCheck size={12} /> Mark all read
-                    </button>
-                  )}
-                  <button type="button" aria-label="Close" onClick={() => setShowNotifications(false)} className="rounded-full p-1.5 text-slate-400 hover:bg-slate-100">
-                    <X className="h-4 w-4" />
-                  </button>
-                </div>
-              </div>
-              <div className="min-h-0 flex-1 divide-y divide-slate-100 overflow-y-auto" aria-live="polite">
-                {notifLoading && <p className="px-5 py-6 text-center text-xs text-slate-500">Loading notifications…</p>}
-                {!notifLoading && notifError && <p role="alert" className="px-5 py-5 text-xs text-red-600">{notifError}</p>}
-                {!notifLoading && !notifError && notifications.length === 0 && <p className="px-5 py-8 text-center text-xs text-slate-500">No notifications yet</p>}
-                {!notifLoading && !notifError && notifications.map((notification) => {
+              <NotificationPopover
+                embedded
+                onClose={() => setShowNotifications(false)}
+                notifications={notifications.map((n) => ({ ...n, message: n?.message ? formatNotificationMessage(n.message) : n?.message }))}
+                unreadCount={unreadCount}
+                loading={notifLoading}
+                error={notifError}
+                onMarkAllRead={markAllRead}
+                onMarkRead={(id) => markRead(id)}
+                onOpenNotification={async (notification) => {
                   const id = String(notification?._id || notification?.id || '');
-                  const isRead = Boolean(notification?.isRead);
-                  return (
-                    <button
-                      key={id || notification?.title}
-                      type="button"
-                      onClick={async () => {
-                        await markRead(id);
-                        setShowNotifications(false);
-                        navigate(resolveNotifPath(notification));
-                      }}
-                      className={`flex w-full items-start gap-2 px-5 py-3 text-left ${isRead ? 'bg-white' : 'bg-violet-50/60'}`}
-                    >
-                      <span className={`mt-1.5 h-1.5 w-1.5 shrink-0 rounded-full ${isRead ? 'bg-slate-200' : 'bg-violet-500'}`} />
-                      <span className="min-w-0">
-                        <span className="block truncate text-xs font-semibold text-slate-800">{notification?.title || 'Notification'}</span>
-                        {notification?.message && <span className="mt-0.5 block line-clamp-2 text-[11px] text-slate-500">{formatNotificationMessage(notification.message)}</span>}
-                        <span className="mt-1 block text-[10px] text-slate-400">{timeAgo(notification?.createdAt)}</span>
-                      </span>
-                    </button>
-                  );
-                })}
-              </div>
+                  if (id && !notification?.isRead) await markRead(id);
+                  setShowNotifications(false);
+                  navigate(resolveNotifPath(notification));
+                }}
+              />
             </motion.div>
           </div>
         )}

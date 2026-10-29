@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { AUTH_LOGOUT_EVENT, AUTH_NOTICE, getTokenExpiryMs, logoutAndRedirect } from '../utils/authSession';
+import { renewSession } from '../utils/sessionRenewal';
 
 const POLL_INTERVAL_MS   = 30_000; // check every 30s (was 1s)
 const WARN_BEFORE_MS     = 5 * 60 * 1000; // warn 5 min before expiry
@@ -28,19 +29,33 @@ const AuthSessionManager = () => {
 
       const remaining = expiryMs - Date.now();
       if (remaining <= WARN_BEFORE_MS) {
-        setSecondsLeft(Math.ceil(remaining / 1000));
-        setShowWarning(true);
+        // Try to slide the session silently first; only warn if that fails
+        // (e.g. offline), so an active user never sees the countdown.
+        renewSession().then((renewed) => {
+          if (renewed) {
+            setShowWarning(false);
+            return;
+          }
+          setSecondsLeft(Math.ceil(remaining / 1000));
+          setShowWarning(true);
+        });
       } else {
         setShowWarning(false);
       }
     };
+
+    // Refresh the token whenever the app opens or the tab comes back, so an
+    // idle-but-open session keeps sliding forward (only Logout ends it).
+    renewSession();
 
     // Check immediately on mount and on tab becoming visible
     runExpiryCheck();
     const intervalId = window.setInterval(runExpiryCheck, POLL_INTERVAL_MS);
 
     const onVisibilityChange = () => {
-      if (document.visibilityState === 'visible') runExpiryCheck();
+      if (document.visibilityState === 'visible') {
+        renewSession().finally(runExpiryCheck);
+      }
     };
     document.addEventListener('visibilitychange', onVisibilityChange);
 
@@ -103,7 +118,8 @@ const AuthSessionManager = () => {
   };
 
   const handleStayLoggedIn = async () => {
-    setShowWarning(false);
+    const renewed = await renewSession();
+    if (renewed) setShowWarning(false);
   };
 
   const handleLogoutNow = () => {

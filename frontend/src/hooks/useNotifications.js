@@ -1,12 +1,15 @@
 import { useState, useEffect, useCallback, useRef } from 'react';
 import { subscribeSocketEvent } from './useCommunityWallUnread';
+import { readCachedNotifications, writeCachedNotifications } from '../utils/notificationCache';
 
 const POLLING_INTERVAL = 45000; // 45 seconds
+const CACHE_KIND = 'student-bell';
 
 export const useNotifications = () => {
-  const [notifications, setNotifications] = useState([]);
-  const [unreadCount, setUnreadCount] = useState(0);
-  const [loading, setLoading] = useState(true);
+  // Seed from the client cache so the bell opens instantly; polling refreshes it.
+  const [notifications, setNotifications] = useState(() => readCachedNotifications(CACHE_KIND) || []);
+  const [unreadCount, setUnreadCount] = useState(() => (readCachedNotifications(CACHE_KIND) || []).filter((n) => !n.isRead).length);
+  const [loading, setLoading] = useState(() => !readCachedNotifications(CACHE_KIND));
   const [error, setError] = useState(null);
   const pollingIntervalRef = useRef(null);
 
@@ -47,6 +50,7 @@ export const useNotifications = () => {
 
       setNotifications(notificationsArray);
       setUnreadCount(notificationsArray.filter(n => !n.isRead).length);
+      writeCachedNotifications(notificationsArray, CACHE_KIND);
       setError(null);
     } catch (err) {
       console.error('Failed to fetch notifications:', err);

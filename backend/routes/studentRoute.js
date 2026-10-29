@@ -29,6 +29,9 @@ const StudentEnrollmentDraft = require('../models/StudentEnrollmentDraft');
 const Wellbeing = require('../models/Wellbeing');
 const Principal = require('../models/Principal');
 const Admin = require('../models/Admin');
+const Room = require('../models/Room');
+const Building = require('../models/Building');
+const Floor = require('../models/Floor');
 const bcrypt = require('bcryptjs');
 const jwt = require('jsonwebtoken');
 const adminAuth = require('../middleware/adminAuth');
@@ -2280,6 +2283,15 @@ router.get('/schedule', authStudent, studentDashboardCache.cache, async (req, re
         .populate('sectionId', 'name')
         .populate('entries.subjectId', 'name')
         .populate('entries.teacherId', 'name')
+        .populate({
+          path: 'entries.roomId',
+          model: Room,
+          select: 'roomNumber label buildingId floorId',
+          populate: [
+            { path: 'buildingId', model: Building, select: 'name' },
+            { path: 'floorId', model: Floor, select: 'name' },
+          ],
+        })
         .lean();
       if (Array.isArray(found) && found.length > 0) {
         timetables = found;
@@ -2338,7 +2350,10 @@ router.get('/schedule', authStudent, studentDashboardCache.cache, async (req, re
         time: `${entry.startTime} - ${entry.endTime}`,
         subject: entry.isBreak ? 'Break' : (entry.subjectId?.name || entry.subjectName || entry.subject || 'Subject'),
         instructor: entry.isBreak ? '-' : (entry.teacherId?.name || 'TBA'),
-        room: entry.isBreak ? '' : (entry.room || ''),
+        room: entry.isBreak ? '' : (entry.roomId?.roomNumber || entry.room || ''),
+        roomLabel: entry.isBreak ? '' : (entry.roomId?.label || ''),
+        building: entry.isBreak ? '' : (entry.roomId?.buildingId?.name || ''),
+        floor: entry.isBreak ? '' : (entry.roomId?.floorId?.name || ''),
         period: entry.period,
         className: classDoc.name,
         sectionName: resolvedSectionName,

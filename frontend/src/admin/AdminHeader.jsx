@@ -7,11 +7,10 @@ import {
   ChevronDown,
   Settings,
   LogOut,
-  CheckCheck,
-  AlertCircle,
   Menu,
   Clock,
 } from 'lucide-react';
+import NotificationPopover from '../components/NotificationPopover';
 import { useNavigate } from 'react-router-dom';
 import {
   useDesktopNotificationBridge,
@@ -263,86 +262,23 @@ const AdminHeader = ({ adminUser, onOpenMobileSidebar, onLogoutRequest, notifica
   }, []);
 
   const notificationDropdown = showNotifications && (
-    <div className="absolute right-0 top-full mt-2 w-[calc(100vw-2rem)] max-w-80 rounded-2xl border border-white/60 bg-white/85 backdrop-blur-xl shadow-xl ring-1 ring-black/5 z-50 overflow-hidden animate-in fade-in slide-in-from-top-1 duration-150">
-      <div className="flex items-center justify-between px-4 py-3 border-b border-white/50">
-        <div className="flex items-center gap-2">
-          <Bell size={14} className="text-indigo-500" />
-          <span className="text-sm font-bold text-slate-900">Notifications</span>
-          {unreadCount > 0 && (
-            <span className="bg-indigo-100 text-indigo-700 text-[10px] font-bold px-1.5 py-0.5 rounded-full">{unreadCount}</span>
-          )}
-        </div>
-        {notifications.length > 0 && (
-          <button
-            type="button"
-            onClick={markAllRead}
-            className="inline-flex items-center gap-1 text-xs text-indigo-600 hover:text-indigo-700 font-semibold"
-          >
-            <CheckCheck size={12} />
-            Mark all read
-          </button>
-        )}
-      </div>
-
-      <div className="max-h-72 overflow-y-auto divide-y divide-white/50">
-        {notifLoading && (
-          <div className="px-4 py-6 text-sm text-slate-400 text-center">Loading…</div>
-        )}
-        {!notifLoading && notifError && (
-          <div className="px-4 py-4 text-sm text-red-600 flex items-center gap-2">
-            <AlertCircle size={14} />{notifError}
-          </div>
-        )}
-        {!notifLoading && !notifError && notifications.length === 0 && (
-          <div className="px-4 py-8 text-sm text-slate-400 text-center">
-            <Bell size={24} className="mx-auto text-slate-200 mb-2" />
-            No notifications yet
-          </div>
-        )}
-        {!notifLoading && !notifError && notifications.map((n) => {
-          const id = String(n?._id || n?.id || '');
-          const isRead = Boolean(n?.isRead);
-          return (
-            <button
-              key={id || n?.title}
-              type="button"
-              onClick={async () => {
-                await markRead(id);
-                setShowNotifications(false);
-                navigate(resolveNotifPath(n));
-              }}
-              className={`w-full text-left px-4 py-3 hover:bg-white/60 transition-colors ${isRead ? '' : 'bg-indigo-50/50'}`}
-            >
-              <div className="flex items-start gap-2">
-                {!isRead && <span className="mt-1.5 w-1.5 h-1.5 rounded-full bg-indigo-500 shrink-0" />}
-                <div className={!isRead ? '' : 'ml-3.5'}>
-                  <p className="text-sm font-medium text-slate-800 line-clamp-1">{n?.title || 'Notification'}</p>
-                  {n?.message && <p className="text-xs text-slate-500 mt-0.5 line-clamp-2">{n.message}</p>}
-                  <p className="text-[11px] text-slate-400 mt-1 flex items-center">
-                    {(n?.schoolName || n?.senderName || n?.createdByName) && (
-                      <span className="font-semibold text-slate-500 mr-1.5 truncate max-w-[120px]">
-                        {n.schoolName || n.senderName || n.createdByName} •
-                      </span>
-                    )}
-                    <span>{timeAgo(n?.createdAt)}</span>
-                  </p>
-                </div>
-              </div>
-            </button>
-          );
-        })}
-      </div>
-
-      <div className="border-t border-white/50 px-4 py-2.5">
-        <button
-          type="button"
-          onClick={() => { setShowNotifications(false); navigate('/admin/notices'); }}
-          className="w-full text-sm text-indigo-600 hover:text-indigo-700 font-semibold text-center py-1"
-        >
-          View all notices →
-        </button>
-      </div>
-    </div>
+    <NotificationPopover
+      notifications={notifications}
+      unreadCount={unreadCount}
+      loading={notifLoading}
+      error={notifError}
+      onMarkAllRead={markAllRead}
+      onMarkRead={(id) => markRead(id)}
+      onOpenNotification={async (n) => {
+        const id = String(n?._id || n?.id || '');
+        if (id && !n?.isRead) await markRead(id);
+        setShowNotifications(false);
+        navigate(resolveNotifPath(n));
+      }}
+      formatTime={timeAgo}
+      footerLabel="View all notices"
+      onFooterClick={() => { setShowNotifications(false); navigate('/admin/notices'); }}
+    />
   );
 
   const profileDropdown = showProfileMenu && (

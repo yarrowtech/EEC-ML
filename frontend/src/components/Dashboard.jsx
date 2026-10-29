@@ -170,7 +170,11 @@ JournalAssignmentView.displayName = 'JournalAssignmentView';
 const DashboardContent = () => {
   const location = useLocation();
   const navigate = useNavigate();
-  const [sidebarOpen, setSidebarOpen] = useState(false);
+  // Start open on desktop so the sidebar never renders collapsed and then
+  // springs open after the first effect.
+  const [sidebarOpen, setSidebarOpen] = useState(
+    () => (typeof window !== 'undefined' ? window.innerWidth >= 1024 : false)
+  );
   const [showOnboarding, setShowOnboarding] = useState(false);
   const [isChatBoxOpen, setIsChatBoxOpen] = useState(false);
   const journalRef = useRef(null);
@@ -209,15 +213,8 @@ const DashboardContent = () => {
       if (typeof window === 'undefined') return;
       const isDesktop = window.innerWidth >= 1024;
 
-      // Set initial state by viewport after login/mount.
-      if (!wasDesktopRef.current && !isDesktop) {
-        setSidebarOpen(false);
-      }
-      if (wasDesktopRef.current && isDesktop) {
-        setSidebarOpen(true);
-      }
-
-      // Only force toggle when crossing breakpoint.
+      // Only change it when crossing the breakpoint — any other resize keeps
+      // whatever the user chose (so a manual collapse stays collapsed).
       if (wasDesktopRef.current !== isDesktop) {
         setSidebarOpen(isDesktop);
         wasDesktopRef.current = isDesktop;
@@ -330,8 +327,11 @@ const DashboardContent = () => {
           className={`flex-1 flex flex-col h-screen transition-all duration-300 ${sidebarOpen ? '' : ''
             } ${isFullscreenView ? 'overflow-hidden' : 'overflow-y-auto custom-scrollbar'}`}
         >
+          {/* The sticky element must be the header's wrapper (a direct child of
+              the scroll container) — sticky on <header> alone did nothing
+              because its parent was exactly the header's height. */}
           {!isChatBoxOpen && (
-            <div className={isChatView ? 'hidden lg:block' : ''}>
+            <div className={`sticky top-0 z-40 ${isChatView ? 'hidden lg:block' : ''}`}>
               <Header
                 sidebarOpen={sidebarOpen}
                 setSidebarOpen={setSidebarOpen}

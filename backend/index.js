@@ -160,7 +160,9 @@ if (TRUST_PROXY && TRUST_PROXY.trim().length > 0) {
   else app.set('trust proxy', TRUST_PROXY);
 }
 
-app.use(cors({ origin: corsOrigin }));
+const { slidingSession, renewSessionHandler, RENEWED_TOKEN_HEADER } = require('./utils/sessionRenewal');
+// exposedHeaders lets the browser read the renewed session token (see utils/sessionRenewal.js).
+app.use(cors({ origin: corsOrigin, exposedHeaders: [RENEWED_TOKEN_HEADER] }));
 // gzip every JSON response — several admin list/report endpoints return
 // several hundred KB to 1MB+ of JSON, and this connection's measured
 // bandwidth to the DB/network is poor enough that transferring those
@@ -194,6 +196,11 @@ app.use(portalActionLogger);
 // Super Admin usage dashboard can tell which schools/users are actually active.
 app.use(activityTracker);
 app.use('/api', limiters.general);
+
+// Sliding sessions: users stay signed in until they log out (or are inactive
+// for JWT_SESSION_TTL, default 60d). Active requests get a renewed token header.
+app.use(slidingSession);
+app.get('/api/session/renew', renewSessionHandler);
 
 // Razorpay webhook must receive the raw body before express.json() parses it.
 app.post('/api/payments/webhook', express.raw({ type: 'application/json', limit: '1mb' }), paymentWebhookController);

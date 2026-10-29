@@ -10,13 +10,9 @@ export const STUDENT_DASHBOARD_URLS = [
   '/api/student/auth/class-teacher',
   '/api/student/auth/schedule',
   '/api/exam/results/me',
-  '/api/spaced-repetition/retention',
   '/api/confidence/profile',
   '/api/learning-style/me',
-  '/api/belonging/me',
   '/api/help-seeking/profile',
-  '/api/student-dashboard/mastery-topics',
-  '/api/student-dashboard/learning-streak',
   '/api/student-dashboard/time-by-subject',
   '/api/student-dashboard/flashcard-stats',
 ].map((path) => `${STUDENT_API_BASE}${path}`);

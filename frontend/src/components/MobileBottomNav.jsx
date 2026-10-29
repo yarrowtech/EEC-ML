@@ -3,7 +3,7 @@ import {
   Home, BookOpen, Calendar, CalendarDays, MessageCircle, CircleUserRound,
   X, FileText, NotebookPen, Target, BarChart3, Users,
   Brain, Save, LogOut, GraduationCap, Bell, Heart, Zap,
-  ClipboardCheck, MoreHorizontal,
+  ClipboardCheck,
 } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 import { AUTH_NOTICE, logoutAndRedirect } from '../utils/authSession';
@@ -61,7 +61,7 @@ const navItems = [
   { id: 'learn',     label: 'Learn',    icon: GraduationCap, subMenu: 'learn' },
   { id: 'school',    label: 'School',   icon: BookOpen,      subMenu: 'school' },
   { id: 'chat',      label: 'Messages', icon: MessageCircle, path: '/student/chat' },
-  { id: 'more',      label: 'More',     icon: MoreHorizontal, subMenu: 'more' },
+  { id: 'profile',   label: 'Profile',  icon: CircleUserRound, path: '/student/profile', avatar: true },
 ];
 
 // Every view served by the Learning hub — legacy ids keep deep links alive.
@@ -86,7 +86,9 @@ const MobileBottomNav = ({ activeView, onSaveJournal }) => {
   const [showLogoutConfirm, setShowLogoutConfirm] = useState(false);
   // Shared with Sidebar via StudentDashboardContext — see its comment for why
   // this used to be a second independent poller.
-  const { unreadChatCount, notifications, moduleSeenState, chatSeenCount } = useStudentDashboard();
+  const { unreadChatCount, notifications, moduleSeenState, chatSeenCount, profile } = useStudentDashboard();
+  const profilePhoto = String(profile?.profilePic || profile?.avatar || '').trim();
+  const [photoFailed, setPhotoFailed] = useState(false);
   const getModuleCount = (moduleId) => getStudentModuleNotificationCount(notifications, moduleId, unreadChatCount, moduleSeenState, chatSeenCount);
 
 
@@ -249,17 +251,26 @@ const MobileBottomNav = ({ activeView, onSaveJournal }) => {
                   className="flex-1 flex flex-col items-center justify-center gap-1 active:scale-90 transition-transform min-w-0"
                 >
                   <div
-                    className={`relative flex items-center justify-center p-1.5 sm:p-2 rounded-2xl transition-all duration-200 ${
-                      isActive
-                        ? '-translate-y-0.5 bg-linear-to-b from-amber-100 to-amber-50 shadow-sm shadow-amber-200/60'
-                        : 'translate-y-0'
+                    // Fixed-size slot so every tab's icon (and its label below)
+                    // sits on the same line whether active, an icon or a photo.
+                    className={`relative flex h-10 w-10 shrink-0 items-center justify-center rounded-full transition-colors duration-200 sm:h-11 sm:w-11 ${
+                      isActive ? 'bg-amber-500 shadow-sm shadow-amber-200/60' : ''
                     }`}
                   >
-                    <Icon
-                      size={22}
-                      strokeWidth={isActive ? 2.3 : 1.75}
-                      className={`sm:w-6 sm:h-6 transition-colors ${isActive ? 'text-amber-600' : 'text-gray-400'}`}
-                    />
+                    {item.avatar && profilePhoto && !photoFailed ? (
+                      <img
+                        src={profilePhoto}
+                        alt=""
+                        onError={() => setPhotoFailed(true)}
+                        className={`h-8 w-8 rounded-full object-cover sm:h-9 sm:w-9 ${isActive ? 'ring-2 ring-white' : 'ring-1 ring-gray-200'}`}
+                      />
+                    ) : (
+                      <Icon
+                        size={22}
+                        strokeWidth={isActive ? 2.3 : 1.75}
+                        className={`sm:w-6 sm:h-6 transition-colors ${isActive ? 'text-white' : 'text-gray-400'}`}
+                      />
+                    )}
                     {notificationCount > 0 && (
                       <span className="absolute -top-1 -right-1 min-w-[18px] h-[18px] px-1 rounded-full bg-red-500 text-white text-[10px] font-bold leading-[18px] text-center shadow">
                         {notificationCount > 99 ? '99+' : notificationCount}

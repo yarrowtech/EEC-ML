@@ -80,6 +80,7 @@ import TeacherAchievements from './TeacherAchievements';
 import TeacherAlcove from './TeacherAlcove';
 import TryoutManagement from '../components/TryoutManagement';
 import { useDesktopNotificationBridge } from '../hooks/useDesktopNotificationBridge';
+import { readCachedNotifications as readCachedBell, writeCachedNotifications as writeCachedBell } from '../utils/notificationCache';
 import useCommunityWallUnread, { subscribeSocketEvent } from '../hooks/useCommunityWallUnread';
 import usePortalChatNotifier from '../hooks/usePortalChatNotifier';
 import DesktopNotificationPermissionModal from '../components/DesktopNotificationPermissionModal';
@@ -1733,7 +1734,9 @@ const TeacherPortalShell = () => {
   const [teacherProfile, setTeacherProfile] = useState({ name: '', profilePic: '', department: '' });
   const [profileOpen, setProfileOpen] = useState(false);
   const [showNotifications, setShowNotifications] = useState(false);
-  const [notifications, setNotifications] = useState([]);
+  // Seed from the client cache so the bell opens instantly; polling refreshes it.
+  const [notifications, setNotifications] = useState(() => readCachedBell('teacher-bell') || []);
+  const hasNotifsRef = useRef(notifications.length > 0);
   const [assignmentSubmissionNotifications, setAssignmentSubmissionNotifications] = useState([]);
   const [notifLoading, setNotifLoading] = useState(false);
   const [notifError, setNotifError] = useState('');
@@ -1872,7 +1875,7 @@ const TeacherPortalShell = () => {
       setAssignmentSubmissionNotifications([]);
       return;
     }
-    setNotifLoading(true);
+    if (!hasNotifsRef.current) setNotifLoading(true);
     setNotifError('');
     try {
       const res = await apiFetch(`${API_BASE}/api/notifications/user?kind=notification`, {
@@ -1886,11 +1889,12 @@ const TeacherPortalShell = () => {
       const data = await res.json().catch(() => []);
       if (!res.ok) throw new Error(data?.error || 'Failed to load notifications');
       const all = Array.isArray(data) ? data : [];
-      setNotifications(
-        all
-          .sort((a, b) => new Date(b?.createdAt || 0) - new Date(a?.createdAt || 0))
-          .slice(0, 20)
-      );
+      const latest = all
+        .sort((a, b) => new Date(b?.createdAt || 0) - new Date(a?.createdAt || 0))
+        .slice(0, 20);
+      setNotifications(latest);
+      hasNotifsRef.current = latest.length > 0;
+      writeCachedBell(latest, 'teacher-bell');
       try {
         const submissionsResponse = await apiFetch(`${API_BASE}/api/assignment/teacher/submissions`, {
           cache: 'no-store',
@@ -1909,8 +1913,8 @@ const TeacherPortalShell = () => {
         // The main notification feed remains usable if the assignment feed is unavailable.
       }
     } catch (err) {
-      setNotifError(err.message || 'Failed to load notifications');
-      setNotifications([]);
+      // Keep the cached list on a transient failure; only surface the error when empty.
+      if (!hasNotifsRef.current) setNotifError(err.message || 'Failed to load notifications');
     } finally {
       setNotifLoading(false);
     }
@@ -2276,6 +2280,7 @@ const TeacherPortalShell = () => {
                         loading={notifLoading}
                         error={notifError}
                         onMarkAllRead={markAllRead}
+                        onMarkRead={(id) => markRead(id)}
                         onDismissNotification={dismissHeaderNotification}
                         formatTime={timeAgo}
                         onOpenNotification={async (notification) => {
@@ -2448,6 +2453,7 @@ const TeacherPortalShell = () => {
                         loading={notifLoading}
                         error={notifError}
                         onMarkAllRead={markAllRead}
+                        onMarkRead={(id) => markRead(id)}
                         onDismissNotification={dismissHeaderNotification}
                         formatTime={timeAgo}
                         onOpenNotification={async (notification) => {

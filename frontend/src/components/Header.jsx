@@ -10,7 +10,7 @@ import {
   LogOut,
 } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
-import { AnimatePresence } from 'framer-motion';
+import { AnimatePresence, motion as Motion } from 'framer-motion';
 import { useStudentDashboard } from './StudentDashboardContext';
 import { useDesktopNotificationBridge } from '../hooks/useDesktopNotificationBridge';
 import DesktopNotificationPermissionModal from './DesktopNotificationPermissionModal';
@@ -25,6 +25,18 @@ const Header = ({ sidebarOpen, setSidebarOpen, onOpenProfile }) => {
   const [profileOpen, setProfileOpen] = useState(false);
   const [searchText, setSearchText] = useState('');
   const [showSearchSuggestions, setShowSearchSuggestions] = useState(false);
+  // Mobile/tablet: the jump-to box is hidden behind a search icon and opens full width.
+  const [mobileSearchOpen, setMobileSearchOpen] = useState(false);
+  const searchInputRef = useRef(null);
+  const openMobileSearch = () => {
+    setMobileSearchOpen(true);
+    setTimeout(() => searchInputRef.current?.focus(), 0);
+  };
+  const closeMobileSearch = () => {
+    setMobileSearchOpen(false);
+    setSearchText('');
+    setShowSearchSuggestions(false);
+  };
   const {
     profile,
     notifications: baseNotifications,
@@ -164,17 +176,22 @@ const Header = ({ sidebarOpen, setSidebarOpen, onOpenProfile }) => {
     ? `${nameParts[0][0]}${nameParts[nameParts.length - 1][0]}`
     : (nameParts[0]?.[0] || 'S');
   const initialsLabel = initials.toUpperCase();
+  // Same "K.S.H.S"-style short name the sidebar shows.
+  const schoolShortName = (studentData.schoolName || '')
+    .trim()
+    .split(/\s+/)
+    .filter(Boolean)
+    .map((word) => word.charAt(0).toUpperCase())
+    .join('.');
 
-  // Greeting and date
-  const { greeting, dateLabel } = useMemo(() => {
-    const now = new Date();
-    const hour = now.getHours();
-    const greeting = hour < 12 ? 'Good morning' : hour < 18 ? 'Good afternoon' : 'Good evening';
-    const dateLabel = now.toLocaleDateString(undefined, {
-      weekday: 'long', month: 'short', day: 'numeric'
-    });
-    return { greeting, dateLabel };
+  // Live date + time for the desktop header (ticks every 30s).
+  const [now, setNow] = useState(() => new Date());
+  useEffect(() => {
+    const id = setInterval(() => setNow(new Date()), 30 * 1000);
+    return () => clearInterval(id);
   }, []);
+  const dateLabel = now.toLocaleDateString(undefined, { weekday: 'long', day: 'numeric', month: 'short', year: 'numeric' });
+  const timeLabel = now.toLocaleTimeString(undefined, { hour: 'numeric', minute: '2-digit' });
 
   const handleLogout = () => {
     logoutAndRedirect({ navigate, notice: AUTH_NOTICE.LOGGED_OUT });
@@ -258,7 +275,8 @@ const Header = ({ sidebarOpen, setSidebarOpen, onOpenProfile }) => {
 
   return (
     <>
-    <header className="sticky top-0 z-40 w-full bg-white/80 backdrop-blur-xl border-b border-gray-100">
+    {/* On desktop the header floats like the sidebar: inset from the screen edges, rounded, with its own border/shadow. */}
+    <header className="relative z-40 w-full bg-white/80 backdrop-blur-xl border-b border-gray-100 lg:mx-3 lg:mt-3 lg:w-auto lg:rounded-2xl lg:border lg:border-gray-100 lg:bg-white/90 lg:shadow-[0_20px_40px_-12px_rgba(0,0,0,0.06),0_8px_24px_-6px_rgba(0,0,0,0.02)]">
       <div className="px-3 sm:px-5">
         <div className="flex items-center justify-between h-14 sm:h-16 gap-2 sm:gap-4">
 
@@ -271,35 +289,55 @@ const Header = ({ sidebarOpen, setSidebarOpen, onOpenProfile }) => {
             >
               <Menu size={20} className="text-gray-600" />
             </button>
-            <div className="hidden sm:block min-w-0">
-              <p className="text-sm font-semibold text-gray-900 truncate">
-                {greeting}, <span className="text-amber-600">{studentData.name?.split(' ')[0] || 'Student'}</span>
-              </p>
-              <div className="flex items-center gap-1.5 text-[11px] text-gray-400">
-                <CalendarDays size={12} />
+            {/* Desktop: school logo + name, then date and time */}
+            <div className="hidden min-w-0 items-center gap-3 lg:flex">
+              {studentData.schoolLogo && (
+                <img
+                  src={studentData.schoolLogo}
+                  alt=""
+                  className="h-9 w-9 shrink-0 rounded-full border border-gray-200 bg-white object-cover"
+                  onError={(e) => { e.target.style.display = 'none'; }}
+                />
+              )}
+              <p className="truncate text-sm font-bold text-gray-900">{studentData.schoolName || 'Student Portal'}</p>
+              <span className="h-6 w-px shrink-0 bg-gray-200" aria-hidden="true" />
+              <div className="flex shrink-0 items-center gap-1.5 text-xs text-gray-500">
+                <CalendarDays size={13} className="text-gray-400" />
                 <span>{dateLabel}</span>
-                {displayClass && (
-                  <>
-                    <span className="text-gray-300">|</span>
-                    <span>Class {displayClass}{displaySection ? `-${displaySection}` : ''}</span>
-                  </>
-                )}
-                {displayRoll && (
-                  <>
-                    <span className="text-gray-300">|</span>
-                    <span>Roll {displayRoll}</span>
-                  </>
-                )}
+                <span className="text-gray-300">|</span>
+                <span className="font-semibold text-gray-700">{timeLabel}</span>
               </div>
             </div>
           </div>
 
-          {/* Center: Jump-to (destination picker, not full-text search) */}
-          <div className="flex-1 max-w-lg mx-2">
-            <div className="relative">
+          {/* Mobile/tablet: school short name in the centre */}
+          <div className="flex min-w-0 flex-1 items-center justify-center gap-2 lg:hidden">
+            {studentData.schoolLogo && (
+              <img
+                src={studentData.schoolLogo}
+                alt=""
+                className="h-8 w-8 shrink-0 rounded-full border border-gray-200 bg-white object-cover"
+                onError={(e) => { e.target.style.display = 'none'; }}
+              />
+            )}
+            <p className="truncate text-base font-bold tracking-wide text-gray-900">{schoolShortName || 'Student'}</p>
+          </div>
+
+          {/* Jump-to search (destination picker, not full-text search): hidden
+              until the search icon is clicked, then it slides open with a close
+              button — over the bar on mobile, inline on desktop. */}
+          <div
+            className={mobileSearchOpen
+              // Mobile/tablet: covers the header bar. Desktop: opens inline
+              // between the school/date block and the icons, so those stay visible.
+              ? 'animate-header-search absolute inset-0 z-50 flex items-center gap-2 bg-white px-3 sm:px-5 lg:static lg:z-auto lg:mx-3 lg:max-w-xl lg:flex-1 lg:bg-transparent lg:px-0'
+              : 'hidden'}
+          >
+            <div className="relative flex-1">
               <div className="relative flex items-center">
                 <Search className="absolute left-3 text-gray-400 pointer-events-none" size={16} />
                 <input
+                  ref={searchInputRef}
                   type="text"
                   role="combobox"
                   aria-expanded={showSearchSuggestions}
@@ -312,7 +350,10 @@ const Header = ({ sidebarOpen, setSidebarOpen, onOpenProfile }) => {
                   onBlur={() => setTimeout(() => setShowSearchSuggestions(false), 150)}
                   onKeyDown={(e) => {
                     if (e.key === 'Enter') { e.preventDefault(); jumpToFirstMatch(); }
-                    if (e.key === 'Escape') setShowSearchSuggestions(false);
+                    if (e.key === 'Escape') {
+                      setShowSearchSuggestions(false);
+                      if (mobileSearchOpen) closeMobileSearch();
+                    }
                   }}
                   className="w-full pl-9 pr-9 py-2 rounded-full bg-gray-50 border border-gray-200 text-sm placeholder-gray-400 focus:bg-white focus:ring-2 focus:ring-amber-500/30 focus:border-amber-300 outline-none transition-all"
                 />
@@ -344,7 +385,7 @@ const Header = ({ sidebarOpen, setSidebarOpen, onOpenProfile }) => {
                           <button
                             type="button"
                             onMouseDown={(e) => e.preventDefault()}
-                            onClick={() => { setShowSearchSuggestions(false); setSearchText(''); s.action(); }}
+                            onClick={() => { setShowSearchSuggestions(false); setSearchText(''); setMobileSearchOpen(false); s.action(); }}
                             className={`w-full px-4 py-2.5 text-left hover:bg-amber-50/60 transition-colors flex items-center gap-3 ${i > 0 ? 'border-t border-gray-50' : ''}`}
                           >
                             <Search size={14} className="text-gray-300 shrink-0" aria-hidden="true" />
@@ -360,31 +401,49 @@ const Header = ({ sidebarOpen, setSidebarOpen, onOpenProfile }) => {
                 </div>
               )}
             </div>
+            {mobileSearchOpen && (
+              <button
+                type="button"
+                onClick={closeMobileSearch}
+                className="shrink-0 rounded-xl p-2 text-gray-600 hover:bg-gray-100 lg:hidden"
+                aria-label="Close search"
+              >
+                <X size={20} />
+              </button>
+            )}
           </div>
 
           {/* Right: School + Bell + Profile */}
           <div className="flex items-center gap-1.5 sm:gap-2">
 
-            {/* School badge - desktop only */}
-            {(studentData.schoolName || studentData.schoolLogo) && (
-              <div className="hidden xl:flex items-center gap-2 bg-gray-100 px-3 py-1.5 rounded-full border border-gray-100">
-                <div className="w-7 h-7 rounded-full bg-white border border-gray-200 flex items-center justify-center overflow-hidden">
-                  {studentData.schoolLogo ? (
-                    <img src={studentData.schoolLogo} alt="" className="w-full h-full object-cover" onError={(e) => { e.target.style.display = 'none'; }} />
-                  ) : (
-                    <span className="text-[10px] font-bold text-gray-400">
-                      {(studentData.schoolName || 'S').slice(0, 2).toUpperCase()}
-                    </span>
-                  )}
-                </div>
-                <span className="text-xs font-medium text-gray-600 max-w-auto truncate">{studentData.schoolName}</span>
-              </div>
-            )}
+            {/* Search toggle — the icon rolls between 🔍 and ✕ as the search opens/closes */}
+            <button
+              type="button"
+              onClick={mobileSearchOpen ? closeMobileSearch : openMobileSearch}
+              className="relative flex h-[35px] w-[35px] items-center justify-center overflow-hidden rounded-xl transition-colors hover:bg-gray-100 active:scale-95"
+              aria-label={mobileSearchOpen ? 'Close search' : 'Search pages'}
+              aria-expanded={mobileSearchOpen}
+            >
+              <AnimatePresence mode="wait" initial={false}>
+                <Motion.span
+                  key={mobileSearchOpen ? 'close' : 'search'}
+                  initial={{ rotate: -180, scale: 0.4, opacity: 0 }}
+                  animate={{ rotate: 0, scale: 1, opacity: 1 }}
+                  exit={{ rotate: 180, scale: 0.4, opacity: 0 }}
+                  transition={{ duration: 0.22, ease: 'easeInOut' }}
+                  className="flex"
+                >
+                  {mobileSearchOpen
+                    ? <X size={19} className="text-gray-600" />
+                    : <Search size={19} className="text-gray-600" />}
+                </Motion.span>
+              </AnimatePresence>
+            </button>
 
             {/* Notifications */}
             <div className="relative" ref={notifRef}>
               <button
-                className="relative p-2 rounded-xl bg-gray-100 hover:bg-gray-200 active:scale-95 transition-all"
+                className="relative p-2 rounded-xl hover:bg-gray-100 active:scale-95 transition-all"
                 onClick={toggleNotifications}
                 aria-label="Notifications"
               >
@@ -407,6 +466,7 @@ const Header = ({ sidebarOpen, setSidebarOpen, onOpenProfile }) => {
                     loading={notificationsLoading}
                     error={notificationsError}
                     onMarkAllRead={markAllAsRead}
+                    onMarkRead={(id) => markAsRead(id)}
                     onOpenNotification={handleNotificationClick}
                     onDismissNotification={dismissNotification}
                     formatTime={formatTimeAgo}
@@ -421,10 +481,10 @@ const Header = ({ sidebarOpen, setSidebarOpen, onOpenProfile }) => {
             </div>
 
             {/* Divider */}
-            <div className="hidden sm:block w-px h-6 bg-gray-200" />
+            <div className="hidden lg:block w-px h-6 bg-gray-200" />
 
-            {/* Profile */}
-            <div className="relative" ref={profileRef}>
+            {/* Profile — desktop only; mobile reaches it from the bottom nav */}
+            <div className="relative hidden lg:block" ref={profileRef}>
               <button
                 className="flex items-center gap-2 rounded-xl p-1.5 bg-gray-100 hover:bg-gray-200 active:scale-95 transition-all"
                 onClick={toggleProfile}

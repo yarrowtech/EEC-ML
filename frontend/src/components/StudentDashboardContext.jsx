@@ -11,7 +11,13 @@ import {
   writeModuleSeenState,
 } from '../utils/moduleNotificationUtils';
 
-const StudentDashboardContext = createContext({
+// Keep ONE context object across Vite hot reloads. When this module is
+// re-evaluated, createContext() would otherwise return a new object: the
+// already-mounted provider keeps the old one while re-executed consumers read
+// the new one, find no provider, and fall back to the default
+// ({ loading: true, ... }) — so the dashboard showed no data until a hard refresh.
+const CONTEXT_KEY = '__eecStudentDashboardContext__';
+const StudentDashboardContext = globalThis[CONTEXT_KEY] || createContext({
   loading: true,
   error: '',
   profile: null,
@@ -28,6 +34,7 @@ const StudentDashboardContext = createContext({
   markModuleVisited: () => {},
   refresh: () => {},
 });
+globalThis[CONTEXT_KEY] = StudentDashboardContext;
 
 const DASHBOARD_CACHE_KEY = 'studentDashboardCacheV2';
 const DASHBOARD_CACHE_TTL_MS = 2 * 60 * 1000;
@@ -170,8 +177,8 @@ export const StudentDashboardProvider = ({ children }) => {
         return type.includes('worksheet') && !['submitted', 'graded', 'late'].includes(String(assignment?.submissionStatus || '').toLowerCase());
       });
       setSmartLearningReminders([
-        ...papers.map((paper) => ({ id: `paper-${paper._id}`, kind: 'Practice paper', title: paper.title, path: '/student/smart-learning-courses' })),
-        ...assignments.map((assignment) => ({ id: `worksheet-${assignment._id}`, kind: 'Worksheet', title: assignment.title, path: '/student/smart-learning-courses' })),
+        ...papers.map((paper) => ({ id: `paper-${paper._id}`, kind: 'Practice paper', subject: paper.subjectName || paper.subject?.name || paper.subject || '', topic: paper.topicTitle || paper.subTopicTitle || paper.topics?.[0] || paper.chapterTitle || paper.chapter || '', title: paper.title, path: '/student/smart-learning-courses' })),
+        ...assignments.map((assignment) => ({ id: `worksheet-${assignment._id}`, kind: 'Worksheet', subject: assignment.subject || '', topic: assignment.topicTitle || assignment.topic || assignment.subTopicTitle || assignment.chapterTitle || '', title: assignment.title, path: '/student/smart-learning-courses' })),
       ]);
     } catch {
       // keep existing reminders on transient network errors

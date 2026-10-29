@@ -3,6 +3,10 @@ import { MotionConfig } from "framer-motion";
 import "./index.css";
 import App from "./App.jsx";
 import { TenantProvider } from "./context/TenantContext.jsx";
+import { installSessionRenewal } from "./utils/sessionRenewal";
+
+// Keep users signed in until they log out (sliding session token renewal).
+installSessionRenewal();
 
 createRoot(document.getElementById("root")).render(
   // `reducedMotion="user"` makes every Framer Motion animation honour the OS

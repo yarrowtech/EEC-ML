@@ -1,9 +1,10 @@
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useLocation, useNavigate } from 'react-router-dom';
 import { apiFetch } from '../utils/authSession';
 import { notificationId, readModuleSeenState, writeModuleSeenState } from '../utils/moduleNotificationUtils';
 import { normalizeAdminPath, resolveAdminNotificationPath } from './adminNotificationUtils';
 import { subscribeSocketEvent } from '@/hooks/useCommunityWallUnread';
+import { readCachedNotifications, writeCachedNotifications } from '../utils/notificationCache';
 
 const API_BASE = (import.meta.env.VITE_API_URL || window.location.origin).replace(/\/$/, '');
 
@@ -13,15 +14,18 @@ const API_BASE = (import.meta.env.VITE_API_URL || window.location.origin).replac
 export const useAdminNotifications = ({ isSuperAdmin = false } = {}) => {
   const navigate = useNavigate();
   const location = useLocation();
-  const [notifications, setNotifications] = useState([]);
+  // Seed from the client cache so the bell opens instantly; polling refreshes it.
+  const [notifications, setNotifications] = useState(() => readCachedNotifications('admin-bell') || []);
   const [notifLoading, setNotifLoading] = useState(false);
+  const hasNotifsRef = useRef(notifications.length > 0);
   const [notifError, setNotifError] = useState('');
   const [seenState, setSeenState] = useState(() => readModuleSeenState('admin'));
 
   const fetchNotifs = useCallback(async () => {
     const token = localStorage.getItem('token');
     if (!token) { setNotifications([]); return; }
-    setNotifLoading(true);
+    // Only show "Loading…" when there's nothing cached to show meanwhile.
+    if (!hasNotifsRef.current) setNotifLoading(true);
     setNotifError('');
     try {
       const res = await apiFetch(`${API_BASE}/api/notifications/user?kind=notification`, {
@@ -41,9 +45,11 @@ export const useAdminNotifications = ({ isSuperAdmin = false } = {}) => {
         .sort((a, b) => new Date(b?.createdAt || 0) - new Date(a?.createdAt || 0))
         .slice(0, 20);
       setNotifications(filtered);
+      hasNotifsRef.current = filtered.length > 0;
+      writeCachedNotifications(filtered, 'admin-bell');
     } catch (err) {
-      setNotifError(err.message || 'Failed to load');
-      setNotifications([]);
+      // Keep the cached list on a transient failure; only surface the error when empty.
+      if (!hasNotifsRef.current) setNotifError(err.message || 'Failed to load');
     } finally {
       setNotifLoading(false);
     }

@@ -134,6 +134,7 @@ const useCommunityWallUnread = ({ enabled = true, wallPath }) => {
     id: `community-post-${item.postId}`,
     title: `${item.authorName} posted on Community Wall`,
     message: item.preview,
+    senderAvatar: item.authorPhoto || '', // poster's profile photo for the bell avatar
     createdAt: item.createdAt,
     isRead: Boolean(item.isRead),
     type: 'community_post',

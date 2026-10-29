@@ -128,12 +128,6 @@ const Sidebar = ({ activeView, isOpen, setIsOpen }) => {
   };
   const classTeacherName = resolveTeacherName(classTeacher, studentData);
 
-  const nameParts = (studentData.name || '').trim().split(/\s+/).filter(Boolean);
-  const initials = nameParts.length >= 2
-    ? `${nameParts[0][0]}${nameParts[nameParts.length - 1][0]}`
-    : (nameParts[0]?.[0] || 'S');
-  const profileImage = studentData.profilePic || studentData.avatar || '';
-  const hasProfileImage = typeof profileImage === 'string' && profileImage.trim() !== '';
   const schoolName = studentData.schoolName || 'Student Portal';
   const hasSchoolLogo = typeof studentData.schoolLogo === 'string' && studentData.schoolLogo.trim() !== '';
   const schoolInitial = (schoolName.trim()[0] || 'S').toUpperCase();
@@ -207,8 +201,6 @@ const Sidebar = ({ activeView, isOpen, setIsOpen }) => {
 
         {/* ════════════════════════════════ HEADER ════════════════════════════════ */}
         <div className={`relative shrink-0 border-b border-slate-100 ${isOpen ? 'px-4 pt-4 pb-3.5' : 'px-0 py-4'}`}>
-          {/* gradient accent line under the brand */}
-          <span className={`pointer-events-none absolute -bottom-px h-0.5 w-10 rounded bg-gradient-to-r from-violet-500 to-amber-300 ${isOpen ? 'left-4' : 'left-1/2 -translate-x-1/2'}`} />
 
           {isOpen ? (
             /* ── Expanded header ── */
@@ -428,38 +420,7 @@ const Sidebar = ({ activeView, isOpen, setIsOpen }) => {
         </nav>
 
         {/* ════════════════════════════════ FOOTER ════════════════════════════════ */}
-        <div className={`shrink-0 border-t border-slate-100 mb-16 lg:mb-0 ${collapsed ? 'px-2 py-3' : 'px-3 py-3'}`}>
-
-          {/* Profile / user card (expanded only) */}
-          {!collapsed && (
-            <button
-              type="button"
-              onClick={() => handleNavigation('profile')}
-              className="mb-2 flex w-full items-center gap-3 rounded-xl border border-transparent bg-slate-50 px-3 py-2.5 text-left transition-all duration-200 hover:-translate-y-px hover:border-amber-200 hover:bg-amber-50 hover:shadow-[0_4px_12px_-6px_rgba(251,191,36,0.15)]"
-            >
-              <div className="shrink-0">
-                {hasProfileImage ? (
-                  <img
-                    src={profileImage}
-                    alt="You"
-                    className="h-9 w-9 rounded-full border border-slate-200 object-cover"
-                    onError={(e) => (e.target.style.display = 'none')}
-                  />
-                ) : (
-                  <div className="flex h-9 w-9 items-center justify-center rounded-full bg-gradient-to-br from-violet-500 to-violet-400 shadow-[0_2px_6px_-2px_rgba(139,92,246,0.3)]">
-                    <span className="text-xs font-semibold text-white">{initials.toUpperCase()}</span>
-                  </div>
-                )}
-              </div>
-              <div className="min-w-0 flex-1">
-                <p className="truncate text-sm font-semibold text-slate-900">{studentData.name}</p>
-                <p className="truncate text-xs font-medium text-slate-400">
-                  {displayClass ? `Class ${displayClass}` : 'Student'}
-                  {displaySection ? ` – ${displaySection}` : ''}
-                </p>
-              </div>
-            </button>
-          )}
+        <div className={`shrink-0 border-t border-slate-200 mb-16 lg:mb-0 ${collapsed ? 'px-2 py-3' : 'px-3 py-3'}`}>
 
           {/* Logout */}
           <div
@@ -472,19 +433,19 @@ const Sidebar = ({ activeView, isOpen, setIsOpen }) => {
               className={
                 collapsed
                   ? 'group flex h-10 w-full items-center justify-center rounded-lg text-slate-400 transition-all duration-200 hover:bg-red-50 hover:text-red-600'
-                  : 'group flex w-full items-center gap-3 rounded-lg border border-transparent px-3 py-2.5 text-sm font-medium text-slate-600 transition-all duration-200 hover:translate-x-0.5 hover:border-red-300 hover:bg-red-50 hover:text-red-700'
+                  : 'group flex w-full items-center gap-3 rounded-full border border-transparent px-3 py-2.5 text-sm font-medium text-white transition-all duration-200 hover:translate-x-0.5 bg-red-500 hover:border-red-300 hover:bg-red-600'
               }
             >
               <LogOut
                 size={collapsed ? 16 : 15}
-                className={`shrink-0 transition-colors ${collapsed ? 'text-slate-400 group-hover:text-red-500' : 'text-slate-400 group-hover:text-red-500'}`}
+                className={`shrink-0 transition-colors ${collapsed ? 'text-slate-400 group-hover:text-red-500' : 'text-white group-hover:text-white'}`}
               />
               {!collapsed && (
                 <span className="flex items-center gap-2">
                   Logout
-                  <span className="rounded-full bg-slate-200 px-2 py-px text-[10px] font-medium text-slate-500 transition-colors group-hover:bg-red-200 group-hover:text-red-800">
+                  {/* <span className="rounded-full bg-slate-200 px-2 py-px text-[10px] font-medium text-slate-500 transition-colors group-hover:bg-red-200 group-hover:text-red-800">
                     secure
-                  </span>
+                  </span> */}
                 </span>
               )}
             </button>
