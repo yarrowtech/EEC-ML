@@ -4,6 +4,7 @@ const axios = require('axios');
 const mongoose = require('mongoose');
 const authTeacher = require('../middleware/authTeacher');
 const StudentUser = require('../models/StudentUser');
+const { summarizeStudentAttendance, attendancePercentOf } = require('../utils/sessionAttendance');
 const ExamResult = require('../models/ExamResult');
 const MasteryScore = require('../models/MasteryScore');
 const ClassModel = require('../models/Class');
@@ -66,7 +67,7 @@ const requireStudentScope = async (req, res, studentId) => {
     res.status(401).json({ error: 'Unauthorized' });
     return null;
   }
-  const student = await StudentUser.findOne({ _id: studentId, schoolId }).select('name grade section attendance').lean();
+  const student = await StudentUser.findOne({ _id: studentId, schoolId }).select('name grade section attendance attendanceSummary').lean();
   if (!student) {
     res.status(404).json({ error: 'Student not found' });
     return null;
@@ -146,6 +147,82 @@ const BLOOM_NOTES = {
   evaluate: "Target Bloom's level: Evaluate — every question must require judging or justifying a position with criteria.",
   create: "Target Bloom's level: Create — every question must require compiling ideas in a new way or proposing an original solution.",
 };
+
+// Per-type JSON schema instructions for AI-generated tryout questions. Each
+// shape mirrors what the matching Creator component in
+// frontend/.../TryoutBuilder.jsx (and the student-facing renderer in
+// AILearningTryoutSection.jsx) expects, so generated items drop straight
+// into the builder without any reshaping. Only mcq is auto-graded
+// server-side (tryout-submit) — the rest just need to render correctly.
+const TRYOUT_TYPE_SCHEMAS = {
+  mcq: [
+    'Return ONLY a valid JSON array with no markdown, heading, or commentary.',
+    'Each array item must use this exact shape:',
+    '{"questionText":"Question","options":[{"text":"Option 1","isCorrect":false},{"text":"Option 2","isCorrect":true},{"text":"Option 3","isCorrect":false},{"text":"Option 4","isCorrect":false}],"explanation":"Why the marked option is correct","difficulty":"medium"}',
+    'Every question must have exactly four distinct, non-empty options and exactly one option with isCorrect set to true.',
+    'Do not add A, B, C, or D prefixes inside option text.',
+  ],
+  choice_matrix: [
+    'Return ONLY a valid JSON array with no markdown, heading, or commentary.',
+    'Each array item must use this exact shape:',
+    '{"question":"Instruction shown above the table","statements":["Statement 1","Statement 2","Statement 3"],"answers":[true,false,true],"explanation":"Why each true/false answer is correct"}',
+    'Include at least 3 statements per item. "answers" must be the same length as "statements", using boolean true/false values only.',
+  ],
+  cloze_drag_drop: [
+    'Return ONLY a valid JSON array with no markdown, heading, or commentary.',
+    'Each array item must use this exact shape:',
+    '{"text":"Sentence(s) with ${{blank}} where each word should go","options":["word for blank 1","word for blank 2"],"hints":["optional hint 1","optional hint 2"],"explanation":"..."}',
+    'The Nth ${{blank}} in "text" must be filled by the Nth entry in "options", in order. "hints" must be the same length as "options" (use empty strings for no hint).',
+  ],
+  cloze_dropdown: [
+    'Return ONLY a valid JSON array with no markdown, heading, or commentary.',
+    'Each array item must use this exact shape:',
+    '{"text":"Sentence(s) with ${{input}} where each dropdown should go","dropdownOptions":[["correct answer","distractor 1","distractor 2"],["correct answer","distractor 1"]],"explanation":"..."}',
+    'The Nth ${{input}} in "text" must be answered by dropdownOptions[N]. The correct answer for each blank must always be listed FIRST in its options array, followed by 1-3 plausible distractors.',
+  ],
+  cloze_text: [
+    'Return ONLY a valid JSON array with no markdown, heading, or commentary.',
+    'Each array item must use this exact shape:',
+    '{"text":"Sentence(s) with ${{input}} where each blank goes","correctAnswers":["answer for blank 1","answer for blank 2"],"explanation":"..."}',
+    'The Nth ${{input}} in "text" must be answered by correctAnswers[N], in order.',
+  ],
+  match_list: [
+    'Return ONLY a valid JSON array with no markdown, heading, or commentary.',
+    'Each array item must use this exact shape:',
+    '{"question":"Instruction shown above the two columns","items":["Left item 1","Left item 2","Left item 3"],"pairs":["Right match for item 1","Right match for item 2","Right match for item 3"],"explanation":"..."}',
+    'items[N] must correctly pair with pairs[N], in order. Include at least 3 pairs per item.',
+  ],
+  sort_list: [
+    'Return ONLY a valid JSON array with no markdown, heading, or commentary.',
+    'Each array item must use this exact shape:',
+    '{"question":"Instruction telling the student what to sort and by what criteria","items":["item in correct order 1","item in correct order 2","item in correct order 3"],"explanation":"..."}',
+    '"items" must already be listed in the single correct order — the UI shuffles them for the student. Include at least 3 items per item.',
+  ],
+  plain_text: [
+    'Return ONLY a valid JSON array with no markdown, heading, or commentary.',
+    'Each array item must use this exact shape:',
+    '{"question":"An open-ended question that requires a written answer grounded in the material","maxWords":200}',
+  ],
+  rich_text: [
+    'Return ONLY a valid JSON array with no markdown, heading, or commentary.',
+    'Each array item must use this exact shape:',
+    '{"question":"An open-ended question that requires a longer, formatted written answer grounded in the material","maxWords":300}',
+  ],
+  file_upload: [
+    'Return ONLY a valid JSON array with no markdown, heading, or commentary.',
+    'Each array item must use this exact shape:',
+    '{"question":"Instructions describing what the student should create/complete and upload, grounded in the material","allowedTypes":["image","pdf","document"]}',
+  ],
+  image_highlighter: [
+    'Return ONLY a valid JSON array with no markdown, heading, or commentary.',
+    'Each array item must use this exact shape:',
+    '{"question":"Instructions telling the student what to mark/highlight — the teacher will attach the image separately, so describe the task in words only"}',
+  ],
+};
+
+const buildTryoutTypeInstruction = (requestedType) => (
+  (TRYOUT_TYPE_SCHEMAS[requestedType] || TRYOUT_TYPE_SCHEMAS.plain_text).join(' ')
+);
 
 const normalizeMcqQuestion = (item) => {
   if (!item || typeof item !== 'object') return null;
@@ -250,8 +327,12 @@ router.post('/ingest-file', authTeacher, async (req, res) => {
     const schoolId = String(req.schoolId || '');
     const classDoc = await ClassModel.findOne({ _id: classId, schoolId }).select('academicYearId').lean();
     if (!classDoc) return res.status(400).json({ error: 'Selected class was not found for this school' });
-    // Use the Cloudinary public ID as a stable vector namespace; fall back to the URL
-    const materialId = cloudinaryPublicId || url;
+    // Use the Cloudinary public ID as a stable vector namespace. Falling back to the raw
+    // URL is unsafe when it carries signed/expiring query params (e.g. rotating
+    // X-Amz-Signature) — every re-ingest would then get a different material_id and the
+    // AI service's delete-before-reingest would never find the old Qdrant chunks,
+    // leaving duplicates behind. Strip the query string so the fallback stays stable.
+    const materialId = cloudinaryPublicId || url.split('?')[0];
 
     const response = await axios.post(
       `${AI_SERVICE_URL}/ingest/material`,
@@ -340,7 +421,7 @@ router.post('/class-summary', authTeacher, async (req, res) => {
     if (className) filter.$or = [{ grade: className }, { grade: `Class ${className}` }];
     if (section) filter.section = section;
 
-    const students = await StudentUser.find(filter).select('_id name grade section attendance').lean();
+    const students = await StudentUser.find(filter).select('_id name grade section attendance attendanceSummary').lean();
     const studentIds = students.map((s) => s._id);
 
     const results = await ExamResult.find({
@@ -354,10 +435,9 @@ router.post('/class-summary', authTeacher, async (req, res) => {
 
     // Compute class averages
     const totalStudents = students.length;
-    const attPcts = students.map((s) => {
-      const att = s.attendance || [];
-      return att.length > 0 ? Math.round((att.filter((a) => a.status === 'present').length / att.length) * 100) : 100;
-    });
+    // Academic-year attendance (present days ÷ school days), stored per student.
+    const attSummaries = await summarizeStudentAttendance(students, { schoolId, campusId: req.campusId || null });
+    const attPcts = students.map((s) => attendancePercentOf(attSummaries, s._id)).filter((v) => v != null);
     const avgAtt = attPcts.length ? Math.round(attPcts.reduce((a, b) => a + b, 0) / attPcts.length) : 0;
     const below75 = attPcts.filter((p) => p < 75).length;
 
@@ -420,8 +500,8 @@ router.post('/parent-report', authTeacher, async (req, res) => {
       .limit(20)
       .lean();
 
-    const att = student?.attendance || [];
-    const attPct = att.length > 0 ? Math.round((att.filter((a) => a.status === 'present').length / att.length) * 100) : 100;
+    const attSummaries = student ? await summarizeStudentAttendance([student], { schoolId, campusId: req.campusId || null }) : new Map();
+    const attPct = student ? (attendancePercentOf(attSummaries, student._id) ?? 100) : 100;
 
     const subjectMap = {};
     results.forEach((r) => {
@@ -799,15 +879,7 @@ router.post('/quiz-generate', authTeacher, async (req, res) => {
       normalizedBloom ? BLOOM_NOTES[normalizedBloom] : null,
       `Generate exactly ${safeCount} ${questionTypeText}.`,
       'Base all questions only on the uploaded course material for this topic.',
-      requestedType === 'mcq'
-        ? [
-          'Return ONLY a valid JSON array with no markdown, heading, or commentary.',
-          'Each array item must use this exact shape:',
-          `{"questionText":"Question","options":[{"text":"Option 1","isCorrect":false},{"text":"Option 2","isCorrect":true},{"text":"Option 3","isCorrect":false},{"text":"Option 4","isCorrect":false}],"explanation":"Why the marked option is correct","difficulty":"medium","bloomLevel":"${normalizedBloom || 'remember|understand|apply|analyse|evaluate|create'}"}`,
-          'Every question must have exactly four distinct, non-empty options and exactly one option with isCorrect set to true.',
-          'Do not add A, B, C, or D prefixes inside option text.',
-        ].join(' ')
-        : `Create questions in the ${requestedType} format and return a valid JSON array with no markdown.`,
+      buildTryoutTypeInstruction(requestedType),
     ].filter(Boolean).join(' ');
 
     const payload = {
@@ -1093,17 +1165,15 @@ router.post('/progress-summary', authTeacher, async (req, res) => {
     if (!(await requireStudentScope(req, res, studentId))) return;
 
     const [student, results, mastery] = await Promise.all([
-      StudentUser.findById(studentId).select('name grade section attendance').lean(),
+      StudentUser.findById(studentId).select('name grade section attendance attendanceSummary').lean(),
       ExamResult.find({ schoolId, studentId, published: true })
         .populate('examId', 'subject marks date')
         .sort({ createdAt: -1 }).limit(20).lean(),
       MasteryScore.find({ studentId, schoolId }).sort({ score: 1 }).lean(),
     ]);
 
-    const att = student?.attendance || [];
-    const attPct = att.length > 0
-      ? Math.round((att.filter((a) => a.status === 'present').length / att.length) * 100)
-      : 100;
+    const attSummaries = student ? await summarizeStudentAttendance([student], { schoolId, campusId: req.campusId || null }) : new Map();
+    const attPct = student ? (attendancePercentOf(attSummaries, student._id) ?? 100) : 100;
 
     const subjectMap = {};
     results.forEach((r) => {
@@ -1293,7 +1363,7 @@ router.post('/cohort-report', authTeacher, async (req, res) => {
     const filter = { schoolId };
     if (className) filter.grade = { $regex: `^${className}$`, $options: 'i' };
     if (section) filter.section = { $regex: `^${section}$`, $options: 'i' };
-    const students = await StudentUserModel.find(filter).select('_id name grade section attendance').lean();
+    const students = await StudentUserModel.find(filter).select('_id name grade section attendance attendanceSummary').lean();
     const studentIds = students.map((s) => s._id);
     const since = new Date(Date.now() - 30 * 86400000);
 
@@ -1315,10 +1385,10 @@ router.post('/cohort-report', authTeacher, async (req, res) => {
       .join('\n');
 
     const weakTopics = [...new Set(masteryLow.map((m) => m.topicTitle))].slice(0, 5).join(', ');
-    const attArr = students.flatMap((s) => s.attendance || []);
-    const attPct = attArr.length > 0
-      ? Math.round((attArr.filter((a) => a.status === 'present').length / attArr.length) * 100)
-      : 100;
+    // Class academic-year attendance: total present days ÷ total school days.
+    const attSummaries = await summarizeStudentAttendance(students, { schoolId, campusId: req.campusId || null });
+    const attTotals = [...attSummaries.values()].reduce((t, v) => ({ p: t.p + (v.presentDays || 0), d: t.d + (v.schoolDays || 0) }), { p: 0, d: 0 });
+    const attPct = attTotals.d > 0 ? Math.round((attTotals.p / attTotals.d) * 100) : 100;
 
     const context = [
       `Class: Grade ${className}${section ? ' Section ' + section : ''} | ${students.length} students | Period: last 30 days`,

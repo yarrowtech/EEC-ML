@@ -5,7 +5,28 @@
 
 const paymentWebhookController = require('../controllers/paymentWebhookController');
 
+const PARENT_DASHBOARD_CACHE_PATHS = [
+  /^\/api\/attendance\/parent\/children(?:\?|$)/,
+  /^\/api\/reports\/report-cards\/parent(?:\?|$)/,
+  /^\/api\/exam\/groups\/parent-schedule(?:\?|$)/,
+  /^\/api\/notifications\/user(?:\?|$)/,
+  /^\/api\/meeting\/parent\/my-meetings(?:\?|$)/,
+  /^\/api\/holidays\/parent(?:\?|$)/,
+  /^\/api\/fees\/parent\/invoices(?:\?|$)/,
+  /^\/api\/assignment\/parent\/assignments(?:\?|$)/,
+];
+
+const parentDashboardCacheHeaders = (req, res, next) => {
+  if (req.method === 'GET' && PARENT_DASHBOARD_CACHE_PATHS.some((pattern) => pattern.test(req.originalUrl || req.url || ''))) {
+    res.set('Cache-Control', 'private, max-age=60, stale-while-revalidate=120');
+    res.set('Vary', 'Authorization');
+  }
+  next();
+};
+
+
 module.exports = function registerRoutes(app, { generalApiLimiter, authApiLimiter, aiApiLimiter, uploadApiLimiter, writeHeavyApiLimiter, adminActionLogger, requireOrganizationDomain } = {}) {
+  app.use(parentDashboardCacheHeaders);
   // Razorpay webhook must receive the raw body before express.json() is applied.
   // This registration lives in index.js before body parsing, so this function
   // only mounts the HTTP-standard routes that come after body parsing.
@@ -61,6 +82,7 @@ module.exports = function registerRoutes(app, { generalApiLimiter, authApiLimite
   app.use('/api/student', require('./student'));
   app.use('/api/student-dashboard', require('./studentDashboardRoutes'));
   app.use('/api/parent-dashboard', require('./parentDashboardRoutes'));
+  app.use('/api/parent/teacher-feedback', require('./parentFeedbackRoutes'));
   app.use('/api/alcove', require('./alcoveRoute'));
 
   // ── AI / Learning ────────────────────────────────────────────────────────────
@@ -80,6 +102,7 @@ module.exports = function registerRoutes(app, { generalApiLimiter, authApiLimite
   app.use('/api/help-seeking', require('./helpSeekingRoutes'));
   app.use('/api/learning-style', require('./learningStyleRoutes'));
   app.use('/api/belonging', require('./belongingRoutes'));
+  app.use('/api/health-records', writeHeavyApiLimiter, require('./healthRecordRoutes'));
   app.use('/api/practice', require('./practiceRoutes'));
   app.use('/api/practice-papers', writeHeavyApiLimiter, require('./practicePaperRoutes'));
   app.use('/api/practice-sections', writeHeavyApiLimiter, require('./practiceSectionRoutes'));
@@ -109,6 +132,7 @@ module.exports = function registerRoutes(app, { generalApiLimiter, authApiLimite
 
   // ── Platform admin ───────────────────────────────────────────────────────────
   app.use('/api/super-admin', writeHeavyApiLimiter, adminActionLogger, require('./superAdminRoutes'));
+  app.use('/api/super-admin/migration', writeHeavyApiLimiter, adminActionLogger, require('./superAdminMigrationRoutes'));
   app.use('/api/support', writeHeavyApiLimiter, adminActionLogger, require('./supportRoutes'));
   app.use('/api/issues', writeHeavyApiLimiter, adminActionLogger, require('./issueRoutes'));
 
@@ -116,3 +140,4 @@ module.exports = function registerRoutes(app, { generalApiLimiter, authApiLimite
   app.use('/api/uploads', uploadApiLimiter, require('./uploadRoutes'));
   app.use('/api', require('./organizationRoutes'));
 };
+

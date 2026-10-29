@@ -60,6 +60,8 @@ const parentMeetingSchema = new mongoose.Schema({
     type: String,
     default: ''
   },
+  // Set when an in-person meeting is booked into a school room; used to show that room as taken.
+  roomId: { type: mongoose.Schema.Types.ObjectId, ref: 'Room', default: null, index: true },
   meetingLink: {
     type: String,
     default: ''

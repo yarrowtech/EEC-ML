@@ -40,6 +40,61 @@ def test_class_and_section_filters_applied(monkeypatch):
     assert conditions["section_id"] == "section-a"
 
 
+class FakeScrollClient:
+    """Minimal Qdrant client stub for audit_index_health(): one page of points,
+    then an empty page with offset=None to end the scroll."""
+
+    def __init__(self, points):
+        self._points = points
+
+    def scroll(self, **kwargs):
+        if kwargs.get("offset") == "done":
+            return [], None
+        return self._points, ("done" if self._points else None)
+
+
+def _point(payload):
+    class Point:
+        pass
+
+    p = Point()
+    p.payload = payload
+    return p
+
+
+def test_audit_index_health_groups_by_material_and_flags_missing_fields(monkeypatch):
+    points = [
+        _point({
+            "material_id": "m1", "school_id": "s1", "class_id": "c1",
+            "subject_name": "Maths", "chapter_title": "Algebra",
+        }),
+        _point({
+            "material_id": "m1", "school_id": "s1", "class_id": "c1",
+            "subject_name": "Maths", "chapter_title": "",
+        }),
+        _point({
+            "material_id": "m2", "school_id": "s2", "class_id": "c2",
+            "subject_name": "", "chapter_title": "Cells",
+        }),
+        _point({"material_id": None, "school_id": "s3"}),  # no material_id — ignored
+    ]
+    monkeypatch.setattr(repository, "make_qdrant_client", lambda: FakeScrollClient(points))
+
+    result = repository.audit_index_health()
+
+    assert result["m1"]["chunkCount"] == 2
+    assert result["m1"]["schoolIds"] == ["s1"]
+    assert result["m1"]["missingFields"] == ["chapter_title"]
+    assert result["m2"]["chunkCount"] == 1
+    assert result["m2"]["missingFields"] == ["subject_name"]
+    assert "m3" not in result and None not in result
+
+
+def test_audit_index_health_empty_collection(monkeypatch):
+    monkeypatch.setattr(repository, "make_qdrant_client", lambda: FakeScrollClient([]))
+    assert repository.audit_index_health() == {}
+
+
 def test_chapter_filter_supersedes_subject(monkeypatch):
     conditions = _search(monkeypatch, chapter_title="Light", subject_name="science")
     assert conditions["chapter_title"] == "Light"

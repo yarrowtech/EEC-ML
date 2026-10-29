@@ -152,7 +152,7 @@ async def generate_learning_path(req: LearningPathRequest) -> dict:
         raw_nodes = _extract_json_array(raw_text)
         nodes = _validate_nodes(raw_nodes)
     except Exception as exc:
-        logger.warning("Failed to parse LLM learning-path output: %s\nRaw: %.500s", exc, raw_text)
+        logger.warning("Failed to parse LLM learning-path output (%s)", type(exc).__name__)
         raise HTTPException(status_code=422, detail=f"LLM returned invalid JSON: {exc}") from exc
 
     if not nodes:

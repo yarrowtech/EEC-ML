@@ -202,6 +202,10 @@ practicePaperSchema.index({ teacherId: 1, status: 1, createdAt: -1 });
 practicePaperSchema.index({ subjectId: 1, status: 1 });
 practicePaperSchema.index({ tags: 1 });
 practicePaperSchema.index({ paperType: 1, status: 1 });
+// GET /api/lesson-plans/student/smart-learning-map (background load on every
+// Smart Learning page) filters on exactly this shape — none of the indexes
+// above cover publishedForStudentPortal + sourceLessonPlanId.
+practicePaperSchema.index({ schoolId: 1, status: 1, publishedForStudentPortal: 1, sourceLessonPlanId: 1 });
 
 // Virtuals
 practicePaperSchema.virtual('isExpired').get(function() {

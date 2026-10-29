@@ -12,6 +12,7 @@ const { isStrongPassword, passwordPolicyMessage } = require('../utils/passwordPo
 const adminAuth = require('../middleware/adminAuth');
 const principalAuth = require('../middleware/principalAuth');
 const { logAuthEvent } = require('../utils/authEventLogger');
+const { findLinkedTeacher, signTeacherToken } = require('../utils/roleSwitch');
 
 const normalize = (value = '') => String(value).trim().toLowerCase();
 
@@ -33,6 +34,11 @@ router.post('/register', adminAuth, async (req, res) => {
     const principalEmail = normalize(email || username);
     if (!principalEmail) {
       return res.status(400).json({ error: 'email or username is required' });
+    }
+
+    const schoolAlreadyHasPrincipal = await Principal.exists({ schoolId: resolvedSchoolId });
+    if (schoolAlreadyHasPrincipal) {
+      return res.status(400).json({ error: 'This school already has a principal. Remove the existing principal before assigning a new one.' });
     }
 
     const principal = new Principal({
@@ -297,6 +303,37 @@ router.post('/profile/update', principalAuth, avatarUpload.single('avatar'), asy
     const avatar = principal.avatar || await resolveLinkedTeacherAvatar(principal);
 
     res.json({ ...principal, avatar, schoolName, schoolLogo });
+  } catch (err) {
+    res.status(400).json({ error: err.message });
+  }
+});
+
+// A principal who also teaches can switch back to their teacher portal.
+router.get('/teacher-access', principalAuth, async (req, res) => {
+  try {
+    const teacher = await findLinkedTeacher(req.principal?.id);
+    res.json({ isTeacher: Boolean(teacher) });
+  } catch (err) {
+    res.status(400).json({ error: err.message });
+  }
+});
+
+router.post('/switch-to-teacher', principalAuth, async (req, res) => {
+  try {
+    const teacher = await findLinkedTeacher(req.principal?.id);
+    if (!teacher) {
+      return res.status(403).json({ error: 'This account does not have a teacher profile' });
+    }
+    logAuthEvent(req, {
+      action: 'switch_account',
+      outcome: 'success',
+      userType: 'teacher',
+      identifier: teacher.email || teacher.username,
+      userId: teacher._id,
+      schoolId: teacher.schoolId,
+      campusId: teacher.campusId,
+    });
+    res.json({ token: signTeacherToken(teacher), userType: 'Teacher' });
   } catch (err) {
     res.status(400).json({ error: err.message });
   }

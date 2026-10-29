@@ -54,6 +54,17 @@ if (typeof global.ResizeObserver === 'undefined') {
   };
 }
 
+// IntersectionObserver — also not implemented in JSDOM (scroll-spy in
+// AILearningCoursesReference, AILearningTryoutSection, etc. all construct
+// one); without this, mounting those components throws a ReferenceError.
+if (typeof global.IntersectionObserver === 'undefined') {
+  global.IntersectionObserver = class {
+    observe() {}
+    unobserve() {}
+    disconnect() {}
+  };
+}
+
 // Mock window.scrollTo (not implemented in JSDOM)
 window.scrollTo = jest.fn();
 

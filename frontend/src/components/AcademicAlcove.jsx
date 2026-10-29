@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useState } from 'react';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
 import {
   BookOpen, Search, Star, MessageSquare, Calendar, Layers, Users,
   Award, TrendingUp, Send, User, Check, X, ChevronLeft, ChevronRight, Heart,
@@ -35,6 +35,7 @@ const Avatar = ({ name = '?', size = 'sm', gradient = 'from-amber-400 to-orange-
 
 /* ── Main ────────────────────────────────────────────────────── */
 export default function AcademicAlcove() {
+  const openPostIdRef = useRef(null);
   const [items, setItems]       = useState([]);
   const [total, setTotal]       = useState(0);
   const [page, setPage]         = useState(1);
@@ -148,6 +149,11 @@ export default function AcademicAlcove() {
   /* ── open post modal ────────────────────────────────────────── */
   const openPost = async (post) => {
     let selectedPost = post;
+    // Guards against closing/reopening a different post before this one's
+    // comments/submissions requests resolve — a stale response must not
+    // overwrite the data for whichever post is actually open now.
+    openPostIdRef.current = post._id;
+    const isStale = () => openPostIdRef.current !== post._id;
     setSelected(post); setComments([]); setSubmissions([]);
     setMySubmission(null); setAnswerText('');
     setModalTab('problem');
@@ -156,8 +162,10 @@ export default function AcademicAlcove() {
         method: 'POST',
         headers: auth(),
       });
+      if (isStale()) return;
       if (viewRes.ok) {
         const data = await viewRes.json();
+        if (isStale()) return;
         selectedPost = { ...post, viewCount: Number(data.viewCount) || 0 };
         setSelected(selectedPost);
         const updateView = (entry) => (
@@ -173,12 +181,19 @@ export default function AcademicAlcove() {
         fetch(`${API}/api/alcove/posts/${post._id}/comments`,    { headers: auth() }),
         fetch(`${API}/api/alcove/posts/${post._id}/submissions`, { headers: auth() }),
       ]);
+      if (isStale()) return;
       if (cRes.ok) setComments(await cRes.json());
       if (sRes.ok) {
         const subs = await sRes.json();
         setSubmissions(subs);
         const myId = (() => { try { return JSON.parse(localStorage.getItem('user'))?.id; } catch { return null; } })();
-        const mine = subs.find(s => s.studentId === myId);
+        // `studentId` may come back as a raw id string or a populated object
+        // (e.g. `{ _id, ... }`) depending on the backend's populate path —
+        // normalize both sides before comparing so an existing submission is
+        // never missed (which would otherwise let a student "resubmit" a
+        // duplicate instead of editing their saved answer).
+        const resolveId = (value) => String((value && typeof value === 'object' ? value._id || value.id : value) || '');
+        const mine = myId ? subs.find(s => resolveId(s.studentId) === String(myId)) : null;
         if (mine) { setMySubmission(mine); setAnswerText(mine.answerText); }
       }
     } catch {

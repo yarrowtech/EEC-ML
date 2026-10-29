@@ -20,7 +20,7 @@ const subMenus = {
       { id: 'learning',                    name: 'Learning Hub',  icon: Brain,         color: 'bg-amber-500',  desc: 'Lessons & tutor' },
       { id: 'assignments',                 name: 'Assignments',   icon: FileText,      color: 'bg-amber-600',  desc: 'Submit & track' },
       { id: 'assignments-journal',         name: 'Journal',       icon: NotebookPen,   color: 'bg-amber-500',  desc: 'My notes' },
-      { id: 'assignments-academic-alcove', name: 'Class Wall',    icon: Target,        color: 'bg-amber-600',  desc: 'Deep focus' },
+      { id: 'assignments-academic-alcove', name: 'Community Wall', icon: Target,       color: 'bg-amber-600',  desc: 'Posts & polls' },
       { id: 'results',                     name: 'Results',       icon: BarChart3,     color: 'bg-amber-500',  desc: 'Grades' },
       { id: 'mastery',                     name: 'Mastery',       icon: Zap,           color: 'bg-amber-600',  desc: 'Topic strength' },
       { id: 'error-analysis',              name: 'Error Analysis', icon: ClipboardCheck, color: 'bg-amber-500', desc: 'What to fix' },

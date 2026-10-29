@@ -9,8 +9,10 @@ import {
 } from "lucide-react";
 import Swal from "sweetalert2";
 import toast from "react-hot-toast";
+import { clearSessionScopedCaches } from "../../utils/swrCache";
 
 const API_BASE = import.meta.env.VITE_API_URL;
+const coverObjectUrlCache = { remote: '', url: '' };
 const ACADEMIC_SETUP_CACHE_PREFIX = "academic_setup_cache_v1";
 const ACADEMIC_SETUP_CACHE_TTL_MS = 5 * 60 * 1000;
 // Display-only relabel — the stored status value is still "archived" (same
@@ -312,6 +314,31 @@ const AcademicSetup = ({ setShowAdminHeader }) => {
       "Content-Type": "application/json",
       authorization: token ? `Bearer ${token}` : "",
     };
+  }, []);
+
+  const [coverSrc, setCoverSrc] = useState(() => coverObjectUrlCache.url || '');
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      try {
+        const res = await fetch(`${API_BASE}/api/admin/auth/settings`, { headers: authHeaders });
+        const data = await res.json().catch(() => ({}));
+        const remote = String(data?.admin?.coverImage || '').trim();
+        if (!res.ok || !remote) { if (!cancelled) setCoverSrc(''); return; }
+        if (coverObjectUrlCache.remote === remote && coverObjectUrlCache.url) {
+          if (!cancelled) setCoverSrc(coverObjectUrlCache.url);
+          return;
+        }
+        const imgRes = await fetch(remote, { credentials: 'omit', referrerPolicy: 'no-referrer' });
+        if (!imgRes.ok) throw new Error('cover fetch failed');
+        const blob = await imgRes.blob();
+        if (coverObjectUrlCache.url) URL.revokeObjectURL(coverObjectUrlCache.url);
+        coverObjectUrlCache.remote = remote;
+        coverObjectUrlCache.url = URL.createObjectURL(blob);
+        if (!cancelled) setCoverSrc(coverObjectUrlCache.url);
+      } catch { /* no cover */ }
+    })();
+    return () => { cancelled = true; };
   }, []);
 
   const isYearActive = (year) => {
@@ -926,6 +953,7 @@ const AcademicSetup = ({ setShowAdminHeader }) => {
       });
       await requireOk(res, "Request failed");
       await res.json().catch(() => ({}));
+      if (endpoint === "/api/academic/years") clearSessionScopedCaches();
       await onSuccess();
       toast.success(successMessage);
     } catch (err) {
@@ -1209,6 +1237,7 @@ const AcademicSetup = ({ setShowAdminHeader }) => {
         throw new Error(data.error || "Update failed");
       }
       await res.json();
+      if (endpoint === "/api/academic/years") clearSessionScopedCaches();
       await onSuccess();
       toast.success("Updated successfully!");
     } catch (err) {
@@ -1337,6 +1366,7 @@ const AcademicSetup = ({ setShowAdminHeader }) => {
               throw new Error(errData.error || "Delete failed");
             }
             const result = await cascadeRes.json();
+            if (endpoint === "/api/academic/years") clearSessionScopedCaches();
             await onSuccess();
             Swal.fire({
               title: "Deleted!",
@@ -1382,6 +1412,82 @@ const AcademicSetup = ({ setShowAdminHeader }) => {
   const deleteSection = (id) => handleDelete("/api/academic/sections", id, "section", loadAcademicData);
   const deleteSubject = (id) => handleDelete("/api/academic/subjects", id, "subject", loadAcademicData);
 
+  /* Full-screen, non-dismissable progress overlay for "Move to Next Session".
+     The percentage comes from the server (GET .../copy-setup-progress/:jobId) —
+     this just renders whatever the backend last reported, polled on an interval. */
+  const showMoveSessionProgressModal = () => {
+    Swal.fire({
+      title: "Moving to Next Session",
+      html: `
+        <div style="padding:4px 8px;max-width:360px;margin:0 auto;">
+          <p id="move-session-step" style="color:#6b7280;font-size:13px;margin-bottom:16px;">Starting…</p>
+          <div style="width:100%;height:10px;background:#e5e7eb;border-radius:9999px;overflow:hidden;">
+            <div id="move-session-bar" style="height:100%;width:0%;background:linear-gradient(90deg,#f59e0b,#d97706);transition:width .35s ease;"></div>
+          </div>
+          <p id="move-session-pct" style="margin-top:12px;font-weight:700;font-size:28px;color:#111827;">0%</p>
+          <p style="color:#9ca3af;font-size:12px;margin-top:4px;">Please don't close or refresh this page.</p>
+        </div>
+      `,
+      allowOutsideClick: false,
+      allowEscapeKey: false,
+      allowEnterKey: false,
+      showConfirmButton: false,
+      showCloseButton: false,
+      didOpen: (popup) => {
+        Object.assign(popup.style, {
+          width: "100vw",
+          maxWidth: "100vw",
+          height: "100vh",
+          maxHeight: "100vh",
+          borderRadius: "0",
+          display: "flex",
+          flexDirection: "column",
+          alignItems: "center",
+          justifyContent: "center",
+        });
+      },
+    });
+  };
+
+  const updateMoveSessionProgressModal = (percentage, step) => {
+    const bar = document.getElementById("move-session-bar");
+    const pct = document.getElementById("move-session-pct");
+    const stepEl = document.getElementById("move-session-step");
+    const clamped = Math.max(0, Math.min(100, Number(percentage) || 0));
+    if (bar) bar.style.width = `${clamped}%`;
+    if (pct) pct.textContent = `${clamped}%`;
+    if (stepEl && step) stepEl.textContent = step;
+  };
+
+  const MOVE_SESSION_POLL_MS = 700;
+  const pollMoveSessionProgress = (jobId) => new Promise((resolve, reject) => {
+    const poll = async () => {
+      try {
+        const res = await fetch(`${API_BASE}/api/academic/years/copy-setup-progress/${jobId}`, {
+          headers: authHeaders,
+        });
+        const data = await res.json().catch(() => ({}));
+        if (!res.ok) {
+          reject(new Error(data.error || "Unable to check progress"));
+          return;
+        }
+        updateMoveSessionProgressModal(data.percentage, data.step);
+        if (data.status === "done") {
+          resolve(data.result);
+          return;
+        }
+        if (data.status === "error") {
+          reject(new Error(data.error || "Move to next session failed"));
+          return;
+        }
+        setTimeout(poll, MOVE_SESSION_POLL_MS);
+      } catch (err) {
+        reject(err);
+      }
+    };
+    poll();
+  });
+
   const copyYearSetup = async (sourceYear) => {
     const sourceYearId = sourceYear?._id;
     if (!sourceYearId) return;
@@ -1389,7 +1495,7 @@ const AcademicSetup = ({ setShowAdminHeader }) => {
     if (!targetCandidates.length) {
       Swal.fire({
         title: "No Target Year",
-        text: "Create another academic year first, then copy setup.",
+        text: "Create another academic year first, then move to next session.",
         icon: "warning",
       });
       return;
@@ -1419,11 +1525,11 @@ const AcademicSetup = ({ setShowAdminHeader }) => {
     if (!targetYear) return;
 
     const confirm = await Swal.fire({
-      title: "Copy Setup",
+      title: "Move to Next Session",
       html: `This will copy <b>classes, sections, subjects, and class teachers</b> from <b>${sourceYear?.name || "source year"}</b> to <b>${targetYear?.name || "target year"}</b>.`,
       icon: "question",
       showCancelButton: true,
-      confirmButtonText: "Yes, Copy",
+      confirmButtonText: "Yes, Move",
       cancelButtonText: "Cancel",
       confirmButtonColor: "#f59e0b",
     });
@@ -1437,27 +1543,33 @@ const AcademicSetup = ({ setShowAdminHeader }) => {
         body: JSON.stringify({ sourceYearId }),
       });
       const data = await res.json().catch(() => ({}));
-      if (!res.ok) throw new Error(data.error || "Unable to copy setup");
+      if (!res.ok) throw new Error(data.error || "Unable to start move to next session");
+      if (!data.jobId) throw new Error("Move to next session did not return a job id");
+
+      showMoveSessionProgressModal();
+      const result = await pollMoveSessionProgress(data.jobId);
+      Swal.close();
 
       await Promise.all([loadAcademicData(), loadClassTeachers()]);
 
       await Swal.fire({
-        title: "Copy Completed",
+        title: "Move to Next Session Completed",
         icon: "success",
         html: `
           <div style="text-align:left">
-            <p><b>Source:</b> ${data?.sourceYear?.name || "Previous Year"}</p>
-            <p><b>Target:</b> ${data?.targetYear?.name || targetYear?.name || ""}</p>
+            <p><b>Source:</b> ${result?.sourceYear?.name || "Previous Year"}</p>
+            <p><b>Target:</b> ${result?.targetYear?.name || targetYear?.name || ""}</p>
             <hr style="margin:10px 0" />
-            <p><b>Classes:</b> ${data?.classes?.created || 0} created, ${data?.classes?.skipped || 0} skipped</p>
-            <p><b>Sections:</b> ${data?.sections?.created || 0} created, ${data?.sections?.skipped || 0} skipped</p>
-            <p><b>Subjects:</b> ${data?.subjects?.created || 0} created, ${data?.subjects?.skipped || 0} skipped</p>
-            <p><b>Class Teachers:</b> ${data?.classTeachers?.created || 0} created, ${data?.classTeachers?.skipped || 0} skipped</p>
+            <p><b>Classes:</b> ${result?.classes?.created || 0} created, ${result?.classes?.skipped || 0} skipped</p>
+            <p><b>Sections:</b> ${result?.sections?.created || 0} created, ${result?.sections?.skipped || 0} skipped</p>
+            <p><b>Subjects:</b> ${result?.subjects?.created || 0} created, ${result?.subjects?.skipped || 0} skipped</p>
+            <p><b>Class Teachers:</b> ${result?.classTeachers?.created || 0} created, ${result?.classTeachers?.skipped || 0} skipped</p>
           </div>
         `,
       });
     } catch (err) {
-      Swal.fire({ title: "Error", text: err.message || "Failed to copy setup", icon: "error" });
+      Swal.close();
+      Swal.fire({ title: "Error", text: err.message || "Failed to move to next session", icon: "error" });
     } finally {
       setDeletingId(null);
     }
@@ -1869,12 +1981,12 @@ const AcademicSetup = ({ setShowAdminHeader }) => {
 
   return (
     <Motion.div
-      className="min-h-screen p-4 md:p-6"
+      className="p-4 md:p-5"
       initial={{ opacity: 0, y: 16 }}
       animate={{ opacity: 1, y: 0 }}
       transition={{ duration: 0.45, ease: [0.16, 1, 0.3, 1] }}
     >
-      <div className="w-full space-y-6">
+      <div className="w-full space-y-4">
         {/* ─── Header ─── */}
         <Motion.div
           className="relative flex items-start justify-between gap-3 overflow-hidden"
@@ -1883,21 +1995,19 @@ const AcademicSetup = ({ setShowAdminHeader }) => {
           transition={{ duration: 0.4, delay: 0.05, ease: [0.16, 1, 0.3, 1] }}
         >
           <div>
-            <h1 className="flex items-center gap-2 text-[1.7rem] font-bold leading-tight text-gray-900">
-              Let's setup your school 
-              {/* <Sparkles className="h-5 w-5 text-blue-400" /> */}
+            <h1 className="text-2xl font-extrabold leading-tight tracking-tight text-[#14203B] md:text-[1.7rem]">
+              Let’s setup your school
             </h1>
-            <p className="mt-1 text-sm text-gray-500">We'll guide you through everything in just a few simple steps.</p>
-            {/* <img src="/academic_setup_image.png" alt="" className='inline w-[] h-20' /> */}
+            <p className="mt-0.5 text-sm text-slate-500">We’ll guide you through everything in just a few simple steps.</p>
           </div>
           <button
             type="button"
             onClick={handleRefresh}
             disabled={isRefreshing}
             title="Refresh"
-            className="mt-1 flex shrink-0 items-center gap-1.5 rounded-lg border border-gray-200 bg-white px-3 py-2 text-xs font-semibold text-gray-600 shadow-sm transition hover:bg-gray-50 disabled:cursor-not-allowed disabled:opacity-60"
+            className="mt-1 flex shrink-0 items-center gap-2 rounded-xl border border-slate-200 bg-white px-3.5 py-2 text-sm font-semibold text-indigo-700 shadow-sm transition hover:bg-indigo-50/50 disabled:cursor-not-allowed disabled:opacity-60"
           >
-            <RefreshCw className={`h-3.5 w-3.5 ${isRefreshing ? "animate-spin" : ""}`} />
+            <RefreshCw className={`h-4 w-4 ${isRefreshing ? "animate-spin" : ""}`} />
             {isRefreshing ? "Refreshing..." : "Refresh"}
           </button>
         </Motion.div>
@@ -2154,7 +2264,22 @@ const AcademicSetup = ({ setShowAdminHeader }) => {
 
                       {/* Right: live preview */}
                       <div className="relative overflow-hidden border-t border-gray-100 bg-blue-500/50 p-6 text-white sm:border-l sm:border-t-0">
-                        <img src="/academic_setup_image.png" alt="Academic Setup" className="absolute -right-12 -bottom-8 w-full opacity-60" />
+                        {coverSrc ? (
+                          <>
+                            <div
+                              aria-hidden="true"
+                              onContextMenu={(e) => e.preventDefault()}
+                              className="pointer-events-none absolute inset-0 select-none bg-cover bg-center"
+                              style={{
+                                backgroundImage: `url(${coverSrc})`,
+                                opacity: 0.35,
+                              }}
+                            />
+                            <div className="absolute inset-0 bg-blue-600/40" />
+                          </>
+                        ) : (
+                          <img src="/academic_setup_image.png" alt="Academic Setup" className="absolute -right-12 -bottom-8 w-full opacity-60" />
+                        )}
                         <div className="relative z-10">
                           <p className="flex items-center gap-1.5 text-xs font-bold text-white/80">
                             <Calendar size={16} /> Academic Year Preview
@@ -2186,29 +2311,61 @@ const AcademicSetup = ({ setShowAdminHeader }) => {
               </AnimatePresence>
 
               {/* Current academic year — full-width banner, above the year picker cards */}
-              <div className="relative overflow-hidden rounded-2xl bg-indigo-400 p-6 text-white shadow-lg shadow-blue-200/50">
-                <img src="/academic_setup_image.png" alt="" aria-hidden="true" className="pointer-events-none absolute top-1/2 right-6 hidden h-auto max-h-[85%] w-auto max-w-[220px] -translate-y-1/2 object-contain opacity-90 sm:block" />
-                <div className="relative z-10 flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
-                  <div>
-                    <p className="flex items-center gap-1.5 text-xs font-bold">
-                      <Calendar size={16} /> Current Academic Year
-                    </p>
-                    <p className="mt-2 text-3xl font-bold">{currentAcademicYear ? currentAcademicYear.name : "No academic year yet"}</p>
-                    {!currentAcademicYear && <p className="mt-1 text-xs text-white/80">Add one to get started.</p>}
+              <div className="relative overflow-hidden rounded-2xl border border-indigo-100 bg-gradient-to-r from-indigo-50 via-slate-50 to-violet-50/70 px-5 py-3.5 shadow-sm">
+                {coverSrc && (
+                  <div
+                    aria-hidden="true"
+                    onContextMenu={(e) => e.preventDefault()}
+                    className="pointer-events-none absolute inset-y-0 right-0 w-full lg:w-3/5 select-none overflow-hidden"
+                  >
+                    <div
+                      className="cover-fade absolute inset-0 bg-cover bg-center"
+                      style={{
+                        backgroundImage: `url(${coverSrc})`,
+                      }}
+                    />
+                    <div
+                      className="cover-shade absolute inset-0"
+                    />
+                  </div>
+                )}
+                <div className="relative flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
+                  <div className="flex items-center gap-4">
+                    <span className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl bg-indigo-100 text-indigo-600">
+                      <Calendar className="h-5 w-5" />
+                    </span>
+                    <div>
+                      <p className="text-xs font-semibold text-slate-700">Current Academic Year</p>
+                      <p className="text-2xl font-extrabold tracking-tight text-[#14203B] md:text-[1.75rem]">
+                        {currentAcademicYear ? currentAcademicYear.name : "No academic year yet"}
+                      </p>
+                      {!currentAcademicYear && <p className="mt-1 text-xs text-slate-500">Add one to get started.</p>}
+                    </div>
                   </div>
                   {currentAcademicYear && (
-                    <div className="flex flex-wrap items-center gap-3 text-sm">
-                      <div className="rounded-lg bg-black/5 px-4 py-2.5 backdrop-blur-sm">
-                        <p className="flex items-center gap-1.5 text-xs text-white/70"><Calendar className="h-3.5 w-3.5" /> Starts</p>
-                        <p className="mt-0.5 font-semibold">{currentAcademicYear.startDate ? new Date(currentAcademicYear.startDate).toLocaleDateString("en-IN", { day: "numeric", month: "short", year: "numeric" }) : "—"}</p>
-                      </div>
-                      <div className="rounded-lg bg-black/5 px-4 py-2.5 backdrop-blur-sm">
-                        <p className="flex items-center gap-1.5 text-xs text-white/70"><Calendar className="h-3.5 w-3.5" /> Ends</p>
-                        <p className="mt-0.5 font-semibold">{currentAcademicYear.endDate ? new Date(currentAcademicYear.endDate).toLocaleDateString("en-IN", { day: "numeric", month: "short", year: "numeric" }) : "—"}</p>
-                      </div>
-                      <div className="rounded-lg bg-black/5 px-4 py-2.5 backdrop-blur-sm">
-                        <p className="flex items-center gap-1.5 text-xs text-white/70"><CheckCircle2 className="h-3.5 w-3.5" /> Status</p>
-                        <p className="mt-0.5 font-semibold capitalize">{currentAcademicYear.status || "active"}</p>
+                    <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
+                      {[
+                        { label: "Starts", value: currentAcademicYear.startDate },
+                        { label: "Ends", value: currentAcademicYear.endDate },
+                      ].map((item) => (
+                        <div key={item.label} className="flex items-start gap-3 rounded-xl bg-white/90 px-4 py-2 shadow-sm">
+                          <Calendar className="mt-0.5 h-4 w-4 shrink-0 text-slate-500" />
+                          <div>
+                            <p className="text-xs text-slate-500">{item.label}</p>
+                            <p className="whitespace-nowrap text-sm font-bold text-[#14203B]">
+                              {item.value ? new Date(item.value).toLocaleDateString("en-IN", { day: "numeric", month: "short", year: "numeric" }) : "—"}
+                            </p>
+                          </div>
+                        </div>
+                      ))}
+                      <div className="flex items-start gap-3 rounded-xl bg-white/90 px-4 py-2 shadow-sm">
+                        <span className="mt-1.5 h-2.5 w-2.5 shrink-0 rounded-full bg-emerald-500" />
+                        <div>
+                          <p className="text-xs text-slate-500">Status</p>
+                          <span className="inline-flex rounded-full bg-emerald-50 px-2 py-0.5 text-xs font-semibold capitalize text-emerald-600">
+                            {YEAR_STATUS_DISPLAY_LABELS[currentAcademicYear.status] || currentAcademicYear.status || "Active"}
+                          </span>
+                        </div>
                       </div>
                     </div>
                   )}
@@ -2217,8 +2374,19 @@ const AcademicSetup = ({ setShowAdminHeader }) => {
 
               {/* Select an academic year to manage its classes/sections/subjects/class teachers */}
               <div>
-                {/* <p className="mb-0.5 text-xs font-bold uppercase tracking-widest text-blue-500">Step 1</p> */}
-                <h2 className="mb-4 text-lg font-bold text-gray-900">Select a year to manage</h2>
+                <div className="mb-3 flex flex-col gap-2 sm:flex-row sm:items-end sm:justify-between">
+                  <div>
+                    <h2 className="text-xl font-extrabold tracking-tight text-[#14203B]">Academic Years</h2>
+                    <p className="mt-0.5 text-sm text-slate-500">Select a year to manage classes, sections, subjects, exams and more.</p>
+                  </div>
+                  {/* <button
+                    type="button"
+                    onClick={() => setShowYearForm(true)}
+                    className="inline-flex shrink-0 items-center justify-center gap-2 rounded-xl bg-indigo-600 px-4 py-2.5 text-sm font-semibold text-white shadow-md shadow-indigo-200 transition hover:bg-indigo-700"
+                  >
+                    <Plus className="h-4 w-4" /> Add Academic Year
+                  </button> */}
+                </div>
                 <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
                   {sortedYears.map((year, idx) => {
                     const statusLabel = year.status || (year.isActive ? "active" : "upcoming");
@@ -2254,36 +2422,30 @@ const AcademicSetup = ({ setShowAdminHeader }) => {
                         transition={{ duration: 0.35, delay: idx * 0.06, ease: [0.16, 1, 0.3, 1] }}
                         // whileHover={{ y: -6 }}
                         whileTap={{ scale: 0.97 }}
-                        className={`group relative flex flex-col items-start gap-1 text-black overflow-hidden rounded-3xl p-5 text-left shadow-sm transition-shadow duration-300 hover:shadow-xl cursor-pointer ${isLive
-                            ? "bg-gradient-to-br from-violet-400 via-indigo-400 to-indigo-400 text-white shadow-blue-200"
-                            : "border border-gray-200 bg-white hover:border-blue-200 hover:shadow-blue-100"
+                        className={`group relative flex cursor-pointer flex-col items-start overflow-hidden rounded-2xl bg-white p-4 text-left transition-all duration-300 hover:shadow-lg ${isLive
+                            ? "border-2 border-indigo-500 bg-indigo-50/20 shadow-md shadow-indigo-100"
+                            : "border border-slate-200 shadow-sm hover:border-indigo-200"
                           }`}
                       >
-                        <div
-                          className={`pointer-events-none absolute -right-8 -top-8 h-28 w-28 rounded-full blur-2xl transition-opacity duration-300 ${isLive ? "bg-white/20 opacity-100" : "bg-blue-100 opacity-0 group-hover:opacity-100"
-                            }`}
-                        />
-
                         <div className="relative flex w-full items-start justify-between">
                           <div
-                            className={`flex h-11 w-11 items-center justify-center rounded-2xl transition-transform duration-300 group-hover:scale-110 ${isLive ? "bg-white/15 text-white" : "bg-blue-50 text-blue-600"
+                            className={`flex h-10 w-10 items-center justify-center rounded-xl text-indigo-600 transition-transform duration-300 group-hover:scale-105 ${isLive ? "border border-indigo-200 bg-white" : "bg-indigo-50"
                               }`}
                           >
                             <Calendar className="h-5 w-5" />
                           </div>
                           <div className="flex items-center gap-1.5">
                             <span
-                              className={`inline-flex items-center gap-1.5 rounded-full px-2.5 py-1 text-[11px] font-semibold capitalize ${isLive ? "bg-green-200 text-green-700" : statusStyles[statusLabel] || statusStyles.upcoming
-                                }`}
+                              className={`inline-flex items-center gap-1.5 rounded-full px-2.5 py-0.5 text-xs font-semibold capitalize ${statusStyles[statusLabel] || statusStyles.upcoming}`}
                             >
-                              <span className={`h-1.5 w-1.5 rounded-full ${isLive ? "bg-emerald-500" : statusDot[statusLabel] || statusDot.upcoming}`} />
+                              <span className={`h-2 w-2 rounded-full ${statusDot[statusLabel] || statusDot.upcoming}`} />
                               {YEAR_STATUS_DISPLAY_LABELS[statusLabel] || statusLabel}
                             </span>
                             <div className="relative" ref={isMenuOpen ? yearMenuRef : null}>
                               <button
                                 type="button"
                                 onClick={(e) => { e.stopPropagation(); setOpenYearMenuId(isMenuOpen ? null : year._id); }}
-                                className={`flex h-7 w-7 items-center justify-center rounded-full transition ${isLive ? "text-white hover:bg-white/20" : "text-gray-400 hover:bg-gray-100 hover:text-gray-600"}`}
+                                className="flex h-8 w-8 items-center justify-center rounded-full text-slate-500 transition hover:bg-slate-100 hover:text-slate-700"
                                 aria-label={`Actions for ${year.name}`}
                                 aria-haspopup="menu"
                                 aria-expanded={isMenuOpen}
@@ -2311,7 +2473,7 @@ const AcademicSetup = ({ setShowAdminHeader }) => {
                                   disabled={deletingId === year._id}
                                   className="flex w-full items-center gap-2 px-3 py-2 text-left text-sm transition hover:bg-emerald-50 hover:text-emerald-600 disabled:opacity-50"
                                 >
-                                  <Copy className="h-3.5 w-3.5" /> Copy
+                                  <Copy className="h-3.5 w-3.5" /> Move to Next Session
                                 </button>
                                 <button
                                   type="button"
@@ -2336,40 +2498,42 @@ const AcademicSetup = ({ setShowAdminHeader }) => {
                           </div>
                         </div>
 
-                        <p className={`relative mt-3 text-xl font-extrabold tracking-tight ${isLive ? "text-white" : "text-gray-900"}`}>{year.name}</p>
-                        <p className={`relative text-xs ${isLive ? "text-white/75" : "text-gray-500"}`}>
+                        <p className="relative mt-3 text-xl font-extrabold leading-tight tracking-tight text-[#14203B]">{year.name}</p>
+                        <p className="relative mt-0.5 text-xs text-slate-500">
                           {year.startDate ? new Date(year.startDate).toLocaleDateString("en-IN", { day: "numeric", month: "short", year: "numeric" }) : "—"}
                           {" – "}
                           {year.endDate ? new Date(year.endDate).toLocaleDateString("en-IN", { day: "numeric", month: "short", year: "numeric" }) : "—"}
                         </p>
 
-                        <div
-                          className={`relative mt-3 flex items-center gap-1.5 rounded-full px-2.5 py-1 text-xs font-semibold ${isLive ? "bg-white/15 text-white" : "bg-gray-50 text-gray-600"
-                            }`}
-                        >
-                          <Layers className="h-3.5 w-3.5" /> {classCount} {classCount === 1 ? "class" : "classes"}
+                        <div className="relative mt-2.5 inline-flex items-center gap-1.5 rounded-lg bg-slate-50 px-2.5 py-1 text-xs font-semibold text-slate-800">
+                          <Layers className="h-3.5 w-3.5 text-slate-600" /> {classCount} {classCount === 1 ? "class" : "classes"}
                         </div>
 
                         <div className="relative mt-3 w-full">
-                          <div className={`flex items-center justify-between text-[11px] font-semibold ${isLive ? "text-white/80" : "text-gray-500"}`}>
+                          <div className="flex items-center justify-between text-xs text-slate-600">
                             <span>Setup progress</span>
-                            <span>{progress.percent === 100 ? "100% completed" : `${progress.percent}%`}</span>
+                            <span className="font-medium">{progress.percent}%</span>
                           </div>
-                          <div className={`mt-1 h-1.5 w-full overflow-hidden rounded-full ${isLive ? "bg-white/20" : "bg-gray-100"}`}>
+                          <div className="mt-1.5 h-1.5 w-full overflow-hidden rounded-full bg-slate-100">
                             <div
-                              className={`h-full rounded-full transition-all duration-500 ${progress.percent === 100 ? "bg-green-400" : isLive ? "bg-white" : "bg-blue-500"}`}
+                              className="h-full rounded-full bg-emerald-500 transition-all duration-500"
                               style={{ width: `${progress.percent}%` }}
                             />
                           </div>
                         </div>
 
-                        <div className={`relative mt-4 flex w-full items-center justify-between border-t pt-3 ${isLive ? "border-white/20" : "border-gray-100"}`}>
-                          <span className={`text-xs font-bold ${isLive ? "text-white" : "text-blue-600"}`}>Manage this year</span>
+                        <div
+                          className={`relative mt-4 flex w-full items-center justify-between rounded-xl px-4 py-2.5 transition ${isLive
+                              ? "bg-indigo-600 text-white shadow-md shadow-indigo-200 group-hover:bg-indigo-700"
+                              : "border border-slate-200 bg-white text-indigo-700 group-hover:border-indigo-200"
+                            }`}
+                        >
+                          <span className="text-sm font-semibold">Manage this year</span>
                           <span
-                            className={`flex h-7 w-7 items-center justify-center rounded-full transition-transform duration-300 group-hover:translate-x-1 ${isLive ? "bg-white/20 text-white" : "bg-blue-50 text-blue-600"
+                            className={`flex h-7 w-7 items-center justify-center rounded-full transition-transform duration-300 group-hover:translate-x-1 ${isLive ? "bg-white text-indigo-600" : "bg-indigo-50 text-indigo-600"
                               }`}
                           >
-                            <ArrowRight className="h-3.5 w-3.5" />
+                            <ArrowRight className="h-4 w-4" />
                           </span>
                         </div>
                       </Motion.div>
@@ -2384,12 +2548,13 @@ const AcademicSetup = ({ setShowAdminHeader }) => {
                     transition={{ duration: 0.35, delay: sortedYears.length * 0.06, ease: [0.16, 1, 0.3, 1] }}
                     whileHover={{ y: -6 }}
                     whileTap={{ scale: 0.97 }}
-                    className="group flex min-h-48 flex-col items-center justify-center gap-3 rounded-3xl border-2 border-dashed border-gray-200 bg-gray-50/50 p-5 text-center text-gray-400 transition-all duration-300 hover:border-blue-400 hover:bg-blue-50/60 hover:text-blue-600"
+                    className="group flex min-h-52 flex-col items-center justify-center gap-2 rounded-2xl border-2 border-dashed border-slate-200 bg-white/40 p-4 text-center transition-all duration-300 hover:border-indigo-300 hover:bg-indigo-50/30"
                   >
-                    <span className="flex h-12 w-12 items-center justify-center rounded-2xl bg-white text-gray-400 shadow-sm transition-all duration-300 group-hover:scale-110 group-hover:bg-blue-600 group-hover:text-white group-hover:shadow-lg group-hover:shadow-blue-200">
+                    <span className="flex h-12 w-12 items-center justify-center rounded-full bg-indigo-50 text-indigo-600 transition-all duration-300 group-hover:scale-105 group-hover:bg-indigo-600 group-hover:text-white">
                       <Plus className="h-6 w-6" />
                     </span>
-                    <span className="text-sm font-bold">Add Academic Year</span>
+                    <span className="mt-1 text-base font-bold text-[#14203B]">Add Academic Year</span>
+                    <span className="max-w-60 text-xs leading-relaxed text-slate-500">Create a new academic year to manage classes, sections and more.</span>
                   </Motion.button>
                 </div>
               </div>
@@ -2447,7 +2612,7 @@ const AcademicSetup = ({ setShowAdminHeader }) => {
                                   onClick={() => copyYearSetup(year)}
                                   disabled={deletingId === year._id}
                                   className="rounded-md p-1.5 text-gray-400 transition hover:bg-emerald-50 hover:text-emerald-600 disabled:opacity-50"
-                                  title="Copy this year's classes, sections, subjects and class teachers to another year"
+                                  title="Move to Next Session — copies this year's classes, sections, subjects and class teachers to another year"
                                 >
                                   <Copy className="h-4 w-4" />
                                 </button>

@@ -1,3 +1,4 @@
+import AssignmentFlashcards from '../features/assignment-flashcards/AssignmentFlashcards';
 import React, { useState, useRef, useEffect, useMemo } from "react";
 import {
   Clock,
@@ -95,13 +96,6 @@ const Assignment = ({ assignmentType }) => {
   const ASSIGNMENTS_CACHE_TTL_MS = 2 * 60 * 1000;
   const ASSIGNMENTS_ENDPOINT = `${API_BASE_URL}/api/assignment/student/assignments`;
 
-  // Flashcard state
-  const [flashDeck, setFlashDeck] = useState([]);
-  const [flashIndex, setFlashIndex] = useState(0);
-  const [flashFlipped, setFlashFlipped] = useState(false);
-  const [flashKnown, setFlashKnown] = useState({});
-  const [flashShuffle, setFlashShuffle] = useState(false);
-
   // EEC / Practice state
   const [selectedClass, setSelectedClass] = useState("6");
   const [practiceMeta, setPracticeMeta] = useState(null);
@@ -197,7 +191,10 @@ const Assignment = ({ assignmentType }) => {
           score: assignment.score,
           feedback: assignment.feedback,
           teacherName: assignment.teacherId?.name,
-          attachments: assignment.attachments || []
+          attachments: assignment.attachments || [],
+          isQuiz: Boolean(assignment.isQuiz),
+          quizQuestionCount: assignment.quizQuestionCount || 0,
+          timeLimit: assignment.timeLimit || null
         };
       });
 
@@ -676,19 +673,6 @@ const Assignment = ({ assignmentType }) => {
       setPracticeSubmitting(false);
     }
   };
-
-  // ─── Flashcard keydown ──────────────────────────────────────
-  useEffect(() => {
-    if (assignmentType !== 'flashcard') return;
-    const onKeyDown = (e) => {
-      if (e.key === ' ') {
-        e.preventDefault();
-        setFlashFlipped(!flashFlipped);
-      }
-    };
-    window.addEventListener('keydown', onKeyDown);
-    return () => window.removeEventListener('keydown', onKeyDown);
-  }, [flashFlipped, assignmentType]);
 
   const loadPracticeMeta = async () => {
     const token = localStorage.getItem('token');
@@ -1392,7 +1376,18 @@ const Assignment = ({ assignmentType }) => {
                       </div>
                     )}
 
-                    {!isSubmitted && !isGraded && (
+                    {!isSubmitted && !isGraded && a.isQuiz && (
+                      <button
+                        type="button"
+                        onClick={() => navigate(`/student/quiz/${a.id}`)}
+                        className="flex w-full items-center justify-center gap-2.5 rounded-2xl bg-violet-600 px-6 py-4 text-base font-bold text-white shadow-lg shadow-violet-600/30 transition-all duration-200 hover:bg-violet-700"
+                      >
+                        <SendHorizonal className="h-5 w-5" />
+                        Start Quiz ({a.quizQuestionCount} questions{a.timeLimit ? `, ${a.timeLimit} min` : ''})
+                      </button>
+                    )}
+
+                    {!isSubmitted && !isGraded && !a.isQuiz && (
                       submitSuccess ? (
                         <button
                           type="button"
@@ -1534,29 +1529,7 @@ const Assignment = ({ assignmentType }) => {
         );
       })()}
 
-      {assignmentType === 'flashcard' && (
-        <div className={`page-fade-in ${SURFACE_CARD} p-6`}>
-          <div className="flex flex-wrap items-center gap-3 mb-6">
-            <label htmlFor="fcClass" className="font-medium text-[#334155]">Class:</label>
-            <select
-              id="fcClass"
-              value={selectedClass}
-              onChange={e => setSelectedClass(e.target.value)}
-              className={`${SURFACE_INNER} px-3 py-2 focus:ring-2 focus:ring-violet-500/30 focus:border-violet-500/60 outline-none text-sm text-[#0f172a]`}
-            >
-              <option value="6">Class 6</option>
-              <option value="7">Class 7</option>
-              <option value="8">Class 8</option>
-              <option value="9">Class 9</option>
-              <option value="10">Class 10</option>
-            </select>
-          </div>
-          <div className="flex flex-col items-center gap-3 rounded-2xl border-2 border-dashed border-violet-500/30 py-14 text-center">
-            <Layers className="h-9 w-9 text-violet-300" />
-            <p className="text-[#64748b] text-sm font-medium">Flashcard functionality coming soon!</p>
-          </div>
-        </div>
-      )}
+      {assignmentType === 'flashcard' && <AssignmentFlashcards />}
 
       {assignmentType === 'eec' && (
         <div className={`page-fade-in ${SURFACE_CARD} overflow-hidden`}>

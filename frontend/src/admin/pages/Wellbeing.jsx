@@ -129,6 +129,11 @@ const Wellbeing = ({ setShowAdminHeader }) => {
   }, [studentData, searchTerm, filterStatus, wellbeingData]);
 
   const totalPages = Math.max(1, Math.ceil(filteredStudents.length / ITEMS_PER_PAGE));
+  // Async wellbeing-data fetches can shrink `filteredStudents` after the
+  // page was set — clamp back instead of rendering an out-of-range page.
+  useEffect(() => {
+    setCurrentPage((page) => Math.min(page, totalPages));
+  }, [totalPages]);
   const paginatedStudents = useMemo(() => {
     const start = (currentPage - 1) * ITEMS_PER_PAGE;
     return filteredStudents.slice(start, start + ITEMS_PER_PAGE);

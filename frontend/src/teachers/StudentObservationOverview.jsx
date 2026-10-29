@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useState } from "react";
+import React, { useEffect, useMemo, useRef, useState } from "react";
 import { motion as Motion, AnimatePresence } from "framer-motion";
 import { CheckCircle2, Clock, Heart, Search, Save, ChevronDown, ChevronUp } from "lucide-react";
 
@@ -279,7 +279,15 @@ const StudentObservationOverview = () => {
   const [success, setSuccess] = useState("");
 
   /* Load students */
+  // Switching class/section/session quickly can let a stale response for the
+  // PREVIOUS selection land after the current one — without this guard that
+  // would repopulate `students`/`studentIdSet` for the wrong class, letting a
+  // teacher submit a sensitive wellbeing observation against a student who
+  // isn't actually in the currently-selected class.
+  const loadStudentsRequestIdRef = useRef(0);
   useEffect(() => {
+    const requestId = ++loadStudentsRequestIdRef.current;
+    const isStale = () => loadStudentsRequestIdRef.current !== requestId;
     const load = async () => {
       setStudentsLoading(true);
       setError("");
@@ -296,6 +304,7 @@ const StudentObservationOverview = () => {
         });
         const payload = await res.json().catch(() => ({}));
         if (!res.ok) throw new Error(payload?.error || "Unable to load students");
+        if (isStale()) return;
         const list = Array.isArray(payload?.students) ? payload.students : [];
         const ids  = new Set(list.map((s) => String(s?._id || s?.id || "")));
         setSessionOptions(Array.isArray(payload?.options?.sessions)  ? payload.options.sessions  : []);
@@ -305,11 +314,12 @@ const StudentObservationOverview = () => {
         setStudentIdSet(ids);
         if (!ids.has(String(selectedStudentId || ""))) setSelectedStudentId("");
       } catch (err) {
+        if (isStale()) return;
         setError(err.message || "Unable to load data");
         setStudents([]);
         setStudentIdSet(new Set());
       } finally {
-        setStudentsLoading(false);
+        if (!isStale()) setStudentsLoading(false);
       }
     };
     load();

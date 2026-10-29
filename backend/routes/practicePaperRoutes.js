@@ -6,9 +6,44 @@ const PracticePaper = require('../models/PracticePaper');
 const Class = require('../models/Class');
 const Section = require('../models/Section');
 const Subject = require('../models/Subject');
+const LessonPlan = require('../models/LessonPlan');
 const authTeacher = require('../middleware/authTeacher');
 const authStudent = require('../middleware/authStudent');
 const StudentUser = require('../models/StudentUser');
+const Notification = require('../models/Notification');
+
+// Tells students in the paper's class/section that new or updated practice
+// material is available. Best-effort — a notification failure must never
+// block the teacher's publish/edit action.
+const notifyStudentsOfPaperChange = async (paper, { isNew }) => {
+  try {
+    await Notification.create({
+      schoolId: paper.schoolId,
+      campusId: paper.campusId || null,
+      title: isNew ? 'New practice paper published' : 'Practice paper updated',
+      message: `${paper.title}${paper.subjectName ? ` (${paper.subjectName})` : ''} ${
+        isNew ? 'is now available to practice.' : 'has been updated by your teacher.'
+      }`,
+      audience: 'Student',
+      classId: paper.classId,
+      sectionId: paper.sectionId,
+      subjectId: paper.subjectId || null,
+      className: paper.className || '',
+      sectionName: paper.sectionName || '',
+      subjectName: paper.subjectName || '',
+      createdByType: 'teacher',
+      createdByTeacherId: paper.teacherId,
+      createdByName: paper.teacherName || '',
+      type: 'class_note',
+      typeLabel: 'Practice paper',
+      priority: 'medium',
+      category: 'academic',
+      relatedEntity: { entityType: 'practice_paper', entityId: paper._id },
+    });
+  } catch (err) {
+    logger.error('Error creating practice paper notification:', err);
+  }
+};
 
 const STUDENT_PLACEMENT_FIELDS = 'classId sectionId className sectionName grade section';
 
@@ -97,11 +132,18 @@ router.post('/', authTeacher, async (req, res, next) => {
       classId,
       sectionId,
       subjectId,
+      subjectName,
       questions,
       duration,
       difficulty,
       tags,
       chapter,
+      chapterId,
+      chapterTitle,
+      topicTitle,
+      subTopicTitle,
+      sourceLessonPlanId,
+      sourceSubTopicId,
       unit,
       topics,
       passingPercentage,
@@ -127,8 +169,38 @@ router.post('/', authTeacher, async (req, res, next) => {
       });
     }
 
+    // A paper created from this portal must remain traceable to the lesson
+    // students see. Validate the optional lesson-plan link against the
+    // teacher's own school/class before saving it.
+    let linkedLessonPlan = null;
+    if (sourceLessonPlanId) {
+      if (!mongoose.Types.ObjectId.isValid(sourceLessonPlanId)) {
+        return res.status(400).json({ success: false, message: 'sourceLessonPlanId must be a valid lesson plan id' });
+      }
+      linkedLessonPlan = await LessonPlan.findOne({
+        _id: sourceLessonPlanId,
+        schoolId: req.schoolId,
+        teacherId: req.userId,
+      }).lean();
+      if (!linkedLessonPlan) {
+        return res.status(400).json({ success: false, message: 'The selected lesson plan is not available to this teacher' });
+      }
+      if (String(linkedLessonPlan.classId || '') !== String(classId)
+        || String(linkedLessonPlan.sectionId || '') !== String(sectionId)) {
+        return res.status(400).json({ success: false, message: 'Lesson plan, class, and section must match' });
+      }
+      if (subjectId && linkedLessonPlan.subjectId && String(linkedLessonPlan.subjectId) !== String(subjectId)) {
+        return res.status(400).json({ success: false, message: 'Lesson plan and subject must match' });
+      }
+    }
+
+    const resolvedSubjectId = subjectId || linkedLessonPlan?.subjectId || null;
     // Resolve denormalized names
-    const denormalized = await resolveDenormalizedNames(classId, sectionId, subjectId);
+    const denormalized = await resolveDenormalizedNames(classId, sectionId, resolvedSubjectId);
+    if (!denormalized.subjectName && subjectName) denormalized.subjectName = String(subjectName).trim();
+    if (!denormalized.subjectName && linkedLessonPlan?.subject) {
+      denormalized.subjectName = String(linkedLessonPlan.subject).trim();
+    }
 
     const paperData = {
       schoolId: req.schoolId,
@@ -137,7 +209,7 @@ router.post('/', authTeacher, async (req, res, next) => {
       paperType: paperType || 'practice_set',
       classId,
       sectionId,
-      subjectId: subjectId || null,
+      subjectId: resolvedSubjectId,
       ...denormalized,
       teacherId: req.userId,
       teacherName: req.userDetails?.name || 'Teacher',
@@ -145,7 +217,13 @@ router.post('/', authTeacher, async (req, res, next) => {
       duration: duration || 0,
       difficulty: difficulty || 'medium',
       tags: tags || [],
-      chapter: chapter || '',
+      chapter: chapter || chapterTitle || '',
+      chapterId: chapterId || '',
+      chapterTitle: chapterTitle || chapter || '',
+      topicTitle: topicTitle || '',
+      subTopicTitle: subTopicTitle || '',
+      sourceLessonPlanId: sourceLessonPlanId || linkedLessonPlan?._id || null,
+      sourceSubTopicId: sourceSubTopicId || '',
       unit: unit || '',
       topics: topics || [],
       passingPercentage: passingPercentage || 40,
@@ -252,6 +330,9 @@ router.patch('/:id', authTeacher, async (req, res, next) => {
       });
     }
 
+    const wasPublished = paper.status === 'published';
+    const contentChanged = Boolean(title || description !== undefined || questions || tags || difficulty || duration !== undefined || passingPercentage !== undefined);
+
     // Update allowed fields
     if (title) paper.title = title.trim();
     if (description !== undefined) paper.description = description;
@@ -260,9 +341,23 @@ router.patch('/:id', authTeacher, async (req, res, next) => {
     if (difficulty) paper.difficulty = difficulty;
     if (duration !== undefined) paper.duration = duration;
     if (passingPercentage !== undefined) paper.passingPercentage = passingPercentage;
-    if (status) paper.status = status;
+    if (status) {
+      paper.status = status;
+      if (status === 'published') {
+        paper.publishedForStudentPortal = true;
+        paper.publishedAt = paper.publishedAt || new Date();
+      }
+    }
 
     await paper.save();
+
+    if (paper.status === 'published') {
+      if (!wasPublished) {
+        notifyStudentsOfPaperChange(paper, { isNew: true });
+      } else if (contentChanged) {
+        notifyStudentsOfPaperChange(paper, { isNew: false });
+      }
+    }
 
     res.json({
       success: true,
@@ -317,9 +412,13 @@ router.post('/:id/publish', authTeacher, async (req, res, next) => {
       });
     }
 
+    const wasPublished = paper.status === 'published';
     paper.status = 'published';
+    paper.publishedForStudentPortal = true;
     paper.publishedAt = new Date();
     await paper.save();
+
+    notifyStudentsOfPaperChange(paper, { isNew: !wasPublished });
 
     res.json({
       success: true,
@@ -334,9 +433,18 @@ router.post('/:id/publish', authTeacher, async (req, res, next) => {
 
 // ===== STUDENT ROUTES =====
 
+const escapeRegex = (value) => String(value).replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+
 // StudentUser stores the class name in `grade` and the section name in
 // `section`; some records may also carry classId/sectionId. Papers are
 // matched on whichever identifiers the student actually has.
+//
+// The text match is case-insensitive and tolerates a "Class " prefix on
+// either side (matching PracticePaper.className exactly against a bare
+// grade like "5" finds nothing if the paper was tagged "Class 5" — the same
+// StudentUser.grade vs Class.name inconsistency already fixed for the
+// student schedule/routine endpoint; most StudentUser records here have no
+// classId/sectionId at all, so this text fallback is the only path).
 const buildStudentPaperAccess = (student) => {
   const conditions = [];
   if (student.classId && student.sectionId) {
@@ -345,7 +453,11 @@ const buildStudentPaperAccess = (student) => {
   const className = String(student.className || student.grade || '').trim();
   const sectionName = String(student.sectionName || student.section || '').trim();
   if (className) {
-    conditions.push(sectionName ? { className, sectionName } : { className });
+    const classCondition = {
+      className: { $regex: `^(?:class\\s+)?${escapeRegex(className.replace(/^class\s+/i, ''))}$`, $options: 'i' },
+    };
+    if (sectionName) classCondition.sectionName = { $regex: `^${escapeRegex(sectionName)}$`, $options: 'i' };
+    conditions.push(classCondition);
   }
   return conditions.length ? { $or: conditions } : null;
 };
@@ -392,14 +504,27 @@ router.get('/student/papers', authStudent, async (req, res, next) => {
       .sort({ createdAt: -1 })
       .skip(skip)
       .limit(parseInt(limit))
-      .select('-studentAttempts -questions') // Don't send full questions/answers list initially
+      .select('-questions') // Keep questions private until a student starts the paper.
       .lean();
+
+    const papersForStudent = papers.map((paper) => {
+      const attempts = (paper.studentAttempts || [])
+        .filter((attempt) => String(attempt.studentId) === String(req.userId))
+        .sort((a, b) => new Date(b.submittedAt || b.startedAt || 0) - new Date(a.submittedAt || a.startedAt || 0));
+      const latest = attempts[0];
+      let studentStatus = 'not_started';
+      if (latest && !latest.submittedAt) studentStatus = 'in_progress';
+      else if (latest?.submittedAt && latest.percentage !== undefined && latest.percentage !== null) studentStatus = 'completed';
+      else if (latest?.submittedAt) studentStatus = 'submitted';
+      const { studentAttempts, ...safePaper } = paper;
+      return { ...safePaper, studentStatus };
+    });
 
     const total = await PracticePaper.countDocuments(filters);
 
     res.json({
       success: true,
-      papers,
+      papers: papersForStudent,
       total,
       page: parseInt(page),
       limit: parseInt(limit),

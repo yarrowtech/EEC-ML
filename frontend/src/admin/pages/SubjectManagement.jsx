@@ -23,14 +23,20 @@ const getSubjectCacheScope = () => {
   const token = localStorage.getItem('token');
   if (!token) return 'anonymous';
   try {
-    const base64 = token.split('.')[1]?.replace(/-/g, '+').replace(/_/g, '/');
-    const payload = JSON.parse(atob(base64));
+    // Re-pad the base64url payload — an un-padded length isn't always a
+    // multiple of 4, which would throw on a legitimately-valid token.
+    const base64 = token.split('.')[1]?.replace(/-/g, '+').replace(/_/g, '/') || '';
+    const padded = base64 + '='.repeat((4 - (base64.length % 4)) % 4);
+    const payload = JSON.parse(atob(padded));
     const adminId = payload?.id || 'unknown';
     const schoolId = payload?.schoolId || 'school';
     const campusId = payload?.campusId || 'campus';
     return `${adminId}_${schoolId}_${campusId}`;
   } catch {
-    return 'fallback';
+    // Scope the fallback to this token so a genuinely undecodable token
+    // still can't collide with another admin's cached subject list on a
+    // shared browser/tab (the previous bare 'fallback' key could).
+    return `fallback_${token.slice(-16)}`;
   }
 };
 

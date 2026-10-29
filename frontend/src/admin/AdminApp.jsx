@@ -17,14 +17,15 @@ const SchoolAdminsManagement = lazy(() => import('./pages/SchoolAdminsManagement
 const Routines = lazy(() => import('./Routines'));
 const FloorRoomManagement = lazy(() => import('./pages/FloorRoomManagement'));
 const ExaminationManagement = lazy(() => import('./pages/ExaminationManagement'));
+const AdmitCards = lazy(() => import('./pages/AdmitCards'));
 const ParentsManagement = lazy(() => import('./pages/ParentsManagement'));
 const SubjectManagement = lazy(() => import('./pages/SubjectManagement'));
 const AcademicSetup = lazy(() => import('./pages/AcademicSetup'));
 const AttendanceManagement = lazy(() => import('./pages/AttendanceManagement'));
 const Result = lazy(() => import('./pages/Result'));
 const FeesCollection = lazy(() => import('./pages/FeesCollection'));
-const FeesDashboard = lazy(() => import('./pages/FeesDashboard'));
 const StudentFeeDetails = lazy(() => import('./pages/StudentFeeDetails'));
+const FeeReceipts = lazy(() => import('./pages/FeeReceipts'));
 const FeesManagement = lazy(() => import('./pages/FeesManagement'));
 const HR = lazy(() => import('./pages/HR'));
 const SchoolRegistrations = lazy(() => import('./pages/SchoolRegistrations'));
@@ -34,8 +35,10 @@ const NoticeDetail = lazy(() => import('./pages/NoticeDetail'));
 const AdminSettings = lazy(() => import('./pages/AdminSettings'));
 const PaymentGatewaySettings = lazy(() => import('./pages/PaymentGatewaySettings'));
 const StudentPromotion = lazy(() => import('./pages/StudentPromotion'));
+const LeftStudents = lazy(() => import('./pages/LeftStudents'));
 const ReportCardManagement = lazy(() => import('./pages/ReportCardManagement'));
 const HolidayList = lazy(() => import('./pages/HolidayList'));
+const CommunityWall = lazy(() => import('../components/CommunityWall'));
 const TeacherFeedbackOverview = lazy(() => import('./pages/TeacherFeedbackOverview'));
 import { useNavigate } from 'react-router-dom';
 import { ADMIN_MENU_ITEMS, ADMIN_MENU_SECTIONS } from './adminConstants';
@@ -348,6 +351,7 @@ const AdminApp = () => {
           <Route path="academics" element={<AcademicSetup setShowAdminHeader={setShowAdminHeader} />} />
           <Route path="subjects" element={<SubjectManagement setShowAdminHeader={setShowAdminHeader} />} />
           <Route path="examination" element={<ExaminationManagement setShowAdminHeader={setShowAdminHeader} />} />
+          <Route path="admit-cards" element={<AdmitCards setShowAdminHeader={setShowAdminHeader} />} />
           {/* Lesson Plan is managed by teachers — hidden from the admin portal */}
           <Route path="lesson-plans" element={<Navigate to="/admin/dashboard" replace />} />
           <Route path="result" element={<Result setShowAdminHeader={setShowAdminHeader} />} />
@@ -355,8 +359,10 @@ const AdminApp = () => {
           <Route path="fees" element={<FeesCollection setShowAdminHeader={setShowAdminHeader} />} />
           <Route path="fees/collection" element={<FeesCollection setShowAdminHeader={setShowAdminHeader} />} />
           <Route path="fees/manage" element={<FeesManagement setShowAdminHeader={setShowAdminHeader} />} />
-          <Route path="fees/dashboard" element={<FeesDashboard setShowAdminHeader={setShowAdminHeader} />} />
+          {/* Dashboard is now the default "Overview" tab inside Fees Collection */}
+          <Route path="fees/dashboard" element={<Navigate to="/admin/fees/collection" replace />} />
           <Route path="fees/student-details" element={<StudentFeeDetails setShowAdminHeader={setShowAdminHeader} />} />
+          <Route path="fees/receipts" element={<FeeReceipts setShowAdminHeader={setShowAdminHeader} />} />
           <Route path="hr" element={<HR setShowAdminHeader={setShowAdminHeader} />} />
           <Route path="support" element={<Support setShowAdminHeader={setShowAdminHeader} />} />
           <Route path="notices" element={<Navigate to="/admin/notices/view" replace />} />
@@ -364,9 +370,11 @@ const AdminApp = () => {
           <Route path="notices/view" element={<NoticeManagement setShowAdminHeader={setShowAdminHeader} viewMode="view" />} />
           <Route path="notices/view/:noticeId" element={<NoticeDetail setShowAdminHeader={setShowAdminHeader} />} />
           <Route path="holidays" element={<HolidayList setShowAdminHeader={setShowAdminHeader} />} />
+          <Route path="community-wall" element={<CommunityWall role="admin" />} />
           <Route path="settings" element={<AdminSettings setShowAdminHeader={setShowAdminHeader} onSettingsUpdated={handleSettingsUpdated} />} />
           <Route path="settings/payment-gateway" element={<PaymentGatewaySettings setShowAdminHeader={setShowAdminHeader} />} />
           <Route path="promotion" element={<StudentPromotion setShowAdminHeader={setShowAdminHeader} />} />
+          <Route path="left-students" element={<LeftStudents setShowAdminHeader={setShowAdminHeader} />} />
 
           {/* 404 catch-all — redirect unknown /admin/* paths to dashboard */}
           <Route path="*" element={<Navigate to="/admin/dashboard" replace />} />
@@ -378,3 +386,5 @@ const AdminApp = () => {
 };
 
 export default AdminApp;
+
+

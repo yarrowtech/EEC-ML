@@ -1,109 +1,36 @@
-/**
- * Copyright (c) 2026 HouseofMusa and YarrowTech
- * All rights reserved. Unauthorized copying, modification, distribution,
- * or duplication is prohibited without prior written permission.
- */
+import React, { useId } from 'react';
 
-import React from 'react';
-import { ArrowLeft, ArrowRight, BookOpen, Clock, Layers, PencilLine, Users } from 'lucide-react';
-import { motion as Motion } from 'framer-motion';
-
-const HeaderActions = ({
-  autosaveStatus,
-  classValue,
-  sectionValue,
-  subjectValue,
-  onClassChange,
-  onSectionChange,
-  onSubjectChange,
-  classOptions = [],
-  sectionOptions = [],
-  subjectOptions = [],
-  currentChapter = null,
-  currentStep = 0,
-}) => {
-  const stepLabels = ['Lesson Info', 'Introduction', 'Content', 'Materials', 'Assessment', 'Review & Publish'];
-  const selectedChapterTitle = currentChapter?.title || 'Lesson Planner';
-  const selectedChapterStatus = currentChapter?.status === 'published' && !currentChapter?.isDraft ? 'Published' : 'Draft';
-
+const HeaderActions = ({ autosaveStatus, classValue, sectionValue, subjectValue,
+  onClassChange, onSectionChange, onSubjectChange, classOptions = [], sectionOptions = [],
+  subjectOptions = [], selectionDisabled = false }) => {
+  const id = useId();
+  const fields = [
+    { key: 'class', label: 'Class', value: classValue, change: onClassChange,
+      options: classOptions, placeholder: 'Select class' },
+    { key: 'section', label: 'Section', value: sectionValue, change: onSectionChange,
+      options: sectionOptions, disabled: !classValue, placeholder: 'Select section' },
+    { key: 'subject', label: 'Subject', value: subjectValue, change: onSubjectChange,
+      options: subjectOptions.map(o => ({ id: o.subjectId, name: o.subjectName })),
+      disabled: !sectionValue, placeholder: 'Select subject' },
+  ];
   return (
-    <Motion.div
-      layout
-      initial={{ opacity: 0, y: -8 }}
-      animate={{ opacity: 1, y: 0 }}
-      transition={{ duration: 0.22, ease: 'easeOut' }}
-      className="min-w-0 rounded-[22px] border border-[#e9edf2] bg-[#f8fafc] px-3 py-3 shadow-sm sm:rounded-[28px] sm:px-4"
-    >
-      <div className="flex flex-wrap items-center gap-2.5 lg:gap-4">
-        <div className="flex items-center gap-2">
-          <span className="flex size-7 shrink-0 items-center justify-center rounded-full bg-[#2563eb] text-[11px] font-bold text-white">1</span>
-          <span className="text-xs font-semibold text-[#475569]">Class</span>
-        </div>
-        <select
-          value={classValue}
-          onChange={(event) => onClassChange(event.target.value)}
-          style={{ colorScheme: 'light', color: '#1e293b', backgroundColor: 'white' }}
-          className="h-9 w-full min-w-0 rounded-full border border-[#dce2ea] px-3 text-xs font-medium outline-none transition focus:border-[#2563eb] focus:ring-2 focus:ring-blue-100 sm:w-auto sm:min-w-[112px]"
-        >
-          <option value="">{classOptions.length > 0 ? 'Select Class' : 'No assigned classes'}</option>
-          {classOptions.map((o) => <option key={o.id} value={o.id}>{o.name}</option>)}
-        </select>
-
-        <ArrowRight className="hidden size-4 text-[#94a3b8] sm:block" />
-
-        <div className="flex items-center gap-2">
-          <Users className="size-4 text-[#2563eb]" />
-          <span className="text-xs font-semibold text-[#475569]">Section</span>
-        </div>
-        <select
-          value={sectionValue}
-          onChange={(event) => onSectionChange(event.target.value)}
-          style={{ colorScheme: 'light', color: '#1e293b', backgroundColor: 'white' }}
-          className="h-9 w-full min-w-0 rounded-full border border-[#dce2ea] px-3 text-xs font-medium outline-none transition focus:border-[#2563eb] focus:ring-2 focus:ring-blue-100 sm:w-auto sm:min-w-[108px]"
-        >
-          <option value="">{classValue ? (sectionOptions.length > 0 ? 'Select Section' : 'No assigned sections') : 'Select a class first'}</option>
-          {sectionOptions.map((o) => <option key={o.id} value={o.id}>{o.name}</option>)}
-        </select>
-
-        <ArrowRight className="hidden size-4 text-[#94a3b8] sm:block" />
-
-        <div className="flex items-center gap-2">
-          <BookOpen className="size-4 text-[#2563eb]" />
-          <span className="text-xs font-semibold text-[#475569]">Subject</span>
-        </div>
-        <select
-          value={subjectValue}
-          onChange={(event) => onSubjectChange(event.target.value)}
-          style={{ colorScheme: 'light', color: '#1e293b', backgroundColor: 'white' }}
-          className="h-9 w-full min-w-0 rounded-full border border-[#dce2ea] px-3 text-xs font-medium outline-none transition focus:border-[#2563eb] focus:ring-2 focus:ring-blue-100 sm:w-auto sm:min-w-[128px]"
-        >
-          <option value="">{sectionValue ? (subjectOptions.length > 0 ? 'Select Subject' : 'No assigned subjects') : 'Select a section first'}</option>
-          {subjectOptions.map((o) => <option key={o.subjectId} value={o.subjectId}>{o.subjectName}</option>)}
-        </select>
-        <Motion.div layout className="flex w-full min-w-0 flex-1 flex-col items-stretch justify-between gap-3 sm:flex-row sm:items-center lg:ml-auto lg:w-auto">
-          <div className="flex min-w-0 flex-wrap items-center gap-2 sm:gap-3">
-            <Layers className="hidden size-4 text-[#2563eb] xl:block" />
-            <div className="min-w-0">
-              <p className="break-words text-sm font-semibold tracking-[-0.01em] text-[#0f2b45] sm:text-base">{selectedChapterTitle}</p>
-              <p className="flex items-center gap-1 text-[11px] text-[#64748b]">
-                <Clock className="size-3" /> {autosaveStatus}
-              </p>
-            </div>
-            <span className={`shrink-0 rounded-full px-3 py-1 text-[11px] font-medium ${selectedChapterStatus === 'Published' ? 'bg-emerald-100 text-emerald-700' : 'bg-[#dbe7fe] text-[#1e4f8a]'}`}>
-              <PencilLine className="mr-1 inline size-3" />{selectedChapterStatus}
-            </span>
-          </div>
-
-          <div className="hidden shrink-0 items-center gap-2 rounded-full bg-[#f1f4f9] px-3 py-1.5 text-xs font-medium text-[#64748b] md:flex">
-            <ArrowLeft className="size-3.5" />
-            <span className="rounded-full bg-[#2563eb] px-2.5 py-1 text-[11px] font-semibold text-white">{currentStep + 1} / {stepLabels.length}</span>
-            <ArrowRight className="size-3.5" />
-            <span className="ml-1 whitespace-nowrap">{stepLabels[currentStep] || stepLabels[0]}</span>
-          </div>
-        </Motion.div>
+    <header className="border-b border-slate-200 px-4 py-3 dark:border-slate-700">
+      <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
+        <h1 className="text-base font-semibold text-slate-900 dark:text-white">Lesson plan</h1>
+        <p role="status" className="text-xs text-slate-600 dark:text-slate-300">{autosaveStatus}</p>
       </div>
-    </Motion.div>
+      <div className="grid gap-3 sm:grid-cols-3">
+        {fields.map(field => <div key={field.key}>
+          <label htmlFor={id + field.key} className="mb-1 block text-xs font-medium text-slate-600 dark:text-slate-300">{field.label}</label>
+          <select id={id + field.key} value={field.value} disabled={selectionDisabled || field.disabled}
+            onChange={event => field.change(event.target.value)}
+            className="h-9 w-full rounded-lg border border-slate-300 bg-white px-3 text-sm text-slate-900 disabled:opacity-50 dark:border-slate-600 dark:bg-slate-900 dark:text-white">
+            <option value="">{field.options.length ? field.placeholder : 'No available ' + field.label.toLowerCase() + ' options'}</option>
+            {field.options.map(option => <option key={option.id} value={option.id}>{option.name}</option>)}
+          </select>
+        </div>)}
+      </div>
+    </header>
   );
 };
-
 export default HeaderActions;

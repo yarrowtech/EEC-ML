@@ -9,6 +9,17 @@ const urlBase64ToUint8Array = (base64String) => {
   return outputArray;
 };
 
+// True when an existing push subscription was created with `serverKey`.
+// Browsers that don't expose the key are treated as matching (can't tell).
+export const subscriptionMatchesKey = (subscription, serverKey) => {
+  const current = subscription?.options?.applicationServerKey;
+  if (!current || !serverKey) return true;
+  const a = new Uint8Array(current);
+  if (a.length !== serverKey.length) return false;
+  for (let i = 0; i < a.length; i += 1) if (a[i] !== serverKey[i]) return false;
+  return true;
+};
+
 export const isPushSupported = () =>
   typeof window !== 'undefined' &&
   'serviceWorker' in navigator &&
@@ -57,11 +68,18 @@ export const subscribeToPush = async () => {
     throw new Error('Push notifications are not enabled for this school right now.');
   }
 
+  const serverKey = urlBase64ToUint8Array(String(keyData.publicKey));
   let subscription = await registration.pushManager.getSubscription();
+  // A subscription made with an older server key can never receive pushes
+  // (the push service rejects them) — replace it with one for the current key.
+  if (subscription && !subscriptionMatchesKey(subscription, serverKey)) {
+    await subscription.unsubscribe().catch(() => {});
+    subscription = null;
+  }
   if (!subscription) {
     subscription = await registration.pushManager.subscribe({
       userVisibleOnly: true,
-      applicationServerKey: urlBase64ToUint8Array(String(keyData.publicKey)),
+      applicationServerKey: serverKey,
     });
   }
 

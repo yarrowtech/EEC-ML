@@ -77,7 +77,7 @@ const AssignmentView = forwardRef(({ defaultType = "school" }, ref) => {
   const handleSaveDraft = async () => {
     const headers = getAuthHeaders();
     if (!headers) { setAutosaveLabel("Login required"); return; }
-    if (!journalTitle.trim() && !journalContent.trim()) return;
+    if (!journalTitle.trim() && !journalContent.trim()) { setAutosaveLabel("Nothing to save"); return; }
     setAutosaveLabel("Saving\u2026");
     const payload = { title: journalTitle.trim() || "Untitled", content: journalContent, tags: (journalTags || "").split(",").map((t) => t.trim()).filter(Boolean), mood: journalMood };
     try {

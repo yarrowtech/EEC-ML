@@ -1,6 +1,16 @@
+import os
+
 import pytest
 
+# Route/unit tests must not download or initialise multi-GB speech models. Keep
+# production startup warmup enabled by default; this is test-process scoped.
+os.environ["AI_WARMUP_MODELS"] = "false"
+
+from app.core.config import settings
 from app.modules.chat.schemas import TutorGenerateRequest
+
+# Use an explicit service identity in router tests.
+settings.ai_service_internal_key = "test-service-key"
 
 
 def pytest_configure(config):

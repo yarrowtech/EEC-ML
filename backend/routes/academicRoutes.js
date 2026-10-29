@@ -26,6 +26,40 @@ const { buildInvoiceSnapshotsForStudent } = require('../utils/feeHeadPolicy');
 
 const router = express.Router();
 
+// In-memory progress store for the "Move to Next Session" copy-setup job.
+// The job runs on the same server instance that accepted the POST, and the
+// admin UI polls progress during the single request that follows — a
+// persistent/shared store (Redis) is unnecessary for this scope.
+const copySetupJobs = new Map();
+const COPY_SETUP_JOB_TTL_MS = 10 * 60 * 1000; // garbage-collect finished jobs after 10 minutes
+
+const createCopySetupJob = (schoolId) => {
+  const jobId = new mongoose.Types.ObjectId().toString();
+  copySetupJobs.set(jobId, {
+    schoolId: String(schoolId),
+    status: 'running',
+    percentage: 0,
+    step: 'Starting…',
+    result: null,
+    error: null,
+    createdAt: Date.now(),
+  });
+  return jobId;
+};
+
+const updateCopySetupJob = (jobId, patch) => {
+  const job = copySetupJobs.get(jobId);
+  if (!job) return;
+  copySetupJobs.set(jobId, { ...job, ...patch });
+};
+
+setInterval(() => {
+  const cutoff = Date.now() - COPY_SETUP_JOB_TTL_MS;
+  for (const [jobId, job] of copySetupJobs.entries()) {
+    if (job.createdAt < cutoff) copySetupJobs.delete(jobId);
+  }
+}, 60 * 1000).unref();
+
 const resolveSchoolId = (req, res) => {
   const schoolId = req.schoolId || req.admin?.schoolId || null;
   if (!schoolId) {
@@ -444,6 +478,7 @@ router.delete('/years/:id', adminAuth, async (req, res) => {
   // #swagger.tags = ['Academics']
   try {
     const { id } = req.params;
+    const { cascade } = req.query;
     if (!mongoose.isValidObjectId(id)) {
       return res.status(400).json({ error: 'Invalid ID' });
     }
@@ -459,25 +494,285 @@ router.delete('/years/:id', adminAuth, async (req, res) => {
     }
 
     // Check for dependent classes
-    const dependentClasses = await ClassModel.countDocuments({
+    const classFilter = {
       schoolId,
       academicYearId: id,
       ...(campusId ? { campusId } : {}),
-    });
+    };
+    const dependentClassDocs = await ClassModel.find(classFilter).select('_id').lean();
+    const dependentCount = dependentClassDocs.length;
 
-    if (dependentClasses > 0) {
+    if (dependentCount > 0 && cascade !== 'true') {
       return res.status(409).json({
-        error: `Cannot delete: ${dependentClasses} class(es) are linked to this academic year`,
-        dependentCount: dependentClasses,
+        error: `Cannot delete: ${dependentCount} class(es) are linked to this academic year`,
+        dependentCount,
+        hint: 'Use cascade=true to delete all dependent records',
       });
     }
 
+    let deletedSections = 0;
+    let deletedSubjects = 0;
+    let deletedClasses = 0;
+    if (cascade === 'true' && dependentCount > 0) {
+      const classIds = dependentClassDocs.map((c) => c._id);
+      const sectionFilter = { schoolId, classId: { $in: classIds }, ...(campusId ? { campusId } : {}) };
+      const subjectFilter = { schoolId, classId: { $in: classIds }, ...(campusId ? { campusId } : {}) };
+      const [sectionResult, subjectResult] = await Promise.all([
+        Section.deleteMany(sectionFilter),
+        Subject.deleteMany(subjectFilter),
+      ]);
+      deletedSections = sectionResult.deletedCount || 0;
+      deletedSubjects = subjectResult.deletedCount || 0;
+      const classResult = await ClassModel.deleteMany(classFilter);
+      deletedClasses = classResult.deletedCount || 0;
+    }
+
     await AcademicYear.findByIdAndDelete(id);
-    res.json({ ok: true, message: 'Academic year deleted successfully' });
+    res.json({
+      ok: true,
+      message: 'Academic year deleted successfully',
+      deletedClasses,
+      deletedSections,
+      deletedSubjects,
+    });
   } catch (err) {
     res.status(400).json({ error: err.message });
   }
 });
+
+// Runs the actual class/section/subject/class-teacher copy, reporting
+// progress into the job store as it goes. Not awaited by the route handler —
+// the admin UI polls GET /years/copy-setup-progress/:jobId for the percentage.
+const runCopySetupJob = async (jobId, { schoolId, campusId, scopeFilter, sourceYear, targetYear, sourceClasses }) => {
+  // Weighted stage ranges so the bar moves proportionally to actual work done,
+  // not just "4 equal steps" (classes/sections/subjects usually dominate).
+  const STAGES = { classes: [5, 35], sections: [35, 60], subjects: [60, 85], classTeachers: [85, 99] };
+  const reportStage = (stage, step, done, total) => {
+    const [start, end] = STAGES[stage];
+    const pct = total > 0 ? start + ((end - start) * done) / total : end;
+    updateCopySetupJob(jobId, { percentage: Math.round(pct), step });
+  };
+
+  try {
+    const sourceClassIds = sourceClasses.map((item) => item._id);
+    const targetClasses = await ClassModel.find({
+      ...scopeFilter,
+      academicYearId: targetYear._id,
+    }).lean();
+
+    const classIdMap = new Map();
+    let classesCreated = 0;
+    let classesSkipped = 0;
+
+    for (let i = 0; i < sourceClasses.length; i += 1) {
+      const sourceClass = sourceClasses[i];
+      const sourceStandard = sanitizeStandard(sourceClass.standard);
+      const sourceStream = normalizeStream(sourceClass.stream);
+      const existingClass = targetClasses.find(
+        (item) => {
+          const targetStandard = sanitizeStandard(item.standard);
+          const targetStream = normalizeStream(item.stream);
+          if (sourceStandard && sourceStream) {
+            return targetStandard === sourceStandard && targetStream === sourceStream;
+          }
+          return String(item.name || '').trim().toLowerCase() === String(sourceClass.name || '').trim().toLowerCase();
+        }
+      );
+      if (existingClass) {
+        classIdMap.set(String(sourceClass._id), existingClass._id);
+        classesSkipped += 1;
+      } else {
+        const createdClass = await ClassModel.create({
+          schoolId,
+          campusId: campusId || null,
+          academicYearId: targetYear._id,
+          name: sourceClass.name,
+          order: Number.isFinite(Number(sourceClass.order)) ? Number(sourceClass.order) : 0,
+          standard: sanitizeStandard(sourceClass.standard),
+          stream: normalizeStream(sourceClass.stream),
+        });
+        classIdMap.set(String(sourceClass._id), createdClass._id);
+        targetClasses.push(createdClass.toObject ? createdClass.toObject() : createdClass);
+        classesCreated += 1;
+      }
+      reportStage('classes', `Copying classes… (${i + 1}/${sourceClasses.length})`, i + 1, sourceClasses.length);
+    }
+
+    const sourceSections = await Section.find({
+      ...scopeFilter,
+      classId: { $in: sourceClassIds },
+    }).lean();
+
+    const targetClassIds = Array.from(classIdMap.values());
+    const targetSections = targetClassIds.length
+      ? await Section.find({
+          ...scopeFilter,
+          classId: { $in: targetClassIds },
+        }).lean()
+      : [];
+
+    const sectionIdMap = new Map();
+    let sectionsCreated = 0;
+    let sectionsSkipped = 0;
+
+    for (let i = 0; i < sourceSections.length; i += 1) {
+      const sourceSection = sourceSections[i];
+      const mappedClassId = classIdMap.get(String(sourceSection.classId));
+      if (mappedClassId) {
+        const existingSection = targetSections.find(
+          (item) =>
+            String(item.classId) === String(mappedClassId) &&
+            String(item.name || '').trim().toLowerCase() === String(sourceSection.name || '').trim().toLowerCase()
+        );
+
+        if (existingSection) {
+          sectionIdMap.set(String(sourceSection._id), existingSection._id);
+          sectionsSkipped += 1;
+        } else {
+          const createdSection = await Section.create({
+            schoolId,
+            campusId: campusId || null,
+            classId: mappedClassId,
+            name: sourceSection.name,
+          });
+          sectionIdMap.set(String(sourceSection._id), createdSection._id);
+          targetSections.push(createdSection.toObject ? createdSection.toObject() : createdSection);
+          sectionsCreated += 1;
+        }
+      }
+      reportStage('sections', `Copying sections… (${i + 1}/${sourceSections.length})`, i + 1, sourceSections.length || 1);
+    }
+
+    const sourceSubjects = await Subject.find({
+      ...scopeFilter,
+      classId: { $in: sourceClassIds },
+    }).lean();
+
+    const targetSubjects = targetClassIds.length
+      ? await Subject.find({
+          ...scopeFilter,
+          classId: { $in: targetClassIds },
+        }).lean()
+      : [];
+
+    const subjectIdMap = new Map();
+    let subjectsCreated = 0;
+    let subjectsSkipped = 0;
+
+    for (let i = 0; i < sourceSubjects.length; i += 1) {
+      const sourceSubject = sourceSubjects[i];
+      const mappedClassId = classIdMap.get(String(sourceSubject.classId));
+      if (mappedClassId) {
+        const sourceSubjectStream = normalizeStream(sourceSubject.stream);
+        const existingSubject = targetSubjects.find(
+          (item) =>
+            String(item.classId) === String(mappedClassId) &&
+            String(item.name || '').trim().toLowerCase() === String(sourceSubject.name || '').trim().toLowerCase() &&
+            normalizeStream(item.stream) === sourceSubjectStream
+        );
+
+        if (existingSubject) {
+          subjectIdMap.set(String(sourceSubject._id), existingSubject._id);
+          subjectsSkipped += 1;
+        } else {
+          const createdSubject = await Subject.create({
+            schoolId,
+            campusId: campusId || null,
+            classId: mappedClassId,
+            name: sourceSubject.name,
+            code: sourceSubject.code || '',
+            stream: normalizeStream(sourceSubject.stream),
+          });
+          subjectIdMap.set(String(sourceSubject._id), createdSubject._id);
+          targetSubjects.push(createdSubject.toObject ? createdSubject.toObject() : createdSubject);
+          subjectsCreated += 1;
+        }
+      }
+      reportStage('subjects', `Copying subjects… (${i + 1}/${sourceSubjects.length})`, i + 1, sourceSubjects.length || 1);
+    }
+
+    const sourceClassTeacherAllocations = await TeacherAllocation.find({
+      schoolId,
+      ...(campusId ? { campusId } : {}),
+      isClassTeacher: true,
+      classId: { $in: sourceClassIds },
+    }).lean();
+
+    const targetClassTeacherAllocations = await TeacherAllocation.find({
+      schoolId,
+      ...(campusId ? { campusId } : {}),
+      isClassTeacher: true,
+      classId: { $in: targetClassIds },
+    }).lean();
+
+    let classTeachersCreated = 0;
+    let classTeachersSkipped = 0;
+
+    for (let i = 0; i < sourceClassTeacherAllocations.length; i += 1) {
+      const sourceAllocation = sourceClassTeacherAllocations[i];
+      const mappedClassId = classIdMap.get(String(sourceAllocation.classId));
+      const mappedSectionId = sectionIdMap.get(String(sourceAllocation.sectionId));
+      if (mappedClassId && mappedSectionId) {
+        const exists = targetClassTeacherAllocations.some(
+          (item) =>
+            String(item.teacherId) === String(sourceAllocation.teacherId) &&
+            String(item.classId) === String(mappedClassId) &&
+            String(item.sectionId) === String(mappedSectionId) &&
+            item.isClassTeacher === true
+        );
+
+        if (exists) {
+          classTeachersSkipped += 1;
+        } else {
+          const createdAllocation = await TeacherAllocation.create({
+            schoolId,
+            campusId: campusId || null,
+            teacherId: sourceAllocation.teacherId,
+            subjectId: null,
+            classId: mappedClassId,
+            sectionId: mappedSectionId,
+            isClassTeacher: true,
+            notes: sourceAllocation.notes || '',
+          });
+          targetClassTeacherAllocations.push(
+            createdAllocation.toObject ? createdAllocation.toObject() : createdAllocation
+          );
+          classTeachersCreated += 1;
+        }
+      }
+      reportStage(
+        'classTeachers',
+        `Copying class teachers… (${i + 1}/${sourceClassTeacherAllocations.length})`,
+        i + 1,
+        sourceClassTeacherAllocations.length || 1
+      );
+    }
+
+    updateCopySetupJob(jobId, {
+      status: 'done',
+      percentage: 100,
+      step: 'Done',
+      result: {
+        ok: true,
+        sourceYear: { id: sourceYear._id, name: sourceYear.name },
+        targetYear: { id: targetYear._id, name: targetYear.name },
+        classes: { created: classesCreated, skipped: classesSkipped, totalSource: sourceClasses.length },
+        sections: { created: sectionsCreated, skipped: sectionsSkipped, totalSource: sourceSections.length },
+        subjects: { created: subjectsCreated, skipped: subjectsSkipped, totalSource: sourceSubjects.length },
+        classTeachers: {
+          created: classTeachersCreated,
+          skipped: classTeachersSkipped,
+          totalSource: sourceClassTeacherAllocations.length,
+        },
+      },
+    });
+  } catch (err) {
+    updateCopySetupJob(jobId, {
+      status: 'error',
+      error: err.message || 'Failed to copy academic setup',
+    });
+  }
+};
 
 router.post('/years/:id/copy-setup', adminAuth, async (req, res) => {
   // #swagger.tags = ['Academics']
@@ -546,207 +841,36 @@ router.post('/years/:id/copy-setup', adminAuth, async (req, res) => {
       return res.status(400).json({ error: 'Source academic year has no classes to copy' });
     }
 
-    const sourceClassIds = sourceClasses.map((item) => item._id);
-    const targetClasses = await ClassModel.find({
-      ...scopeFilter,
-      academicYearId: targetYear._id,
-    }).lean();
-
-    const classIdMap = new Map();
-    let classesCreated = 0;
-    let classesSkipped = 0;
-
-    for (const sourceClass of sourceClasses) {
-      const sourceStandard = sanitizeStandard(sourceClass.standard);
-      const sourceStream = normalizeStream(sourceClass.stream);
-      const existingClass = targetClasses.find(
-        (item) => {
-          const targetStandard = sanitizeStandard(item.standard);
-          const targetStream = normalizeStream(item.stream);
-          if (sourceStandard && sourceStream) {
-            return targetStandard === sourceStandard && targetStream === sourceStream;
-          }
-          return String(item.name || '').trim().toLowerCase() === String(sourceClass.name || '').trim().toLowerCase();
-        }
-      );
-      if (existingClass) {
-        classIdMap.set(String(sourceClass._id), existingClass._id);
-        classesSkipped += 1;
-        continue;
-      }
-
-      const createdClass = await ClassModel.create({
-        schoolId,
-        campusId: campusId || null,
-        academicYearId: targetYear._id,
-        name: sourceClass.name,
-        order: Number.isFinite(Number(sourceClass.order)) ? Number(sourceClass.order) : 0,
-        standard: sanitizeStandard(sourceClass.standard),
-        stream: normalizeStream(sourceClass.stream),
-      });
-      classIdMap.set(String(sourceClass._id), createdClass._id);
-      targetClasses.push(createdClass.toObject ? createdClass.toObject() : createdClass);
-      classesCreated += 1;
-    }
-
-    const sourceSections = await Section.find({
-      ...scopeFilter,
-      classId: { $in: sourceClassIds },
-    }).lean();
-
-    const targetClassIds = Array.from(classIdMap.values());
-    const targetSections = targetClassIds.length
-      ? await Section.find({
-          ...scopeFilter,
-          classId: { $in: targetClassIds },
-        }).lean()
-      : [];
-
-    const sectionIdMap = new Map();
-    let sectionsCreated = 0;
-    let sectionsSkipped = 0;
-
-    for (const sourceSection of sourceSections) {
-      const mappedClassId = classIdMap.get(String(sourceSection.classId));
-      if (!mappedClassId) continue;
-
-      const existingSection = targetSections.find(
-        (item) =>
-          String(item.classId) === String(mappedClassId) &&
-          String(item.name || '').trim().toLowerCase() === String(sourceSection.name || '').trim().toLowerCase()
-      );
-
-      if (existingSection) {
-        sectionIdMap.set(String(sourceSection._id), existingSection._id);
-        sectionsSkipped += 1;
-        continue;
-      }
-
-      const createdSection = await Section.create({
-        schoolId,
-        campusId: campusId || null,
-        classId: mappedClassId,
-        name: sourceSection.name,
-      });
-      sectionIdMap.set(String(sourceSection._id), createdSection._id);
-      targetSections.push(createdSection.toObject ? createdSection.toObject() : createdSection);
-      sectionsCreated += 1;
-    }
-
-    const sourceSubjects = await Subject.find({
-      ...scopeFilter,
-      classId: { $in: sourceClassIds },
-    }).lean();
-
-    const targetSubjects = targetClassIds.length
-      ? await Subject.find({
-          ...scopeFilter,
-          classId: { $in: targetClassIds },
-        }).lean()
-      : [];
-
-    const subjectIdMap = new Map();
-    let subjectsCreated = 0;
-    let subjectsSkipped = 0;
-
-    for (const sourceSubject of sourceSubjects) {
-      const mappedClassId = classIdMap.get(String(sourceSubject.classId));
-      if (!mappedClassId) continue;
-      const sourceSubjectStream = normalizeStream(sourceSubject.stream);
-
-      const existingSubject = targetSubjects.find(
-        (item) =>
-          String(item.classId) === String(mappedClassId) &&
-          String(item.name || '').trim().toLowerCase() === String(sourceSubject.name || '').trim().toLowerCase() &&
-          normalizeStream(item.stream) === sourceSubjectStream
-      );
-
-      if (existingSubject) {
-        subjectIdMap.set(String(sourceSubject._id), existingSubject._id);
-        subjectsSkipped += 1;
-        continue;
-      }
-
-      const createdSubject = await Subject.create({
-        schoolId,
-        campusId: campusId || null,
-        classId: mappedClassId,
-        name: sourceSubject.name,
-        code: sourceSubject.code || '',
-        stream: normalizeStream(sourceSubject.stream),
-      });
-      subjectIdMap.set(String(sourceSubject._id), createdSubject._id);
-      targetSubjects.push(createdSubject.toObject ? createdSubject.toObject() : createdSubject);
-      subjectsCreated += 1;
-    }
-
-    const sourceClassTeacherAllocations = await TeacherAllocation.find({
-      schoolId,
-      ...(campusId ? { campusId } : {}),
-      isClassTeacher: true,
-      classId: { $in: sourceClassIds },
-    }).lean();
-
-    const targetClassTeacherAllocations = await TeacherAllocation.find({
-      schoolId,
-      ...(campusId ? { campusId } : {}),
-      isClassTeacher: true,
-      classId: { $in: targetClassIds },
-    }).lean();
-
-    let classTeachersCreated = 0;
-    let classTeachersSkipped = 0;
-
-    for (const sourceAllocation of sourceClassTeacherAllocations) {
-      const mappedClassId = classIdMap.get(String(sourceAllocation.classId));
-      const mappedSectionId = sectionIdMap.get(String(sourceAllocation.sectionId));
-      if (!mappedClassId || !mappedSectionId) continue;
-
-      const exists = targetClassTeacherAllocations.some(
-        (item) =>
-          String(item.teacherId) === String(sourceAllocation.teacherId) &&
-          String(item.classId) === String(mappedClassId) &&
-          String(item.sectionId) === String(mappedSectionId) &&
-          item.isClassTeacher === true
-      );
-
-      if (exists) {
-        classTeachersSkipped += 1;
-        continue;
-      }
-
-      const createdAllocation = await TeacherAllocation.create({
-        schoolId,
-        campusId: campusId || null,
-        teacherId: sourceAllocation.teacherId,
-        subjectId: null,
-        classId: mappedClassId,
-        sectionId: mappedSectionId,
-        isClassTeacher: true,
-        notes: sourceAllocation.notes || '',
-      });
-      targetClassTeacherAllocations.push(
-        createdAllocation.toObject ? createdAllocation.toObject() : createdAllocation
-      );
-      classTeachersCreated += 1;
-    }
-
-    return res.json({
-      ok: true,
-      sourceYear: { id: sourceYear._id, name: sourceYear.name },
-      targetYear: { id: targetYear._id, name: targetYear.name },
-      classes: { created: classesCreated, skipped: classesSkipped, totalSource: sourceClasses.length },
-      sections: { created: sectionsCreated, skipped: sectionsSkipped, totalSource: sourceSections.length },
-      subjects: { created: subjectsCreated, skipped: subjectsSkipped, totalSource: sourceSubjects.length },
-      classTeachers: {
-        created: classTeachersCreated,
-        skipped: classTeachersSkipped,
-        totalSource: sourceClassTeacherAllocations.length,
-      },
+    const jobId = createCopySetupJob(schoolId);
+    // Fire-and-forget: the admin UI shows a progress overlay and polls
+    // GET /years/copy-setup-progress/:jobId rather than waiting on this response.
+    runCopySetupJob(jobId, { schoolId, campusId, scopeFilter, sourceYear, targetYear, sourceClasses }).catch(() => {
+      // runCopySetupJob already records failures on the job itself.
     });
+
+    return res.json({ ok: true, jobId });
   } catch (err) {
     return res.status(500).json({ error: err.message || 'Failed to copy academic setup' });
   }
+});
+
+router.get('/years/copy-setup-progress/:jobId', adminAuth, async (req, res) => {
+  // #swagger.tags = ['Academics']
+  const schoolId = resolveSchoolId(req, res);
+  if (!schoolId) return;
+
+  const job = copySetupJobs.get(req.params.jobId);
+  if (!job || String(job.schoolId) !== String(schoolId)) {
+    return res.status(404).json({ error: 'Job not found' });
+  }
+
+  return res.json({
+    status: job.status,
+    percentage: job.percentage,
+    step: job.step,
+    result: job.status === 'done' ? job.result : undefined,
+    error: job.status === 'error' ? job.error : undefined,
+  });
 });
 
 // Classes

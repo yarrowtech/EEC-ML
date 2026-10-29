@@ -1,8 +1,10 @@
 import React, { useEffect, useMemo, useState, useRef } from 'react';
+import { createPortal } from 'react-dom';
 import { useSearchParams } from 'react-router-dom';
 import { jsPDF } from 'jspdf';
-import { FileText, Users, Building2, CalendarCheck, Plus, X, CreditCard, Search, Filter, ChevronDown, ChevronUp, Clock, CheckCircle, XCircle, AlertCircle, RefreshCw, IndianRupee, Eye } from 'lucide-react';
+import { FileText, Users, Building2, CalendarCheck, X, CreditCard, Search, ChevronLeft, ChevronRight, Clock, CheckCircle, XCircle, AlertCircle, RefreshCw, IndianRupee, Eye, Settings, Printer, Download, SlidersHorizontal } from 'lucide-react';
 import IDCard from '../components/IDCard';
+import { subscribeSocketEvent } from '@/hooks/useCommunityWallUnread';
 
 const API_BASE = (import.meta.env.VITE_API_URL || 'http://localhost:5000').replace(/\/$/, '');
 const ADMIN_PROFILE_CACHE_KEY = 'admin_profile_cache_v1';
@@ -38,6 +40,215 @@ const getSchoolDisplayName = () => {
   }
   return 'EEC School';
 };
+
+// School letterhead details for printed documents (from the cached admin profile).
+const getSchoolProfileForPrint = (fallbackName) => {
+  try {
+    const raw = sessionStorage.getItem(getAdminProfileCacheKey());
+    const p = raw ? JSON.parse(raw) : {};
+    const logo = p?.schoolLogo?.secure_url || p?.schoolLogo || p?.logo?.secure_url || p?.logo || '';
+    return {
+      name: String(p?.schoolName || fallbackName || 'School').trim(),
+      address: String(p?.schoolAddress || p?.address || '').trim(),
+      email: String(p?.schoolEmail || p?.contactEmail || '').trim(),
+      phone: String(p?.schoolPhone || p?.contactPhone || '').trim(),
+      logo: typeof logo === 'string' ? logo : '',
+    };
+  } catch {
+    return { name: fallbackName || 'School', address: '', email: '', phone: '', logo: '' };
+  }
+};
+
+
+/* ─── Table pagination (shared by Attendance / Leaves / Expenses) ─── */
+// Full-screen settings modal: dark backdrop, fades/scales in and out smoothly.
+const MODAL_ANIM_MS = 220;
+const SettingsModal = ({ open, title, onClose, children }) => {
+  const [mounted, setMounted] = useState(open);
+  const [visible, setVisible] = useState(false);
+
+  useEffect(() => {
+    if (open) {
+      setMounted(true);
+      const id = requestAnimationFrame(() => requestAnimationFrame(() => setVisible(true)));
+      return () => cancelAnimationFrame(id);
+    }
+    setVisible(false);
+    const t = setTimeout(() => setMounted(false), MODAL_ANIM_MS);
+    return () => clearTimeout(t);
+  }, [open]);
+
+  useEffect(() => {
+    if (!open) return undefined;
+    const onKey = (e) => { if (e.key === 'Escape') onClose(); };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, [open, onClose]);
+
+  if (!mounted) return null;
+  // Portal to <body> so a transformed/overflow ancestor can't clip the fixed backdrop.
+  return createPortal(
+    <div
+      className={`fixed inset-0 z-[9999] flex h-screen w-screen items-center justify-center bg-black/60 p-4 backdrop-blur-sm transition-opacity duration-200 ease-out ${visible ? 'opacity-100' : 'opacity-0'}`}
+      onMouseDown={(e) => { if (e.target === e.currentTarget) onClose(); }}
+    >
+      <div
+        role="dialog"
+        aria-modal="true"
+        className={`w-full max-w-md rounded-2xl bg-white shadow-2xl transition-all duration-200 ease-out ${visible ? 'translate-y-0 scale-100 opacity-100' : 'translate-y-4 scale-95 opacity-0'}`}
+      >
+        <div className="flex items-center justify-between border-b border-gray-100 px-5 py-4">
+          <h3 className="flex items-center gap-2 text-base font-semibold text-gray-900">
+            <Settings size={17} className="text-yellow-600" /> {title}
+          </h3>
+          <button type="button" onClick={onClose} className="rounded-lg p-1.5 text-gray-400 hover:bg-gray-100 hover:text-gray-600" aria-label="Close">
+            <X size={18} />
+          </button>
+        </div>
+        <div className="p-5">{children}</div>
+      </div>
+    </div>,
+    document.body,
+  );
+};
+
+// Client cache for HR data, per month: in memory for SPA navigation plus
+// sessionStorage so a reload also paints instantly. Scoped to the admin token
+// so a different login never sees another school's data.
+const HR_CLIENT_CACHE_PREFIX = 'hr:activities:v1:';
+const HR_CLIENT_CACHE_MAX_AGE_MS = 10 * 60 * 1000;
+const HR_CLIENT_CACHE_FRESH_MS = 60 * 1000; // reuse without a request
+const hrMemoryCache = new Map();
+const hrClientCacheKey = (month) => {
+  let token = '';
+  try { token = localStorage.getItem('token') || ''; } catch { /* ignore */ }
+  return `${HR_CLIENT_CACHE_PREFIX}${token.slice(-16)}:${month}`;
+};
+const readHrClientCache = (month) => {
+  const key = hrClientCacheKey(month);
+  let entry = hrMemoryCache.get(key);
+  if (!entry) {
+    try { entry = JSON.parse(sessionStorage.getItem(key) || 'null'); } catch { entry = null; }
+  }
+  if (!entry || Date.now() - entry.at > HR_CLIENT_CACHE_MAX_AGE_MS) return null;
+  return entry;
+};
+const writeHrClientCache = (month, data) => {
+  const key = hrClientCacheKey(month);
+  const entry = { at: Date.now(), data };
+  hrMemoryCache.set(key, entry);
+  try { sessionStorage.setItem(key, JSON.stringify(entry)); } catch { /* quota / private mode */ }
+};
+
+const PAGE_SIZES = [4, 10, 25, 50];
+// Laptop / desktop: 4 rows so the whole HR page fits without scrolling.
+const defaultPageSize = () => (typeof window !== 'undefined' && window.matchMedia?.('(min-width: 1024px)').matches ? 4 : 10);
+
+// Slice a list into pages; jumps back to page 1 whenever the list changes
+// (search / filters / month) so you never land on an empty page.
+function usePagination(items) {
+  const [page, setPage] = useState(1);
+  const [pageSize, setPageSize] = useState(defaultPageSize);
+  const total = items.length;
+  const totalPages = Math.max(1, Math.ceil(total / pageSize));
+  useEffect(() => { setPage(1); }, [items, pageSize]);
+  const current = Math.min(page, totalPages);
+  const rows = items.slice((current - 1) * pageSize, current * pageSize);
+  return { rows, page: current, setPage, pageSize, setPageSize, total, totalPages };
+}
+
+// 1 … 4 [5] 6 … 12
+const pageWindow = (current, total) => {
+  if (total <= 7) return Array.from({ length: total }, (_, i) => i + 1);
+  const set = new Set([1, total, current - 1, current, current + 1]);
+  if (current <= 3) [2, 3, 4].forEach((p) => set.add(p));
+  if (current >= total - 2) [total - 3, total - 2, total - 1].forEach((p) => set.add(p));
+  const sorted = [...set].filter((p) => p >= 1 && p <= total).sort((a, b) => a - b);
+  const out = [];
+  sorted.forEach((p, i) => { if (i && p - sorted[i - 1] > 1) out.push('…'); out.push(p); });
+  return out;
+};
+
+function TablePagination({ pager, label = 'records', extra = null }) {
+  const { page, setPage, pageSize, setPageSize, total, totalPages } = pager;
+  if (!total) return null;
+  const from = (page - 1) * pageSize + 1;
+  const to = Math.min(page * pageSize, total);
+  const navBtn = 'flex h-8 w-8 items-center justify-center rounded-lg border border-gray-200 text-gray-500 transition hover:bg-gray-50 disabled:cursor-not-allowed disabled:opacity-40';
+  return (
+    <div className="flex flex-col gap-3 border-t border-gray-100 px-4 py-3 text-xs text-gray-500 sm:flex-row sm:items-center sm:justify-between">
+      <div className="flex flex-wrap items-center gap-3">
+        <span>Showing <b className="text-gray-700">{from}–{to}</b> of <b className="text-gray-700">{total}</b> {label}</span>
+        <label className="flex items-center gap-1.5">
+          Rows
+          <select value={pageSize} onChange={(e) => setPageSize(Number(e.target.value))} className="rounded-lg border border-gray-200 bg-white px-2 py-1 text-xs text-gray-700">
+            {PAGE_SIZES.map((n) => <option key={n} value={n}>{n}</option>)}
+          </select>
+        </label>
+        {extra}
+      </div>
+      {totalPages > 1 && (
+        <nav className="flex items-center gap-1" aria-label="Pagination">
+          <button type="button" className={navBtn} onClick={() => setPage(page - 1)} disabled={page === 1} aria-label="Previous page"><ChevronLeft size={15} /></button>
+          {pageWindow(page, totalPages).map((p, i) => (p === '…'
+            ? <span key={`gap-${i}`} className="w-6 text-center text-gray-400">…</span>
+            : (
+              <button
+                key={p}
+                type="button"
+                onClick={() => setPage(p)}
+                aria-current={p === page ? 'page' : undefined}
+                className={`h-8 min-w-8 rounded-lg px-2 text-xs font-semibold transition ${p === page ? 'bg-yellow-500 text-white shadow-sm' : 'border border-gray-200 text-gray-600 hover:bg-gray-50'}`}
+              >
+                {p}
+              </button>
+            )))}
+          <button type="button" className={navBtn} onClick={() => setPage(page + 1)} disabled={page === totalPages} aria-label="Next page"><ChevronRight size={15} /></button>
+        </nav>
+      )}
+    </div>
+  );
+}
+
+/* ─── Small shared UI bits for the HR tabs ─── */
+const initialsOf = (name) => String(name || '?').split(/\s+/).filter(Boolean).slice(0, 2).map((w) => w[0]).join('').toUpperCase();
+// Profile photo when available (falls back to initials if missing / broken).
+function PersonCell({ name, sub, photo }) {
+  const [broken, setBroken] = useState(false);
+  const src = typeof photo === 'string' && /^(https?:|data:|\/)/.test(photo) ? photo : '';
+  return (
+    <div className="flex items-center gap-2.5">
+      {src && !broken ? (
+        <img src={src} alt="" onError={() => setBroken(true)} className="h-8 w-8 shrink-0 rounded-full object-cover ring-1 ring-gray-200" />
+      ) : (
+        <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-yellow-100 text-[11px] font-bold text-yellow-700">{initialsOf(name)}</span>
+      )}
+      <div className="min-w-0">
+        <p className="truncate text-sm font-medium text-gray-900">{name || '-'}</p>
+        {sub ? <p className="truncate text-xs text-gray-500">{sub}</p> : null}
+      </div>
+    </div>
+  );
+}
+function StatChip({ icon: Icon, label, value, sub, tone }) {
+  const tones = {
+    blue: 'bg-blue-50 text-blue-600', green: 'bg-green-50 text-green-600', red: 'bg-red-50 text-red-600',
+    amber: 'bg-amber-50 text-amber-600', purple: 'bg-purple-50 text-purple-600',
+  };
+  return (
+    <div className="flex items-center gap-3 rounded-xl border border-gray-200 bg-white px-4 py-3">
+      <span className={`flex h-10 w-10 shrink-0 items-center justify-center rounded-lg ${tones[tone] || tones.blue}`}><Icon size={19} /></span>
+      <div className="min-w-0">
+        <p className="text-xs text-gray-500">{label}</p>
+        <p className="text-lg font-bold leading-tight text-gray-900">{value}{sub ? <span className="ml-1.5 text-xs font-medium text-gray-400">{sub}</span> : null}</p>
+      </div>
+    </div>
+  );
+}
+const toolbarInput = 'rounded-lg border border-gray-200 bg-white px-3 py-2 text-sm text-gray-700 focus:border-yellow-400 focus:outline-none focus:ring-2 focus:ring-yellow-100';
+const thCls = 'px-4 py-3 text-left text-xs font-semibold uppercase tracking-wider text-gray-500';
+const tdCls = 'px-4 py-3 text-sm text-gray-600';
+
 
 const HR = ({ setShowAdminHeader }) => {
   const [searchParams] = useSearchParams();
@@ -135,14 +346,12 @@ const HR = ({ setShowAdminHeader }) => {
   const [attendanceTeacherFilter, setAttendanceTeacherFilter] = useState('all');
   const [attendanceStatusFilter, setAttendanceStatusFilter] = useState('all');
   const [attendanceSearch, setAttendanceSearch] = useState('');
-  const [showAttendanceFilters, setShowAttendanceFilters] = useState(false);
 
   // Leave filters
   const [leaveTeacherFilter, setLeaveTeacherFilter] = useState('all');
   const [leaveStatusFilter, setLeaveStatusFilter] = useState('all');
   const [leaveTypeFilter, setLeaveTypeFilter] = useState('all');
   const [leaveSearch, setLeaveSearch] = useState('');
-  const [showLeaveFilters, setShowLeaveFilters] = useState(false);
   const [showLeaveLetterModal, setShowLeaveLetterModal] = useState(false);
   const [selectedLeaveRequest, setSelectedLeaveRequest] = useState(null);
 
@@ -151,7 +360,6 @@ const HR = ({ setShowAdminHeader }) => {
   const [expenseStatusFilter, setExpenseStatusFilter] = useState('all');
   const [expenseCategoryFilter, setExpenseCategoryFilter] = useState('all');
   const [expenseSearch, setExpenseSearch] = useState('');
-  const [showExpenseFilters, setShowExpenseFilters] = useState(false);
 
   const toFriendlyHrError = (err, fallback) => {
     const message = String(err?.message || '').trim();
@@ -204,87 +412,188 @@ const HR = ({ setShowAdminHeader }) => {
 
   const schoolDisplayName = useMemo(() => getSchoolDisplayName(), []);
 
-  const escapeHtml = (value) => String(value ?? '').replace(/[&<>"']/g, (char) => ({
-    '&': '&amp;',
-    '<': '&lt;',
-    '>': '&gt;',
-    '"': '&quot;',
-    "'": '&#39;',
-  }[char]));
-
-  const handlePrintLeaveLetter = () => {
+  // Leave letter → real A4 PDF (jsPDF) → Blob → opened in the browser's PDF
+  // viewer in a new tab (print / download from there). Formal letter layout:
+  // letterhead, ref + date, addressee, subject, body, signature, office use.
+  const handlePrintLeaveLetter = async () => {
     if (!selectedLeaveRequest) return;
-    const teacherName = selectedLeaveRequest.teacherName || 'Teacher';
-    const teacherEmail = String(selectedLeaveRequest.teacherEmail || '').trim() || 'Not provided';
-    const teacherPhone = String(selectedLeaveRequest.teacherPhone || '').trim() || 'Not provided';
-    const subjectDate = formatLeaveSubjectDate(selectedLeaveRequest.startDate, selectedLeaveRequest.endDate);
-    const leavePeriod = formatLeaveDateRange(selectedLeaveRequest.startDate, selectedLeaveRequest.endDate);
-    const printHtml = `
-      <html>
-        <head>
-          <title>Leave Letter</title>
-          <style>
-            @page { size: A4; margin: 18mm; }
-            html, body { width: 210mm; min-height: 297mm; margin: 0; padding: 0; background: #fff; font-family: Arial, sans-serif; color: #111827; }
-            body { -webkit-print-color-adjust: exact; print-color-adjust: exact; }
-            .page { width: 100%; min-height: 297mm; box-sizing: border-box; }
-            .header { display: flex; justify-content: space-between; gap: 16px; margin-bottom: 28px; }
-            .title { font-size: 16px; font-weight: 700; margin: 0 0 4px; }
-            .muted { color: #6b7280; font-size: 12px; margin: 0; line-height: 1.5; }
-            .body { font-size: 13px; line-height: 1.8; }
-            .body p { margin: 0 0 14px; }
-            .subject { text-align: center; font-weight: 600; }
-            .reason { white-space: pre-wrap; }
-            .signature { margin-top: 40px; }
-            .signature .name { font-weight: 700; margin-top: 6px; }
-            .label { font-weight: 700; }
-          </style>
-        </head>
-        <body>
-          <div class="page">
-            <div class="header">
-              <div>
-                <p class="title">${escapeHtml(`${schoolDisplayName} Administration`)}</p>
-                <p class="muted">Human Resource Department</p>
-              </div>
-              <div style="text-align:right;">
-                <p class="muted">${escapeHtml(formatLongDate(selectedLeaveRequest.createdAt))}</p>
-                <p class="muted">Status: ${escapeHtml(selectedLeaveRequest.status || '-')}</p>
-              </div>
-            </div>
+    const r = selectedLeaveRequest;
+    const school = getSchoolProfileForPrint(schoolDisplayName);
+    const teacherName = r.teacherName || 'Teacher';
+    const pdf = new jsPDF({ unit: 'pt', format: 'a4' });
+    const W = pdf.internal.pageSize.getWidth();
+    const H = pdf.internal.pageSize.getHeight();
+    const M = 56; // ~20mm margins
+    const width = W - M * 2;
+    const ink = [30, 41, 59];
+    const muted = [100, 116, 139];
+    let y = M;
 
-            <div class="body">
-              <p><span class="label">To,</span><br />The HR/Admin<br />${escapeHtml(schoolDisplayName)}</p>
-              <p class="subject"><span class="label">Subject:</span> Application for ${escapeHtml(selectedLeaveRequest.type || 'leave')} ${escapeHtml(subjectDate)}</p>
-              <p>Dear Sir/Madam,</p>
-              <p>I respectfully request leave for the period mentioned above. The reason provided by me is shown below.</p>
-              <p class="reason">${escapeHtml(selectedLeaveRequest.reason?.trim() || 'No reason provided.')}</p>
-              ${selectedLeaveRequest.adminNote ? `<p><span class="label">Admin note:</span><br />${escapeHtml(selectedLeaveRequest.adminNote)}</p>` : ''}
-              <p>I request you to kindly consider this leave application and grant approval.</p>
-              <p>Regards,</p>
-              <div class="signature">
-                <p class="name">${escapeHtml(teacherName)}</p>
-                <p class="muted">Email: ${escapeHtml(teacherEmail)}</p>
-                <p class="muted">Phone: ${escapeHtml(teacherPhone)}</p>
-              </div>
-              <p class="muted" style="margin-top: 18px;">Leave period: ${escapeHtml(leavePeriod)}</p>
-            </div>
-          </div>
-        </body>
-      </html>
-    `;
+    const text = (str, x, yy, opts = {}) => {
+      pdf.setFont('helvetica', opts.bold ? 'bold' : (opts.italic ? 'italic' : 'normal'));
+      pdf.setFontSize(opts.size || 11);
+      pdf.setTextColor(...(opts.color || ink));
+      pdf.text(String(str ?? ''), x, yy, { align: opts.align || 'left', maxWidth: opts.maxWidth });
+    };
+    const para = (str, opts = {}) => {
+      pdf.setFont('helvetica', opts.bold ? 'bold' : 'normal');
+      pdf.setFontSize(opts.size || 11);
+      pdf.setTextColor(...(opts.color || ink));
+      const lines = pdf.splitTextToSize(String(str || ''), opts.width || width);
+      lines.forEach((line) => {
+        if (y > H - M - 40) { pdf.addPage(); y = M; }
+        pdf.text(line, opts.x || M, y, { align: 'left' });
+        y += (opts.size || 11) * 1.55;
+      });
+      y += opts.gap ?? 8;
+    };
+    const rule = (yy, color = [203, 213, 225], w = 0.8) => {
+      pdf.setDrawColor(...color);
+      pdf.setLineWidth(w);
+      pdf.line(M, yy, W - M, yy);
+    };
 
-    const printWindow = window.open('', '_blank', 'noopener,noreferrer,width=900,height=1200');
-    if (!printWindow) return;
+    // ── Letterhead ──
+    let logoData = null;
+    if (school.logo) {
+      try {
+        const res = await fetch(school.logo);
+        const blob = await res.blob();
+        logoData = await new Promise((resolve, reject) => {
+          const fr = new FileReader();
+          fr.onload = () => resolve(fr.result);
+          fr.onerror = reject;
+          fr.readAsDataURL(blob);
+        });
+      } catch { logoData = null; }
+    }
+    if (logoData) {
+      try { pdf.addImage(logoData, M, y - 8, 48, 48); } catch { /* unsupported image — skip */ }
+    }
+    // School name, address and contact always centred on the page (logo stays at the left).
+    const headX = W / 2;
+    const headAlign = 'center';
+    text(school.name.toUpperCase(), headX, y + 8, { bold: true, size: 16, align: headAlign });
+    let hy = y + 24;
+    if (school.address) { text(school.address, headX, hy, { size: 9.5, color: muted, align: headAlign }); hy += 13; }
+    const contact = [school.email && `Email: ${school.email}`, school.phone && `Phone: ${school.phone}`].filter(Boolean).join('  |  ');
+    if (contact) { text(contact, headX, hy, { size: 9, color: muted, align: headAlign }); hy += 13; }
+    y = Math.max(hy, y + (logoData ? 48 : 30)) + 6;
+    rule(y, ink, 1.6);
+    y += 3;
+    rule(y, [148, 163, 184], 0.5);
+    y += 26;
 
-    printWindow.document.open();
-    printWindow.document.write(printHtml);
-    printWindow.document.close();
-    printWindow.focus();
-    setTimeout(() => {
-      printWindow.focus();
-      printWindow.print();
-    }, 300);
+    // ── Ref + date ──
+    const refNo = `HR/LV/${String(r.id || '').slice(-6).toUpperCase() || '000000'}`;
+    text(`Ref. No.: ${refNo}`, M, y, { size: 10, color: muted });
+    text(`Date: ${formatLongDate(r.createdAt) || formatLongDate(new Date())}`, W - M, y, { size: 10, color: muted, align: 'right' });
+    y += 34;
+
+    // ── Addressee ──
+    text('To,', M, y, { bold: true }); y += 16;
+    text('The Principal / HR Administrator', M, y); y += 16;
+    text(school.name, M, y); y += 16;
+    if (school.address) { para(school.address, { gap: 0 }); } else { y += 2; }
+    y += 18;
+
+    // ── Subject ──
+    const subject = `Subject: Application for ${r.type || 'Leave'} ${formatLeaveSubjectDate(r.startDate, r.endDate)}`.trim();
+    pdf.setFont('helvetica', 'bold');
+    pdf.setFontSize(11.5);
+    const subjLines = pdf.splitTextToSize(subject, width);
+    subjLines.forEach((line) => {
+      pdf.setTextColor(...ink);
+      pdf.text(line, W / 2, y, { align: 'center' });
+      const lw = pdf.getTextWidth(line);
+      pdf.setDrawColor(...ink); pdf.setLineWidth(0.6);
+      pdf.line(W / 2 - lw / 2, y + 2.5, W / 2 + lw / 2, y + 2.5);
+      y += 17;
+    });
+    y += 14;
+
+    // ── Body ──
+    para('Respected Sir/Madam,', { gap: 10 });
+    // Plain text paragraph with **bold** segments, wrapped word by word.
+    const richPara = (str, opts = {}) => {
+      const size = opts.size || 11;
+      const lineH = size * 1.55;
+      const words = [];
+      String(str).split('**').forEach((part, i) => {
+        // Bold phrases (name, leave type, date) stay together on one line.
+        if (i % 2 === 1) { if (part) words.push({ w: part, bold: true }); return; }
+        part.split(/(\s+)/).filter((w) => w !== '').forEach((w) => words.push({ w, bold: false }));
+      });
+      pdf.setFontSize(size);
+      pdf.setTextColor(...ink);
+      let x = M;
+      const newLine = () => {
+        x = M;
+        y += lineH;
+        if (y > H - M - 40) { pdf.addPage(); y = M; }
+      };
+      words.forEach(({ w, bold }) => {
+        pdf.setFont('helvetica', bold ? 'bold' : 'normal');
+        if (/^\s+$/.test(w)) { if (x > M) x += pdf.getTextWidth(' '); return; }
+        const ww = pdf.getTextWidth(w);
+        if (x > M && x + ww > M + width) newLine();
+        pdf.text(w, x, y);
+        x += ww;
+      });
+      y += lineH + (opts.gap ?? 8);
+    };
+    // Teacher name, leave type and date(s) in bold.
+    richPara(`I, **${teacherName}**, respectfully request you to grant me **${r.type || 'leave'}** for the period **${formatLeaveDateRange(r.startDate, r.endDate)}**. The reason for my leave is stated below:`);
+    // Reason — plain text, bold.
+    const reason = String(r.reason || '').trim() || 'No reason provided.';
+    para(reason, { bold: true });
+    para('During my absence, I will ensure that my responsibilities are managed and any pending work is handed over appropriately. I kindly request you to consider my application and grant me leave for the above period.');
+    para('Thanking you.', { gap: 22 });
+
+    // ── Signature ──
+    if (y > H - M - 190) { pdf.addPage(); y = M; }
+    text('Yours faithfully,', M, y); y += 18;
+    text(teacherName, M, y, { bold: true }); y += 15;
+    if (r.teacherPhone) { text(`Phone: ${r.teacherPhone}`, M, y, { size: 10, color: muted }); y += 13; }
+    if (r.teacherEmail) { text(`Email: ${r.teacherEmail}`, M, y, { size: 10, color: muted }); y += 13; }
+    y += 22;
+
+    // ── For office use ──
+    if (y > H - M - 130) { pdf.addPage(); y = M; }
+    const statusLabel = r.status || 'Pending';
+    const officeH = r.adminNote ? 118 : 96;
+    pdf.setDrawColor(203, 213, 225); pdf.setLineWidth(0.8); pdf.setLineDashPattern([3, 2], 0);
+    pdf.roundedRect(M, y, width, officeH, 4, 4, 'S');
+    pdf.setLineDashPattern([], 0);
+    text('FOR OFFICE USE', M + 14, y + 18, { bold: true, size: 9.5, color: muted });
+    const statusColor = /approv|accept/i.test(statusLabel) ? [4, 120, 87] : /reject/i.test(statusLabel) ? [190, 18, 60] : [180, 83, 9];
+    text('Status:', M + 14, y + 38, { size: 10.5, color: muted });
+    text(statusLabel.toUpperCase(), M + 60, y + 38, { size: 10.5, bold: true, color: statusColor });
+    text(`Reviewed on: ${r.reviewedAt ? formatLongDate(r.reviewedAt) : '—'}`, M + width / 2, y + 38, { size: 10.5, color: muted });
+    let oy = y + 56;
+    if (r.adminNote) {
+      text(`Remarks: ${String(r.adminNote).slice(0, 140)}`, M + 14, oy, { size: 10, color: ink, maxWidth: width - 28 });
+      oy += 22;
+    }
+    pdf.setDrawColor(148, 163, 184); pdf.setLineWidth(0.6);
+    pdf.line(W - M - 180, oy + 18, W - M - 14, oy + 18);
+    text('Authorised Signatory', W - M - 97, oy + 31, { size: 9.5, color: muted, align: 'center' });
+
+    // ── Footer on every page ──
+    const pages = pdf.getNumberOfPages();
+    for (let i = 1; i <= pages; i += 1) {
+      pdf.setPage(i);
+      rule(H - 40, [226, 232, 240], 0.5);
+      text(`${school.name} · Human Resource Department`, M, H - 26, { size: 8, color: muted });    }
+
+    // ── Blob → PDF viewer tab ──
+    const fileName = `Leave-Letter-${String(teacherName).replace(/[^a-z0-9]+/gi, '-')}.pdf`;
+    pdf.setProperties({ title: fileName.replace(/\.pdf$/, ''), subject: subject, author: school.name });
+    const blob = pdf.output('blob');
+    const url = URL.createObjectURL(blob);
+    const tab = window.open(url, '_blank');
+    if (!tab) pdf.save(fileName); // popup blocked → download instead
+    setTimeout(() => URL.revokeObjectURL(url), 120000);
   };
 
   const countWeekdaysInMonth = (month) => {
@@ -430,6 +739,21 @@ const HR = ({ setShowAdminHeader }) => {
   }, [teacherExpenses]);
 
   // Status badge helper
+
+  // Table pagination per tab (see usePagination above the component).
+  const attendancePager = usePagination(attendanceFilteredRecords);
+  const leavesPager = usePagination(filteredLeaves);
+  const expensesPager = usePagination(filteredExpenses);
+  const [showHrSettings, setShowHrSettings] = useState(false);
+  const closeHrSettings = React.useCallback(() => setShowHrSettings(false), []);
+  const [showMobileFilters, setShowMobileFilters] = useState(false);
+  const hrFetchSeq = useRef(0);
+  const [showAttendanceDownload, setShowAttendanceDownload] = useState(false);
+  const closeAttendanceDownload = React.useCallback(() => setShowAttendanceDownload(false), []);
+  const [downloadMonth, setDownloadMonth] = useState('');
+  const [downloadingAttendance, setDownloadingAttendance] = useState(false);
+  const [downloadError, setDownloadError] = useState('');
+
   const StatusBadge = ({ status }) => {
     const s = normalizedStatus(status);
     const config = {
@@ -473,8 +797,88 @@ const HR = ({ setShowAdminHeader }) => {
     return `${hours}h ${String(mins).padStart(2, '0')}m`;
   };
 
-  const fetchTeacherActivities = async (month = teacherActivityMonth) => {
-    setActivityLoading(true);
+  // Month-wise teacher attendance report → .xlsx
+  const downloadAttendanceExcel = async () => {
+    if (!downloadMonth) return;
+    setDownloadingAttendance(true);
+    setDownloadError('');
+    try {
+      const token = localStorage.getItem('token');
+      if (!token) throw new Error('Admin login required');
+      const res = await fetch(`${API_BASE}/api/admin/users/teacher-attendance?month=${encodeURIComponent(downloadMonth)}`, {
+        headers: { authorization: `Bearer ${token}` },
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(data?.error || 'Unable to load teacher attendance');
+      const records = (Array.isArray(data.records) ? data.records : [])
+        .slice()
+        .sort((a, b) => String(a.date).localeCompare(String(b.date)) || String(a.teacherName).localeCompare(String(b.teacherName)));
+      if (!records.length) throw new Error('No attendance records found for this month.');
+
+      const time = (v) => (v ? new Date(v).toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit' }) : '—');
+      const date = (key) => {
+        const [y, m, d] = String(key || '').split('-');
+        return y && m && d ? `${d}-${m}-${y}` : String(key || '');
+      };
+      const rows = records.map((r, i) => ({
+        'Sl No': i + 1,
+        'Teacher Name': r.teacherName || 'Teacher',
+        'Login ID': r.teacherLoginId || '—',
+        Date: date(r.date),
+        'Check-in Time': time(r.checkInAt),
+        'Check-out Time': time(r.checkOutAt),
+        'Working Hours': formatWorkingHours(r.workingMinutes),
+        Status: r.status || 'Present',
+      }));
+
+      const XLSX = await import('xlsx');
+      const ws = XLSX.utils.json_to_sheet(rows);
+      ws['!cols'] = [{ wch: 7 }, { wch: 26 }, { wch: 18 }, { wch: 12 }, { wch: 14 }, { wch: 14 }, { wch: 14 }, { wch: 12 }];
+      const wb = XLSX.utils.book_new();
+      XLSX.utils.book_append_sheet(wb, ws, `Attendance ${downloadMonth}`);
+      XLSX.writeFile(wb, `Teacher-Attendance-${downloadMonth}.xlsx`);
+      setShowAttendanceDownload(false);
+    } catch (err) {
+      setDownloadError(err.message || 'Download failed. Please try again.');
+    } finally {
+      setDownloadingAttendance(false);
+    }
+  };
+
+  const applyHrPayload = ({ leavesData, expensesData, attendanceData, attendanceSettingsData, leavePolicyData }) => {
+    setTeacherLeaves(Array.isArray(leavesData?.leaves) ? leavesData.leaves : []);
+    setTeacherExpenses(Array.isArray(expensesData?.expenses) ? expensesData.expenses : []);
+    setTeacherAttendanceRecords(Array.isArray(attendanceData?.records) ? attendanceData.records : []);
+    setAttendanceSettings({
+      entryTime: attendanceSettingsData?.settings?.entryTime || '09:00',
+      exitTime: attendanceSettingsData?.settings?.exitTime || '17:00',
+      graceMinutes: Number.isFinite(attendanceSettingsData?.settings?.graceMinutes)
+        ? attendanceSettingsData.settings.graceMinutes
+        : 0,
+    });
+    setLeavePolicy({
+      casualLeaveDays: Number.isFinite(Number(leavePolicyData?.policy?.casualLeaveDays))
+        ? Number(leavePolicyData.policy.casualLeaveDays)
+        : 12,
+    });
+  };
+
+  // Stale-while-revalidate: paint the cached month instantly, then refresh in
+  // the background. Only the latest request may write state.
+  // preferCache: tab switches reuse data fetched in the last minute without
+  // hitting the server; Refresh / after-save calls always revalidate.
+  const fetchTeacherActivities = async (month = teacherActivityMonth, { preferCache = false } = {}) => {
+    const cachedEntry = readHrClientCache(month);
+    const cached = cachedEntry?.data || null;
+    if (preferCache && cachedEntry && Date.now() - cachedEntry.at < HR_CLIENT_CACHE_FRESH_MS) {
+      hrFetchSeq.current += 1;
+      applyHrPayload(cached);
+      setActivityLoading(false);
+      return;
+    }
+    const requestId = ++hrFetchSeq.current;
+    if (cached) applyHrPayload(cached);
+    setActivityLoading(!cached);
     setActivityError('');
     try {
       const token = localStorage.getItem('token');
@@ -512,25 +916,16 @@ const HR = ({ setShowAdminHeader }) => {
       if (!attendanceSettingsRes.ok) throw new Error(attendanceSettingsData?.error || 'Unable to load attendance settings');
       if (!leavePolicyRes.ok) throw new Error(leavePolicyData?.error || 'Unable to load leave policy');
 
-      setTeacherLeaves(Array.isArray(leavesData.leaves) ? leavesData.leaves : []);
-      setTeacherExpenses(Array.isArray(expensesData.expenses) ? expensesData.expenses : []);
-      setTeacherAttendanceRecords(Array.isArray(attendanceData.records) ? attendanceData.records : []);
-      setAttendanceSettings({
-        entryTime: attendanceSettingsData?.settings?.entryTime || '09:00',
-        exitTime: attendanceSettingsData?.settings?.exitTime || '17:00',
-        graceMinutes: Number.isFinite(attendanceSettingsData?.settings?.graceMinutes)
-          ? attendanceSettingsData.settings.graceMinutes
-          : 0,
-      });
-      setLeavePolicy({
-        casualLeaveDays: Number.isFinite(Number(leavePolicyData?.policy?.casualLeaveDays))
-          ? Number(leavePolicyData.policy.casualLeaveDays)
-          : 12,
-      });
+      const payload = { leavesData, expensesData, attendanceData, attendanceSettingsData, leavePolicyData };
+      writeHrClientCache(month, payload);
+      if (requestId !== hrFetchSeq.current) return;
+      applyHrPayload(payload);
     } catch (err) {
-      setActivityError(toFriendlyHrError(err, 'Could not load HR data. Please try again.'));
+      if (requestId !== hrFetchSeq.current) return;
+      // Keep showing cached data if the background refresh fails.
+      if (!cached) setActivityError(toFriendlyHrError(err, 'Could not load HR data. Please try again.'));
     } finally {
-      setActivityLoading(false);
+      if (requestId === hrFetchSeq.current) setActivityLoading(false);
     }
   };
 
@@ -601,9 +996,17 @@ const HR = ({ setShowAdminHeader }) => {
 
   useEffect(() => {
     if (tab === 'attendance' || tab === 'leaves' || tab === 'expenses') {
-      fetchTeacherActivities(teacherActivityMonth);
+      fetchTeacherActivities(teacherActivityMonth, { preferCache: true });
     }
   }, [tab, teacherActivityMonth]);
+
+  // A teacher just sent a leave request → show it in the table without a reload.
+  const refreshActivitiesRef = useRef(null);
+  refreshActivitiesRef.current = () => fetchTeacherActivities(teacherActivityMonth);
+  useEffect(() => subscribeSocketEvent('new_notification', (payload) => {
+    const label = String(payload?.typeLabel || '').toLowerCase();
+    if (label.includes('leave request')) refreshActivitiesRef.current?.();
+  }), []);
 
   useEffect(() => {
     const tabParam = String(searchParams.get('tab') || '').trim().toLowerCase();
@@ -1007,25 +1410,44 @@ const HR = ({ setShowAdminHeader }) => {
   };
 
   return (
-    <div className="w-full min-h-screen bg-gray-50 p-6">
+    <div className="w-full bg-gray-50 p-4 md:p-5">
       <div className="max-w-7xl mx-auto">
-        <div className="flex items-center justify-between mb-6">
-          <h1 className="text-2xl font-bold text-gray-800">HR Management</h1>
-          <div className="bg-white rounded-lg border border-gray-200 p-1 flex">
-            {/* {['attendance', 'leaves', 'expenses','payroll','vendors','employees','recruitment','policies','add-new'].map(key => ( */}
-            {['attendance', 'leaves', 'expenses'].map(key => (
-              <button key={key} className={`px-3 py-1 rounded-md text-sm font-medium ${tab === key
-                  ? (key === 'add-new' ? 'bg-green-500 text-white' : 'bg-yellow-100 text-yellow-700')
-                  : (key === 'add-new' ? 'bg-green-100 text-green-700 hover:bg-green-200' : 'text-gray-600 hover:text-gray-800')
-                }`} onClick={() => setTab(key)}>
-                {key === 'add-new' ? (
-                  <span className="flex items-center gap-1">
-                    <Plus size={14} />
-                    Add New
-                  </span>
-                ) : key.charAt(0).toUpperCase() + key.slice(1)}
+        <div className="mb-5 flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
+          <div>
+            <h1 className="text-2xl font-bold text-gray-900">HR Management</h1>
+            <p className="mt-0.5 text-sm text-gray-500">Teacher attendance, leave requests and expense claims in one place.</p>
+          </div>
+          <div className="flex items-center gap-2">
+            <div className="inline-flex rounded-full border border-gray-200 bg-white p-1 shadow-sm">
+              {[
+                { key: 'attendance', label: 'Attendance', icon: Clock },
+                { key: 'leaves', label: 'Leaves', icon: CalendarCheck, badge: leaveSummary.pending },
+                // { key: 'expenses', label: 'Expenses', icon: IndianRupee, badge: expenseSummary.pending },
+              ].map(({ key, label, icon: Icon, badge }) => (
+                <button
+                  key={key}
+                  type="button"
+                  onClick={() => { setTab(key); setShowHrSettings(false); setShowMobileFilters(false); }}
+                  className={`inline-flex items-center gap-1.5 rounded-full px-3 py-1.5 text-sm font-semibold transition ${tab === key ? 'bg-yellow-500 text-white shadow-sm' : 'text-gray-600 hover:bg-gray-50 hover:text-gray-900'}`}
+                >
+                  <Icon size={15} /> {label}
+                  {badge > 0 && (
+                    <span className={`rounded-full px-1.5 text-[10px] font-bold ${tab === key ? 'bg-white/25 text-white' : 'bg-amber-100 text-amber-700'}`}>{badge}</span>
+                  )}
+                </button>
+              ))}
+            </div>
+            {tab !== 'expenses' && (
+              <button
+                type="button"
+                onClick={() => setShowHrSettings((v) => !v)}
+                className={`inline-flex h-10 items-center gap-1.5 rounded-full border px-3 text-sm font-semibold transition ${showHrSettings ? 'border-yellow-300 bg-yellow-50 text-yellow-700' : 'border-gray-200 bg-white text-gray-600 hover:bg-gray-50'}`}
+                title={tab === 'attendance' ? 'Attendance timings' : 'Leave policy'}
+              >
+                <Settings size={15} />
+                 {/* <span className="hidden sm:inline">Settings</span> */}
               </button>
-            ))}
+            )}
           </div>
         </div>
 
@@ -1137,177 +1559,117 @@ const HR = ({ setShowAdminHeader }) => {
         {/* Attendance */}
         {tab === 'attendance' && (
           <div className="space-y-4">
-            {/* Summary Cards */}
-            <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
-              <div className="bg-white rounded-xl border border-gray-200 p-5 flex items-center gap-4">
-                <div className="w-12 h-12 rounded-lg bg-blue-100 flex items-center justify-center"><Users size={22} className="text-blue-600" /></div>
-                <div><div className="text-sm text-gray-500">Teachers</div><div className="text-2xl font-bold text-gray-900">{attendanceSummary.teachers}</div></div>
+            <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
+              <StatChip icon={Users} label="Teachers" value={attendanceSummary.teachers} tone="blue" />
+              <StatChip icon={CheckCircle} label="Present entries" value={attendanceSummary.presentDays} tone="green" />
+              <StatChip icon={XCircle} label="Absent (month)" value={attendanceSummary.absentDays} tone="red" />
+            </div>
+
+            <SettingsModal open={showHrSettings} title="Attendance timings" onClose={closeHrSettings}>
+              <div className="space-y-4">
+                <div className="grid grid-cols-2 gap-4">
+                  <label className="min-w-0 text-xs font-medium text-gray-600">Entry time
+                    <input type="time" value={attendanceSettings.entryTime} onChange={(e) => setAttendanceSettings((prev) => ({ ...prev, entryTime: e.target.value }))} className={`mt-1 block w-full min-w-0 max-w-full appearance-none ${toolbarInput}`} />
+                  </label>
+                  <label className="min-w-0 text-xs font-medium text-gray-600">Exit time
+                    <input type="time" value={attendanceSettings.exitTime} onChange={(e) => setAttendanceSettings((prev) => ({ ...prev, exitTime: e.target.value }))} className={`mt-1 block w-full min-w-0 max-w-full appearance-none ${toolbarInput}`} />
+                  </label>
+                </div>
+                <label className="block text-xs font-medium text-gray-600">Grace (min)
+                  <input type="number" min="0" max="720" value={attendanceSettings.graceMinutes} onChange={(e) => setAttendanceSettings((prev) => ({ ...prev, graceMinutes: Number(e.target.value || 0) }))} className={`mt-1 block w-full ${toolbarInput}`} />
+                </label>
+                <button type="button" onClick={saveAttendanceSettings} disabled={attendanceSettingsSaving || activityLoading} className="inline-flex h-10 w-full items-center justify-center gap-1.5 rounded-lg bg-yellow-500 px-4 text-sm font-semibold text-white hover:bg-yellow-600 disabled:opacity-50">
+                  <Clock size={14} /> {attendanceSettingsSaving ? 'Saving...' : 'Save timings'}
+                </button>
+                <p className="text-xs text-gray-500">Teachers checking in within the grace time are marked Present. Working hours run from check-in to check-out.</p>
               </div>
-              <div className="bg-white rounded-xl border border-green-200 p-5 flex items-center gap-4">
-                <div className="w-12 h-12 rounded-lg bg-green-100 flex items-center justify-center"><CheckCircle size={22} className="text-green-600" /></div>
-                <div><div className="text-sm text-gray-500">Present Entries</div><div className="text-2xl font-bold text-green-700">{attendanceSummary.presentDays}</div></div>
+            </SettingsModal>
+
+            {activityError && (
+              <div className="flex items-center gap-3 rounded-xl border border-red-200 bg-red-50 px-4 py-3">
+                <AlertCircle size={18} className="shrink-0 text-red-500" />
+                <span className="text-sm text-red-700">{activityError}</span>
               </div>
-              <div className="bg-white rounded-xl border border-red-200 p-5 flex items-center gap-4">
-                <div className="w-12 h-12 rounded-lg bg-red-100 flex items-center justify-center"><XCircle size={22} className="text-red-600" /></div>
-                <div><div className="text-sm text-gray-500">Absent (Month)</div><div className="text-2xl font-bold text-red-700">{attendanceSummary.absentDays}</div></div>
+            )}
+
+            <div className="overflow-hidden rounded-xl border border-gray-200 bg-white">
+
+            <div className="flex flex-col gap-2 rounded-t-xl border-b border-gray-100 p-3 lg:flex-row lg:items-center">
+              <div className="flex items-center gap-2 lg:flex-1"><div className="relative flex-1">
+                <Search size={16} className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" />
+                <input
+                  type="text"
+                  placeholder="Search by name or date..."
+                  value={attendanceSearch}
+                  onChange={(e) => setAttendanceSearch(e.target.value)}
+                  className={`w-full pl-9 ${toolbarInput}`}
+                />
+              </div><button type="button" onClick={() => setShowMobileFilters((v) => !v)} className={`flex h-9 w-9 shrink-0 items-center justify-center rounded-lg border transition lg:hidden ${showMobileFilters ? 'border-red-200 bg-red-50 text-red-600' : 'border-gray-200 text-gray-600 hover:bg-gray-50'}`} title={showMobileFilters ? 'Close filters' : 'Filters'} aria-label={showMobileFilters ? 'Close filters' : 'Show filters'} aria-expanded={showMobileFilters}>{showMobileFilters ? <X size={16} /> : <SlidersHorizontal size={16} />}</button></div>
+              <div className={`flex-wrap items-center gap-2 lg:flex ${showMobileFilters ? 'flex' : 'hidden'}`}>
+                <input type="month" value={teacherActivityMonth} onChange={(e) => setTeacherActivityMonth(e.target.value)} className={toolbarInput} aria-label="Month" />
+                <select value={attendanceTeacherFilter} onChange={(e) => setAttendanceTeacherFilter(e.target.value)} className={toolbarInput}>
+                  <option value="all">All teachers</option>
+                  {attendanceTeacherOptions.map((t) => <option key={t.id} value={t.id}>{t.name}</option>)}
+                </select>
+                <select value={attendanceStatusFilter} onChange={(e) => setAttendanceStatusFilter(e.target.value)} className={toolbarInput}>
+                  <option value="all">All statuses</option>
+                  {attendanceStatusOptions.map((s) => <option key={s} value={s}>{s}</option>)}
+                </select>
+                {(countActiveFilters([attendanceTeacherFilter, attendanceStatusFilter]) > 0 || attendanceSearch) && (
+                  <button type="button" onClick={() => { setAttendanceTeacherFilter('all'); setAttendanceStatusFilter('all'); setAttendanceSearch(''); }} className="px-2 text-sm font-medium text-gray-500 hover:text-gray-800">Reset</button>
+                )}
+                <button type="button" onClick={() => fetchTeacherActivities(teacherActivityMonth)} className="flex h-9 w-9 items-center justify-center rounded-lg border border-gray-200 text-gray-600 transition hover:bg-gray-50" title="Refresh" aria-label="Refresh">
+                  <RefreshCw size={15} className={activityLoading ? 'animate-spin' : ''} />
+                </button>
+                <button type="button" onClick={() => { setDownloadMonth(teacherActivityMonth); setDownloadError(''); setShowAttendanceDownload(true); }} className="inline-flex h-9 items-center gap-1.5 rounded-lg bg-emerald-600 px-3 text-sm font-semibold text-white transition hover:bg-emerald-700" title="Download attendance report">
+                  <Download size={15} /> <span className="hidden sm:inline">Download</span>
+                </button>
               </div>
             </div>
 
-            <div className="bg-white rounded-xl border border-gray-200 p-4">
-              <div className="flex flex-col lg:flex-row lg:items-end gap-3">
-                <div className="min-w-[220px]">
-                  <label className="block text-xs font-medium text-gray-600 mb-1">Entry Time</label>
-                  <input
-                    type="time"
-                    value={attendanceSettings.entryTime}
-                    onChange={(e) => setAttendanceSettings((prev) => ({ ...prev, entryTime: e.target.value }))}
-                    className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm"
-                  />
-                </div>
-                <div className="min-w-[220px]">
-                  <label className="block text-xs font-medium text-gray-600 mb-1">Exit Time</label>
-                  <input
-                    type="time"
-                    value={attendanceSettings.exitTime}
-                    onChange={(e) => setAttendanceSettings((prev) => ({ ...prev, exitTime: e.target.value }))}
-                    className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm"
-                  />
-                </div>
-                <div className="min-w-[200px]">
-                  <label className="block text-xs font-medium text-gray-600 mb-1">Consideration (min)</label>
-                  <input
-                    type="number"
-                    min="0"
-                    max="720"
-                    value={attendanceSettings.graceMinutes}
-                    onChange={(e) => setAttendanceSettings((prev) => ({ ...prev, graceMinutes: Number(e.target.value || 0) }))}
-                    className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm"
-                  />
-                </div>
-                <button
-                  onClick={saveAttendanceSettings}
-                  disabled={attendanceSettingsSaving || activityLoading}
-                  className="inline-flex items-center gap-1.5 px-4 py-2 rounded-lg bg-yellow-600 text-white hover:bg-yellow-700 disabled:opacity-50 text-sm font-medium"
-                >
-                  <Clock size={14} />
-                  {attendanceSettingsSaving ? 'Saving...' : 'Save Timings'}
+            <SettingsModal open={showAttendanceDownload} title="Download attendance report" onClose={closeAttendanceDownload}>
+              <div className="space-y-4">
+                <label className="block text-xs font-medium text-gray-600">Month
+                  <input type="month" value={downloadMonth} onChange={(e) => setDownloadMonth(e.target.value)} className={`mt-1 block w-full min-w-0 max-w-full appearance-none ${toolbarInput}`} />
+                </label>
+                {downloadError && <p className="rounded-lg bg-red-50 px-3 py-2 text-xs text-red-700">{downloadError}</p>}
+                <button type="button" onClick={downloadAttendanceExcel} disabled={downloadingAttendance || !downloadMonth} className="inline-flex h-10 w-full items-center justify-center gap-1.5 rounded-lg bg-emerald-600 px-4 text-sm font-semibold text-white hover:bg-emerald-700 disabled:opacity-50">
+                  {downloadingAttendance ? <RefreshCw size={14} className="animate-spin" /> : <Download size={14} />}
+                  {downloadingAttendance ? 'Preparing...' : 'Download Excel'}
                 </button>
+                <p className="text-xs text-gray-500">Includes Sl No, teacher name, login ID, date, check-in, check-out, working hours and status for every teacher in the selected month.</p>
               </div>
-              <div className="mt-2 flex flex-wrap items-center gap-2 text-xs text-gray-500">
-                <span>Saved: {attendanceSettings.entryTime} - {attendanceSettings.exitTime}</span>
-                <span className="text-gray-400">|</span>
-                <span>Consideration: {attendanceSettings.graceMinutes} min</span>
-              </div>
-              <p className="mt-1 text-xs text-gray-500">
-                Teachers checking in within the consideration time are marked as Present. Working hours are calculated from check-in to check-out.
-              </p>
-            </div>
-
-            {/* Filter Panel */}
-            <div className="bg-white rounded-xl border border-gray-200 p-4">
-              <div className="flex flex-wrap items-center gap-3">
-                <div className="flex items-center gap-2 flex-1 min-w-[200px]">
-                  <div className="relative flex-1">
-                    <Search size={16} className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" />
-                    <input
-                      type="text"
-                      placeholder="Search by name or date..."
-                      value={attendanceSearch}
-                      onChange={(e) => setAttendanceSearch(e.target.value)}
-                      className="w-full pl-9 pr-3 py-2 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-yellow-500 focus:border-transparent"
-                    />
-                  </div>
-                </div>
-                <input type="month" value={teacherActivityMonth} onChange={(e) => setTeacherActivityMonth(e.target.value)} className="border border-gray-300 rounded-lg px-3 py-2 text-sm" />
-                <button
-                  onClick={() => setShowAttendanceFilters(!showAttendanceFilters)}
-                  className={`inline-flex items-center gap-1.5 px-3 py-2 rounded-lg border text-sm font-medium transition-colors ${showAttendanceFilters || countActiveFilters([attendanceTeacherFilter, attendanceStatusFilter]) > 0 ? 'bg-yellow-50 border-yellow-300 text-yellow-700' : 'border-gray-300 text-gray-700 hover:bg-gray-50'}`}
-                >
-                  <Filter size={14} />
-                  Filters
-                  {countActiveFilters([attendanceTeacherFilter, attendanceStatusFilter]) > 0 && (
-                    <span className="ml-1 bg-yellow-500 text-white text-xs rounded-full w-5 h-5 flex items-center justify-center">{countActiveFilters([attendanceTeacherFilter, attendanceStatusFilter])}</span>
-                  )}
-                  {showAttendanceFilters ? <ChevronUp size={14} /> : <ChevronDown size={14} />}
-                </button>
-                <button onClick={() => fetchTeacherActivities(teacherActivityMonth)} className="inline-flex items-center gap-1.5 px-3 py-2 rounded-lg bg-yellow-600 text-white hover:bg-yellow-700 text-sm font-medium">
-                  <RefreshCw size={14} />
-                  Refresh
-                </button>
-              </div>
-
-              {/* Advanced Filters */}
-              {showAttendanceFilters && (
-                <div className="mt-3 pt-3 border-t border-gray-200 grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
-                  <div>
-                    <label className="block text-xs font-medium text-gray-600 mb-1">Teacher</label>
-                    <select value={attendanceTeacherFilter} onChange={(e) => setAttendanceTeacherFilter(e.target.value)} className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm">
-                      <option value="all">All Teachers</option>
-                      {attendanceTeacherOptions.map((t) => <option key={t.id} value={t.id}>{t.name}</option>)}
-                    </select>
-                  </div>
-                  <div>
-                    <label className="block text-xs font-medium text-gray-600 mb-1">Status</label>
-                    <select value={attendanceStatusFilter} onChange={(e) => setAttendanceStatusFilter(e.target.value)} className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm">
-                      <option value="all">All Statuses</option>
-                      {attendanceStatusOptions.map((s) => <option key={s} value={s}>{s}</option>)}
-                    </select>
-                  </div>
-                  <div className="flex items-end">
-                    <button
-                      onClick={() => { setAttendanceTeacherFilter('all'); setAttendanceStatusFilter('all'); setAttendanceSearch(''); }}
-                      className="px-3 py-2 text-sm text-gray-600 hover:text-gray-800 hover:bg-gray-100 rounded-lg transition-colors"
-                    >
-                      Clear All Filters
-                    </button>
-                  </div>
-                </div>
-              )}
-            </div>
-
-            {/* Table */}
-            <div className="bg-white rounded-xl border border-gray-200 overflow-hidden">
-              {activityLoading ? (
-                <div className="flex items-center justify-center py-12">
-                  <RefreshCw size={20} className="animate-spin text-yellow-600 mr-2" />
-                  <span className="text-sm text-gray-500">Loading attendance...</span>
-                </div>
-              ) : (
-                <div className="overflow-x-auto">
-                  <table className="min-w-full divide-y divide-gray-200">
-                    <thead>
-                      <tr className="bg-gray-50">
-                        <th className="px-5 py-3 text-left text-xs font-semibold text-gray-600 uppercase tracking-wider">Date</th>
-                        <th className="px-5 py-3 text-left text-xs font-semibold text-gray-600 uppercase tracking-wider">Teacher</th>
-                        <th className="px-5 py-3 text-left text-xs font-semibold text-gray-600 uppercase tracking-wider">Check In</th>
-                        <th className="px-5 py-3 text-left text-xs font-semibold text-gray-600 uppercase tracking-wider">Check Out</th>
-                        <th className="px-5 py-3 text-left text-xs font-semibold text-gray-600 uppercase tracking-wider">Working Hours</th>
-                        <th className="px-5 py-3 text-left text-xs font-semibold text-gray-600 uppercase tracking-wider">Status</th>
+            </SettingsModal>
+              <div className="overflow-x-auto">
+                <table className="min-w-full">
+                  <thead className="bg-gray-50">
+                    <tr>
+                      <th className={thCls}>Teacher</th>
+                      <th className={thCls}>Date</th>
+                      <th className={thCls}>Check in</th>
+                      <th className={thCls}>Check out</th>
+                      <th className={thCls}>Hours</th>
+                      <th className={thCls}>Status</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-gray-100">
+                    {activityLoading ? <tr><td colSpan={6} className="px-4 py-12 text-center text-sm text-gray-400"><RefreshCw size={16} className="mr-2 inline animate-spin text-yellow-600" />Loading attendance…</td></tr> : attendancePager.rows.map((record) => (
+                      <tr key={record.id} className="transition-colors hover:bg-gray-50/70">
+                        <td className="px-4 py-2.5"><PersonCell name={record.teacherName} photo={record.teacherProfilePic} /></td>
+                        <td className={tdCls}>{formatLongDate(record.date) || record.date}</td>
+                        <td className={tdCls}>{record.checkInAt ? new Date(record.checkInAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : '—'}</td>
+                        <td className={tdCls}>{record.checkOutAt ? new Date(record.checkOutAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : '—'}</td>
+                        <td className={tdCls}>{formatWorkingHours(record.workingMinutes)}</td>
+                        <td className="px-4 py-2.5"><StatusBadge status={record.status} /></td>
                       </tr>
-                    </thead>
-                    <tbody className="divide-y divide-gray-100">
-                      {attendanceFilteredRecords.map((record) => (
-                        <tr key={record.id} className="hover:bg-gray-50 transition-colors">
-                          <td className="px-5 py-3 text-sm text-gray-700 font-medium">{record.date}</td>
-                          <td className="px-5 py-3 text-sm text-gray-900 font-medium">{record.teacherName || '-'}</td>
-                          <td className="px-5 py-3 text-sm text-gray-600">{record.checkInAt ? new Date(record.checkInAt).toLocaleTimeString() : '-'}</td>
-                          <td className="px-5 py-3 text-sm text-gray-600">{record.checkOutAt ? new Date(record.checkOutAt).toLocaleTimeString() : '-'}</td>
-                          <td className="px-5 py-3 text-sm text-gray-600">{formatWorkingHours(record.workingMinutes)}</td>
-                          <td className="px-5 py-3"><StatusBadge status={record.status} /></td>
-                        </tr>
-                      ))}
-                      {attendanceFilteredRecords.length === 0 && (
-                        <tr><td colSpan={6} className="px-5 py-12 text-sm text-center text-gray-400">No attendance records found</td></tr>
-                      )}
-                    </tbody>
-                  </table>
-                  {attendanceFilteredRecords.length > 0 && (
-                    <div className="px-5 py-3 bg-gray-50 border-t border-gray-200 text-xs text-gray-500">
-                      Showing {attendanceFilteredRecords.length} of {teacherAttendanceRecords.length} records
-                    </div>
-                  )}
-                </div>
-              )}
+                    ))}
+                    {!activityLoading && attendanceFilteredRecords.length === 0 && (
+                      <tr><td colSpan={6} className="px-4 py-12 text-center text-sm text-gray-400">No attendance records found</td></tr>
+                    )}
+                  </tbody>
+                </table>
+              </div>
+              {!activityLoading && <TablePagination pager={attendancePager} label="records" />}
             </div>
           </div>
         )}
@@ -1376,206 +1738,124 @@ const HR = ({ setShowAdminHeader }) => {
         {/* Leaves */}
         {tab === 'leaves' && (
           <div className="space-y-4">
-            {/* Summary Cards */}
-            <div className="grid grid-cols-1 sm:grid-cols-4 gap-4">
-              <div className="bg-white rounded-xl border border-gray-200 p-5 flex items-center gap-4">
-                <div className="w-12 h-12 rounded-lg bg-blue-100 flex items-center justify-center"><CalendarCheck size={22} className="text-blue-600" /></div>
-                <div><div className="text-sm text-gray-500">Total Requests</div><div className="text-2xl font-bold text-gray-900">{leaveSummary.total}</div></div>
-              </div>
-              <div className="bg-white rounded-xl border border-amber-200 p-5 flex items-center gap-4">
-                <div className="w-12 h-12 rounded-lg bg-amber-100 flex items-center justify-center"><Clock size={22} className="text-amber-600" /></div>
-                <div><div className="text-sm text-gray-500">Pending</div><div className="text-2xl font-bold text-amber-700">{leaveSummary.pending}</div></div>
-              </div>
-              <div className="bg-white rounded-xl border border-green-200 p-5 flex items-center gap-4">
-                <div className="w-12 h-12 rounded-lg bg-green-100 flex items-center justify-center"><CheckCircle size={22} className="text-green-600" /></div>
-                <div><div className="text-sm text-gray-500">Approved</div><div className="text-2xl font-bold text-green-700">{leaveSummary.approved}</div></div>
-              </div>
-              <div className="bg-white rounded-xl border border-red-200 p-5 flex items-center gap-4">
-                <div className="w-12 h-12 rounded-lg bg-red-100 flex items-center justify-center"><XCircle size={22} className="text-red-600" /></div>
-                <div><div className="text-sm text-gray-500">Rejected</div><div className="text-2xl font-bold text-red-700">{leaveSummary.rejected}</div></div>
-              </div>
+            <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
+              <StatChip icon={CalendarCheck} label="Total requests" value={leaveSummary.total} tone="blue" />
+              <StatChip icon={Clock} label="Pending" value={leaveSummary.pending} tone="amber" />
+              <StatChip icon={CheckCircle} label="Approved" value={leaveSummary.approved} tone="green" />
+              <StatChip icon={XCircle} label="Rejected" value={leaveSummary.rejected} tone="red" />
             </div>
 
-            <div className="bg-white rounded-xl border border-gray-200 p-4">
-              <div className="flex flex-col sm:flex-row sm:items-end gap-3">
-                <div className="flex-1">
-                  <label className="block text-xs font-semibold text-gray-600 uppercase tracking-wide mb-1">
-                    Casual Leave Days (Per Teacher)
-                  </label>
-                  <input
-                    type="number"
-                    min="0"
-                    max="365"
-                    value={leavePolicy.casualLeaveDays}
-                    onChange={(e) => setLeavePolicy((prev) => ({ ...prev, casualLeaveDays: e.target.value }))}
-                    className="w-full sm:w-56 border border-gray-300 rounded-lg px-3 py-2 text-sm focus:ring-2 focus:ring-yellow-500 focus:border-transparent"
-                  />
-                  <p className="text-xs text-gray-500 mt-1">Teachers can apply casual leave up to this approved quota.</p>
-                </div>
-                <button
-                  onClick={saveLeavePolicy}
-                  disabled={leavePolicySaving}
-                  className="inline-flex items-center gap-2 px-4 py-2 rounded-lg bg-yellow-600 text-white hover:bg-yellow-700 disabled:opacity-60 text-sm font-medium"
-                >
+            <SettingsModal open={showHrSettings} title="Leave policy" onClose={closeHrSettings}>
+              <div className="space-y-4">
+                <label className="block text-xs font-medium text-gray-600">Casual leave days per teacher
+                  <input type="number" min="0" max="365" value={leavePolicy.casualLeaveDays} onChange={(e) => setLeavePolicy((prev) => ({ ...prev, casualLeaveDays: e.target.value }))} className={`mt-1 block w-full ${toolbarInput}`} />
+                </label>
+                <button type="button" onClick={saveLeavePolicy} disabled={leavePolicySaving} className="inline-flex h-10 w-full items-center justify-center gap-1.5 rounded-lg bg-yellow-500 px-4 text-sm font-semibold text-white hover:bg-yellow-600 disabled:opacity-60">
                   {leavePolicySaving ? <RefreshCw size={14} className="animate-spin" /> : <CheckCircle size={14} />}
-                  {leavePolicySaving ? 'Saving...' : 'Save Policy'}
+                  {leavePolicySaving ? 'Saving...' : 'Save policy'}
                 </button>
+                <p className="text-xs text-gray-500">Teachers can take casual leave up to this approved quota.</p>
               </div>
-            </div>
+            </SettingsModal>
 
-            {/* Filter Panel */}
-            <div className="bg-white rounded-xl border border-gray-200 p-4">
-              <div className="flex flex-wrap items-center gap-3">
-                <div className="flex items-center gap-2 flex-1 min-w-[200px]">
-                  <div className="relative flex-1">
-                    <Search size={16} className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" />
-                    <input
-                      type="text"
-                      placeholder="Search by name, type, or reason..."
-                      value={leaveSearch}
-                      onChange={(e) => setLeaveSearch(e.target.value)}
-                      className="w-full pl-9 pr-3 py-2 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-yellow-500 focus:border-transparent"
-                    />
-                  </div>
-                </div>
-                <input type="month" value={teacherActivityMonth} onChange={(e) => setTeacherActivityMonth(e.target.value)} className="border border-gray-300 rounded-lg px-3 py-2 text-sm" />
-                <button
-                  onClick={() => setShowLeaveFilters(!showLeaveFilters)}
-                  className={`inline-flex items-center gap-1.5 px-3 py-2 rounded-lg border text-sm font-medium transition-colors ${showLeaveFilters || countActiveFilters([leaveTeacherFilter, leaveStatusFilter, leaveTypeFilter]) > 0 ? 'bg-yellow-50 border-yellow-300 text-yellow-700' : 'border-gray-300 text-gray-700 hover:bg-gray-50'}`}
-                >
-                  <Filter size={14} />
-                  Filters
-                  {countActiveFilters([leaveTeacherFilter, leaveStatusFilter, leaveTypeFilter]) > 0 && (
-                    <span className="ml-1 bg-yellow-500 text-white text-xs rounded-full w-5 h-5 flex items-center justify-center">{countActiveFilters([leaveTeacherFilter, leaveStatusFilter, leaveTypeFilter])}</span>
-                  )}
-                  {showLeaveFilters ? <ChevronUp size={14} /> : <ChevronDown size={14} />}
-                </button>
-                <button onClick={() => fetchTeacherActivities(teacherActivityMonth)} className="inline-flex items-center gap-1.5 px-3 py-2 rounded-lg bg-yellow-600 text-white hover:bg-yellow-700 text-sm font-medium">
-                  <RefreshCw size={14} />
-                  Refresh
-                </button>
-              </div>
-
-              {/* Advanced Filters */}
-              {showLeaveFilters && (
-                <div className="mt-3 pt-3 border-t border-gray-200 grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3">
-                  <div>
-                    <label className="block text-xs font-medium text-gray-600 mb-1">Teacher</label>
-                    <select value={leaveTeacherFilter} onChange={(e) => setLeaveTeacherFilter(e.target.value)} className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm">
-                      <option value="all">All Teachers</option>
-                      {leaveTeacherOptions.map((t) => <option key={t.id} value={t.id}>{t.name}</option>)}
-                    </select>
-                  </div>
-                  <div>
-                    <label className="block text-xs font-medium text-gray-600 mb-1">Status</label>
-                    <select value={leaveStatusFilter} onChange={(e) => setLeaveStatusFilter(e.target.value)} className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm">
-                      <option value="all">All Statuses</option>
-                      <option value="pending">Pending</option>
-                      <option value="approved">Approved</option>
-                      <option value="rejected">Rejected</option>
-                    </select>
-                  </div>
-                  <div>
-                    <label className="block text-xs font-medium text-gray-600 mb-1">Leave Type</label>
-                    <select value={leaveTypeFilter} onChange={(e) => setLeaveTypeFilter(e.target.value)} className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm">
-                      <option value="all">All Types</option>
-                      {leaveTypeOptions.map((t) => <option key={t} value={t}>{t}</option>)}
-                    </select>
-                  </div>
-                  <div className="flex items-end">
-                    <button
-                      onClick={() => { setLeaveTeacherFilter('all'); setLeaveStatusFilter('all'); setLeaveTypeFilter('all'); setLeaveSearch(''); }}
-                      className="px-3 py-2 text-sm text-gray-600 hover:text-gray-800 hover:bg-gray-100 rounded-lg transition-colors"
-                    >
-                      Clear All Filters
-                    </button>
-                  </div>
-                </div>
-              )}
-            </div>
-
-            {/* Error */}
             {activityError && (
-              <div className="rounded-xl border border-red-200 bg-red-50 p-4 flex items-center gap-3">
-                <AlertCircle size={18} className="text-red-500 shrink-0" />
+              <div className="flex items-center gap-3 rounded-xl border border-red-200 bg-red-50 px-4 py-3">
+                <AlertCircle size={18} className="shrink-0 text-red-500" />
                 <span className="text-sm text-red-700">{activityError}</span>
               </div>
             )}
 
-            {/* Table */}
-            <div className="bg-white rounded-xl border border-gray-200 overflow-hidden">
-              {activityLoading ? (
-                <div className="flex items-center justify-center py-12">
-                  <RefreshCw size={20} className="animate-spin text-yellow-600 mr-2" />
-                  <span className="text-sm text-gray-500">Loading leave requests...</span>
-                </div>
-              ) : (
-                <div className="overflow-x-auto">
-                  <table className="min-w-full divide-y divide-gray-200">
-                    <thead>
-                      <tr className="bg-gray-50">
-                        <th className="px-5 py-3 text-xs font-semibold text-gray-600 uppercase tracking-wider">Teacher</th>
-                        <th className="px-5 py-3 text-xs font-semibold text-gray-600 uppercase tracking-wider">Type</th>
-                        <th className="px-5 py-3 text-xs font-semibold text-gray-600 uppercase tracking-wider">From</th>
-                        <th className="px-5 py-3 text-xs font-semibold text-gray-600 uppercase tracking-wider">To</th>
-                        {/* <th className="px-5 py-3 text-left text-xs font-semibold text-gray-600 uppercase tracking-wider">Reason</th> */}
-                        <th className="px-5 py-3 text-xs font-semibold text-gray-600 uppercase tracking-wider">Status</th>
-                        <th className="px-5 py-3 text-xs font-semibold text-gray-600 uppercase tracking-wider">Actions</th>
-                      </tr>
-                    </thead>
-                    <tbody className="divide-y divide-gray-100">
-                      {filteredLeaves.map((r) => {
-                        const status = normalizedStatus(r.status);
-                        return (
-                          <tr key={r.id} className="hover:bg-gray-50 transition-colors">
-                            <td className="px-5 py-3 text-sm text-gray-900 font-medium">{r.teacherName || '-'}</td>
-                            <td className="px-5 py-3">
-                              <span className="inline-flex px-2 py-0.5 rounded-md bg-blue-50 text-blue-700 text-xs font-medium">{r.type}</span>
-                            </td>
-                            <td className="px-5 py-3 text-sm text-gray-600">{formatLongDate(r.startDate)}</td>
-                            <td className="px-5 py-3 text-sm text-gray-600">{formatLongDate(r.endDate)}</td>
-                            {/* <td className="px-5 py-3 text-sm text-gray-600 max-w-[200px] truncate" title={r.reason || ''}>{r.reason || '-'}</td> */}
-                            <td className="px-5 py-3"><StatusBadge status={r.status} /></td>
-                            <td className="px-5 py-3 text-sm">
-                              <div className="flex gap-2">
-                                <button
-                                  onClick={() => openLeaveLetter(r)}
-                                  className="inline-flex items-center gap-1 px-2.5 py-1.5 rounded-lg border border-gray-300 text-gray-700 text-xs font-medium hover:bg-gray-50 transition-colors"
-                                  title="View leave letter"
-                                >
-                                  <Eye size={12} /> View
-                                </button>
-                                <button
-                                  onClick={() => reviewLeaveRequest(r.id, 'Approved')}
-                                  disabled={status === 'approved' || status === 'accepted'}
-                                  className="inline-flex items-center gap-1 px-2.5 py-1.5 rounded-lg bg-green-600 text-white text-xs font-medium hover:bg-green-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
-                                >
-                                  <CheckCircle size={12} /> Approve
-                                </button>
-                                <button
-                                  onClick={() => reviewLeaveRequest(r.id, 'Rejected')}
-                                  disabled={status === 'rejected'}
-                                  className="inline-flex items-center gap-1 px-2.5 py-1.5 rounded-lg bg-red-600 text-white text-xs font-medium hover:bg-red-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
-                                >
-                                  <XCircle size={12} /> Reject
-                                </button>
-                              </div>
-                            </td>
-                          </tr>
-                        );
-                      })}
-                      {filteredLeaves.length === 0 && (
-                        <tr><td colSpan={7} className="px-5 py-12 text-sm text-center text-gray-400">No leave requests found</td></tr>
-                      )}
-                    </tbody>
-                  </table>
-                  {filteredLeaves.length > 0 && (
-                    <div className="px-5 py-3 bg-gray-50 border-t border-gray-200 text-xs text-gray-500">
-                      Showing {filteredLeaves.length} of {teacherLeaves.length} requests
-                    </div>
-                  )}
-                </div>
-              )}
+            <div className="overflow-hidden rounded-xl border border-gray-200 bg-white">
+
+            <div className="flex flex-col gap-2 rounded-t-xl border-b border-gray-100 p-3 lg:flex-row lg:items-center">
+              <div className="flex items-center gap-2 lg:flex-1"><div className="relative flex-1">
+                <Search size={16} className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" />
+                <input
+                  type="text"
+                  placeholder="Search by name, type or reason..."
+                  value={leaveSearch}
+                  onChange={(e) => setLeaveSearch(e.target.value)}
+                  className={`w-full pl-9 ${toolbarInput}`}
+                />
+              </div><button type="button" onClick={() => setShowMobileFilters((v) => !v)} className={`flex h-9 w-9 shrink-0 items-center justify-center rounded-lg border transition lg:hidden ${showMobileFilters ? 'border-red-200 bg-red-50 text-red-600' : 'border-gray-200 text-gray-600 hover:bg-gray-50'}`} title={showMobileFilters ? 'Close filters' : 'Filters'} aria-label={showMobileFilters ? 'Close filters' : 'Show filters'} aria-expanded={showMobileFilters}>{showMobileFilters ? <X size={16} /> : <SlidersHorizontal size={16} />}</button></div>
+              <div className={`flex-wrap items-center gap-2 lg:flex ${showMobileFilters ? 'flex' : 'hidden'}`}>
+                <input type="month" value={teacherActivityMonth} onChange={(e) => setTeacherActivityMonth(e.target.value)} className={toolbarInput} aria-label="Month" />
+                <select value={leaveTeacherFilter} onChange={(e) => setLeaveTeacherFilter(e.target.value)} className={toolbarInput}>
+                  <option value="all">All teachers</option>
+                  {leaveTeacherOptions.map((t) => <option key={t.id} value={t.id}>{t.name}</option>)}
+                </select>
+                <select value={leaveStatusFilter} onChange={(e) => setLeaveStatusFilter(e.target.value)} className={toolbarInput}>
+                  <option value="all">All statuses</option>
+                  <option value="pending">Pending</option>
+                  <option value="approved">Approved</option>
+                  <option value="rejected">Rejected</option>
+                </select>
+                <select value={leaveTypeFilter} onChange={(e) => setLeaveTypeFilter(e.target.value)} className={toolbarInput}>
+                  <option value="all">All types</option>
+                  {leaveTypeOptions.map((t) => <option key={t} value={t}>{t}</option>)}
+                </select>
+                {(countActiveFilters([leaveTeacherFilter, leaveStatusFilter, leaveTypeFilter]) > 0 || leaveSearch) && (
+                  <button type="button" onClick={() => { setLeaveTeacherFilter('all'); setLeaveStatusFilter('all'); setLeaveTypeFilter('all'); setLeaveSearch(''); }} className="px-2 text-sm font-medium text-gray-500 hover:text-gray-800">Reset</button>
+                )}
+                <button type="button" onClick={() => fetchTeacherActivities(teacherActivityMonth)} className="flex h-9 w-9 items-center justify-center rounded-lg border border-gray-200 text-gray-600 transition hover:bg-gray-50" title="Refresh" aria-label="Refresh">
+                  <RefreshCw size={15} className={activityLoading ? 'animate-spin' : ''} />
+                </button>
+              </div>
+            </div>
+              <div className="overflow-x-auto">
+                <table className="min-w-full">
+                  <thead className="bg-gray-50">
+                    <tr>
+                      <th className={thCls}>Teacher</th>
+                      <th className={thCls}>Type</th>
+                      <th className={thCls}>Dates</th>
+                      <th className={thCls}>Status</th>
+                      <th className={thCls}>Actions</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-gray-100">
+                    {activityLoading ? <tr><td colSpan={5} className="px-4 py-12 text-center text-sm text-gray-400"><RefreshCw size={16} className="mr-2 inline animate-spin text-yellow-600" />Loading leave requests…</td></tr> : leavesPager.rows.map((r) => {
+                      const status = normalizedStatus(r.status);
+                      const isPending = !['approved', 'accepted', 'rejected'].includes(status);
+                      return (
+                        <tr key={r.id} className="transition-colors hover:bg-gray-50/70">
+                          <td className="px-4 py-2.5">
+                            <div className="flex items-center gap-2">
+                              {/* No admin decision yet */}
+                              <PersonCell name={r.teacherName} photo={r.teacherProfilePic} />
+                              {isPending && <span className="inline-flex shrink-0 animate-pulse items-center rounded-full bg-red-500 px-2 py-0.5 text-[10px] font-bold uppercase tracking-wide text-white">New</span>}
+                            </div>
+                          </td>
+                          <td className={tdCls}>
+                            <span className="inline-flex rounded-md bg-blue-50 px-2 py-0.5 text-xs font-medium text-blue-700">{r.type}</span>
+                          </td>
+                          <td className={tdCls}>{formatLeaveDateRange(r.startDate, r.endDate)}</td>
+                          <td className="px-4 py-2.5"><StatusBadge status={r.status} /></td>
+                          <td className="px-4 py-2.5">
+                          <div className="flex items-center gap-1.5">
+                            <button type="button" onClick={() => openLeaveLetter(r)} className="inline-flex items-center gap-1 rounded-lg border border-gray-200 bg-white px-2.5 py-1.5 text-xs font-semibold text-gray-700 transition hover:bg-gray-50" title="View leave letter"><Eye size={13} /> View</button>
+                            {isPending ? (
+                              <>
+                                <button type="button" onClick={() => reviewLeaveRequest(r.id, 'Approved')} className="inline-flex items-center gap-1 rounded-lg bg-green-600 px-2.5 py-1.5 text-xs font-semibold text-white transition hover:bg-green-700" title="Approve"><CheckCircle size={13} /> Approve</button>
+                                <button type="button" onClick={() => reviewLeaveRequest(r.id, 'Rejected')} className="inline-flex items-center gap-1 rounded-lg border border-red-200 bg-white px-2.5 py-1.5 text-xs font-semibold text-red-600 transition hover:bg-red-50" title="Reject"><XCircle size={13} /> Reject</button>
+                              </>
+                            ) : (
+                              <button type="button" onClick={() => reviewLeaveRequest(r.id, status === 'rejected' ? 'Approved' : 'Rejected')} className="text-xs font-medium text-gray-400 underline-offset-2 hover:text-gray-700 hover:underline" title="Change decision">
+                                {status === 'rejected' ? 'Approve instead' : 'Reject instead'}
+                              </button>
+                            )}
+                          </div>
+                          </td>
+                        </tr>
+                      );
+                    })}
+                    {!activityLoading && filteredLeaves.length === 0 && (
+                      <tr><td colSpan={5} className="px-4 py-12 text-center text-sm text-gray-400">No leave requests found</td></tr>
+                    )}
+                  </tbody>
+                </table>
+              </div>
+              {!activityLoading && <TablePagination pager={leavesPager} label="requests" />}
             </div>
           </div>
         )}
@@ -1659,13 +1939,14 @@ const HR = ({ setShowAdminHeader }) => {
               </div>
 
               <div className="px-6 py-4 border-t border-gray-100 bg-white flex items-center justify-end gap-2">
-                {/* <button
+                <button
+                  type="button"
                   onClick={handlePrintLeaveLetter}
                   className="inline-flex items-center gap-2 px-4 py-2 rounded-lg border border-gray-300 text-gray-700 hover:bg-gray-50 text-sm font-medium"
                 >
-                  <FileText size={16} />
+                  <Printer size={16} />
                   Print
-                </button> */}
+                </button>
                 <button
                   onClick={closeLeaveLetter}
                   className="inline-flex items-center gap-2 px-4 py-2 rounded-lg bg-yellow-600 text-white hover:bg-yellow-700 text-sm font-medium"
@@ -1680,172 +1961,112 @@ const HR = ({ setShowAdminHeader }) => {
         {/* Expenses */}
         {tab === 'expenses' && (
           <div className="space-y-4">
-            {/* Summary Cards */}
-            <div className="grid grid-cols-1 sm:grid-cols-4 gap-4">
-              <div className="bg-white rounded-xl border border-gray-200 p-5 flex items-center gap-4">
-                <div className="w-12 h-12 rounded-lg bg-purple-100 flex items-center justify-center"><IndianRupee size={22} className="text-purple-600" /></div>
-                <div><div className="text-sm text-gray-500">Total Claims</div><div className="text-2xl font-bold text-gray-900">{expenseSummary.total}</div><div className="text-xs text-gray-400">₹{expenseSummary.totalAmount.toLocaleString()}</div></div>
-              </div>
-              <div className="bg-white rounded-xl border border-amber-200 p-5 flex items-center gap-4">
-                <div className="w-12 h-12 rounded-lg bg-amber-100 flex items-center justify-center"><Clock size={22} className="text-amber-600" /></div>
-                <div><div className="text-sm text-gray-500">Pending</div><div className="text-2xl font-bold text-amber-700">{expenseSummary.pending}</div><div className="text-xs text-amber-500">₹{expenseSummary.pendingAmount.toLocaleString()}</div></div>
-              </div>
-              <div className="bg-white rounded-xl border border-green-200 p-5 flex items-center gap-4">
-                <div className="w-12 h-12 rounded-lg bg-green-100 flex items-center justify-center"><CheckCircle size={22} className="text-green-600" /></div>
-                <div><div className="text-sm text-gray-500">Approved</div><div className="text-2xl font-bold text-green-700">{expenseSummary.approved}</div><div className="text-xs text-green-500">₹{expenseSummary.approvedAmount.toLocaleString()}</div></div>
-              </div>
-              <div className="bg-white rounded-xl border border-red-200 p-5 flex items-center gap-4">
-                <div className="w-12 h-12 rounded-lg bg-red-100 flex items-center justify-center"><XCircle size={22} className="text-red-600" /></div>
-                <div><div className="text-sm text-gray-500">Rejected</div><div className="text-2xl font-bold text-red-700">{expenseSummary.rejected}</div></div>
-              </div>
+            <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
+              <StatChip icon={IndianRupee} label="Total claims" value={expenseSummary.total} sub={`₹${expenseSummary.totalAmount.toLocaleString('en-IN')}`} tone="purple" />
+              <StatChip icon={Clock} label="Pending" value={expenseSummary.pending} sub={`₹${expenseSummary.pendingAmount.toLocaleString('en-IN')}`} tone="amber" />
+              <StatChip icon={CheckCircle} label="Approved" value={expenseSummary.approved} sub={`₹${expenseSummary.approvedAmount.toLocaleString('en-IN')}`} tone="green" />
+              <StatChip icon={XCircle} label="Rejected" value={expenseSummary.rejected} tone="red" />
             </div>
 
-            {/* Filter Panel */}
-            <div className="bg-white rounded-xl border border-gray-200 p-4">
-              <div className="flex flex-wrap items-center gap-3">
-                <div className="flex items-center gap-2 flex-1 min-w-[200px]">
-                  <div className="relative flex-1">
-                    <Search size={16} className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" />
-                    <input
-                      type="text"
-                      placeholder="Search by name, category, or description..."
-                      value={expenseSearch}
-                      onChange={(e) => setExpenseSearch(e.target.value)}
-                      className="w-full pl-9 pr-3 py-2 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-yellow-500 focus:border-transparent"
-                    />
-                  </div>
-                </div>
-                <input type="month" value={teacherActivityMonth} onChange={(e) => setTeacherActivityMonth(e.target.value)} className="border border-gray-300 rounded-lg px-3 py-2 text-sm" />
-                <button
-                  onClick={() => setShowExpenseFilters(!showExpenseFilters)}
-                  className={`inline-flex items-center gap-1.5 px-3 py-2 rounded-lg border text-sm font-medium transition-colors ${showExpenseFilters || countActiveFilters([expenseTeacherFilter, expenseStatusFilter, expenseCategoryFilter]) > 0 ? 'bg-yellow-50 border-yellow-300 text-yellow-700' : 'border-gray-300 text-gray-700 hover:bg-gray-50'}`}
-                >
-                  <Filter size={14} />
-                  Filters
-                  {countActiveFilters([expenseTeacherFilter, expenseStatusFilter, expenseCategoryFilter]) > 0 && (
-                    <span className="ml-1 bg-yellow-500 text-white text-xs rounded-full w-5 h-5 flex items-center justify-center">{countActiveFilters([expenseTeacherFilter, expenseStatusFilter, expenseCategoryFilter])}</span>
-                  )}
-                  {showExpenseFilters ? <ChevronUp size={14} /> : <ChevronDown size={14} />}
-                </button>
-                <button onClick={() => fetchTeacherActivities(teacherActivityMonth)} className="inline-flex items-center gap-1.5 px-3 py-2 rounded-lg bg-yellow-600 text-white hover:bg-yellow-700 text-sm font-medium">
-                  <RefreshCw size={14} />
-                  Refresh
-                </button>
-              </div>
-
-              {/* Advanced Filters */}
-              {showExpenseFilters && (
-                <div className="mt-3 pt-3 border-t border-gray-200 grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3">
-                  <div>
-                    <label className="block text-xs font-medium text-gray-600 mb-1">Teacher</label>
-                    <select value={expenseTeacherFilter} onChange={(e) => setExpenseTeacherFilter(e.target.value)} className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm">
-                      <option value="all">All Teachers</option>
-                      {expenseTeacherOptions.map((t) => <option key={t.id} value={t.id}>{t.name}</option>)}
-                    </select>
-                  </div>
-                  <div>
-                    <label className="block text-xs font-medium text-gray-600 mb-1">Status</label>
-                    <select value={expenseStatusFilter} onChange={(e) => setExpenseStatusFilter(e.target.value)} className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm">
-                      <option value="all">All Statuses</option>
-                      <option value="pending">Pending</option>
-                      <option value="approved">Approved</option>
-                      <option value="rejected">Rejected</option>
-                    </select>
-                  </div>
-                  <div>
-                    <label className="block text-xs font-medium text-gray-600 mb-1">Category</label>
-                    <select value={expenseCategoryFilter} onChange={(e) => setExpenseCategoryFilter(e.target.value)} className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm">
-                      <option value="all">All Categories</option>
-                      {expenseCategoryOptions.map((c) => <option key={c} value={c}>{c}</option>)}
-                    </select>
-                  </div>
-                  <div className="flex items-end">
-                    <button
-                      onClick={() => { setExpenseTeacherFilter('all'); setExpenseStatusFilter('all'); setExpenseCategoryFilter('all'); setExpenseSearch(''); }}
-                      className="px-3 py-2 text-sm text-gray-600 hover:text-gray-800 hover:bg-gray-100 rounded-lg transition-colors"
-                    >
-                      Clear All Filters
-                    </button>
-                  </div>
-                </div>
-              )}
-            </div>
-
-            {/* Error */}
             {activityError && (
-              <div className="rounded-xl border border-red-200 bg-red-50 p-4 flex items-center gap-3">
-                <AlertCircle size={18} className="text-red-500 shrink-0" />
+              <div className="flex items-center gap-3 rounded-xl border border-red-200 bg-red-50 px-4 py-3">
+                <AlertCircle size={18} className="shrink-0 text-red-500" />
                 <span className="text-sm text-red-700">{activityError}</span>
               </div>
             )}
 
-            {/* Table */}
-            <div className="bg-white rounded-xl border border-gray-200 overflow-hidden">
-              {activityLoading ? (
-                <div className="flex items-center justify-center py-12">
-                  <RefreshCw size={20} className="animate-spin text-yellow-600 mr-2" />
-                  <span className="text-sm text-gray-500">Loading expense claims...</span>
-                </div>
-              ) : (
-                <div className="overflow-x-auto">
-                  <table className="min-w-full divide-y divide-gray-200">
-                    <thead>
-                      <tr className="bg-gray-50">
-                        <th className="px-5 py-3 text-left text-xs font-semibold text-gray-600 uppercase tracking-wider">Teacher</th>
-                        <th className="px-5 py-3 text-left text-xs font-semibold text-gray-600 uppercase tracking-wider">Category</th>
-                        <th className="px-5 py-3 text-left text-xs font-semibold text-gray-600 uppercase tracking-wider">Amount</th>
-                        <th className="px-5 py-3 text-left text-xs font-semibold text-gray-600 uppercase tracking-wider">Date</th>
-                        <th className="px-5 py-3 text-left text-xs font-semibold text-gray-600 uppercase tracking-wider">Description</th>
-                        <th className="px-5 py-3 text-left text-xs font-semibold text-gray-600 uppercase tracking-wider">Status</th>
-                        <th className="px-5 py-3 text-left text-xs font-semibold text-gray-600 uppercase tracking-wider">Actions</th>
-                      </tr>
-                    </thead>
-                    <tbody className="divide-y divide-gray-100">
-                      {filteredExpenses.map((expense) => {
-                        const status = normalizedStatus(expense.status);
-                        return (
-                          <tr key={expense.id} className="hover:bg-gray-50 transition-colors">
-                            <td className="px-5 py-3 text-sm text-gray-900 font-medium">{expense.teacherName || '-'}</td>
-                            <td className="px-5 py-3">
-                              <span className="inline-flex px-2 py-0.5 rounded-md bg-purple-50 text-purple-700 text-xs font-medium">{expense.category}</span>
-                            </td>
-                            <td className="px-5 py-3 text-sm text-gray-900 font-semibold">₹{Number(expense.amount || 0).toLocaleString()}</td>
-                            <td className="px-5 py-3 text-sm text-gray-600">{expense.date}</td>
-                            <td className="px-5 py-3 text-sm text-gray-600 max-w-[200px] truncate" title={expense.description || ''}>{expense.description || '-'}</td>
-                            <td className="px-5 py-3"><StatusBadge status={expense.status} /></td>
-                            <td className="px-5 py-3 text-sm">
-                              <div className="flex gap-2">
-                                <button
-                                  onClick={() => reviewExpenseClaim(expense.id, 'Approved')}
-                                  disabled={status === 'approved' || status === 'accepted'}
-                                  className="inline-flex items-center gap-1 px-2.5 py-1.5 rounded-lg bg-green-600 text-white text-xs font-medium hover:bg-green-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
-                                >
-                                  <CheckCircle size={12} /> Approve
-                                </button>
-                                <button
-                                  onClick={() => reviewExpenseClaim(expense.id, 'Rejected')}
-                                  disabled={status === 'rejected'}
-                                  className="inline-flex items-center gap-1 px-2.5 py-1.5 rounded-lg bg-red-600 text-white text-xs font-medium hover:bg-red-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
-                                >
-                                  <XCircle size={12} /> Reject
-                                </button>
-                              </div>
-                            </td>
-                          </tr>
-                        );
-                      })}
-                      {filteredExpenses.length === 0 && (
-                        <tr><td colSpan={7} className="px-5 py-12 text-sm text-center text-gray-400">No expense claims found</td></tr>
-                      )}
-                    </tbody>
-                  </table>
-                  {filteredExpenses.length > 0 && (
-                    <div className="px-5 py-3 bg-gray-50 border-t border-gray-200 flex items-center justify-between text-xs text-gray-500">
-                      <span>Showing {filteredExpenses.length} of {teacherExpenses.length} claims</span>
-                      <span>Filtered total: ₹{filteredExpenses.reduce((s, e) => s + Number(e.amount || 0), 0).toLocaleString()}</span>
-                    </div>
-                  )}
-                </div>
+            <div className="overflow-hidden rounded-xl border border-gray-200 bg-white">
+
+            <div className="flex flex-col gap-2 rounded-t-xl border-b border-gray-100 p-3 lg:flex-row lg:items-center">
+              <div className="flex items-center gap-2 lg:flex-1"><div className="relative flex-1">
+                <Search size={16} className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" />
+                <input
+                  type="text"
+                  placeholder="Search by name, category or description..."
+                  value={expenseSearch}
+                  onChange={(e) => setExpenseSearch(e.target.value)}
+                  className={`w-full pl-9 ${toolbarInput}`}
+                />
+              </div><button type="button" onClick={() => setShowMobileFilters((v) => !v)} className={`flex h-9 w-9 shrink-0 items-center justify-center rounded-lg border transition lg:hidden ${showMobileFilters ? 'border-red-200 bg-red-50 text-red-600' : 'border-gray-200 text-gray-600 hover:bg-gray-50'}`} title={showMobileFilters ? 'Close filters' : 'Filters'} aria-label={showMobileFilters ? 'Close filters' : 'Show filters'} aria-expanded={showMobileFilters}>{showMobileFilters ? <X size={16} /> : <SlidersHorizontal size={16} />}</button></div>
+              <div className={`flex-wrap items-center gap-2 lg:flex ${showMobileFilters ? 'flex' : 'hidden'}`}>
+                <input type="month" value={teacherActivityMonth} onChange={(e) => setTeacherActivityMonth(e.target.value)} className={toolbarInput} aria-label="Month" />
+                <select value={expenseTeacherFilter} onChange={(e) => setExpenseTeacherFilter(e.target.value)} className={toolbarInput}>
+                  <option value="all">All teachers</option>
+                  {expenseTeacherOptions.map((t) => <option key={t.id} value={t.id}>{t.name}</option>)}
+                </select>
+                <select value={expenseStatusFilter} onChange={(e) => setExpenseStatusFilter(e.target.value)} className={toolbarInput}>
+                  <option value="all">All statuses</option>
+                  <option value="pending">Pending</option>
+                  <option value="approved">Approved</option>
+                  <option value="rejected">Rejected</option>
+                </select>
+                <select value={expenseCategoryFilter} onChange={(e) => setExpenseCategoryFilter(e.target.value)} className={toolbarInput}>
+                  <option value="all">All categories</option>
+                  {expenseCategoryOptions.map((c) => <option key={c} value={c}>{c}</option>)}
+                </select>
+                {(countActiveFilters([expenseTeacherFilter, expenseStatusFilter, expenseCategoryFilter]) > 0 || expenseSearch) && (
+                  <button type="button" onClick={() => { setExpenseTeacherFilter('all'); setExpenseStatusFilter('all'); setExpenseCategoryFilter('all'); setExpenseSearch(''); }} className="px-2 text-sm font-medium text-gray-500 hover:text-gray-800">Reset</button>
+                )}
+                <button type="button" onClick={() => fetchTeacherActivities(teacherActivityMonth)} className="flex h-9 w-9 items-center justify-center rounded-lg border border-gray-200 text-gray-600 transition hover:bg-gray-50" title="Refresh" aria-label="Refresh">
+                  <RefreshCw size={15} className={activityLoading ? 'animate-spin' : ''} />
+                </button>
+              </div>
+            </div>
+              <div className="overflow-x-auto">
+                <table className="min-w-full">
+                  <thead className="bg-gray-50">
+                    <tr>
+                      <th className={thCls}>Teacher</th>
+                      <th className={thCls}>Category</th>
+                      <th className={thCls}>Amount</th>
+                      <th className={thCls}>Date</th>
+                      <th className={thCls}>Description</th>
+                      <th className={thCls}>Status</th>
+                      <th className={thCls}>Actions</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-gray-100">
+                    {activityLoading ? <tr><td colSpan={7} className="px-4 py-12 text-center text-sm text-gray-400"><RefreshCw size={16} className="mr-2 inline animate-spin text-yellow-600" />Loading expense claims…</td></tr> : expensesPager.rows.map((expense) => {
+                      const status = normalizedStatus(expense.status);
+                      const isPending = !['approved', 'accepted', 'rejected'].includes(status);
+                      return (
+                        <tr key={expense.id} className="transition-colors hover:bg-gray-50/70">
+                          <td className="px-4 py-2.5"><PersonCell name={expense.teacherName} photo={expense.teacherProfilePic} /></td>
+                          <td className={tdCls}><span className="inline-flex rounded-md bg-purple-50 px-2 py-0.5 text-xs font-medium text-purple-700">{expense.category}</span></td>
+                          <td className="px-4 py-3 text-sm font-semibold text-gray-900">₹{Number(expense.amount || 0).toLocaleString('en-IN')}</td>
+                          <td className={tdCls}>{formatLongDate(expense.date) || expense.date}</td>
+                          <td className={`${tdCls} max-w-[220px] truncate`} title={expense.description || ''}>{expense.description || '—'}</td>
+                          <td className="px-4 py-2.5"><StatusBadge status={expense.status} /></td>
+                          <td className="px-4 py-2.5">
+                          <div className="flex items-center gap-1.5">
+
+                            {isPending ? (
+                              <>
+                                <button type="button" onClick={() => reviewExpenseClaim(expense.id, 'Approved')} className="inline-flex items-center gap-1 rounded-lg bg-green-600 px-2.5 py-1.5 text-xs font-semibold text-white transition hover:bg-green-700" title="Approve"><CheckCircle size={13} /> Approve</button>
+                                <button type="button" onClick={() => reviewExpenseClaim(expense.id, 'Rejected')} className="inline-flex items-center gap-1 rounded-lg border border-red-200 bg-white px-2.5 py-1.5 text-xs font-semibold text-red-600 transition hover:bg-red-50" title="Reject"><XCircle size={13} /> Reject</button>
+                              </>
+                            ) : (
+                              <button type="button" onClick={() => reviewExpenseClaim(expense.id, status === 'rejected' ? 'Approved' : 'Rejected')} className="text-xs font-medium text-gray-400 underline-offset-2 hover:text-gray-700 hover:underline" title="Change decision">
+                                {status === 'rejected' ? 'Approve instead' : 'Reject instead'}
+                              </button>
+                            )}
+                          </div>
+                          </td>
+                        </tr>
+                      );
+                    })}
+                    {!activityLoading && filteredExpenses.length === 0 && (
+                      <tr><td colSpan={7} className="px-4 py-12 text-center text-sm text-gray-400">No expense claims found</td></tr>
+                    )}
+                  </tbody>
+                </table>
+              </div>
+              {!activityLoading && (
+                <TablePagination
+                  pager={expensesPager}
+                  label="claims"
+                  extra={<span>Filtered total: <b className="text-gray-700">₹{filteredExpenses.reduce((s, e) => s + Number(e.amount || 0), 0).toLocaleString('en-IN')}</b></span>}
+                />
               )}
             </div>
           </div>

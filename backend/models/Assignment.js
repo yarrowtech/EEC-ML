@@ -1,11 +1,30 @@
 const mongoose = require("mongoose");
 
+const quizQuestionSchema = new mongoose.Schema({
+  text: { type: String, required: true, maxlength: 2000 },
+  marks: { type: Number, min: 0, default: 1 },
+  options: [{ type: String, maxlength: 500 }],
+  correctOptions: [{ type: Number }],          // mcq_single / mcq_multiple
+  correctBool: { type: Boolean, default: null }, // true_false
+  acceptableAnswers: [{ type: String, maxlength: 200 }], // fill_blank
+  modelAnswer: { type: String, default: '', maxlength: 2000 }, // short_answer (teacher reference)
+});
+
+const quizSectionSchema = new mongoose.Schema({
+  title: { type: String, default: '', maxlength: 200 },
+  instructions: { type: String, default: '', maxlength: 500 },
+  type: { type: String, enum: ['mcq_single', 'mcq_multiple', 'fill_blank', 'true_false', 'short_answer'], required: true },
+  marksPerQuestion: { type: Number, min: 0, default: 1 },
+  questions: [quizQuestionSchema],
+});
+
 const assignmentSchema = new mongoose.Schema({
   schoolId: { type: mongoose.Schema.Types.ObjectId, ref: 'School', required: true },
   campusId: { type: String, default: null },
   teacherId: { type: mongoose.Schema.Types.ObjectId, ref: 'TeacherUser', required: true },
   title: { type: String, required: true },
   description: { type: String, default: '' },
+  flashcards: [{ front: { type: String, required: true, maxlength: 2000 }, back: { type: String, required: true, maxlength: 2000 } }],
   subject: String,
   topic: { type: String, default: '' },
   type: { type: String, default: 'Assignment' },
@@ -32,6 +51,8 @@ const assignmentSchema = new mongoose.Schema({
     enum: ['text', 'pdf'],
     default: 'text'
   },
+  quizSections: { type: [quizSectionSchema], default: [] },
+  timeLimit: { type: Number, min: 0, default: null }, // minutes; quizzes are auto-submitted when it runs out
   isEssay: { type: Boolean, default: false },
   rubric: { type: String, default: '' },
   status: {
@@ -47,5 +68,11 @@ const assignmentSchema = new mongoose.Schema({
   },
 });
 
+// This model had zero indexes beyond the default _id (and the tenant
+// plugin's single-field organizationId one). GET /api/lesson-plans/student/
+// smart-learning-map — the background load on every Smart Learning page —
+// filters on exactly this shape; without it, Mongo scans every assignment
+// in the organization to find matches.
+assignmentSchema.index({ schoolId: 1, status: 1, publishedForStudentPortal: 1, sourceLessonPlanId: 1 });
 
 module.exports = mongoose.model("Assignment", assignmentSchema);

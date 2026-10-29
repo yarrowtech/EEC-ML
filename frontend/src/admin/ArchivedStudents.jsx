@@ -21,6 +21,9 @@ const ArchivedStudents = () => {
         },
       });
       const data = await res.json();
+      if (!res.ok) {
+        throw new Error(data?.error || 'Failed to load archived students.');
+      }
       setStudents(Array.isArray(data) ? data : []);
     } catch (err) {
       console.error("Failed to load archived students:", err);
@@ -112,7 +115,7 @@ const ArchivedStudents = () => {
                   <td className="p-3">{s.course}</td>
                   <td className="p-3">{s.batchCode}</td>
                   <td className="p-3">{s.passedOutYear}</td>
-                  <td className="p-3">₹{s.feeSummary?.totalPaid}</td>
+                  <td className="p-3">₹{s.feeSummary?.totalPaid ?? 0}</td>
                   <td className="p-3">
                     {s.archivedAt
                       ? new Date(s.archivedAt).toLocaleDateString()

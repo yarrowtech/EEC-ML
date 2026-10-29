@@ -15,6 +15,7 @@ const Timetable = require('../models/Timetable');
 const { logStudentPortalEvent, logStudentPortalError } = require('../utils/studentPortalLogger');
 
 const router = express.Router();
+const { TYPES, normalizeQuestion, gradeAnswer } = require('../utils/practiceFormats');
 
 const isValidId = (value) => mongoose.isValidObjectId(value);
 
@@ -63,21 +64,34 @@ const ensureTeacherAllocation = async ({ schoolId, campusId, teacherId, classId,
 };
 
 const resolveStudentClassSection = async ({ schoolId, campusId, student }) => {
-  const classDoc = await ClassModel.findOne({
-    schoolId,
-    ...(campusId ? { campusId } : {}),
-    name: String(student.grade || '').trim(),
-  }).lean();
+  const classDoc = student.classId
+    ? await ClassModel.findOne({
+      _id: student.classId,
+      schoolId,
+      ...(campusId ? { campusId } : {}),
+    }).lean()
+    : await ClassModel.findOne({
+      schoolId,
+      ...(campusId ? { campusId } : {}),
+      name: String(student.grade || '').trim(),
+    }).lean();
   if (!classDoc) {
     return { error: 'Class not found for student grade' };
   }
 
-  const sectionDoc = await Section.findOne({
-    schoolId,
-    ...(campusId ? { campusId } : {}),
-    classId: classDoc._id,
-    name: String(student.section || '').trim(),
-  }).lean();
+  const sectionDoc = student.sectionId
+    ? await Section.findOne({
+      _id: student.sectionId,
+      schoolId,
+      ...(campusId ? { campusId } : {}),
+      classId: classDoc._id,
+    }).lean()
+    : await Section.findOne({
+      schoolId,
+      ...(campusId ? { campusId } : {}),
+      classId: classDoc._id,
+      name: String(student.section || '').trim(),
+    }).lean();
   if (!sectionDoc) {
     return { error: 'Section not found for student section' };
   }
@@ -92,7 +106,7 @@ router.post('/teacher/questions', authTeacher, async (req, res) => {
     const campusId = req.campusId || null;
     const teacherId = req.user?.id;
 
-    const { classId, sectionId, subjectId, type, question, options, correctAnswer, explanation } = req.body || {};
+    const { classId, sectionId, subjectId, type, question, options, correctAnswer, explanation, matchingLeft } = req.body || {};
 
     if (!schoolId || !teacherId) {
       return res.status(400).json({ error: 'schoolId and teacherId are required' });
@@ -100,8 +114,8 @@ router.post('/teacher/questions', authTeacher, async (req, res) => {
     if (!isValidId(classId) || !isValidId(sectionId) || !isValidId(subjectId)) {
       return res.status(400).json({ error: 'classId, sectionId and subjectId must be valid IDs' });
     }
-    if (!['mcq', 'blank'].includes(type)) {
-      return res.status(400).json({ error: 'type must be mcq or blank' });
+    if (!TYPES.includes(type)) {
+      return res.status(400).json({ error: 'type must be mcq, blank, true_false or matching' });
     }
     if (!String(question || '').trim()) {
       return res.status(400).json({ error: 'Question is required' });
@@ -131,22 +145,7 @@ router.post('/teacher/questions', authTeacher, async (req, res) => {
       return res.status(400).json({ error: 'Subject does not belong to selected class' });
     }
 
-    let sanitizedOptions = Array.isArray(options) ? options.map((o) => String(o || '').trim()).filter(Boolean) : [];
-    let sanitizedAnswer = String(correctAnswer || '').trim();
-
-    if (type === 'mcq') {
-      if (sanitizedOptions.length < 2) {
-        return res.status(400).json({ error: 'At least two options are required for MCQ' });
-      }
-      if (!sanitizedAnswer || !sanitizedOptions.includes(sanitizedAnswer)) {
-        return res.status(400).json({ error: 'Correct answer must match one of the options' });
-      }
-    } else {
-      sanitizedOptions = [];
-      if (!sanitizedAnswer) {
-        return res.status(400).json({ error: 'Correct answer is required' });
-      }
-    }
+    const normalized = normalizeQuestion({ type, options, correctAnswer, matchingLeft });
 
     const created = await PracticeQuestion.create({
       schoolId,
@@ -157,8 +156,7 @@ router.post('/teacher/questions', authTeacher, async (req, res) => {
       subjectId,
       type,
       question: String(question).trim(),
-      options: sanitizedOptions,
-      correctAnswer: sanitizedAnswer,
+      ...normalized,
       explanation: String(explanation || '').trim(),
     });
 
@@ -187,7 +185,7 @@ router.get('/teacher/questions', authTeacher, async (req, res) => {
     if (isValidId(req.query.classId)) filter.classId = req.query.classId;
     if (isValidId(req.query.sectionId)) filter.sectionId = req.query.sectionId;
     if (isValidId(req.query.subjectId)) filter.subjectId = req.query.subjectId;
-    if (['mcq', 'blank'].includes(req.query.type)) filter.type = req.query.type;
+    if (TYPES.includes(req.query.type)) filter.type = req.query.type;
 
     const questions = await PracticeQuestion.find(filter)
       .populate('classId', 'name')
@@ -228,13 +226,14 @@ router.put('/teacher/questions/:id', authTeacher, async (req, res) => {
       type = existing.type,
       question = existing.question,
       options = existing.options,
+      matchingLeft = existing.matchingLeft,
       correctAnswer = existing.correctAnswer,
       explanation = existing.explanation,
       isActive = existing.isActive,
     } = req.body || {};
 
-    if (!['mcq', 'blank'].includes(type)) {
-      return res.status(400).json({ error: 'type must be mcq or blank' });
+    if (!TYPES.includes(type)) {
+      return res.status(400).json({ error: 'type must be mcq, blank, true_false or matching' });
     }
     if (!String(question || '').trim()) {
       return res.status(400).json({ error: 'Question is required' });
@@ -252,22 +251,7 @@ router.put('/teacher/questions/:id', authTeacher, async (req, res) => {
       return res.status(403).json({ error: 'You are not assigned to this class/section/subject' });
     }
 
-    let sanitizedOptions = Array.isArray(options) ? options.map((o) => String(o || '').trim()).filter(Boolean) : [];
-    let sanitizedAnswer = String(correctAnswer || '').trim();
-
-    if (type === 'mcq') {
-      if (sanitizedOptions.length < 2) {
-        return res.status(400).json({ error: 'At least two options are required for MCQ' });
-      }
-      if (!sanitizedAnswer || !sanitizedOptions.includes(sanitizedAnswer)) {
-        return res.status(400).json({ error: 'Correct answer must match one of the options' });
-      }
-    } else {
-      sanitizedOptions = [];
-      if (!sanitizedAnswer) {
-        return res.status(400).json({ error: 'Correct answer is required' });
-      }
-    }
+    const normalized = normalizeQuestion({ type, options, correctAnswer, matchingLeft });
 
     const updated = await PracticeQuestion.findOneAndUpdate(
       { _id: id, schoolId, teacherId },
@@ -278,8 +262,7 @@ router.put('/teacher/questions/:id', authTeacher, async (req, res) => {
           subjectId,
           type,
           question: String(question).trim(),
-          options: sanitizedOptions,
-          correctAnswer: sanitizedAnswer,
+          ...normalized,
           explanation: String(explanation || '').trim(),
           isActive: Boolean(isActive),
         },
@@ -353,7 +336,7 @@ router.get('/student/meta', authStudent, async (req, res) => {
       class: { id: classDoc._id, name: classDoc.name },
       section: { id: sectionDoc._id, name: sectionDoc.name },
       subjects: subjects.map((s) => ({ id: s._id, name: s.name, code: s.code || '' })),
-      questionTypes: ['mcq', 'blank'],
+      questionTypes: TYPES,
     });
     logStudentPortalEvent(req, {
       feature: 'practice',
@@ -392,8 +375,8 @@ router.get('/student/questions', authStudent, async (req, res) => {
     if (!isValidId(subjectId)) {
       return res.status(400).json({ error: 'Valid subjectId is required' });
     }
-    if (!['mcq', 'blank'].includes(type)) {
-      return res.status(400).json({ error: 'type must be mcq or blank' });
+    if (!TYPES.includes(type)) {
+      return res.status(400).json({ error: 'type must be mcq, blank, true_false or matching' });
     }
 
     const student = await StudentUser.findOne({ _id: studentId, schoolId }).lean();
@@ -426,7 +409,7 @@ router.get('/student/questions', authStudent, async (req, res) => {
       type,
       isActive: true,
     })
-      .select('question options type')
+      .select('question options type matchingLeft')
       .sort({ createdAt: -1 })
       .lean();
 
@@ -435,6 +418,7 @@ router.get('/student/questions', authStudent, async (req, res) => {
         id: q._id,
         question: q.question,
         options: q.options || [],
+        matchingLeft: q.matchingLeft || [],
         type: q.type,
       })),
     });
@@ -489,7 +473,10 @@ router.post('/student/submit', authStudent, async (req, res) => {
     }
     const { classDoc, sectionDoc } = resolved;
 
-    const ids = answers.map((a) => a.questionId).filter((id) => isValidId(id));
+    const ids = answers.map((a) => a?.questionId);
+    if (ids.length > 200 || ids.some((id) => !isValidId(id)) || new Set(ids.map(String)).size !== ids.length) {
+      return res.status(400).json({ error: 'Provide 1–200 distinct valid question IDs' });
+    }
     const questions = await PracticeQuestion.find({
       _id: { $in: ids },
       schoolId,
@@ -500,6 +487,7 @@ router.post('/student/submit', authStudent, async (req, res) => {
     }).lean();
 
     const questionMap = new Map(questions.map((q) => [String(q._id), q]));
+    if (questions.length !== ids.length) return res.status(403).json({ error: 'One or more questions are unavailable for your class' });
     let correctCount = 0;
 
     const results = answers.map((ans) => {
@@ -512,11 +500,8 @@ router.post('/student/submit', authStudent, async (req, res) => {
           explanation: '',
         };
       }
-      const given = String(ans.answer || '').trim();
       const expected = String(q.correctAnswer || '').trim();
-      const isCorrect = q.type === 'blank'
-        ? given.toLowerCase() === expected.toLowerCase()
-        : given === expected;
+      const isCorrect = gradeAnswer(q, ans.answer);
       if (isCorrect) correctCount += 1;
       return {
         questionId: q._id,

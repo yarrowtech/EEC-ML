@@ -11,15 +11,20 @@ const { logger } = require('../utils/logger');
 const { logStudentPortalEvent, logStudentPortalError } = require('../utils/studentPortalLogger');
 const { getJson, setJson } = require('../utils/redisClient');
 const { getStudentSubjectsCacheKey } = require('../utils/studentSubjectsCache');
-const { uploadBufferToCloudinary } = require('../utils/cloudinaryUpload');
+const { normalizeClassName, normalizeText } = require('../utils/teacherAllocationScope');
 
 // Setup multer for file uploads (in memory)
 const storage = multer.memoryStorage();
-const upload = multer({ storage, limits: { fileSize: 3 * 1024 * 1024 } });
-const ALLOWED_PROFILE_PIC_MIME_TYPES = new Set(['image/jpeg', 'image/png', 'image/webp', 'image/gif']);
+const upload = multer({ storage, limits: { fileSize: 5 * 1024 * 1024 } });
+// Multer errors (e.g. file too large) come back as clean JSON instead of a 500 page.
+const profilePicUpload = (req, res, next) => upload.single('profilePic')(req, res, (err) => {
+  if (!err) return next();
+  const tooBig = err.code === 'LIMIT_FILE_SIZE';
+  return res.status(tooBig ? 413 : 400).json({ error: tooBig ? 'Image must be smaller than 5MB' : (err.message || 'Invalid upload') });
+});
 
 // POST request to update student profile
-router.post('/profile/update', auth, upload.single('profilePic'), async (req, res) => {
+router.post('/profile/update', auth, profilePicUpload, async (req, res) => {
   // #swagger.tags = ['Student Profile']
   try {
     logStudentPortalEvent(req, {
@@ -33,27 +38,10 @@ router.post('/profile/update', auth, upload.single('profilePic'), async (req, re
     const schoolId = req.schoolId || req.user?.schoolId || null;
     if (!schoolId) return res.status(400).json({ error: 'schoolId is required' });
 
-    // Handle profilePic if included. Uploaded to Cloudinary rather than
-    // stored inline — a base64 data URI here (up to ~4MB of text per photo)
-    // was bloating this student's own profile/dashboard responses to 1MB+,
-    // and getting pulled into every chat thread they're a participant in
-    // (chatRoutes.js selects profilePic to enrich other users' thread lists),
-    // slowing those down for everyone who chats with them too.
+    // Profile photos are managed by the school; students can't change them.
+    delete updates.profilePic;
     if (req.file) {
-      if (!ALLOWED_PROFILE_PIC_MIME_TYPES.has(req.file.mimetype)) {
-        return res.status(400).json({ error: 'Only JPEG, PNG, WEBP, or GIF images are allowed' });
-      }
-      const uploadResult = await uploadBufferToCloudinary(req.file.buffer, {
-        folder: 'student_profile_pics',
-        resource_type: 'image',
-        use_filename: true,
-        unique_filename: true,
-        overwrite: false,
-      });
-      if (!uploadResult?.secure_url) {
-        return res.status(502).json({ error: 'Profile picture upload failed. Please try again.' });
-      }
-      updates.profilePic = uploadResult.secure_url;
+      return res.status(403).json({ error: 'Profile photo can only be changed by the school.' });
     }
 
     // Do not overwrite DOB with empty value from form submits.
@@ -167,9 +155,21 @@ router.get('/allocated-subjects', auth, async (req, res) => {
       return res.status(404).json({ error: 'Student not found' });
     }
 
-    // Find class and section by name
-    const classDoc = await Class.findOne({ schoolId, name: student.grade });
-    const sectionDoc = await Section.findOne({ schoolId, name: student.section });
+    // Find class and section by name. Matched via normalizeClassName/normalizeText
+    // rather than a raw exact-equality find(): this was the strictest version of
+    // the same StudentUser.grade vs Class.name inconsistency already fixed for
+    // the schedule, practice-paper, and assignment endpoints ("Class 5" vs "5")
+    // — a plain `{ name: student.grade }` match doesn't even have a regex or
+    // case-insensitivity to save it, so it silently returned zero subjects for
+    // every student at any school with this naming mismatch.
+    const [classCandidates, sectionCandidates] = await Promise.all([
+      Class.find({ schoolId }).lean(),
+      Section.find({ schoolId }).lean(),
+    ]);
+    const normalizedGrade = normalizeClassName(student.grade);
+    const normalizedSection = normalizeText(student.section);
+    const classDoc = classCandidates.find((c) => normalizeClassName(c.name) === normalizedGrade) || null;
+    const sectionDoc = sectionCandidates.find((s) => normalizeText(s.name) === normalizedSection) || null;
 
     if (!classDoc || !sectionDoc) {
       logStudentPortalEvent(req, {

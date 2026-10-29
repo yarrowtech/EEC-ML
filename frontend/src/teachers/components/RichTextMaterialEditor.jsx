@@ -371,7 +371,7 @@ const RichTextMaterialEditor = ({ material, classId, sectionId, subjectId, chapt
             <option value="theory" className="text-slate-900">Theory</option>
             <option value="practice" className="text-slate-900">Practice</option>
             <option value="revision" className="text-slate-900">Revision</option>
-            <option value="assessment" className="text-slate-900">Assessment</option>
+            <option value="assessment" className="text-slate-900">Worksheet</option>
             <option value="reference" className="text-slate-900">Reference</option>
             <option value="general" className="text-slate-900">General</option>
           </select>

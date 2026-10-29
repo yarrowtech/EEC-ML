@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useState } from 'react';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { BookOpen, Plus, Search, Calendar, Target, Package, FileText, X, AlertTriangle } from 'lucide-react';
 
 const API_BASE = (import.meta.env.VITE_API_URL || 'http://localhost:5000').replace(/\/$/, '');
@@ -61,7 +61,15 @@ const LessonPlanPage = ({ setShowAdminHeader }) => {
     }
   };
 
+  // Picking a class then quickly picking a different one can leave two
+  // requests in flight; without this guard, class A's response resolving
+  // after class B's would overwrite the sections/allocations shown (and
+  // selectable in the form) with class A's data under class B's selection.
+  const loadOptionsRequestIdRef = useRef(0);
+
   const loadOptions = async ({ classId = '', sectionId = '' } = {}) => {
+    const requestId = ++loadOptionsRequestIdRef.current;
+    const isStale = () => loadOptionsRequestIdRef.current !== requestId;
     try {
       setLoadingOptions(true);
       const query = new URLSearchParams();
@@ -72,13 +80,15 @@ const LessonPlanPage = ({ setShowAdminHeader }) => {
       });
       const data = await res.json().catch(() => ({}));
       if (!res.ok) throw new Error(data?.error || 'Failed to load options');
+      if (isStale()) return;
       setClasses(Array.isArray(data?.classes) ? data.classes : []);
       setSections(Array.isArray(data?.sections) ? data.sections : []);
       setAllocations(Array.isArray(data?.allocations) ? data.allocations : []);
     } catch (err) {
+      if (isStale()) return;
       setError(err.message || 'Failed to load form options');
     } finally {
-      setLoadingOptions(false);
+      if (!isStale()) setLoadingOptions(false);
     }
   };
 

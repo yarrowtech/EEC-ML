@@ -45,6 +45,7 @@ describe('FeesPayment', () => {
 
   beforeEach(() => {
     jest.clearAllMocks();
+    sessionStorage.clear();
 
     global.localStorage.getItem = jest.fn((key) => (key === 'token' ? 'test-token' : null));
 
@@ -105,7 +106,7 @@ describe('FeesPayment', () => {
     test('displays invoices after loading', async () => {
       renderFees();
       await waitFor(() => {
-        expect(screen.getByText(/Tuition Fee - January 2025/i)).toBeInTheDocument();
+        expect(screen.getByText('INV-VOICE2')).toBeInTheDocument();
       });
     });
 
@@ -299,7 +300,7 @@ describe('FeesPayment', () => {
       renderFees();
 
       await waitFor(() => {
-        expect(screen.getByText(/Tuition Fee - January 2025/i)).toBeInTheDocument();
+        expect(screen.getByText('INV-VOICE2')).toBeInTheDocument();
       });
 
       const callsBefore = mockFetch.mock.calls.length;

@@ -1,10 +1,10 @@
 import React, { useState, useEffect, useMemo } from 'react';
 import {
   Home, Calendar, Users, FileText, BookOpen, LogOut,
-  ChevronDown, ChevronRight, ChevronLeft , Trophy, Bell,
+  ChevronDown, ChevronRight, ChevronLeft, Trophy, Bell,
   MessageCircle, MessageSquare, Brain, X, BarChart3,
   Heart, Star, Target, Zap, AlertOctagon, Video, Activity,
-  GraduationCap, CalendarClock, ClipboardCheck, NotebookPen,
+  GraduationCap, CalendarClock, ClipboardCheck, NotebookPen, FileBadge,
 } from 'lucide-react';
 
 import { useNavigate } from 'react-router-dom';
@@ -12,6 +12,7 @@ import { useStudentDashboard } from './StudentDashboardContext';
 import { AUTH_NOTICE, logoutAndRedirect } from '../utils/authSession';
 import { getStudentModuleNotificationCount } from '../utils/moduleNotificationUtils';
 import ConfirmDialog from './ConfirmDialog';
+import useCommunityWallUnread from '../hooks/useCommunityWallUnread';
 
 const API_URL = (import.meta.env.VITE_API_URL || 'http://localhost:5000').replace(/\/$/, '');
 
@@ -32,42 +33,44 @@ const MENU_ITEMS = [
   {
     id: 'learn', name: 'Learn', icon: GraduationCap,
     children: [
-      { id: 'learning',                     name: 'Learning Hub',    icon: Brain     },
-      { id: 'assignments',                  name: 'Assignments',     icon: FileText  },
-      { id: 'assignments-journal',          name: 'Journal',         icon: NotebookPen },
-      { id: 'assignments-academic-alcove',  name: 'Class Wall',      icon: Target    },
-      { id: 'results',                      name: 'Results',         icon: BarChart3 },
-      { id: 'mastery',                      name: 'Mastery Progress', icon: Zap      },
-      { id: 'error-analysis',               name: 'Error Analysis',  icon: ClipboardCheck },
+      { id: 'learning', name: 'Learning Hub', icon: Brain },
+      { id: 'assignments', name: 'Assignments', icon: FileText },
+      { id: 'long-answer', name: 'Long Answer', icon: ClipboardCheck },
+      { id: 'assignments-journal', name: 'Journal', icon: NotebookPen },
+      { id: 'assignments-academic-alcove', name: 'Community Wall', icon: Target },
+      { id: 'results', name: 'Results', icon: BarChart3 },
+      { id: 'mastery', name: 'Mastery Progress', icon: Zap },
+      //{ id: 'error-analysis', name: 'Error Analysis', icon: ClipboardCheck },
     ],
   },
   {
     id: 'school', name: 'School', icon: BookOpen,
     children: [
-      { id: 'routine',             name: 'Timetable',    icon: Calendar     },
-      { id: 'attendance',          name: 'Attendance',   icon: Users        },
-      { id: 'exams',               name: 'Exams',        icon: FileText     },
-      { id: 'lesson-plan-status',  name: 'Syllabus',     icon: BookOpen     },
-      { id: 'holidays',            name: 'Holidays',     icon: CalendarClock },
-      { id: 'noticeboard',         name: 'Notice Board', icon: Bell         },
+      { id: 'routine', name: 'Timetable', icon: Calendar },
+      { id: 'attendance', name: 'Attendance', icon: Users },
+      { id: 'exams', name: 'Exams', icon: FileText },
+      { id: 'admit-cards', name: 'Admit Cards', icon: FileBadge },
+      { id: 'lesson-plan-status', name: 'Syllabus', icon: BookOpen },
+      { id: 'holidays', name: 'Holidays', icon: CalendarClock },
+      { id: 'noticeboard', name: 'Notice Board', icon: Bell },
     ],
   },
   {
     id: 'messages', name: 'Messages', icon: MessageSquare,
     children: [
-      { id: 'chat',            name: 'Chat',            icon: MessageCircle },
-      { id: 'teacherfeedback', name: 'Teacher Feedback', icon: Star        },
-      { id: 'meetings',        name: 'Parent Meetings',  icon: Video       },
-      { id: 'excuse-letter',   name: 'Excuse Letter',    icon: FileText    },
-      { id: 'complaints',      name: 'Complaints',       icon: AlertOctagon },
+      { id: 'chat', name: 'Chat', icon: MessageCircle },
+      { id: 'teacherfeedback', name: 'Teacher Feedback', icon: Star },
+      { id: 'meetings', name: 'Parent Meetings', icon: Video },
+      { id: 'excuse-letter', name: 'Excuse Letter', icon: FileText },
+      { id: 'complaints', name: 'Complaints', icon: AlertOctagon },
     ],
   },
   {
     id: 'wellbeing', name: 'Wellbeing', icon: Heart,
     children: [
-      { id: 'wellbeing',    name: 'Emotional Wellbeing', icon: Heart    },
-      { id: 'health',       name: 'Health Record',       icon: Activity },
-      { id: 'achievements', name: 'Achievements',        icon: Trophy   },
+      { id: 'wellbeing', name: 'Emotional Wellbeing', icon: Heart },
+      { id: 'health', name: 'Health Record', icon: Activity },
+      { id: 'achievements', name: 'Achievements', icon: Trophy },
     ],
   },
 ];
@@ -75,9 +78,8 @@ const MENU_ITEMS = [
 /* ── Tooltip (collapsed mode) ────────────────────────────────── */
 const Tooltip = ({ label, sub, visible }) => (
   <div
-    className={`pointer-events-none absolute left-full top-1/2 -translate-y-1/2 ml-3 z-[999] transition-all duration-150 ${
-      visible ? 'opacity-100 translate-x-0' : 'opacity-0 -translate-x-1'
-    }`}
+    className={`pointer-events-none absolute left-full top-1/2 -translate-y-1/2 ml-3 z-[999] transition-all duration-150 ${visible ? 'opacity-100 translate-x-0' : 'opacity-0 -translate-x-1'
+      }`}
   >
     <div className="bg-slate-900 text-white rounded-xl px-3 py-2 shadow-2xl whitespace-nowrap min-w-max">
       <p className="text-xs font-bold">{label}</p>
@@ -89,9 +91,9 @@ const Tooltip = ({ label, sub, visible }) => (
 
 /* ── Main Component ──────────────────────────────────────────── */
 const Sidebar = ({ activeView, isOpen, setIsOpen }) => {
-  const navigate   = useNavigate();
+  const navigate = useNavigate();
   const [openGroups, setOpenGroups] = useState({});
-  const [hoverId, setHoverId]       = useState(null);
+  const [hoverId, setHoverId] = useState(null);
   const [showLogoutConfirm, setShowLogoutConfirm] = useState(false);
   const {
     profile,
@@ -112,7 +114,7 @@ const Sidebar = ({ activeView, isOpen, setIsOpen }) => {
   };
 
   /* helpers */
-  const displayClass   = studentData.className  || studentData.grade;
+  const displayClass = studentData.className || studentData.grade;
   const displaySection = studentData.sectionName || studentData.section;
   const resolveTeacherName = (t, p) => {
     if (typeof t === 'string' && t.trim()) return t.trim();
@@ -126,22 +128,25 @@ const Sidebar = ({ activeView, isOpen, setIsOpen }) => {
   };
   const classTeacherName = resolveTeacherName(classTeacher, studentData);
 
-  const nameParts   = (studentData.name || '').trim().split(/\s+/).filter(Boolean);
-  const initials    = nameParts.length >= 2
+  const nameParts = (studentData.name || '').trim().split(/\s+/).filter(Boolean);
+  const initials = nameParts.length >= 2
     ? `${nameParts[0][0]}${nameParts[nameParts.length - 1][0]}`
     : (nameParts[0]?.[0] || 'S');
-  const profileImage   = studentData.profilePic || studentData.avatar || '';
+  const profileImage = studentData.profilePic || studentData.avatar || '';
   const hasProfileImage = typeof profileImage === 'string' && profileImage.trim() !== '';
-  const schoolName     = studentData.schoolName || 'Student Portal';
-  const hasSchoolLogo  = typeof studentData.schoolLogo === 'string' && studentData.schoolLogo.trim() !== '';
-  const schoolInitial  = (schoolName.trim()[0] || 'S').toUpperCase();
-  const getModuleCount = (moduleId) => getStudentModuleNotificationCount(notifications, moduleId, unreadChatCount, moduleSeenState, chatSeenCount);
+  const schoolName = studentData.schoolName || 'Student Portal';
+  const hasSchoolLogo = typeof studentData.schoolLogo === 'string' && studentData.schoolLogo.trim() !== '';
+  const schoolInitial = (schoolName.trim()[0] || 'S').toUpperCase();
+  const communityUnread = useCommunityWallUnread({ wallPath: '/student/assignments-academic-alcove' });
+  const getModuleCount = (moduleId) => getStudentModuleNotificationCount(notifications, moduleId, unreadChatCount, moduleSeenState, chatSeenCount)
+    + (moduleId === 'assignments-academic-alcove' ? communityUnread.count : 0);
   const groupCounts = useMemo(() => Object.fromEntries(
     MENU_ITEMS.map((item) => [
       item.id,
       (item.children || []).reduce((total, child) => total + getModuleCount(child.id), 0),
     ])
-  ), [notifications, unreadChatCount, moduleSeenState, chatSeenCount]);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  ), [notifications, unreadChatCount, moduleSeenState, chatSeenCount, communityUnread.count]);
 
   useEffect(() => {
     markModuleVisited(activeView);
@@ -210,15 +215,21 @@ const Sidebar = ({ activeView, isOpen, setIsOpen }) => {
             <div className="flex items-center justify-between gap-2">
               <div className="flex min-w-0 items-center gap-3">
                 <div className="relative shrink-0">
-                  <div className="flex h-10 w-10 items-center justify-center overflow-hidden rounded-xl bg-gradient-to-br from-violet-500 to-violet-400 shadow-[0_4px_8px_-2px_rgba(139,92,246,0.3)]">
+                  <div className="flex h-10 w-10 items-center justify-center overflow-hidden rounded-full">
                     {hasSchoolLogo
                       ? <img src={studentData.schoolLogo} alt="School" className="h-full w-full object-cover" />
                       : <span className="text-lg font-bold text-white">{schoolInitial}</span>}
                   </div>
-                  <span className="absolute -right-0.5 -top-0.5 h-3 w-3 rounded-full border-2 border-white bg-emerald-400" />
+                  {/* <span className="absolute -right-0.5 -top-0.5 h-3 w-3 rounded-full border-2 border-white bg-emerald-400" /> */}
                 </div>
                 <div className="min-w-0">
-                  <p className="truncate text-[15px] font-bold leading-tight text-slate-900">{schoolName}</p>
+                  <p className="truncate text-[15px] font-bold leading-tight text-slate-900">
+                    {schoolName
+                      ?.trim()
+                      .split(/\s+/)
+                      .map(word => word.charAt(0).toUpperCase())
+                      .join('.')}
+                  </p>
                   {displayClass && (
                     <p className="truncate text-xs font-medium text-slate-400">
                       Class {displayClass}{displaySection ? ` – ${displaySection}` : ''}
@@ -250,7 +261,7 @@ const Sidebar = ({ activeView, isOpen, setIsOpen }) => {
             /* ── Collapsed header ── */
             <div className="flex flex-col items-center gap-2">
               <div className="relative">
-                <div className="flex h-10 w-10 items-center justify-center overflow-hidden rounded-xl bg-gradient-to-br from-violet-500 to-violet-400 shadow-[0_4px_8px_-2px_rgba(139,92,246,0.3)]">
+                <div className="flex h-10 w-10 items-center justify-center overflow-hidden rounded-full bg-gradient-to-br from-violet-500 to-violet-400 shadow-[0_4px_8px_-2px_rgba(139,92,246,0.3)]">
                   {hasSchoolLogo
                     ? <img src={studentData.schoolLogo} alt="School" className="h-full w-full object-cover" />
                     : <span className="text-base font-bold text-white">{schoolInitial}</span>}
@@ -318,23 +329,20 @@ const Sidebar = ({ activeView, isOpen, setIsOpen }) => {
                       onClick={onItemClick}
                       className={
                         collapsed
-                          ? `group relative flex h-10 w-full items-center justify-center rounded-lg transition-all duration-200 ${
-                              isActive
-                                ? 'bg-violet-50 text-violet-600'
-                                : 'text-slate-400 hover:bg-violet-50/60 hover:text-violet-600'
-                            }`
-                          : `group relative flex w-full items-center gap-3 rounded-lg border-l-[3px] py-2.5 pl-2.5 pr-3 text-sm transition-all duration-200 ${
-                              isActive
-                                ? 'border-l-violet-500 bg-violet-50 font-semibold text-violet-700 shadow-[0_4px_12px_-6px_rgba(139,92,246,0.15)]'
-                                : 'border-l-transparent font-medium text-slate-600 hover:translate-x-1 hover:border-l-violet-400 hover:bg-violet-50/60 hover:text-violet-700'
-                            }`
+                          ? `group relative flex h-10 w-full items-center justify-center rounded-lg transition-all duration-200 ${isActive
+                            ? 'bg-violet-50 text-violet-600'
+                            : 'text-slate-400 hover:bg-violet-50/60 hover:text-violet-600'
+                          }`
+                          : `group relative flex w-full items-center gap-3 rounded-lg border-l-[3px] py-2.5 pl-2.5 pr-3 text-sm transition-all duration-200 ${isActive
+                            ? 'border-l-violet-500 bg-violet-50 font-semibold text-violet-700 shadow-[0_4px_12px_-6px_rgba(139,92,246,0.15)]'
+                            : 'border-l-transparent font-medium text-slate-600 hover:translate-x-1 hover:border-l-violet-400 hover:bg-violet-50/60 hover:text-violet-700'
+                          }`
                       }
                     >
                       <Icon
                         size={collapsed ? 18 : 17}
-                        className={`shrink-0 transition-all duration-200 ${
-                          isActive ? 'text-violet-500' : 'text-slate-400 group-hover:scale-105 group-hover:text-violet-500'
-                        }`}
+                        className={`shrink-0 transition-all duration-200 ${isActive ? 'text-violet-500' : 'text-slate-400 group-hover:scale-105 group-hover:text-violet-500'
+                          }`}
                       />
 
                       {!collapsed && (
@@ -351,9 +359,8 @@ const Sidebar = ({ activeView, isOpen, setIsOpen }) => {
                           {hasChildren && (
                             <ChevronDown
                               size={14}
-                              className={`shrink-0 transition-transform duration-200 ${expanded ? 'rotate-180' : ''} ${
-                                isActive ? 'text-violet-400' : 'text-slate-300 group-hover:text-violet-400'
-                              }`}
+                              className={`shrink-0 transition-transform duration-200 ${expanded ? 'rotate-180' : ''} ${isActive ? 'text-violet-400' : 'text-slate-300 group-hover:text-violet-400'
+                                }`}
                             />
                           )}
                         </>
@@ -387,11 +394,10 @@ const Sidebar = ({ activeView, isOpen, setIsOpen }) => {
                           <button
                             key={child.id}
                             onClick={(e) => { e.stopPropagation(); handleNavigation(child.id); }}
-                            className={`group flex w-full items-center gap-2.5 rounded-lg px-2.5 py-1.5 text-left text-[13px] transition-all duration-200 ${
-                              childActive
+                            className={`group flex w-full items-center gap-2.5 rounded-lg px-2.5 py-1.5 text-left text-[13px] transition-all duration-200 ${childActive
                                 ? 'bg-violet-50 font-semibold text-violet-700'
                                 : 'text-slate-500 hover:translate-x-0.5 hover:bg-violet-50/50 hover:text-violet-700'
-                            }`}
+                              }`}
                           >
                             <ChildIcon
                               size={14}
@@ -491,3 +497,4 @@ const Sidebar = ({ activeView, isOpen, setIsOpen }) => {
 };
 
 export default Sidebar;
+

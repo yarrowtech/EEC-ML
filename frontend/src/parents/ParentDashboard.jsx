@@ -1,658 +1,1833 @@
-import React, { useState, useEffect, useMemo, useCallback } from 'react';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
+import { Link, useNavigate } from 'react-router-dom';
 import { motion, useReducedMotion } from 'framer-motion';
 import {
-  Calendar,
-  CreditCard,
-  Video,
+  ArrowUp,
+  ArrowDown,
+  ArrowRight,
+  Bell,
+  CalendarCheck,
   Clock,
-  Users,
-  Sparkles,
-  TrendingUp,
-  Award,
-  ChevronRight,
-  Loader2,
-  CheckCircle2,
-  User as UserIcon,
-  MessageCircle,
-  FileText,
-  AlertTriangle,
+  IndianRupee,
+  LayoutGrid,
+  ReceiptText,
+  Trophy,
+  BarChart3,
   BookOpen,
-  Lightbulb,
-  RefreshCw,
-  ChevronDown,
-  ChevronUp,
-  LifeBuoy,
+  CalendarDays,
+  Check,
+  ChevronRight,
+  ClipboardList,
+  CreditCard,
+  FileText,
+  Leaf,
+  Megaphone,
+  MessageSquare,
+  Users,
+  Wallet,
+  X,
+  UsersRound,
 } from 'lucide-react';
-import { Link, useNavigate } from 'react-router-dom';
-import { formatStudentDisplay } from '../utils/studentDisplay';
-import { parentApiFetch, parentApiJson } from './parentApi';
-import { mapAttendanceChildForDashboard } from './attendanceViewModel';
 
-const getInitials = (name) => String(name || 'Student')
-  .trim()
-  .split(/\s+/)
-  .slice(0, 2)
-  .map((part) => part[0])
-  .join('')
-  .toUpperCase();
+import { parentApiJson } from './parentApi';
+import useParentChildren from './useParentChildren';
+import { normalizeReportCard } from './reportCardShape';
 
-// ── Weak Areas Card ───────────────────────────────────────────────────────────
-const WeakAreasCard = () => {
-  const navigate = useNavigate();
-  const [items, setItems] = useState([]);
-  const [loading, setLoading] = useState(true);
+/* ──────────────────────────────────────────────────────────────────────────
+   Animation
+────────────────────────────────────────────────────────────────────────── */
+
+const RISE = {
+  hidden: { opacity: 0, y: 12 },
+  show: {
+    opacity: 1,
+    y: 0,
+    transition: {
+      duration: 0.35,
+      ease: [0.22, 1, 0.36, 1],
+    },
+  },
+};
+
+/* ──────────────────────────────────────────────────────────────────────────
+   Helpers
+────────────────────────────────────────────────────────────────────────── */
+
+const inr = (n) =>
+  `₹${Math.round(Number(n) || 0).toLocaleString('en-IN')}`;
+
+const validDate = (v) =>
+  v && !Number.isNaN(new Date(v).getTime());
+
+const fmtDate = (d) =>
+  validDate(d)
+    ? new Date(d).toLocaleDateString('en-GB', {
+        day: 'numeric',
+        month: 'short',
+        year: 'numeric',
+      })
+    : '';
+
+const dayKey = (d) => {
+  const x = new Date(d);
+
+  return `${x.getFullYear()}-${String(x.getMonth() + 1).padStart(
+    2,
+    '0'
+  )}-${String(x.getDate()).padStart(2, '0')}`;
+};
+
+const startOfDay = (value = new Date()) => {
+  const d = new Date(value);
+  d.setHours(0, 0, 0, 0);
+  return d;
+};
+
+const combineDateAndTime = (dateValue, timeValue) => {
+  if (!validDate(dateValue)) return null;
+
+  const date = new Date(dateValue);
+  const m = String(timeValue || '').match(/^(\d{1,2}):(\d{2})/);
+
+  if (m) {
+    date.setHours(Number(m[1]), Number(m[2]), 0, 0);
+  } else {
+    date.setHours(23, 59, 59, 999);
+  }
+
+  return date;
+};
+
+const CLOSED_MEETING_STATUSES = new Set([
+  'attended',
+  'cancelled',
+  'canceled',
+  'complete',
+  'completed',
+  'declined',
+  'done',
+  'finished',
+]);
+const to12h = (t) => {
+  const m = String(t || '').match(/^(\d{1,2}):(\d{2})/);
+
+  if (!m) return String(t || '');
+
+  const h = Number(m[1]);
+
+  return `${((h + 11) % 12) + 1}:${m[2]} ${
+    h >= 12 ? 'PM' : 'AM'
+  }`;
+};
+
+const initialsOf = (name) =>
+  String(name || 'S')
+    .trim()
+    .split(/\s+/)
+    .slice(0, 2)
+    .map((w) => w[0])
+    .join('')
+    .toUpperCase();
+
+const subjectName = (s) =>
+  s?.subject?.name ||
+  s?.subjectName ||
+  s?.subject ||
+  '';
+
+const greetingFor = (h) =>
+  h < 12
+    ? 'Good Morning'
+    : h < 17
+      ? 'Good Afternoon'
+      : 'Good Evening';
+
+const DASHBOARD_CACHE_PREFIX = 'parent_dashboard_cache_v1';
+const DASHBOARD_CACHE_TTL_MS = 3 * 60 * 1000;
+
+const getTokenScope = () => {
+  const token = localStorage.getItem('token');
+
+  if (!token) return 'anonymous';
+
+  try {
+    const payload = JSON.parse(
+      atob(
+        token
+          .split('.')[1]
+          .replace(/-/g, '+')
+          .replace(/_/g, '/')
+      )
+    );
+
+    return `${payload?.id || 'parent'}__`;
+  } catch {
+    return 'fallback';
+  }
+};
+
+const dashboardCacheKey = (segment) =>
+  `${DASHBOARD_CACHE_PREFIX}:${segment}:${getTokenScope()}`;
+
+const readDashboardCache = (segment) => {
+  try {
+    const raw = sessionStorage.getItem(
+      dashboardCacheKey(segment)
+    );
+
+    if (!raw) return null;
+
+    const parsed = JSON.parse(raw);
+
+    if (
+      !parsed?.cachedAt ||
+      Date.now() - parsed.cachedAt >
+        DASHBOARD_CACHE_TTL_MS
+    ) {
+      return null;
+    }
+
+    return parsed.data || null;
+  } catch {
+    return null;
+  }
+};
+
+const writeDashboardCache = (segment, data) => {
+  try {
+    sessionStorage.setItem(
+      dashboardCacheKey(segment),
+      JSON.stringify({
+        cachedAt: Date.now(),
+        data,
+      })
+    );
+  } catch {
+    // Storage is best-effort.
+  }
+};
+
+/* ──────────────────────────────────────────────────────────────────────────
+   Count animation
+────────────────────────────────────────────────────────────────────────── */
+
+const useCountUp = (target, duration = 750) => {
+  const [value, setValue] = useState(0);
 
   useEffect(() => {
-    parentApiJson('/api/parent-dashboard/weak-areas', {}, navigate)
-      .then((d) => setItems(d.data || []))
-      .catch(() => {})
-      .finally(() => setLoading(false));
-  }, [navigate]);
+    const end = Number(target) || 0;
 
-  const concernColor = (score) => {
-    if (score < 40) return 'bg-red-100 text-red-700 border-red-200';
-    if (score < 60) return 'bg-amber-100 text-amber-700 border-amber-200';
-    return 'bg-yellow-50 text-yellow-700 border-yellow-200';
-  };
+    if (end <= 0) {
+      setValue(0);
+      return undefined;
+    }
 
-  return (
-    <section className="flex h-full flex-col overflow-hidden rounded-xl border border-slate-200 bg-white shadow-sm transition-all duration-200 hover:-translate-y-1 hover:shadow-md">
-      <div className="flex items-center justify-between gap-2 px-4 pb-2 pt-3">
-        <h2 className="flex items-center gap-1.5 text-xs font-semibold uppercase tracking-wider text-slate-500">
-          <AlertTriangle size={14} className="text-amber-500" /> Weak Areas
-        </h2>
-        <span className="rounded-full border border-amber-200/60 bg-amber-50/70 px-2 py-0.5 text-[11px] font-semibold text-amber-700">
-          Topics below 60%
-        </span>
-      </div>
-      <div className="flex-1 px-4 pb-4 pt-1">
-        {loading ? (
-          <div className="flex justify-center py-6"><Loader2 size={20} className="animate-spin text-slate-300" /></div>
-        ) : items.length === 0 ? (
-          <div className="rounded-lg border border-dashed border-emerald-200/60 bg-emerald-50/30 py-6 text-center text-slate-400">
-            <CheckCircle2 size={26} className="mx-auto mb-2 text-emerald-400" />
-            <p className="text-xs font-semibold">All topics on track</p>
-          </div>
-        ) : (
-          <div className="max-h-52 space-y-1 overflow-y-auto pr-1">
-            {items.map((item, i) => (
-              <div key={i} className="flex items-center justify-between border-b border-slate-100/60 py-2 last:border-0">
-                <div className="min-w-0 mr-3">
-                  <p className="truncate text-sm font-medium text-slate-700">{item.topicTitle}</p>
-                  <p className="text-[11px] text-slate-400">{item.subject} · {item.studentId?.name || 'Student'}</p>
-                </div>
-                <span className={`flex-shrink-0 rounded-full border px-2 py-0.5 text-xs font-semibold ${concernColor(item.score)}`}>{item.score}%</span>
-              </div>
-            ))}
-          </div>
-        )}
-      </div>
-    </section>
-  );
+    let frame;
+
+    const start = performance.now();
+
+    const tick = (now) => {
+      const progress = Math.min(
+        1,
+        (now - start) / duration
+      );
+
+      const eased = 1 - (1 - progress) ** 3;
+
+      setValue(Math.round(end * eased));
+
+      if (progress < 1) {
+        frame = requestAnimationFrame(tick);
+      }
+    };
+
+    frame = requestAnimationFrame(tick);
+
+    return () => cancelAnimationFrame(frame);
+  }, [target, duration]);
+
+  return value;
 };
 
-// ── Teacher Remarks Feed ──────────────────────────────────────────────────────
-const RemarksFeedCard = () => {
-  const navigate = useNavigate();
-  const prefersReducedMotion = useReducedMotion();
-  const [remarks, setRemarks] = useState([]);
-  const [loading, setLoading] = useState(true);
-  const [expanded, setExpanded] = useState(null);
+/* ──────────────────────────────────────────────────────────────────────────
+   Theme
+────────────────────────────────────────────────────────────────────────── */
 
-  useEffect(() => {
-    parentApiJson('/api/parent-dashboard/remarks-feed', {}, navigate)
-      .then((d) => setRemarks(d.data || []))
-      .catch(() => {})
-      .finally(() => setLoading(false));
-  }, [navigate]);
+const SUBJECT_TONES = [
+  {
+    tile: 'bg-green-50 text-green-700',
+    icon: 'bg-violet-50 text-violet-600',
+  },
+  {
+    tile: 'bg-blue-50 text-blue-700',
+    icon: 'bg-red-50 text-red-500',
+  },
+  {
+    tile: 'bg-red-50 text-red-600',
+    icon: 'bg-sky-50 text-sky-600',
+  },
+  {
+    tile: 'bg-violet-50 text-violet-700',
+    icon: 'bg-amber-50 text-amber-600',
+  },
+  {
+    tile: 'bg-amber-50 text-amber-700',
+    icon: 'bg-green-50 text-green-600',
+  },
+];
 
-  const concernBadge = {
-    low: 'bg-emerald-50 text-emerald-700 border-emerald-100',
-    medium: 'bg-amber-50 text-amber-700 border-amber-100',
-    high: 'bg-red-50 text-red-700 border-red-100',
-    urgent: 'bg-red-100 text-red-800 border-red-200 font-black',
-  };
+/* ──────────────────────────────────────────────────────────────────────────
+   Compact Card
+────────────────────────────────────────────────────────────────────────── */
 
-  return (
-    <section className="flex h-full flex-col overflow-hidden rounded-xl border border-slate-200 bg-white shadow-sm transition-all duration-200 hover:-translate-y-1 hover:shadow-md">
-      <div className="flex items-center justify-between gap-2 px-4 pb-2 pt-3">
-        <h2 className="flex items-center gap-1.5 text-xs font-semibold uppercase tracking-wider text-slate-500">
-          <BookOpen size={14} className="text-blue-500" /> Teacher Remarks
-        </h2>
-        <span className="rounded-full border border-emerald-200/60 bg-emerald-50/70 px-2 py-0.5 text-[11px] font-semibold text-emerald-700">Latest</span>
-      </div>
-      <div className="flex-1 px-4 pb-4 pt-1">
-        {loading ? (
-          <div className="flex justify-center py-6"><Loader2 size={20} className="animate-spin text-slate-300" /></div>
-        ) : remarks.length === 0 ? (
-          <div className="rounded-lg border border-dashed border-slate-200/60 bg-slate-50 py-6 text-center text-slate-400">
-            <MessageCircle size={26} className="mx-auto mb-2 opacity-30" />
-            <p className="text-xs font-semibold">No remarks yet</p>
-          </div>
-        ) : (
-          <div className="max-h-52 space-y-2 overflow-y-auto pr-1">
-            {remarks.map((r, i) => (
-              <motion.div key={i} whileHover={prefersReducedMotion ? undefined : { x: 3 }} className="rounded-lg border border-slate-200 bg-slate-50 p-2.5 transition hover:bg-white">
-                <div className="flex items-start justify-between gap-2 mb-2">
-                  <div>
-                    <p className="text-xs font-semibold text-slate-700">{r.studentName}</p>
-                    <p className="text-[11px] text-slate-400">{new Date(r.recordedAt).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}</p>
-                  </div>
-                  <div className="flex items-center gap-1 flex-shrink-0">
-                    {r.category && (
-                      <span className="text-[11px] font-black px-2 py-0.5 rounded-full bg-slate-100 text-slate-500 border border-slate-200 uppercase">{r.category}</span>
-                    )}
-                    {r.concernLevel && (
-                      <span className={`text-[11px] px-2 py-0.5 rounded-full border uppercase ${concernBadge[r.concernLevel] || concernBadge.low}`}>{r.concernLevel}</span>
-                    )}
-                  </div>
-                </div>
-                <p className={`text-xs leading-relaxed text-slate-600 ${expanded === i ? '' : 'line-clamp-2'}`}>{r.observationText}</p>
-                {r.observationText?.length > 100 && (
-                  <button onClick={() => setExpanded(expanded === i ? null : i)} className="mt-1 text-[11px] font-bold text-indigo-500 flex items-center gap-0.5">
-                    {expanded === i ? <><ChevronUp size={10} /> Less</> : <><ChevronDown size={10} /> More</>}
-                  </button>
-                )}
-              </motion.div>
-            ))}
-          </div>
-        )}
-      </div>
-    </section>
-  );
-};
+const NAVY = 'text-[#0b1446]';
 
-// ── AI report cards ──────────────────────────────────────────────────────────
-// All three cards self-load their most recent cached report on mount. The server
-// only regenerates (an LLM call) when its cache is stale or "Refresh" forces it.
-const relativeTime = (value) => {
-  if (!value) return '';
-  const diff = Date.now() - new Date(value).getTime();
-  const mins = Math.round(diff / 60000);
-  if (mins < 1) return 'just now';
-  if (mins < 60) return `${mins} min ago`;
-  const hrs = Math.round(mins / 60);
-  if (hrs < 24) return `${hrs} hr ago`;
-  const days = Math.round(hrs / 24);
-  return days === 1 ? 'yesterday' : `${days} days ago`;
-};
+const Card = ({
+  className = '',
+  children,
+}) => (
+  <section
+    className={`
+      rounded-2xl
+      border border-white
+      bg-white
+      p-3
+      shadow-[0_4px_18px_rgba(30,64,175,0.06)]
+      sm:p-3.5
+      ${className}
+    `}
+  >
+    {children}
+  </section>
+);
 
-const ReportSkeleton = () => (
-  <div className="mt-2 space-y-2" aria-hidden="true">
-    <div className="h-2.5 w-3/4 animate-pulse rounded bg-slate-200" />
-    <div className="h-2.5 w-full animate-pulse rounded bg-slate-200" />
-    <div className="h-2.5 w-5/6 animate-pulse rounded bg-slate-200" />
+const CardHead = ({
+  title,
+  icon: HeadIcon,
+  to,
+  linkLabel = 'View All',
+  right,
+}) => (
+  <div className="mb-2.5 flex items-center justify-between gap-3">
+    <h2 className={`flex min-w-0 items-center gap-1.5 text-sm font-bold leading-tight ${NAVY}`}>
+      {HeadIcon ? <HeadIcon size={16} className="shrink-0 text-blue-600" /> : null}
+      <span className="truncate">{title}</span>
+    </h2>
+
+    {right ||
+      (to ? (
+        <Link
+          to={to}
+          className="inline-flex shrink-0 items-center gap-1 whitespace-nowrap text-xs font-semibold text-blue-600 hover:text-blue-700"
+        >
+          {linkLabel}
+          <ArrowRight size={13} />
+        </Link>
+      ) : null)}
   </div>
 );
 
-const useAiReport = (path, navigate) => {
-  const [content, setContent] = useState('');
-  const [generatedAt, setGeneratedAt] = useState(null);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState('');
+/* ──────────────────────────────────────────────────────────────────────────
+   Delta
+────────────────────────────────────────────────────────────────────────── */
 
-  const load = useCallback(async (force = false) => {
-    setLoading(true);
-    setError('');
-    try {
-      const d = await parentApiJson(`${path}${force ? '?refresh=1' : ''}`, {}, navigate);
-      setContent(d.data?.content || '');
-      setGeneratedAt(d.data?.generatedAt || null);
-      if (!d.data?.content) setError('No report available yet — check back after more classwork is recorded.');
-    } catch (err) {
-      setError(err.message || 'Couldn’t load this report.');
-    } finally {
-      setLoading(false);
-    }
-  }, [path, navigate]);
-
-  useEffect(() => { load(false); }, [load]);
-
-  return { content, generatedAt, loading, error, refresh: () => load(true) };
-};
-
-const AiReportCard = ({ title, Icon, palette, studentName, path }) => {
-  const navigate = useNavigate();
-  const { content, generatedAt, loading, error, refresh } = useAiReport(path, navigate);
-  const lines = content.split('\n').filter(Boolean);
-  const showSkeleton = loading && !content;
-
+const Delta = ({ value }) => {
+  if (value === null || value === undefined || Number.isNaN(value) || value === 0) {
+    return null;
+  }
+  const up = value > 0;
   return (
-    <div aria-label={`${title} for ${studentName}`} className={`rounded-lg border ${palette.border} ${palette.bg} p-3`}>
-      <div className="mb-1 flex items-start justify-between gap-2">
-        <div className="flex items-center gap-2">
-          <Icon size={15} className={palette.icon} aria-hidden="true" />
-          <p className={`text-xs font-semibold ${palette.heading}`}>{title}</p>
-        </div>
-        {(content || error) && (
-          <button
-            type="button"
-            onClick={refresh}
-            disabled={loading}
-            className="flex items-center gap-1 rounded px-1.5 py-0.5 text-[11px] font-medium text-slate-500 transition hover:bg-white hover:text-slate-700 disabled:opacity-50"
-          >
-            {loading ? <Loader2 size={10} className="animate-spin" /> : <RefreshCw size={10} />}
-            Refresh
-          </button>
-        )}
-      </div>
-
-      {generatedAt && !showSkeleton && (
-        <p className="text-[11px] text-slate-400">Updated {relativeTime(generatedAt)}</p>
-      )}
-
-      {showSkeleton && <ReportSkeleton />}
-
-      {content && !showSkeleton && (
-        <div className="mt-2 max-h-48 space-y-0.5 overflow-y-auto pr-1">
-          {lines.map((line, i) => (
-            <p key={i} className={`text-xs leading-relaxed ${line.startsWith('##') ? palette.h2 : line.startsWith('•') || line.startsWith('-') ? palette.bullet : palette.body}`}>
-              {line.replace(/^##\s*/, '')}
-            </p>
-          ))}
-        </div>
-      )}
-
-      {error && !loading && !content && (
-        <p role="status" className="mt-2 text-[11px] text-slate-500">{error}</p>
-      )}
-    </div>
+    <span
+      className={`inline-flex items-center gap-0.5 rounded-full px-1.5 py-0.5 text-[10px] font-bold ${
+        up ? 'bg-green-50 text-green-600' : 'bg-red-50 text-red-600'
+      }`}
+    >
+      {up ? <ArrowUp size={10} strokeWidth={3} /> : <ArrowDown size={10} strokeWidth={3} />}
+      {Math.abs(value)}%
+    </span>
   );
 };
 
-const HomeSupportCard = ({ studentId, studentName }) => (
-  <AiReportCard
-    title="Home Support"
-    Icon={Lightbulb}
-    studentName={studentName}
-    path={`/api/parent-dashboard/home-support/${studentId}`}
-    palette={{
-      border: 'border-slate-200', bg: 'bg-slate-50', icon: 'text-violet-600', heading: 'text-slate-800',
-      body: 'text-slate-600', h2: 'font-bold text-slate-800 mt-2', bullet: 'pl-3 text-slate-600',
-    }}
-  />
+/* ──────────────────────────────────────────────────────────────────────────
+   Compact Stat Card — tinted card + soft icon tile (matches design mock)
+────────────────────────────────────────────────────────────────────────── */
+
+const StatCard = ({
+  to,
+  Icon,
+  tone,
+  bg,
+  fillIcon = false,
+  label,
+  value,
+  animatedValue,
+  formatter,
+  delta,
+  sub,
+  sub2,
+}) => {
+  const count = useCountUp(animatedValue ?? 0);
+
+  const displayValue =
+    animatedValue === null || animatedValue === undefined
+      ? value
+      : formatter
+        ? formatter(count)
+        : count.toLocaleString('en-IN');
+
+  return (
+    <Link
+      to={to}
+      className={`
+        group
+        relative
+        flex
+        min-h-[92px]
+        items-center
+        gap-3
+        rounded-2xl
+        border border-white
+        p-3
+        pr-7
+        shadow-[0_4px_18px_rgba(30,64,175,0.06)]
+        transition
+        hover:-translate-y-0.5
+        hover:shadow-md
+        ${bg || 'bg-white'}
+      `}
+    >
+      <span className={`flex h-12 w-12 shrink-0 items-center justify-center rounded-2xl ${tone}`}>
+        <Icon size={22} fill={fillIcon ? 'currentColor' : 'none'} />
+      </span>
+
+      <div className="min-w-0 flex-1">
+        <p className="text-[11px] font-medium text-slate-600">{label}</p>
+
+        <div className="mt-0.5 flex items-center gap-1.5">
+          <p className={`truncate text-lg font-extrabold leading-tight tabular-nums sm:text-xl ${NAVY}`}>
+            {displayValue}
+          </p>
+          <Delta value={delta} />
+        </div>
+
+        {sub ? <p className="mt-0.5 truncate text-[11px] text-slate-500">{sub}</p> : null}
+        {sub2 ? <p className="mt-0.5 truncate text-[11px] font-semibold text-red-500">{sub2}</p> : null}
+      </div>
+
+      <ChevronRight
+        size={15}
+        className="absolute right-2.5 top-3 text-slate-400 transition group-hover:translate-x-0.5 group-hover:text-slate-600"
+      />
+    </Link>
+  );
+};
+
+/* ──────────────────────────────────────────────────────────────────────────
+   Banner Building
+────────────────────────────────────────────────────────────────────────── */
+
+const BannerBuilding = () => (
+  <svg
+    viewBox="0 0 420 140"
+    className="h-full w-auto"
+    aria-hidden="true"
+  >
+    <g
+      fill="none"
+      stroke="#b9c7de"
+      strokeWidth="1.5"
+      opacity="0.85"
+    >
+      <rect
+        x="90"
+        y="52"
+        width="240"
+        height="84"
+        fill="#eef3fb"
+      />
+
+      <polygon
+        points="80,54 210,14 340,54"
+        fill="#e4ebf7"
+      />
+
+      <rect
+        x="180"
+        y="30"
+        width="60"
+        height="106"
+        fill="#e9eff9"
+      />
+
+      <polygon
+        points="172,34 210,6 248,34"
+        fill="#dfe7f5"
+      />
+
+      {[104, 132, 160, 262, 290, 316].map(
+        (x) => (
+          <g key={x}>
+            <rect
+              x={x}
+              y="66"
+              width="16"
+              height="22"
+              fill="#fff"
+            />
+
+            <rect
+              x={x}
+              y="100"
+              width="16"
+              height="22"
+              fill="#fff"
+            />
+          </g>
+        )
+      )}
+
+      <path
+        d="M196 136 v-26 a14 14 0 0 1 28 0 v26"
+        fill="#dfe7f5"
+      />
+
+      <circle
+        cx="210"
+        cy="50"
+        r="8"
+        fill="#fff"
+      />
+    </g>
+
+    <g fill="#cfe3d4" opacity="0.8">
+      <ellipse
+        cx="46"
+        cy="104"
+        rx="26"
+        ry="34"
+      />
+
+      <ellipse
+        cx="380"
+        cy="108"
+        rx="24"
+        ry="30"
+      />
+    </g>
+  </svg>
 );
 
-const AIDigestCard = ({ studentId, studentName, type }) => {
-  const isWeekly = type === 'weekly';
-  return (
-    <AiReportCard
-      title={isWeekly ? 'Weekly Digest' : 'Monthly Report'}
-      Icon={isWeekly ? TrendingUp : FileText}
-      studentName={studentName}
-      path={`/api/parent-dashboard/${isWeekly ? 'weekly-digest' : 'monthly-report'}/${studentId}`}
-      palette={isWeekly
-        ? { border: 'border-indigo-200', bg: 'bg-indigo-50/60', icon: 'text-indigo-600', heading: 'text-indigo-900', body: 'text-indigo-800', h2: 'font-bold text-indigo-900 mt-2', bullet: 'pl-3 text-indigo-800' }
-        : { border: 'border-violet-200', bg: 'bg-violet-50', icon: 'text-violet-600', heading: 'text-violet-900', body: 'text-violet-800', h2: 'font-bold text-violet-900 mt-2', bullet: 'pl-3 text-violet-800' }}
-    />
-  );
-};
+/* ──────────────────────────────────────────────────────────────────────────
+   Dashboard
+────────────────────────────────────────────────────────────────────────── */
 
 const ParentDashboard = ({
-  parentName,
+  parentName = '',
 }) => {
   const navigate = useNavigate();
-  const prefersReducedMotion = useReducedMotion();
-  const [currentTime, setCurrentTime] = useState(new Date());
-  // School year runs April→March, so before April we're still in the prior term.
-  const termStartYear = currentTime.getMonth() >= 3 ? currentTime.getFullYear() : currentTime.getFullYear() - 1;
-  const academicTermLabel = `Academic Term ${termStartYear}–${String(termStartYear + 1).slice(-2)}`;
-  const [lastUpdatedAt, setLastUpdatedAt] = useState(null);
-  const [childrenData, setChildrenData] = useState([]);
-  const [meetings, setMeetings] = useState([]);
-  const [feeSummary, setFeeSummary] = useState(null);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState('');
+  const reduceMotion = useReducedMotion();
 
-  useEffect(() => {
-    const tick = setInterval(() => setCurrentTime(new Date()), 60000);
-    return () => clearInterval(tick);
-  }, []);
+  const {
+    selected: child,
+    loading: childLoading,
+    school,
+  } = useParentChildren();
 
-  useEffect(() => {
-    const fetchData = async () => {
-      setLoading(true);
-      setError('');
-      try {
-        const token = localStorage.getItem('token');
-        if (!token) throw new Error('Auth token missing');
+  const coverImage = school?.coverImage || '';
 
-        const [attendanceRes, meetingsRes, feeRes] = await Promise.all([
-          parentApiFetch('/api/attendance/parent/children', {}, navigate),
-          parentApiFetch('/api/meeting/parent/my-meetings', {}, navigate),
-          parentApiFetch('/api/fees/parent/summary', {}, navigate),
-        ]);
 
-        if (attendanceRes.ok) {
-          const attendance = await attendanceRes.json();
-
-          // Merge data to get rich child info
-          const children = (attendance.children || []).map(mapAttendanceChildForDashboard);
-          setChildrenData(children);
-        } else {
-          throw new Error('attendance');
-        }
-
-        if (meetingsRes.ok) {
-          const data = await meetingsRes.json();
-          setMeetings(Array.isArray(data) ? data : []);
-        }
-
-        if (feeRes.ok) {
-          setFeeSummary(await feeRes.json());
-        }
-        setLastUpdatedAt(new Date());
-      } catch (err) {
-        if (err?.code === 'expired') return;
-        console.error('Dashboard fetch error:', err);
-        setError('Failed to refresh dashboard data.');
-      } finally {
-        setLoading(false);
-      }
-    };
-    fetchData();
-  }, [navigate]);
-
-  const getGreeting = () => {
-    const h = currentTime.getHours();
-    if (h < 12) return 'Good Morning';
-    if (h < 18) return 'Good Afternoon';
-    return 'Good Evening';
-  };
-
-  const avgAttendance = useMemo(() => {
-    if (!childrenData.length) return 0;
-    const sum = childrenData.reduce((acc, c) => acc + (c.attendancePercentage || 0), 0);
-    return Math.round(sum / childrenData.length);
-  }, [childrenData]);
-
-  const upcomingMeetings = useMemo(() => 
-    meetings
-      .filter(m => new Date(m.meetingDate) >= new Date())
-      .sort((a, b) => new Date(a.meetingDate) - new Date(b.meetingDate))
-      .slice(0, 3),
-    [meetings]
+  const cachedPortalData = useMemo(
+    () => readDashboardCache('portal'),
+    []
   );
 
-  const formatMeetingDate = useCallback((dateStr) => {
-    if (!dateStr) return 'N/A';
-    return new Date(dateStr).toLocaleDateString('en-US', {
-      weekday: 'short', month: 'short', day: 'numeric',
-    });
-  }, []);
-
-  const statsData = useMemo(() => {
-    const nextMeeting = upcomingMeetings[0];
-    const openInvoices = Number(feeSummary?.openInvoiceCount || 0);
-    const pendingAmount = Number(feeSummary?.outstandingAmount || 0);
-
-    return [
-      {
-        id: 'attendance',
-        label: 'Monthly attendance',
-        value: `${avgAttendance}%`,
-        sub: 'Current month · across all children',
-        icon: Calendar,
-        iconClass: 'bg-emerald-50 text-emerald-600',
-        valueClass: 'text-slate-800',
-      },
-      {
-        id: 'ptms',
-        label: 'Upcoming meetings',
-        value: String(upcomingMeetings.length),
-        sub: nextMeeting ? `Next ${formatMeetingDate(nextMeeting.meetingDate)}` : 'None scheduled',
-        icon: Video,
-        iconClass: 'bg-amber-50 text-amber-600',
-        valueClass: 'text-slate-800',
-      },
-      {
-        id: 'children',
-        label: 'Linked children',
-        value: String(childrenData.length),
-        sub: childrenData.length ? 'Active profiles' : 'None linked yet',
-        icon: Users,
-        iconClass: 'bg-violet-50 text-violet-600',
-        valueClass: 'text-slate-800',
-      },
-      {
-        id: 'invoices',
-        label: 'Open invoices',
-        value: String(openInvoices),
-        sub: openInvoices ? `₹${pendingAmount.toLocaleString('en-IN')} due` : 'All fees cleared',
-        icon: CreditCard,
-        iconClass: openInvoices ? 'bg-rose-50 text-rose-600' : 'bg-emerald-50 text-emerald-600',
-        valueClass: openInvoices ? 'text-rose-600' : 'text-slate-800',
-      },
-    ];
-  }, [avgAttendance, childrenData.length, feeSummary, formatMeetingDate, upcomingMeetings]);
-
-  const containerVariants = {
-    hidden: { opacity: 0 },
-    visible: {
-      opacity: 1,
-      transition: prefersReducedMotion
-        ? { duration: 0 }
-        : { staggerChildren: 0.08, delayChildren: 0.2 },
-    },
-  };
-
-  const itemVariants = {
-    hidden: { opacity: 0, y: prefersReducedMotion ? 0 : 18 },
-    visible: {
-      opacity: 1,
-      y: 0,
-      transition: prefersReducedMotion
-        ? { duration: 0 }
-        : { type: 'spring', stiffness: 300, damping: 24 },
-    },
-  };
-
-  if (loading && childrenData.length === 0) {
-    return (
-      <div className="min-h-screen flex flex-col items-center justify-center gap-3 bg-slate-50" aria-busy="true" aria-live="polite">
-        <Loader2 size={40} className="animate-spin text-violet-600" aria-hidden="true" />
-        <p className="text-sm font-medium text-slate-500">Loading your dashboard…</p>
-      </div>
+  const [attendanceKids, setAttendanceKids] =
+    useState(
+      () =>
+        cachedPortalData?.attendanceKids || []
     );
-  }
+
+  const [invoices, setInvoices] = useState([]);
+
+  const [reportCards, setReportCards] =
+    useState(() =>
+      (cachedPortalData?.reportCards || []).map(
+        normalizeReportCard
+      )
+    );
+
+  const [examKids, setExamKids] = useState(
+    () => cachedPortalData?.examKids || []
+  );
+
+  const [homework, setHomework] = useState([]);
+
+  const [notices, setNotices] = useState(
+    () => cachedPortalData?.notices || []
+  );
+
+  const [meetings, setMeetings] = useState(
+    () => cachedPortalData?.meetings || []
+  );
+
+  const [holidays, setHolidays] = useState(
+    () => cachedPortalData?.holidays || []
+  );
+
+  /* ─────────────────────────────────────────────
+     School-wide sources
+  ───────────────────────────────────────────── */
+
+  useEffect(() => {
+    let off = false;
+
+    Promise.allSettled([
+      parentApiJson(
+        '/api/attendance/parent/children',
+        {},
+        navigate
+      ),
+
+      parentApiJson(
+        '/api/reports/report-cards/parent',
+        {},
+        navigate
+      ),
+
+      parentApiJson(
+        '/api/exam/groups/parent-schedule',
+        {},
+        navigate
+      ),
+
+      parentApiJson(
+        '/api/notifications/user?kind=notice',
+        {},
+        navigate
+      ),
+
+      parentApiJson(
+        '/api/meeting/parent/my-meetings',
+        {},
+        navigate
+      ),
+
+      parentApiJson(
+        '/api/holidays/parent',
+        {},
+        navigate
+      ),
+    ]).then(
+      ([a, r, e, n, m, h]) => {
+        if (off) return;
+
+        const ok = (x) =>
+          x.status === 'fulfilled'
+            ? x.value
+            : null;
+
+        const nextPortalData = {
+          attendanceKids:
+            ok(a)?.children || [],
+
+          reportCards:
+            ok(r)?.reportCards || [],
+
+          examKids:
+            ok(e)?.children || [],
+
+          notices:
+            Array.isArray(ok(n))
+              ? ok(n)
+              : [],
+
+          meetings:
+            Array.isArray(ok(m))
+              ? ok(m)
+              : [],
+
+          holidays: (() => {
+            const hv = ok(h);
+
+            return Array.isArray(hv)
+              ? hv
+              : hv?.holidays || [];
+          })(),
+        };
+
+        setAttendanceKids(
+          nextPortalData.attendanceKids
+        );
+
+        setReportCards(
+          nextPortalData.reportCards.map(
+            normalizeReportCard
+          )
+        );
+
+        setExamKids(
+          nextPortalData.examKids
+        );
+
+        setNotices(
+          nextPortalData.notices
+        );
+
+        setMeetings(
+          nextPortalData.meetings
+        );
+
+        setHolidays(
+          nextPortalData.holidays
+        );
+
+        writeDashboardCache(
+          'portal',
+          nextPortalData
+        );
+      }
+    );
+
+    return () => {
+      off = true;
+    };
+  }, [navigate]);
+
+  /* ─────────────────────────────────────────────
+     Per-child sources
+  ───────────────────────────────────────────── */
+
+  useEffect(() => {
+    if (!child?.id) return undefined;
+
+    const childCacheKey = `child:${child.id}`;
+
+    const cachedChildData =
+      readDashboardCache(childCacheKey);
+
+    if (cachedChildData) {
+      setInvoices(
+        cachedChildData.invoices || []
+      );
+
+      setHomework(
+        cachedChildData.homework || []
+      );
+    }
+
+    let off = false;
+
+    const q = encodeURIComponent(child.id);
+
+    Promise.allSettled([
+      parentApiJson(
+        `/api/fees/parent/invoices?studentId=${q}`,
+        {},
+        navigate
+      ),
+
+      parentApiJson(
+        `/api/assignment/parent/assignments?studentId=${q}`,
+        {},
+        navigate
+      ),
+    ]).then(([f, hw]) => {
+      if (off) return;
+
+      const nextChildData = {
+        invoices:
+          f.status === 'fulfilled'
+            ? f.value?.invoices || []
+            : [],
+
+        homework:
+          hw.status === 'fulfilled' &&
+          Array.isArray(hw.value)
+            ? hw.value
+            : [],
+      };
+
+      setInvoices(
+        nextChildData.invoices
+      );
+
+      setHomework(
+        nextChildData.homework
+      );
+
+      writeDashboardCache(
+        childCacheKey,
+        nextChildData
+      );
+    });
+
+    return () => {
+      off = true;
+    };
+  }, [child?.id, navigate]);
+
+
+  /* ─────────────────────────────────────────────
+     Attendance
+  ───────────────────────────────────────────── */
+
+  const attendance = useMemo(() => {
+    const entry =
+      attendanceKids.find(
+        (k) =>
+          String(
+            k?.student?._id ||
+              k?.student?.id
+          ) === String(child?.id)
+      ) || null;
+
+    const records = Array.isArray(
+      entry?.records
+    )
+      ? entry.records
+      : [];
+
+    const now = new Date();
+
+    const monthKey = (d) =>
+      String(d).slice(0, 7);
+
+    const thisM = `${now.getFullYear()}-${String(
+      now.getMonth() + 1
+    ).padStart(2, '0')}`;
+
+    const prev = new Date(
+      now.getFullYear(),
+      now.getMonth() - 1,
+      1
+    );
+
+    const prevM = `${prev.getFullYear()}-${String(
+      prev.getMonth() + 1
+    ).padStart(2, '0')}`;
+
+    const pct = (list) =>
+      list.length
+        ? Math.round(
+            (list.filter(
+              (r) => r.status === 'present'
+            ).length /
+              list.length) *
+              100
+          )
+        : null;
+
+    const cur = records.filter(
+      (r) =>
+        monthKey(r.date) === thisM
+    );
+
+    const last = records.filter(
+      (r) =>
+        monthKey(r.date) === prevM
+    );
+
+    const summary =
+      entry?.monthlySummary || {};
+
+    // Active-session attendance from the server: school days elapsed in
+    // the session (Sundays + holidays excluded) vs days marked present.
+    const session = entry?.sessionSummary || null;
+    const percent = session
+      ? session.percentage
+      : pct(records) ??
+        summary.attendancePercentage ??
+        0;
+
+    const curPct = pct(cur);
+    const lastPct = pct(last);
+
+    const today = records.find(
+      (r) => r.date === dayKey(now)
+    );
+
+    return {
+      percent,
+      delta:
+        curPct === null || lastPct === null
+          ? null
+          : curPct - lastPct,
+
+      present: session
+        ? session.presentDays
+        : records.length
+          ? records.filter(
+              (r) => r.status === 'present'
+            ).length
+          : summary.presentDays || 0,
+
+      total: session
+        ? session.schoolDays
+        : records.length ||
+          summary.totalClasses ||
+          0,
+
+      sessionName: session?.sessionName || '',
+
+      today,
+    };
+  }, [attendanceKids, child?.id]);
+
+  /* ─────────────────────────────────────────────
+     Fees
+  ───────────────────────────────────────────── */
+
+  const fees = useMemo(() => {
+    const open = invoices
+      .filter(
+        (i) =>
+          Number(i.balanceAmount) > 0
+      )
+      .sort(
+        (a, b) =>
+          new Date(
+            a.dueDate || 8.64e15
+          ) -
+          new Date(
+            b.dueDate || 8.64e15
+          )
+      );
+
+    const due = open.reduce(
+      (s, i) =>
+        s + Number(i.balanceAmount || 0),
+      0
+    );
+
+    const focus =
+      open[0] ||
+      invoices
+        .slice()
+        .sort(
+          (a, b) =>
+            new Date(
+              b.dueDate || 0
+            ) -
+            new Date(
+              a.dueDate || 0
+            )
+        )[0] ||
+      null;
+
+    const totals = invoices.reduce(
+      (acc, invoice) => {
+        const fine = Number(
+          invoice.lateFeeAmountApplied || 0
+        );
+        const invoiceTotal = Number(
+          invoice.totalAmount ?? invoice.amount ?? 0
+        );
+
+        acc.fine += fine;
+        acc.total += Math.max(
+          0,
+          invoiceTotal - fine
+        );
+        acc.payable += Math.max(0, invoiceTotal);
+        acc.paid += Number(invoice.paidAmount || 0);
+
+        return acc;
+      },
+      { total: 0, payable: 0, paid: 0, fine: 0 }
+    );
+
+    return {
+      due,
+      fullyPaid:
+        invoices.length > 0 && due <= 0,
+      focus,
+      total: totals.total,
+      totalPayable: totals.payable,
+      paid: totals.paid,
+      finePaid: totals.fine,
+      balance: due,
+    };
+  }, [invoices]);
+
+  /* ─────────────────────────────────────────────
+     Results
+  ───────────────────────────────────────────── */
+
+  const results = useMemo(() => {
+    const card =
+      reportCards.find(
+        (c) =>
+          String(c.studentId) ===
+          String(child?.id)
+      ) || null;
+
+    const exams = card?.exams || [];
+
+    const byExam = new Map();
+
+    exams.forEach((x) => {
+      const key =
+        x.examName ||
+        x.term ||
+        'Exam';
+
+      if (!byExam.has(key)) {
+        byExam.set(key, {
+          name: key,
+          date: x.date,
+          rows: [],
+        });
+      }
+
+      const g = byExam.get(key);
+
+      if (
+        validDate(x.date) &&
+        (!validDate(g.date) ||
+          new Date(x.date) >
+            new Date(g.date))
+      ) {
+        g.date = x.date;
+      }
+
+      g.rows.push(x);
+    });
+
+    const groups = [
+      ...byExam.values(),
+    ].sort(
+      (a, b) =>
+        new Date(b.date || 0) -
+        new Date(a.date || 0)
+    );
+
+    const avg = (g) => {
+      const ob = g.rows.reduce(
+        (s, r) =>
+          s +
+          Number(
+            r.obtainedMarks || 0
+          ),
+        0
+      );
+
+      const tot = g.rows.reduce(
+        (s, r) =>
+          s +
+          Number(
+            r.totalMarks || 0
+          ),
+        0
+      );
+
+      return tot > 0
+        ? Math.round(
+            (ob / tot) * 100
+          )
+        : null;
+    };
+
+    const recent = groups
+      .slice(0, 3)
+      .map(avg)
+      .filter(
+        (v) => v !== null
+      );
+
+    const average = recent.length
+      ? Math.round(
+          recent.reduce(
+            (s, v) => s + v,
+            0
+          ) / recent.length
+        )
+      : null;
+
+    const delta =
+      groups.length >= 2 &&
+      avg(groups[0]) !== null &&
+      avg(groups[1]) !== null
+        ? avg(groups[0]) -
+          avg(groups[1])
+        : null;
+
+    return {
+      latest: groups[0] || null,
+      average,
+      delta,
+      count: recent.length,
+    };
+  }, [reportCards, child?.id]);
+
+  /* ─────────────────────────────────────────────
+     Exams
+  ───────────────────────────────────────────── */
+
+  const upcomingExams = useMemo(() => {
+    const kid =
+      examKids.find(
+        (c) =>
+          String(c.studentId) ===
+          String(child?.id)
+      ) || examKids[0];
+
+    const today = new Date(
+      new Date().toDateString()
+    );
+
+    const rows = [];
+
+    const now = new Date();
+    // A paper is over once its end (or start) time has passed today.
+    const paperOver = (s) => {
+      const d = new Date(s.date);
+      if (dayKey(d) !== dayKey(now)) return false;
+      const m = String(s.endTime || s.startTime || s.time || '').match(/^(\d{1,2}):(\d{2})/);
+      if (!m) return false;
+      const t = new Date(d);
+      t.setHours(Number(m[1]), Number(m[2]), 0, 0);
+      return t < now;
+    };
+
+    (kid?.groups || []).forEach(
+      (g) =>
+        // Completed exams (status Completed / last paper done) are not upcoming.
+        !(g.completed || g.examState === 'completed') &&
+        (g.subjects || []).forEach(
+          (s) => {
+            if (
+              validDate(s.date) &&
+              new Date(s.date) >= today &&
+              !paperOver(s)
+            ) {
+              rows.push({
+                date: new Date(s.date),
+                subject:
+                  subjectName(s) ||
+                  g.title ||
+                  'Exam',
+
+                name: `${subjectName(
+                  s
+                )} ${g.title || ''}`.trim(),
+
+                time: to12h(
+                  s.startTime ||
+                    s.time
+                ),
+              });
+            }
+          }
+        )
+    );
+
+    return rows.sort(
+      (a, b) => a.date - b.date
+    );
+  }, [examKids, child?.id]);
+
+  /* ─────────────────────────────────────────────
+     Events
+  ───────────────────────────────────────────── */
+
+  const events = useMemo(() => {
+    const now = new Date();
+    const today = startOfDay(now);
+
+    const list = [];
+
+    upcomingExams
+      .slice(0, 3)
+      .forEach((x) =>
+        list.push({
+          kind: 'exam',
+          date: x.date,
+          title: x.name,
+          sub: `${fmtDate(
+            x.date
+          )}${x.time ? `  |  ${x.time}` : ''}`,
+        })
+      );
+
+    meetings.forEach((m) => {
+      const status = String(m.status || '').toLowerCase();
+      const meetingAt = combineDateAndTime(
+        m.meetingDate,
+        m.meetingTime
+      );
+
+      if (
+        CLOSED_MEETING_STATUSES.has(status) ||
+        !meetingAt ||
+        meetingAt < now
+      ) {
+        return;
+      }
+
+      if (
+        m.studentId &&
+        child?.id &&
+        String(
+          m.studentId?._id ||
+            m.studentId
+        ) !== String(child.id)
+      ) {
+        return;
+      }
+
+      list.push({
+        kind: 'ptm',
+        date: meetingAt,
+        title:
+          m.title ||
+          'Parent Teacher Meeting',
+
+        sub: `${fmtDate(
+          m.meetingDate
+        )}${
+          m.meetingTime
+            ? `  |  ${to12h(
+                m.meetingTime
+              )}`
+            : ''
+        }`,
+      });
+    });
+
+    holidays.forEach((h) => {
+      const start =
+        h.startDate || h.date;
+
+      if (!validDate(start)) return;
+
+      const end = validDate(h.endDate)
+        ? h.endDate
+        : start;
+
+      if (new Date(end) < today)
+        return;
+
+      const s = new Date(start);
+      const e = new Date(end);
+
+      const range =
+        dayKey(s) === dayKey(e)
+          ? fmtDate(s)
+          : `${s.getDate()} – ${fmtDate(
+              e
+            )}`;
+
+      list.push({
+        kind: 'holiday',
+        date: s,
+        title:
+          h.name ||
+          h.title ||
+          'Holiday',
+        sub: range,
+      });
+    });
+
+    return list
+      .sort(
+        (a, b) =>
+          a.date - b.date
+      )
+      .slice(0, 3);
+  }, [
+    upcomingExams,
+    meetings,
+    holidays,
+    child?.id,
+  ]);
+
+  /* ─────────────────────────────────────────────
+     Recent items
+  ───────────────────────────────────────────── */
+
+  const recentHomework = useMemo(
+    () =>
+      homework
+        .slice()
+        .sort(
+          (a, b) =>
+            new Date(
+              b.createdAt || 0
+            ) -
+            new Date(
+              a.createdAt || 0
+            )
+        )
+        .slice(0, 3),
+    [homework]
+  );
+
+  const recentNotices = useMemo(
+    () =>
+      notices
+        .slice()
+        .sort(
+          (a, b) =>
+            new Date(
+              b.createdAt || 0
+            ) -
+            new Date(
+              a.createdAt || 0
+            )
+        )
+        .slice(0, 3),
+    [notices]
+  );
+
+  /* ─────────────────────────────────────────────
+     General UI values
+  ───────────────────────────────────────────── */
+
+  const firstName = String(
+    parentName || ''
+  ).trim();
+
+  const greeting = `${
+    greetingFor(
+      new Date().getHours()
+    )
+  }${firstName ? `, ${firstName}` : ''}`;
+
+  const childFirstName = String(child?.name || '').trim().split(/s+/)[0] || '';
+
+  const nextExam =
+    upcomingExams[0];
+
+  const todayLabel =
+    new Date().toLocaleDateString(
+      'en-GB',
+      {
+        day: 'numeric',
+        month: 'short',
+        year: 'numeric',
+      }
+    ) +
+    ` (${new Date().toLocaleDateString(
+      'en-US',
+      { weekday: 'short' }
+    )})`;
+
+  const todayStatus =
+    attendance.today?.status;
+
+  const classLine = child
+    ? `Class ${child.grade || '—'}${
+        child.section
+          ? ` - Section ${child.section}`
+          : ''
+      }`
+    : '';
+
+  const Avatar = ({
+    size = 'h-10 w-10',
+    text = 'text-sm',
+  }) =>
+    child?.photo ? (
+      <img
+        src={child.photo}
+        alt={child.name}
+        className={`${size} shrink-0 rounded-full object-cover`}
+      />
+    ) : (
+      <span
+        className={`
+          ${size}
+          ${text}
+          flex
+          shrink-0
+          items-center
+          justify-center
+          rounded-full
+          bg-violet-100
+          font-bold
+          text-violet-700
+        `}
+      >
+        {initialsOf(child?.name)}
+      </span>
+    );
+
+  /* ────────────────────────────────────────────────────────────────────────
+     Render
+  ──────────────────────────────────────────────────────────────────────── */
 
   return (
-    <div className="min-h-screen bg-slate-50 p-3 sm:p-4 lg:p-6 flex flex-col gap-4 sm:gap-6 max-w-7xl mx-auto">
-      <motion.section
-        initial={{ opacity: 0, y: prefersReducedMotion ? 0 : 16 }}
-        animate={{ opacity: 1, y: 0 }}
-        transition={{ duration: prefersReducedMotion ? 0 : 0.5, ease: 'easeOut' }}
-        className="relative isolate overflow-hidden rounded-2xl border border-white bg-gradient-to-br from-sky-50 via-violet-50 to-purple-50/60 p-5 shadow-sm sm:rounded-[1.75rem] sm:p-6 lg:p-8"
-      >
-        <div className="pointer-events-none absolute -bottom-6 -right-6 h-32 w-32 rounded-full bg-purple-200/50 blur-2xl sm:h-48 sm:w-48" aria-hidden="true" />
-        <div className="relative z-10">
-          <div className="mb-2 flex items-center justify-between gap-3">
-            <span className="inline-flex items-center rounded-full bg-white/80 px-2.5 py-0.5 text-xs font-semibold text-violet-800 shadow-sm">
-              {academicTermLabel}
-            </span>
-            <span className="text-xs font-medium text-slate-500">
-              {currentTime.toLocaleDateString('en-US', { month: 'long', day: 'numeric', year: 'numeric' })}
-            </span>
-          </div>
-          <h1 className="text-xl font-extrabold leading-snug tracking-tight text-slate-900 sm:text-3xl lg:text-4xl">
-            {getGreeting()}, <span className="text-violet-600">{parentName || 'Parent Account'}</span>
-          </h1>
-          <p className="mt-2 max-w-xl text-xs leading-relaxed text-slate-600 sm:text-sm">
-            Track academic progress, monitor wellbeing, and stay connected with the school.
-          </p>
-          {error && (
-            <div role="alert" className="mt-4 max-w-xl rounded-xl border border-rose-200 bg-rose-50/80 px-4 py-3 text-sm text-rose-700">
-              {error}
-            </div>
-          )}
-        </div>
-      </motion.section>
-
-      <motion.section
-        initial={{ opacity: 0, y: prefersReducedMotion ? 0 : 16 }}
-        animate={{ opacity: 1, y: 0 }}
-        transition={{ duration: prefersReducedMotion ? 0 : 0.4, ease: 'easeOut' }}
-        className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm sm:p-6"
-      >
-        <div className="mb-4 flex flex-wrap items-center justify-between gap-2 border-b border-slate-100 pb-3">
-          <h2 className="text-lg font-bold tracking-tight text-slate-800">Your children</h2>
-          <span className="text-xs font-medium text-slate-400">
-            Updated {currentTime.toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' })}
-          </span>
-        </div>
-
-        <motion.div variants={containerVariants} initial="hidden" animate="visible" className="grid grid-cols-1 gap-3 md:grid-cols-2">
-          {childrenData.length === 0 ? (
-            <motion.div variants={itemVariants} className="md:col-span-2 rounded-xl border border-dashed border-slate-200/60 bg-slate-50 py-10 text-center text-slate-400">
-              <UserIcon size={38} className="mx-auto mb-3 opacity-30" />
-              <p className="text-sm font-semibold">No active student profiles linked</p>
-            </motion.div>
-          ) : childrenData.map((child) => (
-            <motion.article
-              key={child._id}
-              variants={itemVariants}
-              whileHover={prefersReducedMotion ? undefined : { y: -4 }}
-              className="rounded-xl border border-slate-200 bg-white p-4 shadow-sm transition-shadow hover:shadow-md md:col-span-2"
-            >
-              <div className="mb-3 flex items-center gap-3">
-                {child.profilePic ? (
-                  <img
-                    src={child.profilePic}
-                    alt={child.name || 'Student'}
-                    className="h-12 w-12 shrink-0 rounded-full border border-violet-100 object-cover shadow-md shadow-violet-500/20"
-                  />
-                ) : (
-                  <div className="flex h-12 w-12 shrink-0 items-center justify-center rounded-full bg-gradient-to-br from-violet-500 to-violet-600 text-base font-bold text-white shadow-md shadow-violet-500/20">
-                    {getInitials(child.name)}
-                  </div>
-                )}
-                <div className="min-w-0">
-                  <h3 className="truncate text-base font-bold text-slate-800">{child.name}</h3>
-                  <p className="truncate text-xs text-slate-500">
-                    Class {child.grade} · {formatStudentDisplay({ username: child.username, studentCode: child.studentCode, roll: child.section })} {child.section}
-                  </p>
-                </div>
-              </div>
-
-              <div className="grid grid-cols-1 gap-2 sm:grid-cols-3">
-                <div className="flex min-h-16 flex-col items-center justify-center rounded-lg border border-slate-200 bg-slate-50 p-2.5 text-center">
-                  <span className="text-base font-bold text-violet-600">{child.attendancePercentage}%</span>
-                  <span className="flex items-center gap-1 text-[11px] font-semibold uppercase tracking-wider text-slate-500"><Calendar size={12} /> Monthly attendance</span>
-                </div>
-                <Link to="/parents/routine" className="flex min-h-16 flex-col items-center justify-center rounded-lg border border-slate-200 bg-slate-50 p-2.5 text-center transition hover:-translate-y-0.5 hover:bg-white">
-                  <span className="text-base font-bold text-emerald-600">View</span>
-                  <span className="flex items-center gap-1 text-[11px] font-semibold uppercase tracking-wider text-slate-500"><Clock size={12} /> Routine</span>
-                </Link>
-                <Link to="/parents/academic" className="flex min-h-16 flex-col items-center justify-center rounded-lg border border-slate-200 bg-slate-50 p-2.5 text-center transition hover:-translate-y-0.5 hover:bg-white">
-                  <span className="text-base font-bold text-violet-600">View</span>
-                  <span className="flex items-center gap-1 text-[11px] font-semibold uppercase tracking-wider text-slate-500"><Award size={12} /> Report card</span>
-                </Link>
-              </div>
-            </motion.article>
-          ))}
-
-          <motion.div variants={itemVariants}><WeakAreasCard /></motion.div>
-          <motion.div variants={itemVariants}><RemarksFeedCard /></motion.div>
-
-          <motion.section variants={itemVariants} className="flex h-full flex-col rounded-xl border border-slate-200 bg-white p-4 shadow-sm transition-all duration-200 hover:-translate-y-1 hover:shadow-md">
-            <h3 className="mb-3 flex items-center gap-1.5 text-xs font-semibold uppercase tracking-wider text-slate-500"><Calendar size={14} /> Upcoming Events</h3>
-            {upcomingMeetings.length === 0 ? (
-              <div className="flex flex-1 flex-col items-center justify-center rounded-lg border border-dashed border-slate-200/50 bg-slate-50 py-5 text-center">
-                <Video size={28} className="mb-2 text-slate-300" />
-                <p className="text-sm font-semibold text-slate-600">No meetings scheduled</p>
-                <p className="text-xs text-slate-400">Check back later for updates</p>
-              </div>
-            ) : (
-              <div className="flex-1 space-y-2">
-                {upcomingMeetings.map((meeting) => (
-                  <div key={meeting._id} className="rounded-lg border border-slate-200 bg-slate-50 p-2.5">
-                    <div className="flex items-start justify-between gap-2">
-                      <div className="min-w-0">
-                        <p className="truncate text-sm font-semibold text-slate-700">{meeting.title || meeting.topic || 'Parent-teacher meeting'}</p>
-                        <p className="mt-0.5 flex items-center gap-1 text-[11px] text-slate-400"><Clock size={10} /> {formatMeetingDate(meeting.meetingDate)} · {meeting.meetingTime}</p>
-                      </div>
-                      <span className={`rounded-full border px-2 py-0.5 text-[11px] font-semibold uppercase ${meeting.status === 'confirmed' ? 'border-emerald-200 bg-emerald-50 text-emerald-700' : 'border-amber-200 bg-amber-50 text-amber-700'}`}>{String(meeting.status || 'pending').replace(/_/g, ' ')}</span>
-                    </div>
-                  </div>
-                ))}
-              </div>
-            )}
-            <Link to="/parents/ptm" className="mt-2 inline-flex items-center justify-end text-xs font-semibold text-violet-600 hover:text-violet-700">View All Meetings <ChevronRight size={14} /></Link>
-          </motion.section>
-
-          <motion.section variants={itemVariants} className="flex h-full flex-col rounded-xl border border-violet-200 bg-violet-50 p-4 shadow-sm transition-all duration-200 hover:-translate-y-1 hover:shadow-md">
-            <div className="mb-3 flex items-start gap-3">
-              <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-violet-100 text-violet-600"><LifeBuoy size={17} /></div>
-              <div>
-                <h3 className="text-sm font-semibold text-slate-800">Need technical assistance?</h3>
-                <p className="mt-0.5 text-xs leading-relaxed text-slate-500">Our support team can help with portal navigation or student records.</p>
-              </div>
-            </div>
-            <Link to="/parents/complaints" className="mt-auto self-start rounded-full bg-violet-600 px-4 py-2 text-xs font-semibold text-white shadow-md shadow-violet-600/20 transition hover:bg-violet-700">Contact Support</Link>
-          </motion.section>
-
-          {childrenData.length > 0 && (
-            <motion.section variants={itemVariants} className="rounded-xl border border-slate-200 bg-white p-4 shadow-sm md:col-span-2">
-              <div className="mb-3 flex items-center justify-between gap-2">
-                <h3 className="flex items-center gap-1.5 text-xs font-semibold uppercase tracking-wider text-slate-500"><Sparkles size={14} className="text-violet-500" /> AI-Powered Reports</h3>
-                <span className="rounded-full border border-violet-200 bg-violet-50 px-2 py-0.5 text-[11px] font-semibold text-violet-600">Personalized</span>
-              </div>
-              <div className="space-y-4">
-                {childrenData.map((child) => (
-                  <div key={child._id}>
-                    <p className="mb-2 text-xs text-slate-400">{child.name} · Class {child.grade} {child.section}</p>
-                    <div className="grid grid-cols-1 gap-2.5 sm:grid-cols-3">
-                      <HomeSupportCard studentId={child._id} studentName={child.name} />
-                      <AIDigestCard studentId={child._id} studentName={child.name} type="weekly" />
-                      <AIDigestCard studentId={child._id} studentName={child.name} type="monthly" />
-                    </div>
-                  </div>
-                ))}
-              </div>
-            </motion.section>
-          )}
-        </motion.div>
-      </motion.section>
-
-      <section className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm sm:p-6">
-        <h2 className="mb-4 text-lg font-bold tracking-tight text-slate-800">At a glance</h2>
-        <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
-          <Link
-            to="/parents/chat"
-            className="flex flex-col justify-between rounded-xl border border-violet-200 bg-violet-50 p-4 transition hover:bg-violet-100"
-          >
-            <span className="flex h-9 w-9 items-center justify-center rounded-full bg-white text-violet-600 shadow-sm">
-              <MessageCircle size={18} aria-hidden="true" />
-            </span>
-            <span className="mt-3">
-              <span className="block text-sm font-bold text-slate-800">Message staff</span>
-              <span className="mt-0.5 block text-xs text-slate-500">Open chat</span>
-            </span>
-          </Link>
-          {statsData.map((item) => {
-            const Icon = item.icon;
-            return (
-              <div key={item.id} className="flex flex-col justify-between rounded-xl border border-slate-200 bg-white p-4">
-                <span className={`flex h-9 w-9 items-center justify-center rounded-full ${item.iconClass}`}>
-                  <Icon size={18} aria-hidden="true" />
-                </span>
-                <span className="mt-3">
-                  <span className={`block text-2xl font-bold leading-none ${item.valueClass || 'text-slate-800'}`}>{item.value}</span>
-                  <span className="mt-1 block text-xs font-semibold text-slate-600">{item.label}</span>
-                  <span className="block text-xs text-slate-400">{item.sub}</span>
-                </span>
-              </div>
-            );
-          })}
-        </div>
-      </section>
-
-      <footer className="border-t border-slate-100 pt-6 pb-8 text-center">
-        <p className="text-xs font-medium tracking-wide text-slate-400">
-          Electronic Educare
+    <motion.div
+      data-testid="parent-dashboard"
+      className="
+        mx-auto
+        flex
+        min-h-screen
+        max-w-6xl
+        flex-col
+        gap-3
+        p-3
+        sm:p-4
+        lg:p-5
+      "
+      initial="hidden"
+      animate="show"
+      variants={{
+        hidden: {},
+        show: {
+          transition: {
+            staggerChildren: reduceMotion ? 0 : 0.06,
+            delayChildren: 0.03,
+          },
+        },
+      }}
+    >
+      {/* Greeting */}
+      <motion.div variants={RISE}>
+        <h1 className={`text-xl font-extrabold sm:text-2xl ${NAVY}`}>
+          {greeting} 
+          {/* <span aria-hidden="true">👋</span> */}
+        </h1>
+        <p className="mt-0.5 text-xs text-slate-600 sm:text-sm">
+          Here&apos;s an overview of {childFirstName ? `${childFirstName}’s` : 'your child’s'} academic journey.
         </p>
-      </footer>
-    </div>
+      </motion.div>
+
+      {/* Child Banner */}
+      <motion.section
+        variants={RISE}
+        className="relative overflow-hidden rounded-2xl border border-white bg-gradient-to-r from-[#eaf1fd] via-[#eef4fd] to-[#dfeafb] shadow-[0_4px_18px_rgba(30,64,175,0.06)]"
+      >
+        {coverImage ? (
+          <div aria-hidden="true" className="pointer-events-none absolute inset-y-0 right-0 hidden w-3/5 overflow-hidden md:block">
+            <div className="absolute inset-0 bg-cover bg-center" style={{ backgroundImage: `url(${coverImage})` }} />
+            <div className="absolute inset-0 bg-gradient-to-r from-[#eef4fd] via-[#eef4fd]/40 to-transparent" />
+          </div>
+        ) : (
+          <div className="pointer-events-none absolute inset-y-0 right-16 hidden opacity-70 md:block lg:right-40">
+            <BannerBuilding />
+          </div>
+        )}
+
+        <div className="relative flex items-center gap-3 px-3 py-3 sm:gap-4 sm:px-5 sm:py-3.5">
+          {child ? (
+            <span className="rounded-full bg-gradient-to-br from-violet-200 to-blue-200 p-1">
+              <Avatar size="h-14 w-14 sm:h-[72px] sm:w-[72px]" text="text-lg" />
+            </span>
+          ) : (
+            <span className="h-14 w-14 animate-pulse rounded-full bg-white/70" />
+          )}
+
+          <div className="min-w-0 flex-1">
+            <h2 className={`truncate text-base font-extrabold sm:text-xl ${NAVY}`}>
+              {child?.name || (childLoading ? 'Loading…' : 'No child linked')}
+            </h2>
+
+            {child && (
+              <p className="mt-1 flex flex-wrap items-center gap-x-3 gap-y-0.5 text-xs font-medium text-slate-700">
+                <span className="inline-flex items-center gap-1">
+                  <span className="h-2 w-2 rounded-full border-2 border-blue-400" />
+                  Class {child.grade || '—'}
+                </span>
+                {child.section ? (
+                  <span className="inline-flex items-center gap-1">
+                    <span className="h-2 w-2 rounded-full border-2 border-blue-400" />
+                    Section {child.section}
+                  </span>
+                ) : null}
+                <span className="inline-flex items-center gap-1">
+                  <span className="h-2 w-2 rounded-full border-2 border-blue-400" />
+                  Roll {child.roll !== '' && child.roll !== null && child.roll !== undefined ? child.roll : '—'}
+                </span>
+              </p>
+            )}
+
+            {child && (
+              <p className="mt-1 flex flex-wrap items-center gap-x-2 text-[11px] text-slate-700">
+                <span> <strong> ID:</strong> {child.admissionNumber || child.studentCode || '—'}</span>
+                {attendance.sessionName ? (
+                  <>
+                    <span className="text-slate-300">|</span>
+                    <span> <strong>Session:</strong> {attendance.sessionName}</span>
+                  </>
+                ) : null}
+              </p>
+            )}
+          </div>
+
+          <p className="hidden shrink-0 rotate-[-4deg] rounded-xl bg-white/70 px-3 py-2 text-right font-[cursive] text-sm leading-snug text-slate-700 backdrop-blur-sm lg:block">
+            “Keep learning,
+            <br />
+            keep growing!” <span className="text-amber-400">☀</span>
+          </p>
+        </div>
+      </motion.section>
+
+      {/* Stat Cards */}
+      <motion.div variants={RISE} className="grid grid-cols-2 gap-2.5 xl:grid-cols-4">
+        <StatCard
+          to="/parents/attendance"
+          Icon={UsersRound}
+          tone="bg-gradient-to-br from-green-100 to-green-200/70 text-green-600"
+          bg="bg-gradient-to-br from-white to-green-50"
+          label="Attendance"
+          value={`${attendance.percent}%`}
+          animatedValue={attendance.percent}
+          formatter={(n) => `${n}%`}
+          delta={attendance.delta}
+          sub={`Present: ${attendance.present} / ${attendance.total} days`}
+        />
+
+        <StatCard
+          to="/parents/fees"
+          Icon={Wallet}
+          tone="bg-gradient-to-br from-rose-100 to-rose-200/70 text-rose-500"
+          bg="bg-gradient-to-br from-white to-rose-50"
+          label="Fee Due"
+          value={fees.fullyPaid ? 'Fully Paid' : inr(fees.due)}
+          animatedValue={fees.fullyPaid ? undefined : fees.due}
+          formatter={inr}
+          sub={fees.fullyPaid ? 'No pending fees' : ''}
+          sub2={
+            !fees.fullyPaid && fees.focus && validDate(fees.focus.dueDate)
+              ? `Due: ${fmtDate(fees.focus.dueDate)}`
+              : ''
+          }
+        />
+
+        <StatCard
+          to="/parents/academic"
+          Icon={BarChart3}
+          tone="bg-gradient-to-br from-violet-100 to-violet-200/70 text-violet-600"
+          bg="bg-gradient-to-br from-white to-violet-50"
+          label="Average Marks"
+          value={results.average === null ? '—' : `${results.average}%`}
+          animatedValue={results.average ?? null}
+          formatter={(n) => `${n}%`}
+          delta={results.delta}
+          sub={
+            results.count
+              ? `Last ${results.count} Exam${results.count > 1 ? 's' : ''}`
+              : 'No results yet'
+          }
+        />
+
+        <StatCard
+          to="/parents/exam-routine"
+          Icon={CalendarDays}
+          tone="bg-gradient-to-br from-amber-100 to-orange-200/70 text-orange-500"
+          bg="bg-gradient-to-br from-white to-orange-50"
+          label="Upcoming Exam"
+          value={nextExam ? nextExam.subject : 'N/A'}
+          animatedValue={null}
+          sub={
+            nextExam
+              ? `${fmtDate(nextExam.date)}${nextExam.time ? ` | ${nextExam.time}` : ''}`
+              : 'Check back later'
+          }
+        />
+      </motion.div>
+
+      {/* Cards — one grid so tablet (md) and desktop (lg) can order them differently:
+          tablet: Attendance+Fee, Latest Result+Events, Homework+Quick Actions, Notices.
+          desktop: Attendance+Fee+Events, Homework+Notices, Latest Result+Quick Actions. */}
+      <motion.div variants={RISE} className="grid grid-cols-1 gap-3 md:grid-cols-2 lg:grid-cols-6">
+        {/* Attendance */}
+        <Card className="md:order-1 lg:order-1 lg:col-span-2">
+          <CardHead
+            title="Today's Attendance"
+            icon={CalendarCheck}
+            right={<span className="text-[11px] text-slate-500">{todayLabel}</span>}
+          />
+
+          <Link
+            to="/parents/attendance"
+            className={`flex items-center gap-3 rounded-xl px-3 py-3 transition hover:shadow-sm ${
+              todayStatus === 'present'
+                ? 'bg-green-50'
+                : todayStatus === 'absent'
+                  ? 'bg-red-50'
+                  : 'bg-[#eef3fc]'
+            }`}
+          >
+            <span
+              className={`flex h-10 w-10 shrink-0 items-center justify-center rounded-full text-white ${
+                todayStatus === 'present'
+                  ? 'bg-green-600'
+                  : todayStatus === 'absent'
+                    ? 'bg-red-500'
+                    : 'bg-[#34509a]'
+              }`}
+            >
+              {todayStatus === 'absent' ? <X size={18} strokeWidth={3} /> : <Check size={18} strokeWidth={3} />}
+            </span>
+
+            <span className="min-w-0 flex-1">
+              <span
+                className={`block text-sm font-bold leading-tight ${
+                  todayStatus === 'present'
+                    ? 'text-green-700'
+                    : todayStatus === 'absent'
+                      ? 'text-red-600'
+                      : NAVY
+                }`}
+              >
+                {todayStatus === 'present' ? 'Present' : todayStatus === 'absent' ? 'Absent' : 'Attendance not marked'}
+              </span>
+              <span className="mt-0.5 block text-[11px] text-slate-600">
+                {todayStatus
+                  ? attendance.today?.markedAt
+                    ? `Marked at ${new Date(attendance.today.markedAt).toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' })}`
+                    : 'Marked for today'
+                  : 'School attendance will appear here once marked.'}
+              </span>
+            </span>
+
+            <ChevronRight size={15} className="text-slate-400" />
+          </Link>
+        </Card>
+
+        {/* Fee */}
+        <Card className="md:order-2 lg:order-2 lg:col-span-2">
+          <CardHead title="Fee Summary" to="/parents/fees" linkLabel="View Details" />
+
+          {fees.focus ? (
+            <>
+              <div className="h-2 w-full overflow-hidden rounded-full bg-slate-100">
+                <div
+                  className="h-full rounded-full bg-green-600"
+                  style={{
+                    width: `${fees.totalPayable > 0 ? Math.min(100, (fees.paid / fees.totalPayable) * 100) : 0}%`,
+                  }}
+                />
+              </div>
+
+              <div className="mt-2.5 grid grid-cols-3 gap-2">
+                {[
+                  { label: 'Paid', value: fees.paid, Icon: IndianRupee, box: 'bg-green-50', icon: 'text-green-600', val: 'text-slate-900' },
+                  { label: 'Due', value: fees.balance, Icon: Clock, box: 'bg-rose-50', icon: 'text-rose-500', val: 'text-rose-600' },
+                  { label: 'Total', value: fees.total, Icon: ReceiptText, box: 'bg-slate-50', icon: 'text-slate-600', val: 'text-slate-900' },
+                ].map(({ label, value, Icon: TileIcon, box, icon, val }) => (
+                  <div key={label} className={`flex min-w-0 flex-col items-center rounded-xl px-1.5 py-2 text-center ${box}`}>
+                    <TileIcon size={18} className={icon} />
+                    <p className="mt-1 text-[10px] text-slate-600">{label}</p>
+                    <p className={`max-w-full truncate text-sm font-bold ${val}`} title={inr(value)}>
+                      {inr(value)}
+                    </p>
+                  </div>
+                ))}
+              </div>
+
+              {fees.fullyPaid && fees.finePaid > 0 ? (
+                <p className="mt-2.5 truncate rounded-lg bg-green-50 px-3 py-1.5 text-center text-xs font-semibold text-green-700" title={`Paid fully including fine: ${inr(fees.totalPayable)} (Fine ${inr(fees.finePaid)})`}>
+                  Paid fully including fine: {inr(fees.totalPayable)} (Fine {inr(fees.finePaid)})
+                </p>
+              ) : null}
+              {fees.balance > 0 && (
+                <Link
+                  to="/parents/fees"
+                  className="mt-2.5 flex w-full items-center justify-center gap-1.5 rounded-lg bg-blue-600 px-3 py-1.5 text-xs font-semibold text-white shadow-sm hover:bg-blue-700"
+                >
+                  <CreditCard size={14} />
+                  Pay Now
+                </Link>
+              )}
+            </>
+          ) : (
+            <p className="rounded-lg bg-slate-50 py-5 text-center text-xs text-slate-500">No fee invoices yet</p>
+          )}
+        </Card>
+
+        {/* Events */}
+        <Card className="md:order-4 lg:order-3 lg:col-span-2">
+          <CardHead title="Upcoming Events" icon={Bell} to="/parents/calendar" />
+
+          {events.length === 0 ? (
+            <p className="rounded-lg bg-slate-50 py-5 text-center text-xs text-slate-500">Nothing coming up</p>
+          ) : (
+            <ul className="space-y-1.5">
+              {events.map((ev, i) => {
+                const cfg =
+                  ev.kind === 'exam'
+                    ? { Icon: CalendarDays, cls: 'bg-violet-100 text-violet-600' }
+                    : ev.kind === 'ptm'
+                      ? { Icon: Users, cls: 'bg-rose-100 text-rose-500' }
+                      : { Icon: Leaf, cls: 'bg-green-100 text-green-600' };
+
+                return (
+                  <li key={i}>
+                    <Link
+                      to="/parents/calendar"
+                      className="flex items-center gap-2.5 rounded-xl bg-[#f3f6fc] px-2 py-1.5 transition hover:bg-[#e9effa]"
+                    >
+                      <span className={`flex h-8 w-8 shrink-0 items-center justify-center rounded-lg ${cfg.cls}`}>
+                        <cfg.Icon size={15} />
+                      </span>
+                      <span className="min-w-0 flex-1">
+                        <span className={`block truncate text-xs font-bold ${NAVY}`}>{ev.title}</span>
+                        <span className="block truncate text-[10px] text-slate-500">{ev.sub}</span>
+                      </span>
+                      <ChevronRight size={14} className="shrink-0 text-slate-400" />
+                    </Link>
+                  </li>
+                );
+              })}
+            </ul>
+          )}
+        </Card>
+        {/* Homework */}
+        <Card className="md:order-5 lg:order-4 lg:col-span-3">
+          <CardHead title="Recent Homework" icon={CalendarDays} to="/parents/homework" />
+
+          {recentHomework.length === 0 ? (
+            <p className="rounded-lg bg-slate-50 py-5 text-center text-xs text-slate-500">No homework yet</p>
+          ) : (
+            <ul className="divide-y divide-slate-100">
+              {recentHomework.map((a, i) => {
+                const pending = !a.submissionStatus || a.submissionStatus === 'not_submitted';
+                const tone = SUBJECT_TONES[i % SUBJECT_TONES.length].icon;
+
+                return (
+                  <li key={a._id}>
+                    <Link to="/parents/homework" className="flex items-center gap-2.5 py-2 transition hover:bg-slate-50/60">
+                      <span className={`flex h-9 w-9 shrink-0 items-center justify-center rounded-lg ${tone}`}>
+                        <BookOpen size={17} />
+                      </span>
+
+                      <span className="min-w-0 flex-1">
+                        <span className={`block truncate text-xs font-bold ${NAVY}`}>{subjectName(a) || 'General'}</span>
+                        <span className="block truncate text-[11px] text-slate-600" title={a.title}>{a.title}</span>
+                        {validDate(a.dueDate) && (
+                          <span className="block text-[10px] text-slate-500">Due: {fmtDate(a.dueDate)}</span>
+                        )}
+                      </span>
+
+                      <span
+                        className={`shrink-0 rounded-full px-2.5 py-1 text-[10px] font-bold ${
+                          pending ? 'text-white bg-yellow-600' : 'text-white bg-green-600'
+                        }`}
+                      >
+                        {pending ? 'Pending' : 'Submitted'}
+                      </span>
+                      <ChevronRight size={14} className="shrink-0 text-slate-400" />
+                    </Link>
+                  </li>
+                );
+              })}
+            </ul>
+          )}
+        </Card>
+
+        {/* Notices */}
+        <Card className="md:order-7 md:col-span-2 lg:order-5 lg:col-span-3">
+          <CardHead title="Recent Notices" icon={FileText} to="/parents/notices" />
+
+          {recentNotices.length === 0 ? (
+            <p className="rounded-lg bg-slate-50 py-5 text-center text-xs text-slate-500">No notices yet</p>
+          ) : (
+            <ul className="space-y-1.5">
+              {recentNotices.map((n) => {
+                const label = String(n.typeLabel || n.title || '').toLowerCase();
+                const cfg = /holiday/.test(label)
+                  ? { Icon: Megaphone, cls: 'bg-rose-100 text-rose-500' }
+                  : /ptm|meeting|parent/.test(label)
+                    ? { Icon: Users, cls: 'bg-violet-100 text-violet-600' }
+                    : { Icon: FileText, cls: 'bg-blue-100 text-blue-600' };
+
+                return (
+                  <li key={n._id}>
+                    <Link
+                      to="/parents/notices"
+                      state={{ openNoticeId: n._id }}
+                      className="flex items-center gap-2.5 rounded-xl px-2 py-2 transition hover:bg-[#f3f6fc]"
+                    >
+                      <span className={`flex h-9 w-9 shrink-0 items-center justify-center rounded-lg ${cfg.cls}`}>
+                        <cfg.Icon size={17} />
+                      </span>
+
+                      <span className="min-w-0 flex-1">
+                        <span className="flex items-start justify-between gap-2">
+                          <span className={`truncate text-xs font-bold ${NAVY}`}>{n.title}</span>
+                          <span className="shrink-0 text-[10px] text-slate-500">{fmtDate(n.createdAt)}</span>
+                        </span>
+                        {n.message ? (
+                          <span className="block truncate text-[11px] text-slate-600">{n.message}</span>
+                        ) : null}
+                      </span>
+                      <ChevronRight size={14} className="shrink-0 text-slate-400" />
+                    </Link>
+                  </li>
+                );
+              })}
+            </ul>
+          )}
+        </Card>
+        {/* Latest Result */}
+        <Card className="md:order-3 lg:order-6 lg:col-span-3">
+          <CardHead title="Latest Exam Result" icon={Trophy} to="/parents/academic" />
+
+          {results.latest ? (
+            <div className="rounded-xl border border-slate-100 p-2.5">
+              <div className="mb-2 flex flex-wrap items-center gap-x-4 gap-y-1">
+                <span className={`text-xs font-bold ${NAVY}`}>{results.latest.name}</span>
+                {validDate(results.latest.date) && (
+                  <span className="text-[11px] text-slate-500">{fmtDate(results.latest.date)}</span>
+                )}
+                <Link
+                  to="/parents/academic"
+                  className="ml-auto rounded-lg bg-blue-50 px-2.5 py-1 text-[11px] font-semibold text-blue-600 hover:bg-blue-100"
+                >
+                  View Report
+                </Link>
+              </div>
+
+              <div className="grid grid-cols-1 gap-1.5 sm:grid-cols-2">
+                {results.latest.rows.map((r, i) => (
+                  <div
+                    key={`${r.subject}-${i}`}
+                    className={`flex items-center gap-2.5 rounded-xl px-2.5 py-2 ${SUBJECT_TONES[i % SUBJECT_TONES.length].tile}`}
+                  >
+                    <BookOpen size={18} className="shrink-0 opacity-80" />
+                    <span className="min-w-0">
+                      <span className="block truncate text-[11px] font-medium text-slate-700">{r.subject || 'Subject'}</span>
+                      <span className={`block text-base font-extrabold ${NAVY}`}>
+                        {Number(r.obtainedMarks || 0)}/{Number(r.totalMarks || 0)}
+                      </span>
+                    </span>
+                  </div>
+                ))}
+              </div>
+            </div>
+          ) : (
+            <p className="rounded-lg bg-slate-50 py-5 text-center text-xs text-slate-500">No published results yet</p>
+          )}
+        </Card>
+
+        {/* Quick Actions */}
+        <Card className="md:order-6 lg:order-7 lg:col-span-3">
+          <CardHead title="Quick Actions" icon={LayoutGrid} />
+
+          <div className="grid grid-cols-5 gap-2 md:flex md:flex-wrap md:justify-center md:gap-x-4 md:gap-y-3 lg:grid lg:gap-2">
+            {[
+              { to: '/parents/fees', label: 'Pay Fees', Icon: Wallet, cls: 'bg-rose-50 text-rose-500' },
+              { to: '/parents/attendance', label: 'Attendance', Icon: Users, cls: 'bg-green-50 text-green-600' },
+              { to: '/parents/academic', label: 'Results', Icon: BarChart3, cls: 'bg-violet-50 text-violet-600' },
+              { to: '/parents/excuse-letters', label: 'Apply Leave', Icon: ClipboardList, cls: 'bg-orange-50 text-orange-500' },
+              { to: '/parents/chat', label: 'Message', Icon: MessageSquare, cls: 'bg-blue-50 text-blue-600' },
+            ].map(({ to, label, Icon, cls }) => (
+              <Link key={to} to={to} className="group flex min-w-0 flex-col items-center gap-1.5 text-center md:w-[76px] lg:w-auto">
+                <span
+                  className={`flex h-11 w-11 items-center justify-center rounded-2xl shadow-sm transition group-hover:-translate-y-0.5 sm:h-12 sm:w-12 ${cls}`}
+                >
+                  <Icon size={20} />
+                </span>
+                <span className={`max-w-full truncate text-[10px] font-semibold sm:text-[11px] ${NAVY}`}>{label}</span>
+              </Link>
+            ))}
+          </div>
+        </Card>
+      </motion.div>
+    </motion.div>
   );
 };
 

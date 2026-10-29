@@ -3,6 +3,7 @@ import { useLocation, useNavigate } from 'react-router-dom';
 import { apiFetch } from '../utils/authSession';
 import { notificationId, readModuleSeenState, writeModuleSeenState } from '../utils/moduleNotificationUtils';
 import { normalizeAdminPath, resolveAdminNotificationPath } from './adminNotificationUtils';
+import { subscribeSocketEvent } from '@/hooks/useCommunityWallUnread';
 
 const API_BASE = (import.meta.env.VITE_API_URL || window.location.origin).replace(/\/$/, '');
 
@@ -23,7 +24,7 @@ export const useAdminNotifications = ({ isSuperAdmin = false } = {}) => {
     setNotifLoading(true);
     setNotifError('');
     try {
-      const res = await apiFetch(`${API_BASE}/api/notifications/user`, {
+      const res = await apiFetch(`${API_BASE}/api/notifications/user?kind=notification`, {
         cache: 'no-store',
         headers: { 'Content-Type': 'application/json', authorization: `Bearer ${token}` },
       }, navigate);
@@ -55,18 +56,16 @@ export const useAdminNotifications = ({ isSuperAdmin = false } = {}) => {
       if (document.visibilityState === 'visible') fetchNotifs();
     }, 15_000);
 
-    const socket = window.io?.(API_BASE, {
-      transports: ['websocket', 'polling'],
-      auth: { token: localStorage.getItem('token') },
-    });
-    socket?.on('new_notification', () => fetchNotifs());
+    // window.io was never defined, so the bell only refreshed on the 15s poll.
+    // Use the app's shared Socket.IO connection for instant updates.
+    const unsubscribe = subscribeSocketEvent('new_notification', () => fetchNotifs());
 
     const onVisible = () => { if (document.visibilityState === 'visible') fetchNotifs(); };
     document.addEventListener('visibilitychange', onVisible);
 
     return () => {
       clearInterval(poll);
-      socket?.disconnect?.();
+      unsubscribe();
       document.removeEventListener('visibilitychange', onVisible);
     };
   }, [fetchNotifs]);
@@ -103,7 +102,7 @@ export const useAdminNotifications = ({ isSuperAdmin = false } = {}) => {
     if (!token) return;
     setNotifications((prev) => prev.map((n) => ({ ...n, isRead: true })));
     try {
-      const res = await apiFetch(`${API_BASE}/api/notifications/user/read-all`, {
+      const res = await apiFetch(`${API_BASE}/api/notifications/user/read-all?kind=notification`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json', authorization: `Bearer ${token}` },
       }, navigate);
@@ -125,6 +124,19 @@ export const useAdminNotifications = ({ isSuperAdmin = false } = {}) => {
     );
     const ids = matches.map(notificationId).filter(Boolean);
     if (ids.length === 0) return;
+    // Persist on the server too: the local seen-state is wiped on logout, so
+    // without this the same old alerts re-badge the module on every login.
+    const unreadIds = matches.filter((n) => !n?.isRead).map(notificationId).filter(Boolean);
+    const token = localStorage.getItem('token');
+    if (unreadIds.length && token) {
+      setNotifications((prev) => prev.map((n) => (unreadIds.includes(notificationId(n)) ? { ...n, isRead: true } : n)));
+      unreadIds.forEach((id) => {
+        apiFetch(`${API_BASE}/api/notifications/user/${id}/read`, {
+          method: 'PATCH',
+          headers: { 'Content-Type': 'application/json', authorization: `Bearer ${token}` },
+        }, navigate).catch(() => {});
+      });
+    }
     setSeenState((prev) => {
       const current = new Set(Array.isArray(prev?.[target]) ? prev[target] : []);
       let changed = false;
@@ -134,7 +146,7 @@ export const useAdminNotifications = ({ isSuperAdmin = false } = {}) => {
       writeModuleSeenState('admin', next);
       return next;
     });
-  }, [notifications]);
+  }, [notifications, navigate]);
 
   useEffect(() => {
     const path = location.pathname;
@@ -151,7 +163,7 @@ export const useAdminNotifications = ({ isSuperAdmin = false } = {}) => {
     const seenIds = new Set(Array.isArray(seenState?.[target]) ? seenState[target] : []);
     return notifications.filter((n) => {
       const id = notificationId(n);
-      if (!id || seenIds.has(id)) return false;
+      if (!id || n?.isRead || seenIds.has(id)) return false;
       return normalizeAdminPath(resolveAdminNotificationPath(n)) === target;
     }).length;
   }, [notifications, seenState]);

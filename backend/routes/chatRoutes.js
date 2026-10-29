@@ -13,6 +13,7 @@ const Section = require('../models/Section');
 const AcademicYear = require('../models/AcademicYear');
 const TeacherAllocation = require('../models/TeacherAllocation');
 const ChatKey = require('../models/ChatKey');
+const { sendChatMessagePush } = require('../utils/webPushService');
 const {
   getPresenceSnapshot,
   markUserOffline,
@@ -23,6 +24,7 @@ const { logStudentPortalEvent, logStudentPortalError } = require('../utils/stude
 
 const router = express.Router();
 router.use(authAnyUser);
+const { chatCache } = require('../utils/responseCache');
 const GROUP_SYNC_MIN_INTERVAL_MS = 2 * 60 * 1000;
 const CHAT_EDIT_WINDOW_MS = Math.max(1000, Number(process.env.CHAT_EDIT_WINDOW_MS || 15 * 60 * 1000));
 const groupSyncState = new Map();
@@ -568,12 +570,24 @@ const ensureStudentAccessToThread = async (context, thread) => {
   return false;
 };
 
+// The teacher/student checks rebuild class allocations, which is slow; remember a
+// successful check for a couple of minutes so every message/edit/read doesn't redo it.
+const ACCESS_CACHE_TTL_MS = 2 * 60 * 1000;
+const accessCache = new Map(); // `${userType}:${userId}:${threadId}` -> expiresAt
 const ensureChatAccessToThread = async (context, thread) => {
   const user = context?.user || context;
   const userType = String(user?.userType || '').toLowerCase();
-  if (userType === 'student') return ensureStudentAccessToThread(context, thread);
-  if (userType === 'teacher') return ensureTeacherAccessToThread(context, thread);
-  return true;
+  if (userType !== 'student' && userType !== 'teacher') return true;
+  const key = `${userType}:${user?.id || ''}:${thread?._id || ''}`;
+  if ((accessCache.get(key) || 0) > Date.now()) return true;
+  const allowed = userType === 'student'
+    ? await ensureStudentAccessToThread(context, thread)
+    : await ensureTeacherAccessToThread(context, thread);
+  if (allowed) {
+    if (accessCache.size > 5000) accessCache.clear();
+    accessCache.set(key, Date.now() + ACCESS_CACHE_TTL_MS);
+  }
+  return allowed;
 };
 
 const ensureTeacherCanAccessStudent = async (req, studentOrId) => {
@@ -641,6 +655,8 @@ const emitChatMessageEvents = (io, { threadId, thread, message, senderId }) => {
       message: payload,
     });
   }
+
+  sendChatMessagePush({ io, thread, message: payload, senderId }).catch(() => {});
 };
 
 const markThreadMessagesSeen = async ({ threadId, schoolId, campusId, userId }) => {
@@ -695,7 +711,7 @@ const ensureUserSubjectGroups = async (req, options = {}) => {
 };
 
 // GET /api/chat/me — current user's display info
-router.get('/me', async (req, res) => {
+router.get('/me', chatCache.cache, async (req, res) => {
   try {
     const { id, userType, schoolId, campusId } = req.user;
     let name = '';
@@ -844,7 +860,7 @@ router.get('/students/:studentId/profile', async (req, res) => {
       schoolId,
       ...(campusId ? { campusId } : {}),
     })
-      .select('name grade section roll studentCode fatherName motherName guardianName')
+      .select('name grade section roll studentCode fatherName motherName guardianName mobile email profilePic')
       .lean();
 
     if (!student) {
@@ -880,6 +896,9 @@ router.get('/students/:studentId/profile', async (req, res) => {
         student.roll !== undefined && student.roll !== null
           ? String(student.roll)
           : (student.studentCode || 'N/A'),
+      phone: student.mobile || '',
+      email: student.email || '',
+      photo: student.profilePic || '',
     });
   } catch (err) {
     res.status(500).json({ error: err.message });
@@ -906,7 +925,7 @@ router.get('/parents/:parentId/profile', async (req, res) => {
       schoolId,
       ...(campusId ? { campusId } : {}),
     })
-      .select('name childrenIds children schoolId campusId')
+      .select('name childrenIds children schoolId campusId mobile email')
       .lean();
 
     if (!parent) {
@@ -933,6 +952,8 @@ router.get('/parents/:parentId/profile', async (req, res) => {
     res.json({
       id: String(parent._id),
       parentName: parent.name || 'Parent',
+      phone: parent.mobile || '',
+      email: parent.email || '',
       students: normalizedStudents,
     });
   } catch (err) {
@@ -942,7 +963,7 @@ router.get('/parents/:parentId/profile', async (req, res) => {
 
 // GET /api/chat/contacts — list people you can message
 // Students see same-section classmates and assigned teachers; teachers see assigned students.
-router.get('/contacts', async (req, res) => {
+router.get('/contacts', chatCache.cache, async (req, res) => {
   try {
     const { userType } = req.user;
     const schoolId = req.schoolId || req.user?.schoolId;
@@ -1152,7 +1173,7 @@ router.get('/contacts', async (req, res) => {
 });
 
 // GET /api/chat/threads — list all threads for current user
-router.get('/threads', async (req, res) => {
+router.get('/threads', chatCache.cache, async (req, res) => {
   try {
     const userId = new mongoose.Types.ObjectId(req.user.id);
     const schoolId = req.schoolId || req.user?.schoolId;
@@ -1277,9 +1298,9 @@ router.get('/threads', async (req, res) => {
       const latestMessages = await ChatMessage.aggregate([
         {
           $match: {
-            threadId: { $in: threadIds },
-            schoolId,
-            ...(campusId !== null ? { campusId } : {}),
+            // aggregate() skips schema casting, so a string schoolId/campusId
+            // from the JWT never matched. Threads are already user-scoped.
+            threadId: { $in: threadIds.map((id) => new mongoose.Types.ObjectId(String(id))) },
           },
         },
         { $sort: { threadId: 1, createdAt: -1 } },
@@ -1636,20 +1657,28 @@ router.get('/threads/:threadId/messages', async (req, res) => {
     const allowed = await ensureChatAccessToThread(req, thread);
     if (!allowed) return res.status(403).json({ error: 'Access denied' });
 
-    const messages = await ChatMessage.find({
+    // Only the most recent messages: loading a thread's whole history made big chats slow.
+    const limit = Math.min(Math.max(Number(req.query.limit) || 200, 1), 500);
+    const messages = (await ChatMessage.find({
       threadId,
       schoolId,
       ...(campusId !== null ? { campusId } : {}),
     })
-      .sort({ createdAt: 1 })
-      .lean();
+      .sort({ createdAt: -1 })
+      .limit(limit)
+      .lean()).reverse();
 
-    // Auto-mark as read
-    await ChatThread.updateOne(
-      { _id: threadId, 'unreadCounts.userId': userId },
-      { $set: { 'unreadCounts.$.count': 0 } }
-    );
-    await markThreadMessagesSeen({ threadId, schoolId, campusId, userId });
+    // Auto-mark as read without awaiting, so it doesn't delay showing the messages.
+    // (Started here rather than on 'finish' so it keeps this request's tenant context.)
+    {
+      Promise.all([
+        ChatThread.updateOne(
+          { _id: threadId, 'unreadCounts.userId': userId },
+          { $set: { 'unreadCounts.$.count': 0 } }
+        ),
+        markThreadMessagesSeen({ threadId, schoolId, campusId, userId }),
+      ]).catch(() => {});
+    }
 
     logStudentPortalEvent(req, {
       feature: 'chat',
@@ -1695,10 +1724,21 @@ router.get('/threads/:threadId/presence', async (req, res) => {
     if (!allowed) return res.status(403).json({ error: 'Access denied' });
 
     const presence = {};
+    const missingByType = { student: [], teacher: [], parent: [] };
     (thread.participants || []).forEach((participant) => {
       const pid = String(participant.userId || '');
       if (!pid) return;
       presence[pid] = getPresenceSnapshot(pid);
+      const type = String(participant.userType || '').toLowerCase();
+      if (!presence[pid].online && !presence[pid].lastSeen && missingByType[type]) missingByType[type].push(pid);
+    });
+    const storedModels = { student: StudentUser, teacher: TeacherUser, parent: ParentUser };
+    const stored = await Promise.all(Object.entries(missingByType)
+      .filter(([, ids]) => ids.length)
+      .map(([type, ids]) => storedModels[type].find({ _id: { $in: ids } }).select('_id lastActiveAt lastLoginAt').lean()));
+    stored.flat().forEach((doc) => {
+      const at = doc.lastActiveAt || doc.lastLoginAt;
+      if (at) presence[String(doc._id)] = { ...presence[String(doc._id)], lastSeen: at };
     });
 
     logStudentPortalEvent(req, {

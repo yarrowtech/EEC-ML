@@ -18,6 +18,8 @@ const excuseLetterSchema = new mongoose.Schema(
     dateTo: { type: Date, required: true },
     reason: { type: String, required: true },
     reasonType: { type: String, default: 'other' },
+    // Free-text reason the parent typed when they picked "Other".
+    customReasonType: { type: String, default: '', trim: true, maxlength: 60 },
     additionalNotes: { type: String, default: '' },
     emergencyContact: { type: String, default: '' },
     status: { type: String, enum: ['pending', 'approved', 'rejected'], default: 'pending', index: true },

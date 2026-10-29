@@ -1278,7 +1278,7 @@ const Routines = ({ setShowAdminHeader }) => {
     setTimeout(() => setToast(t => ({ ...t, show: false })), 3000);
   }, []);
 
-  useEffect(() => { setShowAdminHeader?.(false); }, [setShowAdminHeader]);
+  useEffect(() => { setShowAdminHeader?.(true); }, [setShowAdminHeader]);
 
   const loadInitialData = async () => {
     setLoading(true); setError(null);
@@ -1403,6 +1403,34 @@ const Routines = ({ setShowAdminHeader }) => {
 
   /* ── save cell ── */
   const saveCellData = async (classId, sectionId, day, periodData) => {
+    // Clash detection (`dayConflicts`) was previously display-only — it only
+    // warned *after* a save, via a banner computed from already-persisted
+    // data. Nothing stopped an admin from double-booking the same teacher
+    // into two different classes at the same time slot. Check here, before
+    // the request goes out, and make the admin confirm if so.
+    if (!periodData.clear && periodData.subject !== 'Break' && periodData.teacher) {
+      const names = periodData.teacher.split(/[&,]/).map(t => t.trim().toUpperCase()).filter(Boolean);
+      const clashingRows = classSectionRows.filter(row => {
+        if (String(row.classId) === String(classId) && String(row.sectionId || '') === String(sectionId || '')) return false;
+        const cell = getCell(row.classId, row.sectionId, day, periodData.startTime);
+        if (!cell || !cell.teacher || cell.teacher === '-' || cell.isBreak) return false;
+        const cellNames = cell.teacher.split(/[&,]/).map(t => t.trim().toUpperCase()).filter(Boolean);
+        return cellNames.some(n => names.includes(n));
+      });
+      if (clashingRows.length > 0) {
+        const clashList = clashingRows.map(row => `${row.className}${row.sectionName ? ' - ' + row.sectionName : ''}`).join(', ');
+        const confirm = await Swal.fire({
+          icon: 'warning',
+          title: 'Teacher already scheduled',
+          html: `<strong>${periodData.teacher}</strong> is already assigned to <strong>${clashList}</strong> at this same time slot.<br/>Save anyway?`,
+          showCancelButton: true,
+          confirmButtonText: 'Save anyway',
+          confirmButtonColor: '#ef4444',
+          cancelButtonColor: '#6b7280',
+        });
+        if (!confirm.isConfirmed) return;
+      }
+    }
     setSaving(true);
     try {
       const r = routines.find(rt =>
@@ -1623,7 +1651,7 @@ const Routines = ({ setShowAdminHeader }) => {
       </AnimatePresence>
 
       {/* ── Topbar ── */}
-      <div className="sticky top-0 z-40 bg-white border-b border-slate-200 shadow-sm safe-top">
+      <div className="sticky top-0 z-20 bg-white border-b border-slate-200 shadow-sm safe-top">
         {/* Row 1: brand + actions */}
         <div className="max-w-[1560px] mx-auto px-3 sm:px-6 py-2.5 sm:py-3 flex items-center justify-between gap-3">
           <div className="flex items-center gap-2.5 min-w-0">
@@ -1655,7 +1683,7 @@ const Routines = ({ setShowAdminHeader }) => {
         {/* Row 2: view tabs + filters + school timing */}
         <div className="max-w-[1560px] mx-auto px-3 sm:px-6 py-2 flex flex-col sm:flex-row items-stretch sm:items-center gap-3 sm:gap-4 sm:flex-wrap border-t border-slate-100">
           {/* View tabs */}
-          <div className="flex gap-1 p-1 rounded-xl bg-slate-100 w-full sm:w-auto shrink-0">
+          <div className="flex gap-1 p-1 rounded-full bg-slate-100 w-full sm:w-auto shrink-0">
             {[
               { key: 'dayGrid',     icon: <LayoutGrid size={13} />, label: 'Day Grid' },
               { key: 'classView',   icon: <BookOpen   size={13} />, label: 'By Class' },
@@ -1663,7 +1691,7 @@ const Routines = ({ setShowAdminHeader }) => {
             ].map(tab => (
               <Motion.button key={tab.key} onClick={() => setCurrentView(tab.key)}
                 whileTap={{ scale: 0.97 }}
-                className="flex flex-1 sm:flex-none items-center justify-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold transition-all"
+                className="flex flex-1 sm:flex-none items-center justify-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-semibold transition-all"
                 style={{
                   background: currentView === tab.key ? '#fff' : 'transparent',
                   color: currentView === tab.key ? '#4f46e5' : '#64748b',

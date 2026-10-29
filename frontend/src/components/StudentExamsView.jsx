@@ -73,8 +73,14 @@ const useCountdown = (target) => {
   const compute = useCallback(() => calcTimeLeft(target), [target]);
   const [t, setT] = useState(compute);
   useEffect(() => {
-    setT(compute());
-    const id = setInterval(() => setT(compute()), 1000);
+    const next = compute();
+    setT(next);
+    if (next === null) return undefined;
+    const id = setInterval(() => {
+      const updated = compute();
+      if (updated === null) clearInterval(id);
+      setT(updated);
+    }, 1000);
     return () => clearInterval(id);
   }, [compute]);
   return t;

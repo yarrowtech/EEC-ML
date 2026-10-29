@@ -14,6 +14,7 @@ import {
   Hash,
   BookOpen,
   Search,
+  ListFilter,
   Plus,
   Edit2,
   MoreVertical,
@@ -43,6 +44,10 @@ import {
   Loader2,
   CalendarDays,
   Wallet,
+  Edit3Icon,
+  Edit,
+  Info,
+  BadgeInfo,
 } from "lucide-react";
 import StudentEnrollWizard, { DocPreviewModal, getStudentDataGaps } from "./components/StudentEnrollWizard";
 import Swal from "sweetalert2";
@@ -216,6 +221,7 @@ const Students = ({ setShowAdminHeader }) => {
   const [studentsLoadError, setStudentsLoadError] = useState(null);
   const [tableRefreshing, setTableRefreshing] = useState(false);
   const [searchTerm, setSearchTerm] = useState("");
+  const [showMobileFilters, setShowMobileFilters] = useState(false);
   const [showAddForm, setShowAddForm] = useState(false);
   const [showWellbeingModal, setShowWellbeingModal] = useState(false);
   const [selectedStudent, setSelectedStudent] = useState(null);
@@ -290,6 +296,13 @@ const Students = ({ setShowAdminHeader }) => {
   const [newStudent, setNewStudent] = useState(() => ({ ...INITIAL_NEW_STUDENT }));
 
   const [currentPage, setCurrentPage] = useState(1);
+
+  // Changing page must show the new page from its first row, not keep the
+  // previous page's scroll offset (which left you at the bottom of page 2).
+  useEffect(() => {
+    const el = tableBodyScrollRef.current;
+    if (el) el.scrollTop = 0;
+  }, [currentPage]);
 
   /* -------------------- Derived -------------------- */
   const filteredStudents = useMemo(() => {
@@ -773,7 +786,7 @@ const Students = ({ setShowAdminHeader }) => {
 
     try {
     const [studentsResult, parentsResult, invoicesResult] = await Promise.allSettled([
-      fetch(`${API_BASE}/api/admin/users/get-students`, {
+      fetch(`${API_BASE}/api/admin/users/get-students${useCache ? '' : '?fresh=1'}`, {
         method: "GET",
         headers: {
           "Content-Type": "application/json",
@@ -897,12 +910,10 @@ const Students = ({ setShowAdminHeader }) => {
       setStudentsLoadError(null);
       setStudentData(withFees);
       try {
-        if (withFees.length > 0) {
-          sessionStorage.setItem(
-            getStudentsCacheKey(),
-            JSON.stringify({ students: withFees, parents, cachedAt: Date.now() })
-          );
-        }
+        sessionStorage.setItem(
+          getStudentsCacheKey(),
+          JSON.stringify({ students: withFees, parents, cachedAt: Date.now() })
+        );
       } catch (err) {
         console.warn("Unable to cache students data", err);
       }
@@ -961,12 +972,10 @@ const Students = ({ setShowAdminHeader }) => {
     setStudentsLoadError(null);
     setStudentData(enriched);
     try {
-      if (enriched.length > 0) {
-        sessionStorage.setItem(
-          getStudentsCacheKey(),
-          JSON.stringify({ students: enriched, parents, cachedAt: Date.now() })
-        );
-      }
+      sessionStorage.setItem(
+        getStudentsCacheKey(),
+        JSON.stringify({ students: enriched, parents, cachedAt: Date.now() })
+      );
     } catch (err) {
       console.warn("Unable to cache students data", err);
     }
@@ -1655,9 +1664,55 @@ const Students = ({ setShowAdminHeader }) => {
     setShowAddForm(true);
   };
 
+  // Dashboard "Add Student" quick action links here with ?add=1 — open the
+  // form straight away, then drop the flag so a refresh doesn't reopen it.
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search);
+    if (params.get("add") !== "1") return;
+    startNewEnrollment();
+    params.delete("add");
+    const qs = params.toString();
+    window.history.replaceState(window.history.state, "", `${window.location.pathname}${qs ? `?${qs}` : ""}`);
+  }, []);
+
   // Open the multi-step wizard pre-filled with an existing student, in edit mode.
   // Applies a normalized student record into the wizard's form + selector state.
   const applyEditSource = useCallback((src) => {
+    // Older records never had guardianType/guardianRelation saved even though
+    // a father/mother/guardian was clearly filled in — infer which one the
+    // guardian fields actually belong to (by phone, falling back to name) so
+    // step 3 shows that card selected and its relation pre-picked instead of
+    // looking like no guardian was ever chosen.
+    let inferredGuardianType = src.guardianType || "";
+    let inferredGuardianRelation = src.guardianRelation || "";
+    if (!inferredGuardianType) {
+      const guardianPhoneDigits = String(src.guardianPhone || "").replace(/\D/g, "");
+      const guardianNameNorm = String(src.guardianName || "").trim().toLowerCase();
+      const fatherPhoneDigits = String(src.fatherPhone || "").replace(/\D/g, "");
+      const motherPhoneDigits = String(src.motherPhone || "").replace(/\D/g, "");
+      const fatherNameNorm = String(src.fatherName || "").trim().toLowerCase();
+      const motherNameNorm = String(src.motherName || "").trim().toLowerCase();
+      if (guardianPhoneDigits && guardianPhoneDigits === fatherPhoneDigits) {
+        inferredGuardianType = "father";
+      } else if (guardianPhoneDigits && guardianPhoneDigits === motherPhoneDigits) {
+        inferredGuardianType = "mother";
+      } else if (guardianNameNorm && guardianNameNorm === fatherNameNorm) {
+        inferredGuardianType = "father";
+      } else if (guardianNameNorm && guardianNameNorm === motherNameNorm) {
+        inferredGuardianType = "mother";
+      } else {
+        const linkedParent = parentDirectory.find((p) => {
+          const ids = Array.isArray(p.childrenIds) ? p.childrenIds : [];
+          return ids.some((id) => extractLinkedStudentId(id) === String(src._id || ""));
+        });
+        if (linkedParent) inferredGuardianType = "existing";
+      }
+      if (!inferredGuardianRelation) {
+        if (inferredGuardianType === "father") inferredGuardianRelation = "Father";
+        else if (inferredGuardianType === "mother") inferredGuardianRelation = "Mother";
+      }
+    }
+
     setNewStudent((prev) => ({
       ...prev,
       ...src,
@@ -1665,7 +1720,8 @@ const Students = ({ setShowAdminHeader }) => {
       pincode: src.pincode || src.pinCode || "",
       photograph: src.photograph || src.profilePic || "",
       hasPreviousSchool: src.hasPreviousSchool || (src.previousSchoolName ? "yes" : "no"),
-      guardianType: src.guardianType || "",
+      guardianType: inferredGuardianType,
+      guardianRelation: inferredGuardianRelation,
       status: src.status || "Active",
       approvalStatus: src.approvalStatus || "Approved",
       admissionType: src.admissionType || "New Admission",
@@ -1680,7 +1736,7 @@ const Students = ({ setShowAdminHeader }) => {
     setSelectedAcademicYearId(yr ? String(yr._id) : "");
     setSelectedClassId(cls ? String(cls._id) : "");
     setSelectedSectionId(sec ? String(sec._id) : "");
-  }, [academicClasses, academicYears, academicSections]);
+  }, [academicClasses, academicYears, academicSections, parentDirectory]);
 
   const openEditWizard = (student) => {
     if (!student?._id) return;
@@ -1691,8 +1747,15 @@ const Students = ({ setShowAdminHeader }) => {
     const src = normalizeStudentForEdit(student);
     setNewStudent({ ...INITIAL_NEW_STUDENT, ...src });
     applyEditSource(src);
-    setSelectedExistingParent(null);
-    setParentSearchTerm("");
+    // If this student already has a linked parent account, preselect it so
+    // step 3 shows it as the chosen guardian (and its relation) instead of
+    // looking like no guardian was ever picked.
+    const linkedParent = parentDirectory.find((p) => {
+      const ids = Array.isArray(p.childrenIds) ? p.childrenIds : [];
+      return ids.some((id) => extractLinkedStudentId(id) === String(student._id || ""));
+    }) || null;
+    setSelectedExistingParent(linkedParent);
+    setParentSearchTerm(linkedParent ? (linkedParent.name || linkedParent.username || "") : "");
     setActiveDraftId(null);
     setEditingStudentId(student._id);
     setResumeStep(0);
@@ -2224,6 +2287,49 @@ const Students = ({ setShowAdminHeader }) => {
     };
   };
 
+  // Small copy-to-clipboard button for a plain ID value (Student ID / Parent
+  // ID) — same icon set / wiring pattern as buildCredentialPasswordBlock's
+  // password copy button, just without the show/hide toggle.
+  const buildCredentialIdRow = (label, value, idPrefix) => {
+    const valueId = `swal-${idPrefix}-value`;
+    const copyId = `swal-${idPrefix}-copy`;
+    const copyBtnBaseClasses = ["border-gray-200", "bg-gray-50", "text-gray-600", "hover:bg-gray-100"];
+    const copyBtnSuccessClasses = ["border-emerald-200", "bg-emerald-50", "text-emerald-600"];
+    const copyBtnClass = `inline-flex items-center gap-1.5 rounded-lg border px-2.5 py-1.5 text-xs font-semibold active:scale-95 transition-all ${copyBtnBaseClasses.join(" ")}`;
+    const hasValue = value && value !== "-";
+    return {
+      html: `
+        <div>
+          <div class="text-xs font-semibold text-gray-500 uppercase">${escapeHtml(label)}</div>
+          <div class="flex items-center gap-2 mt-1">
+            <div class="font-mono text-sm text-gray-900" id="${valueId}">${escapeHtml(value)}</div>
+            ${hasValue ? `<button type="button" id="${copyId}" class="${copyBtnClass}">${CRED_ICON_COPY}<span>Copy</span></button>` : ""}
+          </div>
+        </div>
+      `,
+      wire: () => {
+        if (!hasValue) return;
+        const copyBtn = document.getElementById(copyId);
+        if (!copyBtn) return;
+        copyBtn.addEventListener("click", async () => {
+          try {
+            await navigator.clipboard.writeText(value);
+            copyBtn.innerHTML = `${CRED_ICON_CHECK}<span>Copied!</span>`;
+            copyBtn.classList.remove(...copyBtnBaseClasses);
+            copyBtn.classList.add(...copyBtnSuccessClasses);
+            setTimeout(() => {
+              copyBtn.innerHTML = `${CRED_ICON_COPY}<span>Copy</span>`;
+              copyBtn.classList.remove(...copyBtnSuccessClasses);
+              copyBtn.classList.add(...copyBtnBaseClasses);
+            }, 1500);
+          } catch {
+            copyBtn.innerHTML = `${CRED_ICON_X}<span>Failed</span>`;
+          }
+        });
+      },
+    };
+  };
+
   const handleViewStudentCredentials = (student) => {
     if (!student) return;
     const loginId = student.username || student.studentCode || "-";
@@ -2239,29 +2345,40 @@ const Students = ({ setShowAdminHeader }) => {
     const parentId = parent?.username || parent?.userId || "-";
     const parentResetAt = parent?.lastLoginAt ? new Date(parent.lastLoginAt) : null;
 
+    const studentIdBlock = buildCredentialIdRow("Student ID", loginId, "sid");
+    const parentIdBlock = buildCredentialIdRow("Parent ID", parentId, "pid");
     const studentBlock = buildCredentialPasswordBlock("Password", studentResetAt, student.initialPassword, "spw");
     const parentBlock = buildCredentialPasswordBlock("Parent Password", parentResetAt, parent?.initialPassword, "ppw");
 
+    const photoUrl = isSafeImageUrl(student.profilePic) ? student.profilePic : "";
+    const classSectionRoll = [
+      [student.class || student.grade, student.section].filter(Boolean).join(" - "),
+      student.roll ? `Roll ${student.roll}` : "",
+    ].filter(Boolean).join(" · ");
+
     Swal.fire({
-      icon: "info",
       title: "Student Credentials",
       html: `
         <div class="text-left space-y-3">
-          <div>
-            <div class="text-xs font-semibold text-gray-500 uppercase">Student ID</div>
-            <div class="font-mono text-sm text-gray-900">${escapeHtml(loginId)}</div>
+          <div class="flex flex-col items-center gap-1 pb-2">
+            ${photoUrl
+              ? `<img src="${photoUrl}" alt="${escapeHtml(student.name || "Student")}" class="h-16 w-16 rounded-full object-cover border border-gray-200" />`
+              : `<div class="h-16 w-16 rounded-full bg-gray-100 border border-gray-200 flex items-center justify-center text-xl font-bold text-gray-300">${escapeHtml((student.name || "?").charAt(0))}</div>`
+            }
+            <div class="text-sm font-semibold text-gray-900">${escapeHtml(student.name || "Student")}</div>
+            ${classSectionRoll ? `<div class="text-xs text-gray-500">${escapeHtml(classSectionRoll)}</div>` : ""}
           </div>
+          ${studentIdBlock.html}
           ${studentBlock.html}
           <div class="pt-2 border-t border-gray-200"></div>
-          <div>
-            <div class="text-xs font-semibold text-gray-500 uppercase">Parent ID</div>
-            <div class="font-mono text-sm text-gray-900">${escapeHtml(parentId)}</div>
-          </div>
+          ${parentIdBlock.html}
           ${parentBlock.html}
         </div>
       `,
       confirmButtonColor: "#EAB308",
       didOpen: () => {
+        studentIdBlock.wire();
+        parentIdBlock.wire();
         studentBlock.wire();
         parentBlock.wire();
       },
@@ -3881,7 +3998,12 @@ const Students = ({ setShowAdminHeader }) => {
     // container instead of the whole page scrolling.
     // ── Adjust the table area height here: bump the subtracted px to make it
     //    shorter (63.4px = AdminHeader; the extra ~30px leaves a bottom gap).
-    <div className="page-fade-in flex h-[calc(100dvh-94px)] flex-col overflow-hidden bg-gray-50">
+    // Tablet widths (md: 768–1024px) wrap the Add/Demo/Select All/Refresh
+    // button row onto two lines, eating extra height the base offset doesn't
+    // account for — without a bigger subtraction here that overflow drags the
+    // whole page into a second, outer scrollbar instead of staying contained
+    // in the table's own scroll area.
+    <div className="page-fade-in flex h-[calc(100dvh-94px)] md:h-[calc(100dvh-150px)] lg:h-[calc(100dvh-94px)] flex-col overflow-hidden bg-gray-50">
       <div className="w-full flex-1 flex flex-col p-3 md:p-5 lg:p-6 overflow-hidden text-sm md:text-base">
         {/* Header */}
         <div className="flex flex-col sm:flex-wrap gap-3 sm:justify-between sm:items-center mb-1 flex-shrink-0">
@@ -3893,7 +4015,7 @@ const Students = ({ setShowAdminHeader }) => {
               Manage and monitor all enrolled students
             </p>
           </div>
-          <div className="flex flex-wrap gap-2 w-full sm:w-auto justify-stretch sm:justify-start">
+          <div className="flex flex-wrap gap-2 w-full sm:w-auto justify-stretch sm:justify-center">
             <button
               onClick={startNewEnrollment}
               className="bg-amber-500 text-white px-3 py-2 rounded-full hover:bg-amber-600 flex items-center gap-2 text-sm flex-1 sm:flex-none justify-center transition"
@@ -3937,38 +4059,6 @@ const Students = ({ setShowAdminHeader }) => {
 
             
            
-            {selectedStudentIds.length > 0 && (
-              <button
-                onClick={handleBulkArchiveStudents}
-                disabled={isArchiving}
-                className="bg-blue-600 text-white px-3 py-2 rounded-full hover:bg-blue-700 disabled:opacity-60 flex items-center gap-2 text-sm flex-1 sm:flex-none justify-center transition"
-                title={`Archive ${selectedStudentIds.length} selected student(s)`}
-              >
-                <Archive size={15} />
-                {/* {isArchiving ? "Archiving..." : `Archive (${selectedStudentIds.length})`} */}
-                {isArchiving ? "Archiving..." : `Archive All`}
-              </button>
-            )}
-            {selectedStudentIds.length > 0 && (
-              <button
-                onClick={handleBulkDeleteStudents}
-                disabled={isBulkDeleting}
-                className="relative overflow-hidden bg-red-500 text-white px-3 py-2 rounded-full hover:bg-red-600 disabled:opacity-100 flex items-center gap-2 text-sm flex-1 sm:flex-none justify-center transition min-w-[130px]"
-                title={`Delete ${selectedStudentIds.length} selected student(s)`}
-              >
-                {isBulkDeleting && (
-                  <span
-                    className="absolute inset-y-0 left-0 bg-red-700/60 transition-all duration-200 ease-out"
-                    style={{ width: `${deleteProgress}%` }}
-                  />
-                )}
-                <span className="relative flex items-center gap-2">
-                  {isBulkDeleting ? <Loader2 size={15} className="animate-spin" /> : <Trash2 size={15} />}
-                  {/* {isBulkDeleting ? `Deleting... ${deleteProgress}%` : `Delete (${selectedStudentIds.length})`} */}
-                  {isBulkDeleting ? `Deleting... ${deleteProgress}%` : `Delete All`}
-                </span>
-              </button>
-            )}
             <button
               onClick={() => setShowDraftsModal(true)}
               className="relative border border-gray-200 bg-white text-gray-700 px-3 py-2 rounded-full hover:bg-gray-50 flex items-center gap-2 text-sm flex-1 sm:flex-none justify-center transition"
@@ -4001,6 +4091,40 @@ const Students = ({ setShowAdminHeader }) => {
               {/* {isAllFilteredSelected ? "Deselect All" : `Select All (${filteredStudentIds.length})`} */ }
               {isAllFilteredSelected ? "Deselect All" : `Select All`}
             </button>
+            {/* Only meaningful once something is selected — grouped right next
+                to Select All / Deselect All instead of sitting earlier in the
+                row, where their appearing/disappearing used to reflow and
+                misalign every button after them. */}
+            {selectedStudentIds.length > 0 && (
+              <button
+                onClick={handleBulkArchiveStudents}
+                disabled={isArchiving}
+                className="bg-blue-600 text-white px-3 py-2 rounded-full hover:bg-blue-700 disabled:opacity-60 flex items-center gap-2 text-sm flex-1 sm:flex-none justify-center transition"
+                title={`Archive ${selectedStudentIds.length} selected student(s)`}
+              >
+                <Archive size={15} />
+                {isArchiving ? "Archiving..." : `Archive All`}
+              </button>
+            )}
+            {selectedStudentIds.length > 0 && (
+              <button
+                onClick={handleBulkDeleteStudents}
+                disabled={isBulkDeleting}
+                className="relative overflow-hidden bg-red-500 text-white px-3 py-2 rounded-full hover:bg-red-600 disabled:opacity-100 flex items-center gap-2 text-sm flex-1 sm:flex-none justify-center transition min-w-[130px]"
+                title={`Delete ${selectedStudentIds.length} selected student(s)`}
+              >
+                {isBulkDeleting && (
+                  <span
+                    className="absolute inset-y-0 left-0 bg-red-700/60 transition-all duration-200 ease-out"
+                    style={{ width: `${deleteProgress}%` }}
+                  />
+                )}
+                <span className="relative flex items-center gap-2">
+                  {isBulkDeleting ? <Loader2 size={15} className="animate-spin" /> : <Trash2 size={15} />}
+                  {isBulkDeleting ? `Deleting... ${deleteProgress}%` : `Delete All`}
+                </span>
+              </button>
+            )}
             <button
               onClick={handleRefreshTableData}
               disabled={tableRefreshing || bulkBusy}
@@ -4008,7 +4132,10 @@ const Students = ({ setShowAdminHeader }) => {
               title={bulkBusy ? "Unavailable while a bulk job is running" : "Refresh students table data"}
             >
               {tableRefreshing ? <Loader2 size={15} className="animate-spin" /> : <RotateCcw size={15} />}
-              {tableRefreshing ? "Refreshing..." : "Refresh"}
+              {/* Icon-only on tablet widths (md: 768–1024px) to save header
+                  space — full label on mobile (buttons stack, room is fine)
+                  and back on desktop (lg+). */}
+              <span className="md:hidden lg:inline">{tableRefreshing ? "Refreshing..." : "Refresh"}</span>
             </button>
           </div>
         </div>
@@ -4110,59 +4237,84 @@ const Students = ({ setShowAdminHeader }) => {
 
           {/* Filter Bar */}
           <div className="mb-1 p-3 md:p-4 flex-shrink-0  ">
-            <div className="flex flex-wrap items-center gap-3">
-              {/* Search */}
-              <div className="flex-1 min-w-[200px] relative">
-                <Search size={16} className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" />
-                <input
-                  type="text"
-                  placeholder="Search by name, roll, email, or username..."
-                  className="w-full pl-9 pr-4 py-2 bg-white border border-gray-200 rounded-full focus:outline-none focus:ring-1 focus:rounded-full focus:ring-yellow-500 text-sm"
-                  value={searchTerm}
-                  onChange={(e) => setSearchTerm(e.target.value)}
-                />
+            {/* Search gets its own full-width row on mobile/tablet (below lg,
+                i.e. up to 1024px) — squeezing it down to min-w-[200px] next to
+                the filter selects on a tablet-width screen left it cramped
+                and wrapping awkwardly. Desktop (lg+) keeps the single row. */}
+            <div className="flex flex-col lg:flex-row lg:items-center gap-3">
+              {/* Search (+ filter toggle below lg — the selects collapse behind it on mobile/tablet) */}
+              <div className="flex w-full items-center gap-2 lg:flex-1 lg:min-w-[200px]">
+                <div className="relative min-w-0 flex-1">
+                  <Search size={16} className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" />
+                  <input
+                    type="text"
+                    placeholder="Search by name, roll, email, or username..."
+                    className="w-full pl-9 pr-4 py-2 bg-white border border-gray-200 rounded-full focus:outline-none focus:ring-1 focus:rounded-full focus:ring-yellow-500 text-sm"
+                    value={searchTerm}
+                    onChange={(e) => setSearchTerm(e.target.value)}
+                  />
+                </div>
+                <button
+                  type="button"
+                  onClick={() => setShowMobileFilters((v) => !v)}
+                  className={`lg:hidden relative flex h-9 w-9 shrink-0 items-center justify-center rounded-full border transition-colors ${
+                    showMobileFilters
+                      ? 'border-rose-200 bg-rose-50 text-rose-600 hover:bg-rose-100'
+                      : 'border-gray-200 bg-white text-gray-600 hover:bg-gray-50'
+                  }`}
+                  aria-label={showMobileFilters ? 'Close filters' : 'Show filters'}
+                  aria-expanded={showMobileFilters}
+                  title={showMobileFilters ? 'Close filters' : 'Show filters'}
+                >
+                  {showMobileFilters ? <X size={16} /> : <ListFilter size={16} />}
+                  {!showMobileFilters && (classFilter || sectionFilter) && (
+                    <span className="absolute -right-0.5 -top-0.5 h-2.5 w-2.5 rounded-full border-2 border-white bg-yellow-500" />
+                  )}
+                </button>
               </div>
 
-              {/* Session Filter */}
-              <select
-                value={sessionFilter}
-                onChange={(e) => { setSessionFilter(e.target.value); setClassFilter(""); setSectionFilter(""); }}
-                disabled={!sessionOptions.length}
-                className="bg-white border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-yellow-500 min-w-[140px]"
-              >
-                {!sessionOptions.length && <option value="">No Active Session</option>}
-                {sessionOptions.map((s) => <option key={s} value={s}>{s}</option>)}
-              </select>
-
-              {/* Class Filter */}
-              <select
-                value={classFilter}
-                onChange={(e) => { setClassFilter(e.target.value); setSectionFilter(""); }}
-                className="bg-white border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-yellow-500 min-w-[130px]"
-              >
-                <option value="">All Classes</option>
-                {classOptions.map((c) => <option key={c} value={c}>{c}</option>)}
-              </select>
-
-              {/* Section Filter */}
-              <select
-                value={sectionFilter}
-                onChange={(e) => setSectionFilter(e.target.value)}
-                className="bg-white border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-yellow-500 min-w-[130px]"
-              >
-                <option value="">All Sections</option>
-                {sectionOptions.map((s) => <option key={s} value={s}>{s}</option>)}
-              </select>
-
-              {/* Reset */}
-              {(sessionFilter || classFilter || sectionFilter || searchTerm) && (
-                <button
-                  onClick={() => { setSessionFilter(""); setClassFilter(""); setSectionFilter(""); setSearchTerm(""); }}
-                  className="inline-flex items-center gap-1 px-3 py-2 text-sm text-gray-600 hover:text-gray-800 hover:bg-gray-100 rounded-lg transition-colors"
+              <div className={`${showMobileFilters ? 'flex' : 'hidden'} lg:flex flex-wrap items-center justify-center lg:justify-start gap-3`}>
+                {/* Session Filter */}
+                <select
+                  value={sessionFilter}
+                  onChange={(e) => { setSessionFilter(e.target.value); setClassFilter(""); setSectionFilter(""); }}
+                  disabled={!sessionOptions.length}
+                  className="bg-white border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-yellow-500 min-w-[140px]"
                 >
-                  <X size={14} /> Clear
-                </button>
-              )}
+                  {!sessionOptions.length && <option value="">No Active Session</option>}
+                  {sessionOptions.map((s) => <option key={s} value={s}>{s}</option>)}
+                </select>
+
+                {/* Class Filter */}
+                <select
+                  value={classFilter}
+                  onChange={(e) => { setClassFilter(e.target.value); setSectionFilter(""); }}
+                  className="bg-white border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-yellow-500 min-w-[130px]"
+                >
+                  <option value="">All Classes</option>
+                  {classOptions.map((c) => <option key={c} value={c}>{c}</option>)}
+                </select>
+
+                {/* Section Filter */}
+                <select
+                  value={sectionFilter}
+                  onChange={(e) => setSectionFilter(e.target.value)}
+                  className="bg-white border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-yellow-500 min-w-[130px]"
+                >
+                  <option value="">All Sections</option>
+                  {sectionOptions.map((s) => <option key={s} value={s}>{s}</option>)}
+                </select>
+
+                {/* Reset */}
+                {(sessionFilter || classFilter || sectionFilter || searchTerm) && (
+                  <button
+                    onClick={() => { setSessionFilter(""); setClassFilter(""); setSectionFilter(""); setSearchTerm(""); }}
+                    className="inline-flex items-center gap-1 px-3 py-2 text-sm text-gray-600 hover:text-gray-800 hover:bg-gray-100 rounded-lg transition-colors"
+                  >
+                    <X size={14} /> Clear
+                  </button>
+                )}
+              </div>
             </div>
 
             {/* Active filter tags */}
@@ -4276,7 +4428,7 @@ const Students = ({ setShowAdminHeader }) => {
                     <col style={{ width: "5%" }} /><col style={{ width: "24%" }} /><col style={{ width: "14%" }} />
                     <col style={{ width: "12%" }} /><col style={{ width: "18%" }} /><col style={{ width: "27%" }} />
                   </colgroup>
-                  <tbody className={tableRefreshing || isImporting ? "opacity-70 animate-pulse" : ""}>
+                  <tbody className={isImporting ? "opacity-70 animate-pulse" : ""}>
                     {studentsLoadError && studentData.length === 0 ? (
                       <tr>
                         <td colSpan={6} className="px-4 pt-16 pb-6">
@@ -4292,10 +4444,10 @@ const Students = ({ setShowAdminHeader }) => {
                           </div>
                         </td>
                       </tr>
-                    ) : studentsLoading && studentData.length === 0 ? (
+                    ) : (studentsLoading && studentData.length === 0) || tableRefreshing ? (
                       <>
                         <tr>
-                          <td colSpan={6} className="px-4 pt-16 pb-6">
+                          <td colSpan={6} className={tableRefreshing ? "px-4 py-10" : "px-4 pt-16 pb-6"}>
                             <div className="flex flex-col items-center justify-center gap-4">
                               <span className="relative flex h-12 w-12 items-center justify-center">
                                 <span className="absolute inset-0 rounded-full border-[3px] border-amber-100" />
@@ -4304,17 +4456,17 @@ const Students = ({ setShowAdminHeader }) => {
                               </span>
                               <div className="text-center">
                                 <p className="text-sm font-semibold text-gray-700">
-                                  Loading student data
+                                  {tableRefreshing ? "Refreshing student data" : "Loading student data"}
                                   <span className="loading-dots" />
                                 </p>
                                 <p className="mt-1 text-xs text-gray-400">
-                                  This can take a moment on the first visit
+                                  {tableRefreshing ? "Fetching the latest records" : "This can take a moment on the first visit"}
                                 </p>
                               </div>
                             </div>
                           </td>
                         </tr>
-                        {Array.from({ length: 5 }).map((_, i) => (
+                        {!tableRefreshing && Array.from({ length: 5 }).map((_, i) => (
                           <tr key={`student-skeleton-${i}`} className="animate-pulse">
                             <td className="px-2 py-3.5"><div className="h-4 w-4 rounded bg-gray-100" /></td>
                             <td className="px-2 py-3.5">
@@ -4374,9 +4526,17 @@ const Students = ({ setShowAdminHeader }) => {
                             }}
                           >
                             <div className="flex items-center gap-2">
-                              <div className="w-7 h-7 rounded-full bg-gradient-to-br from-amber-100 to-yellow-200 flex items-center justify-center text-xs font-semibold text-amber-700 flex-shrink-0">
-                                {student.name?.charAt(0) || "?"}
-                              </div>
+                              {isSafeImageUrl(student.profilePic) ? (
+                                <img
+                                  src={student.profilePic}
+                                  alt={student.name || "Student"}
+                                  className="w-7 h-7 rounded-full object-cover flex-shrink-0 ring-1 ring-amber-100"
+                                />
+                              ) : (
+                                <div className="w-7 h-7 rounded-full bg-gradient-to-br from-amber-100 to-yellow-200 flex items-center justify-center text-xs font-semibold text-amber-700 flex-shrink-0">
+                                  {student.name?.charAt(0) || "?"}
+                                </div>
+                              )}
                               <div className="min-w-0 flex-1">
                                 <div className="font-medium text-gray-900 text-xs truncate hover:text-amber-600 transition flex items-center gap-1">
                                   {studentGaps.length > 0 && (
@@ -4529,7 +4689,7 @@ const Students = ({ setShowAdminHeader }) => {
                                 className="inline-flex items-center px-1.5 py-1 text-blue-600 hover:bg-blue-50 rounded-md text-xs transition"
                                 title="View Details"
                               >
-                                <Eye size={14} />
+                                <BadgeInfo size={14} />
                               </button>
                               <button
                                 onClick={(e) => {
@@ -4539,7 +4699,7 @@ const Students = ({ setShowAdminHeader }) => {
                                 className="inline-flex items-center px-1.5 py-1 text-gray-500 hover:bg-gray-100 rounded-md text-xs transition"
                                 title="Edit Student"
                               >
-                                <Edit2 size={14} />
+                                <Edit size={14} />
                               </button>
                               <button
                                 onClick={(e) => {
@@ -4612,7 +4772,7 @@ const Students = ({ setShowAdminHeader }) => {
             </div>
 
             {/* Pagination */}
-              <div className="mt-1 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between flex-shrink-0 pt-3 border-t border-gray-100 px-1">
+              <div className="mt-1 flex  gap-3 sm:flex-col lg:flex-row sm:items-center sm:justify-between flex-shrink-0 pt-3 border-t border-gray-100 px-1">
                 <p className="text-gray-500 text-xs">
                   {filteredStudents.length === 0
                     ? "No students to display"
@@ -4679,7 +4839,7 @@ const Students = ({ setShowAdminHeader }) => {
                           <button
                             key={page}
                             onClick={() => setCurrentPage(page)}
-                            className={`min-w-[28px] h-7 rounded-md text-xs font-medium transition ${
+                            className={`min-w-[28px] h-7 rounded-full text-xs font-medium transition ${
                               page === currentPage
                                 ? "bg-amber-500 text-white shadow-sm"
                                 : "text-gray-600 hover:bg-gray-100"
@@ -4717,7 +4877,6 @@ const Students = ({ setShowAdminHeader }) => {
         </div>
 
         {/* Enroll New Student — full-screen wizard */}
-        <AnimatePresence>
         {showAddForm && (
           <StudentEnrollWizard
             key={`enroll-${enrollSessionKey}`}
@@ -4747,9 +4906,11 @@ const Students = ({ setShowAdminHeader }) => {
             setSelectedSectionId={setSelectedSectionId}
           />
         )}
-        </AnimatePresence>
 
-        {/* Enrollment Drafts modal */}
+        {/* Enrollment Drafts modal — portaled to document.body, same as the
+            Student View modal, so its backdrop truly covers the full
+            viewport instead of being clipped to a transformed ancestor. */}
+        {showDraftsModal && createPortal(
         <AnimatePresence>
         {showDraftsModal && (
           <Motion.div
@@ -4825,11 +4986,26 @@ const Students = ({ setShowAdminHeader }) => {
             </Motion.div>
           </Motion.div>
         )}
-        </AnimatePresence>
+        </AnimatePresence>,
+        document.body
+        )}
 
-        {/* Student View Modal */}
-        <AnimatePresence>
-        {showViewModal && viewStudent && (
+        {/* Student View Modal — portaled to document.body. It used to render
+            inline inside the page's own DOM subtree, so anything upstream
+            that ever picks up a `transform`/`filter`/`will-change` style
+            (Framer Motion's own animated ancestors included) silently turns
+            into a containing block for this modal's `fixed inset-0`
+            backdrop, shrinking it down to that ancestor's box instead of the
+            real viewport — exactly the "backdrop doesn't cover the page"
+            symptom. Portaling to <body> sidesteps the whole class of bug,
+            matching the BlockingOverlay component earlier in this file.
+            AnimatePresence has to live INSIDE the createPortal call, not
+            wrap it from the outside — it was wrapping the portal node
+            itself first, and AnimatePresence can't clone/track a Portal
+            object the way it can a normal element, which was why the modal
+            silently failed to ever mount at all. */}
+        {showViewModal && viewStudent && createPortal(
+          <AnimatePresence>
           <Motion.div
             className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4 overflow-y-auto"
             initial={{ opacity: 0 }}
@@ -4908,14 +5084,17 @@ const Students = ({ setShowAdminHeader }) => {
 
               {/* Tab Content */}
               <div className="overflow-y-auto flex-1 p-6">
-                {loadingViewData && (
+                {/* The student's own fields (viewStudent) are already available
+                    the instant the modal opens — only Attendance/Fees need the
+                    async fetch, so Overview must not wait on loadingViewData. */}
+                {loadingViewData && viewTab !== "overview" && (
                   <div className="flex items-center justify-center py-12">
                     <Loader2 className="h-6 w-6 animate-spin text-amber-500" />
                     <span className="ml-2 text-sm text-gray-500">Loading details...</span>
                   </div>
                 )}
 
-                {!loadingViewData && viewTab === "overview" && (
+                {viewTab === "overview" && (
                   (() => {
                     const s = viewStudent;
                     const dash = "—";
@@ -5445,7 +5624,7 @@ const Students = ({ setShowAdminHeader }) => {
                   onClick={() => openEditWizard(viewStudent)}
                   className="px-5 py-2 bg-gradient-to-r from-yellow-500 to-amber-500 text-white text-sm rounded-lg hover:from-yellow-600 hover:to-amber-600 flex items-center gap-2 transition"
                 >
-                  <Edit2 size={14} />
+                  <Edit size={14} />
                   Edit
                 </button>
                 <button
@@ -5459,8 +5638,9 @@ const Students = ({ setShowAdminHeader }) => {
               </div>
             </Motion.div>
           </Motion.div>
+          </AnimatePresence>,
+          document.body
         )}
-        </AnimatePresence>
 
         <DocPreviewModal
           open={!!docPreview}
@@ -6225,6 +6405,9 @@ const Students = ({ setShowAdminHeader }) => {
           </div>
         )}
 
+        {/* Archived Students modal — portaled to document.body, same fix as
+            the Enrollment Drafts / Student View modals. */}
+        {showArchiveModal && createPortal(
         <AnimatePresence>
         {showArchiveModal && (
           <Motion.div
@@ -6405,7 +6588,9 @@ const Students = ({ setShowAdminHeader }) => {
             </Motion.div>
           </Motion.div>
         )}
-        </AnimatePresence>
+        </AnimatePresence>,
+        document.body
+        )}
       </div>
     </div>
   );

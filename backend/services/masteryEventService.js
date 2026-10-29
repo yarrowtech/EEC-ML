@@ -19,6 +19,9 @@ function blendScore(previous, score, source) {
 async function applyAssessment({ schoolId, studentId, subject, topicId, topicTitle = '', chapterTitle = '', source,
   assessmentScore, eventId, metadata = {} }) {
   if (!schoolId || !studentId || !subject || !topicId) throw new Error('Assessment scope is required');
+  if (['tutor', 'self-report', 'decay'].includes(source)) {
+    throw new Error('Mastery requires verified assessment evidence');
+  }
   const score = percentage(assessmentScore);
   const eventKey = eventId ? `${schoolId}:${studentId}:${source}:${eventId}:${topicId}` : undefined;
   const session = await mongoose.startSession();

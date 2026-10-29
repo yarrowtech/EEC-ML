@@ -1,10 +1,14 @@
 const express = require('express');
 const router = express.Router();
 const ParentUser = require('../models/ParentUser');
+const { isParentLoginBlocked, PARENT_BLOCKED_MESSAGE } = require('../utils/parentArchiveSync');
 const StudentUser = require('../models/StudentUser');
 const ClassModel = require('../models/Class');
 const AcademicYear = require('../models/AcademicYear');
 const Timetable = require('../models/Timetable');
+const Room = require('../models/Room');
+const Building = require('../models/Building');
+const Floor = require('../models/Floor');
 const SupportRequest = require('../models/SupportRequest');
 const Admin = require('../models/Admin');
 const Section = require('../models/Section');
@@ -18,7 +22,13 @@ const rateLimit = require('../middleware/rateLimit');
 const { isStrongPassword, passwordPolicyMessage } = require('../utils/passwordPolicy');
 const { logAuthEvent } = require('../utils/authEventLogger');
 const { resolveParentChildren } = require('../utils/parentChildren');
+const { notifyComplaintCreated } = require('../utils/complaintNotifications');
 const Wellbeing = require('../models/Wellbeing');
+const { createResponseCache } = require('../utils/responseCache');
+
+// Child profiles change rarely (admin edits happen in other routers), so a
+// short TTL bounds staleness while making repeat visits instant.
+const childrenProfileCache = createResponseCache({ ttlMs: 60 * 1000 });
 
 const normalizeKey = (value) =>
   String(value || '')
@@ -72,7 +82,7 @@ const fetchParentStudents = async ({ parent, schoolId }) => {
       ...baseFilter,
       _id: { $in: childIds },
     })
-      .select('name grade section studentCode username roll admissionNumber')
+      .select('name grade section studentCode username roll admissionNumber profilePic')
       .lean();
   }
 
@@ -248,11 +258,26 @@ const buildStudentSchedule = async ({ student, schoolId, campusId, activeYear = 
     timetableFilter.campusId = campusId;
   }
 
-  const timetables = await Timetable.find(timetableFilter)
+  // Prefer the active academic year's timetable; fall back to any for older data.
+  const loadTimetables = (filter) => Timetable.find(filter)
     .populate('sectionId', 'name')
     .populate('entries.subjectId', 'name')
     .populate('entries.teacherId', 'name')
+    .populate({
+      path: 'entries.roomId',
+      model: Room,
+      select: 'roomNumber label buildingId floorId',
+      populate: [
+        { path: 'buildingId', model: Building, select: 'name code' },
+        { path: 'floorId', model: Floor, select: 'name floorCode' },
+      ],
+    })
+    .sort({ updatedAt: -1 })
     .lean();
+  let timetables = activeYear?._id
+    ? await loadTimetables({ ...timetableFilter, academicYearId: activeYear._id })
+    : [];
+  if (!timetables.length) timetables = await loadTimetables(timetableFilter);
 
   if (!Array.isArray(timetables) || timetables.length === 0) {
     return {
@@ -298,9 +323,30 @@ const buildStudentSchedule = async ({ student, schoolId, campusId, activeYear = 
     }
     scheduleByDay[entry.dayOfWeek].push({
       time: `${entry.startTime || ''}${entry.endTime ? ` - ${entry.endTime}` : ''}`.trim(),
-      subject: entry.subjectId?.name || 'Unknown',
+      startTime: entry.startTime || '',
+      endTime: entry.endTime || '',
+      isBreak: Boolean(entry.isBreak),
+      subject: entry.isBreak ? (entry.subjectId?.name || 'Break') : (entry.subjectId?.name || 'Unknown'),
       instructor: entry.teacherId?.name || 'TBA',
       room: entry.room || '',
+      // Structured parts for the routine chip (building / floor / room no.).
+      ...(() => {
+        const r = entry.roomId && typeof entry.roomId === 'object' ? entry.roomId : null;
+        return {
+          roomBuilding: r?.buildingId?.name || r?.buildingId?.code || '',
+          roomFloor: r?.floorId?.name || r?.floorId?.floorCode || '',
+          roomNumber: r?.roomNumber || r?.label || entry.room || '',
+        };
+      })(),
+      // "Main Block · 1st Floor · Room 101" from the linked room, if any.
+      roomLocation: (() => {
+        const r = entry.roomId && typeof entry.roomId === 'object' ? entry.roomId : null;
+        if (!r) return entry.room || '';
+        const building = r.buildingId?.name || r.buildingId?.code || '';
+        const floor = r.floorId?.name || r.floorId?.floorCode || '';
+        const number = r.roomNumber || r.label || entry.room || '';
+        return [building, floor, number ? `Room ${number}` : ''].filter(Boolean).join(' · ');
+      })(),
       period: entry.period,
       className: classDoc.name,
       sectionName: resolvedSectionName,
@@ -420,6 +466,20 @@ router.post('/login', rateLimit({ windowMs: 60 * 1000, max: 20, keyGenerator: ra
       });
       return res.status(401).json({ error: 'Invalid credentials' });
     }
+    // Every linked child has left the school → the parent ID is blocked.
+    if (await isParentLoginBlocked(user.childrenIds)) {
+      logAuthEvent(req, {
+        action: 'login',
+        outcome: 'failure',
+        userType: 'parent',
+        identifier: username,
+        userId: user._id,
+        schoolId: user.schoolId,
+        reason: 'All linked students have left',
+        statusCode: 403,
+      });
+      return res.status(403).json({ error: PARENT_BLOCKED_MESSAGE, code: 'ACCOUNT_BLOCKED' });
+    }
     if (!user.campusId) {
       logAuthEvent(req, {
         action: 'login',
@@ -491,6 +551,127 @@ router.get('/profile', authParent, async (req, res) => {
   }
 });
 
+// Read-only child profiles for the parent portal. Only non-sensitive fields —
+// no Aadhaar, caste/religion, enrolment documents or credentials.
+router.get('/children-profile', authParent, childrenProfileCache.cache, async (req, res) => {
+  // #swagger.tags = ['Parents']
+  try {
+    if (req.userType !== 'parent') {
+      return res.status(403).json({ error: 'Forbidden - not a parent' });
+    }
+    const parent = await ParentUser.findById(req.user.id)
+      .select('name email mobile phone username childrenIds schoolId')
+      .lean();
+    if (!parent) return res.status(404).json({ error: 'Parent not found' });
+    const ids = Array.isArray(parent.childrenIds) ? parent.childrenIds : [];
+    const students = ids.length
+      ? await StudentUser.find({ _id: { $in: ids } })
+        .select('schoolId name username profilePic studentCodeadmissionNumber admissionDate grade section roll dob gender bloodGroup academicYear campusName fatherName fatherPhone motherName motherPhone guardianName guardianPhone guardianRelation address status isArchived')
+        .lean()
+      : [];
+    // School cover photo (set by the school admin in Settings) for the
+    // parent dashboard banner.
+    let coverImage = '';
+    const schoolId = parent.schoolId || req.schoolId || students[0]?.schoolId || null;
+    if (schoolId) {
+      const Admin = require('../models/Admin');
+      const admin = await Admin.findOne({ schoolId, role: 'admin', coverImage: { $nin: [null, ''] } })
+        .select('coverImage').lean();
+      coverImage = admin?.coverImage || '';
+    }
+
+    res.json({
+      school: { coverImage },
+      parent: {
+        name: parent.name || '',
+        email: parent.email || '',
+        phone: parent.mobile || parent.phone || '',
+        username: parent.username || '',
+      },
+      children: students.map((s) => ({
+        id: String(s._id),
+        name: s.name || '',
+        photo: s.profilePic || '',
+        studentCode: s.studentCode || s.username || '',
+        admissionNumber: s.admissionNumber || '',
+        admissionDate: s.admissionDate || null,
+        grade: s.grade || '',
+        section: s.section || '',
+        roll: s.roll ?? '',
+        dob: s.dob || null,
+        gender: s.gender || '',
+        bloodGroup: s.bloodGroup || '',
+        academicYear: s.academicYear || '',
+        campusName: s.campusName || '',
+        address: s.address || '',
+        father: { name: s.fatherName || '', phone: s.fatherPhone || '' },
+        mother: { name: s.motherName || '', phone: s.motherPhone || '' },
+        guardian: { name: s.guardianName || '', phone: s.guardianPhone || '', relation: s.guardianRelation || '' },
+        status: s.isArchived ? 'Archived' : (s.status || 'Active'),
+      })),
+    });
+  } catch (err) {
+    res.status(500).json({ error: err.message || 'Unable to load child profile' });
+  }
+});
+
+// Documents the school uploaded for the parent's own children (enrolment
+// documents, student photo, achievement certificates). Every file here was
+// uploaded by the school, so the portal shows it as verified.
+router.get('/children-documents', authParent, childrenProfileCache.cache, async (req, res) => {
+  // #swagger.tags = ['Parents']
+  try {
+    if (req.userType !== 'parent') {
+      return res.status(403).json({ error: 'Forbidden - not a parent' });
+    }
+    const parent = await ParentUser.findById(req.user.id).select('childrenIds').lean();
+    if (!parent) return res.status(404).json({ error: 'Parent not found' });
+    const ids = Array.isArray(parent.childrenIds) ? parent.childrenIds : [];
+    const students = ids.length
+      ? await StudentUser.find({ _id: { $in: ids } })
+        .select('profilePic documents achievements createdAt')
+        .lean()
+      : [];
+
+    const DOC_LABELS = {
+      birth_certificate: 'Birth Certificate',
+      transfer_certificate: 'Transfer Certificate',
+      aadhar_card: 'Aadhaar Card',
+    };
+    const CATEGORY = {
+      birth_certificate: 'identity',
+      aadhar_card: 'identity',
+      transfer_certificate: 'academic',
+    };
+
+    res.json({
+      children: students.map((s) => {
+        const docs = [];
+        if (s.profilePic) {
+          docs.push({ name: 'Student Photo', category: 'identity', url: s.profilePic, uploadedAt: s.createdAt || null });
+        }
+        (Array.isArray(s.documents) ? s.documents : []).forEach((d) => {
+          if (!d?.url) return;
+          docs.push({
+            name: d.label || DOC_LABELS[d.type] || d.fileName || 'Document',
+            category: CATEGORY[d.type] || 'other',
+            url: d.url,
+            fileName: d.fileName || '',
+            uploadedAt: d.uploadedAt || null,
+          });
+        });
+        (Array.isArray(s.achievements) ? s.achievements : []).forEach((a) => {
+          if (!a?.certificateUrl) return;
+          docs.push({ name: `${a.title} Certificate`, category: 'academic', url: a.certificateUrl, uploadedAt: a.date || null });
+        });
+        return { studentId: String(s._id), documents: docs.map((d) => ({ ...d, verified: true })) };
+      }),
+    });
+  } catch (err) {
+    res.status(500).json({ error: err.message || 'Unable to load documents' });
+  }
+});
+
 router.get('/routine', authParent, async (req, res) => {
   // #swagger.tags = ['Parents']
   try {
@@ -525,7 +706,7 @@ router.get('/routine', authParent, async (req, res) => {
         ...studentFilter,
         _id: { $in: parent.childrenIds },
       })
-        .select('name grade section studentCode roll admissionNumber')
+        .select('name grade section studentCode roll admissionNumber profilePic')
         .lean();
     }
 
@@ -536,7 +717,7 @@ router.get('/routine', authParent, async (req, res) => {
           ...studentFilter,
           name: { $in: validNames },
         })
-          .select('name grade section studentCode roll admissionNumber')
+          .select('name grade section studentCode roll admissionNumber profilePic')
           .lean();
       }
     }
@@ -560,6 +741,7 @@ router.get('/routine', authParent, async (req, res) => {
       childRoutines.push({
         studentId: student._id,
         studentName: student.name || 'Student',
+        photo: student.profilePic || '',
         studentCode: student.studentCode || '',
         username: student.username || '',
         roll: student.roll || null,
@@ -579,8 +761,28 @@ router.get('/routine', authParent, async (req, res) => {
       Object.values(child.schedule || {}).some((entries) => Array.isArray(entries) && entries.length > 0)
     ).length;
 
+    // Letterhead details for the routine PDF.
+    const School = require('../models/School');
+    const Principal = require('../models/Principal');
+    const principalFilter = campusId
+      ? { schoolId, $or: [{ campusId }, { campusId: null }, { campusId: { $exists: false } }] }
+      : { schoolId };
+    const [schoolDoc, principal] = await Promise.all([
+      School.findById(schoolId).select('name address logo contactEmail contactPhone officialEmail websiteURL').lean(),
+      Principal.findOne(principalFilter).sort({ updatedAt: -1, createdAt: -1 }).select('name').lean(),
+    ]);
+
     res.json({
       children: childRoutines,
+      school: {
+        name: schoolDoc?.name || '',
+        address: schoolDoc?.address || '',
+        logo: schoolDoc?.logo?.secure_url || schoolDoc?.logo?.url || (typeof schoolDoc?.logo === 'string' ? schoolDoc.logo : ''),
+        email: schoolDoc?.contactEmail || schoolDoc?.officialEmail || '',
+        phone: schoolDoc?.contactPhone || '',
+        website: schoolDoc?.websiteURL || '',
+      },
+      principalName: principal?.name || '',
       meta: {
         childCount: childRoutines.length,
         withRoutine,
@@ -638,6 +840,7 @@ router.get('/complaints', authParent, async (req, res) => {
         username: student.username || '',
         roll: student.roll || '',
         admissionNumber: student.admissionNumber || '',
+        profilePic: student.profilePic || '',
       })),
     });
   } catch (err) {
@@ -723,6 +926,11 @@ router.post('/complaints', authParent, async (req, res) => {
         targetPhone = adminContact?.phone || undefined;
         requestDetailsExtra = { assignedTo: 'School Admin' };
       }
+    } else if (isTechnical) {
+      // App/technical problems go to the platform support team (super admin).
+      ownerName = 'Super Admin';
+      targetRole = 'superadmin';
+      requestDetailsExtra = { assignedTo: 'Super Admin' };
     } else {
       const adminContact = await ensureAdminContact();
       ownerName = adminContact?.name || 'School Admin';
@@ -768,6 +976,7 @@ router.post('/complaints', authParent, async (req, res) => {
       ],
     });
 
+    notifyComplaintCreated(ticket);
     res.status(201).json(formatComplaintResponse(ticket));
   } catch (err) {
     console.error('Parent complaint creation error:', err);
@@ -824,7 +1033,7 @@ router.post('/reset-first-password', rateLimit({ windowMs: 60 * 1000, max: 20, k
   }
 });
 
-router.get('/achievements', authParent, async (req, res) => {
+router.get('/achievements', authParent, childrenProfileCache.cache, async (req, res) => {
   try {
     const parent = await ParentUser.findById(req.user.id)
       .select('name schoolId campusId childrenIds children')
@@ -851,7 +1060,7 @@ router.get('/achievements', authParent, async (req, res) => {
         ...studentFilter,
         _id: { $in: parent.childrenIds },
       })
-        .select('name grade section studentCode roll admissionNumber username achievements')
+        .select('name grade section studentCode roll admissionNumber username profilePic achievements')
         .lean();
     }
 
@@ -863,7 +1072,7 @@ router.get('/achievements', authParent, async (req, res) => {
           ...studentFilter,
           name: { $in: validNames },
         })
-          .select('name grade section studentCode roll admissionNumber username achievements')
+          .select('name grade section studentCode roll admissionNumber username profilePic achievements')
           .lean();
       }
     }
@@ -878,7 +1087,7 @@ router.get('/achievements', authParent, async (req, res) => {
           { guardianName: parent.name }
         ]
       })
-        .select('name grade section studentCode roll admissionNumber username achievements')
+        .select('name grade section studentCode roll admissionNumber username profilePic achievements')
         .lean();
     }
 
@@ -895,16 +1104,26 @@ router.get('/achievements', authParent, async (req, res) => {
       return {
         studentId: student._id,
         studentName: student.name || 'Student',
+        photo: student.profilePic || '',
         studentCode: student.studentCode || '',
         username: student.username || '',
         roll: student.roll || null,
         grade: student.grade || '',
         section: student.section || '',
+        classTeacher: teacherName,
         achievements,
       };
     }));
 
+    // School name/logo for the auto-generated certificate (when no file was uploaded).
+    const School = require('../models/School');
+    const schoolDoc = await School.findById(schoolId).select('name logo').lean();
+    const logo = schoolDoc?.logo;
     res.json({
+      school: {
+        name: schoolDoc?.name || '',
+        logo: logo?.secure_url || logo?.url || (typeof logo === 'string' ? logo : ''),
+      },
       children: childrenAchievements,
       meta: { childCount: childrenAchievements.length }
     });
@@ -932,13 +1151,19 @@ router.get('/health', authParent, async (req, res) => {
       schoolId,
       campusId: req.campusId,
       select:
-        'name grade section roll studentCode username dob bloodGroup knownHealthIssues allergies '
+        'name grade section roll studentCode username profilePic dob bloodGroup knownHealthIssues allergies '
         + 'immunizationStatus learningDisabilities fatherName fatherPhone motherName motherPhone '
         + 'guardianName guardianPhone guardianRelation',
     });
 
+    // School cover photo (set by the school admin in Settings) for the child card.
+    const coverAdmin = schoolId
+      ? await Admin.findOne({ schoolId, role: 'admin', coverImage: { $nin: [null, ''] } }).select('coverImage').lean()
+      : null;
+    const school = { coverImage: coverAdmin?.coverImage || '' };
+
     if (!students.length) {
-      return res.json({ children: [] });
+      return res.json({ children: [], school });
     }
 
     const wellbeingByStudent = new Map();
@@ -960,6 +1185,9 @@ router.get('/health', authParent, async (req, res) => {
         studentId: student._id,
         name: student.name || 'Student',
         className: [student.grade, student.section].filter(Boolean).join('-'),
+        grade: student.grade || '',
+        section: student.section || '',
+        profilePic: student.profilePic || '',
         roll: student.roll || null,
         age: parseAge(student.dob),
         bloodGroup: student.bloodGroup || '',
@@ -968,12 +1196,15 @@ router.get('/health', authParent, async (req, res) => {
         immunizationStatus: student.immunizationStatus || '',
         learningDisabilities: listValue(student.learningDisabilities),
         emergencyContacts: [
-          student.fatherName && { name: student.fatherName, relation: 'Father', phone: student.fatherPhone || '' },
-          student.motherName && { name: student.motherName, relation: 'Mother', phone: student.motherPhone || '' },
+          student.fatherName && { key: 'father', name: student.fatherName, relation: 'Father', phone: student.fatherPhone || '', editable: true },
+          student.motherName && { key: 'mother', name: student.motherName, relation: 'Mother', phone: student.motherPhone || '', editable: true },
           student.guardianName && {
+            key: 'guardian',
             name: student.guardianName,
             relation: student.guardianRelation || 'Guardian',
             phone: student.guardianPhone || '',
+            // The guardian number is the parent's login mobile — school office only.
+            editable: false,
           },
         ].filter(Boolean),
         wellbeing: wellbeing
@@ -989,10 +1220,64 @@ router.get('/health', authParent, async (req, res) => {
       };
     });
 
-    res.json({ children });
+    res.json({ children, school });
   } catch (err) {
     console.error('Fetch parent health report error:', err);
     res.status(500).json({ error: err.message || 'Unable to load health report' });
+  }
+});
+
+// PUT /health/:studentId — a parent updates their own child's medical details
+// and father/mother emergency contacts. The guardian contact is not editable
+// here: guardianPhone doubles as the parent's login mobile and is kept in sync
+// with the parent record by the school admin flows.
+const HEALTH_LIST_FIELDS = ['allergies', 'knownHealthIssues', 'learningDisabilities'];
+const PHONE_RE = /^\+?[0-9\s-]{7,15}$/;
+const cleanText = (value, max = 500) => String(value ?? '').replace(/[<>]/g, '').trim().slice(0, max);
+
+router.put('/health/:studentId', authParent, async (req, res) => {
+  try {
+    const schoolId = req.schoolId || req.user?.schoolId || null;
+    const { studentId } = req.params;
+    const { students } = await resolveParentChildren({
+      parentId: req.user.id,
+      schoolId,
+      campusId: req.campusId,
+      select: '_id',
+    });
+    if (!students.some((st) => String(st._id) === String(studentId))) {
+      return res.status(403).json({ error: 'Student is not linked to this parent account' });
+    }
+
+    const body = req.body || {};
+    const $set = {};
+    HEALTH_LIST_FIELDS.forEach((field) => {
+      if (body[field] === undefined) return;
+      const list = Array.isArray(body[field]) ? body[field] : String(body[field]).split(/[,;\n]/);
+      $set[field] = list.map((item) => cleanText(item, 120)).filter(Boolean).slice(0, 30).join(', ');
+    });
+    if (body.immunizationStatus !== undefined) $set.immunizationStatus = cleanText(body.immunizationStatus, 200);
+
+    const contacts = body.emergencyContacts && typeof body.emergencyContacts === 'object' ? body.emergencyContacts : {};
+    for (const key of ['father', 'mother']) {
+      const contact = contacts[key];
+      if (!contact || typeof contact !== 'object') continue;
+      if (contact.name !== undefined) $set[`${key}Name`] = cleanText(contact.name, 100);
+      if (contact.phone !== undefined) {
+        const phone = cleanText(contact.phone, 20);
+        if (phone && !PHONE_RE.test(phone)) {
+          return res.status(400).json({ error: `Enter a valid phone number for the ${key}.` });
+        }
+        $set[`${key}Phone`] = phone;
+      }
+    }
+
+    if (!Object.keys($set).length) return res.status(400).json({ error: 'Nothing to update' });
+    await StudentUser.updateOne({ _id: studentId }, { $set });
+    return res.json({ ok: true });
+  } catch (err) {
+    console.error('Update parent health report error:', err);
+    return res.status(500).json({ error: err.message || 'Unable to update health record' });
   }
 });
 

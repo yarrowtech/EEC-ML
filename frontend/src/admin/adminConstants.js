@@ -13,7 +13,6 @@ import {
   Settings,
   Receipt,
   UserSearch,
-  BarChart4,
   Layers,
   Building2,
   Shield,
@@ -23,9 +22,11 @@ import {
   ArrowUpCircle,
   CalendarDays,
   CreditCard,
+  FileBadge,
   Plus,
   Eye,
-  Activity
+  UserX,
+  MessagesSquare
 } from 'lucide-react';
 
 export const ADMIN_MENU_ITEMS = [
@@ -41,19 +42,14 @@ export const ADMIN_MENU_ITEMS = [
     path: '/admin/analytics'
   },
   {
-    icon: Activity,
-    label: 'Activity Log',
-    path: '/admin/activity-log'
-  },
-  {
     icon: IndianRupee,
     label: 'Fees Management',
-    path: '/admin/fees/collection',
+    path: '/admin/fees/manage',
     hasSubmenu: true,
     submenu: [
       {
         icon: Layers,
-        label: 'Fees Manage',
+        label: 'Create Fees',
         path: '/admin/fees/manage'
       },
       {
@@ -62,9 +58,9 @@ export const ADMIN_MENU_ITEMS = [
         path: '/admin/fees/collection'
       },
       {
-        icon: BarChart4,
-        label: 'Fees Dashboard',
-        path: '/admin/fees/dashboard'
+        icon: FileText,
+        label: 'Fee Receipts',
+        path: '/admin/fees/receipts'
       }
     ]
   },
@@ -92,14 +88,24 @@ export const ADMIN_MENU_ITEMS = [
     path: '/admin/holidays'
   },
   {
+    icon: MessagesSquare,
+    label: 'Community Wall',
+    path: '/admin/community-wall'
+  },
+  {
     icon: GraduationCap,
     label: 'Students',
     path: '/admin/students'
   },
   {
     icon: ArrowUpCircle,
-    label: 'Promotion & Leave',
+    label: 'Student Promotion',
     path: '/admin/promotion'
+  },
+  {
+    icon: UserX,
+    label: 'Leave & Left Students',
+    path: '/admin/left-students'
   },
   {
     icon: ClipboardList,
@@ -145,6 +151,11 @@ export const ADMIN_MENU_ITEMS = [
     icon: Calendar,
     label: 'Exam Management',
     path: '/admin/examination'
+  },
+  {
+    icon: FileBadge,
+    label: 'Admit Cards',
+    path: '/admin/admit-cards'
   },
   {
     icon: FileText,
@@ -195,16 +206,17 @@ export const ADMIN_MENU_ITEMS = [
 // Labels resolve against ADMIN_MENU_ITEMS (top-level items and submenu children).
 export const ADMIN_MENU_SECTIONS = [
   { items: ['Dashboard'] },
-  { section: 'OVERVIEW', items: ['Analytics', 'Activity Log'] },
+  { section: 'OVERVIEW', items: ['Analytics'] },
   {
     section: 'ACADEMIC MANAGEMENT',
-    items: ['Academic Setup', 'Teachers Management', 'Teacher Feedback', 'Routine Management', 'Exam Management', 'Result Management', 'Report Cards'],
+    items: ['Academic Setup', 'Teachers Management', 'Teacher Feedback', 'Routine Management', 'Exam Management', 'Admit Cards', 'Result Management', 'Report Cards'],
   },
-  { section: 'STUDENTS', items: ['Students', 'Parents', 'Promotion & Leave'] },
-  { section: 'FEES MANAGEMENT', items: ['Fees Dashboard', 'Fees Manage', 'Fees Collection'] },
-  { section: 'COMMUNICATION', items: ['Notices', 'Holiday List'] },
+  { section: 'STUDENTS', items: ['Students', 'Parents', 'Student Promotion', 'Leave & Left Students'] },
+  { section: 'FEES MANAGEMENT', items: ['Create Fees', 'Fees Collection', 'Fee Receipts'] },
+  { section: 'COMMUNICATION', items: ['Notices', 'Holiday List', 'Community Wall'] },
   { section: 'CAMPUS', items: ['Floor & Rooms'] },
   { section: 'HUMAN RESOURCES', items: ['HR'] },
   { section: 'SUPPORT', items: ['Support'] },
   { section: 'SETTINGS', items: ['Profile & School', 'Payment Gateway'] },
 ];
+

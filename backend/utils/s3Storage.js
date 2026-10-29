@@ -1,5 +1,5 @@
 const crypto = require('crypto');
-const { GetObjectCommand, PutObjectCommand, S3Client } = require('@aws-sdk/client-s3');
+const { DeleteObjectCommand, GetObjectCommand, PutObjectCommand, S3Client } = require('@aws-sdk/client-s3');
 const { getSignedUrl } = require('@aws-sdk/s3-request-presigner');
 const { buildCloudinaryAttachmentUrl } = require('./cloudinaryUpload');
 
@@ -129,8 +129,23 @@ const signAttachmentUrls = async (attachments = [], options = {}) => Promise.all
   })
 );
 
+// Best-effort delete: resolves bucket/key from the stored fields first,
+// falling back to parsing the s3:// URI stored in `url`. Returns false
+// (never throws) when the object can't be identified, so callers can
+// log-and-continue cleanup rather than fail the whole operation.
+const deleteS3Object = async (attachment = {}) => {
+  const parsed = parseS3Uri(attachment.url);
+  const bucket = attachment.s3Bucket || parsed?.bucket;
+  const key = attachment.s3Key || parsed?.key;
+  if (!bucket || !key) return false;
+  const region = attachment.s3Region || getS3Config().region;
+  await getClient(region).send(new DeleteObjectCommand({ Bucket: bucket, Key: key }));
+  return true;
+};
+
 module.exports = {
   DEFAULT_SIGNED_URL_TTL_SECONDS,
+  deleteS3Object,
   getAttachmentDownloadUrl,
   getS3Config,
   getSignedS3Url,

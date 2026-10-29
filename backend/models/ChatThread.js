@@ -45,4 +45,9 @@ chatThreadSchema.index(
   }
 );
 
+
+// Any chat write (HTTP or Socket.IO) drops cached chat reads.
+const clearChatCache = () => require('../utils/responseCache').chatCache.clear();
+chatThreadSchema.post(['save', 'insertMany', 'updateOne', 'updateMany', 'findOneAndUpdate', 'deleteOne', 'deleteMany', 'findOneAndDelete'], clearChatCache);
+
 module.exports = mongoose.model('ChatThread', chatThreadSchema);

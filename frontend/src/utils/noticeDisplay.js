@@ -40,6 +40,7 @@ export const getDisplayCategory = (notice) => {
   if (type === 'exam' || type === 'result') return 'exam';
   if (type === 'fee') return 'fee';
   const category = String(notice?.category || '').toLowerCase();
+  if (category === 'exam') return 'exam';
   if (['academic', 'events', 'transport'].includes(category)) return category;
   return 'general';
 };

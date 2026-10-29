@@ -1,5 +1,7 @@
 const express = require('express');
 const router = express.Router();
+const { teacherAnalyticsCache } = require('../utils/responseCache');
+router.use(teacherAnalyticsCache.invalidateOnWrite);
 const authStudent = require('../middleware/authStudent');
 const authTeacher = require('../middleware/authTeacher');
 const { scopedStudents } = require('../utils/analyticsScope');
@@ -16,15 +18,18 @@ router.get('/me', authStudent, async (req, res) => {
 });
 
 // GET /api/belonging/class — teacher view, least-engaged students first
-router.get('/class', authTeacher, async (req, res) => {
+router.get('/class', authTeacher, teacherAnalyticsCache.cache, async (req, res) => {
   try {
     const students = await scopedStudents(req);
-    const summary = await getClassBelongingSummary({ schoolId: req.schoolId, studentIds: students.map((s) => s._id) });
+    const requestedDays = Number(req.query.sinceDays);
+    const sinceDays = [7, 30, 90, 365].includes(requestedDays) ? requestedDays : 30;
+    const summary = await getClassBelongingSummary({ schoolId: req.schoolId, studentIds: students.map((s) => s._id), sinceDays });
     const byId = new Map(students.map((s) => [String(s._id), s]));
     const data = summary.map((row) => ({
       ...row,
       name: byId.get(String(row.studentId))?.name,
       roll: byId.get(String(row.studentId))?.roll,
+      profilePic: byId.get(String(row.studentId))?.profilePic,
     }));
     return res.json({ success: true, data });
   } catch (err) {

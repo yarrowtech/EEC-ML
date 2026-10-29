@@ -21,6 +21,9 @@ const TYPE_ICONS = {
 };
 
 const resolveNotifPath = (notification) => {
+  // Teacher-feedback window alerts/notices open the feedback form.
+  if (String(notification?.typeLabel || '').toLowerCase().startsWith('feedback_')
+    || String(notification?.eventType || '').startsWith('FEEDBACK_WINDOW')) return '/student/teacherfeedback';
   const type = notification?.type?.toLowerCase();
   const relatedEntity = notification?.relatedEntity?.entityType?.toLowerCase();
   const typeLabel = String(notification?.typeLabel || '').toLowerCase();
@@ -128,6 +131,7 @@ const StudentNotificationCenter = () => {
     markNotificationAsRead: markAsRead,
     markAllNotificationsAsRead: markAllAsRead,
     markModuleVisited,
+    smartLearningReminders,
   } = useStudentDashboard();
 
   useEffect(() => {
@@ -170,7 +174,7 @@ const StudentNotificationCenter = () => {
               </p>
             </div>
           </div>
-          {!loading && unreadCount > 0 && (
+      {!loading && unreadCount > 0 && (
             <button
               type="button"
               onClick={markAllAsRead}
@@ -182,6 +186,23 @@ const StudentNotificationCenter = () => {
           )}
         </div>
       </div>
+
+      {smartLearningReminders.length > 0 && (
+        <section className="rounded-2xl border border-indigo-100 bg-indigo-50/70 p-4" aria-label="Smart Learning reminders">
+          <div className="flex items-center justify-between gap-3">
+            <div>
+              <p className="text-sm font-bold text-indigo-950">Smart Learning reminders</p>
+              <p className="mt-1 text-xs text-indigo-700">These stay visible until you finish the task.</p>
+            </div>
+            <button type="button" onClick={() => navigate('/student/smart-learning-courses')} className="rounded-lg bg-indigo-600 px-3 py-2 text-xs font-bold text-white hover:bg-indigo-700">Open</button>
+          </div>
+          <div className="mt-3 space-y-2">
+            {smartLearningReminders.slice(0, 4).map((reminder) => (
+              <div key={reminder.id} className="rounded-xl bg-white px-3 py-2 text-xs font-semibold text-indigo-900">{reminder.kind}: {reminder.title}</div>
+            ))}
+          </div>
+        </section>
+      )}
 
       {/* Stats row */}
       {!loading && notifications.length > 0 && (
@@ -255,8 +276,8 @@ const StudentNotificationCenter = () => {
                   <p className="text-[11px] font-bold uppercase tracking-wider text-slate-400">{dateLabel}</p>
                 </div>
                 <div className="divide-y divide-slate-50">
-                  {items.map((n) => {
-                    const id = String(n?._id || n?.id || n?.title || Math.random());
+                  {items.map((n, itemIdx) => {
+                    const id = String(n?._id || n?.id || n?.title || `${dateLabel}-${itemIdx}`);
                     return (
                       <NotificationRow
                         key={id}

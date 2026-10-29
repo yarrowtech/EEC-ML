@@ -28,4 +28,8 @@ holidaySchema.pre('validate', function attachLegacyDefaults(next) {
 
 holidaySchema.index({ schoolId: 1, campusId: 1, startDate: 1, name: 1 }, { unique: true });
 
+// Any holiday write drops cached holiday reads.
+const clearHolidayCache = () => require('../utils/responseCache').holidayCache.clear();
+holidaySchema.post(['save', 'insertMany', 'updateOne', 'updateMany', 'findOneAndUpdate', 'deleteOne', 'deleteMany', 'findOneAndDelete'], clearHolidayCache);
+
 module.exports = mongoose.model('Holiday', holidaySchema);

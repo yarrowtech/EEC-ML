@@ -13,6 +13,7 @@ const resetBrowserBranding = () => {
 export const AUTH_NOTICE = Object.freeze({
   EXPIRED: 'expired',
   LOGGED_OUT: 'logged_out',
+  BLOCKED: 'blocked', // student account blocked (left / expelled / archived)
 });
 
 const resolveApiBaseUrl = () => {
@@ -140,7 +141,7 @@ export const logoutAndRedirect = ({
   }
   clearAuthData({ clearAllLocalStorage });
   if (typeof window !== 'undefined') {
-    window.dispatchEvent(new Event(AUTH_LOGOUT_EVENT));
+    window.dispatchEvent(new CustomEvent(AUTH_LOGOUT_EVENT, { detail: { notice } }));
   }
   setAuthNotice(notice);
   if (typeof navigate === 'function') {
@@ -161,4 +162,21 @@ export const apiFetch = async (url, options = {}, navigate = null) => {
     throw authError;
   }
   return res;
+};
+
+// Swap the current session for a linked account (teacher ↔ principal) and do a
+// full navigation so every portal re-reads the new token from scratch.
+export const switchAccount = async ({ endpoint, redirectTo }) => {
+  const res = await fetch(`${import.meta.env.VITE_API_URL}${endpoint}`, {
+    method: 'POST',
+    headers: { authorization: `Bearer ${localStorage.getItem('token')}` },
+  });
+  const data = await res.json().catch(() => ({}));
+  if (!res.ok || !data.token) {
+    throw new Error(data.error || 'Unable to switch account');
+  }
+  purgeStaleSessionCaches();
+  localStorage.setItem('token', data.token);
+  localStorage.setItem('userType', data.userType);
+  window.location.assign(redirectTo);
 };

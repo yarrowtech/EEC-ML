@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useMemo, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useLocation } from 'react-router-dom';
 import {
   Award,
@@ -261,6 +261,8 @@ const ResultsView = () => {
   const [page, setPage] = useState(1);
   const [downloadingId, setDownloadingId] = useState('');
 
+  const fetchRequestIdRef = useRef(0);
+
   const fetchExamWiseReport = useCallback(async () => {
     const token = localStorage.getItem('token');
     const userType = localStorage.getItem('userType');
@@ -269,6 +271,13 @@ const ResultsView = () => {
       setLoading(false);
       return;
     }
+
+    // Rapid navigation away-and-back (location.key changes) can start a new
+    // fetch before an earlier one resolves — only the most recent request's
+    // response is allowed to update state, so a stale/slow response can't
+    // overwrite fresher data.
+    const requestId = ++fetchRequestIdRef.current;
+    const isStale = () => fetchRequestIdRef.current !== requestId;
 
     setLoading(true);
     setError('');
@@ -303,6 +312,8 @@ const ResultsView = () => {
         fetchJson(resultsEndpoint),
         fetchJson(assignmentResultsEndpoint),
       ]);
+
+      if (isStale()) return;
 
       // Template + academic-year badge only — the results list itself is driven
       // entirely by the student's own published results below, so it naturally
@@ -344,13 +355,14 @@ const ResultsView = () => {
       }
 
     } catch (err) {
+      if (isStale()) return;
       console.error('Student results fetch error:', err);
       setError(err.message || 'Unable to load exam results');
       setReportCard(null);
       setPublishedResults([]);
       setAssignmentResults([]);
     } finally {
-      setLoading(false);
+      if (!isStale()) setLoading(false);
     }
   }, []);
 

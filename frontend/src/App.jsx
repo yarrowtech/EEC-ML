@@ -27,6 +27,7 @@ const SchoolRegistrationSuccess = lazy(() =>
   import("./components/SchoolRegistrationSuccess"),
 );
 const GamesPage = lazy(() => import("./games/GamesPage"));
+const QuizAttemptPage = lazy(() => import("./components/QuizAttemptPage"));
 const SuperAdminApp = lazy(() => import("./Super Admin/SuperAdminApp"));
 const ArchivedStudents = lazy(() => import("./admin/ArchivedStudents"));
 const AdminFeeQrDisplay = lazy(() =>
@@ -56,6 +57,7 @@ const studentSections = [
   "smart-learning-tutor",
   "academics",
   "assignments",
+  "long-answer",
   "assignments-journal",
   "assignments-academic-alcove",
   "results",
@@ -139,6 +141,11 @@ function App() {
         <Route
           path="/dashboard/games/:gameKey"
           element={withAuth([ROLES.STUDENT], <GamesPage />)}
+        />
+        {/* Full-screen quiz attempt, outside the dashboard chrome */}
+        <Route
+          path="/student/quiz/:assignmentId"
+          element={withAuth([ROLES.STUDENT], <QuizAttemptPage />)}
         />
         {/* General student dashboard routes */}
         {studentDashboardPaths.map((path) => (

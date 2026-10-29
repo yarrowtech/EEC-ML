@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useMemo, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { LogOut } from 'lucide-react';
 import AdminHeader from './AdminHeader';
@@ -6,6 +6,9 @@ import AdminSidebar from './AdminSidebar';
 import AdminBottomNav from './AdminBottomNav';
 import { AUTH_NOTICE, logoutAndRedirect } from '../utils/authSession';
 import { useAdminNotifications } from './useAdminNotifications';
+import useCommunityWallUnread from '../hooks/useCommunityWallUnread';
+
+const WALL_PATH = '/admin/community-wall';
 
 const AdminLayout = ({
   children,
@@ -22,7 +25,27 @@ const AdminLayout = ({
   const [mobileOpen, setMobileOpen] = useState(false);
   const [showLogoutConfirm, setShowLogoutConfirm] = useState(false);
   const isSuperAdmin = String(adminUser?.role || '').toLowerCase() === 'super admin';
-  const notificationState = useAdminNotifications({ isSuperAdmin });
+  const baseNotificationState = useAdminNotifications({ isSuperAdmin });
+  // Unread Community Wall posts join the bell list and badge the sidebar's Community Wall item.
+  const communityUnread = useCommunityWallUnread({ enabled: !isSuperAdmin, wallPath: WALL_PATH });
+  const notificationState = useMemo(() => ({
+    ...baseNotificationState,
+    notifications: [...communityUnread.bellItems, ...(baseNotificationState.notifications || [])].sort((a, b) => new Date(b?.createdAt || 0) - new Date(a?.createdAt || 0)),
+    unreadCount: (baseNotificationState.unreadCount || 0) + communityUnread.count,
+    // Opening the post marks it read, so a click needs no separate call.
+    markRead: (id, ...rest) => (String(id).startsWith('community-post-')
+      ? Promise.resolve()
+      : baseNotificationState.markRead(id, ...rest)),
+    markAllRead: (...args) => {
+      communityUnread.markAllSeen();
+      return baseNotificationState.markAllRead(...args);
+    },
+    resolveNotifPath: (notification) => (notification?.isCommunityPost
+      ? notification.path
+      : baseNotificationState.resolveNotifPath(notification)),
+    getModuleCount: (path) => (baseNotificationState.getModuleCount(path) || 0)
+      + (path === WALL_PATH ? communityUnread.count : 0),
+  }), [baseNotificationState, communityUnread]);
 
   const handleLogoutRequest = () => setShowLogoutConfirm(true);
   const confirmLogout = () => {
@@ -104,7 +127,12 @@ const AdminLayout = ({
       </div>
 
       {/* Mobile-only bottom tab bar — "More" opens the full sidebar drawer */}
-      <AdminBottomNav onOpenMore={() => setMobileOpen(true)} getNotificationCount={notificationState.getModuleCount} />
+      <AdminBottomNav
+        onOpenMore={() => setMobileOpen(true)}
+        getNotificationCount={notificationState.getModuleCount}
+        adminUser={adminUser}
+        onLogoutRequest={handleLogoutRequest}
+      />
     </div>
   );
 };

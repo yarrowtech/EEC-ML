@@ -444,12 +444,16 @@ router.post('/announcements/broadcast', adminAuth, ensureSuperAdmin, async (req,
       : 'medium';
 
     const schoolFilter = resolveBroadcastSchoolFilter(audience);
-    const schools = await School.find(schoolFilter).select('_id').lean();
+    const schools = await School.find(schoolFilter).select('_id organizationId').lean();
     if (!schools.length) {
       return res.status(404).json({ error: 'No schools matched the selected audience' });
     }
 
+    // Super-admin requests run with no tenant context, so organizationId is
+    // not auto-stamped — set it explicitly or each school's tenant-scoped
+    // notification queries would never see the broadcast.
     const docs = schools.map((school) => ({
+      organizationId: school.organizationId || school._id,
       schoolId: school._id,
       campusId: null,
       title: safeTitle,
