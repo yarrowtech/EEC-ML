@@ -361,9 +361,26 @@ router.get('/profile', authTeacher, async (req, res) => {
       return res.status(404).json({ error: 'Teacher not found' });
     }
 
+    // Extras for the My Work header: the school's cover photo and the classes this teacher has.
+    const TeacherAllocation = require('../models/TeacherAllocation');
+    const [coverAdmin, allocations] = await Promise.all([
+      teacher.schoolId
+        ? Admin.findOne({ schoolId: teacher.schoolId, coverImage: { $nin: [null, ''] } }).select('coverImage').lean()
+        : null,
+      TeacherAllocation.find({ teacherId: teacher._id, ...(teacher.schoolId ? { schoolId: teacher.schoolId } : {}) })
+        .populate('classId', 'name').populate('sectionId', 'name').select('classId sectionId').lean(),
+    ]);
+    const classLabels = [...new Set((allocations || [])
+      .map((a) => [a.classId?.name, a.sectionId?.name].filter(Boolean).join(' '))
+      .filter(Boolean))]
+      .map((label) => (/^class/i.test(label) ? label : `Class ${label}`))
+      .sort((x, y) => x.localeCompare(y, undefined, { numeric: true }));
+
     res.json({
       ...teacher,
       employeeId: teacher.username || teacher.employeeCode || '',
+      schoolCoverImage: coverAdmin?.coverImage || '',
+      classLabels,
     });
   } catch (err) {
     res.status(400).json({ error: err.message });
