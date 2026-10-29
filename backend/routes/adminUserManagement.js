@@ -19,6 +19,7 @@ const Principal = require('../models/Principal');
 const Admin = require('../models/Admin');
 const School = require('../models/School');
 const TeacherLeave = require('../models/TeacherLeave');
+const Notification = require('../models/Notification');
 const TeacherExpense = require('../models/TeacherExpense');
 const TeacherAttendance = require('../models/TeacherAttendance');
 const FeeStructure = require('../models/FeeStructure');
@@ -2195,6 +2196,30 @@ router.patch('/teacher-leaves/:id/status', adminAuth, invalidateHrCacheOnWrite, 
 
     if (!updated) {
       return res.status(404).json({ error: 'Leave request not found for this school/campus' });
+    }
+
+    if (updated.status === 'Approved' || updated.status === 'Rejected') {
+      try {
+        const fmt = (d) => new Date(d).toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' });
+        const decision = updated.status.toLowerCase();
+        const note = updated.adminNote ? ` Remarks: ${updated.adminNote}` : '';
+        await Notification.create({
+          schoolId: updated.schoolId,
+          campusId: updated.campusId || null,
+          title: `Leave request ${decision}`,
+          message: `Your ${updated.type} from ${fmt(updated.startDate)} to ${fmt(updated.endDate)} was ${decision}.${note}`,
+          audience: 'Teacher',
+          targetUserIds: [updated.teacherId],
+          createdByType: 'admin',
+          type: 'alert',
+          typeLabel: 'teacher_leave_reviewed',
+          category: 'general',
+          priority: 'high',
+          relatedEntity: { entityType: 'leave', entityId: updated._id },
+        });
+      } catch (notifErr) {
+        logger.error({ err: notifErr }, 'Teacher leave decision notification failed');
+      }
     }
 
     res.json({

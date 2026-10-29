@@ -4,6 +4,7 @@ import { useSearchParams } from 'react-router-dom';
 import { jsPDF } from 'jspdf';
 import { FileText, Users, Building2, CalendarCheck, X, CreditCard, Search, ChevronLeft, ChevronRight, Clock, CheckCircle, XCircle, AlertCircle, RefreshCw, IndianRupee, Eye, Settings, Printer, Download, SlidersHorizontal } from 'lucide-react';
 import IDCard from '../components/IDCard';
+import { subscribeSocketEvent } from '@/hooks/useCommunityWallUnread';
 
 const API_BASE = (import.meta.env.VITE_API_URL || 'http://localhost:5000').replace(/\/$/, '');
 const ADMIN_PROFILE_CACHE_KEY = 'admin_profile_cache_v1';
@@ -999,6 +1000,14 @@ const HR = ({ setShowAdminHeader }) => {
     }
   }, [tab, teacherActivityMonth]);
 
+  // A teacher just sent a leave request → show it in the table without a reload.
+  const refreshActivitiesRef = useRef(null);
+  refreshActivitiesRef.current = () => fetchTeacherActivities(teacherActivityMonth);
+  useEffect(() => subscribeSocketEvent('new_notification', (payload) => {
+    const label = String(payload?.typeLabel || '').toLowerCase();
+    if (label.includes('leave request')) refreshActivitiesRef.current?.();
+  }), []);
+
   useEffect(() => {
     const tabParam = String(searchParams.get('tab') || '').trim().toLowerCase();
     if (tabParam === 'attendance' || tabParam === 'leaves' || tabParam === 'expenses') {
@@ -1810,8 +1819,16 @@ const HR = ({ setShowAdminHeader }) => {
                       const isPending = !['approved', 'accepted', 'rejected'].includes(status);
                       return (
                         <tr key={r.id} className="transition-colors hover:bg-gray-50/70">
-                          <td className="px-4 py-2.5"><PersonCell name={r.teacherName} photo={r.teacherProfilePic} /></td>
-                          <td className={tdCls}><span className="inline-flex rounded-md bg-blue-50 px-2 py-0.5 text-xs font-medium text-blue-700">{r.type}</span></td>
+                          <td className="px-4 py-2.5">
+                            <div className="flex items-center gap-2">
+                              {/* No admin decision yet */}
+                              <PersonCell name={r.teacherName} photo={r.teacherProfilePic} />
+                              {isPending && <span className="inline-flex shrink-0 animate-pulse items-center rounded-full bg-red-500 px-2 py-0.5 text-[10px] font-bold uppercase tracking-wide text-white">New</span>}
+                            </div>
+                          </td>
+                          <td className={tdCls}>
+                            <span className="inline-flex rounded-md bg-blue-50 px-2 py-0.5 text-xs font-medium text-blue-700">{r.type}</span>
+                          </td>
                           <td className={tdCls}>{formatLeaveDateRange(r.startDate, r.endDate)}</td>
                           <td className="px-4 py-2.5"><StatusBadge status={r.status} /></td>
                           <td className="px-4 py-2.5">

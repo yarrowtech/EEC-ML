@@ -96,7 +96,8 @@ const portalNavigation = [
   { icon: Users, label: 'Classes & Work', path: `${PORTAL_BASE}/classes` },
   { icon: CalendarDays, label: 'Calendar', path: `${PORTAL_BASE}/calendar` },
   { icon: Clock, label: 'Timetable', path: `${PORTAL_BASE}/timetable` },
-  { icon: Bell, label: 'Notifications', path: `${PORTAL_BASE}/notifications` },
+  // Notifications live in the header bell; no sidebar entry.
+  // { icon: Bell, label: 'Notifications', path: `${PORTAL_BASE}/notifications` },
   { icon: ClipboardCheck, label: 'Exam Duty', path: `${PORTAL_BASE}/exam-duty` },
   { icon: Library, label: 'Community Wall', path: `${PORTAL_BASE}/community-wall` },
   { icon: Brain, label: 'Lesson Plan', path: `${PORTAL_BASE}/lesson-plan` },
@@ -205,6 +206,7 @@ const resolveTeacherNotificationPath = (notification) => {
   const type = String(notification?.type || notification?.typeLabel || '').toLowerCase();
   const blob = `${title} ${message} ${type}`;
   if (String(notification?.typeLabel || '').toLowerCase().startsWith('excuse_letter')) return '/teacher/classes/current/communication/excuse-letters';
+  if (String(notification?.typeLabel || '').toLowerCase() === 'teacher_leave_reviewed') return '/teacher/settings?tab=leave';
   if (blob.includes('substitute') || blob.includes('attendance')) return '/teacher/attendance';
   if (blob.includes('assignment_submission') || blob.includes('new submission') || blob.includes('submitted')) return '/teacher/evaluation';
   if (blob.includes('assignment')) return '/teacher/assignments';
@@ -1336,7 +1338,7 @@ const ClassWorkspace = ({ notifications = [], seenState = {} }) => {
   ) : null);
 
   return (
-    <div className="mx-auto max-w-[1240px] space-y-3">
+    <div className={`mx-auto max-w-[1240px] space-y-3 ${rel === 'overview/analytics' ? 'p-3 sm:p-5 lg:p-6' : ''}`}>
 
       {/* ── Header: back · title · switch class · date ── */}
       <div className="flex flex-wrap items-center gap-3">
@@ -1698,9 +1700,25 @@ const TeacherPortalShell = () => {
     };
   }, [sidebarOpen]);
 
-  const isItemActive = useCallback((path) =>
-    location.pathname === path || location.pathname.startsWith(`${path}/`),
-    [location.pathname]);
+  // Sidebar shortcuts (Chat, Student Feedback, Excuse Letters) point at
+  // `classes/current/...` but the URL carries the real class (`classes/5-a/...`),
+  // so match any class id there — and when one of them matches, "Classes & Work"
+  // must not light up as well.
+  const isItemActive = useCallback((path) => {
+    const current = location.pathname.replace(/\/$/, '');
+    const matches = (target) => current === target || current.startsWith(`${target}/`);
+    const shortcutPattern = (target) => {
+      const m = target.match(/^(.*\/classes\/)current(\/.+)$/);
+      return m ? new RegExp(`^${m[1]}[^/]+${m[2]}(?:/|$)`) : null;
+    };
+    const pattern = shortcutPattern(path);
+    if (pattern) return pattern.test(current);
+    if (path === `${PORTAL_BASE}/classes`) {
+      const onShortcut = portalNavigation.some((item) => shortcutPattern(item.path)?.test(current));
+      if (onShortcut) return false;
+    }
+    return matches(path);
+  }, [location.pathname]);
 
   const handleLogout = () => {
     setShowLogoutConfirm(true);
@@ -2554,7 +2572,7 @@ const TeacherPortalShell = () => {
                 <Route path="exam-duty/:notificationId" element={<TeacherExamDuty />} />
                 <Route path="community-wall" element={<TeacherAlcove />} />
                 <Route path="resource-library" element={<Navigate to="/teacher/community-wall" replace />} />
-                <Route path="lesson-plan" element={<AIPoweredTeaching />} />
+                <Route path="lesson-plan" element={<div className="p-3 sm:p-5 lg:p-6"><AIPoweredTeaching /></div>} />
                 <Route path="tryout" element={<TryoutManagement />} />
                 <Route path="ai-tools" element={<TeacherAIToolsPanel />} />
                 <Route path="live-monitor" element={<LiveExamMonitor />} />

@@ -394,20 +394,23 @@ router.put('/profile', authTeacher, async (req, res) => {
       return res.status(403).json({ error: 'Forbidden - not a teacher' });
     }
 
+    // Identity (name, gender, DOB, blood group), department, joining date, photo,
+    // employee code and assignments are managed by the school (admin) only.
     const allowedUpdates = [
-      'name',
       'email',
       'mobile',
-      'subject',
-      'department',
-      'qualification',
-      'experience',
-      'joiningDate',
-      'address',
-      'emergencyContact',
-      'gender',
+      'alternatePhone',
       'pinCode',
-      // profilePic: managed by the school (admin) only
+      'address',
+      'permanentAddress',
+      'city',
+      'district',
+      'state',
+      'qualification',
+      'specialization',
+      'experience',
+      'emergencyContactName',
+      'emergencyContact',
     ];
 
     const payload = {};
@@ -416,6 +419,18 @@ router.put('/profile', authTeacher, async (req, res) => {
         payload[key] = req.body[key];
       }
     });
+
+    const phoneFields = { mobile: 'Phone', alternatePhone: 'Alternate phone', emergencyContact: 'Emergency contact phone' };
+    for (const [key, label] of Object.entries(phoneFields)) {
+      if (!Object.prototype.hasOwnProperty.call(payload, key)) continue;
+      const value = String(payload[key] ?? '').trim();
+      const optional = key !== 'mobile';
+      if (optional && !value) { payload[key] = ''; continue; }
+      if (!/^\d{10}$/.test(value)) {
+        return res.status(400).json({ error: `${label} must be a 10-digit number` });
+      }
+      payload[key] = value;
+    }
 
     const teacher = await TeacherUser.findByIdAndUpdate(
       req.user.id,

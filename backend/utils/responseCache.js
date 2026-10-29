@@ -66,4 +66,7 @@ const teacherAnalyticsCache = createResponseCache({ ttlMs: 60 * 1000, maxEntries
 // so socket-sent messages and read receipts invalidate it too.
 const chatCache = createResponseCache({ ttlMs: 30 * 1000, maxEntries: 3000 });
 
-module.exports = { createResponseCache, parentAttendanceCache, userNotificationsCache, parentFeesCache, teacherAnalyticsCache, chatCache };
+// Holiday calendar reads. Cleared by Holiday model write hooks, so admin edits show at once.
+const holidayCache = createResponseCache({ ttlMs: 5 * 60 * 1000 });
+
+module.exports = { createResponseCache, parentAttendanceCache, userNotificationsCache, parentFeesCache, teacherAnalyticsCache, chatCache, holidayCache };

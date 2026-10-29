@@ -1,6 +1,6 @@
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { CalendarClock, ClipboardCheck, MapPin, RefreshCw } from 'lucide-react';
+import { CalendarCheck, CheckCircle2, ChevronDown, ChevronLeft, ChevronRight, ClipboardCheck, FileText, RefreshCw } from 'lucide-react';
 import { apiFetch } from '../utils/authSession';
 
 // "My Exam Duty": every exam where this teacher is a named invigilator,
@@ -136,30 +136,45 @@ const TeacherExamDutyList = () => {
       .sort((a, b) => (tab === 'upcoming' ? 1 : -1) * String(a.rows[0]?.date).localeCompare(String(b.rows[0]?.date)));
   }, [exams, tab, today, nowHHMM]);
 
-  return (
-    <div className="min-h-full bg-slate-50 p-3 sm:p-5 lg:p-6">
-      <div className="mx-auto max-w-5xl space-y-5">
-        <section className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm sm:p-6">
-          <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
-            <div>
-              <p className="text-xs font-semibold uppercase tracking-[0.18em] text-indigo-600">Teacher Portal</p>
-              <h1 className="mt-2 text-2xl font-semibold text-slate-950">My Exam Duty</h1>
-              <p className="mt-2 max-w-2xl text-sm text-slate-500">Every exam you are assigned to invigilate — date, time, class and room.</p>
-            </div>
-            <button type="button" onClick={load} disabled={loading} className="inline-flex items-center justify-center gap-2 rounded-xl border border-slate-200 px-3 py-2 text-xs font-semibold text-slate-700 hover:bg-indigo-50 disabled:opacity-60">
-              <RefreshCw size={15} className={loading ? 'animate-spin' : ''} />
-              Refresh
-            </button>
-          </div>
-          <div className="mt-5 grid grid-cols-2 gap-3">
-            <div className="rounded-xl bg-indigo-50 p-3"><p className="text-2xl font-semibold text-indigo-700">{upcomingCount}</p><p className="mt-1 text-xs text-indigo-600">Upcoming duties</p></div>
-            <div className="rounded-xl bg-slate-50 p-3"><p className="text-2xl font-semibold text-slate-900">{pastCount}</p><p className="mt-1 text-xs text-slate-500">Completed</p></div>
-          </div>
-        </section>
+  // Accordion + pagination (a page of exam groups at a time).
+  const PAGE_SIZE = 5;
+  const [openTitle, setOpenTitle] = useState(null);
+  const [page, setPage] = useState(1);
+  useEffect(() => { setPage(1); setOpenTitle(null); }, [tab]);
+  const totalPages = Math.max(1, Math.ceil(groups.length / PAGE_SIZE));
+  const safePage = Math.min(page, totalPages);
+  const pageGroups = groups.slice((safePage - 1) * PAGE_SIZE, safePage * PAGE_SIZE);
+  // First group on the page opens by default until the teacher picks another.
+  const expanded = openTitle === null ? pageGroups[0]?.title : openTitle;
 
-        <div className="inline-flex rounded-xl border border-slate-200 bg-white p-1">
-          {[['upcoming', 'Upcoming'], ['past', 'Past']].map(([key, label]) => (
-            <button key={key} type="button" onClick={() => setTab(key)} className={`rounded-lg px-3 py-1.5 text-xs font-semibold transition ${tab === key ? 'bg-slate-950 text-white' : 'text-slate-500 hover:text-slate-900'}`}>
+  return (
+    <div className="min-h-full bg-[#f6f8fb] p-3 sm:p-5 lg:p-6">
+      <div className="mx-auto max-w-6xl space-y-3">
+        <div className="flex items-start justify-between gap-3">
+          <div>
+            <h1 className="text-[26px] font-bold leading-tight text-[#0f1b3d]">My Exam Duty</h1>
+            <p className="text-[13px] text-[#64748b]">Every exam you are assigned to invigilate — date, time, class and room.</p>
+          </div>
+          <button type="button" onClick={load} disabled={loading} className="inline-flex items-center gap-2 rounded-xl border border-[#e2e8f0] bg-white px-4 py-2 text-[13px] font-medium text-[#0f1b3d] shadow-sm transition hover:bg-slate-50 disabled:opacity-60">
+            <RefreshCw size={16} className={loading ? 'animate-spin text-[#2563eb]' : 'text-[#475569]'} />
+            Refresh
+          </button>
+        </div>
+
+        <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+          <div className="flex items-center gap-4 rounded-2xl border border-[#dbe7fb] bg-[#f2f7ff] px-5 py-4">
+            <span className="flex h-14 w-14 items-center justify-center rounded-2xl bg-[#e0ebfd] text-[#2563eb]"><CalendarCheck size={26} /></span>
+            <div><p className="text-[28px] font-bold leading-tight text-[#0f1b3d]">{upcomingCount}</p><p className="text-[14px] text-[#64748b]">Upcoming duties</p></div>
+          </div>
+          <div className="flex items-center gap-4 rounded-2xl border border-[#d4f1de] bg-[#f2fbf5] px-5 py-4">
+            <span className="flex h-14 w-14 items-center justify-center rounded-2xl bg-[#dcf5e6] text-[#16a34a]"><CheckCircle2 size={26} /></span>
+            <div><p className="text-[28px] font-bold leading-tight text-[#0f1b3d]">{pastCount}</p><p className="text-[14px] text-[#64748b]">Completed duties</p></div>
+          </div>
+        </div>
+
+        <div className="flex rounded-xl border border-[#e6ebf2] bg-white px-2">
+          {[['upcoming', `Upcoming (${upcomingCount})`], ['past', `Past (${pastCount})`]].map(([key, label]) => (
+            <button key={key} type="button" onClick={() => setTab(key)} className={`-mb-px border-b-2 px-6 py-3 text-[14px] font-semibold transition ${tab === key ? 'border-[#2563eb] text-[#2563eb]' : 'border-transparent text-[#64748b] hover:text-[#0f1b3d]'}`}>
               {label}
             </button>
           ))}
@@ -168,53 +183,79 @@ const TeacherExamDutyList = () => {
         {error && <div className="rounded-xl border border-rose-200 bg-rose-50 px-4 py-3 text-sm text-rose-700">{error}</div>}
 
         {loading && !exams.length ? (
-          <div className="rounded-2xl border border-slate-200 bg-white p-8 text-center text-sm text-slate-500">Loading exam duty…</div>
+          <div className="rounded-2xl border border-[#e6ebf2] bg-white p-8 text-center text-sm text-[#64748b]">Loading exam duty…</div>
         ) : groups.length === 0 ? (
           <div className="rounded-2xl border border-dashed border-slate-300 bg-white p-10 text-center">
             <div className="mx-auto flex h-12 w-12 items-center justify-center rounded-2xl bg-slate-100 text-slate-400"><ClipboardCheck size={22} /></div>
-            <h2 className="mt-4 text-base font-semibold text-slate-950">{tab === 'upcoming' ? 'No upcoming exam duty' : 'No past exam duty'}</h2>
-            <p className="mt-1 text-sm text-slate-500">Duties appear here once the admin assigns you as an invigilator.</p>
+            <h2 className="mt-4 text-base font-semibold text-[#0f1b3d]">{tab === 'upcoming' ? 'No upcoming exam duty' : 'No past exam duty'}</h2>
+            <p className="mt-1 text-sm text-[#64748b]">Duties appear here once the admin assigns you as an invigilator.</p>
           </div>
         ) : (
-          groups.map((g) => (
-            <section key={g.title} className="overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm">
-              <header className="flex flex-wrap items-center gap-2 border-b border-slate-100 px-4 py-3 sm:px-5">
-                <CalendarClock size={18} className="text-indigo-600" />
-                <h2 className="font-semibold text-slate-900">{g.title}</h2>
-                <span className={`rounded-full px-2 py-0.5 text-[10px] font-bold uppercase tracking-wide ${tab === 'past' ? 'bg-slate-100 text-slate-600' : g.published ? 'bg-emerald-50 text-emerald-700' : 'bg-amber-50 text-amber-700'}`}>
-                  {tab === 'past' ? 'Completed' : g.published ? 'Routine published' : 'Provisional'}
-                </span>
-                <span className="ml-auto text-xs text-slate-400">{g.rows.length} dut{g.rows.length === 1 ? 'y' : 'ies'}</span>
-              </header>
-              <div className="overflow-x-auto">
-                <table className="w-full min-w-[640px] text-left text-sm">
-                  <thead className="bg-slate-50 text-xs text-slate-500">
-                    <tr>
-                      <th className="px-4 py-2 font-semibold">Date</th>
-                      <th className="px-4 py-2 font-semibold">Time</th>
-                      <th className="px-4 py-2 font-semibold">Subject</th>
-                      {/* <th className="px-4 py-2 font-semibold">Class</th> */}
-                      <th className="px-4 py-2 font-semibold">Venue</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {g.rows.map((e) => {
-                      const end = endTime(e.time, e.duration);
-                      return (
-                        <tr key={e._id} className="border-t border-slate-100">
-                          <td className="px-4 py-2.5"><span className="font-medium text-slate-800">{fmtDate(e.date)}</span> <span className="text-xs text-slate-400">{fmtDay(e.date)}</span></td>
-                          <td className="px-4 py-2.5 text-slate-700">{e.time ? `${to12h(e.time)}${end ? ` – ${to12h(end)}` : ''}` : '—'}</td>
-                          <td className="px-4 py-2.5 text-slate-700">{e.subjects?.join(', ') || e.subjectId?.name || e.subject || '—'}</td>
-                          {/* <td className="px-4 py-2.5 text-slate-700">{e.classes?.join(', ') || '—'}</td> */}
-                          <td className="px-4 py-2.5 text-slate-700"><span className="inline-flex items-center gap-1"><MapPin size={13} className="text-slate-400" />{venueOf(e)}</span></td>
-                        </tr>
-                      );
-                    })}
-                  </tbody>
-                </table>
+          <>
+            {pageGroups.map((g) => {
+              const isOpen = expanded === g.title;
+              const badge = tab === 'past'
+                ? { text: 'Completed', cls: 'bg-[#dcf5e6] text-[#15803d]' }
+                : g.published ? { text: 'Routine published', cls: 'bg-[#dbeafe] text-[#2563eb]' } : { text: 'Provisional', cls: 'bg-[#fdf0d2] text-[#b45309]' };
+              return (
+                <section key={g.title} className="overflow-hidden rounded-2xl border border-[#e6ebf2] bg-white shadow-[0_1px_3px_rgba(15,23,42,0.04)]">
+                  <button type="button" onClick={() => setOpenTitle(isOpen ? '' : g.title)} className="flex w-full items-center gap-4 px-4 py-3 text-left">
+                    <span className="flex h-12 w-12 shrink-0 items-center justify-center rounded-xl bg-[#e8f1ff] text-[#2563eb]"><FileText size={22} /></span>
+                    <div className="min-w-0 flex-1">
+                      <div className="flex flex-wrap items-center gap-2.5">
+                        <h2 className="text-[16px] font-bold text-[#0f1b3d]">{g.title}</h2>
+                        <span className={`rounded-full px-3 py-0.5 text-[12px] font-semibold ${badge.cls}`}>{badge.text}</span>
+                      </div>
+                      <p className="text-[13px] text-[#64748b]">{g.rows.length} dut{g.rows.length === 1 ? 'y' : 'ies'}</p>
+                    </div>
+                    <ChevronDown size={20} className={`shrink-0 text-[#64748b] transition-transform ${isOpen ? 'rotate-180' : ''}`} />
+                  </button>
+                  {isOpen && (
+                    <div className="px-4 pb-4">
+                      <div className="overflow-x-auto rounded-xl border border-[#e6ebf2]">
+                        <table className="w-full min-w-[640px] text-left text-[13px]">
+                          <thead className="bg-[#f8fafc] text-[12px] text-[#64748b]">
+                            <tr>
+                              <th className="border-r border-[#eef2f7] px-4 py-2.5 font-medium">Date</th>
+                              <th className="border-r border-[#eef2f7] px-4 py-2.5 font-medium">Time</th>
+                              <th className="border-r border-[#eef2f7] px-4 py-2.5 font-medium">Subject</th>
+                              <th className="px-4 py-2.5 font-medium">Venue</th>
+                            </tr>
+                          </thead>
+                          <tbody>
+                            {g.rows.map((e) => {
+                              const end = endTime(e.time, e.duration);
+                              return (
+                                <tr key={e._id} className="border-t border-[#eef2f7] text-[#0f1b3d]">
+                                  <td className="border-r border-[#eef2f7] px-4 py-3">{fmtDate(e.date)} ({fmtDay(e.date)})</td>
+                                  <td className="border-r border-[#eef2f7] px-4 py-3">{e.time ? `${to12h(e.time)}${end ? ` – ${to12h(end)}` : ''}` : '—'}</td>
+                                  <td className="border-r border-[#eef2f7] px-4 py-3">{e.subjects?.join(', ') || e.subjectId?.name || e.subject || '—'}</td>
+                                  <td className="px-4 py-3">{venueOf(e)}</td>
+                                </tr>
+                              );
+                            })}
+                          </tbody>
+                        </table>
+                      </div>
+                    </div>
+                  )}
+                </section>
+              );
+            })}
+
+            {groups.length > PAGE_SIZE && (
+              <div className="flex items-center justify-between rounded-xl border border-[#e6ebf2] bg-white px-4 py-2 text-[12px] text-[#64748b]">
+                <span>Showing {(safePage - 1) * PAGE_SIZE + 1}–{Math.min(safePage * PAGE_SIZE, groups.length)} of {groups.length} exams</span>
+                <div className="flex items-center gap-1">
+                  <button type="button" disabled={safePage <= 1} onClick={() => { setPage(safePage - 1); setOpenTitle(null); }} className="flex h-7 w-7 items-center justify-center rounded-md border border-[#e2e8f0] disabled:opacity-40" aria-label="Previous page"><ChevronLeft size={16} /></button>
+                  {Array.from({ length: totalPages }, (_, i) => i + 1).map((n) => (
+                    <button key={n} type="button" onClick={() => { setPage(n); setOpenTitle(null); }} className={`h-7 min-w-7 rounded-md px-2 font-semibold ${n === safePage ? 'bg-[#2563eb] text-white' : 'border border-[#e2e8f0] text-[#334155] hover:bg-slate-50'}`}>{n}</button>
+                  ))}
+                  <button type="button" disabled={safePage >= totalPages} onClick={() => { setPage(safePage + 1); setOpenTitle(null); }} className="flex h-7 w-7 items-center justify-center rounded-md border border-[#e2e8f0] disabled:opacity-40" aria-label="Next page"><ChevronRight size={16} /></button>
+                </div>
               </div>
-            </section>
-          ))
+            )}
+          </>
         )}
       </div>
     </div>

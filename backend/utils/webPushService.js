@@ -183,6 +183,7 @@ const resolveNotificationPath = (notification, userType) => {
     if (userType === 'Parent') return '/parents/excuse-letters';
     if (userType === 'Student') return '/student/excuse-letter';
   }
+  if (normalizeString(notification?.typeLabel) === 'teacher_leave_reviewed' && userType === 'Teacher') return '/teacher/settings?tab=leave';
   // Parent-teacher meetings open the meetings page, whatever words the topic contains.
   if (normalizeString(notification?.typeLabel) === 'parent_teacher_meeting') {
     if (userType === 'Parent') return '/parents/ptm';

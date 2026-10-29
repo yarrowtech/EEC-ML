@@ -3,6 +3,7 @@ import { useLocation, useNavigate } from 'react-router-dom';
 import { apiFetch } from '../utils/authSession';
 import { notificationId, readModuleSeenState, writeModuleSeenState } from '../utils/moduleNotificationUtils';
 import { normalizeAdminPath, resolveAdminNotificationPath } from './adminNotificationUtils';
+import { subscribeSocketEvent } from '@/hooks/useCommunityWallUnread';
 
 const API_BASE = (import.meta.env.VITE_API_URL || window.location.origin).replace(/\/$/, '');
 
@@ -55,18 +56,16 @@ export const useAdminNotifications = ({ isSuperAdmin = false } = {}) => {
       if (document.visibilityState === 'visible') fetchNotifs();
     }, 15_000);
 
-    const socket = window.io?.(API_BASE, {
-      transports: ['websocket', 'polling'],
-      auth: { token: localStorage.getItem('token') },
-    });
-    socket?.on('new_notification', () => fetchNotifs());
+    // window.io was never defined, so the bell only refreshed on the 15s poll.
+    // Use the app's shared Socket.IO connection for instant updates.
+    const unsubscribe = subscribeSocketEvent('new_notification', () => fetchNotifs());
 
     const onVisible = () => { if (document.visibilityState === 'visible') fetchNotifs(); };
     document.addEventListener('visibilitychange', onVisible);
 
     return () => {
       clearInterval(poll);
-      socket?.disconnect?.();
+      unsubscribe();
       document.removeEventListener('visibilitychange', onVisible);
     };
   }, [fetchNotifs]);
