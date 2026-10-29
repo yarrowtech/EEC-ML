@@ -1,7 +1,14 @@
-import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import React, { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { AnimatePresence, motion, useReducedMotion } from 'framer-motion';
 import {
   Activity,
+  ArrowLeft,
+  BarChart3,
+  BookOpen,
+  ChevronDown,
+  Flame,
+  Info,
+  Users,
   AlertCircle,
   Archive,
   BadgeCheck,
@@ -165,7 +172,10 @@ const mapProfileFromApi = (teacher = {}) => ({
   joinDate: normalizeJoinDate(teacher.joiningDate || teacher.joinDate),
   address: teacher.address || '',
   emergencyContact: teacher.emergencyContact || '',
-  profilePic: teacher.profilePic || ''
+  profilePic: teacher.profilePic || '',
+  subject: teacher.subject || '',
+  coverImage: teacher.schoolCoverImage || '',
+  classLabels: Array.isArray(teacher.classLabels) ? teacher.classLabels : [],
 });
 
 const formatDate = (dateStr) => {
@@ -200,6 +210,37 @@ const getLeaveDays = (startDate, endDate) => {
   const end = new Date(endDate);
   if (Number.isNaN(start.getTime()) || Number.isNaN(end.getTime()) || end < start) return 0;
   return Math.floor((end - start) / (24 * 60 * 60 * 1000)) + 1;
+};
+
+// Card tints used across the My Work overview (green / blue / amber / purple).
+const TONES = {
+  green:  { bg: '#effaf3', border: '#d4f1de', tile: '#d8f3e2', icon: '#16a34a', ring: '#22c55e', track: '#d8f3e2' },
+  blue:   { bg: '#eff5ff', border: '#d9e6fd', tile: '#dbe7fe', icon: '#2563eb', ring: '#2563eb', track: '#dbe7fe' },
+  amber:  { bg: '#fff8ec', border: '#fbe7c6', tile: '#fdebc8', icon: '#f59e0b', ring: '#f59e0b', track: '#fdebc8' },
+  purple: { bg: '#f7f2ff', border: '#e8dcfd', tile: '#ece2fe', icon: '#9333ea', ring: '#a855f7', track: '#ece2fe' },
+};
+
+const RingGauge = ({ percent = 0, color, track, text, sub, size = 84 }) => {
+  const stroke = size < 70 ? 6 : 7;
+  const radius = (size - stroke) / 2;
+  const circumference = 2 * Math.PI * radius;
+  const clamped = Math.max(0, Math.min(100, Number(percent) || 0));
+  return (
+    <div className="relative" style={{ width: size, height: size }}>
+      <svg width={size} height={size} className="-rotate-90">
+        <circle cx={size / 2} cy={size / 2} r={radius} fill="white" stroke={track} strokeWidth={stroke} />
+        <circle
+          cx={size / 2} cy={size / 2} r={radius} fill="none" stroke={color} strokeWidth={stroke} strokeLinecap="round"
+          strokeDasharray={circumference} strokeDashoffset={circumference * (1 - clamped / 100)}
+          style={{ transition: 'stroke-dashoffset 0.8s ease' }}
+        />
+      </svg>
+      <div className="absolute inset-0 flex flex-col items-center justify-center leading-none">
+        <span className="font-bold text-[#0f1b3d]" style={{ fontSize: Math.round(size / 5.6) }}>{text}</span>
+        {sub && <span className="mt-0.5 text-[10px] font-semibold text-[#334155]">{sub}</span>}
+      </div>
+    </div>
+  );
 };
 
 const SectionTitle = ({ icon: Icon, title, description, action }) => (
@@ -818,78 +859,149 @@ const MyWorkPortal = () => {
 
   const tabContentProps = shouldReduceMotion ? {} : panelMotion;
 
+  // ── Overview: one screen, no page scroll (sized to the space below the portal header) ──
+  const overviewRef = useRef(null);
+  const [overviewHeight, setOverviewHeight] = useState(null);
+  useLayoutEffect(() => {
+    if (activeTab !== 'overview') return undefined;
+    const measure = () => {
+      const top = overviewRef.current?.getBoundingClientRect().top ?? 0;
+      setOverviewHeight(Math.max(560, window.innerHeight - Math.max(0, top)));
+    };
+    measure();
+    window.addEventListener('resize', measure);
+    return () => window.removeEventListener('resize', measure);
+  }, [activeTab]);
+
+  const quickActionCards = [
+    { label: 'Mark Attendance', hint: "Take today's attendance", icon: CalendarCheck, tone: TONES.green, onClick: () => setActiveTab('attendance') },
+    { label: 'Apply Leave', hint: 'Request time off', icon: FileText, tone: TONES.blue, onClick: () => { setActiveTab('leave'); openLeaveForm(); } },
+    { label: 'Submit Expense', hint: 'Claim your expenses', icon: Receipt, tone: TONES.amber, onClick: () => { setActiveTab('expenses'); openExpenseForm(); } },
+    { label: 'Update Profile', hint: 'Manage your information', icon: User, tone: TONES.purple, onClick: () => setActiveTab('profile') },
+  ];
+  const claimVolume = expenseStats.approved + expenseStats.pending;
+  const insightRings = [
+    { label: 'Work Health Score', tone: TONES.blue, icon: BarChart3, percent: insightScore, text: `${insightScore}%`, tip: 'Average of attendance rate, leave buffer left and profile completeness.' },
+    { label: 'Attendance Consistency', tone: TONES.green, icon: User, percent: attendanceStats.attendanceRate || 0, text: `${attendanceStats.attendanceRate || 0}%`, tip: 'Share of working days you were present this month.' },
+    { label: 'Approved Leave Days', tone: TONES.amber, icon: CalendarCheck, percent: Math.min(100, (leaveQuota.approvedLeaveDays / Math.max(leaveQuota.totalAllowanceDays || 1, 1)) * 100), text: String(leaveQuota.approvedLeaveDays || 0), sub: 'days', tip: 'Leave days approved this session.' },
+    { label: 'Claim Volume', tone: TONES.purple, icon: FileText, percent: claimVolume ? 100 : 0, text: `Rs ${claimVolume.toLocaleString('en-IN')}`, tip: 'Approved plus pending reimbursement claims.' },
+  ];
+  const punctualityOk = !attendanceStats.lateDays;
+
   const renderOverview = () => (
-    <MotionDiv {...tabContentProps} className="space-y-6">
-      <Card className="overflow-hidden border-slate-200/80 bg-white py-0 shadow-sm">
-        <CardContent className="p-0">
-          <div className="grid gap-0 lg:grid-cols-[1.35fr_0.65fr]">
-            <div className="relative min-h-[260px] overflow-hidden bg-[radial-gradient(circle_at_top_left,#e0f2fe,transparent_35%),linear-gradient(135deg,#f8fafc,#ffffff_52%,#ecfeff)] p-5 sm:p-7">
-              <div className="absolute inset-x-0 bottom-0 h-px bg-linear-to-r from-transparent via-slate-200 to-transparent" />
-              <div className="relative flex flex-col gap-8">
-                <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
-                  <div className="flex items-center gap-4">
-                    <Avatar className="h-16 w-16 border border-white shadow-md">
-                      <AvatarImage src={profileData.profilePic} alt={profileData.name || 'Teacher'} />
-                      <AvatarFallback className="bg-slate-900 text-lg font-semibold text-white">{profileData.name?.charAt(0) || 'T'}</AvatarFallback>
-                    </Avatar>
-                    <div>
-                      <Badge className="mb-2 border-cyan-200 bg-cyan-50 text-cyan-700">Work Portal</Badge>
-                      <h1 className="text-2xl font-semibold tracking-tight text-slate-950 sm:text-3xl">My Work</h1>
-                      <p className="mt-1 text-sm text-slate-500">{profileData.name || 'Teacher'} · {profileData.department || 'Academic team'} · {formatDate(new Date().toISOString().slice(0, 10))}</p>
-                    </div>
-                  </div>
-                  <Badge className={cn('w-fit border px-3 py-1.5', getStatusClass(todayAttendance.status))}>{todayAttendance.status || 'Not marked'}</Badge>
-                </div>
-
-                <div className="grid gap-3 sm:grid-cols-3">
-                  <div className="rounded-xl border border-white/80 bg-white/80 p-4 shadow-sm backdrop-blur">
-                    <p className="text-xs font-medium uppercase tracking-wide text-slate-500">Today</p>
-                    <p className="mt-2 text-sm font-semibold text-slate-900">{todayAttendance.hasCheckedIn ? `Checked in at ${formatTime(todayAttendance.checkIn)}` : 'Ready for check-in'}</p>
-                    <p className="mt-1 text-xs text-slate-500">Expected window {formatTime(attendanceTiming.entryTime)} - {formatTime(attendanceTiming.exitTime)}</p>
-                  </div>
-                  <div className="rounded-xl border border-white/80 bg-white/80 p-4 shadow-sm backdrop-blur">
-                    <p className="text-xs font-medium uppercase tracking-wide text-slate-500">Session</p>
-                    <p className="mt-2 flex items-center gap-2 text-sm font-semibold text-slate-900"><Timer className="h-4 w-4 text-cyan-600" />{formatWorkingHours(todayAttendance.workingMinutes)}</p>
-                    <p className="mt-1 text-xs text-slate-500">{activeSession ? 'Live work timer active' : 'No active work session'}</p>
-                  </div>
-                  <div className="rounded-xl border border-white/80 bg-white/80 p-4 shadow-sm backdrop-blur">
-                    <p className="text-xs font-medium uppercase tracking-wide text-slate-500">Next Action</p>
-                    <p className="mt-2 text-sm font-semibold text-slate-900">{leaveStats.pendingRequests ? `${leaveStats.pendingRequests} leave request pending` : 'No leave bottlenecks'}</p>
-                    <p className="mt-1 text-xs text-slate-500">{expenseStats.pendingCount} reimbursement claims pending</p>
-                  </div>
-                </div>
-              </div>
-            </div>
-
-            <div className="border-t border-slate-200 bg-slate-950 p-5 text-white lg:border-l lg:border-t-0">
-              <div className="flex items-center justify-between">
-                <div>
-                  <p className="text-xs font-medium uppercase tracking-wide text-slate-400">Monthly insight</p>
-                  <p className="mt-2 text-4xl font-semibold">{insightScore}</p>
-                </div>
-                <div className="flex h-12 w-12 items-center justify-center rounded-2xl bg-white/10 text-cyan-200">
-                  <Gauge className="h-5 w-5" />
-                </div>
-              </div>
-              <Progress value={insightScore} className="mt-5 h-2 bg-white/10" />
-              <div className="mt-6 space-y-3 text-sm">
-                <div className="flex items-center justify-between"><span className="text-slate-400">Attendance rate</span><span>{attendanceStats.attendanceRate || 0}%</span></div>
-                <div className="flex items-center justify-between"><span className="text-slate-400">Leave days remaining</span><span>{leaveQuota.projectedAvailableDays} / {leaveQuota.totalAllowanceDays}</span></div>
-                <div className="flex items-center justify-between"><span className="text-slate-400">Profile completion</span><span>{profileCompletion}%</span></div>
-              </div>
+    <MotionDiv {...tabContentProps} className="flex min-h-0 flex-1 flex-col gap-3">
+      {/* Profile banner — school cover photo on the right */}
+      <div className="relative flex min-h-[92px] shrink-0 items-center overflow-hidden rounded-2xl border border-[#dbe9fb] bg-linear-to-r from-[#e6f1fd] via-[#eef6ff] to-[#f5f9ff]">
+        {profileData.coverImage && (
+          <div className="absolute inset-y-0 right-0 hidden w-[80%] md:block">
+            <img src={profileData.coverImage} alt="" className="h-full w-full object-cover" />
+            {/* Fade only the left edge so the name and details stay readable over the photo. */}
+            <div className="absolute inset-0" style={{ background: 'linear-gradient(to right, #eef6ff 0%, rgba(238,246,255,0.85) 22%, rgba(238,246,255,0.25) 42%, transparent 60%)' }} />
+          </div>
+        )}
+        <div className="relative flex items-center gap-4 px-4 py-2.5 sm:px-5">
+          <Avatar className="h-16 w-16 shrink-0 border-[3px] border-white shadow-[0_6px_18px_rgba(30,64,175,0.15)]">
+            <AvatarImage src={profileData.profilePic} alt={profileData.name || 'Teacher'} className="object-cover" />
+            <AvatarFallback className="bg-[#1e3a8a] text-2xl font-semibold text-white">{profileData.name?.charAt(0) || 'T'}</AvatarFallback>
+          </Avatar>
+          <div className="min-w-0">
+            <span className="inline-block rounded-full bg-[#dbeafe] px-2.5 py-px text-[11px] font-semibold text-[#2563eb]">Teacher</span>
+            <h2 className="mt-1 truncate text-[19px] font-bold leading-tight text-[#0f1b3d]">{profileData.name || 'Teacher'}</h2>
+            <div className="mt-1 flex flex-wrap items-center gap-x-4 gap-y-0.5 text-[12px] text-[#475569]">
+              {(profileData.subject || profileData.department) && (
+                <span className="inline-flex items-center gap-1.5"><BookOpen className="h-4 w-4 text-[#64748b]" />{profileData.subject || profileData.department}</span>
+              )}
+              {profileData.classLabels?.length > 0 && (
+                <span className="inline-flex items-center gap-1.5"><Users className="h-4 w-4 text-[#64748b]" />{profileData.classLabels.join(', ')}</span>
+              )}
             </div>
           </div>
-        </CardContent>
-      </Card>
+        </div>
+      </div>
 
-      <MotionDiv variants={staggerMotion} initial="initial" animate="animate" className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
-        <MetricCard icon={CheckCircle} label="Days Present" value={attendanceStats.presentDays} hint={`${attendanceStats.lateDays || 0} late arrivals this month`} tone="emerald" progress={attendanceStats.attendanceRate || 0} onClick={() => setActiveTab('attendance')} />
-        <MetricCard icon={CalendarCheck} label="Leave Balance" value={leaveQuota.projectedAvailableDays} hint={`${leaveQuota.usedDays} of ${leaveQuota.totalAllowanceDays} used${leaveQuota.pendingLeaveDays > 0 ? ` · ${leaveQuota.pendingLeaveDays} pending` : ''}`} tone="blue" progress={(leaveQuota.projectedAvailableDays / Math.max(leaveQuota.totalAllowanceDays || 1, 1)) * 100} onClick={() => setActiveTab('leave')} />
-        <MetricCard icon={Receipt} label="Pending Claims" value={expenseStats.pendingCount} hint={`Rs ${expenseStats.pending.toLocaleString('en-IN')} awaiting review`} tone="amber" onClick={() => setActiveTab('expenses')} />
-        <MetricCard icon={BellRing} label="Unread Alerts" value={unreadNotifications} hint="Workflow inbox" tone="violet" onClick={() => setActiveTab('notifications')} />
-      </MotionDiv>
+      {/* Quick Actions */}
+      <div className="shrink-0">
+        <h3 className="mb-1.5 text-[13px] font-bold text-[#0f1b3d]">Quick Actions</h3>
+        <div className="grid grid-cols-2 gap-2 lg:grid-cols-4">
+          {quickActionCards.map(({ label, hint, icon: Icon, tone, onClick }) => (
+            <button
+              key={label}
+              type="button"
+              onClick={onClick}
+              title={hint}
+              className="group flex items-center gap-2 rounded-full border px-2.5 py-1.5 text-left transition hover:shadow-sm"
+              style={{ backgroundColor: tone.bg, borderColor: tone.border }}
+            >
+              <span className="flex h-7 w-7 shrink-0 items-center justify-center rounded-lg" style={{ backgroundColor: tone.tile, color: tone.icon }}><Icon className="h-4 w-4" /></span>
+              <span className="min-w-0 flex-1 truncate text-[13px] font-semibold text-[#0f1b3d]">{label}</span>
+              <ChevronRight className="h-4 w-4 shrink-0 text-[#64748b] transition group-hover:translate-x-0.5" />
+            </button>
+          ))}
+        </div>
+      </div>
 
-      
+      {/* Work Insights */}
+      <div className="flex shrink-0 flex-col rounded-2xl border border-[#e6ebf2] bg-white p-3 shadow-[0_1px_3px_rgba(15,23,42,0.04)]">
+        <div className="flex shrink-0 items-start justify-between gap-3">
+          <div className="flex items-start gap-3">
+            <TrendingUp className="mt-0.5 h-5 w-5 text-[#2563eb]" />
+            <div>
+              <h3 className="text-[14px] font-bold text-[#0f1b3d]">Work Insights</h3>
+              <p className="text-[12px] text-[#64748b]">Operational signals that summarize consistency, leave usage, reimbursements, and monthly readiness.</p>
+            </div>
+          </div>
+          <label className="relative flex h-8 shrink-0 items-center gap-2 rounded-lg border border-[#e2e8f0] bg-white px-2.5 text-[12px] font-medium text-[#0f1b3d]">
+            <CalendarDays className="h-4 w-4 text-[#64748b]" />
+            <span>{toMonthLabel(selectedMonth)}</span>
+            <ChevronDown className="h-4 w-4 text-[#64748b]" />
+            <input type="month" value={selectedMonth} onChange={(e) => e.target.value && setSelectedMonth(e.target.value)} className="absolute inset-0 cursor-pointer opacity-0" aria-label="Choose month" />
+          </label>
+        </div>
+
+        <div className="mt-2 grid min-h-0 shrink-0 grid-cols-2 gap-2 lg:grid-cols-4">
+          {insightRings.map(({ label, tone, icon: Icon, percent, text, sub, tip }) => (
+            <div key={label} className="relative flex flex-col items-center rounded-xl px-2 py-2" style={{ backgroundColor: tone.bg }}>
+              <span className="absolute left-2 top-2 flex h-6 w-6 items-center justify-center rounded-md" style={{ backgroundColor: tone.tile, color: tone.icon }}><Icon className="h-3.5 w-3.5" /></span>
+              <RingGauge percent={percent} color={tone.ring} track={tone.track} text={text} sub={sub} size={62} />
+              <p className="mt-1 flex items-center gap-1 text-[12px] font-medium text-[#0f1b3d]">
+                {label}
+                <span title={tip} className="cursor-help text-[#94a3b8]"><Info className="h-3.5 w-3.5" /></span>
+              </p>
+            </div>
+          ))}
+        </div>
+
+        <div className="mt-2 grid min-h-0 grid-cols-1 items-center gap-2 lg:grid-cols-[1fr_320px]">
+          <div>
+            <div className="flex items-start gap-3">
+              <CalendarDays className="mt-0.5 h-5 w-5 text-[#2563eb]" />
+              <div>
+                <p className="text-[13px] font-bold text-[#0f1b3d]">Monthly Work Statistics</p>
+                <p className="text-[12px] text-[#64748b]">{toMonthLabel(selectedMonth)} summary</p>
+              </div>
+            </div>
+            <div className="mt-1.5 grid grid-cols-3 divide-x divide-[#e2e8f0]">
+              {[
+                { label: 'Work streak', value: `${attendanceStats.presentDays || 0} day${attendanceStats.presentDays === 1 ? '' : 's'}`, icon: Flame, tile: '#fdecec', color: '#ef4444', valueColor: '#0f1b3d' },
+                { label: 'Punctuality signal', value: punctualityOk ? 'On track' : 'Needs attention', icon: Clock, tile: '#f5ecfd', color: '#9333ea', valueColor: punctualityOk ? '#16a34a' : '#f59e0b' },
+                { label: 'Pending approvals', value: String(leaveStats.pendingRequests + expenseStats.pendingCount), icon: Check, tile: '#e3f6ea', color: '#16a34a', valueColor: '#0f1b3d' },
+              ].map(({ label, value, icon: Icon, tile, color, valueColor }) => (
+                <div key={label} className="flex items-center gap-3 px-3 first:pl-0">
+                  <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg" style={{ backgroundColor: tile, color }}><Icon className="h-4 w-4" /></span>
+                  <div className="min-w-0">
+                    <p className="truncate text-[12px] text-[#64748b]">{label}</p>
+                    <p className="truncate text-[14px] font-bold" style={{ color: valueColor }}>{value}</p>
+                  </div>
+                </div>
+              ))}
+            </div>
+          </div>
+          <div className="flex items-start gap-2 rounded-xl bg-[#eef5ff] px-3 py-2 text-[11px] leading-4 text-[#475569]">
+            <Info className="mt-0.5 h-4 w-4 shrink-0 text-[#2563eb]" />
+            <p>Insight is calculated from attendance rate, remaining leave buffer, and profile readiness. It is a workspace signal, not a performance grade.</p>
+          </div>
+        </div>
+      </div>
     </MotionDiv>
   );
 
@@ -1177,21 +1289,32 @@ const MyWorkPortal = () => {
     return content?.();
   };
 
+  const isOverview = activeTab === 'overview';
   return (
-    <div className="min-h-screen bg-[#f6f8fb] px-3 py-4 text-slate-900 sm:px-5 lg:px-6">
-        <div className="mx-auto max-w-7xl space-y-5">
-          <div className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
-            <div><p className="text-xs font-semibold uppercase tracking-[0.18em] text-cyan-700">Teacher Work Portal</p><h1 className="mt-1 text-2xl font-semibold tracking-tight text-slate-950">My Work</h1><p className="mt-1 text-sm text-slate-500">Attendance, leave, claims, documents, notifications, and identity in one workspace.</p></div>
-            <div className="flex flex-wrap gap-2">{quickActions.slice(0, 3).map((action) => <Button key={action.label} size="sm" variant={action.label === 'Check In' || action.label === 'Check Out' ? 'default' : 'outline'} disabled={action.disabled} onClick={action.onClick}><action.icon className="h-3.5 w-3.5" />{action.label}</Button>)}</div>
-          </div>
-
-          <div className="sticky top-0 z-20 -mx-3 border-y border-slate-200/70 bg-[#f6f8fb]/90 px-3 py-3 backdrop-blur sm:-mx-5 sm:px-5 lg:-mx-6 lg:px-6">
-            <div className="flex gap-2 overflow-x-auto pb-1">
-              {tabs.map((tab) => {
-                const active = activeTab === tab.id;
-                return <button key={tab.id} type="button" onClick={() => setActiveTab(tab.id)} className={cn('flex shrink-0 items-center gap-2 rounded-xl border px-3 py-2 text-sm font-medium outline-none transition focus-visible:ring-2 focus-visible:ring-slate-400', active ? 'border-slate-900 bg-slate-950 text-white shadow-sm' : 'border-slate-200 bg-white text-slate-600 hover:border-slate-300 hover:text-slate-950')}><tab.icon className="h-4 w-4" />{tab.label}</button>;
-              })}
+    <div
+      ref={overviewRef}
+      className={cn('bg-[#f6f8fb] px-3 py-3 text-slate-900 sm:px-5 lg:px-6', isOverview ? 'flex flex-col overflow-hidden' : 'min-h-screen')}
+      style={isOverview && overviewHeight ? { height: overviewHeight } : undefined}
+    >
+        <div className={cn('mx-auto w-full max-w-7xl', isOverview ? 'flex min-h-0 flex-1 flex-col gap-3' : 'space-y-5')}>
+          <div className="flex shrink-0 flex-wrap items-end justify-between gap-3">
+            <div>
+              {!isOverview && (
+                <button type="button" onClick={() => setActiveTab('overview')} className="mb-1 inline-flex items-center gap-1 text-[12px] font-semibold text-[#2563eb] hover:underline">
+                  <ArrowLeft className="h-3.5 w-3.5" />Back to My Work
+                </button>
+              )}
+              <h1 className="text-[22px] font-bold leading-tight tracking-tight text-[#0f1b3d]">My Profile</h1>
+              <p className="text-[12px] text-[#64748b]">Manage your daily teaching activities from here.</p>
             </div>
+            {!isOverview && (
+              <div className="flex gap-1.5 overflow-x-auto pb-1">
+                {tabs.filter((tab) => tab.id !== 'overview').map((tab) => {
+                  const active = activeTab === tab.id;
+                  return <button key={tab.id} type="button" onClick={() => setActiveTab(tab.id)} className={cn('flex shrink-0 items-center gap-1.5 rounded-lg border px-2.5 py-1.5 text-[12px] font-medium outline-none transition focus-visible:ring-2 focus-visible:ring-slate-400', active ? 'border-[#2563eb] bg-[#2563eb] text-white shadow-sm' : 'border-slate-200 bg-white text-slate-600 hover:border-slate-300 hover:text-slate-950')}><tab.icon className="h-3.5 w-3.5" />{tab.label}</button>;
+                })}
+              </div>
+            )}
           </div>
 
           <AnimatePresence mode="wait">{renderContent()}</AnimatePresence>
