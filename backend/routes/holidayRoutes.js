@@ -11,7 +11,7 @@ const authParent = require('../middleware/authParent');
 const { logStudentPortalEvent, logStudentPortalError } = require('../utils/studentPortalLogger');
 
 const router = express.Router();
-const { parentAttendanceCache } = require('../utils/responseCache');
+const { parentAttendanceCache, holidayCache } = require('../utils/responseCache');
 // Any write here clears the parent attendance screen's response cache.
 router.use(parentAttendanceCache.invalidateOnWrite);
 
@@ -236,7 +236,7 @@ router.put('/:id', adminAuth, async (req, res) => {
   }
 });
 
-router.get('/teacher', authTeacher, async (req, res) => {
+router.get('/teacher', authTeacher, holidayCache.cache, async (req, res) => {
   try {
     const schoolId = req.schoolId || null;
     const campusId = req.campusId || null;

@@ -330,7 +330,11 @@ const ExcuseLetters = () => {
                           <div className="flex items-center gap-2.5">
                             <StudentAvatar name={letter.studentName} photo={letter.studentPhoto} />
                             <div className="min-w-0">
-                              <p className="truncate text-[13px] font-semibold text-gray-900">{letter.studentName}</p>
+                              <p className="flex min-w-0 items-center gap-1.5 text-[13px] font-semibold text-gray-900">
+                                <span className="truncate">{letter.studentName}</span>
+                                {/* No decision yet */}
+                                {status === 'pending' && <span className="inline-flex shrink-0 animate-pulse items-center rounded-full bg-red-500 px-2 py-0.5 text-[10px] font-bold uppercase tracking-wide text-white">New</span>}
+                              </p>
                               <p className="text-[11px] text-gray-500">
                                 Class {letter.className}{letter.sectionName && `-${letter.sectionName}`}{letter.rollNumber ? ` · Roll ${letter.rollNumber}` : ''}
                               </p>
