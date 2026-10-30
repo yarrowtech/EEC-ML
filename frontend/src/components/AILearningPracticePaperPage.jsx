@@ -28,6 +28,20 @@ const AILearningPracticePaperPage = () => {
   const topic = topicMatch?.[1] ? deslugifyFromUrl(topicMatch[1]) : '';
   const subject = subjectMatch?.[1] ? deslugifyFromUrl(subjectMatch[1]) : '';
 
+  // Dashboard reminders link here with ?paper=<id> or ?worksheet=<id>.
+  const linkedPaperId = new URLSearchParams(location.search).get('paper');
+  const linkedWorksheetId = new URLSearchParams(location.search).get('worksheet');
+  useEffect(() => {
+    if (!linkedPaperId || !papers.length) return;
+    const paper = papers.find((p) => String(p._id) === linkedPaperId);
+    if (paper) setSelectedPaper(paper);
+  }, [linkedPaperId, papers]);
+  useEffect(() => {
+    if (!linkedWorksheetId || !worksheetAssignments.length) return;
+    const worksheet = worksheetAssignments.find((a) => String(a._id) === linkedWorksheetId);
+    if (worksheet) setWorksheetModal(worksheet);
+  }, [linkedWorksheetId, worksheetAssignments]);
+
   useEffect(() => {
     const load = async () => {
       try {

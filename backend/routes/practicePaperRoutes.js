@@ -516,8 +516,15 @@ router.get('/student/papers', authStudent, async (req, res, next) => {
       if (latest && !latest.submittedAt) studentStatus = 'in_progress';
       else if (latest?.submittedAt && latest.percentage !== undefined && latest.percentage !== null) studentStatus = 'completed';
       else if (latest?.submittedAt) studentStatus = 'submitted';
+      // Progress shown on the dashboard reminder: answered share of an open attempt,
+      // otherwise the best score from earlier attempts (0 when never tried).
+      const total = Number(paper.totalQuestions) || 0;
+      const best = attempts.reduce((m, a) => (Number.isFinite(Number(a.percentage)) ? Math.max(m, Number(a.percentage)) : m), 0);
+      const progressPercent = studentStatus === 'in_progress' && total
+        ? Math.min(99, Math.round(((latest.answers || []).length / total) * 100))
+        : Math.round(best);
       const { studentAttempts, ...safePaper } = paper;
-      return { ...safePaper, studentStatus };
+      return { ...safePaper, studentStatus, progressPercent };
     });
 
     const total = await PracticePaper.countDocuments(filters);

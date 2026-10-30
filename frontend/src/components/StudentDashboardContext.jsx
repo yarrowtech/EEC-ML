@@ -3,6 +3,12 @@ import { clearCacheEntry, readCacheEntry, writeCacheEntry } from '../utils/stude
 import { fetchCachedJson, peekCachedJson } from '../utils/studentApiCache';
 import { STUDENT_API_BASE, STUDENT_DASHBOARD_TTL_MS } from '../utils/studentDashboardPrefetch';
 import { AUTH_NOTICE, logoutAndRedirect } from '../utils/authSession';
+import { slugifyForUrl } from '../utils/urlSlug';
+
+// Deep link to the practice-paper page for one subject/topic; ?paper / ?worksheet opens the item.
+const reminderPath = (subject, topic, param, id) => (subject && topic
+  ? `/student/smart-learning-courses/subject/${slugifyForUrl(subject)}/topic/${slugifyForUrl(topic)}/assessment/practice-paper?${param}=${id}`
+  : '/student/smart-learning-courses');
 import { useNotifications } from '../hooks/useNotifications';
 import {
   getStudentNotificationModule,
@@ -177,8 +183,8 @@ export const StudentDashboardProvider = ({ children }) => {
         return type.includes('worksheet') && !['submitted', 'graded', 'late'].includes(String(assignment?.submissionStatus || '').toLowerCase());
       });
       setSmartLearningReminders([
-        ...papers.map((paper) => ({ id: `paper-${paper._id}`, kind: 'Practice paper', subject: paper.subjectName || paper.subject?.name || paper.subject || '', topic: paper.topicTitle || paper.subTopicTitle || paper.topics?.[0] || paper.chapterTitle || paper.chapter || '', title: paper.title, path: '/student/smart-learning-courses' })),
-        ...assignments.map((assignment) => ({ id: `worksheet-${assignment._id}`, kind: 'Worksheet', subject: assignment.subject || '', topic: assignment.topicTitle || assignment.topic || assignment.subTopicTitle || assignment.chapterTitle || '', title: assignment.title, path: '/student/smart-learning-courses' })),
+        ...papers.map((paper) => ({ id: `paper-${paper._id}`, kind: 'Practice paper', subject: paper.subjectName || paper.subject?.name || paper.subject || '', chapter: paper.chapterTitle || paper.chapter || '', topic: paper.topicTitle || paper.subTopicTitle || paper.topics?.[0] || paper.chapterTitle || paper.chapter || '', title: paper.title, status: paper.studentStatus || 'not_started', progress: Number(paper.progressPercent) || 0, path: reminderPath(paper.subjectName || paper.subject?.name || paper.subject, paper.topicTitle || paper.chapterTitle || paper.chapter || paper.subTopicTitle, 'paper', paper._id) })),
+        ...assignments.map((assignment) => ({ id: `worksheet-${assignment._id}`, kind: 'Worksheet', subject: assignment.subject || '', chapter: assignment.chapterTitle || '', topic: assignment.topicTitle || assignment.topic || assignment.subTopicTitle || assignment.chapterTitle || '', title: assignment.title, status: 'not_started', progress: 0, path: reminderPath(assignment.subjectName || assignment.subject, assignment.topicTitle || assignment.topic || assignment.chapterTitle, 'worksheet', assignment._id) })),
       ]);
     } catch {
       // keep existing reminders on transient network errors

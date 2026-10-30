@@ -29,7 +29,7 @@ const StatCard = ({ stat, theme, loading }) => {
           <div className={`flex h-10 w-10 items-center justify-center rounded-full shadow-md ${theme.iconBg}`}>
             <Icon size={20} className="text-white" />
           </div>
-          <span className={`rounded-full px-2 py-0.5 text-[10px] font-bold ${theme.badge} max-w-22.5 truncate`}>
+          <span className={`rounded-full px-2 py-0.5 text-[10px] font-bold ${stat.badgeClass || theme.badge} max-w-22.5 truncate`}>
             {loading ? '…' : stat.change}
           </span>
         </div>
@@ -49,7 +49,7 @@ const StatCard = ({ stat, theme, loading }) => {
 const QuickStats = ({ square = false }) => {
   const { stats: dashboardStats, loading } = useStudentDashboard();
   const [assignmentSummary, setAssignmentSummary] = useState({ total: 0, pending: 0, evaluated: 0, loading: false });
-  const [examSummary, setExamSummary] = useState({ percentage: null, examName: '', loading: false });
+  const [examSummary, setExamSummary] = useState({ percentage: null, examName: '', obtained: null, total: null, grade: '', loading: false });
 
   // Fire immediately on mount (in parallel with the dashboard's own fetch) instead of
   // waiting on `loading` — that previously made these two cards wait for the dashboard
@@ -94,9 +94,14 @@ const QuickStats = ({ square = false }) => {
         });
         const totals = data?.reportCard?.totals || {};
         const percentage = Number(totals.percentage);
+        const obtained = Number(totals.obtainedMarks);
+        const total = Number(totals.totalMarks);
         setExamSummary({
           percentage: Number.isFinite(percentage) ? percentage : null,
           examName: data?.selectedExamGroupTitle || data?.reportCard?.term || '',
+          obtained: Number.isFinite(obtained) ? obtained : null,
+          total: Number.isFinite(total) && total > 0 ? total : null,
+          grade: totals.grade || '',
           loading: false,
         });
       } catch {
@@ -107,17 +112,41 @@ const QuickStats = ({ square = false }) => {
   }, []);
 
   const stats = useMemo(() => {
-    const attPct = dashboardStats?.attendancePercentage ?? 0;
+    const attPct = Number(dashboardStats?.attendancePercentage ?? 0);
     const presentDays = dashboardStats?.presentDays ?? 0;
     const totalClasses = dashboardStats?.totalClasses ?? 0;
+    const absentDays = Math.max(0, totalClasses - presentDays);
     const examPct = examSummary.percentage;
+
+    // Attendance health against the usual 75% minimum.
+    const attStatus = totalClasses === 0
+      ? { label: 'No records yet', badge: 'bg-slate-400 text-white', bar: 'bg-slate-300' }
+      : attPct >= 90
+        ? { label: 'Excellent', badge: 'bg-emerald-500 text-white', bar: 'bg-emerald-500' }
+        : attPct >= 75
+          ? { label: 'On track', badge: 'bg-blue-500 text-white', bar: 'bg-blue-500' }
+          : { label: 'Below 75%', badge: 'bg-rose-500 text-white', bar: 'bg-rose-500' };
+    // Consecutive present days needed to climb back to 75%: (p + n) / (t + n) >= 0.75.
+    const daysToMinimum = attPct < 75 && totalClasses > 0 ? Math.max(0, Math.ceil(3 * totalClasses - 4 * presentDays)) : 0;
+    const attSubtitle = totalClasses === 0
+      ? ''
+      : daysToMinimum > 0 && daysToMinimum <= 30
+        ? `Attend ${daysToMinimum} more day${daysToMinimum === 1 ? '' : 's'} to reach 75%`
+        : `${presentDays} present · ${absentDays} absent of ${totalClasses} days`;
+
+    // Assignment states: graded → Evaluated; handed in but not graded → Submitted; else Pending.
+    const submittedOnly = Math.max(0, assignmentSummary.total - assignmentSummary.pending - assignmentSummary.evaluated);
 
     return [
       {
         title: 'Attendance',
         to: '/student/attendance',
         value: loading ? '…' : `${attPct}%`,
-        change: loading ? 'Loading…' : `${presentDays}/${totalClasses} days`,
+        change: loading ? 'Loading…' : attStatus.label,
+        badgeClass: totalClasses > 0 && attPct < 75 ? 'bg-red-500 text-white' : '',
+        subtitle: attSubtitle,
+        subtitleClass: attPct < 75 && totalClasses > 0 ? 'text-rose-600' : 'text-[#64748b]',
+        bar: totalClasses > 0 ? { value: attPct, color: attStatus.bar, title: `${attPct}% (minimum 75%)` } : null,
         icon: Clock,
       },
       {
@@ -126,10 +155,9 @@ const QuickStats = ({ square = false }) => {
         value: assignmentSummary.loading ? '…' : String(assignmentSummary.total),
         change: assignmentSummary.loading
           ? 'Loading…'
-          : assignmentSummary.total > 0 ? `${assignmentSummary.evaluated} Evaluated` : 'No assignments',
-        // Anything not "not_submitted" counts as handed in (submitted, late, graded).
+          : assignmentSummary.pending > 0 ? `${assignmentSummary.pending} due` : assignmentSummary.total > 0 ? 'All done' : 'No assignments',
         subtitle: !assignmentSummary.loading && assignmentSummary.total > 0
-          ? `${assignmentSummary.total - assignmentSummary.pending} of ${assignmentSummary.total} submitted`
+          ? `${submittedOnly} Submitted · ${assignmentSummary.pending} Pending · ${assignmentSummary.evaluated} Evaluated`
           : '',
         icon: FileText,
       },
@@ -137,7 +165,7 @@ const QuickStats = ({ square = false }) => {
         title: 'Achievements',
         to: '/student/achievements',
         value: loading ? '…' : String(dashboardStats?.achievements ?? 0),
-        change: 'Keep learning!',
+        change: 'Keep going!',
         icon: Trophy,
       },
       {
@@ -147,6 +175,11 @@ const QuickStats = ({ square = false }) => {
         change: examSummary.loading
           ? 'Loading…'
           : examPct === null ? 'No exams yet' : (examSummary.examName || 'Latest exam'),
+        // Marks scored out of the exam's total, e.g. "412 / 500 marks · Grade A".
+        subtitle: !examSummary.loading && examPct !== null && examSummary.total
+          ? `${Math.round(examSummary.obtained * 100) / 100} / ${examSummary.total} marks${examSummary.grade ? ` · Grade ${examSummary.grade}` : ''}`
+          : '',
+        subtitleClass: 'font-semibold text-[#334155]',
         icon: Award,
       },
     ];

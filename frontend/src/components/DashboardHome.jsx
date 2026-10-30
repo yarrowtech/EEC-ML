@@ -21,7 +21,7 @@ const API_BASE = STUDENT_API_BASE;
 const CardError = ({ onRetry, label }) => (
   <div className="rounded-2xl border border-amber-100 bg-white p-4 shadow-sm">
     <p className="text-sm font-bold text-[#0f172a]">{label}</p>
-    <p className="mt-1 text-xs text-[#8e9aaf]">Couldn&apos;t load this right now.</p>
+    <p className="mt-1 text-xs text-[#64748b]">Couldn&apos;t load this right now.</p>
     <button
       type="button"
       onClick={onRetry}
@@ -431,7 +431,7 @@ const TodaySchedule = ({ setActiveView }) => {
       {!error && !loading && todaySessions.length > 0 && (
         <ol
           ref={listRef}
-          className={`relative space-y-4 border-l-2 border-dashed border-gray-300 pl-5 ${expanded ? 'overflow-y-auto pr-1' : ''}`}
+          className={`relative space-y-2.5 border-l-2 border-dashed border-gray-300 pl-5 ${expanded ? 'overflow-y-auto pr-1' : ''}`}
           style={expanded && collapsedHeight ? { maxHeight: collapsedHeight } : undefined}
         >
           {visibleSessions.map((session, i) => {
@@ -445,40 +445,49 @@ const TodaySchedule = ({ setActiveView }) => {
             const showTeacher = teacherName && !['-', 'tba'].includes(teacherName.toLowerCase());
             const isBreak = isBreakSession(session);
             const endMinutes = sessionEndMinutes(session);
+            const startMinutes = sessionStartMinutes(session);
             const isCompleted = endMinutes !== null && nowMinutes >= endMinutes;
+            // The period running right now gets a highlighted row and a NOW badge.
+            const isNow = startMinutes !== null && endMinutes !== null && nowMinutes >= startMinutes && nowMinutes < endMinutes;
             const location = isBreak ? '' : [
               session.building,
               session.floor,
               session.room ? `Room ${session.room}` : '',
             ].filter(Boolean).join(' · ');
             return (
-              <li key={`${subject}-${i}`} className="relative">
-                <span className={`absolute -left-[26px] top-1 h-2.5 w-2.5 rounded-full ring-4 ring-white ${isBreak ? 'bg-gray-300' : 'bg-[#6366f1]'}`} />
+              <li key={`${subject}-${i}`} className={`relative ${isNow ? '-ml-2 rounded-xl bg-[#eef2ff] py-1.5 pl-2 pr-1.5 ring-1 ring-[#c7d2fe]' : ''}`} aria-current={isNow ? 'time' : undefined}>
+                <span className={`absolute top-1 h-2.5 w-2.5 rounded-full ring-4 ${isNow ? '-left-[18px] top-3 animate-pulse bg-rose-500 ring-[#eef2ff]' : '-left-[26px] ring-white'} ${isNow ? '' : isBreak ? 'bg-gray-300' : 'bg-[#6366f1]'}`} />
                 <div className="flex items-center justify-between gap-3">
                   <div className="min-w-0">
-                    <p className="flex items-center gap-1.5 text-xs font-medium text-gray-400">
+                    <p className={`flex items-center gap-1.5 text-[11.5px] font-medium ${isNow ? 'text-[#4338ca]' : 'text-gray-500'}`}>
                       <Clock size={11} /> {timeLabel || '—'}
                     </p>
                     <p className="flex min-w-0 items-center gap-1.5">
-                      <span className="truncate text-sm font-semibold text-[#0f172a]">{subject}</span>
+                      <span className={`truncate text-[13px] font-semibold ${isCompleted ? 'text-gray-500' : 'text-[#0f172a]'}`}>{subject}</span>
                       {showTeacher && (
                         <>
                           <span className="h-3 w-px shrink-0 bg-gray-300" aria-hidden="true" />
-                          <span className="truncate text-[11px] font-medium text-gray-500">{teacherName}</span>
+                          <span className="truncate text-[11.5px] font-medium text-gray-600">{teacherName}</span>
                         </>
                       )}
                     </p>
                     {location && (
-                      <p className="flex items-center gap-1 truncate text-[11px] text-gray-500">
+                      <p className="flex items-center gap-1 truncate text-[11.5px] text-gray-600">
                         <MapPin size={11} className="shrink-0" /> {location}
                       </p>
                     )}
                   </div>
-                  <span className={`shrink-0 rounded-full px-2.5 py-1 text-[11px] font-bold ${
-                    isCompleted ? 'bg-emerald-500 text-white' : isBreak ? 'bg-gray-500 text-gray-100' : 'bg-[#4f46e5] text-white'
-                  }`}>
-                    {isCompleted ? 'Completed' : isBreak ? 'Break' : `Period ${session.period || i + 1}`}
-                  </span>
+                  {isNow ? (
+                    <span className="flex shrink-0 items-center gap-1 rounded-full bg-rose-500 px-2 py-0.5 text-[11px] font-extrabold tracking-wide text-white shadow-sm shadow-rose-500/30">
+                      <span className="h-1.5 w-1.5 animate-ping rounded-full bg-white" />NOW
+                    </span>
+                  ) : (
+                    <span className={`shrink-0 rounded-full px-2 py-0.5 text-[11px] font-bold ${
+                      isCompleted ? 'bg-emerald-500 text-white' : isBreak ? 'bg-gray-500 text-gray-100' : 'bg-[#4f46e5] text-white'
+                    }`}>
+                      {isCompleted ? 'Completed' : isBreak ? 'Break' : `Period ${session.period || i + 1}`}
+                    </span>
+                  )}
                 </div>
               </li>
             );
@@ -511,30 +520,61 @@ const TodaySchedule = ({ setActiveView }) => {
 
 // ── Quick links ───────────────────────────────────────────────────────────
 // ── Smart Learning reminders (missed / unfinished work) ─────────────────
+// Small progress ring for a reminder (0–100).
+const ReminderRing = ({ value, color }) => {
+  const r = 15;
+  const c = 2 * Math.PI * r;
+  return (
+    <div className="relative h-10 w-10 shrink-0">
+      <svg viewBox="0 0 36 36" className="h-10 w-10 -rotate-90">
+        <circle cx="18" cy="18" r={r} fill="none" stroke="#eef2f7" strokeWidth="3.5" />
+        <circle cx="18" cy="18" r={r} fill="none" stroke={color} strokeWidth="3.5" strokeLinecap="round" strokeDasharray={c} strokeDashoffset={c * (1 - Math.min(100, value) / 100)} />
+      </svg>
+      <span className="absolute inset-0 flex items-center justify-center text-[10.5px] font-bold text-[#0f172a]">{value}%</span>
+    </div>
+  );
+};
+
+const chapterLabel = (chapter) => {
+  const n = String(chapter || '').match(/(\d+)/);
+  return n ? `Chapter ${n[1]}` : String(chapter || '');
+};
+
 const SmartLearningReminders = ({ reminders }) => (
-  <section className="flex h-full flex-col rounded-2xl bg-white p-4 shadow-sm" aria-label="Smart Learning reminders">
-    <div className="-mx-4 -mt-4 flex items-center justify-between gap-2 rounded-t-2xl border-b border-gray-100 bg-gray-100 px-4 py-3">
-      <p className="text-sm font-bold text-[#0f172a]">Smart Learning reminders</p>
-      <Link to="/student/smart-learning-courses" className="text-xs font-bold text-indigo-600 hover:text-indigo-700">Open</Link>
+  <section className="flex h-full flex-col rounded-2xl bg-white p-3 shadow-sm" aria-label="Smart Learning reminders">
+    <div className="-mx-3 -mt-3 mb-2 flex items-center justify-between gap-2 rounded-t-2xl border-b border-gray-100 bg-gray-100 px-3 py-2.5">
+      <p className="text-sm font-bold text-[#0f172a]">Smart Learning Reminders</p>
+      <Link to="/student/smart-learning-courses" className="text-[11.5px] font-bold text-indigo-600 hover:text-indigo-700">View all →</Link>
     </div>
     {reminders.length === 0 ? (
-      <p className="mt-3 text-xs text-[#8e9aaf]">All caught up — nothing missed. 🎉</p>
+      <p className="mt-2 text-xs text-[#64748b]">All caught up — nothing missed. 🎉</p>
     ) : (
-      <ul className="mt-2 divide-y divide-gray-100">
-        {reminders.slice(0, 4).map((reminder) => (
-          <li key={reminder.id}>
-            <Link to={reminder.path} className="flex items-center justify-between gap-3 py-2.5 hover:opacity-80">
-              <div className="min-w-0">
-                <p className="truncate text-[11px] font-semibold uppercase tracking-wide text-[#8e9aaf]">{reminder.subject || 'General'}</p>
-                <p className="truncate text-sm font-semibold text-[#0f172a]">{reminder.topic || reminder.title}</p>
+      <ul className="space-y-2">
+        {reminders.slice(0, 2).map((reminder) => {
+          const onTrack = reminder.progress >= 70;
+          const tone = onTrack
+            ? { tag: 'bg-emerald-50 text-emerald-700', ring: '#10b981', btn: 'bg-emerald-600 hover:bg-emerald-700', label: 'On track', action: 'Continue' }
+            : reminder.status === 'not_started' && !reminder.progress
+              ? { tag: 'bg-red-500 text-white', ring: '#6366f1', btn: 'bg-indigo-600 hover:bg-indigo-700', label: 'New', action: 'Start now' }
+              : { tag: 'bg-amber-50 text-amber-700', ring: '#f59e0b', btn: 'bg-amber-500 hover:bg-amber-600', label: 'Recommended', action: 'Revise now' };
+          const heading = [reminder.subject || 'General', chapterLabel(reminder.chapter)].filter(Boolean).join(' · ');
+          return (
+            <li key={reminder.id} className="rounded-xl border border-gray-100 p-2.5">
+              <div className="flex items-center justify-between gap-2">
+                <p className="truncate text-[10.5px] font-semibold uppercase tracking-wide text-[#64748b]">{heading}</p>
+                <span className={`shrink-0 rounded-full px-2 py-0.5 text-[10.5px] font-bold ${tone.tag}`}>{tone.label}</span>
               </div>
-              <div className="flex shrink-0 items-center gap-1.5">
-                <span className="rounded-full bg-indigo-600 px-2 py-0.5 text-[10px] font-bold text-white">{reminder.kind}</span>
-                <ChevronRight size={16} className="text-[#8e9aaf]" aria-hidden="true" />
+              <div className="mt-1.5 flex items-center gap-2.5">
+                <ReminderRing value={reminder.progress || 0} color={tone.ring} />
+                <div className="min-w-0 flex-1">
+                  <p className="truncate text-[13px] font-semibold text-[#0f172a]">{reminder.topic || reminder.title}</p>
+                  <p className="text-[11px] text-[#64748b]">{reminder.kind} · based on learning progress</p>
+                </div>
+                <Link to={reminder.path} className={`shrink-0 rounded-full px-2.5 py-1 text-[11px] font-bold text-white transition ${tone.btn}`}>{tone.action}</Link>
               </div>
-            </Link>
-          </li>
-        ))}
+            </li>
+          );
+        })}
       </ul>
     )}
   </section>
@@ -567,14 +607,14 @@ const QuickLinks = ({ setActiveView }) => {
             className="relative flex flex-col items-center gap-2 rounded-2xl border border-gray-50 bg-gray-50/60 p-3 text-center transition-colors hover:bg-gray-100"
           >
             {badge > 0 && (
-              <span className="absolute right-2 top-2 flex h-4 min-w-4 items-center justify-center rounded-full bg-red-500 px-1 text-[10px] font-bold text-white">
+              <span className="absolute right-2 top-2 flex h-4 min-w-4 items-center justify-center rounded-full bg-red-500 px-1 text-[11.5px] font-bold text-white">
                 {badge > 9 ? '9+' : badge}
               </span>
             )}
             <span className={`flex h-12 w-12 items-center justify-center rounded-xl text-white shadow-md ${color}`}>
               <Icon size={24} />
             </span>
-            <span className="text-[11px] font-semibold leading-tight text-[#374151]">{label}</span>
+            <span className="text-[12.5px] font-semibold leading-tight text-[#374151]">{label}</span>
           </button>
         ))}
       </div>
@@ -654,7 +694,7 @@ const ConfidenceCalibrationCard = () => {
     <div className="rounded-2xl border border-rose-100 bg-gradient-to-br from-rose-50 to-pink-50 p-4 shadow-sm">
       <div className="mb-3 flex items-center justify-between">
         <p className="text-sm font-bold text-[#0f172a]">Confidence Calibration</p>
-        <span className={`rounded-full px-2 py-0.5 text-[10px] font-bold ${overall.color}`}>{overall.label}</span>
+        <span className={`rounded-full px-2 py-0.5 text-[11.5px] font-bold ${overall.color}`}>{overall.label}</span>
       </div>
       <p className="mb-3 text-xs text-[#64748b]">How your self-rated confidence compares to your actual mastery</p>
       <div className="space-y-2">
@@ -663,7 +703,7 @@ const ConfidenceCalibrationCard = () => {
           return (
             <div key={`${t.subject}-${t.topicId}`} className="flex items-center justify-between gap-2 rounded-lg bg-white/70 px-3 py-1.5">
               <span className="truncate text-xs font-semibold text-[#0f172a]">{t.topicTitle || t.topicId}</span>
-              <span className={`shrink-0 rounded-full px-2 py-0.5 text-[10px] font-bold ${meta.color}`}>{meta.label}</span>
+              <span className={`shrink-0 rounded-full px-2 py-0.5 text-[11.5px] font-bold ${meta.color}`}>{meta.label}</span>
             </div>
           );
         })}
@@ -701,11 +741,11 @@ const LearningStyleCard = () => {
         <span className="text-2xl">{meta.emoji}</span>
         <div>
           <p className="text-sm font-bold text-[#0f172a]">{meta.label}</p>
-          <p className="text-[11px] text-[#8e9aaf]">{profile.confidence}% of your recent sessions</p>
+          <p className="text-[12.5px] text-[#64748b]">{profile.confidence}% of your recent sessions</p>
         </div>
       </div>
       {profile.selfReported && profile.agreesWithSelfReport === false && (
-        <p className="mt-2 text-[11px] text-[#64748b]">
+        <p className="mt-2 text-[12.5px] text-[#64748b]">
           You told us you prefer <strong>{LEARNING_STYLE_META[profile.selfReported]?.label || profile.selfReported}</strong> — worth trying those modes more often!
         </p>
       )}
@@ -732,19 +772,19 @@ const HelpSeekingCard = () => {
       <div className="grid grid-cols-3 gap-2 text-center">
         <div className="rounded-lg bg-white/70 px-2 py-2">
           <p className="text-lg font-bold text-[#0f172a]">{profile.homeworkHelpUsed}</p>
-          <p className="text-[10px] text-[#8e9aaf]">Homework help</p>
+          <p className="text-[11.5px] text-[#64748b]">Homework help</p>
         </div>
         <div className="rounded-lg bg-white/70 px-2 py-2">
           <p className="text-lg font-bold text-[#0f172a]">{profile.misconceptionExplainerUsed}</p>
-          <p className="text-[10px] text-[#8e9aaf]">Mistakes explained</p>
+          <p className="text-[11.5px] text-[#64748b]">Mistakes explained</p>
         </div>
         <div className="rounded-lg bg-white/70 px-2 py-2">
           <p className="text-lg font-bold text-[#0f172a]">{profile.stuckSignals}</p>
-          <p className="text-[10px] text-[#8e9aaf]">Times stuck</p>
+          <p className="text-[11.5px] text-[#64748b]">Times stuck</p>
         </div>
       </div>
       {profile.topSubjects?.length > 0 && (
-        <p className="mt-2 text-[11px] text-[#64748b]">Most often in {profile.topSubjects[0].subject}</p>
+        <p className="mt-2 text-[12.5px] text-[#64748b]">Most often in {profile.topSubjects[0].subject}</p>
       )}
     </div>
   );
@@ -766,7 +806,7 @@ const TimeBySubjectCard = () => {
           <div key={d.subject}>
             <div className="flex justify-between text-xs text-[#64748b] mb-1">
               <span className="font-medium">{d.subject}</span>
-              <span className="text-[#8e9aaf]">{d.totalMinutes}m</span>
+              <span className="text-[#64748b]">{d.totalMinutes}m</span>
             </div>
             <div className="h-1.5 rounded-full bg-gray-100 overflow-hidden">
               <div className="h-full rounded-full bg-emerald-200" style={{ width: `${(d.totalMinutes / max) * 100}%` }} />
@@ -802,7 +842,7 @@ const FlashcardStatsCard = () => {
           </div>
         ))}
       </div>
-      <p className="mt-2 text-[10px] text-[#8e9aaf]">{data.totalAttempts} total flashcard attempts</p>
+      <p className="mt-2 text-[11.5px] text-[#64748b]">{data.totalAttempts} total flashcard attempts</p>
     </div>
   );
 };
