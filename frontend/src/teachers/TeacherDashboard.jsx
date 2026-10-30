@@ -27,7 +27,9 @@ import {
   Star,
   PenLine,
   ClipboardList,
-  Megaphone,
+  Loader2,
+  LogIn,
+  LogOut,
 } from 'lucide-react';
 
 const MotionSection = framerMotion.section;
@@ -112,6 +114,36 @@ const TeacherDashboard = () => {
   const [clearedDeadlines, setClearedDeadlines] = useState(() => new Set());
   const [completingDeadlineId, setCompletingDeadlineId] = useState('');
   const [deadlineError, setDeadlineError] = useState('');
+  const [workToday, setWorkToday] = useState(null);
+  const [workSaving, setWorkSaving] = useState(false);
+
+  const loadWorkToday = async () => {
+    try {
+      const token = localStorage.getItem('token');
+      const month = new Date().toISOString().slice(0, 7);
+      const res = await fetch(`${API_BASE}/api/teacher/dashboard/work-attendance?month=${month}`, { headers: { authorization: `Bearer ${token}` } });
+      const data = await res.json().catch(() => ({}));
+      if (res.ok) setWorkToday(data.today || {});
+    } catch { /* tile falls back to "Entry" */ }
+  };
+  useEffect(() => { loadWorkToday(); }, []);
+
+  const handleWorkAttendance = async () => {
+    if (workSaving || workToday?.hasCheckedOut) return;
+    const action = workToday?.hasCheckedIn ? 'check-out' : 'check-in';
+    setWorkSaving(true);
+    try {
+      const token = localStorage.getItem('token');
+      const res = await fetch(`${API_BASE}/api/teacher/dashboard/work-attendance/${action}`, { method: 'POST', headers: { authorization: `Bearer ${token}` } });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(data?.error || (action === 'check-in' ? 'Unable to mark entry' : 'Unable to mark exit'));
+      await loadWorkToday();
+    } catch (err) {
+      setDeadlineError(err.message);
+    } finally {
+      setWorkSaving(false);
+    }
+  };
 
   const clearDeadline = async (task) => {
     const taskId = deadlineKey(task);
@@ -303,6 +335,11 @@ const TeacherDashboard = () => {
     .sort((a, b) => a.offset - b.offset || a.start - b.start)
     .slice(0, 4)
     .map((c) => ({ ...c, dayLabel: c.offset === 0 ? 'Today' : c.offset === 1 ? 'Tomorrow' : c.dayOfWeek }));
+
+  // No timetable entry today (and nothing marked yet) → show a "no schedule" note instead of 0%.
+  const hasClassToday = (Array.isArray(dashboardData?.upcomingClasses) ? dashboardData.upcomingClasses : [])
+    .some((c) => c.dayOfWeek === WEEK[todayIdx]);
+  const noScheduleToday = Boolean(dashboardData) && !hasClassToday && !attendance.present && !attendance.absent;
 
   const lowSubject = performanceMetrics.find((m) => Number(m.average) < 50);
   const studentAlerts = [
@@ -590,6 +627,15 @@ const TeacherDashboard = () => {
             </Panel>
 
             <Panel icon={Users} iconColor="text-blue-600" title="Today's Attendance" link={{ to: '/teacher/classes/current/students/attendance', label: 'Details' }}>
+              {noScheduleToday ? (
+                <div className="flex flex-col items-center justify-center px-2 py-6 text-center">
+                  <span className="flex h-14 w-14 items-center justify-center rounded-full bg-amber-50 text-amber-500"><Calendar size={26} /></span>
+                  <p className="mt-3 text-[15px] font-semibold text-slate-900">No schedule today</p>
+                  <p className="mt-1 text-[12.5px] text-slate-500">You have no classes on {WEEK[todayIdx]}, so there is no attendance to take.</p>
+                  <Link to="/teacher/timetable" className="mt-4 rounded-full border border-slate-200 px-4 py-2 text-[12.5px] font-semibold text-slate-700 hover:bg-slate-50">View Timetable</Link>
+                </div>
+              ) : (
+              <>
               <div className="flex items-center gap-5 px-1">
                 <Donut percent={attendancePercent} />
                 <div>
@@ -611,10 +657,38 @@ const TeacherDashboard = () => {
                 ))}
               </div>
               <Link to="/teacher/classes/current/students/attendance" className="mt-4 block rounded-full text-white py-2.5 text-center text-sm font-semibold bg-blue-500 hover:bg-blue-700">Take Attendance</Link>
+              </>
+              )}
             </Panel>
 
             <Panel icon={Zap} iconColor="text-amber-500" title="Quick Actions">
               <div className="grid grid-cols-2 gap-2.5">
+                {(() => {
+                  const checkedIn = Boolean(workToday?.hasCheckedIn);
+                  const done = Boolean(workToday?.hasCheckedOut);
+                  const fmt = (t) => formatClock(t) || t || '';
+                  const tile = done
+                    ? { label: 'Day Completed', sub: `Entry ${fmt(workToday.checkIn)} · Exit ${fmt(workToday.checkOut)}`, icon: CheckCircle2, bg: 'bg-slate-400', cls: 'border-slate-200 bg-slate-50' }
+                    : checkedIn
+                      ? { label: 'Mark Exit', sub: `Entry at ${fmt(workToday.checkIn)}`, icon: LogOut, bg: 'bg-rose-500', cls: 'border-rose-100 bg-rose-50' }
+                      : { label: 'Mark Entry', sub: 'Start your work day', icon: LogIn, bg: 'bg-emerald-600', cls: 'border-emerald-100 bg-emerald-50' };
+                  return (
+                    <button
+                      type="button"
+                      onClick={handleWorkAttendance}
+                      disabled={workSaving || done}
+                      className={cx('col-span-2 flex h-[60px] items-center gap-3 rounded-xl border px-3 text-left shadow-md transition-all duration-200 hover:-translate-y-0.5 hover:shadow-lg disabled:cursor-default disabled:hover:translate-y-0', tile.cls)}
+                    >
+                      <span className={cx('flex h-9 w-9 shrink-0 items-center justify-center rounded-full text-white', tile.bg)}>
+                        {workSaving ? <Loader2 size={18} className="animate-spin" /> : React.createElement(tile.icon, { size: 18, strokeWidth: 2.2 })}
+                      </span>
+                      <span className="min-w-0">
+                        <span className="block text-[13px] font-semibold text-gray-800">{tile.label}</span>
+                        <span className="block truncate text-[11px] text-gray-500">{tile.sub}</span>
+                      </span>
+                    </button>
+                  );
+                })()}
                 {QUICK_ACTIONS.map((a) => (
                   <Link
                     key={a.label}
@@ -781,25 +855,11 @@ const QUICK_ACTIONS = [
     iconBg: 'bg-violet-600',
   },
   {
-    label: 'Create Exam',
-    icon: ClipboardList,
-    to: '/teacher/classes/current/assessments/exam',
-    cls: 'bg-white shadow-md border-gray-100',
-    iconBg: 'bg-orange-500',
-  },
-  {
     label: 'Enter Marks',
     icon: BarChart3,
     to: '/teacher/classes/current/assessments/exam',
     cls: 'bg-white shadow-md border-gray-100',
     iconBg: 'bg-rose-500',
-  },
-  {
-    label: 'Post Notice',
-    icon: Megaphone,
-    to: '/teacher/notifications',
-    cls: 'bg-white shadow-md border-gray-100',
-    iconBg: 'bg-cyan-600',
   },
 ];
 
