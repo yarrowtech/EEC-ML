@@ -8,18 +8,21 @@ import {
   Send,
   RotateCcw,
   Award,
-  TrendingUp,
   Heart,
   Target,
   Users,
-  ChevronDown,
   ChevronRight,
   Search,
-  Eye,
   Edit3,
   Shield,
   X,
-  AlertCircle
+  AlertCircle,
+  MessageSquareText,
+  CalendarDays,
+  ShieldCheck,
+  BarChart3,
+  PieChart,
+  FileText,
 } from 'lucide-react';
 import { clearStudentApiCacheByUrl, fetchCachedJson } from '../utils/studentApiCache';
 
@@ -30,13 +33,6 @@ const getRatingColor = (rating) => {
   if (rating >= 3.5) return 'text-blue-600';
   if (rating >= 2.5) return 'text-amber-600';
   return 'text-red-500';
-};
-
-const RatingBadge = ({ rating }) => {
-  const color = getRatingColor(rating);
-  return (
-    <span className={`font-bold tabular-nums ${color}`}>{Number(rating).toFixed(1)}</span>
-  );
 };
 
 const TeacherFeedback = () => {
@@ -287,15 +283,24 @@ const TeacherFeedback = () => {
     resetForm();
   };
 
+  const avatarFor = (item) => item?.teacherProfilePic
+    || teacherSubjects.find((s) => s.contextId === item?.contextId || (s.teacherName && s.teacherName === item?.teacherName))?.teacherProfilePic
+    || placeholderAvatar;
+  const formatShortDate = (value) => (value
+    ? new Date(value).toLocaleDateString(undefined, { day: '2-digit', month: 'short', year: 'numeric' })
+    : '');
+  const visiblePrevious = showPreviousFeedback ? filteredPreviousFeedback : filteredPreviousFeedback.slice(0, 4);
+  const cardClass = 'rounded-2xl border border-slate-100 bg-white shadow-[0_2px_10px_rgba(15,23,42,0.04)]';
+
   if (loading) {
     return (
-      <div className="min-h-screen bg-gradient-to-br from-yellow-50 via-amber-50 to-purple-50 flex items-center justify-center p-6">
-        <div className="bg-white rounded-2xl shadow-xl p-10 text-center border border-yellow-200 max-w-sm w-full">
-          <div className="w-16 h-16 bg-yellow-100 rounded-full flex items-center justify-center mx-auto mb-4 animate-pulse">
-            <Clock className="w-8 h-8 text-amber-500" />
+      <div className="flex min-h-[60vh] items-center justify-center p-6">
+        <div className={`${cardClass} w-full max-w-xs p-8 text-center`}>
+          <div className="mx-auto mb-3 flex h-12 w-12 animate-pulse items-center justify-center rounded-full bg-indigo-50">
+            <Clock className="h-6 w-6 text-indigo-500" />
           </div>
-          <h3 className="text-xl font-bold text-amber-900 mb-2">Loading your teachers…</h3>
-          <p className="text-amber-600 text-sm">Fetching your timetable and previous feedback.</p>
+          <h3 className="text-base font-bold text-slate-900">Loading your teachers…</h3>
+          <p className="mt-1 text-xs text-slate-500">Fetching your timetable and previous feedback.</p>
         </div>
       </div>
     );
@@ -303,313 +308,240 @@ const TeacherFeedback = () => {
 
   return (
     <>
-      <div className="min-h-screen bg-gradient-to-br from-yellow-50 via-amber-50 to-purple-50 p-4 sm:p-6">
+      <div className="p-3 sm:p-4 lg:p-5">
+        <div className="grid grid-cols-1 gap-4 lg:grid-cols-[minmax(0,1fr)_320px]">
 
-        {/* Header */}
-        <div className="bg-gradient-to-r from-amber-500 via-yellow-400 to-purple-600 rounded-2xl p-6 sm:p-8 text-white mb-6 sm:mb-8 shadow-lg">
-          <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
-            <div>
-              <h1 className="text-2xl sm:text-3xl font-bold mb-1 flex items-center gap-3">
-                <MessageCircle className="w-7 h-7 sm:w-8 sm:h-8 flex-shrink-0" />
-                Teacher Feedback
-              </h1>
-              <p className="text-yellow-100 text-sm sm:text-base">
-                Share your thoughts and help improve the learning experience
-              </p>
+          {/* Left column */}
+          <div className="min-w-0 space-y-3">
+            {/* Header */}
+            <div className={`${cardClass} relative flex items-center gap-3 overflow-hidden px-4 py-3 sm:px-5`}>
+              <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-indigo-600 text-white shadow-sm">
+                <MessageSquareText className="h-5 w-5" />
+              </div>
+              <div className="min-w-0 flex-1">
+                <h1 className="text-lg font-bold text-slate-900 sm:text-xl">Teacher Feedback</h1>
+                <p className="text-xs text-slate-500 sm:text-sm">Share your thoughts and help improve the learning experience.</p>
+              </div>
+              <img src="/feedback.png" alt="" aria-hidden="true" className="hidden h-20 w-auto shrink-0 object-contain sm:block" />
             </div>
-            <div className="flex gap-3 sm:gap-4 self-start sm:self-auto">
-              <div className="bg-white/20 backdrop-blur-sm rounded-xl p-3 sm:p-4 text-center min-w-[80px]">
-                <div className="text-2xl sm:text-3xl font-bold">{teacherSubjects.length}</div>
-                <div className="text-xs text-yellow-100">Subjects</div>
+
+            {loadError && (
+              <div className="flex items-center gap-2 rounded-xl border border-red-200 bg-red-50 px-3 py-2 text-xs text-red-700">
+                <AlertCircle className="h-4 w-4 shrink-0" />
+                {loadError}
               </div>
-              <div className="bg-white/20 backdrop-blur-sm rounded-xl p-3 sm:p-4 text-center min-w-[80px]">
-                <div className="text-2xl sm:text-3xl font-bold">{pendingSubjectsCount}</div>
-                <div className="text-xs text-yellow-100">Pending</div>
+            )}
+            {!loadError && !feedbackWindow.isOpen && (
+              <div className="flex items-center gap-2 rounded-xl border border-slate-200 bg-slate-50 px-3 py-2 text-xs text-slate-600">
+                <Clock className="h-4 w-4 shrink-0" />
+                {feedbackWindow.message || 'Teacher feedback has not started yet.'}
               </div>
-              <div className="bg-white/20 backdrop-blur-sm rounded-xl p-3 sm:p-4 text-center min-w-[80px]">
-                <div className="text-2xl sm:text-3xl font-bold">{totalFeedbackGiven}</div>
-                <div className="text-xs text-yellow-100">Reviewed</div>
-              </div>
+            )}
+
+            {/* Stat cards */}
+            <div className="grid grid-cols-3 gap-3">
+              {[
+                { value: teacherSubjects.length, label: 'Subjects', icon: BookOpen, tone: 'bg-blue-50 text-blue-600' },
+                { value: pendingSubjectsCount, label: 'Pending', icon: Clock, tone: 'bg-amber-50 text-amber-500' },
+                { value: totalFeedbackGiven, label: 'Reviewed', icon: CheckCircle, tone: 'bg-emerald-50 text-emerald-600' },
+              ].map(({ value, label, icon: Icon, tone }) => (
+                <div key={label} className={`${cardClass} flex items-center gap-3 px-3 py-3 sm:px-4`}>
+                  <div className={`flex h-10 w-10 shrink-0 items-center justify-center rounded-xl ${tone}`}>
+                    <Icon className="h-5 w-5" />
+                  </div>
+                  <div className="min-w-0">
+                    <p className="text-lg font-bold leading-tight text-slate-900">{value}</p>
+                    <p className="truncate text-xs text-slate-500">{label}</p>
+                  </div>
+                </div>
+              ))}
             </div>
-          </div>
-        </div>
 
-        {loadError && (
-          <div className="mb-5 bg-red-50 border border-red-200 text-red-700 rounded-xl p-4 flex items-center gap-3">
-            <AlertCircle className="w-5 h-5 flex-shrink-0" />
-            <span className="text-sm">{loadError}</span>
-          </div>
-        )}
-        {!loadError && !feedbackWindow.isOpen && (
-          <div className="mb-5 bg-amber-50 border border-amber-200 text-amber-800 rounded-xl p-4 flex items-center gap-3">
-            <Clock className="w-5 h-5 flex-shrink-0" />
-            <span className="text-sm">{feedbackWindow.message || 'Teacher feedback has not started yet.'}</span>
-          </div>
-        )}
-
-        <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 sm:gap-8">
-
-          {/* Left Column */}
-          <div className="lg:col-span-2 space-y-5">
-
-            {/* Subject Selection */}
-            <div className="bg-white rounded-2xl shadow-md p-5 sm:p-6 border border-yellow-100">
-              <div className="flex items-center gap-3 mb-4">
-                <div className="p-2 bg-purple-100 rounded-lg">
-                  <BookOpen className="w-5 h-5 text-purple-600" />
-                </div>
-                <div>
-                  <h3 className="text-lg font-bold text-amber-900">Select a Teacher</h3>
-                  <p className="text-xs text-amber-600">Tap a card to open the feedback form</p>
-                </div>
-              </div>
-
-              {/* Search */}
-              <div className="mb-4 relative">
-                <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-amber-400 pointer-events-none" />
+            {/* Filters + search */}
+            <div className="flex flex-wrap items-center gap-2">
+              {[
+                { key: 'all', label: `All (${teacherSubjects.length})` },
+                { key: 'pending', label: `Pending (${pendingSubjectsCount})` },
+                { key: 'reviewed', label: `Reviewed (${totalFeedbackGiven})` },
+              ].map(({ key, label }) => (
+                <button
+                  key={key}
+                  type="button"
+                  onClick={() => setSubjectStatusFilter(key)}
+                  className={`shrink-0 rounded-full border px-4 py-1.5 text-xs font-semibold transition-colors ${
+                    subjectStatusFilter === key
+                      ? 'border-indigo-600 bg-indigo-600 text-white'
+                      : 'border-slate-200 bg-white text-slate-600 hover:bg-slate-50'
+                  }`}
+                >
+                  {label}
+                </button>
+              ))}
+              <div className="relative ml-auto w-full sm:w-56">
+                <Search className="pointer-events-none absolute left-3 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-slate-400" />
                 <input
                   type="text"
-                  placeholder="Search subjects or teachers…"
+                  placeholder="Search teacher or subject…"
                   value={searchQuery}
                   onChange={(e) => setSearchQuery(e.target.value)}
-                  className="w-full pl-10 pr-4 py-2.5 border border-yellow-200 rounded-xl text-sm focus:ring-2 focus:ring-yellow-400 focus:border-transparent outline-none"
+                  className="w-full rounded-full border border-slate-200 bg-white py-1.5 pl-8 pr-8 text-xs outline-none focus:border-indigo-300 focus:ring-2 focus:ring-indigo-100"
                 />
                 {searchQuery && (
-                  <button
-                    onClick={() => setSearchQuery('')}
-                    className="absolute right-3 top-1/2 -translate-y-1/2 text-amber-400 hover:text-amber-600"
-                  >
-                    <X className="w-4 h-4" />
+                  <button type="button" onClick={() => setSearchQuery('')} className="absolute right-2.5 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600" aria-label="Clear search">
+                    <X className="h-3.5 w-3.5" />
                   </button>
                 )}
               </div>
-
-              {/* Status filter */}
-              <div className="mb-4 flex gap-2 overflow-x-auto pb-0.5">
-                {[
-                  { key: 'all', label: 'All' },
-                  { key: 'pending', label: `Pending (${pendingSubjectsCount})` },
-                  { key: 'reviewed', label: `Reviewed (${totalFeedbackGiven})` },
-                ].map(({ key, label }) => (
-                  <button
-                    key={key}
-                    type="button"
-                    onClick={() => setSubjectStatusFilter(key)}
-                    className={`shrink-0 rounded-full border px-3.5 py-1.5 text-xs font-bold transition-all ${
-                      subjectStatusFilter === key
-                        ? 'border-purple-500 bg-purple-600 text-white shadow-sm'
-                        : 'border-yellow-200 bg-white text-amber-700 hover:bg-amber-50'
-                    }`}
-                  >
-                    {label}
-                  </button>
-                ))}
-              </div>
-
-              {/* Cards */}
-              {filteredSubjects.length === 0 ? (
-                <div className="col-span-2 text-center py-10">
-                  <Search className="w-10 h-10 text-amber-200 mx-auto mb-3" />
-                  <p className="text-sm text-amber-600 font-medium">
-                    {subjectStatusFilter === 'pending'
-                      ? "You're all caught up — no pending feedback."
-                      : subjectStatusFilter === 'reviewed'
-                        ? 'No reviewed subjects yet.'
-                        : 'No matching subjects found'}
-                  </p>
-                  <p className="text-xs text-amber-400 mt-1">Try adjusting your search or filter</p>
-                </div>
-              ) : (
-                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                  {filteredSubjects.map((subject) => {
-                    const isReviewed = alreadyReviewedIds.has(subject.contextId);
-                    const isSelected = selectedSubject === subject.contextId;
-                    return (
-                      <button
-                        key={subject.contextId}
-                        onClick={() => openFeedbackModal(subject)}
-                        disabled={!feedbackWindow.isOpen}
-                        className={`w-full text-left p-4 border-2 rounded-xl transition-all duration-200 group ${
-                          isSelected
-                            ? 'border-purple-400 bg-purple-50 ring-2 ring-purple-100 shadow-md'
-                            : feedbackWindow.isOpen
-                              ? 'border-yellow-200 bg-white hover:border-amber-300 hover:shadow-md'
-                              : 'border-slate-200 bg-slate-50 opacity-70 cursor-not-allowed'
-                        }`}
-                      >
-                        <div className="flex items-start gap-3">
-                          <img
-                            src={subject.teacherProfilePic || placeholderAvatar}
-                            alt={subject.teacherName}
-                            className="w-11 h-11 rounded-full object-cover border-2 border-white shadow flex-shrink-0"
-                            onError={(e) => { e.target.src = placeholderAvatar; }}
-                          />
-                          <div className="flex-1 min-w-0">
-                            <div className="flex items-start justify-between gap-2 mb-0.5">
-                              <h4 className="font-bold text-amber-900 text-sm leading-tight truncate">
-                                {subject.subjectName}
-                              </h4>
-                              {isReviewed ? (
-                                <span className="flex-shrink-0 inline-flex items-center gap-1 text-xs font-medium text-green-700 bg-green-100 rounded-full px-2 py-0.5">
-                                  <CheckCircle className="w-3 h-3" />
-                                  Reviewed
-                                </span>
-                              ) : feedbackWindow.isOpen && (
-                                <span className="flex-shrink-0 inline-flex items-center gap-1 text-xs font-medium text-amber-700 bg-amber-100 rounded-full px-2 py-0.5">
-                                  Pending
-                                </span>
-                              )}
-                            </div>
-                            <p className="text-xs text-amber-500 truncate mb-1">
-                              {subject.className}
-                              {subject.sectionName ? ` · Section ${subject.sectionName}` : ''}
-                            </p>
-                            <p className="text-sm font-medium text-amber-800 truncate">{subject.teacherName}</p>
-                            {subject.scheduleTimes?.length > 0 && (
-                              <p className="text-xs text-amber-500 mt-0.5">
-                                <Clock className="inline w-3 h-3 mr-0.5 -mt-0.5" />
-                                {subject.scheduleTimes[0].dayOfWeek}
-                                {subject.scheduleTimes[0].time ? ` · ${subject.scheduleTimes[0].time}` : ''}
-                              </p>
-                            )}
-                          </div>
-                        </div>
-                        <div className={`mt-3 text-xs font-medium rounded-lg py-1.5 text-center transition-colors ${
-                          !feedbackWindow.isOpen
-                            ? 'bg-slate-100 text-slate-500 border border-slate-200'
-                            : isReviewed
-                            ? 'bg-green-50 text-green-700 border border-green-100'
-                            : 'bg-amber-50 text-amber-700 border border-amber-100 group-hover:bg-amber-100'
-                        }`}>
-                          {!feedbackWindow.isOpen ? 'Feedback not started' : isReviewed ? 'Update your feedback' : 'Give feedback →'}
-                        </div>
-                      </button>
-                    );
-                  })}
-                </div>
-              )}
             </div>
 
-            {/* Privacy note */}
-            <div className="bg-purple-50 border border-purple-100 rounded-xl p-4 flex items-start gap-3">
-              <div className="p-1.5 bg-purple-100 rounded-lg flex-shrink-0 mt-0.5">
-                <Shield className="w-4 h-4 text-purple-600" />
-              </div>
-              <div>
-                <p className="text-sm font-semibold text-purple-900 mb-0.5">Your privacy is protected</p>
-                <p className="text-xs text-purple-700 leading-relaxed">
-                  Student feedback is submitted anonymously only.
+            {/* Teacher list */}
+            {filteredSubjects.length === 0 ? (
+              <div className={`${cardClass} py-10 text-center`}>
+                <Search className="mx-auto mb-2 h-8 w-8 text-slate-200" />
+                <p className="text-sm font-medium text-slate-600">
+                  {subjectStatusFilter === 'pending'
+                    ? "You're all caught up — no pending feedback."
+                    : subjectStatusFilter === 'reviewed'
+                      ? 'No reviewed subjects yet.'
+                      : 'No matching subjects found'}
                 </p>
+                <p className="mt-0.5 text-xs text-slate-400">Try adjusting your search or filter</p>
               </div>
-            </div>
-          </div>
-
-          {/* Right Column */}
-          <div className="space-y-5">
-
-            {/* Quick Stats */}
-            <div className="bg-white rounded-2xl shadow-md p-5 border border-yellow-100">
-              <h3 className="text-sm font-bold text-amber-900 mb-4 flex items-center gap-2">
-                <TrendingUp className="w-4 h-4 text-purple-600" />
-                Your Feedback Stats
-              </h3>
-              <div className="space-y-3">
-                <div className="flex items-center justify-between p-3 bg-amber-50 rounded-xl">
-                  <span className="text-sm text-amber-700">Total Submitted</span>
-                  <span className="font-bold text-amber-900">{totalFeedbackGiven}</span>
-                </div>
-                <div className="flex items-center justify-between p-3 bg-purple-50 rounded-xl">
-                  <span className="text-sm text-purple-700">Avg Rating Given</span>
-                  <span className="font-bold text-purple-900">{averageRatingGiven} / 5</span>
-                </div>
-                <div className="flex items-center justify-between p-3 bg-green-50 rounded-xl">
-                  <span className="text-sm text-green-700">Response Rate</span>
-                  <span className="font-bold text-green-900">{responseRate}%</span>
-                </div>
-                {/* Response rate bar */}
-                <div className="h-2 bg-gray-100 rounded-full overflow-hidden">
-                  <div
-                    className="h-full bg-gradient-to-r from-amber-400 to-purple-500 rounded-full transition-all duration-500"
-                    style={{ width: `${responseRate}%` }}
-                  />
-                </div>
-              </div>
-            </div>
-
-            {/* Previous Feedback */}
-            <div className="bg-white rounded-2xl shadow-md border border-yellow-100 overflow-hidden">
-              <div className="p-5 border-b border-yellow-100">
-                <div className="flex items-center justify-between mb-1">
-                  <h3 className="text-sm font-bold text-amber-900 flex items-center gap-2">
-                    <Eye className="w-4 h-4 text-blue-500" />
-                    Previous Feedback
-                    {totalFeedbackGiven > 0 && (
-                      <span className="ml-1 text-xs font-medium text-white bg-purple-500 rounded-full px-1.5 py-0.5">
-                        {totalFeedbackGiven}
-                      </span>
-                    )}
-                  </h3>
-                  <button
-                    onClick={() => setShowPreviousFeedback(!showPreviousFeedback)}
-                    className="text-xs font-medium text-purple-600 hover:text-purple-800 flex items-center gap-1"
-                  >
-                    {showPreviousFeedback ? <ChevronDown className="w-4 h-4" /> : <ChevronRight className="w-4 h-4" />}
-                    {showPreviousFeedback ? 'Collapse' : 'View all'}
-                  </button>
-                </div>
-                {showPreviousFeedback && previousSubjectOptions.length > 0 && (
-                  <select
-                    value={filterSubject}
-                    onChange={(e) => setFilterSubject(e.target.value)}
-                    className="mt-3 w-full px-3 py-2 text-sm border border-yellow-200 rounded-xl focus:ring-2 focus:ring-yellow-400 focus:border-transparent outline-none"
-                  >
-                    <option value="all">All Subjects</option>
-                    {previousSubjectOptions.map(name => (
-                      <option key={name} value={name}>{name}</option>
-                    ))}
-                  </select>
-                )}
-              </div>
-
-              {showPreviousFeedback && (
-                <div className="max-h-96 overflow-y-auto divide-y divide-yellow-50">
-                  {filteredPreviousFeedback.length === 0 ? (
-                    <div className="p-6 text-center">
-                      <MessageCircle className="w-8 h-8 text-amber-200 mx-auto mb-2" />
-                      <p className="text-sm text-amber-500">No feedback records yet.</p>
-                    </div>
-                  ) : (
-                    filteredPreviousFeedback.map((item) => (
-                      <div key={item.id} className="p-4 hover:bg-amber-50/50 transition-colors">
-                        <div className="flex items-start justify-between gap-2 mb-1">
-                          <h4 className="text-sm font-semibold text-amber-900 leading-tight">{item.subjectName}</h4>
-                          <div className="flex items-center gap-1 flex-shrink-0">
-                            <Star className="w-3.5 h-3.5 fill-yellow-400 text-yellow-500" />
-                            <RatingBadge rating={item.overallRating || 0} />
-                          </div>
-                        </div>
-                        <p className="text-xs text-amber-500 mb-1">{item.teacherName}</p>
-                        {item.comments && (
-                          <p className="text-xs text-amber-700 italic mb-2 line-clamp-2">"{item.comments}"</p>
-                        )}
-                        <div className="flex items-center justify-between flex-wrap gap-1">
-                          <span className="text-xs text-amber-400">
-                            {item.createdAt ? new Date(item.createdAt).toLocaleDateString(undefined, { day: 'numeric', month: 'short', year: 'numeric' }) : ''}
+            ) : (
+              <div className="space-y-2.5">
+                {filteredSubjects.map((subject) => {
+                  const isReviewed = alreadyReviewedIds.has(subject.contextId);
+                  const slot = subject.scheduleTimes?.[0];
+                  return (
+                    <div
+                      key={subject.contextId}
+                      role="button"
+                      tabIndex={0}
+                      onClick={() => openFeedbackModal(subject)}
+                      onKeyDown={(e) => { if (e.key === 'Enter') openFeedbackModal(subject); }}
+                      className={`${cardClass} flex cursor-pointer items-center gap-3 px-3 py-3 transition-shadow hover:shadow-md sm:px-4`}
+                    >
+                      <img
+                        src={subject.teacherProfilePic || placeholderAvatar}
+                        alt={subject.teacherName}
+                        className="h-12 w-12 shrink-0 rounded-full bg-slate-100 object-cover sm:h-14 sm:w-14"
+                        onError={(e) => { e.target.src = placeholderAvatar; }}
+                      />
+                      <div className="min-w-0 flex-1">
+                        <h4 className="truncate text-sm font-bold text-slate-900">{subject.teacherName}</h4>
+                        <p className="truncate text-xs text-slate-600">{subject.subjectName}</p>
+                        <div className="mt-1 flex flex-wrap items-center gap-x-4 gap-y-0.5 text-[11px] text-slate-500">
+                          <span className="inline-flex items-center gap-1">
+                            <Users className="h-3.5 w-3.5" />
+                            {subject.className}{subject.sectionName ? ` - Section ${subject.sectionName}` : ''}
                           </span>
-                          <div className="flex items-center gap-1.5">
-                            {item.isAnonymous && (
-                              <span className="text-xs px-2 py-0.5 bg-purple-50 text-purple-600 rounded-full border border-purple-100">
-                                Anonymous
-                              </span>
-                            )}
-                            <span className="text-xs text-amber-400">
-                              {Object.keys(item.ratings || {}).length}/{totalCategories} rated
+                          {slot && (
+                            <span className="inline-flex items-center gap-1">
+                              <CalendarDays className="h-3.5 w-3.5" />
+                              {slot.dayOfWeek}{slot.time ? ` · ${slot.time}` : ''}
                             </span>
-                          </div>
+                          )}
                         </div>
                       </div>
-                    ))
-                  )}
+                      <div className="flex shrink-0 flex-col items-end gap-1.5">
+                        <span className={`rounded-full px-2.5 py-0.5 text-[10px] font-semibold ${isReviewed ? 'bg-emerald-50 text-emerald-700' : 'bg-red-50 text-red-600'}`}>
+                          {isReviewed ? 'Reviewed' : 'Feedback not started'}
+                        </span>
+                        <button
+                          type="button"
+                          disabled={!feedbackWindow.isOpen}
+                          onClick={(e) => { e.stopPropagation(); openFeedbackModal(subject); }}
+                          className="rounded-lg bg-indigo-600 px-3.5 py-1.5 text-xs font-semibold text-white transition-colors hover:bg-indigo-700 disabled:cursor-not-allowed disabled:opacity-40"
+                        >
+                          {isReviewed ? 'Update Feedback' : 'Give Feedback'}
+                        </button>
+                      </div>
+                      <ChevronRight className="hidden h-4 w-4 shrink-0 text-slate-400 sm:block" />
+                    </div>
+                  );
+                })}
+              </div>
+            )}
+          </div>
+
+          {/* Right column */}
+          <div className="space-y-3">
+            <div className={`${cardClass} p-2.5`}>
+              <div className="flex items-center gap-3 rounded-xl bg-emerald-50 px-3 py-3">
+                <ShieldCheck className="h-8 w-8 shrink-0 fill-emerald-500 text-white" />
+                <div>
+                  <p className="text-sm font-bold text-emerald-700">Your privacy is protected</p>
+                  <p className="text-xs leading-snug text-slate-600">Student feedback is submitted anonymously only.</p>
+                </div>
+              </div>
+            </div>
+
+            <div className={`${cardClass} p-3`}>
+              <h3 className="mb-2 flex items-center gap-2 text-sm font-bold text-slate-900">
+                <BarChart3 className="h-4 w-4 text-indigo-600" />
+                Your Feedback Stats
+              </h3>
+              <div className="space-y-2">
+                {[
+                  { value: totalFeedbackGiven, label: 'Total Submitted', icon: Send, tone: 'bg-indigo-100 text-indigo-600' },
+                  { value: `${averageRatingGiven} / 5`, label: 'Avg Rating Given', icon: Star, tone: 'bg-amber-100 text-amber-500', fill: true },
+                  { value: `${responseRate}%`, label: 'Response Rate', icon: PieChart, tone: 'bg-emerald-100 text-emerald-600' },
+                ].map(({ value, label, icon: Icon, tone, fill }) => (
+                  <div key={label} className="flex items-center gap-3 rounded-xl bg-slate-50 px-3 py-2">
+                    <div className={`flex h-9 w-9 shrink-0 items-center justify-center rounded-full ${tone}`}>
+                      <Icon className={`h-4 w-4 ${fill ? 'fill-amber-400' : ''}`} />
+                    </div>
+                    <div>
+                      <p className="text-base font-bold leading-tight text-slate-900">{value}</p>
+                      <p className="text-[11px] text-slate-500">{label}</p>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </div>
+
+            <div className={`${cardClass} p-3`}>
+              <div className="mb-1 flex items-center justify-between gap-2">
+                <h3 className="flex items-center gap-2 text-sm font-bold text-slate-900">
+                  <FileText className="h-4 w-4 text-indigo-600" />
+                  Previous Feedback
+                </h3>
+                {filteredPreviousFeedback.length > 4 && (
+                  <button type="button" onClick={() => setShowPreviousFeedback((v) => !v)} className="text-xs font-semibold text-indigo-600 hover:text-indigo-800">
+                    {showPreviousFeedback ? 'Show less' : 'View all'}
+                  </button>
+                )}
+              </div>
+              {showPreviousFeedback && previousSubjectOptions.length > 1 && (
+                <select
+                  value={filterSubject}
+                  onChange={(e) => setFilterSubject(e.target.value)}
+                  className="mb-1 mt-1 w-full rounded-lg border border-slate-200 px-2.5 py-1.5 text-xs outline-none focus:ring-2 focus:ring-indigo-100"
+                >
+                  <option value="all">All Subjects</option>
+                  {previousSubjectOptions.map((name) => <option key={name} value={name}>{name}</option>)}
+                </select>
+              )}
+              {visiblePrevious.length === 0 ? (
+                <p className="py-6 text-center text-xs text-slate-400">No feedback submitted yet.</p>
+              ) : (
+                <div className={`divide-y divide-slate-100 ${showPreviousFeedback ? 'max-h-80 overflow-y-auto' : ''}`}>
+                  {visiblePrevious.map((item) => (
+                    <div key={item.id} className="flex items-center gap-2.5 py-2">
+                      <img
+                        src={avatarFor(item)}
+                        alt={item.teacherName}
+                        className="h-10 w-10 shrink-0 rounded-full bg-slate-100 object-cover"
+                        onError={(e) => { e.target.src = placeholderAvatar; }}
+                      />
+                      <div className="min-w-0 flex-1">
+                        <p className="truncate text-xs font-semibold text-slate-900">{item.teacherName}</p>
+                        <p className="truncate text-[11px] text-slate-500">{item.subjectName}</p>
+                        <p className="text-[11px] text-slate-400">{formatShortDate(item.createdAt)}</p>
+                      </div>
+                      <span className="shrink-0 rounded-md bg-emerald-50 px-2 py-0.5 text-[10px] font-semibold text-emerald-700">Submitted</span>
+                    </div>
+                  ))}
                 </div>
               )}
             </div>

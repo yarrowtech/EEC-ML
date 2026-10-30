@@ -513,6 +513,8 @@ const EditMessageModal = ({ draft, saving, theme, onChange, onCancel, onSave }) 
 const ChatMessage = ({
   msg,
   isMine,
+  // Only the last bubble of a run from the same sender gets the squared "tail" corner.
+  isLastInGroup = true,
   myId,
   fallbackSenderName = '',
   showSenderLabel = true,
@@ -569,7 +571,7 @@ const ChatMessage = ({
   const showActions = canEdit && !isEditing;
 
   return (
-  <div className={`group flex items-center gap-1.5 ${isMine ? 'justify-end' : 'justify-start'} mb-3`}>
+  <div className={`group flex items-center gap-1.5 ${isMine ? 'justify-end' : 'justify-start'} ${isLastInGroup ? 'mb-3' : 'mb-0.5'} ${msg?._clientKey ? (isMine ? 'chat-bubble-in-mine' : 'chat-bubble-in-theirs') : ''}`}>
     {showActions && (
       <div ref={menuRef} className="relative shrink-0">
         <button
@@ -599,8 +601,8 @@ const ChatMessage = ({
     <div
       className={`relative max-w-[80%] w-fit rounded-[16px] px-4 py-2.5 text-sm leading-[1.5] shadow-sm
         ${isMine
-          ? 'text-white rounded-br-[4px] shadow-[0_2px_8px_rgba(37,99,235,0.25)]'
-          : 'bg-white text-[#0f172a] rounded-bl-[4px] border border-white/60'}`}
+          ? `text-white ${isLastInGroup ? 'rounded-br-[4px]' : ''} shadow-[0_2px_8px_rgba(37,99,235,0.25)]`
+          : `bg-white text-[#0f172a] ${isLastInGroup ? 'rounded-bl-[4px]' : ''} border border-white/60`}`}
       style={isMine ? { background: `linear-gradient(135deg, ${t.color}, ${t.hover})` } : {}}
     >
       {showSenderLabel && (
@@ -1302,9 +1304,11 @@ const TeacherChat = () => {
         if (prev.some((item) => String(item?._id) === String(msg?._id))) return prev;
         // FIFO match, same reasoning as the `new-message` handler above.
         const optimisticIndex = prev.findIndex((item) => item?._optimistic && isSameId(item.senderId, msg.senderId));
-        if (optimisticIndex === -1) return [...prev, msg];
+        // _clientKey keeps the React key stable when the server copy replaces the
+        // optimistic one, so the bubble isn't remounted (and its entry animation doesn't replay).
+        if (optimisticIndex === -1) return [...prev, { ...msg, _clientKey: `live-${msg._id}` }];
         const next = [...prev];
-        next[optimisticIndex] = msg;
+        next[optimisticIndex] = { ...msg, _clientKey: prev[optimisticIndex]._clientKey };
         return next;
       });
     });
@@ -1691,6 +1695,7 @@ const TeacherChat = () => {
       createdAt: new Date().toISOString(),
       seenBy: [{ userId: me?.id, seenAt: new Date().toISOString() }],
       _optimistic: true,
+      _clientKey: optimisticId,
     };
     setMessages(prev => [...prev, optimistic]);
 
@@ -1722,7 +1727,7 @@ const TeacherChat = () => {
         });
       }).then(async (msg) => {
         const decrypted = await decryptForUI(msg);
-        setMessages(prev => prev.map(m => m._id === optimisticId ? decrypted : m));
+        setMessages(prev => prev.map(m => m._id === optimisticId ? { ...decrypted, _clientKey: optimisticId } : m));
       }).catch(() => {
         setMessages(prev => prev.filter(m => m._id !== optimisticId));
       });
@@ -2277,8 +2282,12 @@ const TeacherChat = () => {
                       const currentTs = msg.createdAt || msg.ts;
                       const prevTs = index > 0 ? (visibleMessages[index - 1].createdAt || visibleMessages[index - 1].ts) : null;
                       const showDateSeparator = index === 0 || dayKey(currentTs) !== dayKey(prevTs);
+                      const nextMsg = visibleMessages[index + 1];
+                      const isLastInGroup = !nextMsg
+                        || !isSameId(nextMsg.senderId, msg.senderId)
+                        || dayKey(nextMsg.createdAt || nextMsg.ts) !== dayKey(currentTs);
                       return (
-                        <React.Fragment key={msg._id}>
+                        <React.Fragment key={msg._clientKey || msg._id}>
                           {showDateSeparator && (
                             <div className="flex justify-center my-3 relative z-[1]">
                               <span className="text-[12px] px-4 py-1 rounded-full bg-white text-[#0f172a] font-semibold shadow-sm">
@@ -2289,6 +2298,7 @@ const TeacherChat = () => {
                           <ChatMessage
                             msg={msg}
                             isMine={isSameId(msg.senderId, me?.id)}
+                            isLastInGroup={isLastInGroup}
                             myId={me?.id}
                             fallbackSenderName={activeThread?.otherParticipant?.name || ''}
                             showSenderLabel={isGroupActiveThread}

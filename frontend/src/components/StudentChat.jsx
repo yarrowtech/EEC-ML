@@ -4,7 +4,8 @@ import {
   MessageSquare, Send, Search, ChevronLeft,
   PlusCircle, X, Loader2, Eye, Mail, BookOpen,
   GraduationCap, Phone, User, Check, CheckCheck,
-  Info, Palette, Lock, Link2, ExternalLink, Pencil, ChevronDown, MoreVertical
+  Info, Palette, Lock, Link2, ExternalLink, Pencil, ChevronDown, MoreVertical,
+  Users as GroupIcon,
 } from 'lucide-react';
 import { createPortal } from 'react-dom';
 import { decryptChatMessage, encryptChatMessage, ensureE2EEIdentity } from '../utils/chatE2EE';
@@ -461,7 +462,7 @@ const SIZES = {
   xl:  'h-24 w-24 text-2xl',
 };
 
-const Avatar = ({ src, name = '', size = 'sm', className = '', themeColor = '#f59e0b' }) => {
+const Avatar = ({ src, name = '', size = 'sm', className = '', themeColor = '#f59e0b', isGroup = false }) => {
   const [err, setErr] = useState(false);
   const url = resolveImg(src);
   const sz = SIZES[size] || SIZES.sm;
@@ -484,7 +485,8 @@ const Avatar = ({ src, name = '', size = 'sm', className = '', themeColor = '#f5
       className={`rounded-full flex items-center justify-center text-white font-semibold flex-shrink-0 ${sz} ${className}`}
       style={{ background: `linear-gradient(135deg, ${themeColor}bb, ${themeColor})`, ...ringStyle }}
     >
-      {getInitials(name)}
+      {/* Groups have no photo: show a people icon instead of initials. */}
+      {isGroup ? <GroupIcon className="h-1/2 w-1/2" aria-hidden="true" /> : getInitials(name)}
     </div>
   );
 };
@@ -672,6 +674,8 @@ const EditMessageModal = ({ draft, saving, theme, onChange, onCancel, onSave }) 
 const ChatMessage = ({
   msg,
   isMine,
+  // Only the last bubble of a run from the same sender gets the squared "tail" corner.
+  isLastInGroup = true,
   myId,
   fallbackSenderName = '',
   showSenderLabel = true,
@@ -728,7 +732,7 @@ const ChatMessage = ({
   const showActions = canEdit && !isEditing;
 
   return (
-  <div className={`group flex items-center gap-1.5 ${isMine ? 'justify-end' : 'justify-start'} mb-3`}>
+  <div className={`group flex items-center gap-1.5 ${isMine ? 'justify-end' : 'justify-start'} ${isLastInGroup ? 'mb-3' : 'mb-0.5'} ${msg?._clientKey ? (isMine ? 'chat-bubble-in-mine' : 'chat-bubble-in-theirs') : ''}`}>
     {showActions && (
       <div ref={menuRef} className="relative shrink-0">
         <button
@@ -758,8 +762,8 @@ const ChatMessage = ({
     <div
       className={`relative max-w-[80%] w-fit rounded-[16px] px-4 py-2.5 text-sm leading-[1.5] shadow-sm
         ${isMine
-          ? 'text-white rounded-br-[4px] shadow-[0_2px_8px_rgba(37,99,235,0.25)]'
-          : 'bg-white text-[#0f172a] rounded-bl-[4px] border border-white/60'}`}
+          ? `text-white ${isLastInGroup ? 'rounded-br-[4px]' : ''} shadow-[0_2px_8px_rgba(37,99,235,0.25)]`
+          : `bg-white text-[#0f172a] ${isLastInGroup ? 'rounded-bl-[4px]' : ''} border border-white/60`}`}
       style={isMine ? { background: `linear-gradient(135deg, ${t.color}, ${t.hover})` } : {}}
     >
       {showSenderLabel && (
@@ -869,7 +873,7 @@ const ContactInfoPanel = ({ open, isMobile, participant, roleLabel, presence, fo
       <div className="chat-scroll min-h-0 flex-1 overflow-y-auto px-5 pb-4">
         <div className="flex flex-col items-center border-b border-slate-100 pb-4 text-center">
           <div className="relative">
-            <Avatar src={pickImg(participant)} name={name} size="xl" className="!h-28 !w-28 text-3xl" themeColor={theme.color} />
+            <Avatar src={pickImg(participant)} name={name} size="xl" isGroup={String(participant?.userType || '').toLowerCase() === 'group'} className="!h-28 !w-28 text-3xl" themeColor={theme.color} />
             {presence?.online && <span className="absolute bottom-1.5 right-1.5 h-4 w-4 rounded-full border-[3px] border-white bg-emerald-500" aria-label="Online" />}
           </div>
           <p className="mt-3 text-[19px] font-bold text-slate-900">{name}</p>
@@ -932,7 +936,7 @@ const ConversationItem = ({ thread, isActive, onClick, typingName, theme }) => {
         ${isActive ? '' : 'hover:bg-gray-50'}`}
       style={isActive ? { backgroundColor: t.lighter, borderLeft: `4px solid ${t.color}` } : {}}
     >
-      <Avatar src={img} name={name} size="md" ring={isActive} themeColor={t.color} />
+      <Avatar src={img} name={name} size="md" ring={isActive} themeColor={t.color} isGroup={String(other?.userType || '').toLowerCase() === 'group'} />
 
       <div className="flex-1 min-w-0">
         <div className="flex items-center justify-between">
@@ -1250,9 +1254,11 @@ const StudentChat = ({ onChatOpenChange } = {}) => {
         const existingIndex = prev.findIndex((item) => String(item?._id) === String(msg?._id));
         if (existingIndex !== -1) return prev;
         const optimisticIndex = prev.findLastIndex((item) => item?._optimistic && isSameId(item.senderId, msg.senderId));
-        if (optimisticIndex === -1) return [...prev, msg];
+        // _clientKey keeps the React key stable when the server copy replaces the
+        // optimistic one, so the bubble isn't remounted (and its entry animation doesn't replay).
+        if (optimisticIndex === -1) return [...prev, { ...msg, _clientKey: `live-${msg._id}` }];
         const next = [...prev];
-        next[optimisticIndex] = msg;
+        next[optimisticIndex] = { ...msg, _clientKey: prev[optimisticIndex]._clientKey };
         return next;
       });
     });
@@ -1598,6 +1604,7 @@ const StudentChat = ({ onChatOpenChange } = {}) => {
       createdAt: new Date().toISOString(),
       seenBy: [{ userId: me?.id, seenAt: new Date().toISOString() }],
       _optimistic: true,
+      _clientKey: optimisticId,
     };
     setMessages(prev => [...prev, optimistic]);
 
@@ -1629,7 +1636,7 @@ const StudentChat = ({ onChatOpenChange } = {}) => {
         });
       }).then(async (msg) => {
         const decrypted = await decryptForUI(msg);
-        setMessages(prev => prev.map(m => m._id === optimisticId ? decrypted : m));
+        setMessages(prev => prev.map(m => m._id === optimisticId ? { ...decrypted, _clientKey: optimisticId } : m));
       }).catch(() => {
         setMessages(prev => prev.filter(m => m._id !== optimisticId));
       });
@@ -2064,6 +2071,7 @@ const StudentChat = ({ onChatOpenChange } = {}) => {
                         src={pickImg(activeTeacher)}
                         name={activeTeacher?.name || ''}
                         size="sm"
+                        isGroup={activeParticipantType === 'group'}
                         ring
                         themeColor={theme.color}
                         className="hover:opacity-90 transition-opacity cursor-pointer"
@@ -2145,7 +2153,7 @@ const StudentChat = ({ onChatOpenChange } = {}) => {
                   ) : messages.length === 0 ? (
                     <div className="flex flex-col items-center justify-center h-full gap-3">
                       {/* Show teacher avatar in empty state */}
-                      <Avatar src={pickImg(activeTeacher)} name={activeTeacher?.name || ''} size="lg" />
+                      <Avatar src={pickImg(activeTeacher)} name={activeTeacher?.name || ''} size="lg" isGroup={activeParticipantType === 'group'} themeColor={theme.color} />
                       <div className="text-center">
                         <p className="text-sm font-semibold text-gray-700">{activeTeacher?.name || activeParticipantLabel}</p>
                         <p className="text-xs text-gray-400 mt-1">No messages yet — say hello!</p>
@@ -2160,8 +2168,12 @@ const StudentChat = ({ onChatOpenChange } = {}) => {
                         const currentTs = msg.createdAt || msg.ts;
                         const prevTs = index > 0 ? (visibleMessages[index - 1].createdAt || visibleMessages[index - 1].ts) : null;
                         const showDateSeparator = index === 0 || dayKey(currentTs) !== dayKey(prevTs);
+                        const nextMsg = visibleMessages[index + 1];
+                        const isLastInGroup = !nextMsg
+                          || !isSameId(nextMsg.senderId, msg.senderId)
+                          || dayKey(nextMsg.createdAt || nextMsg.ts) !== dayKey(currentTs);
                         return (
-                          <React.Fragment key={msg._id}>
+                          <React.Fragment key={msg._clientKey || msg._id}>
                             {showDateSeparator && (
                               <div className="flex justify-center my-3 relative z-[1]">
                                 <span className="text-[11px] px-4 py-1 rounded-full bg-gray-300 border border-[#e9edf2] text-[#475569] font-semibold tracking-wide">
@@ -2172,6 +2184,7 @@ const StudentChat = ({ onChatOpenChange } = {}) => {
                             <ChatMessage
                             msg={msg}
                             isMine={isSameId(msg.senderId, me?.id)}
+                            isLastInGroup={isLastInGroup}
                             myId={me?.id}
                             showSenderLabel={isGroupActiveThread}
                             theme={theme}
