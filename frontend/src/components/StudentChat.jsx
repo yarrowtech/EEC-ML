@@ -1777,8 +1777,9 @@ const StudentChat = ({ onChatOpenChange } = {}) => {
         <TeacherModal teacher={teacherModal} onClose={() => setTeacherModal(null)} />
       )}
 
-      <div className="h-[100dvh] lg:h-full flex items-center justify-center p-0 sm:p-4 lg:p-3 overflow-hidden">
-        <div className="w-full h-full sm:h-[calc(100dvh-2rem)] lg:h-full flex overflow-hidden rounded-none sm:rounded-[28px] border border-white/70 bg-white shadow-[0_12px_40px_rgba(15,23,42,0.08)]">
+      {/* On phones the thread list sits above the fixed bottom nav, so it gets the viewport minus the nav; an open thread hides the nav and takes the full height. */}
+      <div className={`${isMobileView && !activeThreadId ? 'h-[calc(100dvh-4rem)] sm:h-[calc(100dvh-4.5rem)]' : 'h-[100dvh]'} lg:h-full flex items-center justify-center p-0 sm:p-4 lg:p-3 overflow-hidden`}>
+        <div className="w-full h-full sm:h-full lg:h-full flex overflow-hidden rounded-none sm:rounded-[28px] border border-white/70 bg-white shadow-[0_12px_40px_rgba(15,23,42,0.08)]">
 
         {/* ── Sidebar ─────────────────────────────────────────────────────── */}
         {showSidebar && (
@@ -1849,7 +1850,7 @@ const StudentChat = ({ onChatOpenChange } = {}) => {
                     />
                   </div>
                 </div>
-                <div className="chat-scroll flex-1 overflow-y-auto">
+                <div className="chat-scroll min-h-0 flex-1 overflow-y-auto">
                   {filteredContacts.length === 0 ? (
                     <div className="p-6 text-center text-sm text-gray-500">
                       {contacts.length === 0 ? 'No teachers found' : 'No results'}
@@ -1961,7 +1962,7 @@ const StudentChat = ({ onChatOpenChange } = {}) => {
             )}
 
             {/* Thread list */}
-            <div className="chat-scroll flex-1 overflow-y-auto">
+            <div className="chat-scroll min-h-0 flex-1 overflow-y-auto">
               {loadingThreads ? (
                 <div className="flex items-center justify-center py-12">
                   <Loader2 className="h-5 w-5 text-amber-400 animate-spin" />
@@ -1996,6 +1997,14 @@ const StudentChat = ({ onChatOpenChange } = {}) => {
                     theme={theme}
                   />
                 ))
+              )}
+              {/* Phones: mark the bottom of the list. */}
+              {isMobileView && !loadingThreads && filteredThreads.length > 0 && (
+                <div className="flex items-center justify-center gap-3 px-6 py-5 text-[11px] font-medium text-gray-400">
+                  <span className="h-px flex-1 bg-gray-200" aria-hidden="true" />
+                  <span>End of chats</span>
+                  <span className="h-px flex-1 bg-gray-200" aria-hidden="true" />
+                </div>
               )}
               {syncingThreads && filteredThreads.length > 0 && (
                 <div className="px-4 py-2 border-t border-gray-100 bg-white/90 backdrop-blur-sm">
@@ -2035,12 +2044,12 @@ const StudentChat = ({ onChatOpenChange } = {}) => {
             {activeThreadId ? (
               <>
                 {/* Chat header */}
-                <div className="px-4 py-2 border-b border-[#e9edf2] bg-white/90 backdrop-blur-md flex items-center justify-between flex-shrink-0 sticky top-0 z-20">
-                  <div className="flex items-center gap-3">
+                <div className="px-2 py-1 sm:px-4 sm:py-2 border-b border-[#e9edf2] bg-white/90 backdrop-blur-md flex items-center justify-between gap-2 flex-shrink-0 sticky top-0 z-20">
+                  <div className="flex min-w-0 items-center gap-2 sm:gap-3">
                     {isMobileView && (
                       <button
                         onClick={() => { setActiveThreadId(null); activeThreadIdRef.current = null; }}
-                        className="h-8 w-8 rounded-lg hover:bg-gray-100 flex items-center justify-center"
+                        className="h-7 w-7 shrink-0 rounded-lg hover:bg-gray-100 flex items-center justify-center"
                       >
                         <ChevronLeft className="h-5 w-5 text-gray-500" />
                       </button>
@@ -2060,19 +2069,19 @@ const StudentChat = ({ onChatOpenChange } = {}) => {
                         className="hover:opacity-90 transition-opacity cursor-pointer"
                       />
                     </button>
-                    <div>
-                      <div className="font-semibold text-[#0f172a] text-[0.95rem] tracking-[-0.01em] flex items-center gap-2 flex-wrap">
-                        {activeTeacher?.name || activeParticipantLabel}
-                        <span className="text-[0.6rem] font-semibold uppercase tracking-wide rounded-full px-2.5 py-0.5 bg-[#e9edf2] text-[#475569]">
+                    <div className="min-w-0">
+                      <div className="font-semibold text-[#0f172a] text-sm sm:text-[0.95rem] leading-tight tracking-[-0.01em] flex items-center gap-2 sm:flex-wrap">
+                        <span className="truncate">{activeTeacher?.name || activeParticipantLabel}</span>
+                        <span className="hidden sm:inline text-[0.6rem] font-semibold uppercase tracking-wide rounded-full px-2.5 py-0.5 bg-[#e9edf2] text-[#475569]">
                           {activeParticipantLabel}
                         </span>
                       </div>
-                      <div className="text-xs text-[#475569] flex items-center gap-2 flex-wrap">
+                      <div className="text-[11px] sm:text-xs leading-tight text-[#475569] flex items-center gap-2 sm:flex-wrap">
                         <span className="inline-flex items-center gap-1.5">
                           <span className={`h-2 w-2 rounded-full ${activePresence?.online ? 'bg-green-500' : 'bg-slate-300'}`} aria-hidden="true" />
                           <span style={isTypingInActive ? { color: theme.color, fontWeight: 500 } : {}}>{activeStatusText}</span>
                         </span>
-                        <span className="inline-flex items-center gap-1 rounded-full border border-[#e9edf2] bg-[#f4f6fa] px-2.5 py-0.5 text-[0.68rem] text-[#94a3b8]">
+                        <span className="hidden sm:inline-flex items-center gap-1 rounded-full border border-[#e9edf2] bg-[#f4f6fa] px-2.5 py-0.5 text-[0.68rem] text-[#94a3b8]">
                           <Lock className="h-3 w-3" aria-hidden="true" />
                           End-to-end encrypted
                         </span>
@@ -2084,7 +2093,7 @@ const StudentChat = ({ onChatOpenChange } = {}) => {
                     <button
                       type="button"
                       onClick={() => { setSearchOpen((open) => !open); setMessageSearch(''); }}
-                      className={`flex h-9 w-9 items-center justify-center rounded-full transition-colors ${searchOpen ? 'bg-slate-100 text-slate-900' : 'text-slate-600 hover:bg-slate-100'}`}
+                      className={`flex h-8 w-8 sm:h-9 sm:w-9 items-center justify-center rounded-full transition-colors ${searchOpen ? 'bg-slate-100 text-slate-900' : 'text-slate-600 hover:bg-slate-100'}`}
                       title="Search in conversation"
                       aria-label="Search in conversation"
                     >
@@ -2095,7 +2104,7 @@ const StudentChat = ({ onChatOpenChange } = {}) => {
                     <button
                       type="button"
                       onClick={() => setShowContactInfo((open) => !open)}
-                      className="flex h-9 w-9 items-center justify-center rounded-full transition-colors"
+                      className="flex h-8 w-8 sm:h-9 sm:w-9 items-center justify-center rounded-full transition-colors"
                       style={{ backgroundColor: showContactInfo ? theme.light : theme.lighter, color: theme.color }}
                       title="Contact info"
                       aria-label="Contact info"
