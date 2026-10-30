@@ -84,7 +84,8 @@ const registerSocketEvents = (io, socket, ensureChatAccess) => {
       ...(user.campusId ? { campusId: user.campusId } : {}),
       'participants.userId': userId,
     })
-      .select('participants.userId participants.name')
+      // ensureChatAccess needs threadType + each participant's userType.
+      .select('threadType participants.userId participants.name participants.userType')
       .lean();
     if (!thread) return;
     if (!(await ensureChatAccess({ user, schoolId: user.schoolId, campusId: user.campusId }, thread))) return;

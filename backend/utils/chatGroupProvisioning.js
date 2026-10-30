@@ -7,6 +7,7 @@ const ClassModel = require('../models/Class');
 const Section = require('../models/Section');
 const TeacherAllocation = require('../models/TeacherAllocation');
 const Timetable = require('../models/Timetable');
+const AcademicYear = require('../models/AcademicYear');
 const GROUP_KEY_ROUTINE_PREFIX = 'routine-subject';
 const GROUP_KEY_CLASS_TEACHER_PREFIX = 'class-teacher';
 
@@ -114,6 +115,27 @@ const buildProvisioningPrefetch = async ({ schoolId, campusId, combos }) => {
     studentsByGradeSection,
     threadsByGroupKey: new Map(existingThreads.filter((t) => t.groupKey).map((t) => [t.groupKey, t])),
     existingThreads,
+  };
+};
+
+// Chat groups follow the school's active academic year: allocations/timetables of
+// classes from other years are ignored, so their groups count as stale and the
+// sync deletes them. Schools without an active year are not filtered.
+const loadActiveYearScope = async (schoolId) => {
+  const years = await AcademicYear.find({ isActive: true, ...(schoolId ? { schoolId } : {}) })
+    .select('_id schoolId').lean();
+  const schoolsWithActiveYear = new Set(years.map((y) => String(y.schoolId)));
+  const activeYearIds = new Set(years.map((y) => String(y._id)));
+  const classes = years.length
+    ? await ClassModel.find({ academicYearId: { $in: years.map((y) => y._id) } }).select('_id').lean()
+    : [];
+  const activeClassIds = new Set(classes.map((c) => String(c._id)));
+  return {
+    inActiveYear: (record) => {
+      if (!schoolsWithActiveYear.has(String(record?.schoolId || ''))) return true;
+      if (record?.academicYearId && !activeYearIds.has(String(record.academicYearId))) return false;
+      return activeClassIds.has(String(record?.classId || ''));
+    },
   };
 };
 
@@ -417,9 +439,13 @@ const syncAllocationGroupThreads = async ({ schoolId = null, campusId = null } =
   if (schoolId) filter.schoolId = schoolId;
   if (campusId !== null && campusId !== undefined) filter.campusId = campusId;
 
-  const allocations = await TeacherAllocation.find(filter)
-    .select('schoolId campusId teacherId subjectId classId sectionId isClassTeacher')
-    .lean();
+  const [allAllocations, yearScope] = await Promise.all([
+    TeacherAllocation.find(filter)
+      .select('schoolId campusId teacherId subjectId classId sectionId isClassTeacher')
+      .lean(),
+    loadActiveYearScope(schoolId),
+  ]);
+  const allocations = allAllocations.filter(yearScope.inActiveYear);
 
   const validGroupKeys = new Set();
   const classTeacherAllocations = allocations.filter((allocation) => Boolean(allocation.isClassTeacher));
@@ -477,9 +503,13 @@ const syncTimetableGroupThreads = async ({ schoolId = null, campusId = null } = 
   if (schoolId) timetableFilter.schoolId = schoolId;
   if (campusId !== null && campusId !== undefined) timetableFilter.campusId = campusId;
 
-  const timetables = await Timetable.find(timetableFilter)
-    .select('schoolId campusId classId sectionId entries')
-    .lean();
+  const [allTimetables, yearScope] = await Promise.all([
+    Timetable.find(timetableFilter)
+      .select('schoolId campusId classId sectionId academicYearId entries')
+      .lean(),
+    loadActiveYearScope(schoolId),
+  ]);
+  const timetables = allTimetables.filter(yearScope.inActiveYear);
 
   const combos = new Map();
   timetables.forEach((tt) => {

@@ -30,7 +30,9 @@ const Header = ({ sidebarOpen, setSidebarOpen, onOpenProfile }) => {
   const searchInputRef = useRef(null);
   const openMobileSearch = () => {
     setMobileSearchOpen(true);
-    setTimeout(() => searchInputRef.current?.focus(), 0);
+    // Show the page list right away, not only after the input gets focus.
+    setShowSearchSuggestions(true);
+    requestAnimationFrame(() => searchInputRef.current?.focus());
   };
   const closeMobileSearch = () => {
     setMobileSearchOpen(false);
@@ -281,7 +283,7 @@ const Header = ({ sidebarOpen, setSidebarOpen, onOpenProfile }) => {
         <div className="flex items-center justify-between h-14 sm:h-16 gap-2 sm:gap-4">
 
           {/* Left: Sidebar toggle + Greeting */}
-          <div className="flex items-center gap-2 sm:gap-3 min-w-0">
+          <div className="flex min-w-0 items-center gap-2 sm:gap-3 lg:shrink-0">
             <button
               onClick={() => setSidebarOpen(!sidebarOpen)}
               className="lg:hidden p-2 rounded-xl hover:bg-gray-100 active:scale-95 transition-all"
@@ -299,7 +301,7 @@ const Header = ({ sidebarOpen, setSidebarOpen, onOpenProfile }) => {
                   onError={(e) => { e.target.style.display = 'none'; }}
                 />
               )}
-              <p className="truncate text-sm font-bold text-gray-900">{studentData.schoolName || 'Student Portal'}</p>
+              <p className="max-w-[22rem] truncate text-sm font-bold text-gray-900" title={studentData.schoolName || undefined}>{studentData.schoolName || 'Student Portal'}</p>
               <span className="h-6 w-px shrink-0 bg-gray-200" aria-hidden="true" />
               <div className="flex shrink-0 items-center gap-1.5 text-xs text-gray-500">
                 <CalendarDays size={13} className="text-gray-400" />
@@ -330,7 +332,7 @@ const Header = ({ sidebarOpen, setSidebarOpen, onOpenProfile }) => {
             className={mobileSearchOpen
               // Mobile/tablet: covers the header bar. Desktop: opens inline, pushed
               // right so it sits directly beside the ✕ toggle; everything else stays visible.
-              ? 'animate-header-search absolute inset-0 z-50 flex items-center gap-2 bg-white px-3 sm:px-5 lg:static lg:z-auto lg:-mr-2 lg:ml-auto lg:w-[min(28rem,40vw)] lg:flex-none lg:bg-transparent lg:px-0'
+              ? 'animate-header-search absolute inset-0 z-50 flex items-center gap-2 bg-white px-3 sm:px-5 lg:static lg:z-auto lg:mx-auto lg:min-w-0 lg:max-w-md lg:flex-1 lg:bg-transparent lg:px-0'
               : 'hidden'}
           >
             <div className="relative flex-1">

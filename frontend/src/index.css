@@ -128,7 +128,8 @@ body {
   to   { clip-path: inset(0 0 0 0);    opacity: 1; }
 }
 .animate-header-search {
-  animation: headerSearchExpand 0.28s cubic-bezier(0.4, 0, 0.2, 1) both;
+  /* "backwards", not "both": a clip-path kept after the animation would clip the suggestions dropdown. */
+  animation: headerSearchExpand 0.28s cubic-bezier(0.4, 0, 0.2, 1) backwards;
 }
 @media (prefers-reduced-motion: reduce) {
   .animate-header-search { animation: none; }

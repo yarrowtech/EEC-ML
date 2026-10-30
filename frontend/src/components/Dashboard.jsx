@@ -176,7 +176,10 @@ const DashboardContent = () => {
     () => (typeof window !== 'undefined' ? window.innerWidth >= 1024 : false)
   );
   const [showOnboarding, setShowOnboarding] = useState(false);
-  const [isChatBoxOpen, setIsChatBoxOpen] = useState(false);
+  const [chatThreadOpen, setIsChatBoxOpen] = useState(false);
+  // An open conversation takes over the whole screen only on phones/tablets;
+  // on desktop the chat stays inside the normal layout (header + sidebar).
+  const isChatBoxOpen = chatThreadOpen && typeof window !== 'undefined' && window.innerWidth < 1024;
   const journalRef = useRef(null);
   const wasDesktopRef = useRef(
     typeof window !== 'undefined' ? window.innerWidth >= 1024 : false
@@ -198,11 +201,31 @@ const DashboardContent = () => {
   // treatment to receive a definite height from their ancestors.
   const isFullscreenView = effectiveView === 'excuse-letter'
     || effectiveView === 'assignments-journal'
-    || (effectiveView === 'chat' && isChatBoxOpen);
+    || (effectiveView === 'chat' && isChatBoxOpen)
+    // Desktop chat fills the viewport (no page scroll) so it lines up with the sidebar.
+    || ((effectiveView === 'chat' || effectiveView === 'communication') && typeof window !== 'undefined' && window.innerWidth >= 1024);
 
   // Chat has its own compact "Messages" header, so the app header is just
   // redundant vertical space on small screens — keep it on desktop/tablet.
   const isChatView = effectiveView === 'chat' || effectiveView === 'communication';
+
+  // Chat gets the full width on desktop: collapse the sidebar on entering it and
+  // restore the previous state when leaving.
+  const sidebarBeforeChatRef = useRef(null);
+  useEffect(() => {
+    if (typeof window === 'undefined' || window.innerWidth < 1024) return;
+    if (isChatView) {
+      if (sidebarBeforeChatRef.current === null) {
+        setSidebarOpen((open) => {
+          sidebarBeforeChatRef.current = open;
+          return false;
+        });
+      }
+    } else if (sidebarBeforeChatRef.current !== null) {
+      setSidebarOpen(sidebarBeforeChatRef.current);
+      sidebarBeforeChatRef.current = null;
+    }
+  }, [isChatView]);
 
   // Fade/remount key for the content area: LearningHub tabs share one key so
   // its own tab bar stays mounted while only its content swaps underneath.

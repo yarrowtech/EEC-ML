@@ -1020,30 +1020,8 @@ router.get('/contacts', chatCache.cache, async (req, res) => {
         avatar: teacher.profilePic || null,
       }));
 
-      const classmateFilter = {
-        schoolId,
-        _id: { $ne: student._id },
-        grade: { $regex: `^${escapeRegex(student.grade || '')}$`, $options: 'i' },
-      };
-      if (student.section) {
-        classmateFilter.section = { $regex: `^${escapeRegex(student.section)}$`, $options: 'i' };
-      }
-      const classmateCampus = buildCampusCondition(campusId);
-      if (classmateCampus) classmateFilter.$or = classmateCampus.$or;
-      const classmates = await StudentUser.find(classmateFilter)
-        .select('_id name username studentCode profilePic grade section campusId academicYear')
-        .lean();
-      const classmateContacts = classmates
-        .filter((classmate) => studentsShareChatCohort(student, classmate))
-        .map((classmate) => ({
-          _id: classmate._id,
-          name: classmate.name || classmate.username || classmate.studentCode || 'Student',
-          subtitle: classLabel,
-          userType: 'student',
-          avatar: classmate.profilePic || null,
-        }));
-
-      return res.json([...teacherContacts, ...classmateContacts]);
+      // Students start chats only with their assigned teachers (no classmates).
+      return res.json(teacherContacts);
     }
 
     if (userType === 'parent') {
@@ -1496,13 +1474,7 @@ router.post('/threads/direct', async (req, res) => {
     if (normalizedUserType === 'student') {
       const student = await getChatStudent({ userId: myId, schoolId, campusId });
       let allowed = false;
-      if (normalizedTargetType === 'student') {
-        allowed = await ensureStudentCanAccessStudent({
-          student,
-          targetStudent: otherUser,
-          campusId,
-        });
-      } else if (normalizedTargetType === 'teacher') {
+      if (normalizedTargetType === 'teacher') {
         allowed = await ensureStudentCanAccessTeacher({
           student,
           teacherId: otherId,
@@ -1510,7 +1482,7 @@ router.post('/threads/direct', async (req, res) => {
         });
       }
       if (!allowed) {
-        return res.status(403).json({ error: 'You can message only classmates in your section or assigned teachers' });
+        return res.status(403).json({ error: 'You can message only the teachers assigned to your class' });
       }
     }
 
@@ -2037,6 +2009,7 @@ router.patch('/threads/:threadId/messages/:messageId', async (req, res) => {
             lastMessage: message.text || '[Encrypted message]',
             lastMessageAt: message.createdAt,
             message: payload,
+            edited: true,
           });
         }
       }

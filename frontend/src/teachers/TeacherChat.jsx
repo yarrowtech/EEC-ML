@@ -1283,7 +1283,8 @@ const TeacherChat = () => {
               ...t,
               lastMessage: previewText || optimisticTextForMine || sanitizePreviewText(t.lastMessage),
               lastMessageAt: msg.createdAt,
-              unreadCount: isActiveThread ? 0 : (t.unreadCount || 0) + 1,
+              // Unread is counted by 'thread-updated'; counting here too doubled it.
+              unreadCount: isActiveThread ? 0 : (t.unreadCount || 0),
             }
           : t
       ));
@@ -1308,7 +1309,7 @@ const TeacherChat = () => {
       });
     });
 
-    socket.on('thread-updated', async ({ threadId, lastMessage, lastMessageAt, message }) => {
+    socket.on('thread-updated', async ({ threadId, lastMessage, lastMessageAt, message, edited }) => {
       let resolvedLastMessage = sanitizePreviewText(lastMessage);
       if (message) {
         const decrypted = await decryptForUI(message);
@@ -1322,7 +1323,7 @@ const TeacherChat = () => {
               lastMessageAt,
               unreadCount: activeThreadIdRef.current === threadId
                 ? 0
-                : (isSameId(message?.senderId, meRef.current?.id) ? (t.unreadCount || 0) : (t.unreadCount || 0) + 1),
+                : (edited || isSameId(message?.senderId, meRef.current?.id) ? (t.unreadCount || 0) : (t.unreadCount || 0) + 1),
             }
           : t
       ));
@@ -1795,11 +1796,16 @@ const TeacherChat = () => {
   }, [editingMessageId, editDraft, activeThreadId, messages, me?.id, decryptForUI, cancelEditMessage]);
 
   // ── Typing indicators ─────────────────────────────────────────────────────
+  const lastTypingPingRef = useRef(0);
   const handleDraftChange = useCallback((val) => {
     setDraft(val);
     if (!activeThreadId || !socketRef.current) return;
-    if (!isTyping.current) {
+    // Re-announce every ~1.5s while typing: the other side hides the indicator
+    // after 3s without a ping, so a single start event let it vanish mid-sentence.
+    const now = Date.now();
+    if (!isTyping.current || now - (lastTypingPingRef.current || 0) > 1500) {
       isTyping.current = true;
+      lastTypingPingRef.current = now;
       socketRef.current.emit('typing-start', { threadId: activeThreadId });
     }
     clearTimeout(typingDebounce.current);

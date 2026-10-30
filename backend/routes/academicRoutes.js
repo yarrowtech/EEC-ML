@@ -21,6 +21,14 @@ const Building = require('../models/Building');
 const Floor = require('../models/Floor');
 const Room = require('../models/Room');
 const Timetable = require('../models/Timetable');
+const { syncAllocationGroupThreads, syncTimetableGroupThreads } = require('../utils/chatGroupProvisioning');
+
+const resyncChatGroupsForSchool = (schoolId) => {
+  Promise.resolve()
+    .then(() => syncTimetableGroupThreads({ schoolId }))
+    .then(() => syncAllocationGroupThreads({ schoolId }))
+    .catch((err) => console.error('Chat group resync after academic year change failed:', err.message));
+};
 const Exam = require('../models/Exam');
 const { buildInvoiceSnapshotsForStudent } = require('../utils/feeHeadPolicy');
 
@@ -378,6 +386,7 @@ router.post('/years', adminAuth, async (req, res) => {
         { schoolId, _id: { $ne: created._id } },
         { $set: { isActive: false } }
       );
+      resyncChatGroupsForSchool(schoolId);
       await AcademicYear.updateMany(
         { schoolId, _id: { $ne: created._id }, status: 'active' },
         { $set: { status: 'archived' } }
@@ -453,6 +462,7 @@ router.put('/years/:id', adminAuth, async (req, res) => {
         { schoolId, _id: { $ne: updated._id } },
         { $set: { isActive: false } }
       );
+      resyncChatGroupsForSchool(schoolId);
       await AcademicYear.updateMany(
         { schoolId, _id: { $ne: updated._id }, status: 'active' },
         { $set: { status: 'archived' } }

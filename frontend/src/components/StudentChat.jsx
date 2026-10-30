@@ -4,8 +4,9 @@ import {
   MessageSquare, Send, Search, ChevronLeft,
   PlusCircle, X, Loader2, Eye, Mail, BookOpen,
   GraduationCap, Phone, User, Check, CheckCheck,
-  Info, Palette, Lock, Link2, ExternalLink, Pencil, ChevronDown
+  Info, Palette, Lock, Link2, ExternalLink, Pencil, ChevronDown, MoreVertical
 } from 'lucide-react';
+import { createPortal } from 'react-dom';
 import { decryptChatMessage, encryptChatMessage, ensureE2EEIdentity } from '../utils/chatE2EE';
 import { chatCacheKeys, readChatCache, writeChatCache } from '../utils/chatCache';
 import { AUTH_LOGOUT_EVENT } from '../utils/authSession';
@@ -20,8 +21,9 @@ const resolveApiBaseUrl = () => {
 };
 
 const API_URL = resolveApiBaseUrl();
-const THREADS_CACHE_TTL_MS = 15 * 60 * 1000;
-const MESSAGES_CACHE_TTL_MS = 15 * 60 * 1000;
+// Cached chat data is shown immediately (then refreshed), so keep it for days, not minutes.
+const THREADS_CACHE_TTL_MS = 7 * 24 * 60 * 60 * 1000;
+const MESSAGES_CACHE_TTL_MS = 7 * 24 * 60 * 60 * 1000;
 const CONTACTS_CACHE_TTL_MS = 5 * 60 * 1000;
 const CHAT_EDIT_WINDOW_MS = Math.max(1000, Number(import.meta.env.VITE_CHAT_EDIT_WINDOW_MS || 15 * 60 * 1000));
 const LAST_STUDENT_CHAT_ME_KEY = 'student_chat_me_id_v1';
@@ -459,11 +461,12 @@ const SIZES = {
   xl:  'h-24 w-24 text-2xl',
 };
 
-const Avatar = ({ src, name = '', size = 'sm', ring = false, className = '', themeColor = '#f59e0b' }) => {
+const Avatar = ({ src, name = '', size = 'sm', className = '', themeColor = '#f59e0b' }) => {
   const [err, setErr] = useState(false);
   const url = resolveImg(src);
   const sz = SIZES[size] || SIZES.sm;
-  const ringStyle = ring ? { boxShadow: `0 0 0 2px white, 0 0 0 4px ${themeColor}` } : {};
+  // No outline ring around profile photos.
+  const ringStyle = {};
 
   if (url && !err) {
     return (
@@ -629,10 +632,48 @@ const MessageLinkPreview = ({ url, isMine, theme }) => {
   );
 };
 
+const EditMessageModal = ({ draft, saving, theme, onChange, onCancel, onSave }) => {
+  const canSave = !saving && Boolean(String(draft || '').trim());
+  return createPortal(
+    <div className="fixed inset-0 z-[120] flex items-center justify-center bg-slate-900/40 p-4 backdrop-blur-[2px]" onMouseDown={(e) => { if (e.target === e.currentTarget && !saving) onCancel(); }}>
+      <div className="w-full max-w-md overflow-hidden rounded-2xl bg-white shadow-2xl" role="dialog" aria-modal="true" aria-labelledby="edit-message-title">
+        <div className="flex items-center justify-between border-b border-slate-100 px-5 py-3.5">
+          <h3 id="edit-message-title" className="flex items-center gap-2 text-[15px] font-bold text-slate-900"><Pencil className="h-4 w-4" style={{ color: theme.color }} />Edit message</h3>
+          <button type="button" onClick={onCancel} disabled={saving} className="flex h-8 w-8 items-center justify-center rounded-full text-slate-500 hover:bg-slate-100" aria-label="Close"><X className="h-4 w-4" /></button>
+        </div>
+        <div className="px-5 py-4">
+          <textarea
+            autoFocus
+            rows={4}
+            value={draft}
+            onChange={(e) => onChange(e.target.value)}
+            onFocus={(e) => { const end = e.target.value.length; e.target.setSelectionRange(end, end); }}
+            onKeyDown={(e) => {
+              if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); if (canSave) onSave(); }
+              if (e.key === 'Escape' && !saving) onCancel();
+            }}
+            className="w-full resize-none rounded-xl border border-slate-200 bg-slate-50 px-3.5 py-2.5 text-sm text-slate-900 outline-none focus:border-blue-400 focus:bg-white focus:ring-4 focus:ring-blue-500/10"
+            placeholder="Edit message..."
+          />
+          <p className="mt-1.5 text-[11px] text-slate-400">Enter to save · Shift + Enter for a new line · Esc to cancel</p>
+        </div>
+        <div className="flex justify-end gap-2 border-t border-slate-100 px-5 py-3">
+          <button type="button" onClick={onCancel} disabled={saving} className="rounded-lg bg-slate-100 px-4 py-2 text-sm font-semibold text-slate-700 hover:bg-slate-200">Cancel</button>
+          <button type="button" onClick={onSave} disabled={!canSave} className="inline-flex items-center gap-1.5 rounded-lg px-4 py-2 text-sm font-semibold text-white disabled:opacity-50" style={{ background: `linear-gradient(135deg, ${theme.color}, ${theme.hover})` }}>
+            {saving && <Loader2 className="h-4 w-4 animate-spin" />}{saving ? 'Sending…' : 'Send'}
+          </button>
+        </div>
+      </div>
+    </div>,
+    document.body
+  );
+};
+
 const ChatMessage = ({
   msg,
   isMine,
   myId,
+  fallbackSenderName = '',
   showSenderLabel = true,
   theme,
   canEdit = false,
@@ -656,10 +697,11 @@ const ChatMessage = ({
     );
   }
   const optimistic = Boolean(msg?._optimistic);
-  const seen = isMine && isSeenByOther(msg, myId);
   const delivered = isMine && !optimistic;
+  const seen = isMine && delivered && isSeenByOther(msg, myId);
   const LONG_MESSAGE_LIMIT = 260;
-  const fullText = String(msg?.text || '');
+  const messageText = String(msg?.text || '').trim();
+  const fullText = messageText || (msg?.encrypted ? '[Encrypted message]' : '');
   const isLongMessage = fullText.length > LONG_MESSAGE_LIMIT;
   const [expanded, setExpanded] = useState(false);
   const visibleText = isLongMessage && !expanded
@@ -667,10 +709,52 @@ const ChatMessage = ({
     : fullText;
   const textParts = useMemo(() => linkifyMessageText(visibleText), [visibleText]);
   const links = useMemo(() => extractMessageLinks(fullText).slice(0, 2), [fullText]);
-  const senderLabel = isMine ? 'You' : (msg?.senderName || 'User');
+  const senderLabel = isMine ? 'You' : (msg?.senderName || fallbackSenderName || 'User');
+
+  // Hover actions for your own messages: a ⋯ button left of the bubble opens a small menu.
+  const [menuOpen, setMenuOpen] = useState(false);
+  const menuRef = useRef(null);
+  useEffect(() => {
+    if (!menuOpen) return undefined;
+    const onDown = (event) => { if (!menuRef.current?.contains(event.target)) setMenuOpen(false); };
+    const onKey = (event) => { if (event.key === 'Escape') setMenuOpen(false); };
+    document.addEventListener('mousedown', onDown);
+    document.addEventListener('keydown', onKey);
+    return () => {
+      document.removeEventListener('mousedown', onDown);
+      document.removeEventListener('keydown', onKey);
+    };
+  }, [menuOpen]);
+  const showActions = canEdit && !isEditing;
 
   return (
-  <div className={`flex ${isMine ? 'justify-end' : 'justify-start'} mb-3`}>
+  <div className={`group flex items-center gap-1.5 ${isMine ? 'justify-end' : 'justify-start'} mb-3`}>
+    {showActions && (
+      <div ref={menuRef} className="relative shrink-0">
+        <button
+          type="button"
+          onClick={() => setMenuOpen((open) => !open)}
+          className={`flex h-8 w-8 items-center justify-center rounded-full text-slate-500 transition hover:bg-black/5 focus:opacity-100 ${menuOpen ? 'bg-black/5 opacity-100' : 'opacity-0 group-hover:opacity-100'}`}
+          title="Message options"
+          aria-label="Message options"
+          aria-expanded={menuOpen}
+        >
+          <MoreVertical className="h-4 w-4" />
+        </button>
+        {menuOpen && (
+          <div className="absolute right-0 top-full z-20 mt-1 min-w-32 overflow-hidden rounded-xl border border-slate-100 bg-white py-1 shadow-xl">
+            <button
+              type="button"
+              onClick={() => { setMenuOpen(false); onStartEdit(); }}
+              className="flex w-full items-center gap-2 px-3 py-2 text-left text-sm text-slate-700 hover:bg-slate-50"
+            >
+              <Pencil className="h-3.5 w-3.5" />
+              Edit
+            </button>
+          </div>
+        )}
+      </div>
+    )}
     <div
       className={`relative max-w-[80%] w-fit rounded-[16px] px-4 py-2.5 text-sm leading-[1.5] shadow-sm
         ${isMine
@@ -686,50 +770,17 @@ const ChatMessage = ({
           {senderLabel}
         </div>
       )}
-      {isEditing ? (
-        <div className="space-y-2">
-          <textarea
-            rows={3}
-            value={editDraft}
-            onChange={(e) => onEditDraftChange(e.target.value)}
-            onKeyDown={(e) => {
-              if (e.key === 'Enter' && !e.shiftKey) {
-                e.preventDefault();
-                onEditSave();
-              }
-              if (e.key === 'Escape') onEditCancel();
-            }}
-            className={`w-full rounded-lg border px-2 py-1.5 text-sm resize-none focus:outline-none focus:ring-2 ${
-              isMine
-                ? 'bg-white/15 border-white/30 text-white placeholder-white/70 focus:ring-white/40'
-                : 'bg-white border-gray-200 text-gray-800 placeholder-gray-400 focus:ring-amber-200'
-            }`}
-            placeholder="Edit message..."
-          />
-          <div className="flex items-center justify-end gap-2">
-            <button
-              type="button"
-              onClick={onEditCancel}
-              className={`text-xs font-medium px-2.5 py-1 rounded-md ${
-                isMine ? 'text-white/90 hover:bg-white/15' : 'text-gray-600 hover:bg-gray-100'
-              }`}
-              disabled={editSaving}
-            >
-              Cancel
-            </button>
-            <button
-              type="button"
-              onClick={onEditSave}
-              className={`text-xs font-semibold px-2.5 py-1 rounded-md ${
-                isMine ? 'bg-white/20 text-white hover:bg-white/30' : 'bg-amber-100 text-amber-700 hover:bg-amber-200'
-              } disabled:opacity-50`}
-              disabled={editSaving || !String(editDraft || '').trim()}
-            >
-              {editSaving ? 'Saving...' : 'Save'}
-            </button>
-          </div>
-        </div>
-      ) : (
+      {isEditing && (
+        <EditMessageModal
+          draft={editDraft}
+          saving={editSaving}
+          theme={t}
+          onChange={onEditDraftChange}
+          onCancel={onEditCancel}
+          onSave={onEditSave}
+        />
+      )}
+      {(
         <>
           {links.map((url) => (
             <MessageLinkPreview key={url} url={url} isMine={isMine} theme={t} />
@@ -776,28 +827,92 @@ const ChatMessage = ({
               {expanded ? 'Read less' : 'Read more'}
             </button>
           )}
-          {canEdit && (
-            <div className="mt-2 flex justify-end">
-              <button
-                type="button"
-                onClick={onStartEdit}
-                className={`inline-flex items-center gap-1.5 rounded-md px-2 py-1 text-xs font-semibold transition-colors focus:outline-none focus:ring-2 ${
-                  isMine
-                    ? 'text-white/90 hover:bg-white/15 focus:ring-white/40'
-                    : 'text-amber-700 hover:bg-amber-100 focus:ring-amber-200'
-                }`}
-                title="Edit this message"
-                aria-label="Edit this message"
-              >
-                <Pencil className="h-3.5 w-3.5" />
-                <span>Edit</span>
-              </button>
-            </div>
-          )}
         </>
       )}
     </div>
   </div>
+  );
+};
+
+const ContactRow = ({ icon: Icon, label, value }) => (
+  <div className="flex items-center gap-3 py-2">
+    <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-slate-100 text-slate-700"><Icon className="h-[18px] w-[18px]" /></span>
+    <div className="min-w-0">
+      <p className="text-[13px] font-semibold text-slate-900">{label}</p>
+      <p className="truncate text-[13px] text-slate-500">{value}</p>
+    </div>
+  </div>
+);
+
+const ContactInfoPanel = ({ open, isMobile, participant, roleLabel, presence, formatLastSeen, theme, onClose }) => {
+  const name = participant?.name || 'Contact';
+  const statusText = presence?.online ? 'Online' : presence?.lastSeen ? `Last seen ${formatLastSeen(presence.lastSeen)}` : '';
+  const subjects = Array.isArray(participant?.subjects) && participant.subjects.length
+    ? participant.subjects.join(', ')
+    : participant?.subject || participant?.specialization || '';
+  const phone = participant?.mobile || participant?.phone || '';
+  const qualification = participant?.qualification || participant?.degree || '';
+
+  useEffect(() => {
+    if (!open) return undefined;
+    const onKey = (event) => { if (event.key === 'Escape') onClose(); };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, [open, onClose]);
+
+  const body = (
+    <div className="flex h-full w-[340px] max-w-full flex-col bg-white">
+      <div className="flex items-center justify-between px-5 py-4">
+        <h3 className="text-[17px] font-bold text-slate-900">Contact Info</h3>
+        <button type="button" onClick={onClose} className="flex h-8 w-8 items-center justify-center rounded-full text-slate-500 hover:bg-slate-100" aria-label="Close contact info"><X className="h-5 w-5" /></button>
+      </div>
+      <div className="chat-scroll min-h-0 flex-1 overflow-y-auto px-5 pb-4">
+        <div className="flex flex-col items-center border-b border-slate-100 pb-4 text-center">
+          <div className="relative">
+            <Avatar src={pickImg(participant)} name={name} size="xl" className="!h-28 !w-28 text-3xl" themeColor={theme.color} />
+            {presence?.online && <span className="absolute bottom-1.5 right-1.5 h-4 w-4 rounded-full border-[3px] border-white bg-emerald-500" aria-label="Online" />}
+          </div>
+          <p className="mt-3 text-[19px] font-bold text-slate-900">{name}</p>
+          <span className="mt-1 rounded-full bg-slate-100 px-3 py-0.5 text-[11px] font-semibold uppercase tracking-wide text-slate-600">{roleLabel}</span>
+          {statusText && <p className="mt-2 text-[12px] text-slate-500">{statusText}</p>}
+        </div>
+        <div className="border-b border-slate-100 py-2">
+          {subjects && <ContactRow icon={BookOpen} label="Subject" value={subjects} />}
+          {participant?.department && <ContactRow icon={GraduationCap} label="Department" value={participant.department} />}
+          {qualification && <ContactRow icon={GraduationCap} label="Qualification" value={qualification} />}
+          {phone && <ContactRow icon={Phone} label="Phone" value={phone} />}
+          {participant?.email && <ContactRow icon={Mail} label="Email" value={participant.email} />}
+          {!subjects && !participant?.department && !qualification && !phone && !participant?.email && (
+            <p className="py-3 text-[12px] text-slate-500">No further details shared.</p>
+          )}
+        </div>
+      </div>
+      <div className="m-4 mt-0 flex items-start gap-3 rounded-xl border border-slate-100 bg-slate-50 p-3">
+        <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-violet-100 text-violet-600"><Lock className="h-4 w-4" /></span>
+        <div>
+          <p className="text-[13px] font-semibold text-slate-900">End-to-end encrypted</p>
+          <p className="text-[12px] text-slate-500">Messages are secured with end-to-end encryption.</p>
+        </div>
+      </div>
+    </div>
+  );
+
+  if (isMobile) {
+    return (
+      <div className={`fixed inset-0 z-50 ${open ? '' : 'pointer-events-none'}`} aria-hidden={!open}>
+        <div className={`absolute inset-0 bg-black/30 transition-opacity duration-300 ${open ? 'opacity-100' : 'opacity-0'}`} onClick={onClose} />
+        <div className={`absolute right-0 top-0 h-full shadow-2xl transition-transform duration-300 ease-out ${open ? 'translate-x-0' : 'translate-x-full'}`}>{body}</div>
+      </div>
+    );
+  }
+  // Desktop: a column that grows in from the right edge, pushing the chat narrower.
+  return (
+    <aside
+      className={`h-full shrink-0 overflow-hidden border-l border-[#e9edf2] bg-white transition-[width,opacity] duration-300 ease-out ${open ? 'w-[340px] opacity-100' : 'w-0 border-l-0 opacity-0'}`}
+      aria-hidden={!open}
+    >
+      {body}
+    </aside>
   );
 };
 
@@ -884,6 +999,10 @@ const StudentChat = ({ onChatOpenChange } = {}) => {
   const [presenceByUser, setPresenceByUser] = useState({});
   const [isMobileView, setIsMobileView]     = useState(false);
   const [teacherModal, setTeacherModal]     = useState(null); // teacher object or null
+  const [showContactInfo, setShowContactInfo] = useState(false);
+  // In-conversation message search (same as the teacher chat).
+  const [searchOpen, setSearchOpen] = useState(false);
+  const [messageSearch, setMessageSearch] = useState('');
   const [wallpaperKey, setWallpaperKey]     = useState(() => localStorage.getItem('chat_wallpaper') || 'plain');
   const [themeKey, setThemeKey]             = useState(() => localStorage.getItem('chat_theme')     || 'blue');
   const [showChatSettings, setShowChatSettings] = useState(false);
@@ -945,6 +1064,8 @@ const StudentChat = ({ onChatOpenChange } = {}) => {
     });
     return { ...rawMsg, text: plainText };
   }, []);
+  const decryptForUIRef = useRef(decryptForUI);
+  decryptForUIRef.current = decryptForUI;
 
   const decryptThreadPreview = useCallback(async (thread) => {
     if (!thread) return thread;
@@ -1021,6 +1142,8 @@ const StudentChat = ({ onChatOpenChange } = {}) => {
     const init = async () => {
       try {
         setSyncingThreads(true);
+        const threadsPromise = apiFetch('/api/chat/threads');
+        threadsPromise.catch(() => {});
         const meData = await apiFetch('/api/chat/me');
         if (!mounted) return;
         setMe(meData);
@@ -1037,7 +1160,7 @@ const StudentChat = ({ onChatOpenChange } = {}) => {
           setThreads(cachedThreads);
           if (mounted) setLoadingThreads(false);
         }
-        const threadsData = await apiFetch('/api/chat/threads');
+        const threadsData = await threadsPromise;
         if (!mounted) return;
         const hydratedThreads = await Promise.all((Array.isArray(threadsData) ? threadsData : []).map((thread) => decryptThreadPreview(thread)));
         const hydratedWithFallback = await hydrateEncryptedThreadPreviews(hydratedThreads);
@@ -1055,6 +1178,7 @@ const StudentChat = ({ onChatOpenChange } = {}) => {
         });
         setThreads(mergedThreads);
         writeChatCache(threadsCacheKey, mergedThreads);
+        prefetchRecentMessages(mergedThreads, meData?.id);
       } catch { /* ignore */ } finally {
         if (mounted) {
           setLoadingThreads(false);
@@ -1108,7 +1232,7 @@ const StudentChat = ({ onChatOpenChange } = {}) => {
       });
       setThreads(prev => prev.map(t =>
         String(t._id) === threadId
-          ? { ...t, lastMessage: msg.text, lastMessageAt: msg.createdAt, unreadCount: isActiveThread ? 0 : (t.unreadCount || 0) + 1 }
+          ? { ...t, lastMessage: msg.text, lastMessageAt: msg.createdAt, unreadCount: isActiveThread ? 0 : (t.unreadCount || 0) }
           : t
       ));
 
@@ -1133,7 +1257,7 @@ const StudentChat = ({ onChatOpenChange } = {}) => {
       });
     });
 
-    socket.on('thread-updated', async ({ threadId, lastMessage, lastMessageAt, message }) => {
+    socket.on('thread-updated', async ({ threadId, lastMessage, lastMessageAt, message, edited }) => {
       let resolvedLastMessage = lastMessage;
       let decryptedMessage = null;
       if (message) {
@@ -1148,7 +1272,7 @@ const StudentChat = ({ onChatOpenChange } = {}) => {
               lastMessageAt,
               unreadCount: activeThreadIdRef.current === threadId
                 ? 0
-                : (isSameId(message?.senderId, meRef.current?.id) ? (t.unreadCount || 0) : (t.unreadCount || 0) + 1),
+                : (edited || isSameId(message?.senderId, meRef.current?.id) ? (t.unreadCount || 0) : (t.unreadCount || 0) + 1),
             }
           : t
       ));
@@ -1330,6 +1454,26 @@ const StudentChat = ({ onChatOpenChange } = {}) => {
     writeChatCache(chatCacheKeys.contacts(userId), contacts);
   }, [contacts, me?.id]);
 
+  // Warm the message cache for the most recent conversations (in the background),
+  // so the first open of any of them paints immediately.
+  const prefetchRecentMessages = useCallback((threadList, userId) => {
+    if (!userId || !Array.isArray(threadList)) return;
+    threadList.slice(0, 6).forEach((thread) => {
+      const threadId = String(thread?._id || '');
+      if (!threadId) return;
+      const key = chatCacheKeys.messages(userId, threadId);
+      const cached = readChatCache(key, MESSAGES_CACHE_TTL_MS);
+      const cachedLast = Array.isArray(cached) ? cached[cached.length - 1] : null;
+      const fresh = cachedLast && thread.lastMessageAt
+        && new Date(cachedLast.createdAt || 0) >= new Date(thread.lastMessageAt);
+      if (fresh) return;
+      apiFetch(`/api/chat/threads/${threadId}/messages`)
+        .then((msgs) => Promise.all((Array.isArray(msgs) ? msgs : []).map((msg) => decryptForUIRef.current(msg))))
+        .then((decrypted) => writeChatCache(key, decrypted.slice(-120)))
+        .catch(() => {});
+    });
+  }, []);
+
   // ── Thread actions ─────────────────────────────────────────────────────────
   const selectThread = useCallback(async (threadId) => {
     setEditingMessageId('');
@@ -1356,7 +1500,7 @@ const StudentChat = ({ onChatOpenChange } = {}) => {
     socket?.emit('join-thread', { threadId });
     socket?.emit('mark-seen', { threadId });
     try {
-      const presenceRes = await apiFetch(`/api/chat/threads/${threadId}/presence`);
+      apiFetch(`/api/chat/threads/${threadId}/presence`).then((presenceRes) => {
       if (presenceRes?.presence && typeof presenceRes.presence === 'object') {
         setPresenceByUser((prev) => {
           const next = { ...prev };
@@ -1366,6 +1510,7 @@ const StudentChat = ({ onChatOpenChange } = {}) => {
           return next;
         });
       }
+      }).catch(() => {});
       const msgs = await apiFetch(`/api/chat/threads/${threadId}/messages`);
       const decrypted = await Promise.all((Array.isArray(msgs) ? msgs : []).map((msg) => decryptForUI(msg)));
       setMessages(decrypted);
@@ -1556,11 +1701,16 @@ const StudentChat = ({ onChatOpenChange } = {}) => {
     }
   }, [editingMessageId, editDraft, activeThreadId, messages, me?.id, decryptForUI, cancelEditMessage]);
 
+  const lastTypingPingRef = useRef(0);
   const handleDraftChange = useCallback((val) => {
     setDraft(val);
     if (!activeThreadId || !socketRef.current) return;
-    if (!isTyping.current) {
+    // Re-announce every ~1.5s while typing: the other side hides the indicator
+    // after 3s without a ping, so a single start event let it vanish mid-sentence.
+    const now = Date.now();
+    if (!isTyping.current || now - (lastTypingPingRef.current || 0) > 1500) {
       isTyping.current = true;
+      lastTypingPingRef.current = now;
       socketRef.current.emit('typing-start', { threadId: activeThreadId });
     }
     clearTimeout(typingDebounce.current);
@@ -1607,6 +1757,9 @@ const StudentChat = ({ onChatOpenChange } = {}) => {
   const activeParticipantType = String(activeTeacher?.userType || '').toLowerCase();
   const activeParticipantLabel = activeParticipantType === 'group' ? 'Group' : 'Teacher';
   const activePresence = activeTeacher?.userId ? presenceByUser[String(activeTeacher.userId)] : null;
+  const visibleMessages = messageSearch.trim()
+    ? messages.filter((msg) => String(msg?.text || '').toLowerCase().includes(messageSearch.trim().toLowerCase()))
+    : messages;
   const activeStatusText = isTypingInActive
     ? `${isTypingInActive} is typing...`
     : activePresence?.online
@@ -1624,8 +1777,8 @@ const StudentChat = ({ onChatOpenChange } = {}) => {
         <TeacherModal teacher={teacherModal} onClose={() => setTeacherModal(null)} />
       )}
 
-      <div className="h-[100dvh] lg:h-full flex items-center justify-center bg-[#f4f6fa] p-0 sm:p-4 lg:p-5 overflow-hidden">
-        <div className="w-full h-full sm:h-[calc(100dvh-2rem)] lg:h-full max-w-[1280px] max-h-[900px] flex overflow-hidden rounded-none sm:rounded-[28px] border border-white/70 bg-white shadow-[0_12px_40px_rgba(15,23,42,0.08)]">
+      <div className="h-[100dvh] lg:h-full flex items-center justify-center p-0 sm:p-4 lg:p-3 overflow-hidden">
+        <div className="w-full h-full sm:h-[calc(100dvh-2rem)] lg:h-full flex overflow-hidden rounded-none sm:rounded-[28px] border border-white/70 bg-white shadow-[0_12px_40px_rgba(15,23,42,0.08)]">
 
         {/* ── Sidebar ─────────────────────────────────────────────────────── */}
         {showSidebar && (
@@ -1663,7 +1816,7 @@ const StudentChat = ({ onChatOpenChange } = {}) => {
                   </button>
                 </div>
               </div>
-              <div className="flex items-center gap-2 bg-[#f4f6fa] rounded-xl px-3 py-2 border border-transparent focus-within:border-blue-200">
+              <div className="flex items-center gap-2 bg-[#f4f6fa] rounded-full px-3 py-2 border border-transparent focus-within:border-blue-200">
                 <Search className="h-3.5 w-3.5 text-gray-400 flex-shrink-0" />
                 <input
                   value={query}
@@ -1696,7 +1849,7 @@ const StudentChat = ({ onChatOpenChange } = {}) => {
                     />
                   </div>
                 </div>
-                <div className="flex-1 overflow-y-auto">
+                <div className="chat-scroll flex-1 overflow-y-auto">
                   {filteredContacts.length === 0 ? (
                     <div className="p-6 text-center text-sm text-gray-500">
                       {contacts.length === 0 ? 'No teachers found' : 'No results'}
@@ -1723,7 +1876,7 @@ const StudentChat = ({ onChatOpenChange } = {}) => {
                   </button>
                 </div>
 
-                <div className="flex-1 overflow-y-auto p-4 space-y-5">
+                <div className="chat-scroll flex-1 overflow-y-auto p-4 space-y-5">
                   {/* Wallpaper Picker */}
                   <div>
                     <p className="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-3">Wallpaper</p>
@@ -1808,7 +1961,7 @@ const StudentChat = ({ onChatOpenChange } = {}) => {
             )}
 
             {/* Thread list */}
-            <div className="flex-1 overflow-y-auto">
+            <div className="chat-scroll flex-1 overflow-y-auto">
               {loadingThreads ? (
                 <div className="flex items-center justify-center py-12">
                   <Loader2 className="h-5 w-5 text-amber-400 animate-spin" />
@@ -1882,7 +2035,7 @@ const StudentChat = ({ onChatOpenChange } = {}) => {
             {activeThreadId ? (
               <>
                 {/* Chat header */}
-                <div className="px-5 py-4 border-b border-[#e9edf2] bg-white/90 backdrop-blur-md flex items-center justify-between flex-shrink-0 sticky top-0 z-20">
+                <div className="px-4 py-2 border-b border-[#e9edf2] bg-white/90 backdrop-blur-md flex items-center justify-between flex-shrink-0 sticky top-0 z-20">
                   <div className="flex items-center gap-3">
                     {isMobileView && (
                       <button
@@ -1892,23 +2045,23 @@ const StudentChat = ({ onChatOpenChange } = {}) => {
                         <ChevronLeft className="h-5 w-5 text-gray-500" />
                       </button>
                     )}
-                    {/* Clickable avatar → opens modal */}
+                    {/* Clickable avatar → Contact Info side panel */}
                     <button
-                      onClick={() => setTeacherModal(activeTeacher)}
+                      onClick={() => setShowContactInfo(true)}
                       className="shrink-0 focus:outline-none"
                       title="View teacher profile"
                     >
                       <Avatar
                         src={pickImg(activeTeacher)}
                         name={activeTeacher?.name || ''}
-                        size="md"
+                        size="sm"
                         ring
                         themeColor={theme.color}
                         className="hover:opacity-90 transition-opacity cursor-pointer"
                       />
                     </button>
                     <div>
-                      <div className="font-semibold text-[#0f172a] text-[1.05rem] tracking-[-0.01em] flex items-center gap-2 flex-wrap">
+                      <div className="font-semibold text-[#0f172a] text-[0.95rem] tracking-[-0.01em] flex items-center gap-2 flex-wrap">
                         {activeTeacher?.name || activeParticipantLabel}
                         <span className="text-[0.6rem] font-semibold uppercase tracking-wide rounded-full px-2.5 py-0.5 bg-[#e9edf2] text-[#475569]">
                           {activeParticipantLabel}
@@ -1927,23 +2080,51 @@ const StudentChat = ({ onChatOpenChange } = {}) => {
                     </div>
                   </div>
 
-                  {/* Info button → teacher details modal */}
-                  <button
-                    onClick={() => setTeacherModal(activeTeacher)}
-                    className="h-8 w-8 rounded-lg flex items-center justify-center transition-colors hover:bg-gray-100"
-                    title="View teacher details"
-                    onMouseEnter={e => { e.currentTarget.style.backgroundColor = theme.lighter; }}
-                    onMouseLeave={e => { e.currentTarget.style.backgroundColor = ''; }}
-                  >
-                    <Info className="h-4 w-4 text-gray-400" />
-                  </button>
+                  <div className="flex shrink-0 items-center gap-1">
+                    <button
+                      type="button"
+                      onClick={() => { setSearchOpen((open) => !open); setMessageSearch(''); }}
+                      className={`flex h-9 w-9 items-center justify-center rounded-full transition-colors ${searchOpen ? 'bg-slate-100 text-slate-900' : 'text-slate-600 hover:bg-slate-100'}`}
+                      title="Search in conversation"
+                      aria-label="Search in conversation"
+                    >
+                      <Search className="h-4 w-4" />
+                    </button>
+                    <span className="mx-1 h-6 w-px bg-[#e9edf2]" aria-hidden="true" />
+                    {/* Info button → Contact Info side panel */}
+                    <button
+                      type="button"
+                      onClick={() => setShowContactInfo((open) => !open)}
+                      className="flex h-9 w-9 items-center justify-center rounded-full transition-colors"
+                      style={{ backgroundColor: showContactInfo ? theme.light : theme.lighter, color: theme.color }}
+                      title="Contact info"
+                      aria-label="Contact info"
+                    >
+                      <Info className="h-4 w-4" />
+                    </button>
+                  </div>
                 </div>
+                {searchOpen && (
+                  <div className="flex shrink-0 items-center gap-2 border-b border-[#e9edf2] bg-white px-5 py-2">
+                    <Search className="h-4 w-4 text-slate-400" aria-hidden="true" />
+                    <input
+                      autoFocus
+                      value={messageSearch}
+                      onChange={(e) => setMessageSearch(e.target.value)}
+                      onKeyDown={(e) => { if (e.key === 'Escape') { setSearchOpen(false); setMessageSearch(''); } }}
+                      placeholder="Search messages…"
+                      className="flex-1 bg-transparent text-sm text-slate-800 outline-none placeholder:text-slate-400"
+                    />
+                    {messageSearch && <span className="text-xs text-slate-400">{visibleMessages.length} found</span>}
+                    <button type="button" onClick={() => { setSearchOpen(false); setMessageSearch(''); }} className="flex h-7 w-7 items-center justify-center rounded-full text-slate-500 hover:bg-slate-100" aria-label="Close search"><X className="h-4 w-4" /></button>
+                  </div>
+                )}
 
                 {/* Messages */}
                 <div
                   ref={messagesContainerRef}
                   onScroll={handleMessagesScroll}
-                  className="relative flex-1 min-h-0 overflow-y-auto overflow-x-hidden px-5 py-5 bg-[#fafcff]"
+                  className="chat-scroll relative flex-1 min-h-0 overflow-y-auto overflow-x-hidden px-5 py-5 bg-[#fafcff]"
                   style={{ ...wallpaperStyle, backgroundColor: wallpaperKey === 'plain' ? '#fafcff' : undefined }}
                 >
                   <div className="pointer-events-none absolute inset-0 opacity-30" style={{ backgroundImage: 'radial-gradient(#e9edf2 1px, transparent 1px)', backgroundSize: '24px 24px' }} aria-hidden="true" />
@@ -1963,9 +2144,12 @@ const StudentChat = ({ onChatOpenChange } = {}) => {
                     </div>
                   ) : (
                     <>
-                      {messages.map((msg, index) => {
+                      {messageSearch && visibleMessages.length === 0 && (
+                        <p className="py-10 text-center text-sm text-slate-500">No messages match “{messageSearch}”.</p>
+                      )}
+                      {visibleMessages.map((msg, index) => {
                         const currentTs = msg.createdAt || msg.ts;
-                        const prevTs = index > 0 ? (messages[index - 1].createdAt || messages[index - 1].ts) : null;
+                        const prevTs = index > 0 ? (visibleMessages[index - 1].createdAt || visibleMessages[index - 1].ts) : null;
                         const showDateSeparator = index === 0 || dayKey(currentTs) !== dayKey(prevTs);
                         return (
                           <React.Fragment key={msg._id}>
@@ -2023,9 +2207,9 @@ const StudentChat = ({ onChatOpenChange } = {}) => {
                 </div>
 
                 {/* Input */}
-                <div className="border-t border-gray-200 bg-white px-4 pt-3 pb-5 lg:py-3 flex-shrink-0 sticky bottom-0 z-20">
-                  <div className="flex items-end gap-2">
-                    <div className="flex-1 bg-gray-100 rounded-full px-4 py-2.5">
+                <div className="border-t border-[#e9edf2] bg-white/90 backdrop-blur-md px-4 pt-2 pb-3 lg:py-2 flex-shrink-0 sticky bottom-0 z-20">
+                  <div className="flex items-center gap-3">
+                    <div className="flex min-h-10 flex-1 items-center bg-[#f8fafc] rounded-full border border-[#e2e8f0] px-4 py-1 focus-within:border-blue-400 focus-within:ring-4 focus-within:ring-blue-500/10">
                       <textarea
                         rows={1}
                         value={draft}
@@ -2034,18 +2218,18 @@ const StudentChat = ({ onChatOpenChange } = {}) => {
                           if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); sendMessage(); }
                         }}
                         placeholder="Type a message..."
-                        className="w-full resize-none bg-transparent text-sm text-[#0f172a] caret-[#0f172a] focus:outline-none placeholder:text-[#94a3b8] min-h-[20px] max-h-28"
+                        className="block w-full resize-none bg-transparent py-1 text-sm leading-5 text-[#0f172a] caret-[#0f172a] focus:outline-none placeholder:text-[#94a3b8] max-h-28"
                         style={{ color: '#111827', WebkitTextFillColor: '#111827' }}
                       />
                     </div>
                     <button
                       onClick={sendMessage}
                       disabled={!draft.trim()}
-                      className="h-[46px] min-w-[46px] px-3 rounded-full text-white flex items-center justify-center gap-1.5 disabled:opacity-40 disabled:cursor-not-allowed transition-all hover:scale-[1.02] active:scale-95 shrink-0 shadow-[0_2px_8px_rgba(37,99,235,0.2)]"
+                      aria-label="Send message"
+                      className="h-10 w-10 rounded-full text-white flex items-center justify-center disabled:opacity-40 disabled:cursor-not-allowed transition-all hover:scale-[1.04] active:scale-95 shrink-0 shadow-[0_4px_12px_rgba(37,99,235,0.3)]"
                       style={{ background: `linear-gradient(135deg, ${theme.color}, ${theme.hover})` }}
                     >
                       <Send className="h-4 w-4" />
-                      <span className="hidden sm:inline text-sm font-semibold">Send</span>
                     </button>
                   </div>
                 </div>
@@ -2074,6 +2258,16 @@ const StudentChat = ({ onChatOpenChange } = {}) => {
             )}
           </div>
         )}
+        <ContactInfoPanel
+          open={Boolean(activeThreadId) && showContactInfo}
+          isMobile={isMobileView}
+          participant={activeTeacher}
+          roleLabel={activeParticipantLabel}
+          presence={activePresence}
+          formatLastSeen={formatLastSeen}
+          theme={theme}
+          onClose={() => setShowContactInfo(false)}
+        />
         </div>
       </div>
     </>
