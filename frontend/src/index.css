@@ -585,3 +585,14 @@ textarea:-webkit-autofill {
 .chat-bubble-in-mine { animation: chat-bubble-in-mine 260ms cubic-bezier(0.22, 1, 0.36, 1) both; transform-origin: bottom right; }
 .chat-bubble-in-theirs { animation: chat-bubble-in-theirs 260ms cubic-bezier(0.22, 1, 0.36, 1) both; transform-origin: bottom left; }
 @media (prefers-reduced-motion: reduce) { .chat-bubble-in-mine, .chat-bubble-in-theirs { animation: none; } }
+
+/* Student excuse letter: form drawer slides in from the right. */
+@keyframes excuse-drawer-in { from { transform: translateX(100%); } to { transform: none; } }
+.excuse-drawer-in { animation: excuse-drawer-in 260ms cubic-bezier(0.22, 1, 0.36, 1) both; }
+
+/* Student excuse letter: delete confirmation fades in and pops up. */
+@keyframes excuse-fade-in { from { opacity: 0; } to { opacity: 1; } }
+@keyframes excuse-pop-in { from { opacity: 0; transform: translateY(12px) scale(0.94); } to { opacity: 1; transform: none; } }
+.excuse-fade-in { animation: excuse-fade-in 200ms ease-out both; }
+.excuse-pop-in { animation: excuse-pop-in 280ms cubic-bezier(0.22, 1, 0.36, 1) both; }
+@media (prefers-reduced-motion: reduce) { .excuse-fade-in, .excuse-pop-in, .excuse-drawer-in { animation: none; } }

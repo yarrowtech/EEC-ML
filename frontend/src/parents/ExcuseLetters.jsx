@@ -7,6 +7,7 @@ import {
   Heart, Home, Loader2, MoreHorizontal, Plane, Plus, Search, Send, Users, X, XCircle,
 } from 'lucide-react';
 import { parentApiJson } from './parentApi';
+import { subscribeSocketEvent } from '../hooks/useCommunityWallUnread';
 import Loading from './Loading';
 import { EmptyState, ErrorState } from './StateBlock';
 import { useDialog } from './useDialog';
@@ -48,7 +49,9 @@ const dayCount = (from, to) => {
   return Math.max(1, Math.round((b - a) / 86400000) + 1);
 };
 
-const statusChip = (status) => {
+const statusChip = (status, letter) => {
+  if (status === 'awaiting_parent') return <span className="inline-flex items-center gap-1 rounded-full bg-violet-100 px-2.5 py-0.5 text-[11px] font-medium text-violet-700"><Clock3 size={12} /> Needs your approval</span>;
+  if (letter?.parentReview?.status === 'rejected') return <span className="inline-flex items-center gap-1 rounded-full bg-red-600 px-2.5 py-0.5 text-[11px] font-medium text-white"><XCircle size={12} /> You rejected</span>;
   if (status === 'approved') return <span className="inline-flex items-center gap-1 rounded-full bg-green-600 px-2.5 py-0.5 text-[11px] font-medium text-white"><CheckCircle2 size={12} /> Approved</span>;
   if (status === 'rejected') return <span className="inline-flex items-center gap-1 rounded-full bg-red-600 px-2.5 py-0.5 text-[11px] font-medium text-white"><XCircle size={12} /> Rejected</span>;
   return <span className="inline-flex items-center gap-1 rounded-full bg-amber-60 px-2.5 py-0.5 text-[11px] font-medium text-amber-700"><Clock3 size={12} /> Pending</span>;
@@ -84,6 +87,29 @@ const ExcuseLetters = () => {
   const createRef = useDialog(showCreate, () => setShowCreate(false));
   const openCreate = () => { setFormError(''); setShowCreate(true); };
 
+  // Letters your child wrote wait here until you approve (→ class teacher) or reject them.
+  const [reviewingId, setReviewingId] = useState('');
+  const [rejectingId, setRejectingId] = useState('');
+  const [rejectNote, setRejectNote] = useState('');
+  const [reviewError, setReviewError] = useState('');
+  const reviewLetter = async (letter, decision) => {
+    try {
+      setReviewingId(String(letter._id));
+      setReviewError('');
+      const updated = await parentApiJson(`/api/excuse-letters/parent/${letter._id}/review`, {
+        method: 'PATCH',
+        body: JSON.stringify({ decision, note: decision === 'reject' ? rejectNote : '' }),
+      }, navigate);
+      setLetters((prev) => prev.map((l) => (String(l._id) === String(letter._id) ? { ...l, ...updated } : l)));
+      setRejectingId('');
+      setRejectNote('');
+    } catch (err) {
+      setReviewError(err.message || 'Unable to update the letter');
+    } finally {
+      setReviewingId('');
+    }
+  };
+
   const loadLetters = async () => {
     try {
       setLoading(true);
@@ -106,6 +132,10 @@ const ExcuseLetters = () => {
   useEffect(() => {
     loadLetters();
   }, []);
+  // Child's new letter / teacher's decision refreshes the page instantly.
+  useEffect(() => subscribeSocketEvent('new_notification', (payload) => {
+    if (String(payload?.typeLabel || '').startsWith('excuse_letter')) loadLetters();
+  }), []);
 
   const submitLetter = async (event) => {
     event.preventDefault();
@@ -134,6 +164,8 @@ const ExcuseLetters = () => {
       setSubmitting(false);
     }
   };
+
+  const awaitingLetters = useMemo(() => letters.filter((l) => l.status === 'awaiting_parent'), [letters]);
 
   const stats = useMemo(() => letters.reduce((acc, l) => {
     acc.total += 1;
@@ -190,6 +222,64 @@ const ExcuseLetters = () => {
       </motion.header>
 
       {error ? <ErrorState message={error} onRetry={loadLetters} /> : null}
+
+      {/* Letters written by the child: parent approves before the class teacher sees them */}
+      {awaitingLetters.length > 0 && (
+        <motion.section variants={RISE} className="rounded-2xl border border-violet-200 bg-violet-50/60 p-3">
+          <div className="mb-2 flex items-center gap-2">
+            <span className="flex h-8 w-8 items-center justify-center rounded-full bg-violet-600 text-white"><Clock3 size={16} /></span>
+            <div>
+              <h2 className="text-sm font-bold text-[#0b1446]">Needs your approval ({awaitingLetters.length})</h2>
+              <p className="text-[11px] text-slate-500">Your child wrote these. Approve to send them to the class teacher.</p>
+            </div>
+          </div>
+          {reviewError ? <p className="mb-2 rounded-lg bg-red-50 px-3 py-2 text-xs text-red-700">{reviewError}</p> : null}
+          <div className="space-y-2">
+            {awaitingLetters.map((letter) => {
+              const busy = reviewingId === String(letter._id);
+              const rejecting = rejectingId === String(letter._id);
+              const days = dayCount(letter.dateFrom, letter.dateTo);
+              return (
+                <div key={letter._id} className="rounded-xl border border-violet-100 bg-white p-3 shadow-sm">
+                  <div className="flex flex-wrap items-start justify-between gap-2">
+                    <div className="min-w-0">
+                      <p className="truncate text-sm font-bold text-[#0b1446]">{letter.studentName || 'Student'}</p>
+                      <p className="text-[11px] text-slate-500">
+                        {fmtDate(letter.dateFrom)}{days > 1 ? ` → ${fmtDate(letter.dateTo)}` : ''} · {days} day{days === 1 ? '' : 's'} · {reasonLabel(letter)}
+                      </p>
+                    </div>
+                    <button type="button" onClick={() => setDetail(letter)} className="text-[11px] font-semibold text-violet-700 hover:underline">View letter</button>
+                  </div>
+                  <p className="mt-1.5 line-clamp-2 text-xs text-slate-600">{letter.reason}</p>
+                  {rejecting && (
+                    <input
+                      autoFocus
+                      value={rejectNote}
+                      onChange={(e) => setRejectNote(e.target.value)}
+                      maxLength={300}
+                      placeholder="Reason for rejecting (optional) — your child will see this"
+                      className={`${INPUT} mt-2`}
+                    />
+                  )}
+                  <div className="mt-2 grid grid-cols-2 gap-2">
+                    {rejecting ? (
+                      <>
+                        <button type="button" disabled={busy} onClick={() => { setRejectingId(''); setRejectNote(''); }} className="rounded-full border border-slate-200 bg-white py-2 text-xs font-semibold text-slate-600 hover:bg-slate-50">Cancel</button>
+                        <button type="button" disabled={busy} onClick={() => reviewLetter(letter, 'reject')} className="rounded-full bg-red-600 py-2 text-xs font-semibold text-white hover:bg-red-700 disabled:opacity-60">{busy ? 'Rejecting…' : 'Confirm reject'}</button>
+                      </>
+                    ) : (
+                      <>
+                        <button type="button" disabled={busy} onClick={() => { setRejectingId(String(letter._id)); setRejectNote(''); }} className="inline-flex items-center justify-center gap-1 rounded-full border border-red-200 bg-white py-2 text-xs font-semibold text-red-600 hover:bg-red-50"><XCircle size={14} /> Reject</button>
+                        <button type="button" disabled={busy} onClick={() => reviewLetter(letter, 'approve')} className="inline-flex items-center justify-center gap-1 rounded-full bg-violet-600 py-2 text-xs font-semibold text-white hover:bg-violet-700 disabled:opacity-60"><CheckCircle2 size={14} /> {busy ? 'Sending…' : 'Approve & send to teacher'}</button>
+                      </>
+                    )}
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        </motion.section>
+      )}
 
       {/* Stats */}
       <motion.div variants={RISE} className="grid grid-cols-2 gap-2.5 lg:grid-cols-4">
@@ -293,7 +383,7 @@ const ExcuseLetters = () => {
                           Class {letter.className || '—'}{letter.sectionName ? ` - ${letter.sectionName}` : ''}
                         </p>
                       </div>
-                      <div className="shrink-0">{statusChip(letter.status)}</div>
+                      <div className="shrink-0">{statusChip(letter.status, letter)}</div>
                     </div>
                     <div className="flex flex-wrap items-center gap-x-2 gap-y-1 rounded-full bg-slate-200/60 px-2.5 py-1.5 text-[11px]">
                       <span className="inline-flex items-center gap-1 font-medium text-[#0b1446]">
@@ -330,7 +420,7 @@ const ExcuseLetters = () => {
                   </div>
                   <span className={`hidden w-fit shrink-0 rounded-full px-3 py-0.5 text-[11px] font-medium lg:inline-block ${reason.tone}`}>{reason.label}</span>
                   <div className="hidden min-w-0 w-[28%] lg:block">
-                    {statusChip(letter.status)}
+                    {statusChip(letter.status, letter)}
                     <p className="mt-1 flex items-start gap-1.5 text-[11px] text-slate-600">
                       <Users size={13} className="mt-0.5 shrink-0 text-slate-500" />
                       <span className="min-w-0 truncate">
@@ -572,7 +662,7 @@ const ExcuseLetters = () => {
                 </div>
                 <div className="space-y-3 overflow-y-auto p-4 text-xs">
                   <div className="flex flex-wrap gap-1.5">
-                    {statusChip(detail.status)}
+                    {statusChip(detail.status, detail)}
                     <span className={`rounded-full px-3 py-0.5 text-[11px] font-medium ${reasonMeta(detail.reasonType).tone}`}>{reasonLabel(detail)}</span>
                   </div>
                   <dl className="grid grid-cols-[90px_1fr] gap-x-2 gap-y-1.5 sm:grid-cols-[110px_1fr]">

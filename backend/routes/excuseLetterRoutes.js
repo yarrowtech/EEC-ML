@@ -51,6 +51,54 @@ const notifyClassTeachersOfLetter = async (letter, submittedBy) => {
   }
 };
 
+// Student wrote a letter → their parent(s) must approve it first.
+const notifyParentsOfStudentLetter = async (letter) => {
+  try {
+    const parents = await ParentUser.find({ schoolId: letter.schoolId, childrenIds: letter.studentId }).select('_id').lean();
+    if (!parents.length) return;
+    await Notification.create({
+      schoolId: letter.schoolId,
+      campusId: null,
+      title: 'Excuse letter needs your approval',
+      message: `${letter.studentName} wrote a leave request for ${letterDates(letter)}. Approve it to send it to the class teacher.`,
+      audience: 'Parent',
+      targetUserIds: parents.map((p) => p._id),
+      createdByType: 'student',
+      type: 'alert',
+      typeLabel: 'excuse_letter',
+      category: 'general',
+      priority: 'high',
+      className: letter.className || '',
+      sectionName: letter.sectionName || '',
+      relatedEntity: { entityType: 'leave', entityId: letter._id },
+    });
+  } catch (err) {
+    console.error('Excuse letter parent notification failed:', err.message);
+  }
+};
+
+// Parent turned down their child's letter → tell the student.
+const notifyStudentOfParentRejection = async (letter) => {
+  try {
+    await Notification.create({
+      schoolId: letter.schoolId,
+      campusId: null,
+      title: 'Excuse letter not approved',
+      message: `Your parent did not approve your leave request for ${letterDates(letter)}${letter.parentReview?.note ? `: "${letter.parentReview.note}"` : '.'}`,
+      audience: 'Student',
+      targetUserIds: [letter.studentId],
+      createdByType: 'parent',
+      type: 'alert',
+      typeLabel: 'excuse_letter_reviewed',
+      category: 'general',
+      priority: 'high',
+      relatedEntity: { entityType: 'leave', entityId: letter._id },
+    });
+  } catch (err) {
+    console.error('Excuse letter student notification failed:', err.message);
+  }
+};
+
 // Decision → the student and their parent(s).
 const notifyLetterDecision = async (letter, teacherId) => {
   try {
@@ -185,7 +233,7 @@ router.post('/student', authStudent, async (req, res) => {
     const studentId = req.user?.id;
     if (!schoolId || !studentId) return res.status(400).json({ error: 'schoolId and studentId are required' });
 
-    const { dateFrom, dateTo, reason, reasonType, additionalNotes, emergencyContact } = req.body || {};
+    const { dateFrom, dateTo, reason, reasonType, customReasonType, additionalNotes, emergencyContact } = req.body || {};
     if (!dateFrom || !dateTo || !reason) {
       return res.status(400).json({ error: 'dateFrom, dateTo and reason are required' });
     }
@@ -235,12 +283,16 @@ router.post('/student', authStudent, async (req, res) => {
       dateTo: new Date(dateTo),
       reason: String(reason).trim(),
       reasonType: String(reasonType || 'other'),
+      customReasonType: String(reasonType || 'other') === 'other' ? String(customReasonType || '').trim().slice(0, 60) : '',
       additionalNotes: String(additionalNotes || ''),
       emergencyContact: String(emergencyContact || ''),
-      status: 'pending',
+      // Students can't reach the class teacher directly: a parent approves first.
+      status: 'awaiting_parent',
+      submittedBy: 'student',
+      parentReview: { status: 'pending' },
     });
 
-    notifyClassTeachersOfLetter(created, 'Student');
+    notifyParentsOfStudentLetter(created);
     res.status(201).json(created);
     logStudentPortalEvent(req, {
       feature: 'excuse_letter',
@@ -262,6 +314,58 @@ router.post('/student', authStudent, async (req, res) => {
       reasonType: req.body?.reasonType || undefined,
     });
     res.status(400).json({ error: err.message });
+  }
+});
+
+// Student: edit / delete their own letter — only while it still waits for the parent.
+const findEditableStudentLetter = async (req, res) => {
+  const { id } = req.params;
+  if (!mongoose.isValidObjectId(id)) { res.status(400).json({ error: 'Invalid id' }); return null; }
+  const letter = await ExcuseLetter.findOne({ _id: id, studentId: req.user?.id }).lean();
+  if (!letter) { res.status(404).json({ error: 'Not found' }); return null; }
+  if (letter.status !== 'awaiting_parent') {
+    res.status(409).json({ error: 'This letter has already been reviewed and can no longer be changed' });
+    return null;
+  }
+  return letter;
+};
+
+router.put('/student/:id', authStudent, async (req, res) => {
+  try {
+    const letter = await findEditableStudentLetter(req, res);
+    if (!letter) return undefined;
+    const { dateFrom, dateTo, reason, reasonType, customReasonType, additionalNotes } = req.body || {};
+    if (!dateFrom || !dateTo || !String(reason || '').trim()) {
+      return res.status(400).json({ error: 'dateFrom, dateTo and reason are required' });
+    }
+    if (new Date(dateTo) < new Date(dateFrom)) return res.status(400).json({ error: 'The end date cannot be before the start date' });
+    const updated = await ExcuseLetter.findOneAndUpdate(
+      { _id: letter._id, status: 'awaiting_parent' },
+      { $set: {
+        dateFrom: new Date(dateFrom),
+        dateTo: new Date(dateTo),
+        reason: String(reason).trim(),
+        reasonType: String(reasonType || 'other'),
+        customReasonType: String(reasonType || 'other') === 'other' ? String(customReasonType || '').trim().slice(0, 60) : '',
+        additionalNotes: String(additionalNotes || ''),
+      } },
+      { new: true }
+    ).lean();
+    if (!updated) return res.status(409).json({ error: 'This letter has already been reviewed and can no longer be changed' });
+    return res.json(updated);
+  } catch (err) {
+    return res.status(400).json({ error: err.message });
+  }
+});
+
+router.delete('/student/:id', authStudent, async (req, res) => {
+  try {
+    const letter = await findEditableStudentLetter(req, res);
+    if (!letter) return undefined;
+    await ExcuseLetter.deleteOne({ _id: letter._id, status: 'awaiting_parent' });
+    return res.json({ success: true });
+  } catch (err) {
+    return res.status(400).json({ error: err.message });
   }
 });
 
@@ -365,9 +469,54 @@ router.post('/parent', authParent, async (req, res) => {
       reasonType: String(reasonType || 'other'),
       customReasonType: String(reasonType || 'other') === 'other' ? String(customReasonType || '').trim().slice(0, 60) : '',
       additionalNotes: String(additionalNotes || ''), emergencyContact: String(emergencyContact || ''), status: 'pending',
+      submittedBy: 'parent',
     });
     notifyClassTeachersOfLetter(created, 'Parent');
     return res.status(201).json(created);
+  } catch (err) {
+    return res.status(400).json({ error: err.message });
+  }
+});
+
+// Parent: approve (→ class teacher) or reject a letter their child wrote.
+router.patch('/parent/:id/review', authParent, async (req, res) => {
+  try {
+    const { id } = req.params;
+    const decision = String(req.body?.decision || '');
+    const note = String(req.body?.note || '').trim().slice(0, 300);
+    if (!mongoose.isValidObjectId(id)) return res.status(400).json({ error: 'Invalid id' });
+    if (!['approve', 'reject'].includes(decision)) return res.status(400).json({ error: 'decision must be approve or reject' });
+
+    const parent = await ParentUser.findById(req.user.id).select('schoolId childrenIds name username').lean();
+    if (!parent) return res.status(404).json({ error: 'Parent not found' });
+    const letter = await ExcuseLetter.findById(id).lean();
+    if (!letter) return res.status(404).json({ error: 'Not found' });
+    const childIds = (parent.childrenIds || []).map(String);
+    if (!childIds.includes(String(letter.studentId))) return res.status(403).json({ error: 'This letter is not from your child' });
+    if (letter.status !== 'awaiting_parent') return res.status(409).json({ error: 'This letter has already been reviewed' });
+
+    const approved = decision === 'approve';
+    const updated = await ExcuseLetter.findOneAndUpdate(
+      { _id: id, status: 'awaiting_parent' },
+      {
+        $set: {
+          status: approved ? 'pending' : 'rejected',
+          parentReview: {
+            status: approved ? 'approved' : 'rejected',
+            parentId: parent._id,
+            parentName: parent.name || parent.username || '',
+            note,
+            reviewedAt: new Date(),
+          },
+        },
+      },
+      { new: true }
+    ).lean();
+    if (!updated) return res.status(409).json({ error: 'This letter has already been reviewed' });
+
+    if (approved) notifyClassTeachersOfLetter(updated, 'Student (approved by parent)');
+    else notifyStudentOfParentRejection(updated);
+    return res.json(updated);
   } catch (err) {
     return res.status(400).json({ error: err.message });
   }
@@ -399,6 +548,9 @@ router.get('/teacher', authTeacher, async (req, res) => {
       schoolId,
       ...(campusId ? { campusId } : {}),
       $or: pairs,
+      // Letters still waiting on (or turned down by) the parent never reach the teacher.
+      status: { $ne: 'awaiting_parent' },
+      'parentReview.status': { $ne: 'rejected' },
     })
       .sort({ createdAt: -1 })
       .lean();
@@ -453,6 +605,9 @@ router.patch('/teacher/:id', authTeacher, async (req, res) => {
       (a) => String(a.classId) === String(letter.classId) && String(a.sectionId) === String(letter.sectionId)
     );
     if (!allowed) return res.status(403).json({ error: 'Forbidden' });
+    if (letter.status === 'awaiting_parent' || letter.parentReview?.status === 'rejected') {
+      return res.status(409).json({ error: 'This letter has not been approved by the parent' });
+    }
 
     const updated = await ExcuseLetter.findByIdAndUpdate(
       id,

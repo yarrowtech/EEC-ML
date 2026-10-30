@@ -22,7 +22,17 @@ const excuseLetterSchema = new mongoose.Schema(
     customReasonType: { type: String, default: '', trim: true, maxlength: 60 },
     additionalNotes: { type: String, default: '' },
     emergencyContact: { type: String, default: '' },
-    status: { type: String, enum: ['pending', 'approved', 'rejected'], default: 'pending', index: true },
+    // Student-written letters start at 'awaiting_parent'; once a parent approves they
+    // move to 'pending' (with the class teacher). Parent-written letters skip straight to 'pending'.
+    status: { type: String, enum: ['awaiting_parent', 'pending', 'approved', 'rejected'], default: 'pending', index: true },
+    submittedBy: { type: String, enum: ['student', 'parent'], default: 'parent' },
+    parentReview: {
+      status: { type: String, enum: ['not_required', 'pending', 'approved', 'rejected'], default: 'not_required' },
+      parentId: { type: mongoose.Schema.Types.ObjectId, ref: 'ParentUser', default: null },
+      parentName: { type: String, default: '' },
+      note: { type: String, default: '', maxlength: 300 },
+      reviewedAt: { type: Date, default: null },
+    },
     reviewedBy: { type: mongoose.Schema.Types.ObjectId, ref: 'TeacherUser', default: null },
     reviewedAt: { type: Date, default: null },
   },

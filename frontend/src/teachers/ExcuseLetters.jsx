@@ -3,6 +3,7 @@ import {
   CheckCircle, XCircle, FileText, Eye, Calendar,
   User, Phone, RefreshCw, X, AlertCircle, Clock, Mail, ChevronLeft, ChevronRight, SlidersHorizontal,
 } from 'lucide-react';
+import { subscribeSocketEvent } from '../hooks/useCommunityWallUnread';
 
 const STATUS_CFG = {
   approved: { label: 'Approved', bg: 'bg-green-600', text: 'text-white', dot: 'bg-emerald-100', accent: 'border-l-emerald-500' },
@@ -97,6 +98,10 @@ const ExcuseLetters = () => {
   };
 
   useEffect(() => { loadLetters(); }, []);
+  // A parent-approved letter (or a new parent letter) shows up the moment it arrives.
+  useEffect(() => subscribeSocketEvent('new_notification', (payload) => {
+    if (String(payload?.typeLabel || '').startsWith('excuse_letter')) loadLetters();
+  }), []);
 
   const updateStatus = async (id, status) => {
     try {
