@@ -777,3 +777,4 @@ Phone: ${d.parentPhone}${d.emergencyContact ? `\nEmergency Contact: ${d.emergenc
 };
 
 export default ExcuseLetter;
+ 
