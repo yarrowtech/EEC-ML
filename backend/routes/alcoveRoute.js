@@ -310,9 +310,12 @@ router.post('/posts', authAnyUser, withPostImages, async (req, res) => {
     const { title, subject, chapter, difficulty = 'medium', problemText = '', solutionText, highlighted = false } = req.body;
     const tags = (parseJsonField(req.body.tags, []) || []).map((tag) => String(tag).trim()).filter(Boolean);
     const poll = normalizePoll(req.body.poll);
-    const files = Array.isArray(req.files) ? req.files : [];
-    if (!String(problemText).trim() && !files.length && !poll) {
-      return res.status(400).json({ error: 'Write something, add a photo, or create a poll.' });
+    if (Array.isArray(req.files) && req.files.length) {
+      return res.status(400).json({ error: 'Photos cannot be posted on the community wall.' });
+    }
+    const files = [];
+    if (!String(problemText).trim() && !poll) {
+      return res.status(400).json({ error: 'Write something or create a poll.' });
     }
     const authorType = normalizeUserType(req.userType || req.user?.userType || req.user?.type);
     if (!['teacher', 'admin', 'student', 'parent'].includes(authorType)) {

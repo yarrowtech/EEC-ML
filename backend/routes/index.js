@@ -75,6 +75,10 @@ module.exports = function registerRoutes(app, { generalApiLimiter, authApiLimite
   app.use('/api/teacher-allocations', writeHeavyApiLimiter, require('./teacherAllocationRoutes'));
   app.use('/api/teacher-analytics', requireOrganizationDomain, writeHeavyApiLimiter, require('./teacherAnalyticsRoutes'));
   app.use('/api/excuse-letters', require('./excuseLetterRoutes'));
+  // Admissions: admin notifications + a public (no-login) apply page per school.
+  // The public endpoints sit under the strict per-IP limiter to slow form spam.
+  app.use('/api/admissions/public', authApiLimiter);
+  app.use('/api/admissions', writeHeavyApiLimiter, require('./admissionRoutes'));
   app.use('/api/meeting', require('./meetingRoute'));
 
   // ── Student portal ───────────────────────────────────────────────────────────

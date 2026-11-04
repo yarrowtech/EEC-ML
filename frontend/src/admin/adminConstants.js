@@ -26,7 +26,8 @@ import {
   Plus,
   Eye,
   UserX,
-  MessagesSquare
+  MessagesSquare,
+  Megaphone,
 } from 'lucide-react';
 
 export const ADMIN_MENU_ITEMS = [
@@ -86,6 +87,11 @@ export const ADMIN_MENU_ITEMS = [
     icon: CalendarDays,
     label: 'Holiday List',
     path: '/admin/holidays'
+  },
+  {
+    icon: Megaphone,
+    label: 'Admissions',
+    path: '/admin/admissions'
   },
   {
     icon: MessagesSquare,
@@ -211,7 +217,7 @@ export const ADMIN_MENU_SECTIONS = [
     section: 'ACADEMIC MANAGEMENT',
     items: ['Academic Setup', 'Teachers Management', 'Teacher Feedback', 'Routine Management', 'Exam Management', 'Admit Cards', 'Result Management', 'Report Cards'],
   },
-  { section: 'STUDENTS', items: ['Students', 'Parents', 'Student Promotion', 'Leave & Left Students'] },
+  { section: 'STUDENTS', items: ['Admissions', 'Students', 'Parents', 'Student Promotion', 'Leave & Left Students'] },
   { section: 'FEES MANAGEMENT', items: ['Create Fees', 'Fees Collection', 'Fee Receipts'] },
   { section: 'COMMUNICATION', items: ['Notices', 'Holiday List', 'Community Wall'] },
   { section: 'CAMPUS', items: ['Floor & Rooms'] },

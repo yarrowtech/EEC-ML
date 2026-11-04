@@ -873,7 +873,6 @@ const CommunityWall = ({ role = 'teacher' }) => {
                     >
                       Share a question, ideas, or resources with the community
                     </button>
-                    <button type="button" title="Photo" onClick={() => setCreateOpen('photo')} className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full hover:bg-slate-100"><ImageIcon size={20} className="text-emerald-500" /></button>
                     <button type="button" title="Poll" onClick={() => setCreateOpen('poll')} className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full hover:bg-slate-100"><BarChart3 size={20} className="text-blue-600" /></button>
                   </div>
                 </section>}
@@ -1799,7 +1798,7 @@ const CreatePostModal = ({ initialAction, userName, userPhoto, tagSuggestions, c
   useEffect(() => () => imagesRef.current.forEach((image) => URL.revokeObjectURL(image.preview)), []);
   // Opened from the composer's photo button: go straight to the file picker.
   useEffect(() => {
-    if (initialAction === 'photo') fileInputRef.current?.click();
+
   }, [initialAction]);
   useEffect(() => {
     const onKey = (event) => { if (event.key === 'Escape' && !submitting) onClose(); };
@@ -2007,8 +2006,6 @@ const CreatePostModal = ({ initialAction, userName, userPhoto, tagSuggestions, c
           <div className="flex items-center justify-between rounded-lg border border-slate-200 px-3.5 py-2 shadow-sm">
             <p className="text-[14px] font-semibold text-slate-800">Add to your post</p>
             <div className="flex items-center gap-0.5">
-              <input ref={fileInputRef} type="file" accept="image/jpeg,image/png,image/webp,image/gif" multiple hidden onChange={(event) => { addImages(event.target.files); event.target.value = ''; }} />
-              <button type="button" title="Photo" onClick={() => fileInputRef.current?.click()} disabled={images.length >= 4} className={`${addBarButton} disabled:opacity-40`}><ImageIcon size={22} className="text-emerald-500" /></button>
               <button type="button" title="Poll" onClick={() => setPollOpen(true)} className={`${addBarButton} ${pollOpen ? 'bg-blue-50' : ''}`}><BarChart3 size={22} className="text-blue-600" /></button>
             </div>
           </div>

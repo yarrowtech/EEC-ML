@@ -596,3 +596,21 @@ textarea:-webkit-autofill {
 .excuse-fade-in { animation: excuse-fade-in 200ms ease-out both; }
 .excuse-pop-in { animation: excuse-pop-in 280ms cubic-bezier(0.22, 1, 0.36, 1) both; }
 @media (prefers-reduced-motion: reduce) { .excuse-fade-in, .excuse-pop-in, .excuse-drawer-in { animation: none; } }
+
+/* Admission application: printing shows only the application sheet. */
+.admission-print-root { display: none; }
+@media print {
+  /* Full application form: print only the copy portalled into <body>. */
+  body:has(.admission-print-root) > *:not(.admission-print-root) { display: none !important; }
+  body:has(.admission-print-root) .admission-print-root { display: block; }
+  .admission-print-root .application-sheet { max-width: none; border: 0; border-radius: 0; padding: 0; }
+  .admission-print-root .application-sheet > div, .admission-print-root .application-sheet p { break-inside: avoid; }
+  /* Other printable cards (e.g. admission credentials). */
+  body:not(:has(.admission-print-root)):has(.admission-print-sheet) * { visibility: hidden; }
+  body:not(:has(.admission-print-root)):has(.admission-print-sheet) .admission-print-sheet,
+  body:not(:has(.admission-print-root)):has(.admission-print-sheet) .admission-print-sheet * { visibility: visible; }
+  body:not(:has(.admission-print-root)):has(.admission-print-sheet) .admission-print-sheet { position: absolute; left: 0; top: 0; width: 100%; }
+  body { -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+  @page { size: A4; margin: 12mm; }
+  .no-print { display: none !important; }
+}

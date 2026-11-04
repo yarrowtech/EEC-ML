@@ -27,6 +27,9 @@ const SchoolRegistrationSuccess = lazy(() =>
   import("./components/SchoolRegistrationSuccess"),
 );
 const GamesPage = lazy(() => import("./games/GamesPage"));
+const AdmissionPortal = lazy(() => import("./pages/AdmissionPortal"));
+const AdmissionHub = lazy(() => import("./pages/AdmissionHub"));
+const AdmissionApply = lazy(() => import("./pages/AdmissionApply"));
 const QuizAttemptPage = lazy(() => import("./components/QuizAttemptPage"));
 const SuperAdminApp = lazy(() => import("./Super Admin/SuperAdminApp"));
 const ArchivedStudents = lazy(() => import("./admin/ArchivedStudents"));
@@ -115,6 +118,10 @@ function App() {
         />
         <Route path="/feedback" element={<FeedbackPage />} />
         <Route path="/feedback/thank-you" element={<FeedbackThankYou />} />
+        {/* Public, no-login admission page — one per school */}
+        <Route path="/admissions" element={<AdmissionHub />} />
+        <Route path="/admission/:schoolId/apply/:sessionId" element={<AdmissionApply />} />
+        <Route path="/admission/:schoolId" element={<AdmissionPortal />} />
         <Route
           path="/school-registration"
           element={<SchoolRegistrationForm />}
