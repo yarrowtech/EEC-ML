@@ -2,6 +2,7 @@ const jwt = require('jsonwebtoken');
 const { logAuthEvent } = require('../utils/authEventLogger');
 const { logSecurityEvent } = require('../utils/securityEventLogger');
 const validateTokenTenant = require('./validateTokenTenant');
+const { enforceTeamAccess } = require('./teamAccess');
 
 const extractSchoolId = (req) => {
   const headerId = req.headers['x-school-id'] || req.headers['x-schoolid'];
@@ -79,6 +80,8 @@ const adminAuth = (req, res, next) => {
       campusId: effectiveCampusId,
       statusCode: 200,
     });
+    // Team members (sub-users) are limited to the modules their role grants.
+    if (decoded.teamMember) return enforceTeamAccess(req, res, next);
     next();
   } catch (err) {
     logAuthEvent(req, {

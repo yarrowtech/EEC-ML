@@ -28,6 +28,7 @@ import {
   UserX,
   MessagesSquare,
   Megaphone,
+  UserCog,
 } from 'lucide-react';
 
 export const ADMIN_MENU_ITEMS = [
@@ -191,7 +192,8 @@ export const ADMIN_MENU_ITEMS = [
     hasSubmenu: true,
     submenu: [
       { icon: UserRound, label: 'Profile & School', path: '/admin/settings' },
-      { icon: CreditCard, label: 'Payment Gateway', path: '/admin/settings/payment-gateway' }
+      { icon: CreditCard, label: 'Payment Gateway', path: '/admin/settings/payment-gateway' },
+      { icon: UserCog, label: 'Roles & Access', path: '/admin/roles-access', ownerOnly: true }
     ]
   },
   {
@@ -223,6 +225,6 @@ export const ADMIN_MENU_SECTIONS = [
   { section: 'CAMPUS', items: ['Floor & Rooms'] },
   { section: 'HUMAN RESOURCES', items: ['HR'] },
   { section: 'SUPPORT', items: ['Support'] },
-  { section: 'SETTINGS', items: ['Profile & School', 'Payment Gateway'] },
+  { section: 'SETTINGS', items: ['Profile & School', 'Payment Gateway', 'Roles & Access'] },
 ];
 

@@ -1,4 +1,4 @@
-import { Routes, Route, Navigate } from 'react-router-dom';
+import { Routes, Route, Navigate, useLocation } from 'react-router-dom';
 import { Component, lazy, Suspense, useState, useEffect, useMemo, useRef } from 'react';
 import AdminLayout from './AdminLayout';
 import Dashboard from './Dashboard';
@@ -41,6 +41,7 @@ const HolidayList = lazy(() => import('./pages/HolidayList'));
 const Admissions = lazy(() => import('./pages/Admissions'));
 const CommunityWall = lazy(() => import('../components/CommunityWall'));
 const TeacherFeedbackOverview = lazy(() => import('./pages/TeacherFeedbackOverview'));
+const RolesAccess = lazy(() => import('./pages/RolesAccess'));
 import { useNavigate } from 'react-router-dom';
 import { ADMIN_MENU_ITEMS, ADMIN_MENU_SECTIONS } from './adminConstants';
 import { syncScopeFromProfile } from './utils/adminScope';
@@ -260,9 +261,20 @@ const AdminApp = () => {
   }, [adminProfile]);
 
   const isSuperAdmin = adminProfile?.role === 'super_admin';
+  // Team members (sub-users) only see the modules their access role grants.
+  const teamAccess = adminProfile?.access?.teamMember ? adminProfile.access : null;
+  const canOpenPath = useMemo(() => {
+    if (!teamAccess) return () => true;
+    const allowed = ['/admin/dashboard', ...(teamAccess.paths || [])];
+    return (path) => allowed.some((p) => path === p || path.startsWith(`${p}/`));
+  }, [teamAccess]);
+  const location = useLocation();
 
   const menuItems = useMemo(() => {
-    if (isSuperAdmin) return ADMIN_MENU_ITEMS.filter((item) => item.scope !== 'school');
+    if (isSuperAdmin) {
+      return ADMIN_MENU_ITEMS.filter((item) => item.scope !== 'school')
+        .map((item) => (item.submenu ? { ...item, submenu: item.submenu.filter((sub) => !sub.ownerOnly) } : item));
+    }
 
     // Resolve every label (top-level item or a submenu child) to its definition.
     const byLabel = new Map();
@@ -277,25 +289,34 @@ const AdminApp = () => {
       const resolved = group.items
         .map((label) => byLabel.get(label))
         .filter(Boolean)
-        .filter((it) => it.label !== 'Student Attendance' && it.path !== '/admin/attendance');
+        .filter((it) => it.label !== 'Student Attendance' && it.path !== '/admin/attendance')
+        .filter((it) => (teamAccess ? !it.ownerOnly && canOpenPath(it.path) : true));
       if (!resolved.length) return;
       if (group.section) out.push({ heading: group.section });
       out.push(...resolved);
     });
     return out;
-  }, [isSuperAdmin]);
+  }, [isSuperAdmin, teamAccess, canOpenPath]);
 
   const adminUser = {
     id: adminProfile?._id || adminProfile?.id || adminProfile?.adminId || '',
     email: adminProfile?.email || '',
     name: adminProfile?.name || 'Admin User',
-    role: isSuperAdmin ? 'SUPER ADMIN' : 'School Admin',
+    role: isSuperAdmin ? 'SUPER ADMIN' : teamAccess ? (teamAccess.roleName || 'Team Member') : 'School Admin',
     avatar: adminProfile?.avatar || '',
     schoolName: adminProfile?.schoolName || '',
     schoolLogo: adminProfile?.schoolLogo || '',
     campusName: adminProfile?.campusName || '',
-    campusType: adminProfile?.campusType || ''
+    campusType: adminProfile?.campusType || '',
+    linkedTeacher: Boolean(teamAccess?.linkedTeacher),
   };
+
+  // Guard: team members typing a URL for a module outside their role.
+  const blockedForTeam = Boolean(teamAccess) && location.pathname.startsWith('/admin/')
+    && !canOpenPath(location.pathname.replace(/\/+$/, ''));
+  useEffect(() => {
+    if (blockedForTeam) toast.error('Your role does not have access to that page');
+  }, [blockedForTeam]);
 
   // Guard: redirect school admins away from super-admin-only routes
   const SuperAdminOnly = ({ children }) =>
@@ -328,6 +349,7 @@ const AdminApp = () => {
             </div>
           }
         >
+        {blockedForTeam ? <Navigate to="/admin/dashboard" replace /> : (
         <Routes>
           <Route index element={<Navigate to="/admin/dashboard" replace />} />
           <Route path="dashboard" element={<Dashboard setShowAdminHeader={setShowAdminHeader} />} />
@@ -372,6 +394,7 @@ const AdminApp = () => {
           <Route path="notices/view/:noticeId" element={<NoticeDetail setShowAdminHeader={setShowAdminHeader} />} />
           <Route path="holidays" element={<HolidayList setShowAdminHeader={setShowAdminHeader} />} />
           <Route path="admissions" element={<Admissions setShowAdminHeader={setShowAdminHeader} />} />
+          <Route path="roles-access" element={teamAccess || isSuperAdmin ? <Navigate to="/admin/dashboard" replace /> : <RolesAccess setShowAdminHeader={setShowAdminHeader} />} />
           <Route path="community-wall" element={<CommunityWall role="admin" />} />
           <Route path="settings" element={<AdminSettings setShowAdminHeader={setShowAdminHeader} onSettingsUpdated={handleSettingsUpdated} />} />
           <Route path="settings/payment-gateway" element={<PaymentGatewaySettings setShowAdminHeader={setShowAdminHeader} />} />
@@ -381,6 +404,7 @@ const AdminApp = () => {
           {/* 404 catch-all — redirect unknown /admin/* paths to dashboard */}
           <Route path="*" element={<Navigate to="/admin/dashboard" replace />} />
         </Routes>
+        )}
         </Suspense>
       </AdminLayout>
     </AdminErrorBoundary>

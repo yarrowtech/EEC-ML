@@ -106,6 +106,15 @@ const registerSocketEvents = (io, socket, ensureChatAccess) => {
     }
   };
 
+  // Tell the other participants (their chat list, thread open or not) that this user read the thread.
+  const emitThreadSeen = (thread, threadId) => {
+    for (const p of thread.participants || []) {
+      const pid = String(p?.userId || '');
+      if (!pid || pid === userId) continue;
+      io.to(`user:${pid}`).emit('thread-seen', { threadId: String(threadId), userId });
+    }
+  };
+
   socket.join(`user:${userId}`);
   if (user.schoolId) {
     socket.join(`school:${user.schoolId}`);
@@ -117,6 +126,32 @@ const registerSocketEvents = (io, socket, ensureChatAccess) => {
   if (presenceOnline.changed) {
     notifyPresenceChange(io, { user, targetUserId: userId, online: true, lastSeen: presenceOnline.lastSeen });
   }
+
+  // Coming online delivers every message still pending for this user; tell the senders.
+  (async () => {
+    const threads = await ChatThread.find({ schoolId: user.schoolId, 'participants.userId': userId })
+      .select('_id participants').lean();
+    if (!threads.length) return;
+    const threadIds = threads.map((t) => t._id);
+    const pendingFilter = {
+      threadId: { $in: threadIds },
+      senderId: { $ne: userId },
+      'deliveredTo.userId': { $ne: userId },
+      createdAt: { $gte: new Date(Date.now() - 30 * 24 * 60 * 60 * 1000) },
+    };
+    const pendingThreadIds = await ChatMessage.distinct('threadId', pendingFilter);
+    if (!pendingThreadIds.length) return;
+    const deliveredAt = new Date();
+    await ChatMessage.updateMany(pendingFilter, { $push: { deliveredTo: { userId, deliveredAt } } });
+    const pendingSet = new Set(pendingThreadIds.map(String));
+    threads.filter((t) => pendingSet.has(String(t._id))).forEach((thread) => {
+      for (const p of thread.participants || []) {
+        const pid = String(p?.userId || '');
+        if (!pid || pid === userId) continue;
+        io.to(`user:${pid}`).emit('message-delivered', { threadId: String(thread._id), userId, deliveredAt });
+      }
+    });
+  })().catch((err) => logger.warn({ err }, 'chat delivery sync failed'));
 
   socket.on('join-thread', async ({ threadId }) => {
     try {
@@ -145,6 +180,7 @@ const registerSocketEvents = (io, socket, ensureChatAccess) => {
       socket.emit('presence-sync', { threadId, presence: presenceMap });
       await markThreadMessagesSeen({ threadId, schoolId: user.schoolId, campusId: user.campusId, currentUserId: userId });
       socket.to(`thread:${threadId}`).emit('message-seen', { threadId, userId });
+      emitThreadSeen(thread, threadId);
     } catch { /* ignore */ }
   });
 
@@ -203,6 +239,9 @@ const registerSocketEvents = (io, socket, ensureChatAccess) => {
         schoolId: user.schoolId,
         campusId: thread.campusId || user.campusId,
         seenBy: [{ userId, seenAt: new Date() }],
+        deliveredTo: (thread.participants || [])
+          .filter((p) => p.userId && p.userId.toString() !== userId && getPresenceSnapshot(String(p.userId)).online)
+          .map((p) => ({ userId: p.userId, deliveredAt: new Date() })),
       });
 
       // Deliver to everyone first; the thread summary/unread writes below can follow.
@@ -265,6 +304,7 @@ const registerSocketEvents = (io, socket, ensureChatAccess) => {
       );
       await markThreadMessagesSeen({ threadId, schoolId: user.schoolId, campusId: user.campusId, currentUserId: userId });
       socket.to(`thread:${threadId}`).emit('message-seen', { threadId, userId });
+      emitThreadSeen(thread, threadId);
     } catch { /* ignore */ }
   });
 

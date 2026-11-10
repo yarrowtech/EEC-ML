@@ -1,4 +1,6 @@
 const express = require('express');
+const { loadTeamAccess } = require('../middleware/teamAccess');
+const { allowedPaths } = require('../config/adminPermissions');
 const router = express.Router();
 const crypto = require('crypto');
 const jwt = require('jsonwebtoken');
@@ -230,6 +232,7 @@ router.post('/login', rateLimit({ windowMs: 60 * 1000, max: 20, keyGenerator: ra
         id: admin._id,
         type: 'admin',
         role: admin.role || 'admin',
+        teamMember: Boolean(admin.isTeamMember),
         username: admin.username,
         organizationId: admin.organizationId || req.organizationId || null,
         schoolId: admin.schoolId || null,
@@ -375,7 +378,19 @@ router.post("/profile", adminAuth, async (req, res) => {
         adminId: req.admin?.id || req.admin?._id,
         role: admin.role,
       });
-      res.json(admin);
+      // Team members get their role's modules so the portal can trim the sidebar.
+      let access = { teamMember: false };
+      if (admin.isTeamMember) {
+        const team = await loadTeamAccess(admin._id);
+        access = {
+          teamMember: true,
+          roleName: team.roleName,
+          permissions: team.permissions,
+          paths: allowedPaths(team.permissions),
+          linkedTeacher: Boolean(admin.linkedTeacherId),
+        };
+      }
+      res.json({ ...admin.toObject(), access });
     } catch (err) {
       logBusinessEvent(req, {
         action: 'admin_profile.fetch',
@@ -388,6 +403,29 @@ router.post("/profile", adminAuth, async (req, res) => {
       res.status(500).json({ error: 'Server error' });
     }
 })
+
+router.post('/switch-to-teacher', adminAuth, async (req, res) => {
+  // #swagger.tags = ['Admin Auth']
+  try {
+    const admin = await Admin.findById(req.admin.id).select('linkedTeacherId').lean();
+    const TeacherUser = require('../models/TeacherUser');
+    const teacher = admin?.linkedTeacherId ? await TeacherUser.findById(admin.linkedTeacherId).lean() : null;
+    if (!teacher) return res.status(403).json({ error: 'This account does not have a teacher profile' });
+    const { signTeacherToken } = require('../utils/roleSwitch');
+    logAuthEvent(req, {
+      action: 'switch_account',
+      outcome: 'success',
+      userType: 'teacher',
+      identifier: teacher.email || teacher.username,
+      userId: teacher._id,
+      schoolId: teacher.schoolId,
+      campusId: teacher.campusId,
+    });
+    res.json({ token: signTeacherToken(teacher), userType: 'Teacher' });
+  } catch (err) {
+    res.status(400).json({ error: err.message });
+  }
+});
 
 router.get('/settings', adminAuth, async (req, res) => {
   // #swagger.tags = ['Admin Auth']
@@ -589,7 +627,7 @@ router.post('/school-admins', adminAuth, ensureSuperAdmin, async (req, res) => {
 router.get('/school-admins', adminAuth, ensureSuperAdmin, async (req, res) => {
   // #swagger.tags = ['Admin Auth']
   try {
-    const filter = { schoolId: { $ne: null } };
+    const filter = { schoolId: { $ne: null }, isTeamMember: { $ne: true } };
     if (req.query?.schoolId && mongoose.isValidObjectId(req.query.schoolId)) {
       filter.schoolId = req.query.schoolId;
     }

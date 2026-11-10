@@ -87,7 +87,31 @@ const formatLastSeen = (ts) => {
   const isYesterday = d.toDateString() === yesterday.toDateString();
   if (sameDay) return `today at ${d.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}`;
   if (isYesterday) return `yesterday at ${d.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}`;
-  return d.toLocaleString([], { day: '2-digit', month: 'short', hour: '2-digit', minute: '2-digit' });
+  const time = d.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+  const startOfToday = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+  const daysAgo = Math.floor((startOfToday - new Date(d.getFullYear(), d.getMonth(), d.getDate())) / 86400000);
+  if (daysAgo > 0 && daysAgo < 7) return `${d.toLocaleDateString([], { weekday: 'short' })} at ${time}`;
+  const sameYear = d.getFullYear() === now.getFullYear();
+  return `${d.toLocaleDateString([], { day: '2-digit', month: 'short', ...(sameYear ? {} : { year: 'numeric' }) })} at ${time}`;
+};
+
+const getOtherReceipt = (list, myId, key) => {
+  const entry = (Array.isArray(list) ? list : []).find((e) => e?.userId && String(e.userId?._id || e.userId) !== String(myId || ''));
+  return entry ? (entry[key] || null) : null;
+};
+const formatReceiptTime = (ts) => (ts
+  ? new Date(ts).toLocaleString([], { weekday: 'short', day: '2-digit', month: 'short', hour: '2-digit', minute: '2-digit' })
+  : null);
+
+// Double tick only once the recipient has actually been online since the message was sent.
+// recipientPresence === undefined means unknown (e.g. group chat) -> keep server-ack behaviour.
+const isDeliveredToRecipient = (msg, recipientPresence) => {
+  if (recipientPresence === undefined) return true;
+  if (!recipientPresence) return false;
+  if (recipientPresence.online) return true;
+  const sentAt = new Date(msg?.createdAt || 0).getTime();
+  const lastSeen = recipientPresence.lastSeen ? new Date(recipientPresence.lastSeen).getTime() : 0;
+  return Boolean(sentAt && lastSeen && lastSeen >= sentAt);
 };
 
 const dayKey = (ts) => {
@@ -426,7 +450,7 @@ const isSeenByOther = (msg, myId) =>
   Array.isArray(msg?.seenBy) &&
   msg.seenBy.some((entry) => String(entry?.userId) !== String(myId));
 
-const ChatMessage = ({ msg, isMine, myId, theme, onRetry }) => {
+const ChatMessage = ({ msg, isMine, myId, theme, onRetry, recipientPresence }) => {
   const t = theme || THEMES.green;
   const isSystem = String(msg?.senderType || '').toLowerCase() === 'system';
   if (isSystem) {
@@ -440,7 +464,7 @@ const ChatMessage = ({ msg, isMine, myId, theme, onRetry }) => {
   }
   const optimistic = Boolean(msg?._optimistic);
   const failed = Boolean(msg?._failed);
-  const delivered = isMine && !optimistic && !failed;
+  const delivered = isMine && !optimistic && !failed && (isSeenByOther(msg, myId) || Boolean(getOtherReceipt(msg?.deliveredTo, myId, 'deliveredAt')) || isDeliveredToRecipient(msg, recipientPresence));
   const seen = isMine && isSeenByOther(msg, myId);
   const LONG_MESSAGE_LIMIT = 260;
   const fullText = String(msg?.text || '');
@@ -499,7 +523,22 @@ const ChatMessage = ({ msg, isMine, myId, theme, onRetry }) => {
 };
 
 // ── ConversationItem ───────────────────────────────────────────────────────────
-const ConversationItem = ({ thread, isActive, onClick, isTyping, theme }) => {
+const isSameId = (a, b) => Boolean(a && b && String(a?._id || a) === String(b?._id || b));
+
+// List-preview ticks for my last message (direct chats only).
+const ListTicks = ({ thread, myId, presence }) => {
+  if (thread?.threadType === 'group' || !thread?.lastMessage || !isSameId(thread?.lastSenderId, myId)) return null;
+  const seen = Boolean(thread.lastMessageSeen);
+  const delivered = seen || Boolean(thread.lastMessageDelivered)
+    || (presence ? isDeliveredToRecipient({ createdAt: thread.lastMessageAt }, presence) : false);
+  return (
+    <span className={`mr-1 inline-flex align-[-2px] ${seen ? 'text-sky-500' : 'text-gray-400'}`} title={seen ? 'Seen' : delivered ? 'Delivered' : 'Sent'}>
+      {delivered ? <CheckCheck className="h-3.5 w-3.5" /> : <Check className="h-3.5 w-3.5" />}
+    </span>
+  );
+};
+
+const ConversationItem = ({ thread, isActive, onClick, isTyping, theme, myId, presence }) => {
   const t      = theme || THEMES.green;
   const other  = thread.otherParticipant;
   const name   = other?.name || 'Unknown';
@@ -528,7 +567,7 @@ const ConversationItem = ({ thread, isActive, onClick, isTyping, theme }) => {
             className="text-xs truncate"
             style={isTyping ? { color: t.color, fontWeight: 500, fontStyle: 'italic' } : { color: '#6b7280' }}
           >
-            {isTyping ? 'typing...' : (thread.lastMessage || 'No messages yet')}
+            {!isTyping && <ListTicks thread={thread} myId={myId} presence={presence} />}{isTyping ? 'typing...' : (thread.lastMessage || 'No messages yet')}
           </span>
           {unread > 0 && (
             <span
@@ -750,7 +789,7 @@ const ParentChat = () => {
         String(t._id) === threadId
           // Unread counting is owned by `thread-updated` (sent once per
           // recipient); counting here too doubled it while still in the room.
-          ? { ...t, lastMessage: msg.text, lastMessageAt: msg.createdAt, ...(isActiveThread ? { unreadCount: 0 } : {}) }
+          ? { ...t, lastMessage: msg.text, lastMessageAt: msg.createdAt, lastSenderId: msg.senderId, lastMessageSeen: false, lastMessageDelivered: false, ...(isActiveThread ? { unreadCount: 0 } : {}) }
           : t
       ));
       if (isActiveThread && isIncomingForMe) {
@@ -783,7 +822,7 @@ const ParentChat = () => {
       }
       setThreads(prev => prev.map(t =>
         String(t._id) === threadId
-          ? { ...t, lastMessage: resolvedLastMessage, lastMessageAt, unreadCount: activeThreadIdRef.current === threadId ? 0 : (t.unreadCount || 0) + 1 }
+          ? { ...t, lastMessage: resolvedLastMessage, lastMessageAt, ...(message ? { lastSenderId: message.senderId, lastMessageSeen: false, lastMessageDelivered: false } : {}), unreadCount: activeThreadIdRef.current === threadId ? 0 : (t.unreadCount || 0) + 1 }
           : t
       ));
     });
@@ -815,6 +854,25 @@ const ParentChat = () => {
         });
         return next;
       });
+    });
+
+    socket.on('thread-seen', ({ threadId }) => {
+      setThreads(prev => prev.map(t => (String(t._id) === String(threadId) && isSameId(t.lastSenderId, meRef.current?.id)
+        ? { ...t, lastMessageSeen: true, lastMessageDelivered: true }
+        : t)));
+    });
+
+    socket.on('message-delivered', ({ threadId, userId, deliveredAt }) => {
+      const myId = String(meRef.current?.id || '');
+      if (String(activeThreadIdRef.current) === String(threadId)) {
+        setMessages((prev) => prev.map((m) => {
+          if (String(m.senderId) !== myId) return m;
+          const list = Array.isArray(m.deliveredTo) ? m.deliveredTo : [];
+          if (list.some((d) => String(d?.userId) === String(userId))) return m;
+          return { ...m, deliveredTo: [...list, { userId, deliveredAt }] };
+        }));
+      }
+      setThreads((prev) => prev.map((t) => (String(t._id) === String(threadId) ? { ...t, lastMessageDelivered: true } : t)));
     });
 
     socket.on('message-seen', ({ threadId, userId }) => {
@@ -1070,7 +1128,7 @@ const ParentChat = () => {
 
     setThreads(prev => prev.map(t =>
       String(t._id) === activeThreadId
-        ? { ...t, lastMessage: text, lastMessageAt: new Date().toISOString() }
+        ? { ...t, lastMessage: text, lastMessageAt: new Date().toISOString(), lastSenderId: me?.id, lastMessageSeen: false, lastMessageDelivered: false }
         : t
     ));
 
@@ -1374,6 +1432,8 @@ const ParentChat = () => {
                   thread={t}
                   isActive={String(t._id) === activeThreadId}
                   isTyping={Boolean(typingUsers[String(t._id)])}
+                  myId={me?.id}
+                  presence={t.otherParticipant?.userId ? presenceByUser[String(t.otherParticipant.userId)] : undefined}
                   onClick={() => selectThread(String(t._id))}
                   theme={theme}
                 />
@@ -1491,6 +1551,7 @@ const ParentChat = () => {
                             myId={me?.id}
                             theme={theme}
                             onRetry={retryMessage}
+                            recipientPresence={activePresence || null}
                           />
                         </React.Fragment>
                       );

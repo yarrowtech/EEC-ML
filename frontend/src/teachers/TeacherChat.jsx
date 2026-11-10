@@ -111,7 +111,31 @@ const formatLastSeen = (ts) => {
   const isYesterday = d.toDateString() === yesterday.toDateString();
   if (sameDay) return `today at ${d.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}`;
   if (isYesterday) return `yesterday at ${d.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}`;
-  return d.toLocaleString([], { day: '2-digit', month: 'short', hour: '2-digit', minute: '2-digit' });
+  const time = d.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+  const startOfToday = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+  const daysAgo = Math.floor((startOfToday - new Date(d.getFullYear(), d.getMonth(), d.getDate())) / 86400000);
+  if (daysAgo > 0 && daysAgo < 7) return `${d.toLocaleDateString([], { weekday: 'short' })} at ${time}`;
+  const sameYear = d.getFullYear() === now.getFullYear();
+  return `${d.toLocaleDateString([], { day: '2-digit', month: 'short', ...(sameYear ? {} : { year: 'numeric' }) })} at ${time}`;
+};
+
+const getOtherReceipt = (list, myId, key) => {
+  const entry = (Array.isArray(list) ? list : []).find((e) => e?.userId && String(e.userId?._id || e.userId) !== String(myId || ''));
+  return entry ? (entry[key] || null) : null;
+};
+const formatReceiptTime = (ts) => (ts
+  ? new Date(ts).toLocaleString([], { weekday: 'short', day: '2-digit', month: 'short', hour: '2-digit', minute: '2-digit' })
+  : null);
+
+// Double tick only once the recipient has actually been online since the message was sent.
+// recipientPresence === undefined means unknown (e.g. group chat) -> keep server-ack behaviour.
+const isDeliveredToRecipient = (msg, recipientPresence) => {
+  if (recipientPresence === undefined) return true;
+  if (!recipientPresence) return false;
+  if (recipientPresence.online) return true;
+  const sentAt = new Date(msg?.createdAt || 0).getTime();
+  const lastSeen = recipientPresence.lastSeen ? new Date(recipientPresence.lastSeen).getTime() : 0;
+  return Boolean(sentAt && lastSeen && lastSeen >= sentAt);
 };
 
 const dayKey = (ts) => {
@@ -511,6 +535,7 @@ const EditMessageModal = ({ draft, saving, theme, onChange, onCancel, onSave }) 
 };
 
 const ChatMessage = ({
+  recipientPresence,
   msg,
   isMine,
   // Only the last bubble of a run from the same sender gets the squared "tail" corner.
@@ -540,8 +565,8 @@ const ChatMessage = ({
     );
   }
   const optimistic = Boolean(msg?._optimistic);
-  const delivered = isMine && !optimistic;
-  const seen = isMine && delivered && isSeenByOther(msg, myId);
+  const seen = isMine && !optimistic && isSeenByOther(msg, myId);
+  const delivered = isMine && !optimistic && (seen || Boolean(getOtherReceipt(msg?.deliveredTo, myId, 'deliveredAt')) || isDeliveredToRecipient(msg, recipientPresence));
   const LONG_MESSAGE_LIMIT = 260;
   const messageText = String(msg?.text || '').trim();
   const fullText = messageText || (msg?.encrypted ? '[Encrypted message]' : '');
@@ -568,7 +593,11 @@ const ChatMessage = ({
       document.removeEventListener('keydown', onKey);
     };
   }, [menuOpen]);
-  const showActions = canEdit && !isEditing;
+  const [infoOpen, setInfoOpen] = useState(false);
+  const showActions = isMine && !optimistic && !isEditing;
+  const sentAt = msg?.createdAt || msg?.ts || null;
+  const readAt = getOtherReceipt(msg?.seenBy, myId, 'seenAt');
+  const deliveredAt = getOtherReceipt(msg?.deliveredTo, myId, 'deliveredAt') || readAt;
 
   return (
   <div className={`group flex items-center gap-1.5 ${isMine ? 'justify-end' : 'justify-start'} ${isLastInGroup ? 'mb-3' : 'mb-0.5'} ${msg?._clientKey ? (isMine ? 'chat-bubble-in-mine' : 'chat-bubble-in-theirs') : ''}`}>
@@ -585,16 +614,48 @@ const ChatMessage = ({
           <MoreVertical className="h-4 w-4" />
         </button>
         {menuOpen && (
-          <div className="absolute right-0 top-full z-20 mt-1 min-w-32 overflow-hidden rounded-xl border border-slate-100 bg-white py-1 shadow-xl">
+          <div className="absolute right-full top-1/2 z-30 mr-1 w-36 -translate-y-1/2 overflow-hidden rounded-xl border border-slate-100 bg-white py-1 shadow-xl">
+            {canEdit && (
+              <button
+                type="button"
+                onClick={() => { setMenuOpen(false); onStartEdit(); }}
+                className="flex w-full items-center gap-2 px-3 py-2 text-left text-sm text-slate-700 hover:bg-slate-50"
+              >
+                <Pencil className="h-3.5 w-3.5" />
+                Edit
+              </button>
+            )}
             <button
               type="button"
-              onClick={() => { setMenuOpen(false); onStartEdit(); }}
+              onClick={() => { setMenuOpen(false); setInfoOpen(true); }}
               className="flex w-full items-center gap-2 px-3 py-2 text-left text-sm text-slate-700 hover:bg-slate-50"
             >
-              <Pencil className="h-3.5 w-3.5" />
-              Edit
+              <Info className="h-3.5 w-3.5" />
+              Info
             </button>
           </div>
+        )}
+        {infoOpen && createPortal(
+          <div className="fixed inset-0 z-[80] flex items-center justify-center bg-black/30 p-4" onClick={() => setInfoOpen(false)}>
+            <div className="w-full max-w-xs rounded-2xl bg-white p-4 shadow-2xl" onClick={(e) => e.stopPropagation()} role="dialog" aria-label="Message info">
+              <div className="mb-3 flex items-center justify-between">
+                <h3 className="text-[15px] font-bold text-slate-900">Message info</h3>
+                <button type="button" onClick={() => setInfoOpen(false)} className="rounded-full p-1 text-slate-500 hover:bg-slate-100" aria-label="Close"><X className="h-4 w-4" /></button>
+              </div>
+              <p className="mb-3 line-clamp-3 rounded-xl bg-slate-50 px-3 py-2 text-sm text-slate-700 break-words">{fullText}</p>
+              {[
+                { label: 'Sent', icon: <Check className="h-4 w-4 text-slate-400" />, at: sentAt },
+                { label: 'Delivered', icon: <CheckCheck className="h-4 w-4 text-slate-400" />, at: deliveredAt },
+                { label: 'Read', icon: <CheckCheck className="h-4 w-4 text-sky-500" />, at: readAt },
+              ].map((row) => (
+                <div key={row.label} className="flex items-center justify-between border-t border-slate-100 py-2.5 text-sm">
+                  <span className="inline-flex items-center gap-2 font-medium text-slate-700">{row.icon}{row.label}</span>
+                  <span className="text-slate-500">{formatReceiptTime(row.at) || '—'}</span>
+                </div>
+              ))}
+            </div>
+          </div>,
+          document.body
         )}
       </div>
     )}
@@ -678,7 +739,20 @@ const ChatMessage = ({
 };
 
 // ── ConversationItem component ─────────────────────────────────────────────────
-const ConversationItem = ({ thread, isActive, onClick, typingName, theme }) => {
+// List-preview ticks for my last message (direct chats only).
+const ListTicks = ({ thread, myId, presence }) => {
+  if (thread?.threadType === 'group' || !thread?.lastMessage || !isSameId(thread?.lastSenderId, myId)) return null;
+  const seen = Boolean(thread.lastMessageSeen);
+  const delivered = seen || Boolean(thread.lastMessageDelivered)
+    || (presence ? isDeliveredToRecipient({ createdAt: thread.lastMessageAt }, presence) : false);
+  return (
+    <span className={`mr-1 inline-flex align-[-2px] ${seen ? 'text-sky-500' : 'text-gray-400'}`} title={seen ? 'Seen' : delivered ? 'Delivered' : 'Sent'}>
+      {delivered ? <CheckCheck className="h-3.5 w-3.5" /> : <Check className="h-3.5 w-3.5" />}
+    </span>
+  );
+};
+
+const ConversationItem = ({ thread, isActive, onClick, typingName, theme, myId, presence }) => {
   const t      = theme || THEMES.blue;
   const other  = thread.otherParticipant;
   const name   = other?.name || 'Unknown';
@@ -712,7 +786,7 @@ const ConversationItem = ({ thread, isActive, onClick, typingName, theme }) => {
             className="text-xs truncate"
             style={isTyping ? { color: t.color, fontWeight: 500, fontStyle: 'italic' } : { color: '#6b7280' }}
           >
-            {isTyping ? `${typingName} is typing...` : (thread.lastMessage || 'No messages yet')}
+            {!isTyping && <ListTicks thread={thread} myId={myId} presence={presence} />}{isTyping ? `${typingName} is typing...` : (thread.lastMessage || 'No messages yet')}
           </span>
           {unread > 0 && (
             <span
@@ -1285,6 +1359,7 @@ const TeacherChat = () => {
               ...t,
               lastMessage: previewText || optimisticTextForMine || sanitizePreviewText(t.lastMessage),
               lastMessageAt: msg.createdAt,
+              lastSenderId: msg.senderId, lastMessageSeen: false, lastMessageDelivered: false,
               // Unread is counted by 'thread-updated'; counting here too doubled it.
               unreadCount: isActiveThread ? 0 : (t.unreadCount || 0),
             }
@@ -1325,6 +1400,7 @@ const TeacherChat = () => {
               ...t,
               lastMessage: resolvedLastMessage || sanitizePreviewText(t.lastMessage),
               lastMessageAt,
+              ...(message && !edited ? { lastSenderId: message.senderId, lastMessageSeen: false, lastMessageDelivered: false } : {}),
               unreadCount: activeThreadIdRef.current === threadId
                 ? 0
                 : (edited || isSameId(message?.senderId, meRef.current?.id) ? (t.unreadCount || 0) : (t.unreadCount || 0) + 1),
@@ -1372,6 +1448,25 @@ const TeacherChat = () => {
         });
         return next;
       });
+    });
+
+    socket.on('thread-seen', ({ threadId }) => {
+      setThreads(prev => prev.map(t => (String(t._id) === String(threadId) && isSameId(t.lastSenderId, meRef.current?.id)
+        ? { ...t, lastMessageSeen: true, lastMessageDelivered: true }
+        : t)));
+    });
+
+    socket.on('message-delivered', ({ threadId, userId, deliveredAt }) => {
+      const myId = String(meRef.current?.id || '');
+      if (String(activeThreadIdRef.current) === String(threadId)) {
+        setMessages((prev) => prev.map((m) => {
+          if (String(m.senderId) !== myId) return m;
+          const list = Array.isArray(m.deliveredTo) ? m.deliveredTo : [];
+          if (list.some((d) => String(d?.userId) === String(userId))) return m;
+          return { ...m, deliveredTo: [...list, { userId, deliveredAt }] };
+        }));
+      }
+      setThreads((prev) => prev.map((t) => (String(t._id) === String(threadId) ? { ...t, lastMessageDelivered: true } : t)));
     });
 
     socket.on('message-seen', ({ threadId, userId }) => {
@@ -1735,7 +1830,7 @@ const TeacherChat = () => {
 
       setThreads(prev => prev.map(t =>
         String(t._id) === activeThreadId
-        ? { ...t, lastMessage: sanitizePreviewText(text) || t.lastMessage, lastMessageAt: new Date().toISOString() }
+        ? { ...t, lastMessage: sanitizePreviewText(text) || t.lastMessage, lastMessageAt: new Date().toISOString(), lastSenderId: me?.id, lastMessageSeen: false, lastMessageDelivered: false }
         : t
     ));
 
@@ -2112,6 +2207,8 @@ const TeacherChat = () => {
                   thread={t}
                   isActive={String(t._id) === activeThreadId}
                   typingName={typingUsers[String(t._id)] || ''}
+                  myId={me?.id}
+                  presence={t.otherParticipant?.userId ? presenceByUser[String(t.otherParticipant.userId)] : undefined}
                   onClick={() => selectThread(String(t._id))}
                   theme={theme}
                 />
@@ -2302,6 +2399,7 @@ const TeacherChat = () => {
                             myId={me?.id}
                             fallbackSenderName={activeThread?.otherParticipant?.name || ''}
                             showSenderLabel={isGroupActiveThread}
+                            recipientPresence={isGroupActiveThread ? undefined : (activeParticipantPresence || null)}
                             theme={theme}
                             canEdit={canEditOwnMessage(msg, me?.id)}
                             isEditing={String(editingMessageId) === String(msg._id)}

@@ -579,4 +579,43 @@ router.post('/switch-to-principal', authTeacher, async (req, res) => {
   }
 });
 
+router.get('/admin-access', authTeacher, async (req, res) => {
+  // #swagger.tags = ['Teachers']
+  try {
+    if (req.user?.userType !== 'teacher') return res.json({ hasAdminAccess: false });
+    const { findLinkedAdmin } = require('../utils/roleSwitch');
+    const admin = await findLinkedAdmin(req.user.id);
+    if (!admin) return res.json({ hasAdminAccess: false });
+    const AdminRole = require('../models/AdminRole');
+    const role = admin.accessRoleId ? await AdminRole.findById(admin.accessRoleId).select('name').lean() : null;
+    res.json({ hasAdminAccess: true, roleName: role?.name || '' });
+  } catch (err) {
+    res.status(400).json({ error: err.message });
+  }
+});
+
+router.post('/switch-to-admin', authTeacher, async (req, res) => {
+  // #swagger.tags = ['Teachers']
+  try {
+    if (req.user?.userType !== 'teacher') {
+      return res.status(403).json({ error: 'Forbidden - not a teacher' });
+    }
+    const { findLinkedAdmin, signAdminToken } = require('../utils/roleSwitch');
+    const admin = await findLinkedAdmin(req.user.id);
+    if (!admin) return res.status(403).json({ error: 'This account does not have admin panel access' });
+    logAuthEvent(req, {
+      action: 'switch_account',
+      outcome: 'success',
+      userType: 'admin',
+      identifier: admin.username,
+      userId: admin._id,
+      schoolId: admin.schoolId,
+      campusId: admin.campusId,
+    });
+    res.json({ token: signAdminToken(admin), userType: 'Admin' });
+  } catch (err) {
+    res.status(400).json({ error: err.message });
+  }
+});
+
 module.exports = router;

@@ -1,6 +1,7 @@
 const jwt = require('jsonwebtoken');
 const TeacherUser = require('../models/TeacherUser');
 const Principal = require('../models/Principal');
+const Admin = require('../models/Admin');
 
 // A teacher who is also the school's principal is linked to their Principal
 // account by email/username within the same school (tenant scope is applied by
@@ -51,4 +52,26 @@ const signTeacherToken = (teacher) => jwt.sign({
   campusId: teacher.campusId || null,
 }, process.env.JWT_SECRET, { expiresIn: expiresIn() });
 
-module.exports = { findLinkedPrincipal, findLinkedTeacher, signPrincipalToken, signTeacherToken };
+// Admin-panel access granted to a teacher through Roles & Access.
+const findLinkedAdmin = (teacherId) => Admin.findOne({
+  linkedTeacherId: teacherId,
+  isTeamMember: true,
+  status: { $ne: 'inactive' },
+}).lean();
+
+const signAdminToken = (admin) => jwt.sign({
+  id: admin._id,
+  type: 'admin',
+  role: admin.role || 'admin',
+  teamMember: Boolean(admin.isTeamMember),
+  username: admin.username,
+  organizationId: admin.organizationId || null,
+  schoolId: admin.schoolId || null,
+  campusId: admin.campusId || null,
+  campusName: admin.campusName || null,
+  campusType: admin.campusType || null,
+}, process.env.JWT_SECRET, { expiresIn: expiresIn() });
+
+module.exports = {
+  findLinkedPrincipal, findLinkedTeacher, findLinkedAdmin, signPrincipalToken, signTeacherToken, signAdminToken,
+};

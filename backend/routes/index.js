@@ -34,6 +34,7 @@ module.exports = function registerRoutes(app, { generalApiLimiter, authApiLimite
   // ── Auth ────────────────────────────────────────────────────────────────────
   app.use('/api/admin/auth', authApiLimiter, adminActionLogger, require('./adminRoutes'));
   app.use('/api/admin/feedback', generalApiLimiter, adminActionLogger, require('./adminFeedbackRoutes'));
+  app.use('/api/admin/team', writeHeavyApiLimiter, adminActionLogger, require('./adminTeamRoutes'));
   app.use('/api/teacher/auth', requireOrganizationDomain, authApiLimiter, require('./teacherRoute'));
   app.use('/api/staff/auth', requireOrganizationDomain, authApiLimiter, require('./staffRoutes'));
   app.use('/api/student/auth', requireOrganizationDomain, authApiLimiter, require('./studentRoute'));

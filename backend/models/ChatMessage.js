@@ -27,6 +27,11 @@ const chatMessageSchema = new mongoose.Schema({
     version: { type: String, default: 'v1' },
   },
   seenBy: [seenBySchema],
+  // Recipients whose device received the message (online at send, or on next connect).
+  deliveredTo: [new mongoose.Schema({
+    userId: { type: mongoose.Schema.Types.ObjectId, required: true },
+    deliveredAt: { type: Date, default: Date.now },
+  }, { _id: false })],
   isEdited: { type: Boolean, default: false },
   editedAt: { type: Date, default: null },
   schoolId: { type: mongoose.Schema.Types.ObjectId, ref: 'School', required: true },

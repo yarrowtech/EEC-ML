@@ -1780,6 +1780,32 @@ const TeacherPortalShell = () => {
       .catch(() => {});
   }, []);
 
+  // Teachers given admin-panel access in Roles & Access can switch to it.
+  const [adminAccess, setAdminAccess] = useState(null); // { roleName }
+  useEffect(() => {
+    const token = localStorage.getItem('token');
+    if (!token) return;
+    fetch(`${import.meta.env.VITE_API_URL}/api/teacher/auth/admin-access`, {
+      headers: { authorization: `Bearer ${token}` },
+    })
+      .then((res) => (res.ok ? res.json() : {}))
+      .then((data) => setAdminAccess(data?.hasAdminAccess ? { roleName: data.roleName || '' } : null))
+      .catch(() => {});
+  }, []);
+
+  const handleSwitchToAdmin = async () => {
+    if (switchingAccount) return;
+    setSwitchingAccount(true);
+    setProfileOpen(false);
+    setShowMobileProfileMenu(false);
+    try {
+      await switchAccount({ endpoint: '/api/teacher/auth/switch-to-admin', redirectTo: '/admin/dashboard' });
+    } catch (err) {
+      setSwitchingAccount(false);
+      window.alert(err.message);
+    }
+  };
+
   const handleSwitchToPrincipal = async () => {
     if (switchingAccount) return;
     setSwitchingAccount(true);
@@ -2386,6 +2412,20 @@ const TeacherPortalShell = () => {
                             {switchingAccount ? 'Switching…' : 'Switch to Principal'}
                           </Motion.button>
                         )}
+                        {adminAccess && (
+                          <Motion.button
+                            type="button"
+                            role="menuitem"
+                            whileHover={{ y: -2 }}
+                            whileTap={{ scale: 0.97 }}
+                            disabled={switchingAccount}
+                            onClick={handleSwitchToAdmin}
+                            className="mb-3 flex w-full items-center justify-center gap-2 rounded-full border border-emerald-200 bg-emerald-50 px-3.5 py-2 text-xs font-semibold text-emerald-700 transition-colors hover:bg-emerald-100 disabled:opacity-60"
+                          >
+                            <ArrowLeftRight size={15} strokeWidth={1.9} />
+                            {switchingAccount ? 'Switching…' : `Switch to Admin Panel${adminAccess.roleName ? ` (${adminAccess.roleName})` : ''}`}
+                          </Motion.button>
+                        )}
 
                         <div className="flex items-center justify-between gap-2 border-t border-slate-100 pt-3">
                           <Motion.button
@@ -2678,6 +2718,17 @@ const TeacherPortalShell = () => {
                                 className="flex w-full items-center gap-2.5 rounded-xl px-3 py-2.5 text-left text-sm font-medium text-indigo-700 transition hover:bg-indigo-50 disabled:opacity-60"
                               >
                                 <ArrowLeftRight size={16} /> Switch to Principal
+                              </button>
+                            )}
+                            {adminAccess && (
+                              <button
+                                type="button"
+                                role="menuitem"
+                                disabled={switchingAccount}
+                                onClick={handleSwitchToAdmin}
+                                className="flex w-full items-center gap-2.5 rounded-xl px-3 py-2.5 text-left text-sm font-medium text-emerald-700 transition hover:bg-emerald-50 disabled:opacity-60"
+                              >
+                                <ArrowLeftRight size={16} /> Switch to Admin Panel
                               </button>
                             )}
                             <button

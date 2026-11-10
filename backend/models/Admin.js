@@ -24,6 +24,13 @@ const adminSchema = new mongoose.Schema({
   campusType: { type: String, default: null },
   lastLoginAt: { type: Date, default: null },
   lastActiveAt: { type: Date, default: null },
+  // Team members are sub-users of the school admin, limited by an AdminRole.
+  isTeamMember: { type: Boolean, default: false },
+  accessRoleId: { type: mongoose.Schema.Types.ObjectId, ref: 'AdminRole', default: null },
+  createdBy: { type: mongoose.Schema.Types.ObjectId, ref: 'Admin', default: null },
+  // Set when the team member is an existing teacher: they reach the admin panel
+  // by switching account from the teacher portal instead of a separate login.
+  linkedTeacherId: { type: mongoose.Schema.Types.ObjectId, ref: 'TeacherUser', default: null, index: true },
 });
 
 adminSchema.index({ organizationId: 1, username: 1 }, { unique: true });

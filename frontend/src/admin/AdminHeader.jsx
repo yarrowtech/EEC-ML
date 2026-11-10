@@ -9,9 +9,11 @@ import {
   LogOut,
   Menu,
   Clock,
+  ArrowLeftRight,
 } from 'lucide-react';
 import NotificationPopover from '../components/NotificationPopover';
 import { useNavigate } from 'react-router-dom';
+import { switchAccount } from '../utils/authSession';
 import {
   useDesktopNotificationBridge,
 } from '../hooks/useDesktopNotificationBridge';
@@ -231,6 +233,18 @@ const AdminHeader = ({ adminUser, onOpenMobileSidebar, onLogoutRequest, notifica
   }, [searchFeedback]);
 
   const handleLogout = () => { setShowProfileMenu(false); onLogoutRequest?.(); };
+  const [switching, setSwitching] = useState(false);
+  const handleSwitchToTeacher = async () => {
+    if (switching) return;
+    setSwitching(true);
+    setShowProfileMenu(false);
+    try {
+      await switchAccount({ endpoint: '/api/admin/auth/switch-to-teacher', redirectTo: '/teacher' });
+    } catch (err) {
+      setSwitching(false);
+      window.alert(err.message);
+    }
+  };
 
   /* ⌘K / Ctrl+K focuses the module search */
   useEffect(() => {
@@ -298,6 +312,16 @@ const AdminHeader = ({ adminUser, onOpenMobileSidebar, onLogoutRequest, notifica
           <Settings size={15} className="text-slate-400" />
           Settings
         </button>
+        {adminUser?.linkedTeacher && (
+          <button
+            className="w-full px-4 py-2.5 text-left text-sm font-medium text-emerald-700 hover:bg-emerald-50/70 rounded-xl flex items-center gap-2.5 transition-colors disabled:opacity-60"
+            disabled={switching}
+            onClick={handleSwitchToTeacher}
+          >
+            <ArrowLeftRight size={15} className="text-emerald-600" />
+            {switching ? 'Switching…' : 'Switch to Teacher Portal'}
+          </button>
+        )}
         <div className="border-t border-white/50 my-1" />
         <button
           className="w-full px-4 py-2.5 text-left text-sm text-rose-600 hover:bg-rose-50/60 rounded-xl flex items-center gap-2.5 transition-colors"

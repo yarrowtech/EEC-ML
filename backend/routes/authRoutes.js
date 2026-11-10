@@ -68,6 +68,7 @@ const tryAdmin = async ({ admin, password, rememberMe }) => {
   const token = signToken({
     id: admin._id,
     type: 'admin',
+    teamMember: Boolean(admin.isTeamMember),
     username: admin.username,
     organizationId: admin.organizationId || null,
     schoolId: admin.schoolId || null,

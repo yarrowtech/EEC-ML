@@ -1268,8 +1268,42 @@ router.get('/threads', chatCache.cache, async (req, res) => {
         lastMessagePayload: null,
         unreadCount: unreadEntry?.count || 0,
         updatedAt: t.updatedAt,
+        lastSenderId: t.lastSenderId || null,
+        // Ticks for the list preview: recipient's unread count 0 => they've read up to the last message.
+        lastMessageSeen: !isGroup && Boolean(other?.userId)
+          && (t.unreadCounts?.find(u => String(u.userId) === String(other.userId))?.count || 0) === 0,
+        lastMessageDelivered: false,
       };
     });
+
+    // Delivered = recipient online now, or active at/after the last message was sent.
+    const tickCandidates = result.filter(t => t.threadType === 'direct' && t.otherParticipant?.userId
+      && String(t.lastSenderId || '') === String(userId) && !t.lastMessageSeen);
+    if (tickCandidates.length) {
+      const offlineByType = { student: new Set(), teacher: new Set(), parent: new Set() };
+      const lastSeenById = new Map();
+      tickCandidates.forEach((t) => {
+        const oid = String(t.otherParticipant.userId);
+        const snap = getPresenceSnapshot(oid);
+        if (snap.online) { t.lastMessageDelivered = true; return; }
+        if (snap.lastSeen) { lastSeenById.set(oid, snap.lastSeen); return; }
+        const type = String(t.otherParticipant.userType || '').toLowerCase();
+        if (offlineByType[type]) offlineByType[type].add(oid);
+      });
+      const tickModels = { student: StudentUser, teacher: TeacherUser, parent: ParentUser };
+      const docs = await Promise.all(Object.entries(offlineByType)
+        .filter(([, ids]) => ids.size)
+        .map(([type, ids]) => tickModels[type].find({ _id: { $in: [...ids] } }).select('_id lastActiveAt lastLoginAt').lean()));
+      docs.flat().forEach((d) => {
+        const at = d.lastActiveAt || d.lastLoginAt;
+        if (at) lastSeenById.set(String(d._id), at);
+      });
+      tickCandidates.forEach((t) => {
+        if (t.lastMessageDelivered) return;
+        const seenAt = lastSeenById.get(String(t.otherParticipant.userId));
+        t.lastMessageDelivered = Boolean(seenAt && t.lastMessageAt && new Date(seenAt) >= new Date(t.lastMessageAt));
+      });
+    }
 
     const threadIds = result.map((item) => item._id).filter(Boolean);
     if (threadIds.length > 0) {
@@ -1840,6 +1874,9 @@ router.post('/threads/:threadId/messages', async (req, res) => {
       schoolId,
       campusId: thread.campusId,
       seenBy: [{ userId, seenAt: new Date() }],
+      deliveredTo: (thread.participants || [])
+        .filter((p) => p.userId && String(p.userId) !== String(userId) && getPresenceSnapshot(String(p.userId)).online)
+        .map((p) => ({ userId: p.userId, deliveredAt: new Date() })),
     });
 
     // Update thread last message and increment unread for others
