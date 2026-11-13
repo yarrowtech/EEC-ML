@@ -1112,6 +1112,8 @@ router.get('/contacts', chatCache.cache, async (req, res) => {
         _id: s._id,
         name: s.name || s.username || s.studentCode || 'Student',
         subtitle: s.grade ? `Grade ${s.grade}${s.section ? ' - ' + s.section : ''}` : 'Student',
+        grade: s.grade || '',
+        section: s.section || '',
         userType: 'student',
         avatar: s.profilePic || null,
       }));

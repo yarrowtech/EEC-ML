@@ -2,7 +2,7 @@ import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { io } from 'socket.io-client';
 import { createPortal } from 'react-dom';
 import {
-  MessageSquare, Send, Search, ChevronLeft,
+  MessageSquare, Send, Search, ChevronLeft, ChevronRight,
   Info, PlusCircle, X, Loader2, GraduationCap, Check, CheckCheck, User, Users, Palette, Lock, Link2, ExternalLink, Pencil, ChevronDown, Phone, Hash, Mail, MoreVertical
 } from 'lucide-react';
 import { decryptChatMessage, encryptChatMessage, ensureE2EEIdentity } from '../utils/chatE2EE';
@@ -803,6 +803,50 @@ const ConversationItem = ({ thread, isActive, onClick, typingName, theme, myId, 
 };
 
 // ── ContactItem ────────────────────────────────────────────────────────────────
+// Horizontal chip row: hidden scrollbar, left/right arrows appear only when there is more to scroll.
+const ChipScroller = ({ children }) => {
+  const ref = useRef(null);
+  const [edges, setEdges] = useState({ left: false, right: false });
+  const update = useCallback(() => {
+    const el = ref.current;
+    if (!el) return;
+    setEdges({ left: el.scrollLeft > 2, right: el.scrollLeft + el.clientWidth < el.scrollWidth - 2 });
+  }, []);
+  useEffect(() => {
+    update();
+    const el = ref.current;
+    if (!el || typeof ResizeObserver === "undefined") return undefined;
+    const ro = new ResizeObserver(update);
+    ro.observe(el);
+    return () => ro.disconnect();
+  }, [update, children]);
+  const scrollBy = (dir) => ref.current?.scrollBy({ left: dir * Math.max(120, (ref.current?.clientWidth || 0) * 0.7), behavior: "smooth" });
+  const arrow = "absolute top-1/2 z-10 flex h-6 w-6 -translate-y-1/2 items-center justify-center rounded-full border border-gray-200 bg-white text-gray-600 shadow-sm hover:bg-gray-50";
+  return (
+    <div className="relative mt-2">
+      {edges.left && (
+        <button type="button" onClick={() => scrollBy(-1)} className={`${arrow} left-0`} aria-label="Scroll classes left">
+          <ChevronLeft className="h-3.5 w-3.5" />
+        </button>
+      )}
+      <div
+        ref={ref}
+        onScroll={update}
+        className={`flex gap-1.5 overflow-x-auto [scrollbar-width:none] [&::-webkit-scrollbar]:hidden ${edges.left ? "pl-7" : ""} ${edges.right ? "pr-7" : ""}`}
+        role="tablist"
+        aria-label="Filter by class"
+      >
+        {children}
+      </div>
+      {edges.right && (
+        <button type="button" onClick={() => scrollBy(1)} className={`${arrow} right-0`} aria-label="Scroll classes right">
+          <ChevronRight className="h-3.5 w-3.5" />
+        </button>
+      )}
+    </div>
+  );
+};
+
 const ContactItem = ({ contact, onClick, theme }) => {
   const t = theme || THEMES.blue;
   return (
@@ -1021,6 +1065,7 @@ const TeacherChat = () => {
   const [contacts, setContacts] = useState([]);
   const [showContacts, setShowContacts] = useState(false);
   const [contactQuery, setContactQuery] = useState('');
+  const [contactClass, setContactClass] = useState('ALL');
   const [contactError, setContactError] = useState('');
   const [loadingThreads, setLoadingThreads] = useState(true);
   const [syncingThreads, setSyncingThreads] = useState(false);
@@ -1770,6 +1815,9 @@ const TeacherChat = () => {
         setContacts(cachedContacts);
       }
     }
+    // Pre-select the class from the URL (/teacher/classes/5-a/...) when present.
+    const routeClass = window.location.pathname.match(/\/classes\/([^/]+)/i)?.[1];
+    setContactClass(routeClass ? decodeURIComponent(routeClass).toUpperCase() : 'ALL');
     setShowContacts(true);
   }, [me?.id]);
 
@@ -1925,11 +1973,25 @@ const TeacherChat = () => {
     });
   }, [threads, query]);
 
+  // Allocated-class chips ("5-A", …) built from the teacher's student contacts.
+  const contactClassKey = (c) => {
+    let grade = String(c?.grade || '').trim();
+    let section = String(c?.section || '').trim();
+    if (!grade) {
+      const m = String(c?.subtitle || '').match(/^Grade\s+(.+?)(?:\s+-\s+(.+))?$/i);
+      if (m) { grade = m[1].trim(); section = (m[2] || '').trim(); }
+    }
+    return grade ? `${grade}${section ? `-${section}` : ''}`.toUpperCase() : '';
+  };
+  const contactClasses = useMemo(() => {
+    const keys = new Set(contacts.map(contactClassKey).filter(Boolean));
+    return [...keys].sort((a, b) => a.localeCompare(b, undefined, { numeric: true }));
+  }, [contacts]);
   const filteredContacts = useMemo(() => {
     const q = contactQuery.trim().toLowerCase();
-    if (!q) return contacts;
-    return contacts.filter(c => c.name.toLowerCase().includes(q) || c.subtitle?.toLowerCase().includes(q));
-  }, [contacts, contactQuery]);
+    return contacts.filter(c => (contactClass === 'ALL' || contactClassKey(c) === contactClass)
+      && (!q || c.name.toLowerCase().includes(q) || c.subtitle?.toLowerCase().includes(q)));
+  }, [contacts, contactQuery, contactClass]);
   const totalUnreadCount = useMemo(
     () =>
       (Array.isArray(threads) ? threads : []).reduce(
@@ -2028,7 +2090,7 @@ const TeacherChat = () => {
                 </button>
               </div>
             </div>
-            <div className="flex items-center gap-2 bg-[#f4f6fa] rounded-xl px-3 py-2 border border-transparent focus-within:border-blue-200">
+            <div className="flex items-center gap-2 bg-[#f4f6fa] rounded-full px-3 py-2 border border-transparent focus-within:border-blue-200">
               <Search className="h-3.5 w-3.5 text-gray-400 flex-shrink-0" />
               <input
                 value={query}
@@ -2050,7 +2112,7 @@ const TeacherChat = () => {
                 </button>
               </div>
               <div className="px-4 py-2 border-b">
-                <div className="flex items-center gap-2 bg-gray-100 rounded-lg px-3 py-1.5">
+                <div className="flex items-center gap-2 bg-gray-100 rounded-full px-3 py-1.5">
                   <Search className="h-3.5 w-3.5 text-gray-400" />
                   <input
                     autoFocus
@@ -2060,6 +2122,26 @@ const TeacherChat = () => {
                     className="bg-transparent outline-none text-xs flex-1 placeholder-gray-400"
                   />
                 </div>
+                {contactClasses.length > 0 && (
+                  <ChipScroller>
+                    {['ALL', ...contactClasses].map((key) => {
+                      const active = contactClass === key;
+                      return (
+                        <button
+                          key={key}
+                          type="button"
+                          role="tab"
+                          aria-selected={active}
+                          onClick={() => setContactClass(key)}
+                          className={`shrink-0 rounded-full border px-3 py-1 text-[11px] font-semibold transition ${active ? 'text-white' : 'border-gray-200 bg-white text-gray-600 hover:bg-gray-50'}`}
+                          style={active ? { backgroundColor: theme.color, borderColor: theme.color } : {}}
+                        >
+                          {key === 'ALL' ? `All (${contacts.length})` : `Class ${key}`}
+                        </button>
+                      );
+                    })}
+                  </ChipScroller>
+                )}
                 {contactError && (
                   <p className="mt-2 text-[11px] text-red-600">{contactError}</p>
                 )}
@@ -2067,7 +2149,7 @@ const TeacherChat = () => {
               <div className="chat-scroll flex-1 overflow-y-auto">
                 {filteredContacts.length === 0 ? (
                   <div className="p-6 text-center text-sm text-gray-500">
-                    {contacts.length === 0 ? 'No students found' : 'No results'}
+                    {contacts.length === 0 ? 'No students found' : contactClass !== 'ALL' && !contactQuery.trim() ? `No students in Class ${contactClass}` : 'No results'}
                   </div>
                 ) : (
                   filteredContacts.map(c => (

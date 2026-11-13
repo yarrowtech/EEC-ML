@@ -27,6 +27,7 @@ const notifyComplaintCreated = async (ticket) => {
     type: 'alert',
     kind: 'notification',
     eventType: 'COMPLAINT_CREATED',
+    typeLabel: 'complaint',
     priority: ticket.priority === 'critical' || ticket.priority === 'high' ? 'high' : 'medium',
     category: 'general',
     createdByType: 'parent',
@@ -45,26 +46,33 @@ const notifyComplaintCreated = async (ticket) => {
   }
 };
 
-const notifyParentComplaintStatus = async (ticket, { previousStatus, actorName } = {}) => {
+const notifyParentComplaintStatus = async (ticket, { previousStatus, previousNotes, actorName, actorType = 'admin' } = {}) => {
   const parentId = ticket?.requestDetails?.parentId;
   if (!ticket?.schoolId || !parentId || ticket.createdByRole !== 'parent') return;
-  if (!ticket.status || ticket.status === previousStatus) return;
+  if (!ticket.status) return;
+  const statusChanged = ticket.status !== previousStatus;
+  const notesChanged = previousNotes !== undefined && String(ticket.resolutionNotes || '') !== String(previousNotes || '');
+  // Any action (status change or a new reply/note) reaches the parent.
+  if (!statusChanged && !notesChanged) return;
 
   const label = STATUS_LABELS[ticket.status] || ticket.status;
   const note = ticket.resolutionNotes ? ` Note: ${String(ticket.resolutionNotes).slice(0, 200)}` : '';
   await safeCreate({
     schoolId: ticket.schoolId,
-    title: `Complaint ${label.toLowerCase()}`,
-    message: `Your complaint "${ticket.subject}" (${ticket.ticketNumber}) is now ${label}${actorName ? ` — updated by ${actorName}` : ''}.${note}`,
+    title: statusChanged ? `Complaint ${label.toLowerCase()}` : 'New reply on your complaint',
+    message: statusChanged
+      ? `Your complaint "${ticket.subject}" (${ticket.ticketNumber}) is now ${label}${actorName ? ` — updated by ${actorName}` : ''}.${note}`
+      : `${actorName || 'The school'} replied on "${ticket.subject}" (${ticket.ticketNumber}).${note}`,
     audience: 'Parent',
     targetRole: 'parent',
     targetUserIds: [parentId],
     type: 'general',
     kind: 'notification',
     eventType: 'COMPLAINT_STATUS_CHANGED',
+    typeLabel: 'complaint_update',
     priority: ticket.status === 'resolved' ? 'medium' : 'low',
     category: 'general',
-    createdByType: 'admin',
+    createdByType: actorType,
     createdByName: actorName || '',
   }, 'parent');
 };

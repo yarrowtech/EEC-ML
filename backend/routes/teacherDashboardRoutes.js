@@ -2148,6 +2148,7 @@ router.put('/complaints/:id/status', authTeacher, async (req, res) => {
     }
 
     const previousStatus = complaint.status;
+    const previousNotes = complaint.resolutionNotes || '';
     complaint.status = status;
     if (typeof resolutionNotes === 'string') {
       complaint.resolutionNotes = resolutionNotes;
@@ -2167,7 +2168,7 @@ router.put('/complaints/:id/status', authTeacher, async (req, res) => {
     }
 
     await complaint.save();
-    notifyParentComplaintStatus(complaint, { previousStatus, actorName: teacher.name || 'Class Teacher' });
+    notifyParentComplaintStatus(complaint, { previousStatus, previousNotes, actorName: teacher.name || 'Class Teacher', actorType: 'teacher' });
 
     const guardianNames = await resolveComplaintGuardianNames([complaint], schoolId);
     res.json(formatTeacherComplaint(complaint, guardianNames.get(String(complaint._id))));

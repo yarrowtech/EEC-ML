@@ -1,5 +1,7 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
+import toast from 'react-hot-toast';
+import { subscribeSocketEvent } from '../hooks/useCommunityWallUnread';
 import { useNavigate } from 'react-router-dom';
 import { AnimatePresence, motion } from 'framer-motion';
 import {
@@ -87,8 +89,10 @@ const CreateComplaintModal = React.memo(({
   onClose,
   children,
   onSubmitSuccess,
+  onSubmitSettled,
   createRef,
   formatStudentDisplay,
+  navigate,
 }) => {
   const [form, setForm] = useState({
     title: '',
@@ -147,27 +151,34 @@ const CreateComplaintModal = React.memo(({
       return;
     }
 
-    setSubmitting(true);
-    setSubmissionError('');
-    try {
-      const { customCategory, ...payload } = form;
-      if (isOtherCategory) payload.category = customCategory.trim().slice(0, CUSTOM_CATEGORY_MAX);
-      if (!payload.studentId) delete payload.studentId;
+    const { customCategory, ...payload } = form;
+    if (isOtherCategory) payload.category = customCategory.trim().slice(0, CUSTOM_CATEGORY_MAX);
+    if (!payload.studentId) delete payload.studentId;
 
-      const token = localStorage.getItem('token');
-      const navigate = useNavigate?.() || {};
-      const data = await parentApiJson('/api/parent/auth/complaints', {
-        method: 'POST',
-        body: JSON.stringify(payload),
-      }, navigate);
+    // Optimistic: show the complaint in the list and close right away; the server reply replaces it.
+    const tempId = `pending-${Date.now()}`;
+    const isAcademic = String(payload.category || '').toLowerCase().includes('academic');
+    onSubmitSuccess({
+      id: tempId,
+      ticketNumber: 'Sending…',
+      title: payload.title.trim(),
+      description: payload.description.trim(),
+      category: payload.category,
+      priority: payload.priority,
+      status: 'open',
+      createdAt: new Date().toISOString(),
+      assignedTo: isAcademic ? 'Class Teacher' : 'School Admin',
+      studentName: selectedChild?.name || '',
+      _pending: true,
+    });
+    onClose();
 
-      onSubmitSuccess(data);
-      onClose();
-    } catch (err) {
-      setSubmissionError(err.message || 'Unable to submit complaint');
-    } finally {
-      setSubmitting(false);
-    }
+    parentApiJson('/api/parent/auth/complaints', {
+      method: 'POST',
+      body: JSON.stringify(payload),
+    }, navigate)
+      .then((data) => onSubmitSettled?.(tempId, data, null))
+      .catch((err) => onSubmitSettled?.(tempId, null, err.message || 'Unable to submit complaint'));
   };
 
   if (!isOpen) return null;
@@ -430,6 +441,11 @@ const ComplaintManagementSystem = () => {
   useEffect(() => {
     fetchComplaints();
   }, []);
+
+  // Teacher/admin acted on a complaint → refresh the list live.
+  useEffect(() => subscribeSocketEvent('new_notification', (payload) => {
+    if (payload?.typeLabel === 'complaint_update') fetchComplaints();
+  }), []);
 
   useEffect(() => {
     if (!children.length) return;
@@ -861,185 +877,17 @@ const ComplaintManagementSystem = () => {
                 children={children}
                 createRef={createRef}
                 formatStudentDisplay={formatStudentDisplay}
+                navigate={navigate}
                 onSubmitSuccess={(data) => {
                   setComplaints((prev) => [data, ...prev]);
                 }}
+                onSubmitSettled={(tempId, data, errorMessage) => {
+                  setComplaints((prev) => (data
+                    ? prev.map((c) => (c.id === tempId ? data : c))
+                    : prev.filter((c) => c.id !== tempId)));
+                  if (errorMessage) toast.error(`Complaint not sent: ${errorMessage}`);
+                }}
               />
-                <div className="flex items-start justify-between gap-3 border-b border-slate-100 px-4 py-3">
-                  <div className="flex min-w-0 items-center gap-2.5">
-                    <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-violet-600 text-white"><Plus size={18} /></span>
-                    <div className="min-w-0">
-                      <h2 id="complaint-create-title" className="text-sm font-bold text-[#0b1446] sm:text-base">Submit new complaint</h2>
-                      <p className="text-[11px] text-slate-500">Tell us about the issue and we will get back to you.</p>
-                    </div>
-                  </div>
-                  <button type="button" onClick={() => setShowCreate(false)} aria-label="Close" className="shrink-0 rounded-lg p-1.5 text-slate-400 hover:bg-slate-100"><X size={16} /></button>
-                </div>
-                <div className="min-h-0 flex-1 overflow-y-auto p-4">
-                  <div className="grid gap-3 lg:grid-cols-2">
-                    <div className="space-y-3">
-                      <div>
-                        <label htmlFor="complaint-title" className="mb-1 block text-xs font-medium text-[#0b1446]">Title <span className="text-rose-500">*</span></label>
-                        <input
-                          id="complaint-title"
-                          ref={titleInputRef}
-                          type="text"
-                          autoFocus
-                          maxLength={120}
-                          value={form.title}
-                          onChange={handleTitleChange}
-                          className={INPUT}
-                          placeholder="Enter a short title for your complaint (e.g., App Issue, Fee Query)"
-                        />
-                      </div>
-
-                      <div>
-                        <p className="mb-1 text-xs font-medium text-[#0b1446]">Category <span className="text-rose-500">*</span></p>
-                        <div className="flex flex-wrap gap-1.5" role="radiogroup" aria-label="Category">
-                          {CATEGORY_OPTIONS.map((option) => {
-                            const Icon = CATEGORY_ICONS[option] || MoreHorizontal;
-                            const active = form.category === option;
-                            return (
-                              <button
-                                key={option}
-                                type="button"
-                                role="radio"
-                                aria-checked={active}
-                                onClick={() => handleCategoryChange(option)}
-                                className={`inline-flex items-center gap-1.5 rounded-full border px-2.5 py-1.5 text-xs font-medium transition ${active ? 'border-violet-500 bg-violet-50 text-violet-700 ring-1 ring-violet-200' : 'border-slate-200 bg-white text-[#0b1446] hover:bg-slate-50'}`}
-                              >
-                                <Icon size={15} className="text-violet-600" /> {option}
-                              </button>
-                            );
-                          })}
-                        </div>
-                        {isOtherCategory ? (
-                          <input
-                            id="complaint-custom-category"
-                            autoFocus
-                            maxLength={CUSTOM_CATEGORY_MAX}
-                            value={form.customCategory}
-                            onChange={handleCustomCategoryChange}
-                            placeholder="Type the category (e.g. Canteen, Safety)"
-                            aria-label="Custom category"
-                            className={`${INPUT} mt-2`}
-                          />
-                        ) : null}
-                        <p className="mt-1.5 text-[11px] text-slate-500">
-                          {isAcademicCategory
-                            ? 'Academic complaints are routed directly to your child’s class teacher.'
-                            : 'Other categories are sent to the school administration team.'}
-                        </p>
-                      </div>
-                    </div>
-
-                    <div className="space-y-3">
-                      <div>
-                        <label htmlFor="complaint-details" className="mb-1 block text-xs font-medium text-[#0b1446]">Details <span className="text-rose-500">*</span></label>
-                        <div className="relative">
-                          <textarea
-                            id="complaint-details"
-                            rows={3}
-                            maxLength={DETAILS_MAX}
-                            value={form.description}
-                            onChange={handleDescriptionChange}
-                            className={`${INPUT} resize-none pb-5`}
-                            placeholder="Describe your issue in detail..."
-                          />
-                          <span className="pointer-events-none absolute bottom-2 right-2.5 text-[10px] text-slate-400">{form.description.length}/{DETAILS_MAX}</span>
-                        </div>
-                      </div>
-
-                      <div>
-                        <p className="mb-1 text-xs font-medium text-[#0b1446]">Priority <span className="text-rose-500">*</span></p>
-                        <div className="flex flex-wrap gap-1.5" role="radiogroup" aria-label="Priority">
-                          {PRIORITY_OPTIONS.map((option) => {
-                            const active = form.priority === option.value;
-                            const tone = PRIORITY_TONE[option.value];
-                            return (
-                              <button
-                                key={option.value}
-                                type="button"
-                                role="radio"
-                                aria-checked={active}
-                                onClick={() => handlePriorityChange(option.value)}
-                                className={`inline-flex items-center gap-1.5 rounded-full border px-3 py-1.5 text-xs font-medium transition ${tone.chip} ${active ? `ring-2 ${tone.ring}` : ''}`}
-                              >
-                                <span className={`flex h-3.5 w-3.5 items-center justify-center rounded-full ${tone.dot}`}>
-                                  {active ? <Check size={9} className="text-white" strokeWidth={4} /> : null}
-                                </span>
-                                {option.label}
-                              </button>
-                            );
-                          })}
-                        </div>
-                      </div>
-
-                      {children.length > 0 && (
-                        <div>
-                          <label htmlFor="complaint-child" className="mb-1 block text-xs font-medium text-[#0b1446]">
-                            Related child {isAcademicCategory ? '(required for academic issues)' : '(optional)'}
-                          </label>
-                          <div className="relative flex items-center gap-2.5 rounded-lg border border-slate-200 px-2.5 py-1.5">
-                            {selectedChild?.profilePic ? (
-                              <img src={selectedChild.profilePic} alt="" className="h-8 w-8 shrink-0 rounded-full object-cover" />
-                            ) : (
-                              <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-violet-50 text-xs font-bold text-violet-600">
-                                {String(selectedChild?.name || 'C').charAt(0).toUpperCase()}
-                              </span>
-                            )}
-                            <div className="min-w-0 flex-1">
-                              <p className="truncate text-sm font-bold text-[#0b1446]">{selectedChild?.name || 'Select child'}</p>
-                              {selectedChild ? <p className="truncate text-[11px] text-slate-500">{childLine(selectedChild)}</p> : null}
-                            </div>
-                            <ChevronDown size={16} className="shrink-0 text-slate-500" />
-                            <select
-                              id="complaint-child"
-                              value={form.studentId}
-                              onChange={(e) => handleStudentChange(e.target.value)}
-                              className="absolute inset-0 cursor-pointer opacity-0"
-                            >
-                              {!isAcademicCategory ? <option value="">No specific child</option> : null}
-                              {children.map((child) => (
-                                <option key={child.studentId} value={child.studentId}>
-                                  {formatStudentDisplay({
-                                    name: child.name,
-                                    username: child.username,
-                                    studentCode: child.studentCode,
-                                    admissionNumber: child.admissionNumber,
-                                    studentId: child.studentId,
-                                    roll: child.roll || child.rollNo || child.rollNumber,
-                                    section: child.section,
-                                  })}
-                                </option>
-                              ))}
-                            </select>
-                          </div>
-                        </div>
-                      )}
-                      {isAcademicCategory && !children.length && (
-                        <p className="text-[11px] text-violet-600">No linked children were found, so this complaint will be forwarded to the school admin.</p>
-                      )}
-                    </div>
-                  </div>
-                </div>
-                <div className="border-t border-slate-100 px-4 py-3">
-                  {submissionError && (
-                    <p role="alert" className="mb-2 flex items-center gap-2 text-xs text-rose-600"><AlertCircle size={14} /> {submissionError}</p>
-                  )}
-                  <div className="flex flex-col-reverse gap-2 sm:flex-row sm:justify-end">
-                    <button type="button" onClick={() => setShowCreate(false)} className="rounded-full border border-slate-200 px-4 py-2.5 text-sm font-semibold text-slate-700 transition hover:bg-slate-50">Cancel</button>
-                    <motion.button
-                      type="submit"
-                      disabled={submitting}
-                      whileTap={{ scale: 0.99 }}
-                      className="flex items-center justify-center gap-2 rounded-full bg-violet-600 px-5 py-2.5 text-sm font-semibold text-white transition hover:bg-violet-700 disabled:opacity-60"
-                    >
-                      {submitting ? <Loader2 size={16} className="animate-spin" /> : <Send size={16} />}
-                      {submitting ? 'Submitting…' : 'Submit'}
-                    </motion.button>
-                  </div>
-                </div>
             </motion.div>
           )}
         </AnimatePresence>,

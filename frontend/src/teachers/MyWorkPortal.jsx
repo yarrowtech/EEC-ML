@@ -911,7 +911,17 @@ const MyWorkPortal = () => {
     return Array.from({ length: daysInMonth }, (_, index) => {
       const day = index + 1;
       const key = `${year}-${String(month).padStart(2, '0')}-${String(day).padStart(2, '0')}`;
-      return { day, record: byDate.get(key) };
+      const record = byDate.get(key);
+      if ((record?.checkIn && record.checkIn !== "-") || record?.checkInAt) return { day, record };
+      // No entry/exit on a past (or today) working day => Absent. Weekends and future days stay blank.
+      const date = new Date(year, month - 1, day);
+      const weekday = date.getDay();
+      const isWorkingDay = weekday !== 0 && weekday !== 6;
+      const startOfToday = new Date(); startOfToday.setHours(0, 0, 0, 0);
+      if (isWorkingDay && date <= startOfToday) {
+        return { day, record: { ...(record || {}), date: key, status: "Absent", checkIn: "-", checkOut: "-", workingMinutes: 0, derived: true } };
+      }
+      return { day, record };
     });
   }, [attendanceData, selectedMonth]);
 
@@ -1125,7 +1135,7 @@ const MyWorkPortal = () => {
       ? { text: 'Session active', cls: 'bg-[#15803d] text-white' }
       : todayAttendance.hasCheckedOut
         ? { text: 'Checked out', cls: 'bg-[#dbeafe] text-[#2563eb]' }
-        : { text: 'Not checked in yet', cls: 'bg-[#fdf0d2] text-[#b45309]' };
+        : { text: 'Absent · not checked in', cls: 'bg-[#fde0e0] text-[#b91c1c]' };
     const primaryAction = activeSession
       ? { label: 'Check-out', sub: 'End your work session', icon: LogOut, onClick: handleCheckOut, disabled: attendanceSaving }
       : { label: 'Check-in', sub: 'Start your work session', icon: Play, onClick: handleCheckIn, disabled: attendanceSaving || todayAttendance.hasCheckedIn };

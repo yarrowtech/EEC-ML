@@ -206,6 +206,7 @@ const resolveTeacherNotificationPath = (notification) => {
   const message = String(notification?.message || '').toLowerCase();
   const type = String(notification?.type || notification?.typeLabel || '').toLowerCase();
   const blob = `${title} ${message} ${type}`;
+  if (String(notification?.typeLabel || '').toLowerCase() === 'complaint' || notification?.eventType === 'COMPLAINT_CREATED' || blob.includes('complaint')) return '/teacher/classes/current/communication/feedback?view=complaints';
   if (String(notification?.typeLabel || '').toLowerCase().startsWith('excuse_letter')) return '/teacher/classes/current/communication/excuse-letters';
   if (String(notification?.typeLabel || '').toLowerCase() === 'teacher_leave_reviewed') return '/teacher/settings?tab=leave';
   if (blob.includes('substitute') || blob.includes('attendance')) return '/teacher/attendance';
@@ -258,6 +259,7 @@ const teacherNotificationModuleKey = (notification) => {
   const entity = String(notification?.relatedEntity?.entityType || '').toLowerCase();
 
   if (TEACHER_NOTIFICATIONS_ONLY_TYPE_LABELS.has(typeLabel)) return 'notifications-only';
+  if (typeLabel === 'complaint' || notification?.eventType === 'COMPLAINT_CREATED') return 'feedback';
   if (typeLabel.includes('submission')) return 'assignments-evaluate';
   if (typeLabel.includes('assignment_created') || typeLabel.includes('assignment_published')) return 'assignments-manage';
   if (entity === 'assignment' || type === 'assignment' || (entity === 'result' && typeLabel.includes('assignment'))) return 'assignments';

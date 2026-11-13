@@ -8,6 +8,8 @@ import {
   PieChart, Pie, Cell, Tooltip, Legend, ResponsiveContainer,
 } from 'recharts';
 import { motion } from 'framer-motion';
+import { useSearchParams } from 'react-router-dom';
+import { subscribeSocketEvent } from '../hooks/useCommunityWallUnread';
 
 // ── Client-side cache ──────────────────────────────────────────────────────────
 const CACHE_TTL_MS         = 5 * 60 * 1000; // 5 minutes
@@ -82,7 +84,11 @@ const ComplaintPieTooltip = ({ active, payload }) => {
 
 // ── Main component ─────────────────────────────────────────────────────────────
 const TeacherFeedbackPortal = () => {
-  const [activeView, setActiveView] = useState('feedback');
+  const [searchParams] = useSearchParams();
+  const viewParam = searchParams.get('view');
+  const [activeView, setActiveView] = useState(viewParam === 'complaints' ? 'complaints' : 'feedback');
+  // Opening from a complaint notification (?view=complaints) switches tabs even if the page is already open.
+  useEffect(() => { if (viewParam === 'complaints') setActiveView('complaints'); }, [viewParam, searchParams]);
 
   // Feedback state
   const [stats, setStats]                   = useState(null);
@@ -204,6 +210,11 @@ const TeacherFeedbackPortal = () => {
       fetchComplaints();
     }
   }, [fetchComplaints]);
+
+  // New parent complaint → refresh instantly (socket hint from the Notification model).
+  useEffect(() => subscribeSocketEvent('new_notification', (payload) => {
+    if (payload?.typeLabel === 'complaint') fetchComplaints({ silent: true });
+  }), [fetchComplaints]);
 
   // ── Filtered lists ───────────────────────────────────────────────────────────
   const subjectOptions = useMemo(() => {
