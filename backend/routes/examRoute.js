@@ -442,7 +442,16 @@ const createConsolidatedTeacherExamNotifications = async ({
   };
 
   const title = `Exam Duty Assigned: ${groupTitle}`;
-  const messageFor = (count) => `You have been assigned invigilation duty for ${count} exam${count !== 1 ? 's' : ''} in ${groupTitle}.`;
+  // One line per teacher covering the whole duty window — not one per subject/date.
+  const fmtDutyDate = (iso) => new Date(`${iso}T00:00:00`).toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' });
+  const dutyRange = (list = []) => {
+    const dates = list.map((r) => String(r?.date || '').slice(0, 10)).filter(Boolean).sort();
+    if (!dates.length) return '';
+    const from = fmtDutyDate(dates[0]);
+    const to = fmtDutyDate(dates[dates.length - 1]);
+    return from === to ? ` on ${from}` : ` from ${from} to ${to}`;
+  };
+  const messageFor = (count, list) => `You have exam duty for ${groupTitle}${dutyRange(list)} (${count} exam${count !== 1 ? 's' : ''}). Open to see your full duty schedule.`;
   const results = [];
   for (const [teacherId, rawRows] of rowsByTeacher.entries()) {
     const rows = dedupeRows(rawRows);
@@ -517,8 +526,8 @@ const createConsolidatedTeacherExamNotifications = async ({
     const isChange = Boolean(before);
     const patch = {
       message: isChange
-        ? `Your invigilation duty for ${groupTitle} has changed. You now have ${finalCount} exam${finalCount !== 1 ? 's' : ''} assigned.`
-        : messageFor(finalCount),
+        ? `Your exam duty for ${groupTitle} has changed — now${dutyRange(updated.examRoutine)} (${finalCount} exam${finalCount !== 1 ? 's' : ''}).`
+        : messageFor(finalCount, updated.examRoutine),
       title: isChange ? `Exam Duty Changed: ${groupTitle}` : title,
       eventType: isChange ? 'EXAM_DUTY_CHANGED' : 'EXAM_DUTY_ASSIGNED',
       kind: 'notification',
@@ -526,8 +535,9 @@ const createConsolidatedTeacherExamNotifications = async ({
       readBy: [],
     };
     updated = await Notification.findOneAndUpdate({ dedupeKey }, { $set: patch }, { new: true }) || updated;
-    // findOneAndUpdate never fires the model's post('save') hooks, so push by hand.
+    // findOneAndUpdate never fires the model's post('save') hooks, so push + live-ping by hand.
     sendPushForNotification(updated).catch(() => {});
+    Notification.emitCreated(updated);
     results.push(updated);
   }
   return results;

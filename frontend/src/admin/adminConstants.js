@@ -217,7 +217,7 @@ export const ADMIN_MENU_SECTIONS = [
   { section: 'OVERVIEW', items: ['Analytics'] },
   {
     section: 'ACADEMIC MANAGEMENT',
-    items: ['Academic Setup', 'Teachers Management', 'Teacher Feedback', 'Routine Management', 'Exam Management', 'Admit Cards', 'Result Management', 'Report Cards'],
+    items: ['Academic Setup', 'Teachers Management', 'Teacher Feedback', 'Routine Management', 'Exam Management', 'Result Management', 'Report Cards'],
   },
   { section: 'STUDENTS', items: ['Admissions', 'Students', 'Parents', 'Student Promotion', 'Leave & Left Students'] },
   { section: 'FEES MANAGEMENT', items: ['Create Fees', 'Fees Collection', 'Fee Receipts'] },

@@ -191,4 +191,6 @@ notificationSchema.index({ dedupeKey: 1 }, { unique: true, sparse: true });
 // Any write to notifications (from any router) drops cached /notifications/user responses.
 const clearUserNotificationsCache = () => userNotificationsCache.clear();
 notificationSchema.post(['save', 'insertMany', 'deleteOne', 'deleteMany', 'findOneAndDelete', 'findOneAndUpdate', 'updateOne', 'updateMany'], clearUserNotificationsCache);
+// Upserts (findOneAndUpdate) skip post('save'); callers use this to ping open tabs instantly.
+notificationSchema.statics.emitCreated = emitNotificationCreated;
 module.exports = mongoose.model('Notification', notificationSchema);

@@ -431,15 +431,6 @@ const formatDateChip = (value) => {
   return d.toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' });
 };
 
-const isWeekend = (d) => d.getDay() === 0 || d.getDay() === 6;
-
-const nextWeekday = (d) => {
-  const next = new Date(d);
-  next.setDate(next.getDate() + 1);
-  while (isWeekend(next)) next.setDate(next.getDate() + 1);
-  return next;
-};
-
 const toIsoDate = (d) => d.toISOString().slice(0, 10);
 
 const CLASS_AVATAR_PALETTE = [
@@ -591,7 +582,8 @@ const ExaminationManagement = ({ setShowAdminHeader }) => {
   const [subjectForm, setSubjectForm] = useState(EMPTY_SUBJECT);
 
   /* ── create-exam wizard ── */
-  const EMPTY_WIZARD_DETAILS = { title: '', term: 'Term 1', yearId: '', status: 'Scheduled', startDate: '', endDate: '' };
+  const EMPTY_WIZARD_DETAILS = { title: '', term: 'Term 1', yearId: '', status: 'Scheduled', startDate: '', endDate: '', skipSaturdays: false, blockedDates: [] };
+  const [blockedDateDraft, setBlockedDateDraft] = useState('');
   const [showWizard, setShowWizard] = useState(false);
   // Lock the page's own scrollbar while the Create Exam wizard is open — it's
   // a bespoke fixed overlay (not the shared Modal component), so it needs the
@@ -4426,6 +4418,47 @@ const ExaminationManagement = ({ setShowAdminHeader }) => {
 
     setAutoScheduling(true);
     try {
+      // ── Days no exam may be placed on ──────────────────────────────────────
+      // Sundays always; Saturdays when "Skip Saturdays" is on; every school
+      // holiday (Holiday List, multi-day ranges expanded); plus any extra dates
+      // the admin blocked for this routine (events, sports day, …).
+      const holidayDates = new Map(); // iso -> holiday name
+      try {
+        const hRes = await fetch(`${API_BASE}/api/holidays/admin`, { headers: authH() });
+        const hData = await hRes.json().catch(() => []);
+        const list = Array.isArray(hData) ? hData : (hData?.holidays || hData?.items || []);
+        list.forEach((h) => {
+          const from = new Date(h.startDate || h.date);
+          const to = new Date(h.endDate || h.startDate || h.date);
+          if (Number.isNaN(from.getTime()) || Number.isNaN(to.getTime())) return;
+          for (let d = new Date(from); d <= to && holidayDates.size < 2000; d.setDate(d.getDate() + 1)) {
+            holidayDates.set(toIsoDate(d), h.name || 'Holiday');
+          }
+        });
+      } catch {
+        /* no holiday list → only weekends / extra dates are skipped */
+      }
+      const extraBlocked = new Set((wizardDetails.blockedDates || []).map((d) => String(d).slice(0, 10)));
+      const skippedDays = new Map(); // iso -> reason (for the summary)
+      const isBlockedDay = (d) => {
+        const iso = toIsoDate(d);
+        const wd = d.getUTCDay();
+        let reason = '';
+        if (wd === 0) reason = 'Sunday';
+        else if (wd === 6 && wizardDetails.skipSaturdays) reason = 'Saturday';
+        else if (holidayDates.has(iso)) reason = holidayDates.get(iso);
+        else if (extraBlocked.has(iso)) reason = 'Blocked date';
+        if (reason && reason !== 'Sunday' && reason !== 'Saturday') skippedDays.set(iso, reason);
+        return Boolean(reason);
+      };
+      const nextOpenDay = (d, includeSelf = false) => {
+        const next = new Date(d);
+        if (!includeSelf) next.setUTCDate(next.getUTCDate() + 1);
+        let hops = 0;
+        while (isBlockedDay(next) && hops < 400) { next.setUTCDate(next.getUTCDate() + 1); hops += 1; }
+        return next;
+      };
+
       const roomBookings = [];
       const teacherBookings = [];
       allExamsForConflict.forEach((ex) => {
@@ -4496,7 +4529,7 @@ const ExaminationManagement = ({ setShowAdminHeader }) => {
       }
 
       const startDate = wizardDetails.startDate ? new Date(wizardDetails.startDate) : new Date();
-      const initialCursor = isWeekend(startDate) ? nextWeekday(startDate) : new Date(startDate);
+      const initialCursor = nextOpenDay(startDate, true);
       // Hard boundary — Auto-Schedule must never place an exam after the
       // routine's own End Date, even if rooms/teachers are still available.
       const endDateLimit = new Date(wizardDetails.endDate);
@@ -4632,9 +4665,8 @@ const ExaminationManagement = ({ setShowAdminHeader }) => {
             queues.get(cand.key).shift();
             const gapDays = Number(subjectGapDays[cand.subjectId]) || 0;
             const nextEarliest = new Date(day);
-            nextEarliest.setDate(nextEarliest.getDate() + 1 + gapDays);
-            while (isWeekend(nextEarliest)) nextEarliest.setDate(nextEarliest.getDate() + 1);
-            earliestDay.set(cand.key, nextEarliest);
+            nextEarliest.setUTCDate(nextEarliest.getUTCDate() + 1 + gapDays);
+            earliestDay.set(cand.key, nextOpenDay(nextEarliest, true));
 
             const roomKey = String(chosenRoom._id);
             if (!roomSeating.has(roomKey)) {
@@ -4661,7 +4693,7 @@ const ExaminationManagement = ({ setShowAdminHeader }) => {
           seatingRooms.push(...roomSeating.values());
         }
 
-        day = nextWeekday(new Date(day.getTime() + 86400000));
+        day = nextOpenDay(day);
       }
 
       // Anything left in a queue after the loop stopped either ran out of
@@ -4688,6 +4720,12 @@ const ExaminationManagement = ({ setShowAdminHeader }) => {
         } else if (unresolvedRooms) {
           lines.push(`<li class="text-rose-600"><strong>${unresolvedRooms}</strong> row${unresolvedRooms !== 1 ? 's' : ''} couldn't find room capacity — add more rooms with a seating capacity set, or assign one manually.</li>`);
         }
+        if (skippedDays.size) {
+          const shown = [...skippedDays.entries()].sort(([a], [b]) => a.localeCompare(b))
+            .map(([iso, why]) => `${formatDateChip(iso)} (${why})`);
+          lines.push(`<li>Skipped <strong>${skippedDays.size}</strong> holiday/blocked day${skippedDays.size !== 1 ? 's' : ''}: ${shown.slice(0, 8).join(', ')}${shown.length > 8 ? '…' : ''}.</li>`);
+        }
+        lines.push(`<li>No exams on Sundays${wizardDetails.skipSaturdays ? ' or Saturdays' : ''}; rooms already booked at the same time were not reused.</li>`);
         if (unresolvedTeachers) lines.push(`<li class="text-rose-600"><strong>${unresolvedTeachers}</strong> row${unresolvedTeachers !== 1 ? 's' : ''} couldn't find a free teacher — assign one manually.</li>`);
         if (unresolvedAssociates) lines.push(`<li class="text-rose-600"><strong>${unresolvedAssociates}</strong> row${unresolvedAssociates !== 1 ? 's' : ''} couldn't find a free associated teacher — assign one manually.</li>`);
         await Swal.fire({
@@ -5826,6 +5864,45 @@ const ExaminationManagement = ({ setShowAdminHeader }) => {
                   <WizardField label="End Date" required>
                     <WizardDateInput value={wizardDetails.endDate} onChange={e => setWizardDetails(p => ({ ...p, endDate: e.target.value }))} />
                   </WizardField>
+                  <div className="sm:col-span-2 rounded-2xl border border-slate-200 bg-slate-50/60 p-3.5">
+                    <p className="text-sm font-semibold text-slate-800">Days without exams</p>
+                    <p className="mt-0.5 text-xs text-slate-500">Auto-Schedule always skips Sundays and every date in the Holiday List.</p>
+                    <label className="mt-3 flex items-center gap-2 text-sm text-slate-700">
+                      <input type="checkbox" className="h-4 w-4 rounded border-slate-300 text-indigo-600"
+                        checked={Boolean(wizardDetails.skipSaturdays)}
+                        onChange={e => setWizardDetails(p => ({ ...p, skipSaturdays: e.target.checked }))} />
+                      Also skip Saturdays
+                    </label>
+                    <div className="mt-3">
+                      <p className="mb-1.5 text-xs font-medium text-slate-600">Extra blocked dates (events, sports day…)</p>
+                      <div className="flex gap-2">
+                        <div className="flex-1">
+                          <WizardDateInput value={blockedDateDraft} onChange={e => setBlockedDateDraft(e.target.value)} />
+                        </div>
+                        <button type="button" disabled={!blockedDateDraft}
+                          onClick={() => {
+                            setWizardDetails(p => ({ ...p, blockedDates: [...new Set([...(p.blockedDates || []), blockedDateDraft])].sort() }));
+                            setBlockedDateDraft('');
+                          }}
+                          className="rounded-xl bg-indigo-600 px-3 text-sm font-semibold text-white hover:bg-indigo-700 disabled:opacity-50">
+                          Add
+                        </button>
+                      </div>
+                      {(wizardDetails.blockedDates || []).length > 0 && (
+                        <div className="mt-2 flex flex-wrap gap-1.5">
+                          {wizardDetails.blockedDates.map((d) => (
+                            <span key={d} className="inline-flex items-center gap-1 rounded-full bg-white px-2.5 py-1 text-xs font-medium text-slate-700 ring-1 ring-slate-200">
+                              {formatDateChip(d)}
+                              <button type="button" aria-label={`Remove ${d}`} className="text-slate-400 hover:text-rose-500"
+                                onClick={() => setWizardDetails(p => ({ ...p, blockedDates: (p.blockedDates || []).filter((x) => x !== d) }))}>
+                                <X size={12} />
+                              </button>
+                            </span>
+                          ))}
+                        </div>
+                      )}
+                    </div>
+                  </div>
                 </div>
               )}
 
