@@ -90,7 +90,9 @@ const CopyButton = ({ value, label = 'Copy' }) => {
   );
 };
 
-const ParentsManagement = ({ setShowAdminHeader }) => {
+const ParentsManagement = ({ setShowAdminHeader, teamAccess = null }) => {
+  // Team members (Roles & Access) get a read-only list: no info / edit / delete.
+  const isTeam = Boolean(teamAccess);
   const navigate = useNavigate();
   const [searchTerm, setSearchTerm] = useState('');
   const [filterGrade, setFilterGrade] = useState('');
@@ -621,7 +623,7 @@ const ParentsManagement = ({ setShowAdminHeader }) => {
             </p>
           </div>
           <div className="flex flex-wrap gap-2 w-full sm:w-auto justify-stretch sm:justify-start">
-            {selectedParentIds.length > 0 && (
+            {!isTeam && selectedParentIds.length > 0 && (
               <button
                 onClick={handleBulkDeleteParents}
                 disabled={bulkDeleteLoading}
@@ -632,7 +634,7 @@ const ParentsManagement = ({ setShowAdminHeader }) => {
                 {bulkDeleteLoading ? 'Deleting...' : 'Delete All'}
               </button>
             )}
-            <button
+            {!isTeam && <button
               onClick={toggleSelectAllFilteredParents}
               disabled={filteredParentIds.length === 0}
               className="border border-gray-200 bg-white text-gray-700 px-3 py-2 rounded-full hover:bg-gray-50 disabled:opacity-60 flex items-center gap-2 text-sm flex-1 sm:flex-none justify-center transition"
@@ -640,7 +642,7 @@ const ParentsManagement = ({ setShowAdminHeader }) => {
             >
               <CheckCircle size={15} />
               {isAllFilteredSelected ? 'Deselect All' : 'Select All'}
-            </button>
+            </button>}
             <button
               onClick={handleRefreshTableData}
               disabled={tableRefreshing}
@@ -733,12 +735,11 @@ const ParentsManagement = ({ setShowAdminHeader }) => {
             <div ref={tableHeaderRef} className="shrink-0 overflow-hidden border-b border-gray-200 table-scroll-gutter">
               <table className="w-full min-w-[900px] border-collapse table-fixed">
                 <colgroup>
-                  <col style={{ width: '5%' }} /><col style={{ width: '22%' }} /><col style={{ width: '20%' }} />
-                  <col style={{ width: '25%' }} /><col style={{ width: '13%' }} /><col style={{ width: '15%' }} />
+                  {(isTeam ? ['25%', '22%', '27%', '13%', '13%'] : ['5%', '22%', '20%', '25%', '13%', '15%']).map((w, i) => <col key={i} style={{ width: w }} />)}
                 </colgroup>
                 <thead>
                   <tr className="bg-gray-50">
-                    <th className="border-b border-gray-200 px-2 py-2.5 text-left text-xs font-semibold uppercase tracking-wider text-gray-500 w-[5%]">
+                    {!isTeam && <th className="border-b border-gray-200 px-2 py-2.5 text-left text-xs font-semibold uppercase tracking-wider text-gray-500 w-[5%]">
                       <input
                         type="checkbox"
                         className="h-5 w-5 rounded-full border-2 border-emerald-200 bg-white text-emerald-500 focus:ring-2 focus:ring-emerald-200 focus:ring-offset-0 cursor-pointer transition shadow-sm"
@@ -747,7 +748,7 @@ const ParentsManagement = ({ setShowAdminHeader }) => {
                         onChange={toggleSelectAllVisibleParents}
                         aria-label="Select all visible parents"
                       />
-                    </th>
+                    </th>}
                     <th className="border-b border-gray-200 px-2 py-2.5 text-left text-xs font-semibold uppercase tracking-wider text-gray-500 w-[22%]">Parent</th>
                     <th className="border-b border-gray-200 px-2 py-2.5 text-left text-xs font-semibold uppercase tracking-wider text-gray-500 w-[20%]">Contact</th>
                     <th className="border-b border-gray-200 px-2 py-2.5 text-left text-xs font-semibold uppercase tracking-wider text-gray-500 w-[25%]">Children</th>
@@ -768,8 +769,7 @@ const ParentsManagement = ({ setShowAdminHeader }) => {
             >
               <table className="w-full min-w-[900px] border-collapse table-fixed">
                 <colgroup>
-                  <col style={{ width: '5%' }} /><col style={{ width: '22%' }} /><col style={{ width: '20%' }} />
-                  <col style={{ width: '25%' }} /><col style={{ width: '13%' }} /><col style={{ width: '15%' }} />
+                  {(isTeam ? ['25%', '22%', '27%', '13%', '13%'] : ['5%', '22%', '20%', '25%', '13%', '15%']).map((w, i) => <col key={i} style={{ width: w }} />)}
                 </colgroup>
                 <tbody className={tableRefreshing ? 'opacity-70 animate-pulse' : ''}>
                   {isLoading && parents.length === 0 ? (
@@ -792,7 +792,7 @@ const ParentsManagement = ({ setShowAdminHeader }) => {
                         const initials = (parent.name || 'NA').split(' ').map((n) => n[0]).join('').slice(0, 2).toUpperCase();
                         return (
                           <tr key={parent.id} className="hover:bg-emerald-50/30 transition-colors">
-                            <td
+                            {!isTeam && <td
                               className="border-b border-gray-100 px-2 py-2.5"
                               onClick={(e) => e.stopPropagation()}
                             >
@@ -803,7 +803,7 @@ const ParentsManagement = ({ setShowAdminHeader }) => {
                                 onChange={() => toggleParentSelection(parent.id)}
                                 aria-label={`Select ${parent.name || 'parent'}`}
                               />
-                            </td>
+                            </td>}
 
                             {/* Parent Info */}
                             <td
@@ -908,6 +908,7 @@ const ParentsManagement = ({ setShowAdminHeader }) => {
                                 >
                                   <KeyRound size={14} />
                                 </button>
+                                {!isTeam && <>
                                 <button
                                   onClick={() => openChildrenModal(parent)}
                                   className="inline-flex items-center px-1.5 py-1 text-emerald-600 hover:bg-emerald-50 rounded-md text-xs transition"
@@ -931,6 +932,7 @@ const ParentsManagement = ({ setShowAdminHeader }) => {
                                 >
                                   <Trash2 size={14} />
                                 </button>
+                                </>}
                               </div>
                             </td>
                           </tr>
@@ -938,7 +940,7 @@ const ParentsManagement = ({ setShowAdminHeader }) => {
                       })}
                       {!isLoading && filteredParents.length === 0 && (
                         <tr>
-                          <td colSpan={6} className="py-14 px-4 text-center">
+                          <td colSpan={isTeam ? 5 : 6} className="py-14 px-4 text-center">
                             <div className="flex flex-col items-center gap-3">
                               <div className="w-14 h-14 rounded-2xl bg-emerald-50 flex items-center justify-center">
                                 <Users size={28} className="text-emerald-300" />

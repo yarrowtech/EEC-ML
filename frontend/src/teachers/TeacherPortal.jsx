@@ -1745,6 +1745,7 @@ const TeacherPortalShell = () => {
   const [moduleSeenState, setModuleSeenState] = useState(() => readModuleSeenState('teacher'));
   const profileRef = useRef(null);
   const notificationsRef = useRef(null);
+  const mobileNotificationsRef = useRef(null);
   const mobileProfileMenuRef = useRef(null);
 
   // Fetch teacher profile
@@ -1827,7 +1828,10 @@ const TeacherPortalShell = () => {
       if (profileRef.current && !profileRef.current.contains(e.target)) {
         setProfileOpen(false);
       }
-      if (notificationsRef.current && !notificationsRef.current.contains(e.target)) {
+      // Desktop and mobile headers each have a bell; a click inside either (incl. its scrollbar) is "inside".
+      const insideNotifications = [notificationsRef.current, mobileNotificationsRef.current]
+        .some((el) => el && el.contains(e.target));
+      if (!insideNotifications) {
         setShowNotifications(false);
       }
       if (mobileProfileMenuRef.current && !mobileProfileMenuRef.current.contains(e.target)) {
@@ -2477,7 +2481,7 @@ const TeacherPortalShell = () => {
                 <span className="min-w-0"><span className="block truncate text-base font-bold leading-tight tracking-tight">{teacherProfile.name || 'Teacher'}</span><span className="block truncate text-xs font-medium text-slate-500">{teacherProfile.department || 'Academic workspace'}</span></span>
               </button>
               <div className="flex items-center gap-2">
-                <div className="relative" ref={notificationsRef}>
+                <div className="relative" ref={mobileNotificationsRef}>
                   <button type="button" onClick={handleToggleNotifications} className="relative flex h-9 w-9 items-center justify-center rounded-full text-slate-600 transition hover:bg-white/70 active:scale-95" aria-label="Notifications">
                     <Bell size={19} />
                     {unreadCount > 0 && (

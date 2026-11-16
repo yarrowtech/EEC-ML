@@ -439,6 +439,11 @@ router.get('/settings', adminAuth, async (req, res) => {
     if (admin.role === 'admin' && admin.schoolId) {
       school = await School.findById(admin.schoolId).lean();
     }
+    // Team members show the school owner's cover photo on their dashboard.
+    if (admin.isTeamMember && !admin.coverImage && admin.schoolId) {
+      const owner = await Admin.findOne({ schoolId: admin.schoolId, isTeamMember: { $ne: true }, coverImage: { $nin: [null, ''] } }).select('coverImage').lean();
+      if (owner?.coverImage) admin.coverImage = owner.coverImage;
+    }
 
     return res.json({ admin, school });
   } catch (err) {

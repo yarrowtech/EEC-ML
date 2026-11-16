@@ -26,6 +26,14 @@ import {
   Receipt,
   Megaphone,
   ClipboardCheck,
+  FileText,
+  Clock,
+  AlertTriangle,
+  LifeBuoy,
+  CheckCircle2,
+  UserCheck,
+  Hourglass,
+  CalendarX,
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { cn } from '@/lib/utils';
@@ -282,8 +290,42 @@ const QuickAction = ({ label, icon, color, onClick }) => (
 
 // ── Dashboard ────────────────────────────────────────────────────────────────
 
-const Dashboard = ({ setShowAdminHeader }) => {
+const FEE_KEYS = ['feesManage', 'feesCollection', 'feeReceipts'];
+
+const Dashboard = ({ setShowAdminHeader, teamAccess = null }) => {
   const navigate = useNavigate();
+  // School owner (no teamAccess) sees everything; a team member only what their role grants.
+  const perms = teamAccess?.permissions || null;
+  const isTeam = Boolean(teamAccess);
+  const can = useCallback(
+    (keys, level = 'view') => !perms || keys.some((k) => (level === 'edit' ? perms[k] === 'edit' : Boolean(perms[k]))),
+    [perms],
+  );
+  const canFees = can(FEE_KEYS);
+  const needsCoreStats = !isTeam || can(['students', 'teachers', 'analytics']);
+  const [roleStats, setRoleStats] = useState(null);
+  const [roleStatsLoading, setRoleStatsLoading] = useState(isTeam);
+
+  useEffect(() => {
+    if (!isTeam) return undefined;
+    let cancelled = false;
+    (async () => {
+      try {
+        const res = await apiFetch(
+          `${import.meta.env.VITE_API_URL}/api/admin/users/dashboard-role-stats`,
+          { headers: { authorization: `Bearer ${localStorage.getItem('token')}` } },
+          navigate,
+        );
+        const data = await res.json().catch(() => ({}));
+        if (!cancelled && res.ok) setRoleStats(data);
+      } catch {
+        /* cards fall back to "—" */
+      } finally {
+        if (!cancelled) setRoleStatsLoading(false);
+      }
+    })();
+    return () => { cancelled = true; };
+  }, [isTeam, navigate]);
   const [stats, setStats] = useState(() => readCache(cacheKey('stats'), CACHE_TTL.stats));
   const [statsLoading, setStatsLoading] = useState(() => !readCache(cacheKey('stats'), CACHE_TTL.stats));
   const [financial, setFinancial] = useState(() => readCache(cacheKey('financial'), CACHE_TTL.financial));
@@ -296,6 +338,7 @@ const Dashboard = ({ setShowAdminHeader }) => {
   }, [setShowAdminHeader]);
 
   useEffect(() => {
+    if (!needsCoreStats) { setStatsLoading(false); return undefined; }
     let cancelled = false;
     (async () => {
       try {
@@ -318,9 +361,10 @@ const Dashboard = ({ setShowAdminHeader }) => {
     return () => {
       cancelled = true;
     };
-  }, [navigate]);
+  }, [navigate, needsCoreStats]);
 
   useEffect(() => {
+    if (!canFees) { setFinancialLoading(false); return undefined; }
     let cancelled = false;
     (async () => {
       try {
@@ -353,7 +397,7 @@ const Dashboard = ({ setShowAdminHeader }) => {
     return () => {
       cancelled = true;
     };
-  }, [navigate]);
+  }, [navigate, canFees]);
 
   // School cover photo for the greeting banner. Loaded as a blob and shown via
   // an in-memory object URL (CSS background, no <img>), so the Cloudinary URL
@@ -399,7 +443,7 @@ const Dashboard = ({ setShowAdminHeader }) => {
     return 'Good evening';
   }, []);
 
-  const statCards = useMemo(() => {
+  const ownerCards = useMemo(() => {
     const studentGrowth = stats?.students?.growthThisYear;
     const onLeave = stats?.teachers?.onLeaveToday ?? 0;
 
@@ -475,6 +519,61 @@ const Dashboard = ({ setShowAdminHeader }) => {
     ];
   }, [stats, financial, financialLoading]);
 
+  const statCards = useMemo(() => {
+    if (!isTeam) return ownerCards;
+    const byLabel = Object.fromEntries(ownerCards.map((c) => [c.label, c]));
+    const rs = roleStats || {};
+    const n = (v) => (roleStatsLoading && v === undefined ? '—' : Number(v || 0).toLocaleString('en-IN'));
+    const card = (label, valueText, sub, icon, color, tint, path, info) => ({
+      label, value: 0, valueText, sub, subTone: 'neutral', icon, color, tint, path, info,
+    });
+    const cards = [];
+    if (can(['admissions'])) {
+      const a = rs.admissions || {};
+      cards.push(
+        card('New Enquiries', n(a.newThisWeek), 'Applications in the last 7 days', <FileText size={24} strokeWidth={2} />, '#2563eb', '#e8f0fe', '/admin/admissions/list?status=new'),
+        card('Pending Review', n(a.pending), 'Submitted or shortlisted', <Hourglass size={24} strokeWidth={2} />, '#d97706', '#fdf3e2', '/admin/admissions/list?status=pending'),
+        card('Approved', n(a.approved), 'Awaiting admission', <CheckCircle2 size={24} strokeWidth={2} />, '#7c3aed', '#f1ebfe', '/admin/admissions/list?status=approved'),
+        card('Admitted', n(a.admittedThisMonth), 'This month', <UserPlus size={24} strokeWidth={2} />, '#059669', '#e3f7ee', '/admin/admissions/list?status=admitted'),
+      );
+    }
+    if (can(FEE_KEYS)) {
+      const trend = financial?.trend ?? [];
+      const thisMonth = Number(trend[trend.length - 1]?.collected || 0);
+      const feeText = (v) => (financialLoading && !financial ? '—' : formatRupeesShort(v));
+      cards.push(
+        card('Collected', feeText(financial?.totals?.totalCollected), 'This session', <Wallet size={24} strokeWidth={2} />, '#059669', '#e3f7ee', '/admin/fees/collection'),
+        card('This Month', feeText(thisMonth), 'Collected this month', <Receipt size={24} strokeWidth={2} />, '#2563eb', '#e8f0fe', '/admin/fees/receipts'),
+        card('Outstanding', feeText(financial?.totals?.totalOutstanding), `${feeText(financial?.totals?.overdueAmount)} overdue`, <AlertTriangle size={24} strokeWidth={2} />, '#d97706', '#fdf3e2', '/admin/fees/collection'),
+        card('Defaulters', n(rs.fees?.defaulters), 'Students past due date', <CalendarX size={24} strokeWidth={2} />, '#dc2626', '#fde8e8', '/admin/fees/collection'),
+      );
+    }
+    if (can(['hr'])) {
+      const h = rs.hr || {};
+      cards.push(
+        card('Staff Present', n(h.presentToday), h.totalStaff !== undefined ? `of ${n(h.totalStaff)} checked in today` : 'Checked in today', <UserCheck size={24} strokeWidth={2} />, '#059669', '#e3f7ee', '/admin/hr'),
+        card('On Leave', n(h.onLeaveToday), 'Today', <CalendarDays size={24} strokeWidth={2} />, '#7c3aed', '#f1ebfe', '/admin/hr?tab=leaves'),
+        card('Leave Requests', n(h.pendingLeaves), 'Waiting for approval', <Clock size={24} strokeWidth={2} />, '#d97706', '#fdf3e2', '/admin/hr?tab=leaves'),
+        card('Expense Claims', n(h.pendingExpenses), 'Waiting for approval', <Receipt size={24} strokeWidth={2} />, '#2563eb', '#e8f0fe', '/admin/hr'),
+      );
+    }
+    if (can(['support'])) {
+      const sp = rs.support || {};
+      const ageDays = sp.oldestOpenAt ? Math.max(0, Math.floor((Date.now() - new Date(sp.oldestOpenAt)) / 86400000)) : null;
+      cards.push(
+        card('Open Tickets', n(sp.open), 'Open or in progress', <LifeBuoy size={24} strokeWidth={2} />, '#2563eb', '#e8f0fe', '/admin/support'),
+        card('Urgent', n(sp.urgent), 'High / critical priority', <AlertTriangle size={24} strokeWidth={2} />, '#dc2626', '#fde8e8', '/admin/support'),
+        card('Resolved Today', n(sp.resolvedToday), 'Closed since midnight', <CheckCircle2 size={24} strokeWidth={2} />, '#059669', '#e3f7ee', '/admin/support'),
+        card('Oldest Open', ageDays === null ? (roleStatsLoading ? '—' : 'None') : `${ageDays}d`, 'Waiting the longest', <Clock size={24} strokeWidth={2} />, '#d97706', '#fdf3e2', '/admin/support'),
+      );
+    }
+    // Generic owner cards only where no role-specific set already covers the area.
+    if (can(['students']) && !can(['admissions']) && byLabel.Students) cards.push(byLabel.Students);
+    if (can(['teachers']) && !can(['hr']) && byLabel.Teachers) cards.push(byLabel.Teachers);
+    if (can(['analytics']) && byLabel.Attendance) cards.push(byLabel.Attendance);
+    return cards.map((c, i) => ({ ...c, delay: 0.05 * ((i % 4) + 1) }));
+  }, [isTeam, ownerCards, roleStats, roleStatsLoading, can, financial, financialLoading]);
+
   const todayLabel = new Date().toLocaleDateString('en-GB', {
     weekday: 'short',
     day: 'numeric',
@@ -482,14 +581,35 @@ const Dashboard = ({ setShowAdminHeader }) => {
     year: 'numeric',
   });
 
+  // Main menu shortcuts require view access to their modules.
+  // Admission team gets task shortcuts for its whole workflow (team members only).
+  const admissionActions = isTeam && can(['admissions']) ? [
+    { label: 'Applications', icon: <FileText size={18} strokeWidth={2} />, color: '#2563eb', path: '/admin/admissions?tab=applications', needs: ['admissions'] },
+    { label: 'Admission Notices', icon: <Megaphone size={18} strokeWidth={2} />, color: '#0ea5e9', path: '/admin/admissions?tab=notifications', needs: ['admissions'] },
+    { label: 'Pending Review', icon: <Hourglass size={18} strokeWidth={2} />, color: '#d97706', path: '/admin/admissions/list?status=pending', needs: ['admissions'] },
+    { label: 'Approved', icon: <CheckCircle2 size={18} strokeWidth={2} />, color: '#7c3aed', path: '/admin/admissions/list?status=approved', needs: ['admissions'] },
+    { label: 'Admitted Students', icon: <UserCheck size={18} strokeWidth={2} />, color: '#059669', path: '/admin/admissions/list?status=admitted', needs: ['admissions'] },
+    { label: 'Add Student', icon: <UserPlus size={18} strokeWidth={2} />, color: '#60a5fa', path: '/admin/students?add=1', needs: ['students'], level: 'edit' },
+    { label: 'Parents', icon: <Users size={18} strokeWidth={2} />, color: '#14b8a6', path: '/admin/parents', needs: ['parents'] },
+    { label: 'Promotion', icon: <ArrowUp size={18} strokeWidth={2} />, color: '#8b5cf6', path: '/admin/promotion', needs: ['promotion'] },
+    { label: 'Left Students', icon: <CalendarX size={18} strokeWidth={2} />, color: '#f43f5e', path: '/admin/left-students', needs: ['leftStudents'] },
+  ].filter((a) => can(a.needs, a.level)) : [];
+
   const quickActions = [
-    { label: 'Academic Setup', icon: <BookOpen size={18} strokeWidth={2} />, color: '#8b5cf6', path: '/admin/academics' },
-    { label: 'Add Student', icon: <UserPlus size={18} strokeWidth={2} />, color: '#60a5fa', path: '/admin/students?add=1' },
-    { label: 'Add Teacher', icon: <School size={18} strokeWidth={2} />, color: '#10b981', path: '/admin/teachers?add=1' },
-    { label: 'Collect Fees', icon: <Wallet size={18} strokeWidth={2} />, color: '#f59e0b', path: '/admin/fees/collection?view=payments' },
-    { label: 'Fee Receipts', icon: <Receipt size={18} strokeWidth={2} />, color: '#f43f5e', path: '/admin/fees/receipts' },
-    { label: 'Post Notice', icon: <Megaphone size={18} strokeWidth={2} />, color: '#0ea5e9', path: '/admin/notices/post' },
-  ];
+    ...admissionActions,
+    { label: 'Admissions', icon: <FileText size={18} strokeWidth={2} />, color: '#2563eb', path: '/admin/admissions', needs: ['admissions'] },
+    { label: 'Academic Setup', icon: <BookOpen size={18} strokeWidth={2} />, color: '#8b5cf6', path: '/admin/academics', needs: ['academics'] },
+    { label: 'Students', icon: <UserPlus size={18} strokeWidth={2} />, color: '#60a5fa', path: '/admin/students', needs: ['students'] },
+    { label: 'Teachers Management', icon: <School size={18} strokeWidth={2} />, color: '#10b981', path: '/admin/teachers', needs: ['teachers'] },
+    { label: 'Fees Collection', icon: <Wallet size={18} strokeWidth={2} />, color: '#f59e0b', path: '/admin/fees/collection', needs: ['feesCollection'] },
+    { label: 'Fee Receipts', icon: <Receipt size={18} strokeWidth={2} />, color: '#f43f5e', path: '/admin/fees/receipts', needs: ['feeReceipts', 'feesCollection'] },
+    { label: 'HR', icon: <Clock size={18} strokeWidth={2} />, color: '#7c3aed', path: '/admin/hr', needs: ['hr'] },
+    { label: 'Support', icon: <LifeBuoy size={18} strokeWidth={2} />, color: '#0891b2', path: '/admin/support', needs: ['support'] },
+    { label: 'Notices', icon: <Megaphone size={18} strokeWidth={2} />, color: '#0ea5e9', path: '/admin/notices/view', needs: ['notices'] },
+  ].filter((a, i, all) => (admissionActions.includes(a) ? true : can(a.needs))
+    // Skip menu shortcuts already covered by the admission set.
+    && !(admissionActions.length && !admissionActions.includes(a) && ['Admissions', 'Students'].includes(a.label))
+    && all.findIndex((b) => b.label === a.label) === i);
 
   const chartData = financial?.trend ?? [];
   const activeYearLabel = financial?.activeYearName || '';
@@ -567,11 +687,13 @@ const Dashboard = ({ setShowAdminHeader }) => {
           <div className="relative flex flex-col gap-3 md:flex-row md:items-center md:gap-5">
             <div className="min-w-0">
               <h1 className="flex flex-wrap items-center gap-1.5 text-xl font-bold tracking-tight text-slate-900 md:text-2xl">
-                {greeting}, <span className="text-blue-600">Admin</span>
+                {greeting}, <span className="text-blue-600">{isTeam ? (teamAccess.roleName || 'Team') : 'Admin'}</span>
                 {/* <span className="inline-block origin-[70%_70%] animate-[wave_2.4s_ease-in-out_infinite]" aria-hidden="true">👋</span> */}
               </h1>
               <p className="mt-0.5 text-xs text-slate-500 md:text-sm">
-                Here&apos;s what&apos;s happening across your school this week.
+                {isTeam
+                  ? (statCards.length ? 'Here’s your work at a glance today.' : 'Use the menu to open the sections your role can access.')
+                  : 'Here’s what’s happening across your school this week.'}
               </p>
             </div>
 
@@ -604,16 +726,16 @@ const Dashboard = ({ setShowAdminHeader }) => {
         </motion.div>
 
         {/* ── Stats Row ── */}
-        <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 sm:gap-4 lg:shrink-0">
+        {statCards.length > 0 && <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 sm:gap-4 lg:shrink-0">
           {statCards.map((stat) => (
-            <StatCard key={stat.label} {...stat} loading={statsLoading} onOpen={stat.path ? () => navigate(stat.path) : undefined} />
+            <StatCard key={stat.label} {...stat} loading={isTeam ? false : statsLoading} onOpen={stat.path ? () => navigate(stat.path) : undefined} />
           ))}
-        </div>
+        </div>}
 
         {/* ── Fees + Quick Actions ── */}
-        <motion.div variants={itemVariants} className="grid grid-cols-1 lg:grid-cols-3 gap-6 lg:gap-4 lg:flex-1 lg:min-h-0">
+        {(canFees || quickActions.length > 0) && <motion.div variants={itemVariants} className={`grid grid-cols-1 ${canFees && quickActions.length ? 'lg:grid-cols-3' : ''} gap-6 lg:gap-4 lg:flex-1 lg:min-h-0`}>
           {/* Fees Collection */}
-          <div className="lg:col-span-2 glass-card p-5 md:p-6 lg:p-5 lg:flex lg:flex-col lg:min-h-0">
+          {canFees && <div className={`${quickActions.length ? 'lg:col-span-2' : ''} glass-card p-5 md:p-6 lg:p-5 lg:flex lg:flex-col lg:min-h-0`}>
             <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 mb-4">
               <div>
                 <h3 className="section-title">Fees Collection</h3>
@@ -695,10 +817,10 @@ const Dashboard = ({ setShowAdminHeader }) => {
               </div>
             </div>
 
-          </div>
+          </div>}
 
           {/* Quick Actions — tiles on mobile/tablet; horizontally scrolling chips (with arrows) on lg+ */}
-          <div className="glass-card p-5 md:p-6 lg:p-4 flex flex-col lg:min-h-0 lg:overflow-hidden">
+          {quickActions.length > 0 && <div className="glass-card p-5 md:p-6 lg:p-4 flex flex-col lg:min-h-0 lg:overflow-hidden">
             <div className="mb-4 lg:mb-3 lg:shrink-0">
               <h3 className="section-title">Quick Actions</h3>
               <p className="section-subtitle">Common admin tasks</p>
@@ -714,7 +836,7 @@ const Dashboard = ({ setShowAdminHeader }) => {
                 />
               ))}
             </div>
-            <div className="relative hidden lg:flex lg:flex-1 lg:min-h-0 lg:items-center">
+            <div className="relative hidden lg:flex lg:flex-1 lg:min-h-0 lg:items-start lg:overflow-y-auto">
               {qaScroll.canLeft && (
                 <button
                   type="button"
@@ -728,7 +850,7 @@ const Dashboard = ({ setShowAdminHeader }) => {
               <div
                 ref={qaScrollRef}
                 onScroll={updateQaScroll}
-                className="qa-scroll grid h-full w-full grid-flow-col grid-rows-2 auto-cols-[calc(50%-0.3125rem)] content-center gap-2.5 overflow-x-auto scroll-smooth snap-x scroll-px-1 px-1 py-1"
+                className="grid w-full grid-cols-3 xl:grid-cols-4 content-start gap-1.5 p-0.5"
               >
                 {/* 2 rows × columns of half the panel width → 4 cards visible
                     (a 2×2 block); the rest scroll in left ↔ right. */}
@@ -737,16 +859,16 @@ const Dashboard = ({ setShowAdminHeader }) => {
                     key={action.label}
                     type="button"
                     onClick={() => navigate(action.path)}
-                    className="group flex snap-start flex-col items-center justify-center gap-1.5 rounded-2xl border border-slate-100 bg-white px-2 py-3 text-center text-xs font-semibold leading-tight text-slate-700 shadow-sm transition-all hover:-translate-y-0.5 hover:border-slate-200 hover:shadow-md"
+                    className="group flex min-w-0 flex-col items-center justify-center gap-1 rounded-xl border border-slate-100 bg-white px-1 py-2 text-center text-[10.5px] font-semibold leading-tight text-slate-700 shadow-sm transition-all hover:-translate-y-0.5 hover:border-slate-200 hover:shadow-md"
                   >
                     <span
-                      className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full transition-transform group-hover:scale-105"
+                      className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full transition-transform group-hover:scale-105"
                       style={{ color: action.color, background: `${action.color}1a` }}
                       aria-hidden="true"
                     >
-                      {React.cloneElement(action.icon, { size: 18 })}
+                      {React.cloneElement(action.icon, { size: 14 })}
                     </span>
-                    {action.label}
+                    <span className="line-clamp-2 break-words">{action.label}</span>
                   </button>
                 ))}
               </div>
@@ -796,7 +918,7 @@ const Dashboard = ({ setShowAdminHeader }) => {
                 </div>
               )}
             </div>
-            <div className="mt-4 pt-4 lg:mt-3 lg:pt-2.5 lg:shrink-0 border-t border-slate-200/50">
+            {!isTeam && <div className="mt-4 pt-4 lg:mt-3 lg:pt-2.5 lg:shrink-0 border-t border-slate-200/50">
               <p className="text-[10px] text-slate-400 text-center">
                 Need help?{' '}
                 <button
@@ -807,9 +929,9 @@ const Dashboard = ({ setShowAdminHeader }) => {
                   Contact support
                 </button>
               </p>
-            </div>
-          </div>
-        </motion.div>
+            </div>}
+          </div>}
+        </motion.div>}
 
         {/* ── Footer ── */}
       </div>

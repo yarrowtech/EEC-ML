@@ -1953,6 +1953,71 @@ router.delete('/principals/:id', adminAuth, async (req, res) => {
 });
 
 // Live dashboard statistics endpoint
+// Role-specific dashboard cards. Only the sections the caller's role covers are
+// computed (the school owner admin gets all of them), so a Finance user never
+// receives admission numbers and vice versa.
+router.get("/dashboard-role-stats", adminAuth, async (req, res) => {
+  // #swagger.tags = ['Admin Users']
+  try {
+    const schoolId = buildScopedFilter(req).schoolId || req.schoolId;
+    if (!schoolId) return res.json({});
+    const perms = req.teamAccess ? (req.teamAccess.permissions || {}) : null; // null = owner
+    const has = (...keys) => !perms || keys.some((k) => perms[k]);
+
+    const now = new Date();
+    const pad = (n) => String(n).padStart(2, '0');
+    const todayKey = `${now.getFullYear()}-${pad(now.getMonth() + 1)}-${pad(now.getDate())}`;
+    const weekAgo = new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000);
+    const monthStart = new Date(now.getFullYear(), now.getMonth(), 1);
+    const dayStart = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+
+    const tasks = {};
+    if (has('admissions')) {
+      const AdmissionApplication = require('../models/AdmissionApplication');
+      tasks.admissions = Promise.all([
+        AdmissionApplication.countDocuments({ schoolId, createdAt: { $gte: weekAgo } }),
+        AdmissionApplication.countDocuments({ schoolId, status: { $in: ['submitted', 'shortlisted'] } }),
+        AdmissionApplication.countDocuments({ schoolId, status: 'approved' }),
+        AdmissionApplication.countDocuments({ schoolId, status: 'admitted', admittedAt: { $gte: monthStart } }),
+      ]).then(([newThisWeek, pending, approved, admittedThisMonth]) => ({ newThisWeek, pending, approved, admittedThisMonth }));
+    }
+    if (has('feesManage', 'feesCollection', 'feeReceipts')) {
+      tasks.fees = FeeInvoice.aggregate([
+        { $match: { schoolId: new mongoose.Types.ObjectId(String(schoolId)), status: { $ne: 'paid' }, dueDate: { $lt: now }, balanceAmount: { $gt: 0 } } },
+        { $group: { _id: '$studentId' } },
+        { $count: 'n' },
+      ]).then((r) => ({ defaulters: r[0]?.n || 0 }));
+    }
+    if (has('hr')) {
+      tasks.hr = Promise.all([
+        TeacherAttendance.countDocuments({ schoolId, dateKey: todayKey, checkInAt: { $ne: null } }),
+        TeacherLeave.distinct('teacherId', { schoolId, status: 'Approved', startDate: { $lte: todayKey }, endDate: { $gte: todayKey } }),
+        TeacherLeave.countDocuments({ schoolId, status: 'Pending' }),
+        TeacherExpense.countDocuments({ schoolId, status: 'Pending' }),
+        TeacherUser.countDocuments({ schoolId }),
+      ]).then(([presentToday, onLeave, pendingLeaves, pendingExpenses, totalStaff]) => ({
+        presentToday, onLeaveToday: onLeave.length, pendingLeaves, pendingExpenses, totalStaff,
+      }));
+    }
+    if (has('support')) {
+      const SupportRequest = require('../models/SupportRequest');
+      const openFilter = { schoolId, targetRole: 'admin', status: { $in: ['open', 'in_progress'] } };
+      tasks.support = Promise.all([
+        SupportRequest.countDocuments(openFilter),
+        SupportRequest.countDocuments({ ...openFilter, priority: { $in: ['high', 'critical'] } }),
+        SupportRequest.countDocuments({ schoolId, targetRole: 'admin', status: 'resolved', updatedAt: { $gte: dayStart } }),
+        SupportRequest.findOne(openFilter).sort({ createdAt: 1 }).select('createdAt').lean(),
+      ]).then(([open, urgent, resolvedToday, oldest]) => ({ open, urgent, resolvedToday, oldestOpenAt: oldest?.createdAt || null }));
+    }
+
+    const keys = Object.keys(tasks);
+    const values = await Promise.all(keys.map((k) => tasks[k].catch(() => null)));
+    res.json(Object.fromEntries(keys.map((k, i) => [k, values[i]])));
+  } catch (err) {
+    res.status(500).json({ error: err.message || 'Unable to load dashboard' });
+  }
+});
+
 router.get("/dashboard-stats", adminAuth, async (req, res) => {
   // #swagger.tags = ['Admin Users']
   try {

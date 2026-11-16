@@ -6,16 +6,33 @@ import { normalizeAdminPath, resolveAdminNotificationPath } from './adminNotific
 import { subscribeSocketEvent } from '@/hooks/useCommunityWallUnread';
 import { readCachedNotifications, writeCachedNotifications } from '../utils/notificationCache';
 
+// Which Roles & Access module a notification belongs to. A team member's bell only
+// shows notifications for modules their role grants (e.g. Admission → admission alerts).
+const NOTIFICATION_MODULES = [
+  { keys: ['admissions'], test: /admission|enquir|admitted/ },
+  { keys: ['feesManage', 'feesCollection', 'feeReceipts'], test: /fee|payment|receipt|invoice/ },
+  { keys: ['hr'], test: /leave request|teacher leave|expense|staff/ },
+  { keys: ['support'], test: /complaint|support|ticket|password reset/ },
+  { keys: ['results', 'exams'], test: /result|exam/ },
+  { keys: ['communityWall'], test: /community wall/ },
+  { keys: ['notices'], test: /notice/ },
+];
+export const notificationAllowedForRole = (n, permissions) => {
+  if (!permissions) return true;
+  const blob = [n?.typeLabel, n?.eventType, n?.title, n?.type].map((v) => String(v || '').toLowerCase()).join(' ');
+  return NOTIFICATION_MODULES.some((m) => m.test.test(blob) && m.keys.some((k) => permissions[k]));
+};
+
 const API_BASE = (import.meta.env.VITE_API_URL || window.location.origin).replace(/\/$/, '');
 
 // Single source of truth for admin notifications, shared by AdminHeader (bell
 // dropdown), AdminSidebar and AdminBottomNav (per-module badge counts) so
 // they all read the same poll instead of each running its own fetch loop.
-export const useAdminNotifications = ({ isSuperAdmin = false } = {}) => {
+export const useAdminNotifications = ({ isSuperAdmin = false, permissions = null } = {}) => {
   const navigate = useNavigate();
   const location = useLocation();
   // Seed from the client cache so the bell opens instantly; polling refreshes it.
-  const [notifications, setNotifications] = useState(() => readCachedNotifications('admin-bell') || []);
+  const [notifications, setNotifications] = useState(() => (readCachedNotifications('admin-bell') || []).filter((n) => notificationAllowedForRole(n, permissions)));
   const [notifLoading, setNotifLoading] = useState(false);
   const hasNotifsRef = useRef(notifications.length > 0);
   const [notifError, setNotifError] = useState('');
@@ -42,6 +59,7 @@ export const useAdminNotifications = ({ isSuperAdmin = false } = {}) => {
           const aud = String(n?.audience || 'All').toLowerCase();
           return aud === 'all' || aud === 'admin' || aud === 'school_admin' || aud === 'school admin';
         })
+        .filter((n) => notificationAllowedForRole(n, permissions))
         .sort((a, b) => new Date(b?.createdAt || 0) - new Date(a?.createdAt || 0))
         .slice(0, 20);
       setNotifications(filtered);
@@ -53,7 +71,7 @@ export const useAdminNotifications = ({ isSuperAdmin = false } = {}) => {
     } finally {
       setNotifLoading(false);
     }
-  }, [isSuperAdmin, navigate]);
+  }, [isSuperAdmin, navigate, permissions]);
 
   useEffect(() => {
     fetchNotifs();

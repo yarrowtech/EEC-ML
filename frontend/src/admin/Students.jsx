@@ -209,7 +209,9 @@ const BlockingProgressModal = ({ open, accent = "amber", title, statusText, extr
   );
 };
 
-const Students = ({ setShowAdminHeader }) => {
+const Students = ({ setShowAdminHeader, teamAccess = null }) => {
+  // Team members (Roles & Access) get a read-only list: no archive / fees / row actions.
+  const isTeam = Boolean(teamAccess);
   const navigate = useNavigate(); 
 
   const [studentData, setStudentData] = useState(() => {
@@ -4070,7 +4072,7 @@ const Students = ({ setShowAdminHeader }) => {
                 </span>
               )}
             </button>
-            <button
+            {!isTeam && <button
               onClick={() => setShowArchiveModal(true)}
               className="relative border border-gray-200 bg-white text-gray-700 px-3 py-2 rounded-full hover:bg-gray-50 flex items-center gap-2 text-sm flex-1 sm:flex-none justify-center transition"
             >
@@ -4080,8 +4082,8 @@ const Students = ({ setShowAdminHeader }) => {
                   {archivedStudents.length}
                 </span>
               )}
-            </button>
-             <button
+            </button>}
+             {!isTeam && <button
               onClick={toggleSelectAllFiltered}
               disabled={filteredStudentIds.length === 0}
               className="border border-gray-200 bg-white text-gray-700 px-3 py-2 rounded-full hover:bg-gray-50 disabled:opacity-60 flex items-center gap-2 text-sm flex-1 sm:flex-none justify-center transition"
@@ -4090,12 +4092,12 @@ const Students = ({ setShowAdminHeader }) => {
               <CheckCircle size={15} />
               {/* {isAllFilteredSelected ? "Deselect All" : `Select All (${filteredStudentIds.length})`} */ }
               {isAllFilteredSelected ? "Deselect All" : `Select All`}
-            </button>
+            </button>}
             {/* Only meaningful once something is selected — grouped right next
                 to Select All / Deselect All instead of sitting earlier in the
                 row, where their appearing/disappearing used to reflow and
                 misalign every button after them. */}
-            {selectedStudentIds.length > 0 && (
+            {!isTeam && selectedStudentIds.length > 0 && (
               <button
                 onClick={handleBulkArchiveStudents}
                 disabled={isArchiving}
@@ -4106,7 +4108,7 @@ const Students = ({ setShowAdminHeader }) => {
                 {isArchiving ? "Archiving..." : `Archive All`}
               </button>
             )}
-            {selectedStudentIds.length > 0 && (
+            {!isTeam && selectedStudentIds.length > 0 && (
               <button
                 onClick={handleBulkDeleteStudents}
                 disabled={isBulkDeleting}
@@ -4375,14 +4377,13 @@ const Students = ({ setShowAdminHeader }) => {
               )} */}
               {/* Header (does not scroll vertically; horizontal scroll synced to body) */}
               <div ref={tableHeaderRef} className="shrink-0 overflow-hidden border-b border-gray-200 table-scroll-gutter">
-                <table className="w-full min-w-[980px] border-collapse table-fixed">
+                <table className="w-full min-w-[980px] border-collapse table-fixed text-center [&_td]:align-middle">
                   <colgroup>
-                    <col style={{ width: "5%" }} /><col style={{ width: "24%" }} /><col style={{ width: "14%" }} />
-                    <col style={{ width: "12%" }} /><col style={{ width: "18%" }} /><col style={{ width: "27%" }} />
+                    {(isTeam ? ["7%", "35%", "22%", "16%", "20%"] : ["5%", "24%", "14%", "12%", "18%", "27%"]).map((w, i) => <col key={i} style={{ width: w }} />)}
                   </colgroup>
                   <thead>
                     <tr className="bg-gray-50">
-                      <th className="border-b border-gray-200 px-2 py-2.5 text-left text-xs font-semibold uppercase tracking-wider text-gray-500 w-[5%]">
+                      {!isTeam && <th className="border-b border-gray-200 px-2 py-2.5 text-center text-xs font-semibold uppercase tracking-wider text-gray-500 w-[5%]">
                         <input
                           type="checkbox"
                           className="h-5 w-5 rounded-full border-2 border-amber-200 bg-white text-amber-500 focus:ring-2 focus:ring-amber-200 focus:ring-offset-0 cursor-pointer transition shadow-sm"
@@ -4391,22 +4392,25 @@ const Students = ({ setShowAdminHeader }) => {
                           onChange={toggleSelectAllVisible}
                           aria-label="Select all visible students"
                         />
-                      </th>
-                      <th className="border-b border-gray-200 px-2 py-2.5 text-left text-xs font-semibold uppercase tracking-wider text-gray-500 w-[24%]">
+                      </th>}
+                      {isTeam && <th className="border-b border-gray-200 px-2 py-2.5 text-center text-xs font-semibold uppercase tracking-wider text-gray-500">
+                        Sl No
+                      </th>}
+                      <th className={`border-b border-gray-200 px-2 py-2.5 ${isTeam ? 'text-left pl-4' : 'text-center'} text-xs font-semibold uppercase tracking-wider text-gray-500 w-[24%]`}>
                         Student
                       </th>
-                      <th className="border-b border-gray-200 px-2 py-2.5 text-left text-xs font-semibold uppercase tracking-wider text-gray-500 w-[14%]">
+                      <th className="border-b border-gray-200 px-2 py-2.5 text-center text-xs font-semibold uppercase tracking-wider text-gray-500 w-[14%]">
                         Academic
                       </th>
-                      {/* <th className="border-b border-gray-200 px-2 py-2.5 text-left text-xs font-semibold uppercase tracking-wider text-gray-500 w-[15%]">
+                      {/* <th className="border-b border-gray-200 px-2 py-2.5 text-center text-xs font-semibold uppercase tracking-wider text-gray-500 w-[15%]">
                         Course
                       </th> */}
-                      <th className="border-b border-gray-200 px-2 py-2.5 text-left text-xs font-semibold uppercase tracking-wider text-gray-500 w-[12%]">
+                      <th className="border-b border-gray-200 px-2 py-2.5 text-center text-xs font-semibold uppercase tracking-wider text-gray-500 w-[12%]">
                         Contact
                       </th>
-                      <th className="border-b border-gray-200 px-2 py-2.5 text-left text-xs font-semibold uppercase tracking-wider text-gray-500 w-[18%]">
+                      {!isTeam && <th className="border-b border-gray-200 px-2 py-2.5 text-center text-xs font-semibold uppercase tracking-wider text-gray-500 w-[18%]">
                         Fees
-                      </th>
+                      </th>}
                       <th className="border-b border-gray-200 px-2 py-2.5 text-center text-xs font-semibold uppercase tracking-wider text-gray-500 w-[27%]">
                         Actions
                       </th>
@@ -4423,15 +4427,14 @@ const Students = ({ setShowAdminHeader }) => {
                 }}
                 className="flex-1 overflow-auto table-scroll"
               >
-                <table className="w-full min-w-[980px] border-collapse table-fixed">
+                <table className="w-full min-w-[980px] border-collapse table-fixed text-center [&_td]:align-middle">
                   <colgroup>
-                    <col style={{ width: "5%" }} /><col style={{ width: "24%" }} /><col style={{ width: "14%" }} />
-                    <col style={{ width: "12%" }} /><col style={{ width: "18%" }} /><col style={{ width: "27%" }} />
+                    {(isTeam ? ["7%", "35%", "22%", "16%", "20%"] : ["5%", "24%", "14%", "12%", "18%", "27%"]).map((w, i) => <col key={i} style={{ width: w }} />)}
                   </colgroup>
                   <tbody className={isImporting ? "opacity-70 animate-pulse" : ""}>
                     {studentsLoadError && studentData.length === 0 ? (
                       <tr>
-                        <td colSpan={6} className="px-4 pt-16 pb-6">
+                        <td colSpan={isTeam ? 5 : 6} className="px-4 pt-16 pb-6">
                           <div className="flex flex-col items-center justify-center gap-3">
                             <p className="text-sm font-semibold text-red-600">{studentsLoadError}</p>
                             <button
@@ -4447,7 +4450,7 @@ const Students = ({ setShowAdminHeader }) => {
                     ) : (studentsLoading && studentData.length === 0) || tableRefreshing ? (
                       <>
                         <tr>
-                          <td colSpan={6} className={tableRefreshing ? "px-4 py-10" : "px-4 pt-16 pb-6"}>
+                          <td colSpan={isTeam ? 5 : 6} className={tableRefreshing ? "px-4 py-10" : "px-4 pt-16 pb-6"}>
                             <div className="flex flex-col items-center justify-center gap-4">
                               <span className="relative flex h-12 w-12 items-center justify-center">
                                 <span className="absolute inset-0 rounded-full border-[3px] border-amber-100" />
@@ -4482,7 +4485,7 @@ const Students = ({ setShowAdminHeader }) => {
                       </>
                     ) : (
                       <>
-                        {paginatedStudents.map((student) => {
+                        {paginatedStudents.map((student, rowIndex) => {
                       const studentKey = student._id || student.id;
                       const admissionYear = student.admissionDate
                         ? new Date(student.admissionDate).getFullYear()
@@ -4506,7 +4509,7 @@ const Students = ({ setShowAdminHeader }) => {
                           key={studentKey}
                           className="hover:bg-amber-50/30 transition-colors"
                         >
-                          <td
+                          {!isTeam && <td
                             className="border-b border-gray-100 px-2 py-2.5"
                             onClick={(e) => e.stopPropagation()}
                           >
@@ -4517,15 +4520,17 @@ const Students = ({ setShowAdminHeader }) => {
                               onChange={() => toggleStudentSelection(studentKey)}
                               aria-label={`Select ${student.name || "student"}`}
                             />
-                          </td>
+                          </td>}
+                          {isTeam && (
+                            <td className="border-b border-gray-100 px-2 py-2.5 text-xs font-medium text-gray-500">
+                              {(currentPage - 1) * STUDENTS_PER_PAGE + rowIndex + 1}
+                            </td>
+                          )}
                           {/* Student Info */}
                           <td
-                            className="border-b border-gray-100 px-2 py-2.5 cursor-pointer"
-                            onClick={() => {
-                              openViewModal(student);
-                            }}
+                            className={`border-b border-gray-100 py-2.5 ${isTeam ? 'pl-4 pr-2 text-left' : 'px-2'}`}
                           >
-                            <div className="flex items-center gap-2">
+                            <div className={`flex items-center gap-2 ${isTeam ? 'justify-start' : 'justify-center'}`}>
                               {isSafeImageUrl(student.profilePic) ? (
                                 <img
                                   src={student.profilePic}
@@ -4537,8 +4542,8 @@ const Students = ({ setShowAdminHeader }) => {
                                   {student.name?.charAt(0) || "?"}
                                 </div>
                               )}
-                              <div className="min-w-0 flex-1">
-                                <div className="font-medium text-gray-900 text-xs truncate hover:text-amber-600 transition flex items-center gap-1">
+                              <div className="min-w-0">
+                                <div className={`font-medium text-gray-900 text-xs truncate flex items-center gap-1 ${isTeam ? 'justify-start' : 'justify-center'}`}>
                                   {studentGaps.length > 0 && (
                                     <span
                                       title={`Action required — some data may be missing:\n• ${studentGaps.join("\n• ")}`}
@@ -4585,7 +4590,7 @@ const Students = ({ setShowAdminHeader }) => {
                           </td>
 
                           {/* Fees */}
-                          <td className="border-b border-gray-100 px-2 py-2.5">
+                          {!isTeam && <td className="border-b border-gray-100 px-2 py-2.5">
                             <div className="text-xs">
                               {(() => {
                                 const sessionFee = getStudentFeeSessionSummary(student);
@@ -4593,7 +4598,7 @@ const Students = ({ setShowAdminHeader }) => {
                                   Array.isArray(student.feeInvoices) && student.feeInvoices.length > 0;
                                 if (!hasAnyInvoice) {
                                   return (
-                                    <div className="flex flex-col gap-0.5">
+                                    <div className="flex flex-col items-center gap-0.5">
                                       <span className="inline-flex w-fit items-center gap-1 rounded-full bg-amber-100 px-2 py-0.5 text-[11px] font-semibold text-amber-700">
                                         <AlertTriangle size={11} /> Not assigned yet
                                       </span>
@@ -4624,7 +4629,7 @@ const Students = ({ setShowAdminHeader }) => {
                                         {/* {formatCurrency(paidAmount)}/{formatCurrency(totalAmount)} */}
                                       </div>
                                     </div>
-                                    <div className="flex items-center gap-1">
+                                    <div className="flex items-center justify-center gap-1">
                                      <span className="font-bold text-gray-500"> Due: </span>
                                       <span className="text-xs text-red-600 font-semibold">
                                         {formatCurrency(balanceAmount)}
@@ -4640,7 +4645,7 @@ const Students = ({ setShowAdminHeader }) => {
                                 );
                               })()}
                             </div>
-                          </td>
+                          </td>}
 
                           {/* Actions */}
                           <td
@@ -4681,6 +4686,7 @@ const Students = ({ setShowAdminHeader }) => {
                                   Portal Ready
                                 </span>
                               )}
+                              {!isTeam && <>
                               <button
                                 onClick={(e) => {
                                   e.stopPropagation();
@@ -4723,6 +4729,7 @@ const Students = ({ setShowAdminHeader }) => {
                               >
                                 <Trash2 size={14} />
                               </button>
+                              </>}
                             </div>
                           </td>
                         </tr>
@@ -4730,7 +4737,7 @@ const Students = ({ setShowAdminHeader }) => {
                     })}
                     {filteredStudents.length === 0 && !studentsLoading && (
                       <tr>
-                        <td colSpan={6} className="py-14 px-4 text-center">
+                        <td colSpan={isTeam ? 5 : 6} className="py-14 px-4 text-center">
                           {isImporting ? (
                             <div className="inline-flex items-center gap-2 text-blue-700 font-medium text-sm">
                               <Loader2 size={16} className="animate-spin" />

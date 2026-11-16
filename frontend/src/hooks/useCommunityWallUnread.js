@@ -86,7 +86,9 @@ const useCommunityWallUnread = ({ enabled = true, wallPath }) => {
   }, [enabled]);
 
   useEffect(() => {
-    if (!enabled) return undefined;
+    // Turned off (e.g. a team role without Community Wall, known only once the
+    // profile loads): drop anything fetched earlier so the bell/badge clear.
+    if (!enabled) { setCount(0); setItems([]); return undefined; }
     refresh();
     const timer = setInterval(refresh, POLL_MS);
     const onChanged = () => refresh();

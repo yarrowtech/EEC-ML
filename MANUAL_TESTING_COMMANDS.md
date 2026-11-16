@@ -554,3 +554,9 @@ npm test -- --runInBand src/components/__tests__/StudentFamilyServices.test.jsx 
 5. `npm test -- --verbose` - Detailed output
 
 **Pro Tip:** Start with watch mode (`npm run test:watch`) when developing. It gives you instant feedback as you write code!
+
+## Admin dashboard and student table
+
+- Check dashboard Quick Actions open main menu pages and respect team view permissions.
+- Check student table headers and all data are centered on desktop and mobile.
+- Clicking a student name or photo should do nothing; the separate View Details button should still open details. Verify selection and other actions still work.

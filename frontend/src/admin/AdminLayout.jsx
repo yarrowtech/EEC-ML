@@ -25,9 +25,10 @@ const AdminLayout = ({
   const [mobileOpen, setMobileOpen] = useState(false);
   const [showLogoutConfirm, setShowLogoutConfirm] = useState(false);
   const isSuperAdmin = String(adminUser?.role || '').toLowerCase() === 'super admin';
-  const baseNotificationState = useAdminNotifications({ isSuperAdmin });
+  const teamPermissions = adminUser?.permissions || null;
+  const baseNotificationState = useAdminNotifications({ isSuperAdmin, permissions: teamPermissions });
   // Unread Community Wall posts join the bell list and badge the sidebar's Community Wall item.
-  const communityUnread = useCommunityWallUnread({ enabled: !isSuperAdmin, wallPath: WALL_PATH });
+  const communityUnread = useCommunityWallUnread({ enabled: !isSuperAdmin && (!teamPermissions || Boolean(teamPermissions.communityWall)), wallPath: WALL_PATH });
   const notificationState = useMemo(() => ({
     ...baseNotificationState,
     notifications: [...communityUnread.bellItems, ...(baseNotificationState.notifications || [])].sort((a, b) => new Date(b?.createdAt || 0) - new Date(a?.createdAt || 0)),

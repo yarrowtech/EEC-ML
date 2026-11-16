@@ -168,7 +168,8 @@ const CredentialsLetter = ({ credentials: c }) => {
 };
 
 const Admissions = ({ setShowAdminHeader }) => {
-  const [tab, setTab] = useState('notifications');
+  // ?tab=applications | notifications (dashboard quick actions deep-link here).
+  const [tab, setTab] = useState(() => (new URLSearchParams(window.location.search).get('tab') === 'applications' ? 'applications' : 'notifications'));
   const [schoolId, setSchoolId] = useState('');
   const [sessions, setSessions] = useState([]);
   const [classOptions, setClassOptions] = useState([]);

@@ -155,6 +155,12 @@ export const logoutAndRedirect = ({
 // ---------------------------------------------------------------------------
 export const apiFetch = async (url, options = {}, navigate = null) => {
   const res = await fetch(url, options);
+  if (res.status === 403) {
+    // A team member (custom Roles & Access role) hitting a section their role doesn't grant gets
+    // 403 PERMISSION_DENIED — that's a missing permission, not a dead session, so don't sign out.
+    const body = await res.clone().json().catch(() => null);
+    if (body?.code === 'PERMISSION_DENIED') return res;
+  }
   if ((res.status === 401 || res.status === 403) && navigate) {
     logoutAndRedirect({ navigate, notice: AUTH_NOTICE.EXPIRED, clearAllLocalStorage: true });
     const authError = new Error('Session expired');

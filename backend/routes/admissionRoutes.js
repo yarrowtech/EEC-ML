@@ -12,6 +12,13 @@ const AcademicYear = require('../models/AcademicYear');
 const { getTenantContext } = require('../utils/tenantContext');
 const Section = require('../models/Section');
 const StudentUser = require('../models/StudentUser');
+const Notification = require('../models/Notification');
+
+// Admin-bell alert for admission events; the admission team's bell shows only "admission_*" alerts.
+const notifyAdmission = (schoolId, typeLabel, title, message, extra = {}) => Notification.create({
+  ...extra, schoolId, title, message, audience: 'Admin', targetRole: 'admin', type: 'alert', kind: 'notification',
+  typeLabel, eventType: typeLabel.toUpperCase(), category: 'general', priority: 'medium', createdByType: 'admin',
+}).catch(() => {});
 const multer = require('multer');
 const { uploadBufferToCloudinary } = require('../utils/cloudinaryUpload');
 
@@ -222,7 +229,7 @@ router.get('/admin/applications', adminAuth, async (req, res) => {
     const filter = { schoolId };
     if (req.query.sessionId && mongoose.isValidObjectId(req.query.sessionId)) filter.sessionId = req.query.sessionId;
     const [items, school] = await Promise.all([
-      AdmissionApplication.find(filter).populate('sessionId', 'title academicYear').sort({ createdAt: -1 }).lean(),
+      AdmissionApplication.find(filter).populate('sessionId', 'title academicYear').populate('studentId', 'name roll grade section academicYear').sort({ createdAt: -1 }).lean(),
       School.findById(schoolId).select('name address contactEmail contactPhone logo').lean(),
     ]);
     return res.json(items.map((a) => ({
@@ -235,6 +242,11 @@ router.get('/admin/applications', adminAuth, async (req, res) => {
       sessionTitle: a.sessionId?.title || '',
       academicYear: a.sessionId?.academicYear || '',
       sessionId: a.sessionId?._id || a.sessionId,
+      studentId: a.studentId?._id || a.studentId || null,
+      studentRoll: a.studentId?.roll ?? null,
+      studentGrade: a.studentId?.grade || '',
+      studentSection: a.studentId?.section || a.admittedSection || '',
+      studentAcademicYear: a.studentId?.academicYear || '',
     })));
   } catch (err) {
     return res.status(400).json({ error: err.message });
@@ -312,6 +324,8 @@ router.post('/admin/applications/:id/admit', adminAuth, async (req, res) => {
       { new: true }
     ).lean();
     if (!updated) return res.status(409).json({ error: 'This applicant is already admitted' });
+    notifyAdmission(schoolId, 'admission_admitted', 'New student admitted',
+      `${updated.studentName} was admitted to Class ${updated.applyingForClass}${updated.admittedSection ? `-${updated.admittedSection}` : ''}.`);
     return res.json(updated);
   } catch (err) {
     return res.status(400).json({ error: err.message });
@@ -589,6 +603,8 @@ router.post('/public/:schoolId/sessions/:sessionId/apply', async (req, res) => {
       transferCertificateDate: hasPreviousSchool === 'yes' ? str(b.transferCertificateDate, 20) : '',
       documents,
     });
+    notifyAdmission(school._id, 'admission_enquiry', 'New admission enquiry',
+      `${created.studentName} applied for Class ${created.applyingForClass} (${session.title}).`, org ? { organizationId: org._id } : {});
     return res.status(201).json({
       ...created.toObject(),
       sessionTitle: session.title,

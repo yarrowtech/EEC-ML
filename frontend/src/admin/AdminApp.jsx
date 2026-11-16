@@ -39,6 +39,7 @@ const LeftStudents = lazy(() => import('./pages/LeftStudents'));
 const ReportCardManagement = lazy(() => import('./pages/ReportCardManagement'));
 const HolidayList = lazy(() => import('./pages/HolidayList'));
 const Admissions = lazy(() => import('./pages/Admissions'));
+const AdmissionStatusList = lazy(() => import('./pages/AdmissionStatusList'));
 const CommunityWall = lazy(() => import('../components/CommunityWall'));
 const TeacherFeedbackOverview = lazy(() => import('./pages/TeacherFeedbackOverview'));
 const RolesAccess = lazy(() => import('./pages/RolesAccess'));
@@ -309,6 +310,8 @@ const AdminApp = () => {
     campusName: adminProfile?.campusName || '',
     campusType: adminProfile?.campusType || '',
     linkedTeacher: Boolean(teamAccess?.linkedTeacher),
+    teamMember: Boolean(teamAccess),
+    permissions: teamAccess?.permissions || null,
   };
 
   // Guard: team members typing a URL for a module outside their role.
@@ -352,7 +355,7 @@ const AdminApp = () => {
         {blockedForTeam ? <Navigate to="/admin/dashboard" replace /> : (
         <Routes>
           <Route index element={<Navigate to="/admin/dashboard" replace />} />
-          <Route path="dashboard" element={<Dashboard setShowAdminHeader={setShowAdminHeader} />} />
+          <Route path="dashboard" element={<Dashboard setShowAdminHeader={setShowAdminHeader} teamAccess={teamAccess} />} />
           <Route path="analytics" element={<Analytics setShowAdminHeader={setShowAdminHeader} />} />
           <Route path="activity-log" element={<ActivityLog setShowAdminHeader={setShowAdminHeader} adminUser={adminUser} />} />
 
@@ -364,13 +367,13 @@ const AdminApp = () => {
 
           <Route path="teachers" element={<Teachers setShowAdminHeader={setShowAdminHeader} />} />
           <Route path="teacher-feedback" element={<TeacherFeedbackOverview setShowAdminHeader={setShowAdminHeader} />} />
-          <Route path="students" element={<Students setShowAdminHeader={setShowAdminHeader} />} />
+          <Route path="students" element={<Students setShowAdminHeader={setShowAdminHeader} teamAccess={teamAccess} />} />
           <Route path="wellbeing" element={<Wellbeing setShowAdminHeader={setShowAdminHeader} />} />
           {/* Canonical route is /routines; /routine redirects to it */}
           <Route path="routine" element={<Navigate to="/admin/routines" replace />} />
           <Route path="routines" element={<Routines setShowAdminHeader={setShowAdminHeader} />} />
           <Route path="floor-rooms" element={<FloorRoomManagement setShowAdminHeader={setShowAdminHeader} />} />
-          <Route path="parents" element={<ParentsManagement setShowAdminHeader={setShowAdminHeader} />} />
+          <Route path="parents" element={<ParentsManagement setShowAdminHeader={setShowAdminHeader} teamAccess={teamAccess} />} />
           <Route path="academics" element={<AcademicSetup setShowAdminHeader={setShowAdminHeader} />} />
           <Route path="subjects" element={<SubjectManagement setShowAdminHeader={setShowAdminHeader} />} />
           <Route path="examination" element={<ExaminationManagement setShowAdminHeader={setShowAdminHeader} />} />
@@ -394,6 +397,7 @@ const AdminApp = () => {
           <Route path="notices/view/:noticeId" element={<NoticeDetail setShowAdminHeader={setShowAdminHeader} />} />
           <Route path="holidays" element={<HolidayList setShowAdminHeader={setShowAdminHeader} />} />
           <Route path="admissions" element={<Admissions setShowAdminHeader={setShowAdminHeader} />} />
+          <Route path="admissions/list" element={<AdmissionStatusList setShowAdminHeader={setShowAdminHeader} />} />
           <Route path="roles-access" element={teamAccess || isSuperAdmin ? <Navigate to="/admin/dashboard" replace /> : <RolesAccess setShowAdminHeader={setShowAdminHeader} />} />
           <Route path="community-wall" element={<CommunityWall role="admin" />} />
           <Route path="settings" element={<AdminSettings setShowAdminHeader={setShowAdminHeader} onSettingsUpdated={handleSettingsUpdated} />} />

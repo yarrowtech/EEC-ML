@@ -305,13 +305,15 @@ const AdminHeader = ({ adminUser, onOpenMobileSidebar, onLogoutRequest, notifica
         )}
       </div>
       <div className="py-1.5">
-        <button
-          className="w-full px-4 py-2.5 text-left text-sm text-slate-700 hover:bg-white/60 rounded-xl flex items-center gap-2.5 transition-colors"
-          onClick={() => { setShowProfileMenu(false); navigate('/admin/settings'); }}
-        >
-          <Settings size={15} className="text-slate-400" />
-          Settings
-        </button>
+        {!adminUser?.teamMember && (
+          <button
+            className="w-full px-4 py-2.5 text-left text-sm text-slate-700 hover:bg-white/60 rounded-xl flex items-center gap-2.5 transition-colors"
+            onClick={() => { setShowProfileMenu(false); navigate('/admin/settings'); }}
+          >
+            <Settings size={15} className="text-slate-400" />
+            Settings
+          </button>
+        )}
         {adminUser?.linkedTeacher && (
           <button
             className="w-full px-4 py-2.5 text-left text-sm font-medium text-emerald-700 hover:bg-emerald-50/70 rounded-xl flex items-center gap-2.5 transition-colors disabled:opacity-60"

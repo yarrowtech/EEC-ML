@@ -12,6 +12,17 @@ import {
 } from 'lucide-react';
 
 /* ── Type → avatar look ─────────────────────────────────────────────────── */
+// Bell preview: drop per-student lists ("Name (ID: …) — Class 6-B — 50% …") from summary alerts
+// such as Low Attendance / Substitute Class, keeping only the headline ("31 student(s) fell below 75% attendance.").
+export const summarizeNotificationMessage = (message) => {
+  const text = String(message || "").replace(/\s+/g, " ").trim();
+  const idAt = text.indexOf("(ID:");
+  if (idAt === -1) return text;
+  const cut = text.lastIndexOf(":", idAt - 1);
+  const head = (cut > 0 ? text.slice(0, cut) : text.slice(0, idAt)).trim().replace(/[\s,;:—-]+$/, "");
+  return head ? `${head}.` : text;
+};
+
 const TYPE_STYLES = [
   { match: /(leave|excuse).*(approv|accept)|approv/i, icon: FileCheck2, bg: 'bg-emerald-100', fg: 'text-emerald-600', badge: Check, badgeBg: 'bg-emerald-500' },
   { match: /excuse|leave/i, icon: FileText, bg: 'bg-blue-100', fg: 'text-blue-600', badge: FileText, badgeBg: 'bg-blue-600' },
@@ -111,8 +122,8 @@ const NotificationRow = ({ notification, formatTime, onOpen }) => {
             {notification?.title || 'Notification'}
           </span>
           {notification?.message && (
-            <span className="mt-0.5 line-clamp-2 block text-xs leading-snug text-slate-500">
-              {notification.message}
+            <span className="mt-0.5 line-clamp-2 break-words text-xs leading-snug text-slate-500" title={summarizeNotificationMessage(notification.message)}>
+              {summarizeNotificationMessage(notification.message)}
             </span>
           )}
           {time && <span className="mt-0.5 block text-[11px] text-slate-400">{time}</span>}
