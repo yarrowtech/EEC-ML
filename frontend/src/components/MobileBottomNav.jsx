@@ -62,7 +62,7 @@ const navItems = [
   { id: 'learn',     label: 'Learn',    icon: GraduationCap, subMenu: 'learn' },
   { id: 'school',    label: 'School',   icon: BookOpen,      subMenu: 'school' },
   { id: 'chat',      label: 'Messages', icon: MessageCircle, path: '/student/chat' },
-  { id: 'profile',   label: 'Profile',  icon: CircleUserRound, path: '/student/profile', avatar: true },
+  { id: 'profile',   label: 'Profile',  icon: CircleUserRound, path: '/student/profile', avatar: true, action: 'profile-menu' },
 ];
 
 // Every view served by the Learning hub — legacy ids keep deep links alive.
@@ -84,6 +84,7 @@ const isViewInSubMenu = (menuKey, activeView) => {
 const MobileBottomNav = ({ activeView, onSaveJournal }) => {
   const navigate = useNavigate();
   const [openMenu, setOpenMenu] = useState(null);
+  const [showProfileMenu, setShowProfileMenu] = useState(false);
   const [showLogoutConfirm, setShowLogoutConfirm] = useState(false);
   // Shared with Sidebar via StudentDashboardContext — see its comment for why
   // this used to be a second independent poller.
@@ -94,6 +95,12 @@ const MobileBottomNav = ({ activeView, onSaveJournal }) => {
 
 
   const handleTabPress = (item) => {
+    if (item.action === 'profile-menu') {
+      setOpenMenu(null);
+      setShowProfileMenu((prev) => !prev);
+      return;
+    }
+    setShowProfileMenu(false);
     if (item.subMenu) {
       setOpenMenu((prev) => (prev === item.subMenu ? null : item.subMenu));
     } else {
@@ -198,6 +205,23 @@ const MobileBottomNav = ({ activeView, onSaveJournal }) => {
         </>
       )}
 
+      {/* ── Profile pop-up (Profile / Logout), like the teacher portal ── */}
+      {showProfileMenu && (
+        <>
+          <div className="fixed inset-0 z-40 lg:hidden" onClick={() => setShowProfileMenu(false)} />
+          <div role="menu" className="animate-slide-up-panel fixed bottom-[calc(4.5rem+env(safe-area-inset-bottom))] right-2 z-50 w-52 overflow-hidden rounded-2xl border border-gray-100 bg-white p-1.5 shadow-2xl sm:right-4 lg:hidden">
+            <button type="button" role="menuitem" onClick={() => { setShowProfileMenu(false); navigate('/student/profile'); }} className="flex w-full items-center gap-3 rounded-xl px-3 py-2.5 text-left text-sm font-semibold text-gray-700 hover:bg-amber-50 active:scale-[.98]">
+              <span className="flex h-8 w-8 items-center justify-center rounded-full bg-amber-100 text-amber-600"><CircleUserRound size={17} /></span>
+              Profile
+            </button>
+            <button type="button" role="menuitem" onClick={() => { setShowProfileMenu(false); setShowLogoutConfirm(true); }} className="flex w-full items-center gap-3 rounded-xl px-3 py-2.5 text-left text-sm font-semibold text-red-500 hover:bg-red-50 active:scale-[.98]">
+              <span className="flex h-8 w-8 items-center justify-center rounded-full bg-red-50 text-red-500"><LogOut size={16} /></span>
+              Logout
+            </button>
+          </div>
+        </>
+      )}
+
       {/* ── Bottom nav bar ───────────────────────────────────────────────── */}
       <nav
         className="fixed bottom-0 left-0 right-0 z-50 lg:hidden bg-white border-t border-gray-100 shadow-[0_-4px_20px_rgba(0,0,0,0.07)]"
@@ -243,6 +267,8 @@ const MobileBottomNav = ({ activeView, onSaveJournal }) => {
                 ? openMenu === item.subMenu || isViewInSubMenu(item.subMenu, activeView)
                 : item.id === 'dashboard'
                 ? activeView === 'dashboard' || activeView === 'home'
+                : item.action === 'profile-menu'
+                ? showProfileMenu || activeView === item.id
                 : activeView === item.id;
 
               return (

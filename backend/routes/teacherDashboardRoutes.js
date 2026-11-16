@@ -521,12 +521,15 @@ router.get('/', authTeacher, teacherDashboardCache.cache, async (req, res) => {
       : Promise.resolve([]);
     const coverAdminP = Admin.findOne({ schoolId, role: 'admin', coverImage: { $nin: [null, ''] } })
       .select('coverImage').lean().exec();
+    const activeYearP = schoolId
+      ? AcademicYear.findOne({ schoolId, isActive: true }).select('name').lean().exec()
+      : Promise.resolve(null);
     // Pre-started queries are awaited later; mark them handled so a failure
     // surfaces at its await (caught below) rather than as an unhandled rejection.
-    [recentP, timetablesP, completedTasksP, coverAdminP].forEach((p) => p.catch(() => {}));
+    [recentP, timetablesP, completedTasksP, coverAdminP, activeYearP].forEach((p) => p.catch(() => {}));
 
     const [teacher, scope, students] = await Promise.all([
-      teacherId ? TeacherUser.findById(teacherId).select('name campusName campusType').lean() : null,
+      teacherId ? TeacherUser.findById(teacherId).select('name campusName campusType username empId department designation profilePic').lean() : null,
       buildTeacherScope({ schoolId, campusId, teacherId }),
       // Only recent attendance is used (today + last few marked days).
       StudentUser.find(studentFilter)
@@ -902,6 +905,12 @@ router.get('/', authTeacher, teacherDashboardCache.cache, async (req, res) => {
         name: teacher?.name || 'Teacher',
         campusName: teacher?.campusName || null,
         campusType: teacher?.campusType || null,
+        username: teacher?.username || '',
+        empId: teacher?.empId ?? null,
+        department: teacher?.department || '',
+        designation: teacher?.designation || '',
+        profilePic: teacher?.profilePic || '',
+        academicYear: (await activeYearP.catch(() => null))?.name || '',
       },
       stats: {
         totalStudents: scopedStudents.length,

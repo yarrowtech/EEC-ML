@@ -185,15 +185,15 @@ const Sidebar = ({ activeView, isOpen, setIsOpen }) => {
       {/* ── Mobile backdrop ── */}
       {isOpen && (
         <div
-          className="fixed inset-0 bg-black/40 backdrop-blur-sm z-40 lg:hidden"
+          className="fixed inset-0 bg-black/40 backdrop-blur-sm z-[55] lg:hidden"
           onClick={() => setIsOpen(false)}
         />
       )}
 
       {/* ── Sidebar shell — a soft white card on desktop, a flush drawer on mobile ── */}
       <div
-        className={`sidebar fixed z-50 flex h-screen flex-col overflow-hidden border-r border-slate-100 bg-white shadow-2xl select-none transition-all duration-300 ease-in-out
-          lg:relative lg:my-3 lg:ml-3 lg:h-[calc(100vh-1.5rem)] lg:rounded-2xl lg:border lg:shadow-[0_20px_40px_-12px_rgba(0,0,0,0.06),0_8px_24px_-6px_rgba(0,0,0,0.02)]
+        className={`sidebar fixed inset-y-0 left-0 z-[60] flex h-dvh flex-col overflow-hidden border-r border-slate-100 bg-white shadow-2xl select-none transition-all duration-300 ease-in-out
+          lg:relative lg:inset-auto lg:z-50 lg:my-3 lg:ml-3 lg:h-[calc(100vh-1.5rem)] lg:rounded-2xl lg:border lg:shadow-[0_20px_40px_-12px_rgba(0,0,0,0.06),0_8px_24px_-6px_rgba(0,0,0,0.02)]
           ${isOpen ? 'w-64' : 'w-16'}
           ${isOpen ? 'translate-x-0' : '-translate-x-full lg:translate-x-0'}
         `}
@@ -420,7 +420,7 @@ const Sidebar = ({ activeView, isOpen, setIsOpen }) => {
         </nav>
 
         {/* ════════════════════════════════ FOOTER ════════════════════════════════ */}
-        <div className={`shrink-0 border-t border-slate-200 mb-16 lg:mb-0 ${collapsed ? 'px-2 py-3' : 'px-3 py-3'}`}>
+        <div className={`shrink-0 border-t border-slate-200 pb-[env(safe-area-inset-bottom)] ${collapsed ? 'px-2 py-3' : 'px-3 py-3'}`}>
 
           {/* Logout */}
           <div

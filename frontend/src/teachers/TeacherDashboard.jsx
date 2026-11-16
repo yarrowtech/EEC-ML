@@ -359,197 +359,86 @@ const TeacherDashboard = () => {
     : 'No class assigned';
 
   return (
-    <div className="min-h-0 bg-[#f1f5f9] text-[#0f172a]">
-      <div className="mx-auto w-full max-w-md space-y-4 px-4 pt-1 pb-4 sm:max-w-xl md:max-w-none md:px-8 lg:hidden">
-        {dashboardError && (
-          <div className={cx('flex items-center gap-2 rounded-2xl border-rose-200/70 bg-rose-50/80 px-4 py-3 text-xs font-medium text-rose-700 backdrop-blur-sm')}>
-            <AlertCircle size={16} /> {dashboardError}
-          </div>
-        )}
-
-        {/* Top app bar */}
-        <header className="flex items-center justify-between gap-3 px-1 py-1">
-          <div className="flex min-w-0 items-center gap-3">
-            <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-2xl bg-gradient-to-tr from-violet-600 via-indigo-600 to-sky-400 p-[2px] shadow-sm shadow-violet-200">
-              <div className="flex h-full w-full items-center justify-center overflow-hidden rounded-[14px] bg-white text-[#8b5cf6]">
-                <BookOpen size={19} />
-              </div>
-            </div>
-            <div className="min-w-0">
-              <div className="flex items-center gap-1.5">
-                <h1 className="truncate text-sm font-bold tracking-tight text-[#0f172a]">{teacherName}</h1>
-                <span className="shrink-0 rounded-md bg-violet-100 px-1.5 py-0.5 text-[10px] font-semibold text-[#7c3aed]">Portal</span>
-              </div>
-              <p className="truncate text-xs font-medium text-[#64748b]">{mobileClassLabel}</p>
-            </div>
-          </div>
-          <div className="flex shrink-0 items-center gap-2.5">
-            <Link to="/teacher/notifications" aria-label="Notifications" className="relative flex h-9 w-9 items-center justify-center rounded-full border border-slate-200/80 bg-white text-[#64748b] shadow-sm transition active:scale-95">
-              <Bell size={16} />
-              <span className="absolute right-2 top-2 h-2 w-2 rounded-full bg-rose-500 ring-2 ring-white" />
-            </Link>
-            <Link to="/teacher/settings" aria-label="Open profile" className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-gradient-to-tr from-[#7c3aed] to-indigo-500 p-[2px] shadow-sm transition active:scale-95">
-              <span className="flex h-full w-full items-center justify-center rounded-full bg-white text-xs font-bold text-[#7c3aed]">
-                {teacherName.split(/\s+/).slice(0, 2).map((part) => part[0]).join('').toUpperCase() || 'T'}
-              </span>
-            </Link>
-          </div>
-        </header>
-
-        {/* Hero card */}
-        <section className={cx('relative overflow-hidden rounded-3xl p-5', GLASS_PANEL_SOLID)}>
-          <div className="pointer-events-none absolute inset-0 bg-[radial-gradient(circle_at_top_right,rgba(139,92,246,0.14),transparent_55%),radial-gradient(circle_at_bottom_left,rgba(16,185,129,0.1),transparent_50%)]" />
-          <div className="relative z-10">
-            <div className="mb-3 flex flex-wrap items-center gap-2">
-              <span className="inline-flex items-center gap-1.5 rounded-full border border-white/70 bg-white/70 px-2.5 py-1 text-[10px] font-bold text-[#8b5cf6] shadow-sm">
-                <span className="h-1.5 w-1.5 rounded-full bg-emerald-400 animate-pulse" />
-                Live workspace
-              </span>
-              <span className="rounded-full border border-white/70 bg-white/70 px-2.5 py-1 text-[10px] font-medium text-[#64748b] shadow-sm">
-                {currentDateTime.toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' })} • {currentDateTime.toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit' })}
-              </span>
-            </div>
-            <h2 className="text-2xl font-black leading-snug tracking-tight text-[#0f172a]">
-              {getGreeting()}, {teacherName.split(' ')[0]}.
-            </h2>
-            <p className="mt-1 mb-4 text-xs leading-relaxed text-[#64748b]">
-              {dashboardLoading
-                ? 'Loading today\'s timetable and workload context…'
-                : `You have ${todaysClasses.length} ${todaysClasses.length === 1 ? 'class' : 'classes'} today and ${pendingTasks} tasks waiting.`}
-            </p>
-            <div className="flex items-center gap-2.5">
-              <Link to="/teacher/classes" className="inline-flex flex-1 items-center justify-center gap-1.5 rounded-xl bg-[#8b5cf6] px-4 py-2.5 text-xs font-semibold text-white shadow-sm shadow-violet-300/50 transition active:scale-[.98]">
-                Open classes <ArrowUpRight size={14} />
-              </Link>
-              <Link to="/teacher/lesson-plan" className="inline-flex items-center justify-center gap-1.5 rounded-xl border border-white/70 bg-white/80 px-4 py-2.5 text-xs font-semibold text-[#0f172a] shadow-sm backdrop-blur-sm transition active:scale-[.98]">
-                Ask AI <Sparkles size={14} className="text-[#8b5cf6]" />
-              </Link>
-            </div>
-          </div>
-        </section>
-
-        {/* Quick status overview */}
-        <section className="space-y-2.5">
-          <div className="flex items-center justify-between px-1">
-            <span className="text-xs font-bold uppercase tracking-wider text-[#94a3b8]">Class &amp; Schedule Status</span>
-          </div>
-          <div className="grid grid-cols-1 gap-2.5 md:grid-cols-3">
-            {[
-              { icon: Users, label: 'Class Teacher', value: classTeacherLabel, to: '/teacher/classes', tone: 'bg-slate-100 text-slate-500' },
-              {
-                icon: Clock,
-                label: 'Next Class',
-                value: dashboardLoading
-                  ? 'Loading from timetable…'
-                  : nextClass ? `${nextClass.subject || nextClass.class || 'Details unavailable'} • ${nextClass.time}` : 'No more classes today',
-                to: '/teacher/classes',
-                tone: 'bg-violet-50 text-[#8b5cf6]',
-              },
-              {
-                icon: CheckCircle2,
-                label: 'Workload',
-                value: pendingTasks > 0 ? `${pendingTasks} actions need review` : 'Clear for focused teaching',
-                to: '/teacher/classes/current/assignments',
-                tone: 'bg-emerald-50 text-emerald-600',
-              },
-            ].map((item) => {
-              const Icon = item.icon;
-              return (
-                <Link key={item.label} to={item.to} className={cx('flex items-center justify-between gap-3 rounded-2xl p-3.5 transition active:scale-[.99]', GLASS_PANEL)}>
-                  <div className="flex min-w-0 items-center gap-3">
-                    <div className={cx('flex h-9 w-9 shrink-0 items-center justify-center rounded-xl', item.tone)}><Icon size={17} /></div>
-                    <div className="min-w-0">
-                      <p className="text-[10px] font-bold uppercase tracking-wide text-[#94a3b8]">{item.label}</p>
-                      <p className="truncate text-xs font-semibold text-[#0f172a]">{item.value}</p>
-                    </div>
-                  </div>
-                  <ChevronRight size={16} className="shrink-0 text-slate-300" />
-                </Link>
-              );
-            })}
-          </div>
-        </section>
-
-        {/* Quick pill shortcuts */}
-        <section className="space-y-2 pt-1">
-          <span className="px-1 text-xs font-bold uppercase tracking-wider text-[#94a3b8]">Quick Shortcuts</span>
-          <div className="flex items-center gap-2 overflow-x-auto no-scrollbar py-1">
-            {[
-              { label: 'Lesson Plan', icon: Calendar, to: '/teacher/lesson-plan' },
-              { label: 'PTM', icon: Users, to: '/teacher/ptm' },
-              { label: 'Student Chat', icon: MessageSquare, to: '/teacher/classes/current/communication/chat' },
-              { label: 'Excuse Letters', icon: FileText, to: '/teacher/classes/current/communication/excuse-letters' },
-              { label: 'Community Wall', icon: BookOpen, to: '/teacher/community-wall' },
-            ].map((item) => {
-              const Icon = item.icon;
-              return (
-                <Link key={item.label} to={item.to} className="inline-flex shrink-0 items-center gap-1.5 rounded-xl border border-slate-200/70 bg-white px-3 py-2 text-xs font-medium text-[#0f172a] shadow-sm transition active:bg-slate-50">
-                  <Icon size={14} className="text-[#8b5cf6]" /> {item.label}
-                </Link>
-              );
-            })}
-          </div>
-        </section>
-
-        {/* Workflow actions */}
-        <section className={cx('rounded-3xl p-4', GLASS_PANEL)}>
-          <div className="flex items-start justify-between gap-3 border-b border-white/60 pb-3">
-            <div className="flex items-center gap-2.5">
-              <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-xl border border-white/70 bg-violet-50/80 text-[#8b5cf6]"><Zap size={16} /></div>
-              <div>
-                <h3 className="text-sm font-bold text-[#0f172a]">Workflow Actions</h3>
-                <p className="text-[11px] text-[#64748b]">Grouped by how teachers actually move through the day.</p>
-              </div>
-            </div>
-            <Link to="/teacher/classes" className="shrink-0 text-xs font-semibold text-[#8b5cf6]">View modules</Link>
-          </div>
-          <div className="md:grid md:grid-cols-2 md:gap-x-6">
-            {[
-              {
-                title: 'Core Actions', items: [
-                  { title: 'Open Classes', description: 'Jump into roster and class context.', icon: Users, path: '/teacher/classes' },
-                  { title: 'Attendance', description: 'Mark today and review exceptions.', icon: ClipboardCheck, path: '/teacher/classes/current/students/attendance' },
-                ]
-              },
-              {
-                title: 'Support', items: [
-                  { title: 'Teaching', description: 'Lesson materials and notes.', icon: BookOpen, path: '/teacher/classes/current/teaching' },
-                  { title: 'AI Center', description: 'Get class insights and teaching support.', icon: Sparkles, path: '/teacher/lesson-plan' },
-                ]
-              },
-            ].map((group) => (
-              <div key={group.title} className="mt-4">
-                <p className="mb-2.5 text-[10px] font-bold uppercase tracking-wider text-[#94a3b8]">{group.title}</p>
-                <div className="grid grid-cols-1 gap-2.5 sm:grid-cols-2 md:grid-cols-1">
-                  {group.items.map((item) => {
-                    const Icon = item.icon;
-                    return (
-                      <Link key={item.title} to={item.path} className="flex items-start gap-3 rounded-2xl border border-white/60 bg-white/50 p-3 transition active:scale-[.99] hover:bg-white/80">
-                        <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg border border-white/70 bg-white text-[#64748b] shadow-sm"><Icon size={16} /></div>
-                        <div className="min-w-0">
-                          <h4 className="text-xs font-bold text-[#0f172a]">{item.title}</h4>
-                          <p className="mt-0.5 text-[11px] leading-snug text-[#64748b]">{item.description}</p>
-                        </div>
-                      </Link>
-                    );
-                  })}
-                </div>
-              </div>
-            ))}
-          </div>
-        </section>
-      </div>
-
-      <div className="hidden lg:block">
-        <MotionDiv variants={pageVariants} initial="hidden" animate="show" className="mx-auto max-w-[1240px] space-y-4 px-5 pb-6 pt-1">
+    <div className="min-h-0 bg-gray- text-[#0f172a]">
+      <div>
+        <MotionDiv variants={pageVariants} initial="hidden" animate="show" className="mx-auto max-w-[1240px] space-y-3 px-3 pb-4 pt-3 sm:px-4 lg:space-y-4 lg:px-5 lg:pb-6 lg:pt-1">
           {dashboardError && (
             <div className="flex items-center gap-3 rounded-xl border border-rose-200 bg-rose-50 px-4 py-2.5 text-sm text-rose-700">
               <AlertCircle size={16} /> {dashboardError}
             </div>
           )}
 
-          {/* ── Greeting banner ── */}
-          <MotionSection variants={itemVariants} className="relative overflow-hidden rounded-2xl border border-white bg-gradient-to-r from-[#eaf1fd] via-[#eef4fd] to-[#dfeafb] px-7 py-5 shadow-[0_4px_18px_rgba(30,64,175,0.06)]">
+          {/* Mobile/tablet: student-style profile card */}
+          <div className="lg:hidden">
+            {/* Profile card — student-portal style, school cover photo behind */}
+            {(() => {
+              const t = dashboardData?.teacher || {};
+              const cover = coverImageOf(dashboardData);
+              const initials = teacherName.split(/\s+/).filter(Boolean).slice(0, 2).map((p) => p[0]).join('').toUpperCase() || 'T';
+              const loginId = t.username || (t.empId != null ? String(t.empId) : '');
+              const tags = [
+                t.department ? `${t.department} Department` : null,
+                t.designation || null,
+              ].filter(Boolean);
+              return (
+                <MotionSection
+                  initial={reduceMotion ? false : { opacity: 0, y: 16 }}
+                  animate={{ opacity: 1, y: 0 }}
+                  transition={{ duration: 0.4, ease: [0.16, 1, 0.3, 1] }}
+                  className={cx('relative overflow-hidden rounded-2xl shadow-[0px_4px_20px_rgba(0,0,0,0.03),0px_1px_3px_rgba(0,0,0,0.05)]', cover ? 'bg-black' : 'bg-white')}
+                >
+                  {cover && (
+                    <div aria-hidden="true" className="pointer-events-none absolute inset-0 bg-cover bg-center" style={{ backgroundImage: `url(${cover})` }}>
+                      <div className="absolute inset-0 bg-gradient-to-t from-black/85 via-black/40 to-transparent" />
+                    </div>
+                  )}
+                  <div className={cx('relative z-10 flex flex-col items-center gap-3 p-6 text-center', cover && 'm-3 rounded-2xl bg-black/60 p-5 backdrop-blur-[2px]')}>
+                    <div className="relative w-fit">
+                      {t.profilePic ? (
+                        <img src={t.profilePic} alt="" className="h-20 w-20 rounded-full border-[3px] border-gray-100 object-cover" onError={(e) => { e.currentTarget.style.display = 'none'; }} />
+                      ) : (
+                        <div className="flex h-20 w-20 items-center justify-center rounded-full border-2 border-gray-100 bg-[#eef2ff]">
+                          <span className="select-none text-2xl font-bold text-[#4f46e5]">{initials}</span>
+                        </div>
+                      )}
+                      <span className="absolute bottom-1 right-1 h-3.5 w-3.5 rounded-full border-2 border-white bg-emerald-400" />
+                    </div>
+                    <div>
+                      <h1 className={cx('text-2xl font-bold leading-tight tracking-tight', cover ? 'text-white' : 'text-[#0f172a]')}>{teacherName}</h1>
+                      {loginId && <p className={cx('mt-0.5 text-xs', cover ? 'text-white/70' : 'text-[#9ca3af]')}>ID: {loginId}</p>}
+                      {t.academicYear && <p className={cx('mt-0.5 text-xs font-medium', cover ? 'text-white/80' : 'text-[#64748b]')}>Academic Year {t.academicYear}</p>}
+                    </div>
+                    <span className={cx('inline-flex max-w-full items-center gap-1.5 rounded-full px-3 py-1 text-xs font-semibold', cover ? 'bg-white/15 text-white' : 'bg-indigo-50 text-[#4338ca]')}>
+                      <Users size={13} className="shrink-0" />
+                      <span className="truncate">
+                        {classTeacherAllocations.length
+                          ? `Class Teacher of ${classTeacherAllocations.map((item) => {
+                            const cls = item?.classId?.name || item?.className || 'Class';
+                            const sec = item?.sectionId?.name || item?.sectionName || '';
+                            return `Class ${String(cls).replace(/^class\s*/i, '')}${sec ? ` - ${sec}` : ''}`;
+                          }).join(', ')}`
+                          : 'Not a class teacher'}
+                      </span>
+                    </span>
+                    {tags.length > 0 && (
+                      <div className="flex flex-wrap items-center justify-center gap-x-3 gap-y-1.5 pt-1">
+                        {tags.map((tag, index) => (
+                          <span key={tag} className={cx('inline-flex items-center gap-1.5 text-xs font-medium', cover ? 'text-white/90' : 'text-[#4338ca]')}>
+                            {index > 0 && <span className={cx('h-1.5 w-1.5 shrink-0 rounded-full', cover ? 'bg-white/80' : 'bg-[#6366f1]')} />}
+                            {tag}
+                          </span>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+                </MotionSection>
+              );
+            })()}
+    
+              </div>
+
+          {/* ── Greeting banner (desktop) ── */}
+          <MotionSection variants={itemVariants} className="relative hidden overflow-hidden lg:block rounded-2xl border border-white bg-gradient-to-r from-[#eaf1fd] via-[#eef4fd] to-[#dfeafb] px-7 py-5 shadow-[0_4px_18px_rgba(30,64,175,0.06)]">
             {coverImageOf(dashboardData) ? (
               // Same treatment as the parent/admin banners: photo fully clear on
               // the right, blending only on its left edge into the banner.
@@ -572,49 +461,83 @@ const TeacherDashboard = () => {
           </MotionSection>
 
           {/* ── Stat cards ── */}
-          <MotionSection variants={itemVariants} className="grid grid-cols-2 gap-4 xl:grid-cols-4">
-            {statCards.map((card) => (
-              <Link key={card.label} to={card.to} className="flex items-center gap-4 rounded-2xl border border-slate-100 bg-white p-4 shadow-sm transition hover:-translate-y-0.5 hover:shadow-md">
-                <div className={cx('flex h-14 w-14 shrink-0 items-center justify-center rounded-full', card.iconBg)}>
-                  {React.createElement(card.icon, { size: 26, className: card.iconColor })}
-                </div>
-                <div className="min-w-0">
-                  <p className="text-sm font-medium text-slate-700">{card.label}</p>
-                  <p className="text-[26px] font-bold leading-tight text-slate-900">{dashboardLoading ? '—' : card.value}</p>
-                  <p className="truncate text-[11px] text-slate-500">{card.helper}</p>
-                </div>
-              </Link>
-            ))}
+          <MotionSection variants={itemVariants} className="grid grid-cols-2 gap-3 md:grid-cols-4 lg:grid-cols-2 lg:gap-4 xl:grid-cols-4">
+            {statCards.map((card, i) => {
+              const theme = [
+                { card: 'from-blue-50 via-white to-white border-blue-100', icon: 'from-blue-500 to-indigo-600 shadow-blue-500/30', blob: 'bg-blue-400/15', text: 'text-blue-600', bar: 'from-blue-500 to-indigo-500' },
+                { card: 'from-emerald-50 via-white to-white border-emerald-100', icon: 'from-emerald-500 to-teal-600 shadow-emerald-500/30', blob: 'bg-emerald-400/15', text: 'text-emerald-600', bar: 'from-emerald-500 to-teal-500' },
+                { card: 'from-rose-50 via-white to-white border-rose-100', icon: 'from-rose-500 to-pink-600 shadow-rose-500/30', blob: 'bg-rose-400/15', text: 'text-rose-600', bar: 'from-rose-500 to-pink-500' },
+                { card: 'from-amber-50 via-white to-white border-amber-100', icon: 'from-amber-500 to-orange-600 shadow-orange-500/30', blob: 'bg-amber-400/20', text: 'text-orange-600', bar: 'from-amber-500 to-orange-500' },
+              ][i % 4];
+              return (
+                <Link key={card.label} to={card.to} className={cx('group relative flex flex-col overflow-hidden rounded-2xl border bg-gradient-to-br p-3.5 shadow-sm transition-all duration-300 hover:-translate-y-1 hover:shadow-lg active:scale-[.98] lg:p-4', theme.card)}>
+                  <span aria-hidden="true" className={cx('pointer-events-none absolute -right-6 -top-6 h-24 w-24 rounded-full transition-transform duration-500 group-hover:scale-125', theme.blob)} />
+                  <span aria-hidden="true" className={cx('pointer-events-none absolute -bottom-8 right-8 h-16 w-16 rounded-full', theme.blob)} />
+                  <div className="relative flex items-start justify-between gap-2">
+                    <div className={cx('flex h-11 w-11 shrink-0 items-center justify-center rounded-xl bg-gradient-to-br text-white shadow-lg transition-transform duration-300 group-hover:rotate-6 group-hover:scale-105 lg:h-12 lg:w-12', theme.icon)}>
+                      {React.createElement(card.icon, { size: 22, strokeWidth: 2.2 })}
+                    </div>
+                    <ArrowUpRight size={16} className={cx('shrink-0 opacity-50 transition-all duration-300 group-hover:-translate-y-0.5 group-hover:translate-x-0.5 group-hover:opacity-100', theme.text)} />
+                  </div>
+                  <p className="relative mt-3 text-[26px] font-extrabold leading-none tracking-tight text-slate-900 lg:text-[30px]">{dashboardLoading ? '—' : card.value}</p>
+                  <p className="relative mt-1.5 truncate text-[13px] font-semibold text-slate-700">{card.label}</p>
+                  <p className={cx('relative truncate text-[11px] font-medium', theme.text)}>{card.helper.replace(/\s*→$/, '')}</p>
+                </Link>
+              );
+            })}
           </MotionSection>
 
           {/* ── Classes / Attendance / Quick actions ── */}
-          <MotionSection variants={itemVariants} className="grid gap-4 xl:grid-cols-[1.6fr_1fr_0.95fr]">
-            <Panel icon={Calendar} iconColor="text-blue-600" title="Today's Classes" link={{ to: '/teacher/timetable', label: 'View Full Schedule' }}>
+          <MotionSection variants={itemVariants} className="grid gap-3 md:grid-cols-2 lg:gap-4 xl:grid-cols-[1.6fr_1fr_0.95fr]">
+            <Panel icon={Calendar} iconColor="text-blue-600" title="Today's Classes" className="md:col-span-2 xl:col-span-1" link={{ to: '/teacher/timetable', label: 'View Full Schedule' }}>
               {todaysClasses.length === 0 ? (
                 <p className="py-10 text-center text-sm text-slate-400">{dashboardLoading ? 'Loading timetable…' : 'No classes scheduled today.'}</p>
               ) : (
-                <div className="overflow-hidden rounded-xl border border-slate-100">
+                <>
+                <div className="space-y-2 sm:hidden">
+                  {todaysClasses.slice(0, 6).map((c, i) => {
+                    const st = c.status === 'In progress' ? 'Ongoing' : c.status;
+                    return (
+                      <div key={c.id || i} className="flex items-center gap-3 rounded-xl border border-slate-100 p-3">
+                        <div className="w-16 shrink-0 text-center">
+                          <p className="text-[13px] font-bold text-slate-900">{formatClock(c.startTime) || c.time}</p>
+                          <span className={cx('mt-1 inline-block rounded-full px-1.5 py-0.5 text-[10px] font-medium', st === 'Completed' ? 'bg-green-600 text-white' : st === 'Ongoing' ? 'bg-blue-50 text-blue-600' : 'bg-slate-100 text-slate-500')}>{st}</span>
+                        </div>
+                        <div className="min-w-0 flex-1 border-l border-slate-100 pl-3">
+                          <p className="truncate text-sm font-semibold text-slate-900">{c.subject || '—'}</p>
+                          <p className="truncate text-xs text-slate-500">Class {c.class || '—'}{c.room ? ` • Room ${c.room}` : ''}</p>
+                        </div>
+                        {st === 'Ongoing' ? (
+                          <Link to={classWorkspacePath(c, 'students/attendance')} className="shrink-0 rounded-lg bg-blue-600 px-2.5 py-1.5 text-xs font-medium text-white">Attendance</Link>
+                        ) : (
+                          <Link to={classWorkspacePath(c, 'teaching')} className="shrink-0 rounded-full border border-slate-200 px-3 py-1.5 text-xs font-semibold text-white bg-blue-500">View</Link>
+                        )}
+                      </div>
+                    );
+                  })}
+                </div>
+                <div className="hidden overflow-x-auto rounded-xl lg:overflow-hidden border border-slate-100 sm:block">
                   <table className="w-full text-left text-[13px]">
                     <thead className="bg-slate-50 text-slate-600">
-                      <tr>{['Time', 'Class', 'Subject', 'Room', 'Status', 'Action'].map((h) => <th key={h} className="px-3 py-2.5 font-medium">{h}</th>)}</tr>
+                      <tr>{['Time', 'Class', 'Subject', 'Room', 'Status', 'Action'].map((h) => <th key={h} className="px-2.5 py-2.5 xl:px-2 font-medium">{h}</th>)}</tr>
                     </thead>
                     <tbody className="divide-y divide-slate-100">
                       {todaysClasses.slice(0, 6).map((c, i) => {
                         const st = c.status === 'In progress' ? 'Ongoing' : c.status;
                         return (
                           <tr key={c.id || i} className="text-slate-800">
-                            <td className="whitespace-nowrap px-3 py-2.5">{formatClock(c.startTime) || c.time}</td>
-                            <td className="px-3 py-2.5">{c.class || '—'}</td>
-                            <td className="px-3 py-2.5">{c.subject || '—'}</td>
-                            <td className="px-3 py-2.5">{c.room || '—'}</td>
-                            <td className="px-3 py-2.5">
-                              <span className={cx('rounded-md px-2 py-1 text-xs font-medium', st === 'Completed' ? 'bg-emerald-50 text-emerald-600' : st === 'Ongoing' ? 'bg-blue-50 text-blue-600' : 'bg-slate-100 text-slate-500')}>{st}</span>
+                            <td className="whitespace-nowrap px-2.5 py-2.5 xl:px-2">{formatClock(c.startTime) || c.time}</td>
+                            <td className="px-2.5 py-2.5 xl:px-2">{c.class || '—'}</td>
+                            <td className="px-2.5 py-2.5 xl:px-2">{c.subject || '—'}</td>
+                            <td className="px-2.5 py-2.5 xl:px-2">{c.room || '—'}</td>
+                            <td className="px-2.5 py-2.5 xl:px-2">
+                              <span className={cx('rounded-full px-2 py-1 text-xs font-medium', st === 'Completed' ? 'bg-green-600/80 text-white' : st === 'Ongoing' ? 'bg-blue-500 text-white' : 'bg-slate-100 text-slate-500')}>{st}</span>
                             </td>
-                            <td className="px-3 py-2">
+                            <td className="px-2.5 py-2 xl:px-2">
                               {st === 'Ongoing' ? (
                                 <Link to={classWorkspacePath(c, 'students/attendance')} className="inline-flex w-full justify-center whitespace-nowrap rounded-md bg-blue-600 px-2.5 py-1.5 text-xs font-medium text-white hover:bg-blue-700">Take Attendance</Link>
                               ) : (
-                                <Link to={classWorkspacePath(c, 'teaching')} className="inline-flex w-full justify-center rounded-md border border-slate-200 px-2.5 py-1.5 text-xs font-semibold text-slate-800 hover:bg-slate-50">View</Link>
+                                <Link to={classWorkspacePath(c, 'teaching')} className="inline-flex w-full justify-center rounded-md border border-slate-200 px-2.5 py-1.5 text-xs font-semibold bg-blue-500 text-white">View</Link>
                               )}
                             </td>
                           </tr>
@@ -623,6 +546,7 @@ const TeacherDashboard = () => {
                     </tbody>
                   </table>
                 </div>
+                </>
               )}
             </Panel>
 
@@ -636,23 +560,23 @@ const TeacherDashboard = () => {
                 </div>
               ) : (
               <>
-              <div className="flex items-center gap-5 px-1">
+              <div className="flex flex-col items-center px-1 text-center">
                 <Donut percent={attendancePercent} />
-                <div>
-                  <p className="text-2xl font-bold text-slate-900">{attendance.present} / {attendanceTotal}</p>
-                  <p className="text-sm text-slate-500">Students present today</p>
-                </div>
+                <p className="mt-3 text-2xl font-bold text-slate-900">{attendance.present} / {attendanceTotal}</p>
+                <p className="text-sm text-slate-500">Students present today</p>
               </div>
-              <div className="mt-4 space-y-2 px-1 text-sm">
+              <div className="mt-4 grid grid-cols-3 gap-2">
                 {[
-                  { label: 'Present', value: attendance.present, dot: 'bg-emerald-500' },
-                  { label: 'Absent', value: attendance.absent, dot: 'bg-rose-500' },
-                  { label: 'Not Marked', value: attendance.notMarked, dot: 'bg-slate-300' },
+                  { label: 'Present', value: attendance.present, dot: 'bg-emerald-500', box: 'bg-emerald-50 text-emerald-700' },
+                  { label: 'Absent', value: attendance.absent, dot: 'bg-rose-500', box: 'bg-rose-50 text-rose-700' },
+                  { label: 'Not Marked', value: attendance.notMarked, dot: 'bg-slate-400', box: 'bg-slate-50 text-slate-600' },
                 ].map((row) => (
-                  <div key={row.label} className="flex items-center gap-3">
-                    <span className={cx('h-3.5 w-3.5 rounded-full', row.dot)} />
-                    <span className="flex-1 text-slate-700">{row.label}</span>
-                    <span className="w-12 text-right font-semibold text-slate-900">{row.value}</span>
+                  <div key={row.label} className={cx('flex flex-col items-center rounded-xl px-1 py-2.5 text-center', row.box)}>
+                    <span className="flex items-center gap-1.5 whitespace-nowrap text-[11px] font-medium">
+                      <span className={cx('h-2.5 w-2.5 shrink-0 rounded-full', row.dot)} />
+                      {row.label}
+                    </span>
+                    <span className="mt-1 text-lg font-bold text-slate-900">{row.value}</span>
                   </div>
                 ))}
               </div>
@@ -713,7 +637,7 @@ const TeacherDashboard = () => {
                     </div>
 
                     {/* Label */}
-                    <span className="text-[10px] font-medium text-gray-700">{a.label}</span>
+                    <span className="text-[11px] font-medium text-gray-700 lg:text-[10px]">{a.label}</span>
                   </Link>
                 ))}
               </div>
@@ -721,9 +645,9 @@ const TeacherDashboard = () => {
           </MotionSection>
 
           {/* ── Homework / Schedule / Alerts + Activity ── */}
-          <MotionSection variants={itemVariants} className="grid gap-4 xl:grid-cols-3">
+          <MotionSection variants={itemVariants} className="grid gap-3 md:grid-cols-2 lg:gap-4 xl:grid-cols-3">
             <Panel icon={FileText} iconColor="text-blue-600" title="Homework & Assignments" link={{ to: '/teacher/classes/current/assignments', label: 'View All' }}>
-              <p className="-mt-1 mb-3 text-[11.5px] text-slate-500">Your assignments that are due soon or still need follow-up.</p>
+              <p className="mb-3 text-[11.5px] text-slate-500">Your assignments that are due soon or still need follow-up.</p>
               {deadlineError && <p className="mb-2 rounded-lg bg-rose-50 px-3 py-2 text-xs text-rose-700">{deadlineError}</p>}
               {visibleDeadlines.length === 0 ? (
                 <div className="flex flex-col items-center px-4 py-8 text-center">
@@ -777,20 +701,37 @@ const TeacherDashboard = () => {
               {upcomingSchedule.length === 0 ? (
                 <p className="py-10 text-center text-sm text-slate-400">Nothing scheduled.</p>
               ) : (
-                <ol className="relative ml-1.5 space-y-4 border-l-2 border-slate-100 pl-5">
-                  {upcomingSchedule.map((c, i) => (
-                    <li key={`${c.id || i}-${c.dayLabel}`} className="relative">
-                      <span className={cx('absolute -left-[27px] top-1 h-3 w-3 rounded-full ring-4 ring-white', i % 3 === 2 ? 'bg-violet-500' : 'bg-blue-500')} />
-                      <p className="text-sm font-semibold text-slate-900">{c.dayLabel} • {formatClock(c.startTime) || c.time}</p>
-                      <p className="text-[13px] text-slate-600">Class {c.class || '—'}{c.subject ? ` • ${c.subject}` : ''}</p>
-                      {c.room && <p className="text-[13px] text-slate-500">Room {c.room}</p>}
-                    </li>
-                  ))}
-                </ol>
+                <ul className="space-y-2">
+                  {upcomingSchedule.map((c, i) => {
+                    const accent = [
+                      'bg-blue-50 text-blue-700',
+                      'bg-violet-50 text-violet-700',
+                      'bg-emerald-50 text-emerald-700',
+                      'bg-amber-50 text-amber-700',
+                    ][i % 4];
+                    const [clock, meridiem] = String(formatClock(c.startTime) || c.time || '').split(' ');
+                    return (
+                      <li key={`${c.id || i}-${c.dayLabel}`} className="flex items-center gap-3 rounded-xl border border-slate-100 p-2.5 transition hover:bg-slate-50">
+                        <div className={cx('flex w-[58px] shrink-0 flex-col items-center justify-center rounded-lg py-1.5 leading-tight', accent)}>
+                          <span className="text-[10px] font-semibold uppercase tracking-wide">{c.dayLabel === 'Today' || c.dayLabel === 'Tomorrow' ? c.dayLabel : String(c.dayLabel).slice(0, 3)}</span>
+                          <span className="text-[13px] font-bold">{clock || '—'}</span>
+                          {meridiem && <span className="text-[9px] font-semibold opacity-70">{meridiem}</span>}
+                        </div>
+                        <div className="min-w-0 flex-1">
+                          <p className="truncate text-sm font-semibold text-slate-900">{c.subject || 'Class'}</p>
+                          <p className="truncate text-xs text-slate-500">Class {c.class || '—'}</p>
+                        </div>
+                        <span className={cx('shrink-0 rounded-full px-2 py-1 text-[11px] font-medium', c.room ? 'bg-slate-200 text-slate-600' : 'text-slate-300')}>
+                          {c.room ? `Room ${c.room}` : 'No room'}
+                        </span>
+                      </li>
+                    );
+                  })}
+                </ul>
               )}
             </Panel>
 
-            <div className="space-y-4">
+            <div className="md:col-span-2 xl:col-span-1">
               <Panel icon={Bell} iconColor="text-rose-500" title="Student Alerts" link={{ to: '/teacher/classes/current/students/analytics', label: 'View All' }}>
                 {studentAlerts.length === 0 ? (
                   <p className="py-4 text-center text-sm text-slate-400">No alerts right now.</p>
@@ -806,22 +747,6 @@ const TeacherDashboard = () => {
                       </Link>
                     ))}
                   </div>
-                )}
-              </Panel>
-
-              <Panel icon={Clock} iconColor="text-blue-600" title="Recent Activity" link={{ to: '/teacher/notifications', label: 'View All' }}>
-                {recentActivities.length === 0 ? (
-                  <p className="py-4 text-center text-sm text-slate-400">No recent activity.</p>
-                ) : (
-                  <ul className="space-y-2">
-                    {recentActivities.slice(0, 4).map((a, i) => (
-                      <li key={a.id || i} className="flex items-center gap-2.5 text-[12.5px]">
-                        <span className={cx('h-2.5 w-2.5 shrink-0 rounded-full border-2', ['border-emerald-500', 'border-amber-400', 'border-amber-400', 'border-rose-400'][i % 4])} />
-                        <span className="min-w-0 flex-1 truncate text-slate-700">{a.message}</span>
-                        <span className="shrink-0 text-[11px] text-slate-400">{a.time}</span>
-                      </li>
-                    ))}
-                  </ul>
                 )}
               </Panel>
             </div>
@@ -881,12 +806,12 @@ const dueLabel = (value) => {
   return { text: `Due ${formatDate(value, { day: 'numeric', month: 'short' })}`, cls: 'bg-slate-100 text-slate-600' };
 };
 
-const Panel = ({ icon: Icon, iconColor, title, link, children }) => (
-  <section className="rounded-2xl border border-slate-100 bg-white p-4 shadow-sm">
+const Panel = ({ icon: Icon, iconColor, title, link, children, className = '' }) => (
+  <section className={cx('min-w-0 rounded-2xl bg-white p-3.5 shadow-sm sm:p-4', className)}>
     <div className="mb-3 flex items-center justify-between gap-2">
-      <div className="flex items-center gap-2.5">
+      <div className="flex min-w-0 items-center gap-2.5">
         <Icon size={18} className={iconColor} />
-        <h2 className="text-[16px] font-semibold text-slate-900">{title}</h2>
+        <h2 className="truncate text-[15px] font-semibold text-slate-900 sm:text-[16px]">{title}</h2>
       </div>
       {link && (
         <Link to={link.to} className="inline-flex items-center gap-0.5 whitespace-nowrap text-xs font-medium text-blue-600 hover:underline">

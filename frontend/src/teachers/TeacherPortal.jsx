@@ -1532,7 +1532,7 @@ const TEACHER_SEARCH_TARGETS = [
   { label: 'Parent Meetings', hint: 'Current class · Communication', path: buildClassPath('current', 'communication/parent-meetings') },
 ];
 
-const TeacherModuleSearch = () => {
+const TeacherModuleSearch = ({ autoFocus = false, onDone } = {}) => {
   const navigate = useNavigate();
   const inputRef = useRef(null);
   const [query, setQuery] = useState('');
@@ -1564,13 +1564,14 @@ const TeacherModuleSearch = () => {
     setQuery(''); setOpen(false); setActiveIndex(-1);
     inputRef.current?.blur();
     navigate(item.path);
+    onDone?.();
   };
 
   const onKeyDown = (e) => {
     if (!suggestions.length) return;
     if (e.key === 'ArrowDown') { e.preventDefault(); setActiveIndex((i) => (i + 1) % suggestions.length); }
     else if (e.key === 'ArrowUp') { e.preventDefault(); setActiveIndex((i) => (i <= 0 ? suggestions.length - 1 : i - 1)); }
-    else if (e.key === 'Escape') { setOpen(false); inputRef.current?.blur(); }
+    else if (e.key === 'Escape') { setOpen(false); inputRef.current?.blur(); onDone?.(); }
   };
 
   return (
@@ -1582,6 +1583,7 @@ const TeacherModuleSearch = () => {
         <Search className="h-4 w-4 shrink-0 text-slate-400" strokeWidth={2} />
         <input
           ref={inputRef}
+          autoFocus={autoFocus}
           type="text"
           value={query}
           placeholder="Search modules…"
@@ -1649,6 +1651,7 @@ const HeaderClock = () => {
 
 const TeacherPortalShell = () => {
   const [sidebarOpen, setSidebarOpen] = useState(false);
+  const [mobileSearchOpen, setMobileSearchOpen] = useState(false);
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
   // Chat needs the width: collapse the main sidebar while it's open, restore it after.
   const sidebarBeforeChatRef = useRef(null);
@@ -2470,26 +2473,36 @@ const TeacherPortalShell = () => {
             </div>
           </header>
 
-          <header className="sticky top-0 z-30 border-b border-white/70 bg-indigo-50 px-3 pb-2.5 pt-[calc(0.625rem+env(safe-area-inset-top))] text-slate-900 shadow-[0_6px_24px_rgba(15,23,42,0.06)] lg:hidden">
-            <div className="flex items-center justify-between gap-3">
-              <button type="button" onClick={() => navigate('/teacher/settings')} className="flex min-w-0 items-center gap-3 text-left" aria-label="Open teacher profile">
-                <span className="relative shrink-0">
-                  {hasProfileImage ? (
-                    <img src={teacherProfile.profilePic} alt="" className="h-10 w-10 rounded-full object-cover ring-2 ring-white/70" />
-                  ) : (
-                    <span className="flex h-10 w-10 items-center justify-center rounded-full border bg-gradient-to-br from-blue-400 to-purple-500 text-sm font-bold text-white ring-2 ring-white/70">{initialsLabel}</span>
-                  )}
-                  <span className="absolute right-0 top-0 h-3 w-3 rounded-full border-2 border-indigo-50 bg-emerald-400" />
-                </span>
-                <span className="min-w-0"><span className="block truncate text-base font-bold leading-tight tracking-tight">{teacherProfile.name || 'Teacher'}</span><span className="block truncate text-xs font-medium text-slate-500">{teacherProfile.department || 'Academic workspace'}</span></span>
-              </button>
-              <div className="flex items-center gap-2">
+          <header className="sticky top-0 z-30 w-full border-b border-gray-100 bg-white/80 px-3 pt-[env(safe-area-inset-top)] backdrop-blur-xl sm:px-5 lg:hidden">
+            <div className="flex h-14 items-center justify-between gap-2 sm:h-16 sm:gap-4">
+              <button type="button" onClick={() => setSidebarOpen(true)} className="shrink-0 rounded-xl p-2 transition-all hover:bg-gray-100 active:scale-95" aria-label="Open all teacher options" aria-expanded={sidebarOpen}><Menu size={20} className="text-gray-600" /></button>
+              <div className="flex min-w-0 flex-1 items-center justify-center gap-2">
+                <img src={schoolLogo || '/logo_new.png'} alt="" className="h-8 w-8 shrink-0 rounded-full border border-gray-200 bg-white object-cover" />
+                <p className="truncate text-base font-bold tracking-wide text-gray-900">{(schoolName || '').trim().split(/\s+/).filter(Boolean).map((w) => w.charAt(0).toUpperCase()).join('.') || 'Teacher'}</p>
+              </div>
+              {mobileSearchOpen && (
+                <div className="animate-header-search absolute inset-x-0 bottom-0 z-50 flex h-14 items-center gap-2 bg-white px-3 sm:h-16 sm:px-5">
+                  <TeacherModuleSearch autoFocus onDone={() => setMobileSearchOpen(false)} />
+                  <button type="button" onClick={() => setMobileSearchOpen(false)} className="relative flex h-[35px] w-[35px] shrink-0 items-center justify-center overflow-hidden rounded-xl bg-gray-200 transition-colors hover:bg-gray-100 active:scale-95" aria-label="Close search">
+                    <Motion.span initial={{ rotate: -180, scale: 0.4, opacity: 0 }} animate={{ rotate: 0, scale: 1, opacity: 1 }} transition={{ duration: 0.22, ease: 'easeInOut' }} className="flex">
+                      <X size={19} className="text-gray-600" />
+                    </Motion.span>
+                  </button>
+                </div>
+              )}
+              <div className="flex shrink-0 items-center gap-1.5 sm:gap-2">
+                <button type="button" onClick={() => setMobileSearchOpen(true)} className="flex h-[35px] w-[35px] items-center justify-center rounded-xl transition-colors hover:bg-gray-100 active:scale-95" aria-label="Search modules">
+                  <Motion.span key={mobileSearchOpen ? 'open' : 'closed'} initial={{ rotate: 180, scale: 0.4, opacity: 0 }} animate={{ rotate: 0, scale: 1, opacity: 1 }} transition={{ duration: 0.22, ease: 'easeInOut' }} className="flex">
+                    <Search size={19} className="text-gray-600" />
+                  </Motion.span>
+                </button>
                 <div className="relative" ref={mobileNotificationsRef}>
-                  <button type="button" onClick={handleToggleNotifications} className="relative flex h-9 w-9 items-center justify-center rounded-full text-slate-600 transition hover:bg-white/70 active:scale-95" aria-label="Notifications">
-                    <Bell size={19} />
+                  <button type="button" onClick={handleToggleNotifications} className={`relative rounded-xl p-2 transition-all hover:bg-gray-100 active:scale-95 ${showNotifications ? 'bg-gray-200' : ''}`} aria-label="Notifications" aria-expanded={showNotifications}>
+                    <Bell size={19} className="text-gray-600" />
                     {unreadCount > 0 && (
-                      <span className="absolute -right-1 -top-1 flex min-h-[17px] min-w-[17px] items-center justify-center rounded-full border-2 border-indigo-50 bg-red-500 px-1 text-[10px] font-bold leading-none text-white">
-                        {unreadCount > 9 ? '9+' : unreadCount}
+                      <span className="absolute right-1 top-1 flex h-4 w-4 items-center justify-center">
+                        <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-red-400 opacity-75" />
+                        <span className="relative inline-flex h-4 w-4 items-center justify-center rounded-full bg-red-500 text-[9px] font-bold text-white">{unreadCount > 9 ? '9+' : unreadCount}</span>
                       </span>
                     )}
                   </button>
@@ -2515,12 +2528,11 @@ const TeacherPortalShell = () => {
                     )}
                   </AnimatePresence>
                 </div>
-                <button type="button" onClick={() => setSidebarOpen(true)} className="flex h-9 w-9 items-center justify-center rounded-full text-slate-600 transition hover:bg-white/70 active:scale-95" aria-label="Open all teacher options" aria-expanded={sidebarOpen}><Menu size={19} /></button>
               </div>
             </div>
           </header>
 
-          <main className={`flex-1 min-h-0 pb-[calc(4.5rem+env(safe-area-inset-bottom))] lg:pb-0 ${isSmartPlannerRoute ? 'p-0' : ''} ${hasContainedPageScroll ? 'overflow-hidden' : 'overflow-y-auto overscroll-contain'}`}>
+          <main className={`flex-1 min-h-0 pb-[calc(3.5rem+env(safe-area-inset-bottom))] lg:pb-0 ${isSmartPlannerRoute ? 'p-0' : ''} ${hasContainedPageScroll ? 'overflow-hidden' : 'overflow-y-auto overscroll-contain'}`}>
             <div className={isChatRoute
               ? 'flex h-full min-h-0 flex-col'
               : isSmartPlannerRoute || isClassesHubRoute
@@ -2672,8 +2684,8 @@ const TeacherPortalShell = () => {
             </div>
           </main>
 
-          <nav aria-label="Teacher mobile navigation" className="fixed inset-x-0 bottom-0 z-40 border-t border-slate-200/80 bg-white/95 px-2 pb-[calc(.375rem+env(safe-area-inset-bottom))] pt-1.5 shadow-[0_-4px_20px_rgba(0,0,0,0.04)] backdrop-blur-md will-change-transform lg:hidden">
-            <div className="mx-auto flex max-w-md items-center justify-around sm:max-w-xl md:max-w-2xl">
+          <nav aria-label="Teacher mobile navigation" className="fixed inset-x-0 bottom-0 z-40 border-t border-gray-200 bg-white/95 px-1 pb-[env(safe-area-inset-bottom)] backdrop-blur-md will-change-transform lg:hidden">
+            <div className="mx-auto grid h-14 max-w-3xl grid-cols-5">
               {mobileNavigation.map((item) => {
                 const Icon = item.icon;
                 const notificationCount = item.action === 'profile'
@@ -2682,17 +2694,17 @@ const TeacherPortalShell = () => {
                 const active = item.action === 'profile'
                   ? showMobileProfileMenu || location.pathname.startsWith('/teacher/settings')
                   : isItemActive(item.path) || (item.label === 'Classes' && location.pathname.startsWith('/teacher/classes') && !location.pathname.includes('/communication/chat'));
-                const itemClasses = `flex min-w-[58px] flex-col items-center rounded-xl px-2 py-1 text-[10px] font-semibold transition active:scale-95 ${active ? 'text-violet-600' : 'text-slate-400'}`;
+                const itemClasses = `flex h-full w-full flex-col items-center justify-center gap-0.5 text-[10px] leading-none tracking-tight transition-all active:scale-95 ${active ? 'font-bold text-amber-600' : 'font-medium text-slate-400'}`;
                 const content = (
                   <>
-                    <span className={`relative mb-0.5 flex h-8 w-8 items-center justify-center rounded-full ${active ? 'bg-purple-100' : ''}`}><Icon size={active ? 17 : 19} fill={active && item.icon === Home ? 'currentColor' : 'none'} />{notificationCount > 0 && <span className="absolute -right-1 -top-1 flex min-h-4 min-w-4 items-center justify-center rounded-full bg-red-500 px-1 text-[9px] font-bold leading-none text-white shadow">{notificationCount > 99 ? '99+' : notificationCount}</span>}</span>
+                    <span className={`relative flex h-8 w-8 items-center justify-center rounded-full transition-all duration-200 ${active ? 'bg-amber-500 text-white shadow-sm' : 'text-slate-400'}`}><Icon size={19} strokeWidth={active ? 2.5 : 2} />{notificationCount > 0 && <span className="absolute -right-1 -top-1 flex min-h-4 min-w-4 items-center justify-center rounded-full bg-red-500 px-1 text-[9px] font-bold leading-none text-white shadow">{notificationCount > 99 ? '99+' : notificationCount}</span>}</span>
                     {item.label}
                   </>
                 );
 
                 if (item.action === 'profile') {
                   return (
-                    <div key={item.label} className="relative" ref={mobileProfileMenuRef}>
+                    <div key={item.label} className="relative h-full" ref={mobileProfileMenuRef}>
                       <button
                         type="button"
                         onClick={() => setShowMobileProfileMenu((prev) => !prev)}
