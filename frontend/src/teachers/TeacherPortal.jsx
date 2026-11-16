@@ -4,7 +4,7 @@
  * or duplication is prohibited without prior written permission.
  */
 
-import React, { Component, useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import React, { Component, Suspense, lazy, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Routes, Route, NavLink, Outlet, useLocation, useNavigate, useParams, Navigate } from 'react-router-dom';
 import { AnimatePresence, motion as Motion } from 'framer-motion';
 import {
@@ -42,43 +42,45 @@ import {
   ArrowRight,
   CheckCircle2,
   Search,
+  QrCode,
 } from 'lucide-react';
 import { Button } from '../components/ui/button';
 import { useTenant } from '../context/TenantContext';
 
-import TeacherExamDutyList from './TeacherExamDutyList';
-import HealthUpdatesAdvanced from './HealthUpdatesAdvanced';
-import ParentMeetings from './ParentMeetings';
-import AssignmentPortal from './AssignmentPortal';
-import AttendanceManagement from './AttendanceManagement';
-import ClassAttendanceOverview from './ClassAttendanceOverview';
+const TeacherExamDutyList = lazy(() => import('./TeacherExamDutyList'));
+const TeacherExamScanner = lazy(() => import('./TeacherExamScanner'));
+const HealthUpdatesAdvanced = lazy(() => import('./HealthUpdatesAdvanced'));
+const ParentMeetings = lazy(() => import('./ParentMeetings'));
+const AssignmentPortal = lazy(() => import('./AssignmentPortal'));
+const AttendanceManagement = lazy(() => import('./AttendanceManagement'));
+const ClassAttendanceOverview = lazy(() => import('./ClassAttendanceOverview'));
 import TeacherDashboard from './TeacherDashboard';
-import SmartTeachingLessonPlanner from './SmartTeachingLessonPlanner';
-import LessonPlannerWizard from './components/LessonPlannerWizard';
-import TeacherChat from './TeacherChat';
-import StudentAnalyticsPortal from './StudentAnalyticsPortal';
-import AILearningPath from './AILearningPath';
-import TestTeacherPortal from './TestTeacherPortal';
-import AIPoweredTeaching from './AIPoweredTeaching';
-import VideoUnderstandingTool from './VideoUnderstandingTool';
-import GenerateAIPathPortal from './GenerateAIPathPortal';
-import TeacherAIToolsPanel from './TeacherAIToolsPanel';
-import MyWorkPortal from './MyWorkPortal';
-import ClassRoutine from './ClassRoutine';
-import StudentObservationOverview from './StudentObservationOverview';
-import ClassNotes from './ClassNotes';
-import PracticeQuestions from './PracticeQuestions';
-import PracticePapersPortal from './components/PracticePapersPortal';
-import LanguagePracticeManager from './LanguagePracticeManager';
-import TeacherFeedbackPortal from './TeacherFeedbackPortal';
-import ExcuseLetters from './ExcuseLetters';
-import ExamResultPortal from './ExamResultPortal';
-import LongAnswerAssessment from './LongAnswerAssessment';
-import LiveExamMonitor from './LiveExamMonitor';
-import HolidayList from './HolidayList';
-import TeacherAchievements from './TeacherAchievements';
-import TeacherAlcove from './TeacherAlcove';
-import TryoutManagement from '../components/TryoutManagement';
+const SmartTeachingLessonPlanner = lazy(() => import('./SmartTeachingLessonPlanner'));
+const LessonPlannerWizard = lazy(() => import('./components/LessonPlannerWizard'));
+const TeacherChat = lazy(() => import('./TeacherChat'));
+const StudentAnalyticsPortal = lazy(() => import('./StudentAnalyticsPortal'));
+const AILearningPath = lazy(() => import('./AILearningPath'));
+const TestTeacherPortal = lazy(() => import('./TestTeacherPortal'));
+const AIPoweredTeaching = lazy(() => import('./AIPoweredTeaching'));
+const VideoUnderstandingTool = lazy(() => import('./VideoUnderstandingTool'));
+const GenerateAIPathPortal = lazy(() => import('./GenerateAIPathPortal'));
+const TeacherAIToolsPanel = lazy(() => import('./TeacherAIToolsPanel'));
+const MyWorkPortal = lazy(() => import('./MyWorkPortal'));
+const ClassRoutine = lazy(() => import('./ClassRoutine'));
+const StudentObservationOverview = lazy(() => import('./StudentObservationOverview'));
+const ClassNotes = lazy(() => import('./ClassNotes'));
+const PracticeQuestions = lazy(() => import('./PracticeQuestions'));
+const PracticePapersPortal = lazy(() => import('./components/PracticePapersPortal'));
+const LanguagePracticeManager = lazy(() => import('./LanguagePracticeManager'));
+const TeacherFeedbackPortal = lazy(() => import('./TeacherFeedbackPortal'));
+const ExcuseLetters = lazy(() => import('./ExcuseLetters'));
+const ExamResultPortal = lazy(() => import('./ExamResultPortal'));
+const LongAnswerAssessment = lazy(() => import('./LongAnswerAssessment'));
+const LiveExamMonitor = lazy(() => import('./LiveExamMonitor'));
+const HolidayList = lazy(() => import('./HolidayList'));
+const TeacherAchievements = lazy(() => import('./TeacherAchievements'));
+const TeacherAlcove = lazy(() => import('./TeacherAlcove'));
+const TryoutManagement = lazy(() => import('../components/TryoutManagement'));
 import { useDesktopNotificationBridge } from '../hooks/useDesktopNotificationBridge';
 import { readCachedNotifications as readCachedBell, writeCachedNotifications as writeCachedBell } from '../utils/notificationCache';
 import useCommunityWallUnread, { subscribeSocketEvent } from '../hooks/useCommunityWallUnread';
@@ -100,6 +102,7 @@ const portalNavigation = [
   // Notifications live in the header bell; no sidebar entry.
   // { icon: Bell, label: 'Notifications', path: `${PORTAL_BASE}/notifications` },
   { icon: ClipboardCheck, label: 'Exam Duty', path: `${PORTAL_BASE}/exam-duty` },
+  { icon: QrCode, label: 'Scan Exam QR', path: `${PORTAL_BASE}/exam-scan` },
   { icon: Library, label: 'Community Wall', path: `${PORTAL_BASE}/community-wall` },
   { icon: Brain, label: 'Lesson Plan', path: `${PORTAL_BASE}/lesson-plan` },
   //{ icon: Brain, label: 'AI Tools', path: `${PORTAL_BASE}/ai-tools` },
@@ -2525,6 +2528,7 @@ const TeacherPortalShell = () => {
                 : isAttendanceRoute
                   ? 'h-full min-h-0 overflow-y-auto overscroll-contain p-3 sm:p-6'
                   : `min-h-full ${isDashboardRoute ? 'p-0' : ''}`}>
+              <Suspense fallback={<div className="flex h-40 items-center justify-center"><div className="h-7 w-7 animate-spin rounded-full border-2 border-indigo-500 border-t-transparent" /></div>}>
               <Routes>
                 <Route index element={<Navigate to="/teacher/dashboard" replace />} />
                 <Route path="dashboard" element={<TeacherDashboard />} />
@@ -2621,6 +2625,7 @@ const TeacherPortalShell = () => {
                   element={<TeacherNotifications />}
                 />
                 <Route path="exam-duty" element={<TeacherExamDutyList />} />
+                <Route path="exam-scan" element={<TeacherExamScanner />} />
                 <Route path="exam-duty/:notificationId" element={<TeacherExamDuty />} />
                 <Route path="community-wall" element={<TeacherAlcove />} />
                 <Route path="resource-library" element={<Navigate to="/teacher/community-wall" replace />} />
@@ -2663,6 +2668,7 @@ const TeacherPortalShell = () => {
                 <Route path="excuse-letters" element={<Navigate to={buildClassPath('current', 'communication/excuse-letters')} replace />} />
                 <Route path="feedback" element={<Navigate to={buildClassPath('current', 'communication/feedback')} replace />} />
               </Routes>
+              </Suspense>
             </div>
           </main>
 

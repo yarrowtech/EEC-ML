@@ -55,6 +55,10 @@ const MODULES = [
     rules: [],
   },
   {
+    key: 'examAttendance', label: 'Exam Attendance', section: 'Academic Management', paths: ['/admin/exam-attendance'],
+    rules: [{ prefix: '/api/exam-attendance', scope: 'all' }],
+  },
+  {
     key: 'results', label: 'Result Management', section: 'Academic Management', paths: ['/admin/result'],
     rules: [{ prefix: '/api/exam/results', scope: 'write' }],
   },

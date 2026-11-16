@@ -496,18 +496,43 @@ router.get('/', authTeacher, teacherDashboardCache.cache, async (req, res) => {
 
     const campusId = req.campusId || req.user?.campusId || null;
     const teacherId = req.user?.id;
-    const teacher = teacherId
-      ? await TeacherUser.findById(teacherId).select('name campusName campusType').lean()
-      : null;
-
     const studentFilter = { schoolId };
     if (campusId) {
       studentFilter.campusId = campusId;
     }
-    const scope = await buildTeacherScope({ schoolId, campusId, teacherId });
-    const students = await StudentUser.find(studentFilter)
-      .select('name grade section attendance attendanceSummary')
-      .lean();
+    const activityCampusFilter = campusId
+      ? { $or: [{ campusId }, { campusId: null }, { campusId: { $exists: false } }] }
+      : {};
+    // Every query below that doesn't depend on another one is started now and
+    // awaited later — the old version ran ~15 Mongo round-trips back to back.
+    const recentP = teacherId
+      ? Promise.all([
+        Assignment.find({ schoolId, teacherId, ...activityCampusFilter })
+          .sort({ createdAt: -1 }).limit(4).select('title class section subject createdAt status').lean(),
+        ParentMeeting.find({ schoolId, teacherId, ...activityCampusFilter })
+          .sort({ updatedAt: -1 }).limit(4).select('title status meetingDate meetingTime createdAt updatedAt').lean(),
+      ])
+      : Promise.resolve([[], []]);
+    const timetablesP = teacherId
+      ? Timetable.find({ schoolId, ...(campusId ? { campusId } : {}), 'entries.teacherId': teacherId }).lean().exec()
+      : Promise.resolve([]);
+    const completedTasksP = teacherId
+      ? TeacherTaskAcknowledgement.find({ schoolId, teacherId }).select('assignmentId').lean().exec()
+      : Promise.resolve([]);
+    const coverAdminP = Admin.findOne({ schoolId, role: 'admin', coverImage: { $nin: [null, ''] } })
+      .select('coverImage').lean().exec();
+    // Pre-started queries are awaited later; mark them handled so a failure
+    // surfaces at its await (caught below) rather than as an unhandled rejection.
+    [recentP, timetablesP, completedTasksP, coverAdminP].forEach((p) => p.catch(() => {}));
+
+    const [teacher, scope, students] = await Promise.all([
+      teacherId ? TeacherUser.findById(teacherId).select('name campusName campusType').lean() : null,
+      buildTeacherScope({ schoolId, campusId, teacherId }),
+      // Only recent attendance is used (today + last few marked days).
+      StudentUser.find(studentFilter)
+        .select({ name: 1, grade: 1, section: 1, attendanceSummary: 1, attendance: { $slice: -60 } })
+        .lean(),
+    ]);
     const scopedStudents = students.filter((student) => studentIsWithinScope(student, scope));
     const studentIds = scopedStudents.map((student) => student._id);
 
@@ -535,8 +560,15 @@ router.get('/', authTeacher, teacherDashboardCache.cache, async (req, res) => {
       ? Math.round((attendancePresent / attendanceMarked) * 1000) / 10
       : 0;
 
+    const recentResultsP = studentIds.length > 0
+      ? ExamResult.find({ schoolId, studentId: { $in: studentIds }, published: true })
+        .populate('examId', 'subject title').sort({ updatedAt: -1 }).limit(4).lean().exec()
+      : Promise.resolve([]);
+    recentResultsP.catch(() => {});
     const progressDocs = studentIds.length > 0
-      ? await StudentProgress.find({ schoolId, studentId: { $in: studentIds } }).lean()
+      ? await StudentProgress.find({ schoolId, studentId: { $in: studentIds } })
+        .select('studentId submissions.assignmentId submissions.status submissions.submittedAt progressMetrics.subject progressMetrics.averageScore improvementTrend')
+        .lean()
       : [];
 
     let pendingEvaluations = 0;
@@ -613,11 +645,7 @@ router.get('/', authTeacher, teacherDashboardCache.cache, async (req, res) => {
     let resultActivities = [];
     try {
       if (studentIds.length > 0) {
-        const recentResults = await ExamResult.find({ schoolId, studentId: { $in: studentIds }, published: true })
-          .populate('examId', 'subject title')
-          .sort({ updatedAt: -1 })
-          .limit(4)
-          .lean();
+        const recentResults = await recentResultsP;
         resultActivities = recentResults.map((result) => {
           const student = studentMap.get(String(result.studentId));
           const subject = result.examId?.subject || result.examId?.title || 'exam';
@@ -634,23 +662,7 @@ router.get('/', authTeacher, teacherDashboardCache.cache, async (req, res) => {
       console.warn('recentActivities: exam results lookup failed', resultErr?.message);
     }
 
-    const activityCampusFilter = campusId
-      ? { $or: [{ campusId }, { campusId: null }, { campusId: { $exists: false } }] }
-      : {};
-    const [recentAssignments, recentMeetings] = teacherId
-      ? await Promise.all([
-        Assignment.find({ schoolId, teacherId, ...activityCampusFilter })
-          .sort({ createdAt: -1 })
-          .limit(4)
-          .select('title class section subject createdAt status')
-          .lean(),
-        ParentMeeting.find({ schoolId, teacherId, ...activityCampusFilter })
-          .sort({ updatedAt: -1 })
-          .limit(4)
-          .select('title status meetingDate meetingTime createdAt updatedAt')
-          .lean(),
-      ])
-      : [[], []];
+    const [recentAssignments, recentMeetings] = await recentP;
     const assignmentActivities = recentAssignments.map((assignment) => ({
       id: `assignment-created-${assignment._id}`,
       type: 'assignment',
@@ -716,13 +728,7 @@ router.get('/', authTeacher, teacherDashboardCache.cache, async (req, res) => {
       .sort((a, b) => b.score - a.score)
       .slice(0, 4);
 
-    const timetables = teacherId
-      ? await Timetable.find({
-        schoolId,
-        ...(campusId ? { campusId } : {}),
-        'entries.teacherId': teacherId,
-      }).lean()
-      : [];
+    const timetables = await timetablesP;
 
     const subjectIds = new Set();
     const classIds = new Set();
@@ -831,9 +837,7 @@ router.get('/', authTeacher, teacherDashboardCache.cache, async (req, res) => {
       return startMinutes !== null && startMinutes >= currentMinutes;
     }) || null;
 
-    const completedTasks = teacherId
-      ? await TeacherTaskAcknowledgement.find({ schoolId, teacherId }).select('assignmentId').lean()
-      : [];
+    const completedTasks = await completedTasksP;
     const completedAssignmentIds = completedTasks.map((item) => item.assignmentId).filter(Boolean);
     const assignmentFilter = {
       schoolId,
@@ -890,9 +894,7 @@ router.get('/', authTeacher, teacherDashboardCache.cache, async (req, res) => {
       .slice(0, 5);
 
     // School cover photo for the greeting banner (set in admin settings).
-    const coverAdmin = await Admin.findOne({ schoolId, role: 'admin', coverImage: { $nin: [null, ''] } })
-      .select('coverImage')
-      .lean();
+    const coverAdmin = await coverAdminP;
 
     res.json({
       school: { coverImage: coverAdmin?.coverImage || '' },
@@ -933,6 +935,7 @@ router.get('/', authTeacher, teacherDashboardCache.cache, async (req, res) => {
       })),
     });
   } catch (err) {
+    console.error('teacher dashboard failed:', err?.stack || err);
     res.status(500).json({ error: err.message || 'Unable to load dashboard data' });
   }
 });

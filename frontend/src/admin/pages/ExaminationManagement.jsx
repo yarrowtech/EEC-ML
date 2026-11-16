@@ -634,19 +634,27 @@ const ExaminationManagement = ({ setShowAdminHeader }) => {
   const [draftState, setDraftState] = useState('idle'); // idle | pending | saving | saved | error
   const [autoSavedAt, setAutoSavedAt] = useState(null);
   const draftAutoTimer = useRef(null);
+  // Set once the wizard's exam is actually created; cleared when the wizard reopens.
+  const wizardSubmittedRef = useRef(false);
+  useEffect(() => { if (showWizard) wizardSubmittedRef.current = false; }, [showWizard]);
   const draftLastSnapshot = useRef('');
 
   /* ── load ── */
+  const groupsReqSeq = useRef(0);
   const loadGroups = async () => {
     // No forced loading flip here — if we already have cached groups to show
     // (initial state above), this just silently refreshes them in the
     // background; `loading` only ever starts true when there was nothing
     // cached to render yet.
+    // Only the newest request may update the list — an older, slower response
+    // (started before a create/publish) must not overwrite fresher data.
+    const reqId = ++groupsReqSeq.current;
     try {
-      const res = await fetch(`${API_BASE}/api/exam/groups`, { headers: authH() });
+      const res = await fetch(`${API_BASE}/api/exam/groups`, { headers: authH(), cache: 'no-store' });
       const data = await res.json().catch(() => []);
       if (!res.ok) throw new Error(data?.error || 'Failed');
       const list = Array.isArray(data) ? data : [];
+      if (reqId !== groupsReqSeq.current) return list;
       setGroups(list);
       writeExamCache(examCacheKey('groups'), list);
       return list;
@@ -3704,6 +3712,11 @@ const ExaminationManagement = ({ setShowAdminHeader }) => {
     });
     const data = await res.json().catch(() => ({}));
     if (!res.ok) throw new Error(data?.error || 'Failed to publish routine');
+    // Reflect it immediately; the follow-up loadGroups() then syncs the rest.
+    const publishedAt = data?.group?.publishedAt || new Date().toISOString();
+    setGroups((prev) => prev.map((g) => (String(g._id) === String(group._id)
+      ? { ...g, status: 'Published', publishedAt, attachment: data?.group?.attachment ?? attachment ?? g.attachment }
+      : g)));
   };
 
   const handlePublishRoutine = async (group) => {
@@ -3968,6 +3981,7 @@ const ExaminationManagement = ({ setShowAdminHeader }) => {
 
   const persistExamDraft = async ({ silent = false } = {}) => {
     if (draftState === 'saving') return;
+    if (wizardSubmittedRef.current) return; // exam already created — never re-save it as a draft
     setDraftState('saving');
     try {
       const payload = {
@@ -3979,6 +3993,16 @@ const ExaminationManagement = ({ setShowAdminHeader }) => {
       const res = await fetch(EXAM_DRAFTS_API, { method: 'POST', headers: draftAuthHeaders(), body: JSON.stringify(payload) });
       const data = await res.json().catch(() => ({}));
       if (!res.ok) throw new Error(data.error || 'Could not save draft');
+      // An autosave that was already in flight when the exam got submitted
+      // would otherwise leave a fresh draft behind — drop it right away.
+      if (wizardSubmittedRef.current) {
+        if (data?.data?._id) {
+          fetch(`${EXAM_DRAFTS_API}/${data.data._id}`, { method: 'DELETE', headers: draftAuthHeaders() }).catch(() => {});
+          setExamDrafts((prev) => prev.filter((d) => d._id !== data.data._id));
+        }
+        setDraftState('idle');
+        return;
+      }
       if (data?.data?._id) setActiveDraftId(data.data._id);
       if (data?.data) {
         setExamDrafts((prev) => [data.data, ...prev.filter((d) => d._id !== data.data._id)]);
@@ -4181,6 +4205,17 @@ const ExaminationManagement = ({ setShowAdminHeader }) => {
         .filter(Boolean)
         .some((name) => isTeacherBusyElsewhere(name, nextRow.date, nextRow.time, nextRow.duration, key, nextRow.roomId));
 
+      // The same class/section can't sit two subjects at overlapping times.
+      const classClash = Object.entries(wizardSchedule).some(([otherKey, s]) => {
+        if (otherKey === key || !s?.date || !s.time || !s.duration) return false;
+        const other = parseScheduleKey(otherKey);
+        return other.classId === classId && other.sectionId === sectionId
+          && hasOverlap(nextRow.date, nextRow.time, nextRow.duration, s);
+      });
+      if (classClash) {
+        toast.error('This class already has another subject at this date & time — change rejected.');
+        return;
+      }
       if (roomClash && teacherClash) {
         toast.error('Both the room and the teacher are already booked at this date & time — change rejected.');
         return;
@@ -4539,6 +4574,31 @@ const ExaminationManagement = ({ setShowAdminHeader }) => {
       const earliestDay = new Map();
       wizardSelections.forEach((sel) => earliestDay.set(selKey(sel), new Date(initialCursor)));
 
+      // A class/section sits at most ONE paper per day. Days a class already
+      // has an exam — subjects dated earlier in this wizard (manually or by a
+      // previous Auto-Schedule run) or exams already saved for that class —
+      // are off-limits, otherwise two subjects land on the same date & time.
+      const classBusyDays = new Map(); // selKey -> Set(dateStr)
+      const markClassBusy = (key, dateStr) => {
+        if (!classBusyDays.has(key)) classBusyDays.set(key, new Set());
+        classBusyDays.get(key).add(dateStr);
+      };
+      Object.entries(wizardSchedule).forEach(([rowKey, s]) => {
+        if (!s?.date) return;
+        const { classId, sectionId } = parseScheduleKey(rowKey);
+        markClassBusy(`${classId}__${sectionId}`, String(s.date).slice(0, 10));
+      });
+      allExamsForConflict.forEach((ex) => {
+        if (!ex?.date) return;
+        const cid = String(ex.classId?._id || ex.classId || '');
+        const sid = String(ex.sectionId?._id || ex.sectionId || '');
+        const subId = String(ex.subjectId?._id || ex.subjectId || '');
+        // The wizard's own row for this subject wins (it may be being re-dated).
+        if (subId && wizardSchedule[wizardScheduleKey(cid, sid, subId)]) return;
+        if (cid && sid) markClassBusy(`${cid}__${sid}`, String(ex.date).slice(0, 10));
+      });
+      const isClassBusy = (key, dateStr) => Boolean(classBusyDays.get(key)?.has(dateStr));
+
       let filled = 0;
       let unresolvedTeachers = 0;
       let unresolvedAssociates = 0;
@@ -4557,6 +4617,7 @@ const ExaminationManagement = ({ setShowAdminHeader }) => {
           const queue = queues.get(key);
           if (!queue.length) return;
           if (day < earliestDay.get(key)) return; // still resting after a previous subject's gap
+          if (isClassBusy(key, dateStr)) return; // this class already has a paper today
           candidates.push({ sel, key, ...queue[0], headcount: headcountFor(sel) });
         });
 
@@ -4663,6 +4724,7 @@ const ExaminationManagement = ({ setShowAdminHeader }) => {
             filled += 1;
 
             queues.get(cand.key).shift();
+            markClassBusy(cand.key, dateStr);
             const gapDays = Number(subjectGapDays[cand.subjectId]) || 0;
             const nextEarliest = new Date(day);
             nextEarliest.setUTCDate(nextEarliest.getUTCDate() + 1 + gapDays);
@@ -4868,11 +4930,13 @@ const ExaminationManagement = ({ setShowAdminHeader }) => {
 
       // Close the modal the instant creation is done — draft cleanup and the
       // background list refresh must never hold the modal open.
+      wizardSubmittedRef.current = true;
       setShowWizard(false);
       if (draftAutoTimer.current) clearTimeout(draftAutoTimer.current);
       draftLastSnapshot.current = '';
       if (activeDraftId) deleteExamDraft(activeDraftId).catch(() => { });
-      loadGroups();
+      await loadGroups();
+      setTimeout(() => { loadExamDrafts(); }, 1500);
 
       if (failed.length) {
         toast.error(`${failed.length} subject${failed.length !== 1 ? 's' : ''} failed to add: ${failed[0].reason?.message || 'Unknown error'}`);

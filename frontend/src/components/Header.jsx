@@ -213,6 +213,7 @@ const Header = ({ sidebarOpen, setSidebarOpen, onOpenProfile }) => {
     { label: 'Attendance', hint: 'Daily attendance overview', action: () => navigate('/student/attendance?filter=all') },
     { label: 'Attendance — absences', hint: 'Only absent days', action: () => navigate('/student/attendance?filter=absent') },
     { label: 'Exams', hint: 'Exam routine', action: () => navigate('/student/exams') },
+    { label: 'Admit Cards', hint: 'View / download admit card', action: () => navigate('/student/admit-cards') },
     { label: 'Holidays', hint: 'Holiday list', action: () => navigate('/student/holidays') },
     { label: 'Syllabus', hint: 'Course coverage status', action: () => navigate('/student/lesson-plan-status') },
     { label: 'Notice Board', hint: 'School notices', action: () => navigate('/student/noticeboard') },

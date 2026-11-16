@@ -27,6 +27,7 @@ const NotificationService = require('../utils/notificationService');
 const { sendPushForNotification } = require('../utils/webPushService');
 const examCommunication = require('../services/examCommunication');
 const { scheduleExamNoticeRefresh } = require('../services/examNoticeService');
+const { signAdmitQr } = require('../utils/admitCardQr');
 
 // A subject exam inside a group changed → rebuild that exam's notices.
 const refreshNoticesForGroupId = async ({ schoolId, campusId, groupId }) => {
@@ -37,6 +38,42 @@ const refreshNoticesForGroupId = async ({ schoolId, campusId, groupId }) => {
     schoolId, campusId, title: g.title, sampleDate: g.startDate,
     routine: g.status === 'Published' || Boolean(g.publishedAt),
   });
+};
+
+// Exam duty must reach invigilators as soon as exams are created/edited — not
+// only when the routine is published. The wizard creates many subject exams
+// in parallel, so per-group calls are debounced into one sync.
+const dutySyncTimers = new Map();
+const scheduleTeacherDutySync = ({ schoolId, campusId, groupId, exam, createdBy = null, createdByName = '' }) => {
+  const key = groupId ? `g:${groupId}` : `e:${exam?._id}`;
+  if (dutySyncTimers.has(key)) clearTimeout(dutySyncTimers.get(key));
+  dutySyncTimers.set(key, setTimeout(async () => {
+    dutySyncTimers.delete(key);
+    try {
+      const populateRoom = {
+        path: 'roomId',
+        select: 'roomNumber floorId',
+        populate: { path: 'floorId', select: 'name floorCode buildingId', populate: { path: 'buildingId', select: 'name code' } },
+      };
+      let exams = [];
+      let groupTitle = exam?.title || 'Exam';
+      if (groupId && mongoose.isValidObjectId(groupId)) {
+        const g = await ExamGroup.findById(groupId).select('title').lean();
+        if (g?.title) groupTitle = g.title;
+        exams = await Exam.find({ groupId, schoolId, ...(campusId ? { campusId } : {}) })
+          .populate('subjectId', 'name').populate(populateRoom).sort({ date: 1, time: 1 }).lean();
+      } else if (exam?._id) {
+        exams = await Exam.find({ _id: exam._id }).populate('subjectId', 'name').populate(populateRoom).lean();
+      }
+      if (!exams.length) return;
+      await createConsolidatedTeacherExamNotifications({
+        schoolId, campusId: campusId || null, exams, groupTitle,
+        groupId: groupId || null, createdBy, createdByName, createdByType: 'admin',
+      });
+    } catch (err) {
+      console.error('Exam duty notification sync failed:', err?.message || err);
+    }
+  }, 1500));
 };
 
 // One consolidated formal notice per exam (not per class/section): rebuild the
@@ -90,7 +127,11 @@ const resolveCampusId = (req) => req.campusId || null;
 const EXAM_GROUPS_CACHE_TTL_MS = 10 * 1000;
 const examGroupsCache = new Map(); // key -> { data, expires }
 const examGroupsCacheKey = (schoolId, campusId) => `${schoolId}:${campusId || 'x'}`;
-const clearExamGroupsCache = () => examGroupsCache.clear();
+// Bumped on every clear: a GET that started before a write must not store
+// its (now stale) result after the write cleared the cache — that race is
+// what made a just-created / just-published exam only show after ~10s.
+let examGroupsCacheGen = 0;
+const clearExamGroupsCache = () => { examGroupsCacheGen += 1; examGroupsCache.clear(); };
 
 const resolveAcademicContext = async ({ schoolId, campusId, classId, sectionId, subjectId }) => {
   if (!classId || !mongoose.isValidObjectId(classId)) {
@@ -663,6 +704,7 @@ router.get('/groups', adminAuth, async (req, res) => {
       return res.json(cached.data);
     }
     const filter = { schoolId, ...(campusId ? { campusId } : {}) };
+    const genAtStart = examGroupsCacheGen;
 
     const [groups, exams] = await Promise.all([
       ExamGroup.find(filter)
@@ -691,7 +733,10 @@ router.get('/groups', adminAuth, async (req, res) => {
     });
 
     const payload = groups.map(g => ({ ...g, subjects: examsByGroup.get(String(g._id)) || [] }));
-    examGroupsCache.set(cacheKey, { data: payload, expires: Date.now() + EXAM_GROUPS_CACHE_TTL_MS });
+    if (genAtStart === examGroupsCacheGen) {
+      examGroupsCache.set(cacheKey, { data: payload, expires: Date.now() + EXAM_GROUPS_CACHE_TTL_MS });
+    }
+    res.set('Cache-Control', 'no-store');
     res.json(payload);
   } catch (err) {
     res.status(500).json({ error: err.message });
@@ -838,6 +883,7 @@ router.get('/groups/student-admit-cards', authStudent, parentScheduleCache.cache
         fatherName: student.fatherName || '',
         motherName: student.motherName || '',
         academicYear: student.academicYear || '',
+        admitQr: signAdmitQr(student._id, schoolId),
       },
       groups: groupsPayload,
       school: { name: school?.name || '', address: school?.address || '', logo: school?.logo?.secure_url || school?.logo?.url || null, board: school?.board === 'Other' ? (school?.boardOther || '') : (school?.board || ''), phone: school?.contactPhone || '', email: school?.contactEmail || '' },
@@ -1056,6 +1102,7 @@ router.get('/groups/parent-admit-cards', authParent, parentScheduleCache.cache, 
         fatherName: student.fatherName || '',
         motherName: student.motherName || '',
         academicYear: student.academicYear || '',
+        admitQr: signAdmitQr(student._id, schoolId),
       groups: publishedGroups
         .filter((group) => studentMatchesExamScope(student, group))
         .map((group) => buildAdmitCardGroupPayload(group, examsByGroup.get(String(group._id)) || []))
@@ -1633,6 +1680,12 @@ router.post("/add", adminAuth, async (req, res) => {
         if (exam.groupId) {
           refreshNoticesForGroupId({ schoolId, campusId: campusId || null, groupId: exam.groupId }).catch(() => {});
         }
+        if (exam.instructor) {
+          scheduleTeacherDutySync({
+            schoolId, campusId: campusId || null, groupId: exam.groupId, exam,
+            createdBy: req.admin?.id || null, createdByName: req.admin?.name || req.admin?.username || '',
+          });
+        }
         res.status(201).json({message: "Exam added successfully", exam});
     } catch(err) {
         res.status(400).json({error: err.message});
@@ -1754,6 +1807,12 @@ router.put("/:id", adminAuth, async (req, res) => {
     clearExamGroupsCache();
     if (exam.groupId) {
       refreshNoticesForGroupId({ schoolId: exam.schoolId, campusId: exam.campusId || null, groupId: exam.groupId }).catch(() => {});
+    }
+    if (exam.instructor || existingExam.instructor) {
+      scheduleTeacherDutySync({
+        schoolId: exam.schoolId, campusId: exam.campusId || null, groupId: exam.groupId, exam,
+        createdBy: req.admin?.id || null, createdByName: req.admin?.name || req.admin?.username || '',
+      });
     }
     res.status(200).json({ message: 'Exam updated successfully', exam });
   } catch (err) {

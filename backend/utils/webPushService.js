@@ -314,7 +314,7 @@ const sendPushForNotification = async (notificationInput) => {
       const statusCode = Number(err?.statusCode || err?.status || 0);
       // 404/410 = subscription gone; 403 = it was created with a different VAPID
       // key (keys rotated) — all are dead, so drop them and let the browser resubscribe.
-      if (statusCode === 404 || statusCode === 410 || statusCode === 403) {
+      if (statusCode === 404 || statusCode === 410 || statusCode === 403 || statusCode === 401) {
         await disableSubscription(sub);
       } else {
         await pruneFailedSubscription(sub);
@@ -400,7 +400,7 @@ const sendChatMessagePush = async ({ io, thread, message, senderId }) => {
       await markSuccessfulDelivery(sub);
     } catch (err) {
       const statusCode = Number(err?.statusCode || err?.status || 0);
-      if (statusCode === 404 || statusCode === 410 || statusCode === 403) {
+      if (statusCode === 404 || statusCode === 410 || statusCode === 403 || statusCode === 401) {
         await disableSubscription(sub);
       } else {
         await pruneFailedSubscription(sub);
@@ -506,7 +506,7 @@ const sendCommunityPostPush = async ({ post, authorName }) => {
       await markSuccessfulDelivery(sub);
     } catch (err) {
       const statusCode = Number(err?.statusCode || err?.status || 0);
-      if (statusCode === 404 || statusCode === 410 || statusCode === 403) {
+      if (statusCode === 404 || statusCode === 410 || statusCode === 403 || statusCode === 401) {
         await disableSubscription(sub);
       } else {
         await pruneFailedSubscription(sub);

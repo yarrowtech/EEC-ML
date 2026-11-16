@@ -458,7 +458,9 @@ export const generateAdmitCardPdf = async ({ student = {}, group = {}, pdfHeader
     doc.text('Affix Photo', px + pw / 2, py + ph / 2, { align: 'center' });
   }
   // QR code: identifies the student + exam for verification at the hall.
-  const qrPayload = [
+  // A signed admitQr token (from the API) lets invigilators scan it for exam
+  // attendance; the plain-text payload is only a fallback for old data.
+  const qrPayload = clean(student.admitQr) || [
     clean(pdfHeader.schoolName),
     `Student: ${clean(student.studentName)}`,
     `Admission: ${clean(student.admissionNumber || student.studentId)}`,
@@ -467,8 +469,8 @@ export const generateAdmitCardPdf = async ({ student = {}, group = {}, pdfHeader
     `Exam: ${clean(group.title)}`,
   ].join('\n');
   try {
-    const qr = await QRCode.toDataURL(qrPayload, { margin: 0, width: 240, errorCorrectionLevel: 'M' });
-    const qs = 15.5;
+    const qr = await QRCode.toDataURL(qrPayload, { margin: 0, width: 320, errorCorrectionLevel: 'L' });
+    const qs = 16;
     doc.addImage(qr, 'PNG', px + (pw - qs) / 2, py + ph + 1.8, qs, qs);
   } catch { /* QR optional */ }
   y += detailsH + 4;

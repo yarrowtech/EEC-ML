@@ -304,7 +304,7 @@ const LoginForm = () => {
         purgeStaleSessionCaches();
         localStorage.setItem('token', loginData.token);
         localStorage.setItem('userType', resetUserType);
-        await refreshBranding();
+        refreshBranding(); // background — never block navigation on branding
         toast.success('Login successful');
         navigate(resetConfig.redirect);
         return;
@@ -347,7 +347,7 @@ const LoginForm = () => {
       localStorage.setItem('token', data.token);
       localStorage.setItem('userType', data.userType);
       if (data.userType === 'Student') prefetchStudentDashboard();
-      await refreshBranding();
+      refreshBranding(); // background — never block navigation on branding
 
       // Persist Remember Me — store username + expiry
       if (formData.rememberMe) {

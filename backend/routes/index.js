@@ -62,6 +62,7 @@ module.exports = function registerRoutes(app, { generalApiLimiter, authApiLimite
   app.use('/api/attendance', require('./attendanceRoutes'));
   app.use('/api/academic', writeHeavyApiLimiter, require('./academicRoutes'));
   app.use('/api/subject', require('./subjectRoute'));
+  app.use('/api/exam-attendance', require('./examAttendanceRoutes'));
   app.use('/api/exam', require('./examRoute'));
   app.use('/api/assignment', require('./assignmentRoute'));
   app.use('/api/behaviour', require('./behaviourRoute'));

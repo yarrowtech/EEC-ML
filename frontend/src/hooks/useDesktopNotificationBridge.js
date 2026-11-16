@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { subscriptionMatchesKey } from '../utils/webPush';
+import { subscriptionMatchesKey, rememberSubscribedKey } from '../utils/webPush';
 
 const PROMPT_COOLDOWN_MS = 24 * 60 * 60 * 1000;
 
@@ -123,6 +123,7 @@ export const useDesktopNotificationBridge = ({
           applicationServerKey: serverKey,
         });
       }
+      rememberSubscribedKey(serverKey);
       if (subscription?.endpoint) {
         await saveSubscriptionOnServer(subscription.toJSON ? subscription.toJSON() : subscription);
       }

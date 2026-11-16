@@ -64,6 +64,7 @@ const VIEW_TITLES = {
   routine: 'Timetable',
   schedule: 'Timetable',
   exams: 'Exams',
+  'admit-cards': 'Admit Cards',
   holidays: 'Holidays',
   'lesson-plan-status': 'Lesson Plan Status',
   courses: 'Courses',

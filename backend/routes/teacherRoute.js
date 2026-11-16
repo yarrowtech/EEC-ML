@@ -218,7 +218,7 @@ router.post('/login', rateLimit({ windowMs: 60 * 1000, max: 20, keyGenerator: ra
     }
     const user = await TeacherUser.findOne({
       $or: [{ username }, { employeeCode: username }],
-    });
+    }).select('_id username employeeCode password schoolId campusId campusName campusType organizationId lastLoginAt');
     if (!user || !(await bcrypt.compare(password, user.password))) {
       logAuthEvent(req, {
         action: 'login',
@@ -261,8 +261,11 @@ router.post('/login', rateLimit({ windowMs: 60 * 1000, max: 20, keyGenerator: ra
       return res.json({ requiresPasswordReset: true, username: user.username });
     }
 
+    // Targeted update instead of a full-document save (no re-validation of the
+    // whole teacher profile on every login); not awaited before responding.
     user.lastLoginAt = new Date();
-    await user.save();
+    TeacherUser.updateOne({ _id: user._id }, { $set: { lastLoginAt: user.lastLoginAt } })
+      .catch((e) => console.error('teacher lastLoginAt update failed:', e?.message));
     const token = jwt.sign(
       {
         id: user._id,

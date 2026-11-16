@@ -11,9 +11,24 @@ const urlBase64ToUint8Array = (base64String) => {
 
 // True when an existing push subscription was created with `serverKey`.
 // Browsers that don't expose the key are treated as matching (can't tell).
+// Firefox (and some others) don't expose the key a subscription was made with,
+// so we also remember it ourselves; a subscription with no remembered key (made
+// before this existed) or a different one is replaced.
+const SUBSCRIBED_KEY_STORAGE = 'webpush_subscribed_server_key';
+const keyToString = (key) => {
+  try { return btoa(String.fromCharCode(...new Uint8Array(key))); } catch { return ''; }
+};
+export const rememberSubscribedKey = (serverKey) => {
+  try { localStorage.setItem(SUBSCRIBED_KEY_STORAGE, keyToString(serverKey)); } catch { /* ignore */ }
+};
+
 export const subscriptionMatchesKey = (subscription, serverKey) => {
+  if (!subscription || !serverKey) return true;
+  let remembered = '';
+  try { remembered = localStorage.getItem(SUBSCRIBED_KEY_STORAGE) || ''; } catch { /* ignore */ }
+  if (remembered !== keyToString(serverKey)) return false;
   const current = subscription?.options?.applicationServerKey;
-  if (!current || !serverKey) return true;
+  if (!current) return true;
   const a = new Uint8Array(current);
   if (a.length !== serverKey.length) return false;
   for (let i = 0; i < a.length; i += 1) if (a[i] !== serverKey[i]) return false;
@@ -82,6 +97,7 @@ export const subscribeToPush = async () => {
       applicationServerKey: serverKey,
     });
   }
+  rememberSubscribedKey(serverKey);
 
   await fetch(`${API_BASE}/api/notifications/push/subscribe`, {
     method: 'POST',

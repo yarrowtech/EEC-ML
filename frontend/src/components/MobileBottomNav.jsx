@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import {
-  Home, BookOpen, Calendar, CalendarDays, MessageCircle, CircleUserRound,
+  Home, FileBadge, BookOpen, Calendar, CalendarDays, MessageCircle, CircleUserRound,
   X, FileText, NotebookPen, Target, BarChart3, Users,
   Brain, Save, LogOut, GraduationCap, Bell, Heart, Zap,
   ClipboardCheck,
@@ -33,6 +33,7 @@ const subMenus = {
       { id: 'routine',            name: 'Timetable',    icon: Calendar,     color: 'bg-amber-500', desc: 'Class schedule' },
       { id: 'attendance',         name: 'Attendance',   icon: Users,        color: 'bg-amber-600', desc: 'Track presence' },
       { id: 'exams',              name: 'Exams',        icon: FileText,     color: 'bg-amber-500', desc: 'Exam routine' },
+      { id: 'admit-cards',        name: 'Admit Cards',  icon: FileBadge,    color: 'bg-amber-600', desc: 'Download admit card' },
       { id: 'lesson-plan-status', name: 'Syllabus',     icon: BookOpen,     color: 'bg-amber-600', desc: 'Course status' },
       { id: 'holidays',           name: 'Holidays',     icon: CalendarDays, color: 'bg-amber-500', desc: 'Holiday list' },
       { id: 'noticeboard',        name: 'Notice Board', icon: Bell,         color: 'bg-amber-600', desc: 'Announcements' },
