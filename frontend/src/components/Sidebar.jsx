@@ -386,8 +386,9 @@ const Sidebar = ({ activeView, isOpen, setIsOpen }) => {
                         return (
                           <button
                             key={child.id}
+                            aria-current={childActive ? 'page' : undefined}
                             onClick={(e) => { e.stopPropagation(); handleNavigation(child.id); }}
-                            className={`group flex w-full items-center gap-2.5 px-2.5 text-left text-[13px] transition-all duration-200 ${isSubjectsItem ? 'my-1 rounded-2xl border border-violet-200 py-2.5 shadow-sm' : 'rounded-lg py-1.5'} ${childActive
+                            className={`group flex w-full items-center gap-2.5 px-2.5 text-left text-[13px] transition-all duration-200 ${isSubjectsItem ? `my-1 rounded-2xl border py-2.5 ${childActive ? 'border-violet-200 shadow-sm' : 'border-transparent'}` : 'rounded-lg py-1.5'} ${childActive
                                 ? 'bg-violet-50 font-semibold text-violet-700'
                                 : 'text-slate-500 hover:translate-x-0.5 hover:bg-violet-50/50 hover:text-violet-700'
                               }`}

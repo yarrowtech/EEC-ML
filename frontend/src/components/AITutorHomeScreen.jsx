@@ -3673,7 +3673,7 @@ function useStudentCurriculum() {
   return { subjects, status };
 }
 
-function AiTutorPanel({ onGeneratedStudyItem = () => {} }) {
+function AiTutorPanel({ onGeneratedStudyItem = () => {}, fullHeight = false }) {
   const { profile } = useStudentDashboard();
   const studentFirstName = String(profile?.name || '').trim().split(/\s+/)[0] || 'there';
   const { subjects, status: curriculumStatus } = useStudentCurriculum();
@@ -4087,8 +4087,7 @@ function AiTutorPanel({ onGeneratedStudyItem = () => {} }) {
 
   return (
     <Section>
-      <SectionHeading eyebrow="Your always-on study partner" title="Study Companion" />
-      <Panel className="flex h-[min(760px,calc(82vh-4.5rem))] flex-col overflow-hidden p-0 lg:h-[min(760px,82vh)]">
+      <Panel className={cn('flex flex-col overflow-hidden p-0', fullHeight ? 'h-[calc(100dvh-6rem)] lg:h-[calc(100dvh-1.5rem)] lg:rounded-2xl' : 'h-[min(760px,calc(82vh-4.5rem))] lg:h-[min(760px,82vh)]')}>
         {/* Header — tutor identity, context, controls */}
         <div className="flex flex-wrap items-center gap-3 border-b border-[#E7E3D9] bg-[#FBF9F4] px-4 py-3 sm:px-5">
           <div className="relative">
@@ -4636,7 +4635,7 @@ function AiTutorPanel({ onGeneratedStudyItem = () => {} }) {
             )}
           </AnimatePresence>
 
-          <div ref={composerRef} className="flex items-end gap-2 rounded-full border border-[#E7E3D9] bg-white p-1.5 shadow-[0_8px_24px_-18px_rgba(38,51,46,0.6)] focus-within:border-[#F59E0B]">
+          <div ref={composerRef} className="flex min-h-14 items-end gap-2 rounded-full border border-[#E7E3D9] bg-white p-2 shadow-sm transition-shadow focus-within:border-[#F59E0B] focus-within:ring-2 focus-within:ring-amber-100">
             {/* <Tooltip>
               <TooltipTrigger asChild>
                 <Button
@@ -4662,11 +4661,12 @@ function AiTutorPanel({ onGeneratedStudyItem = () => {} }) {
               }}
               placeholder={listening ? 'Listening…' : (typedPlaceholder || `${activeChipMeta.label} — type your question…`)}
               rows={1}
-              className="max-h-32 min-h-9 flex-1 resize-none border-0 bg-transparent px-1 py-2 text-sm text-slate-800 shadow-none placeholder:text-slate-400 focus-visible:ring-0"
+              aria-label="Your question"
+              className="max-h-32 min-h-10 min-w-0 flex-1 resize-none overflow-y-auto rounded-none border-0 bg-transparent px-3 py-2 text-sm leading-6 text-slate-800 shadow-none placeholder:text-slate-400 focus-visible:ring-0"
               style={{ color: '#1f2937', WebkitTextFillColor: '#1f2937', caretColor: '#1f2937' }}
             />
 
-            <Motion.div whileTap={{ scale: 0.94 }}>
+            <Motion.div className="flex h-10 shrink-0 items-center justify-center" whileTap={{ scale: 0.94 }}>
               <Button
                 onClick={handleSend}
                 disabled={sending || (!question.trim() && !topicTitle)}

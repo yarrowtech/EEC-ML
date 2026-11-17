@@ -186,10 +186,10 @@ const StudyMaterials = () => {
   };
 
   return (
-    <main className="min-h-full bg-[#f5f6fb] p-4 text-slate-900 sm:p-6">
-      <h1 className="mb-4 text-xl font-bold tracking-tight sm:text-2xl">Study Materials</h1>
+    <main className="m-3 flex min-h-0 flex-1 flex-col overflow-hidden rounded-2xl border border-slate-200/80 bg-[#f8f9fd] p-4 text-slate-900 shadow-sm sm:rounded-3xl sm:px-5">
+      <h1 className="mb-4 shrink-0 text-xl font-bold tracking-tight sm:text-2xl">Study Materials</h1>
 
-      <div className="mb-5 grid gap-3 rounded-xl border border-slate-200/80 bg-white p-3 shadow-sm sm:grid-cols-[1fr_220px]">
+      <div className="mb-5 grid shrink-0 gap-3 rounded-xl border border-slate-200/80 bg-white p-3 shadow-sm sm:grid-cols-[1fr_220px]">
         <label className="relative">
           <span className="sr-only">Search chapters, subjects or teachers</span>
           <Search className="absolute left-3 top-3 h-4 w-4 text-slate-400" />
@@ -203,6 +203,7 @@ const StudyMaterials = () => {
         </label>
       </div>
       {error && <div role="alert" className="mb-4 flex items-center gap-2 rounded-lg bg-red-50 p-3 text-sm text-red-700"><AlertCircle size={16} />{error}<button type="button" onClick={fetchMaterials} className="ml-auto shrink-0 font-semibold underline">Try again</button></div>}
+      <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain pr-2 pb-2 custom-scrollbar" role="region" aria-label="Chapter materials" tabIndex={0}>
       {loading ? <div role="status" className="flex items-center justify-center gap-2 py-16 text-sm text-slate-500"><Loader className="h-5 w-5 animate-spin" />Loading your materials...</div> : filteredChapters.length === 0 ? (
         <div className="rounded-xl border border-dashed border-slate-300 bg-white p-10 text-center">
           <BookOpen className="mx-auto mb-3 h-8 w-8 text-violet-400" />
@@ -261,6 +262,7 @@ const StudyMaterials = () => {
           </div>
         </>
       )}
+      </div>
     </main>
   );
 };

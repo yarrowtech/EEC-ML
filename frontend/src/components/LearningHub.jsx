@@ -106,6 +106,7 @@ const LearningHub = () => {
   // Subject chapters and topic readers provide their own navigation.
   const isSubjectDetail = activeTab.key === 'subjects' && /\/subject\/[^/]+/.test(location.pathname);
   const isSubjectsOverview = activeTab.key === 'subjects' && !isSubjectDetail;
+  const isContainedPage = isSubjectsOverview || activeTab.key === 'materials';
 
   // Snapshot the last activity once per mount so the card offers where the
   // student left off previously, not the page they are currently on.
@@ -155,10 +156,10 @@ const LearningHub = () => {
 
   return (
     <div
-      className={isSubjectsOverview ? 'flex min-h-0 w-full flex-1 flex-col overflow-hidden' : 'min-h-full w-full'}
+      className={isContainedPage ? 'flex min-h-0 w-full flex-1 flex-col overflow-hidden' : 'min-h-full w-full'}
     >
       {activeTab.key === 'tutor' && (
-      <div className="flex w-full flex-col gap-3 p-4 sm:px-5 sm:py-4">
+      <div className="flex w-full flex-col gap-3 p-3">
         {activeTab.key === 'tutor' && (
           <Motion.div
             key="tutor"
@@ -167,7 +168,7 @@ const LearningHub = () => {
             transition={{ duration: 0.3, ease: [0.4, 0, 0.2, 1] }}
           >
             <TooltipProvider delayDuration={150}>
-              <AiTutorPanel />
+              <AiTutorPanel fullHeight />
             </TooltipProvider>
           </Motion.div>
         )}
@@ -198,6 +199,7 @@ const LearningHub = () => {
       {activeTab.key === 'materials' && (
         <Motion.div
           key="materials"
+          className="flex min-h-0 flex-1 flex-col overflow-hidden"
           initial={{ opacity: 0, y: 6 }}
           animate={{ opacity: 1, y: 0 }}
           transition={{ duration: 0.3, ease: [0.4, 0, 0.2, 1] }}
