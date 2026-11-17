@@ -2652,6 +2652,7 @@ router.get('/student/smart-learning-map', authStudent, async (req, res) => {
         const attachmentVersion = new Date(plan.updatedAt || plan.createdAt || plan.date || 0).getTime();
         if (chapterEntry.attachmentVersion === undefined || attachmentVersion > chapterEntry.attachmentVersion) {
           chapterEntry.attachmentVersion = attachmentVersion;
+          chapterEntry.teacherName = normalizeString(plan.teacherName);
           const currentAttachments = normalizeStringList(plan.materialsNeeded).map((item) => parseResourceRef(item));
           (chapter.topics || []).forEach((topic) => {
             (topic.subTopics || []).forEach((sub) => {
@@ -2758,6 +2759,7 @@ router.get('/student/smart-learning-map', authStudent, async (req, res) => {
         meta: chapter.meta || {},
         uploads: chapter.uploads || [],
         currentAttachments: chapter.currentAttachments,
+        teacherName: chapter.teacherName || '',
         topics: Array.from(chapter.topics.values()).map((topic) => ({
           id: topic.id,
           title: topic.title,

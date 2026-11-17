@@ -111,6 +111,26 @@ const GLASS_HOVER = 'transition-all duration-200 hover:-translate-y-0.5 hover:sh
 
 const normalize = (value) => String(value || '').trim().toLowerCase();
 
+const getSubjectCompletion = (subject) => {
+  let saved = {};
+  try {
+    saved = JSON.parse(localStorage.getItem(`smart-learning-progress-${subject.key}`) || '{}') || {};
+  } catch {
+    // Missing or unavailable saved progress starts at zero.
+  }
+  let total = 0;
+  let completed = 0;
+  (subject.chapters || []).forEach((chapter) => {
+    (chapter.topics || []).forEach((topic) => {
+      const subtopics = [...new Set((topic.subtopics || []).map((item) => typeof item === 'string' ? item : item?.title).filter(Boolean))];
+      const done = Array.isArray(saved) ? (saved.includes(topic.title) ? subtopics : []) : saved[topic.title];
+      total += subtopics.length;
+      completed += subtopics.filter((item) => Array.isArray(done) && done.includes(item)).length;
+    });
+  });
+  return total ? Math.round(completed / total * 100) : 0;
+};
+
 const SubjectTopicsView = ({ subject, onBack, style = DEFAULT_STYLE }) => {
   const SubjectIcon = style.icon;
   const navigate = useNavigate();
@@ -312,7 +332,6 @@ const SubjectTopicsView = ({ subject, onBack, style = DEFAULT_STYLE }) => {
     });
   };
 
-  const teacherName = Array.from(subject?.teacherNames || [])[0] || '';
   const moodLead = firstName ? `Keep going, ${firstName}!` : 'Keep going!';
   const moodTrail = progress === 0 ? 'Ready to dive in?' : progress === 100 ? 'Subject complete!' : `You're ${progress}% through.`;
 
@@ -399,12 +418,12 @@ const SubjectTopicsView = ({ subject, onBack, style = DEFAULT_STYLE }) => {
                       <div className="min-w-0 space-y-1">
                         <div className="flex flex-wrap items-center gap-2"><span className={`rounded px-2 py-0.5 text-[10px] font-bold uppercase tracking-wide ${meta.chip}`}>{meta.label}</span>{classLabel && <><span className="text-slate-300">•</span><span className="text-xs font-semibold text-slate-500">Class {classLabel}</span></>}</div>
                         <h3 className="truncate text-base font-bold text-slate-900 transition-colors group-hover:text-violet-700">{chapter.title}</h3>
-                        <div className="flex flex-wrap items-center gap-3 text-xs font-medium text-slate-500"><span className="inline-flex items-center gap-1"><Layers size={13} className="text-slate-400" />{topicCount} topic{topicCount === 1 ? '' : 's'}</span><span className="text-slate-300">•</span><span className="inline-flex items-center gap-1"><List size={13} className="text-slate-400" />{subtopicCount} subtopic{subtopicCount === 1 ? '' : 's'}</span>{durationLabel && <><span className="text-slate-300">•</span><span className="inline-flex items-center gap-1"><Clock size={13} className="text-slate-400" />{durationLabel}</span></>}</div>
+                        <div className="flex flex-wrap items-center gap-3 text-xs font-medium text-slate-500"><span className="inline-flex items-center gap-1"><Layers size={13} className="text-slate-400" />{topicCount} topic{topicCount === 1 ? '' : 's'}</span><span className="text-slate-300">•</span><span className="inline-flex items-center gap-1"><List size={13} className="text-slate-400" />{subtopicCount} subtopic{subtopicCount === 1 ? '' : 's'}</span>{durationLabel && <><span className="text-slate-300">•</span><span className="inline-flex items-center gap-1"><Clock size={13} className="text-slate-400" />{durationLabel}</span></>}{chapter.teacherName && <><span className="text-slate-300">?</span><span className="inline-flex items-center gap-1"><Users size={13} className="text-slate-400" />{chapter.teacherName}</span></>}</div>
                       </div>
                     </div>
                     <div className="flex items-center justify-between gap-4 border-t border-slate-100 pt-2.5 md:justify-end md:border-t-0 md:pt-0">
                       <div className="flex w-28 items-center gap-2 md:w-32"><div className="h-1.5 w-full overflow-hidden rounded-full bg-slate-100"><div className={`h-1.5 rounded-full ${meta.bar}`} style={{ width: `${percentage}%` }} /></div><span className="text-xs font-semibold text-slate-400">{percentage}%</span></div>
-                      <div className="flex items-center gap-2"><input type="checkbox" checked={total > 0 && percentage === 100} disabled={total === 0} onChange={(event) => setChapterCompletion(chapter, event.target.checked)} aria-label={`Mark ${chapter.title} as complete`} className="h-5 w-5 shrink-0 cursor-pointer rounded border-slate-300 accent-violet-600 disabled:cursor-not-allowed" /><button type="button" onClick={() => openTopic(firstTopic)} disabled={!firstTopic} className={`inline-flex items-center gap-1.5 rounded-lg px-4 py-2 text-xs font-bold shadow-sm transition active:scale-[0.98] ${!firstTopic ? 'cursor-not-allowed bg-slate-100 text-slate-400' : 'bg-violet-600 text-white shadow-violet-600/25 hover:bg-violet-700'}`}>{lessonLabel}{firstTopic && <ArrowRight size={14} />}</button></div>
+                      <div className="flex items-center gap-2"><button type="button" onClick={() => openTopic(firstTopic)} disabled={!firstTopic} className={`inline-flex items-center gap-1.5 rounded-lg px-4 py-2 text-xs font-bold shadow-sm transition active:scale-[0.98] ${!firstTopic ? 'cursor-not-allowed bg-slate-100 text-slate-400' : 'bg-violet-600 text-white shadow-violet-600/25 hover:bg-violet-700'}`}>{lessonLabel}{firstTopic && <ArrowRight size={14} />}</button><input type="checkbox" checked={total > 0 && percentage === 100} disabled={total === 0} onChange={(event) => setChapterCompletion(chapter, event.target.checked)} aria-label={`Mark ${chapter.title} as complete`} className="h-5 w-5 shrink-0 cursor-pointer rounded border-slate-300 accent-violet-600 disabled:cursor-not-allowed" /></div>
                     </div>
                   </div>
 
@@ -416,10 +435,6 @@ const SubjectTopicsView = ({ subject, onBack, style = DEFAULT_STYLE }) => {
         )}
       </section>
 
-      <section className="flex items-start gap-3 rounded-xl border border-slate-200 bg-white p-4 shadow-sm">
-        <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-violet-50 text-violet-600"><Users size={17} /></div>
-        <div><h4 className="text-sm font-bold text-slate-900">Course information</h4><p className="mt-1 text-xs text-slate-500">{teacherName ? `Lessons published by ${teacherName}.` : 'Your teacher will add course information here.'} {subject.title} · {chapters.length} chapter{chapters.length === 1 ? '' : 's'}.</p></div>
-      </section>
     </div>
   );
 };
@@ -640,8 +655,8 @@ const AILearningCoursesLanding = () => {
   }
 
   return (
-    <div className="min-h-screen w-full bg-[#f8f9fd] px-4 py-6 text-slate-900 sm:px-6 lg:px-8">
-      <div className="mx-auto w-full max-w-7xl">
+    <div className="min-h-full w-full bg-[#f8f9fd] px-4 py-4 text-slate-900 sm:px-5">
+      <div className="w-full">
         {selectedSubject ? (
           <SubjectTopicsView
             subject={selectedSubject}
@@ -650,9 +665,9 @@ const AILearningCoursesLanding = () => {
           />
         ) : (
           <>
-            <div className="mb-8 flex flex-col gap-2">
-              <h1 className="text-2xl sm:text-4xl lg:text-5xl font-black tracking-tight">Your Subjects</h1>
-              <p className="text-sm sm:text-base text-slate-600">Showing only subjects assigned to your class timetable.</p>
+            <div className="mb-4 flex flex-col gap-1">
+              <h1 className="text-xl font-bold tracking-tight sm:text-2xl">Your Subjects</h1>
+              <p className="text-xs text-slate-600 sm:text-sm">Showing only subjects assigned to your class timetable.</p>
             </div>
 
             {error && (
@@ -672,11 +687,11 @@ const AILearningCoursesLanding = () => {
             )}
 
             {loading ? (
-              <div className="grid grid-cols-1 gap-4 sm:gap-6 md:grid-cols-2 lg:grid-cols-3">
+              <div className="grid grid-cols-[repeat(auto-fit,minmax(min(100%,240px),1fr))] gap-3">
                 {[1, 2, 3].map((i) => (
                   <div key={i} className="overflow-hidden rounded-3xl bg-white shadow-sm">
-                    <div className="h-32 animate-pulse bg-slate-200 sm:h-40 lg:h-44" />
-                    <div className="space-y-3 p-4 sm:p-6">
+                    <div className="h-24 animate-pulse bg-slate-200" />
+                    <div className="space-y-3 p-3">
                       <div className="h-4 w-2/3 animate-pulse rounded-full bg-slate-100" />
                       <div className="h-3 w-full animate-pulse rounded-full bg-slate-100" />
                       <div className="h-10 w-full animate-pulse rounded-xl bg-slate-100" />
@@ -693,48 +708,35 @@ const AILearningCoursesLanding = () => {
                 <p className="mt-1 text-sm leading-relaxed text-slate-500">Ask your class teacher to publish lesson-plan topics/materials for your class.</p>
               </div>
             ) : (
-              <div className="grid grid-cols-1 gap-4 sm:gap-6 md:grid-cols-2 lg:grid-cols-3" style={SUBJECT_CARD_FONT}>
+              <div className="grid grid-cols-[repeat(auto-fit,minmax(min(100%,240px),1fr))] gap-3" style={SUBJECT_CARD_FONT}>
                 {assignedSubjects.map((subject, index) => {
                   const style = CARD_STYLES[index % CARD_STYLES.length];
                   const Icon = style.icon;
                   return (
                     <div
                       key={subject.key}
-                      className={`group flex flex-col overflow-hidden rounded-3xl bg-white shadow-lg shadow-slate-200/60 ring-1 ring-slate-100 transition-all duration-300 hover:-translate-y-1.5 hover:shadow-2xl ${style.glow}`}
+                      className={`group flex min-w-0 flex-col overflow-hidden rounded-xl bg-white shadow-sm ring-1 ring-slate-200 transition-shadow hover:shadow-md ${style.glow}`}
                     >
-                      <div className={`relative flex h-32 flex-col justify-end overflow-hidden bg-linear-to-br p-4 sm:h-40 sm:p-6 lg:h-44 ${style.grad}`}>
+                      <div className={`relative flex h-24 flex-col justify-end overflow-hidden bg-linear-to-br p-3 ${style.grad}`}>
                         {/* Decorative texture */}
                         <div className="pointer-events-none absolute -right-8 -top-8 size-32 rounded-full bg-white/10" />
                         <div className="pointer-events-none absolute inset-0 bg-[radial-gradient(white_1.5px,transparent_1.5px)] bg-size-[16px_16px] opacity-[0.07]" />
                         <Icon className="absolute -bottom-5 -right-5 size-24 rotate-12 text-white/20 transition-transform duration-500 group-hover:rotate-0 group-hover:scale-110" />
 
                         {/* Floating icon badge */}
-                        <div className="absolute left-4 top-4 flex size-10 items-center justify-center rounded-2xl bg-white/20 shadow-sm backdrop-blur-md ring-1 ring-white/30 sm:left-6 sm:top-6">
+                        <div className="absolute right-3 top-3 flex size-8 items-center justify-center rounded-lg bg-white/20 ring-1 ring-white/30">
                           <Icon className="size-5 text-white" />
                         </div>
 
-                        <h3 className="relative text-xl font-bold tracking-tight text-white drop-shadow-sm sm:text-2xl">{subject.title}</h3>
+                        <h3 className="relative pr-10 text-lg font-bold tracking-tight text-white">{subject.title}</h3>
                       </div>
-                      <div className="flex flex-1 flex-col gap-4 p-4 sm:p-6">
-                        <div className="flex flex-wrap gap-2">
-                          <span className={`inline-flex items-center gap-1 rounded-full px-3 py-1 text-[11px] font-semibold uppercase tracking-wide ${style.chipA}`}>
-                            <Users size={12} /> {subject.teacherCount} Teacher{subject.teacherCount > 1 ? 's' : ''}
+                      <div className="flex flex-1 flex-col gap-3 p-3">
+                        <div className="flex flex-wrap items-center justify-between gap-2">
+                          <span className="inline-flex items-center gap-1 rounded-full bg-emerald-600 px-3 py-1 text-[11px] font-semibold uppercase tracking-wide text-white">
+                            <Layers size={12} /> {subject.chapters.length} Chapter{subject.chapters.length === 1 ? '' : 's'}
                           </span>
-                          <span className={`inline-flex items-center gap-1 rounded-full px-3 py-1 text-[11px] font-semibold uppercase tracking-wide ${style.chipB}`}>
-                            <CalendarDays size={12} /> {subject.classCount} Class Slot{subject.classCount > 1 ? 's' : ''}
-                          </span>
-                          {subject.hasLessonPlans && (
-                            <span className="inline-flex items-center gap-1 rounded-full bg-emerald-100 px-3 py-1 text-[11px] font-semibold uppercase tracking-wide text-emerald-700">
-                              <Layers size={12} />
-                              {(subject.chapters?.length || subject.topics.length)} {(subject.chapters?.length || 0) > 0 ? 'Chapter' : 'Topic'}{(subject.chapters?.length || subject.topics.length) > 1 ? 's' : ''}
-                            </span>
-                          )}
+                          <span className="text-xs font-semibold text-slate-600">{getSubjectCompletion(subject)}% completed</span>
                         </div>
-                        <p className="flex-1 text-sm leading-relaxed text-slate-600 line-clamp-2">
-                          {subject.hasLessonPlans
-                            ? 'Assigned in your timetable. Start this subject quest now.'
-                            : 'Assigned in your timetable. Lesson plans coming soon from your teacher.'}
-                        </p>
                         <button
                           onClick={() => {
                             if (subject.hasLessonPlans) {
@@ -743,7 +745,7 @@ const AILearningCoursesLanding = () => {
                               });
                             }
                           }}
-                          className={`flex w-full items-center justify-center gap-2 rounded-2xl py-3 font-semibold tracking-tight transition-all duration-200 ease-out ${
+                          className={`flex w-full items-center justify-center gap-2 rounded-lg py-2 text-xs font-semibold tracking-tight transition-all duration-200 ease-out ${
                             subject.hasLessonPlans
                               ? 'bg-amber-500 text-white shadow-md shadow-amber-300/40 hover:bg-amber-600 hover:shadow-lg hover:shadow-amber-300/50 active:scale-[0.98] cursor-pointer'
                               : 'bg-slate-100 text-slate-400 cursor-not-allowed'

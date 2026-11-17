@@ -103,9 +103,8 @@ const LearningHub = () => {
     return TABS.find((tab) => tab.matches.includes(segment)) || TABS[0];
   }, [location.pathname]);
 
-  // A topic reader is a focused, full-bleed experience with its own header —
-  // the "One place to study" title and tab bar above it would just be clutter.
-  const isReadingTopic = activeTab.key === 'subjects' && /\/topic\//.test(location.pathname);
+  // Subject chapters and topic readers provide their own navigation.
+  const isSubjectDetail = activeTab.key === 'subjects' && /\/subject\/[^/]+/.test(location.pathname);
 
   // Snapshot the last activity once per mount so the card offers where the
   // student left off previously, not the page they are currently on.
@@ -134,18 +133,18 @@ const LearningHub = () => {
         backgroundImage: 'radial-gradient(at 0% 0%, rgba(139, 92, 246, 0.05) 0px, transparent 50%), radial-gradient(at 100% 100%, rgba(16, 185, 129, 0.05) 0px, transparent 50%)',
       }}
     >
-      {!isReadingTopic && (
-      <div className="mx-auto flex w-full max-w-6xl flex-col gap-6 p-4 sm:p-6 lg:p-8">
+      {!isSubjectDetail && (
+      <div className="flex w-full flex-col gap-3 p-4 sm:px-5 sm:py-4">
         <div className="flex flex-col gap-4">
           <div>
             <p className="text-xs font-semibold uppercase tracking-[0.05em] text-[#64748b]">One place to study</p>
-            <h1 className="text-2xl font-bold text-[#0f172a] sm:text-3xl">Learning</h1>
+            <h1 className="text-xl font-bold text-[#0f172a]">Learning</h1>
           </div>
 
           <div
             role="tablist"
             aria-label="Learning sections"
-            className={`flex flex-wrap items-center justify-between gap-2 overflow-x-auto rounded-3xl p-2 sm:flex-nowrap sm:gap-4 sm:p-3 ${GLASS_PANEL}`}
+            className={`grid grid-cols-2 gap-1.5 rounded-xl p-1.5 sm:grid-cols-5 ${GLASS_PANEL}`}
           >
             {TABS.map((tab) => {
               const Icon = tab.icon;
@@ -157,20 +156,20 @@ const LearningHub = () => {
                   role="tab"
                   aria-selected={active}
                   onClick={() => { if (!active) navigate(tab.path); }}
-                  className={`flex shrink-0 items-center gap-3 rounded-xl px-3 py-2.5 text-left transition-all sm:px-4 sm:py-3 ${
+                  className={`flex min-w-0 items-center gap-2 rounded-lg px-2.5 py-2 text-left transition-all ${
                     active
                       ? 'border border-white/90 bg-white/80 shadow-[0_4px_12px_rgba(139,92,246,0.1)]'
                       : 'border border-transparent hover:-translate-y-0.5 hover:bg-white/40'
                   }`}
                 >
                   <span
-                    className="flex size-10 shrink-0 items-center justify-center rounded-[10px]"
+                    className="flex size-8 shrink-0 items-center justify-center rounded-lg"
                     style={{ backgroundColor: tab.iconBg, color: tab.iconColor }}
                   >
                     <Icon className="size-5" />
                   </span>
                   <span className={`min-w-0 flex-col ${active ? 'flex' : 'hidden sm:flex'}`}>
-                    <span className="block text-[0.95rem] font-semibold leading-tight text-[#0f172a]">{tab.label}</span>
+                    <span className="block text-sm font-semibold leading-tight text-[#0f172a]">{tab.label}</span>
                     <span className="mt-0.5 block truncate text-xs text-[#64748b]">{tab.hint}</span>
                   </span>
                 </button>

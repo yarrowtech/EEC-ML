@@ -202,6 +202,7 @@ const DashboardContent = () => {
   // treatment to receive a definite height from their ancestors.
   // Topic reader scrolls inside its own panel on desktop (so its left nav can stay put).
   const isTopicReaderPath = location.pathname.includes('/smart-learning-courses/subject/') && location.pathname.includes('/topic/') && !location.pathname.includes('/assessment/');
+  const isSubjectChaptersPath = /\/smart-learning-courses\/subject\/[^/]+\/?$/.test(location.pathname);
   const isFullscreenView = effectiveView === 'excuse-letter'
     || (isTopicReaderPath && typeof window !== 'undefined' && window.innerWidth >= 1024)
     || effectiveView === 'assignments-journal'
@@ -361,7 +362,7 @@ const DashboardContent = () => {
               the scroll container) — sticky on <header> alone did nothing
               because its parent was exactly the header's height. */}
           {/* The topic reader is a focused full-height view — no portal header. */}
-          {!isChatBoxOpen && !isTopicReaderPath && (
+          {!isChatBoxOpen && !isTopicReaderPath && !isSubjectChaptersPath && (
             <div className={`sticky top-0 z-40 ${isChatView ? 'hidden lg:block' : ''}`}>
               <Header
                 sidebarOpen={sidebarOpen}
