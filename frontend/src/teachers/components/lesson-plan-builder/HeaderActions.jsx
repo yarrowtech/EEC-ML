@@ -1,4 +1,5 @@
 import React, { useId } from 'react';
+import CloudSaveStatus from './CloudSaveStatus';
 
 const HeaderActions = ({ autosaveStatus, classValue, sectionValue, subjectValue,
   onClassChange, onSectionChange, onSubjectChange, classOptions = [], sectionOptions = [],
@@ -17,7 +18,7 @@ const HeaderActions = ({ autosaveStatus, classValue, sectionValue, subjectValue,
     <header className="border-b border-slate-200 px-4 py-3 dark:border-slate-700">
       <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
         <h1 className="text-base font-semibold text-slate-900 dark:text-white">Lesson plan</h1>
-        <p role="status" className="text-xs text-slate-600 dark:text-slate-300">{autosaveStatus}</p>
+        <CloudSaveStatus status={autosaveStatus} className="text-xs" />
       </div>
       <div className="grid gap-3 sm:grid-cols-3">
         {fields.map(field => <div key={field.key}>

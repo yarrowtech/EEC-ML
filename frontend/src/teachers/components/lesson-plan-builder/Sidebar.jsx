@@ -85,14 +85,14 @@ const Sidebar = ({
                 {!collapsed && (
                   <Button
                     variant="ghost"
-                    size="icon-sm"
+                    size="sm"
                     onClick={onAdd}
                     disabled={addDisabled}
-                    title="Create chapter"
+                    title={addDisabled ? 'Select class, section and subject first' : 'Create chapter'}
                     aria-label="Create chapter"
-                    className="size-7 rounded-lg bg-indigo-50 text-indigo-600 hover:bg-indigo-100 disabled:opacity-50"
+                    className="h-7 gap-1 rounded-lg bg-indigo-600 px-2.5 text-xs font-semibold text-white hover:bg-indigo-700 hover:text-white disabled:opacity-50"
                   >
-                    <Plus className="size-4" />
+                    <Plus className="size-3.5" /> Add Chapter
                   </Button>
                 )}
                 <Button

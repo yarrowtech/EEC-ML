@@ -145,7 +145,9 @@ describe('AIPoweredTeaching persistence', () => {
 
     fireEvent.click(chapterButton);
 
+    // Clicking a chapter shows its preview; the editor opens from the edit button.
     expect(screen.getByText('The teacher’s latest saved update')).toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: /continue editing|edit chapter/i }));
     expect(screen.getByTestId('published-plan-id')).toHaveTextContent('published-plan-new');
     expect(localStorage.getItem('currentLessonPlanDraft')).toBe('draft-plan-1');
   });
@@ -205,9 +207,11 @@ describe('AIPoweredTeaching persistence', () => {
 
     render(<AIPoweredTeaching />);
     fireEvent.click(await screen.findByRole('button', { name: 'Algebra' }));
+    fireEvent.click(screen.getByRole('button', { name: /continue editing|edit chapter/i }));
     fireEvent.click(screen.getByRole('button', { name: 'Apply AI suggestion' }));
 
-    await screen.findByText('Algebra introduction.');
+    // Shown in both the preview and the editor.
+    expect((await screen.findAllByText('Algebra introduction.')).length).toBeGreaterThan(0);
     const request = global.fetch.mock.calls.find(([url]) => String(url).includes('/api/ai-teacher/lesson-content'));
     expect(JSON.parse(request[1].body)).toMatchObject({
       subject: 'Mathematics',

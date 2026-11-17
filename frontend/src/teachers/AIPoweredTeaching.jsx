@@ -5,12 +5,14 @@
  */
 
 import React, { useEffect, useMemo, useRef, useState } from 'react';
+import { createPortal } from 'react-dom';
 import { motion as Motion } from 'framer-motion';
 import { toast } from 'react-hot-toast';
 import { BookOpenCheck } from 'lucide-react';
 import HeaderActions from './components/lesson-plan-builder/HeaderActions';
 import Sidebar from './components/lesson-plan-builder/Sidebar';
 import DrawerModal, { DEFAULT_INSTRUCTIONAL_FLOW } from './components/lesson-plan-builder/DrawerModal';
+import ChapterPreview from './components/lesson-plan-builder/ChapterPreview';
 import { assessmentTypes, durationOptions } from './components/lesson-plan-builder/mockData';
 
 const API_BASE = (import.meta.env.VITE_API_URL || 'http://localhost:5000').replace(/\/$/, '');
@@ -218,6 +220,8 @@ const writeStoredSelection = ({ classId = '', sectionId = '', subjectId = '' }) 
 const AIPoweredTeaching = () => {
   const [chapters, setChapters] = useState([]);
   const [openChapterIds, setOpenChapterIds] = useState([]);
+  // Clicking a chapter shows a read-only preview; the step editor opens full-page.
+  const [editorOpen, setEditorOpen] = useState(false);
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
   const [draggedChapterId, setDraggedChapterId] = useState(null);
@@ -276,11 +280,14 @@ const AIPoweredTeaching = () => {
           onProgress?.(100);
           resolve(responseData);
         } else {
-          reject(new Error(responseData?.message || responseData?.error || 'Failed to upload file'));
+          const reason = responseData?.message || responseData?.error
+            || (xhr.status === 413 ? 'File is too large' : xhr.status === 401 ? 'Your session expired — please log in again' : xhr.status === 429 ? 'Too many uploads — wait a minute and try again' : '');
+          const detail = responseData?.detail ? ` (${responseData.detail})` : '';
+          reject(new Error(`${reason || `Upload failed (error ${xhr.status})`}${detail}`));
         }
       };
 
-      xhr.onerror = () => reject(new Error('Failed to upload file'));
+      xhr.onerror = () => reject(new Error('Could not reach the server — check your connection and try again'));
       xhr.onabort = () => reject(new Error('Upload cancelled'));
       xhr.send(formData);
     });
@@ -650,7 +657,9 @@ const AIPoweredTeaching = () => {
     const nextId = `ch-${Date.now()}`;
     const chapter = enrichChapter({ id: nextId, createdAt: new Date().toISOString(), title: 'Untitled Chapter', duration: durationOptions[0], description: '', files: [], assessments: [] });
     setChapters((prev) => [chapter, ...prev]);
-    setOpenChapterIds((prev) => [...prev, nextId]);
+    setOpenChapterIds([nextId]);
+    setActiveStep(0);
+    setEditorOpen(true);
     touchAutosave();
   };
 
@@ -822,13 +831,15 @@ const AIPoweredTeaching = () => {
           [bucket]: (chapter.contentUploads?.[bucket] || []).filter((item) => item.id !== tempId),
         },
       }));
-      toast.error(err?.message || 'Failed to upload file');
+      toast.error(`"${file.name}" was not uploaded: ${err?.message || 'Failed to upload file'}`);
+      console.error('Lesson material upload failed:', err);
     }
   };
 
   const removeContentFile = (chapterId, fileId, bucket) => {
     if (!chapterId || !bucket) return;
     updateChapter(chapterId, (chapter) => ({ ...chapter, contentUploads: { ...chapter.contentUploads, [bucket]: (chapter.contentUploads[bucket] || []).filter((file) => file.id !== fileId) } }));
+    toast.success('File deleted');
   };
 
   const addWorksheetFile = async (chapterId, file) => {
@@ -1196,12 +1207,12 @@ const AIPoweredTeaching = () => {
   const activeChapter = openChapters[openChapters.length - 1] || null;
 
   return (
-    <div className="min-h-full overflow-y-auto bg-[#f4f7fb] p-0 lg:h-full lg:min-h-0 lg:overflow-hidden dark:bg-slate-950">
+    <div className="h-full min-h-0 overflow-y-auto overscroll-contain rounded-2xl bg-[#f4f7fb] p-0 lg:overflow-hidden dark:bg-slate-950">
       <Motion.div
         initial={{ opacity: 0, y: 10 }}
         animate={{ opacity: 1, y: 0 }}
         transition={{ duration: 0.25, ease: 'easeOut' }}
-        className="flex min-h-full w-full min-w-0 flex-col overflow-hidden bg-white shadow-none lg:h-full lg:min-h-0"
+        className="flex min-h-full w-full min-w-0 flex-col bg-white shadow-none lg:h-full lg:min-h-0 lg:overflow-hidden"
       >
         <HeaderActions
           autosaveStatus={publishing ? 'Publishing...' : autosaveStatus}
@@ -1260,6 +1271,7 @@ const AIPoweredTeaching = () => {
             onSelect={(id) => {
               setOpenChapterIds([id]);
               setActiveStep(0);
+              setEditorOpen(false);
             }}
             onAdd={handleAddChapter}
             onDelete={handleDeleteChapter}
@@ -1271,42 +1283,56 @@ const AIPoweredTeaching = () => {
             onDrop={handleChapterDrop}
           />
 
-          <div className="min-w-0 flex-1 overflow-y-auto rounded-[22px] bg-white sm:rounded-[28px] lg:h-full lg:min-h-0">
-            {openChapters.length > 0 ? (
-              <div className="min-w-0 space-y-4 pb-4 pr-1 lg:h-full lg:min-h-0 lg:pb-0">
-                {openChapters.map((chapter) => (
-                  <DrawerModal
-                    key={chapter.id}
-                    open={true}
-                    chapter={chapter}
-                    durations={durationOptions}
-                    assessmentTypes={assessmentTypes}
-                    classId={selectedClass}
-                    sectionId={selectedSection}
-                    subjectId={selectedSubject}
-                    subjectName={selectedSubjectName}
-                    classDisplayName={selectedClassName}
-                    onClose={() => handleCloseChapter(chapter.id)}
-                    onUpdate={(nextChapter) => updateChapter(nextChapter.id, () => nextChapter)}
-                    onAddContentFile={(file, bucket) => addContentFile(chapter.id, file, bucket)}
-                    onRemoveContentFile={(fileId, bucket) => removeContentFile(chapter.id, fileId, bucket)}
-                    onAddWorksheetFile={(file) => addWorksheetFile(chapter.id, file)}
-                    onRemoveWorksheetFile={(fileId) => removeWorksheetFile(chapter.id, fileId)}
-                    onAddAssessment={() => addAssessmentToActiveChapter(chapter.id)}
-                    onUpdateAssessment={(assessmentId, nextAssessment) => updateAssessmentInActiveChapter(chapter.id, assessmentId, nextAssessment)}
-                    onApplyAiSuggestion={() => applyAiSuggestion(chapter.id)}
-                    onSaveVersion={() => saveVersion(chapter.id)}
-                    onRestoreVersion={(versionId) => restoreVersion(chapter.id, versionId)}
-                    onPublishChapter={() => handlePublishChapter(chapter.id)}
-                    isPublishing={publishing}
-                    publishProgress={publishProgress}
-                    externalStep={chapter.id === activeChapter?.id ? activeStep : undefined}
-                    onStepChange={(step) => {
-                      if (chapter.id === activeChapter?.id) setActiveStep(step);
-                    }}
-                  />
-                ))}
-              </div>
+          <div className="min-w-0 flex-1 rounded-[22px] bg-white sm:rounded-[28px] lg:h-full lg:min-h-0 lg:overflow-y-auto">
+            {activeChapter ? (
+              <>
+                <ChapterPreview
+                  chapter={activeChapter}
+                  onEdit={() => setEditorOpen(true)}
+                  onClose={() => handleCloseChapter(activeChapter.id)}
+                />
+                {editorOpen && createPortal(
+                  // Full-page editor, like the student admission form (portalled so
+                  // the animated page wrapper cannot trap the fixed overlay).
+                  <div className="fixed inset-0 z-[70] overflow-y-auto overscroll-contain bg-white lg:overflow-hidden dark:bg-slate-950">
+                    <div className="flex min-h-full w-full flex-col lg:h-full">
+                      <DrawerModal
+                        key={activeChapter.id}
+                        open={true}
+                        chapter={activeChapter}
+                        durations={durationOptions}
+                        assessmentTypes={assessmentTypes}
+                        classId={selectedClass}
+                        sectionId={selectedSection}
+                        subjectId={selectedSubject}
+                        subjectName={selectedSubjectName}
+                        classDisplayName={selectedClassName}
+                        onClose={() => setEditorOpen(false)}
+                        onPreview={() => setEditorOpen(false)}
+                        autosaveStatus={publishing ? 'Publishing...' : autosaveStatus}
+                        onUpdate={(nextChapter) => updateChapter(nextChapter.id, () => nextChapter)}
+                        onAddContentFile={(file, bucket) => addContentFile(activeChapter.id, file, bucket)}
+                        onRemoveContentFile={(fileId, bucket) => removeContentFile(activeChapter.id, fileId, bucket)}
+                        onAddWorksheetFile={(file) => addWorksheetFile(activeChapter.id, file)}
+                        onRemoveWorksheetFile={(fileId) => removeWorksheetFile(activeChapter.id, fileId)}
+                        onAddAssessment={() => addAssessmentToActiveChapter(activeChapter.id)}
+                        onUpdateAssessment={(assessmentId, nextAssessment) => updateAssessmentInActiveChapter(activeChapter.id, assessmentId, nextAssessment)}
+                        onApplyAiSuggestion={() => applyAiSuggestion(activeChapter.id)}
+                        onSaveVersion={() => saveVersion(activeChapter.id)}
+                        onRestoreVersion={(versionId) => restoreVersion(activeChapter.id, versionId)}
+                        onPublishChapter={() => handlePublishChapter(activeChapter.id)}
+                        isPublishing={publishing}
+                        publishProgress={publishProgress}
+                        externalStep={activeStep}
+                        onStepChange={(step) => {
+                          setActiveStep(step);
+                        }}
+                      />
+                    </div>
+                  </div>,
+                  document.body,
+                )}
+              </>
             ) : (
               <div className="flex items-center justify-center overflow-y-auto rounded-2xl border border-dashed border-blue-200 bg-white/80 dark:border-slate-700 dark:bg-slate-900/60">
                 <div className="w-full max-w-sm px-5 py-6">
@@ -1320,8 +1346,8 @@ const AIPoweredTeaching = () => {
                       <div className="space-y-2">
                         {[
                           { step: 1, text: 'Select class, section & subject above' },
-                          { step: 2, text: 'Click + in the sidebar to add a chapter' },
-                          { step: 3, text: 'Fill in the chapter details step by step' },
+                          { step: 2, text: 'Press "+ Add Chapter" to create a chapter' },
+                          { step: 3, text: 'Fill each step and press "Next" — your work saves automatically' },
                           { step: 4, text: 'Hit "Publish" to share with students' },
                         ].map(({ step, text }) => (
                           <div key={step} className="flex items-center gap-2.5 rounded-lg border border-slate-100 bg-slate-50/80 px-3 py-2 dark:border-slate-800 dark:bg-slate-900/60">
@@ -1337,12 +1363,12 @@ const AIPoweredTeaching = () => {
                       <p className="text-sm font-semibold text-slate-700 dark:text-slate-200">
                         {chapters.length} chapter{chapters.length !== 1 ? 's' : ''} ready
                       </p>
-                      <p className="mt-1 text-xs text-slate-400">Click a chapter in the sidebar to open it, or press + to add one.</p>
+                      <p className="mt-1 text-xs text-slate-400">Click a chapter in the list to open it, or press "+ Add Chapter" to create a new one.</p>
                     </div>
                   ) : (
                     <div className="text-center">
                       <p className="text-sm font-semibold text-slate-700 dark:text-slate-200">No chapters yet</p>
-                      <p className="mt-1 text-xs text-slate-400">Press the + button in the sidebar to create your first chapter.</p>
+                      <p className="mt-1 text-xs text-slate-400">Press "+ Add Chapter" in the chapter list to create your first chapter.</p>
                     </div>
                   )}
                 </div>

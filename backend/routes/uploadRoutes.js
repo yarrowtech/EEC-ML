@@ -68,9 +68,40 @@ const parseTags = (value) => String(value || "")
   .slice(0, 10)
   .map((tag) => tag.slice(0, 64));
 
+// Some browsers/OS setups (notably Windows with odd file associations) send
+// documents as application/octet-stream or with no type at all. Fall back to the
+// file extension so a normal PDF/DOCX/PPTX is not rejected as "unsupported".
+const EXTENSION_MIME_TYPES = {
+  pdf: "application/pdf",
+  doc: "application/msword",
+  docx: "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+  xls: "application/vnd.ms-excel",
+  xlsx: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+  ppt: "application/vnd.ms-powerpoint",
+  pptx: "application/vnd.openxmlformats-officedocument.presentationml.presentation",
+  txt: "text/plain",
+  jpg: "image/jpeg",
+  jpeg: "image/jpeg",
+  png: "image/png",
+  webp: "image/webp",
+  gif: "image/gif",
+  heic: "image/heic",
+  heif: "image/heif",
+  mp3: "audio/mpeg",
+  wav: "audio/wav",
+  mp4: "video/mp4",
+  webm: "video/webm",
+};
+
 const validateFile = (file) => {
   if (!file) return "No file received";
-  if (!ALLOWED_MIME_TYPES.has(file.mimetype)) return "Unsupported file type";
+  if (!ALLOWED_MIME_TYPES.has(file.mimetype)) {
+    const ext = String(file.originalname || "").split(".").pop().toLowerCase();
+    const inferred = EXTENSION_MIME_TYPES[ext];
+    const generic = !file.mimetype || file.mimetype === "application/octet-stream" || file.mimetype === "binary/octet-stream";
+    if (!inferred || !generic) return `Unsupported file type (${file.mimetype || "unknown"})`;
+    file.mimetype = inferred;
+  }
   return null;
 };
 

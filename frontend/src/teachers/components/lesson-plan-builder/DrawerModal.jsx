@@ -10,11 +10,18 @@ import {
   BookOpen,
   Calendar,
   CheckCircle2,
+  ArrowLeft,
+  ArrowRight,
+  Check,
   ChevronLeft,
   ChevronRight,
   ClipboardCheck,
   ClipboardList,
   Clock,
+  Eye,
+  Info,
+  Layers,
+  Save,
   FileText,
   FlaskConical,
   Lightbulb,
@@ -40,6 +47,7 @@ import { Input } from '@/components/ui/input';
 import { Progress, ProgressLabel, ProgressValue } from '@/components/ui/progress';
 import { Textarea } from '@/components/ui/textarea';
 import RichTextEditor from './RichTextEditor';
+import CloudSaveStatus from './CloudSaveStatus';
 import UploadDropzone from './UploadDropzone';
 import { InlineTryoutBuilder } from './TryoutBuilder';
 import RichTextMaterialEditor from '../RichTextMaterialEditor';
@@ -54,15 +62,53 @@ export const DEFAULT_INSTRUCTIONAL_FLOW = [
 ];
 
 const STEPS = [
-  { key: 'info',       label: 'Lesson Info',       icon: Calendar,       color: 'blue'    },
-  { key: 'materials',  label: 'Materials',          icon: BookOpen,       color: 'purple'  },
-  { key: 'intro',      label: 'Introduction',       icon: Lightbulb,      color: 'amber'   },
-  { key: 'content',    label: 'Content',            icon: ListChecks,     color: 'green'   },
-  { key: 'assessment', label: 'Worksheet',          icon: ClipboardList,  color: 'rose'    },
-  { key: 'language',   label: 'Language Practice',  icon: Mic,            color: 'indigo'  },
-  { key: 'tryout',     label: 'Tryout',             icon: Play,           color: 'pink'    },
-  { key: 'publish',    label: 'Review and Publish', icon: Send,  color: 'emerald' },
+  { key: 'info',       label: 'Lesson Info',       icon: Calendar,       color: 'blue', desc: 'Basic details of the chapter',    hint: 'Give the chapter a name, pick the lesson date and duration, and write what students should learn.' },
+  { key: 'materials',  label: 'Materials',          icon: BookOpen,       color: 'purple', desc: 'Add learning resources',  hint: 'Upload your PDFs, slides or notes. AI uses them to help write the next steps.' },
+  { key: 'intro',      label: 'Introduction',       icon: Lightbulb,      color: 'amber', desc: 'Write a short introduction',   hint: 'Write how you will start the class — a question, story or activity to get students interested.' },
+  { key: 'content',    label: 'Content',            icon: ListChecks,     color: 'green', desc: 'Add the main lesson content',   hint: 'Explain the main topic step by step. You can use "Generate with AI" to get a draft.' },
+  { key: 'assessment', label: 'Worksheet',          icon: ClipboardList,  color: 'rose', desc: 'Practice questions & activities',    hint: 'Add questions or upload a worksheet to check what students understood.' },
+  { key: 'language',   label: 'Language Practice',  icon: Mic,            color: 'indigo', desc: 'Grammar, vocabulary etc.',  hint: 'Optional: add reading or speaking practice for students. You can skip this step.' },
+  { key: 'tryout',     label: 'Tryout',             icon: Play,           color: 'pink', desc: 'Quick assessment / quiz',    hint: 'Optional: add a short practice activity students can try. You can skip this step.' },
+  { key: 'publish',    label: 'Review & Publish', icon: Send,  color: 'emerald', desc: 'Check and publish the chapter', hint: 'Check everything once, then press "Publish" so students can see this chapter.' },
 ];
+
+const plainText = (v) => String(v || '').replace(/<[^>]*>/g, ' ').replace(/&nbsp;/g, ' ').trim();
+const countUploads = (uploads) => Object.values(uploads || {}).reduce((n, l) => n + (Array.isArray(l) ? l.length : 0), 0);
+// true = filled in, false = required but missing, null = optional and empty
+export const stepStatus = (key, chapter = {}) => {
+  switch (key) {
+    case 'info': {
+      const title = String(chapter.title || '').trim();
+      return Boolean(title && title !== 'Untitled Chapter' && chapter.lessonDate && String(chapter.duration || '').trim());
+    }
+    case 'materials': return countUploads(chapter.contentUploads) > 0;
+    case 'intro': return Boolean(plainText(chapter.introductionText));
+    case 'content': return Boolean(plainText(chapter.explanation));
+    case 'assessment': return ((chapter.worksheetFiles || []).length + (chapter.assessments || []).length) > 0;
+    case 'language': return null;
+    case 'tryout': return (chapter.tryouts || []).length > 0 ? true : null;
+    case 'publish': return chapter.status === 'published' && !chapter.isDraft ? true : null;
+    default: return null;
+  }
+};
+
+const WEEKDAYS = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
+const toIsoDate = (d) => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+// Dates from today → 10 weeks ahead that fall on the given weekdays (no past dates).
+const buildLessonDates = (days) => {
+  if (!days.length) return [];
+  const wanted = new Set(days.map((d) => WEEKDAYS.indexOf(d)).filter((i) => i >= 0));
+  const out = [];
+  const start = new Date();
+  start.setHours(0, 0, 0, 0);
+
+  for (let i = 0; i < 70; i += 1) {
+    const d = new Date(start);
+    d.setDate(start.getDate() + i);
+    if (wanted.has(d.getDay())) out.push(d);
+  }
+  return out;
+};
 
 const EVAL_TAGS = ['Excellent', 'Good', 'Needs Improvement'];
 
@@ -81,6 +127,27 @@ const Field = ({ label, children }) => (
   <div className="space-y-1.5">
     <label className="block text-xs font-semibold uppercase tracking-wide text-slate-500 dark:text-slate-400">{label}</label>
     {children}
+  </div>
+);
+
+const InfoLabel = ({ icon: Icon, required, optional, children }) => (
+  <label className="mb-1.5 flex items-center gap-1.5 text-[13px] font-semibold text-slate-900 dark:text-slate-100">
+    <Icon className="size-3.5 text-slate-600 dark:text-slate-300" />
+    {children}
+    {required && <span className="text-rose-500">*</span>}
+    {optional && <span className="text-xs font-normal text-slate-500">(Optional)</span>}
+  </label>
+);
+
+const StepHeading = ({ step }) => (
+  <div className="mb-4 flex items-center gap-2.5">
+    <span className="flex size-9 shrink-0 items-center justify-center rounded-xl bg-white text-blue-600 shadow-sm ring-1 ring-slate-100 dark:bg-slate-800 dark:ring-slate-700">
+      {React.createElement(step.icon, { className: 'size-5' })}
+    </span>
+    <div>
+      <h4 className="text-base font-bold text-slate-900 dark:text-white">{step.label}</h4>
+      <p className="text-xs text-slate-500 dark:text-slate-400">{step.hint}</p>
+    </div>
   </div>
 );
 
@@ -130,6 +197,8 @@ const DrawerModal = ({
   externalStep,
   onStepChange,
   classDisplayName = '',
+  autosaveStatus = '',
+  onPreview,
 }) => {
   const [currentStep, setCurrentStep] = useState(0);
   const [customDurationSelected, setCustomDurationSelected] = useState(() => (
@@ -209,6 +278,30 @@ const DrawerModal = ({
 
   // Curriculum map topic picker
   const [curriculumTopics, setCurriculumTopics] = useState([]);
+  // Weekdays this class/section/subject is on the teacher's routine.
+  const [routineDays, setRoutineDays] = useState([]);
+  const [routineLoading, setRoutineLoading] = useState(false);
+  React.useEffect(() => {
+    if (!classId || !sectionId) { setRoutineDays([]); return undefined; }
+    let cancelled = false;
+    setRoutineLoading(true);
+    fetch(`${API_BASE}/api/teacher/dashboard/routine`, { headers: authHdrs() })
+      .then((res) => (res.ok ? res.json() : null))
+      .then((data) => {
+        if (cancelled) return;
+        const schedule = data?.schedule || {};
+        const days = WEEKDAYS.filter((day) => (schedule[day] || []).some((e) => (
+          String(e.classId || '') === String(classId)
+          && String(e.sectionId || '') === String(sectionId)
+          && (!subjectId || !e.subjectId || String(e.subjectId) === String(subjectId))
+        )));
+        setRoutineDays(days);
+      })
+      .catch(() => { if (!cancelled) setRoutineDays([]); })
+      .finally(() => { if (!cancelled) setRoutineLoading(false); });
+    return () => { cancelled = true; };
+  }, [classId, sectionId, subjectId]);
+  const lessonDates = React.useMemo(() => buildLessonDates(routineDays), [routineDays]);
   const [curriculumLoading, setCurriculumLoading] = useState(false);
 
   React.useEffect(() => {
@@ -501,84 +594,112 @@ const DrawerModal = ({
       /* ─── LESSON INFO ─────────────────────────────────────────── */
       case 'info':
         return (
-          <div className="space-y-4">
-            <Card>
-              <Field label="Chapter Title">
-                <Input
-                  value={chapter.title}
+          <div className="min-h-full bg-white p-4 sm:p-6 dark:bg-slate-900">
+            <div className="mb-4 flex items-center gap-2.5">
+              <span className="flex size-9 shrink-0 items-center justify-center rounded-xl bg-white text-blue-600 shadow-sm ring-1 ring-slate-100 dark:bg-slate-800 dark:ring-slate-700">
+                <Layers className="size-5" />
+              </span>
+              <div>
+                <h4 className="text-base font-bold text-slate-900 dark:text-white">Chapter Details</h4>
+                <p className="text-xs text-slate-500 dark:text-slate-400">Enter the basic information about your chapter.</p>
+              </div>
+            </div>
+
+            <div className="space-y-4">
+              <div>
+                <InfoLabel icon={BookOpen} required>Chapter Title</InfoLabel>
+                <input
+                  value={chapter.title === 'Untitled Chapter' ? '' : chapter.title}
                   onChange={(e) => onUpdate({ ...chapter, title: e.target.value })}
-                  placeholder="e.g. Photosynthesis — Light Reactions"
-                  className="h-10 rounded-lg border-slate-300 bg-white dark:border-slate-600 dark:bg-slate-800"
-                  style={{ color: '#0f172a', caretColor: '#0f172a' }}
+                  placeholder="Enter chapter name (e.g. “Types of Plants”)"
+                  className="h-10 w-full rounded-full border border-blue-500 bg-white px-3 text-sm text-slate-900 outline-none placeholder:text-slate-400 focus:ring-2 focus:ring-blue-500/20 dark:border-blue-400 dark:bg-slate-800 dark:text-white"
                 />
-              </Field>
-              {curriculumTopics.length > 0 && (
-                <div className="mt-3">
-                  <label className="block text-xs font-semibold uppercase tracking-wide text-slate-500 mb-1.5">
-                    Or pick from curriculum map
-                  </label>
+                {curriculumTopics.length > 0 && (
                   <select
                     value=""
-                    onChange={(e) => {
-                      if (e.target.value) onUpdate({ ...chapter, title: e.target.value });
-                    }}
-                    style={{ colorScheme: 'light', color: '#1e293b', backgroundColor: '#f0f7ff', borderColor: '#bfdbfe' }}
-                    className="h-9 w-full rounded-lg border px-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-blue-300"
+                    onChange={(e) => { if (e.target.value) onUpdate({ ...chapter, title: e.target.value }); }}
+                    style={{ colorScheme: 'light' }}
+                    className="mt-2 h-10 w-full rounded-full border border-blue-100 bg-blue-50/60 px-3 text-sm text-slate-700 outline-none focus:ring-2 focus:ring-blue-300"
                   >
-                    <option value="">— Select a curriculum topic —</option>
-                    {curriculumTopics.map((t, i) => (
-                      <option key={i} value={t.label}>{t.order}. {t.label}</option>
-                    ))}
+                    <option value="">Or pick a topic from the curriculum…</option>
+                    {curriculumTopics.map((t, i) => <option key={i} value={t.label}>{t.order}. {t.label}</option>)}
                   </select>
+                )}
+                {curriculumLoading && (
+                  <p className="mt-2 flex items-center gap-1 text-[11px] text-slate-400">
+                    <span className="inline-block size-3 animate-spin rounded-full border border-slate-300 border-t-blue-500" />
+                    Loading curriculum topics…
+                  </p>
+                )}
+              </div>
+
+              <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-[220px_150px_minmax(0,1fr)]">
+                <div>
+                  <InfoLabel icon={Calendar} required>Lesson Date</InfoLabel>
+                  {lessonDates.length > 0 ? (
+                    <select
+                      value={chapter.lessonDate || ''}
+                      onChange={(e) => onUpdate({ ...chapter, lessonDate: e.target.value })}
+                      style={{ colorScheme: 'light' }}
+                      className="h-9 w-full rounded-full border border-slate-200 bg-white px-3 text-sm text-slate-900 outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-500/20"
+                    >
+                      <option value="" disabled>Select a class day</option>
+                      {chapter.lessonDate && !lessonDates.some((d) => toIsoDate(d) === chapter.lessonDate) && (
+                        <option value={chapter.lessonDate}>{new Date(`${chapter.lessonDate}T00:00:00`).toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' })} (saved)</option>
+                      )}
+                      {lessonDates.map((d) => {
+                        const iso = toIsoDate(d);
+                        const isToday = iso === toIsoDate(new Date());
+                        return (
+                          <option key={iso} value={iso}>
+                            {d.toLocaleDateString('en-GB', { weekday: 'short', day: '2-digit', month: 'short', year: 'numeric' })}{isToday ? ' · Today' : ''}
+                          </option>
+                        );
+                      })}
+                    </select>
+                  ) : (
+                    <input
+                      type="date"
+                      min={toIsoDate(new Date())}
+                      value={chapter.lessonDate}
+                      onChange={(e) => onUpdate({ ...chapter, lessonDate: e.target.value })}
+                      style={{ colorScheme: 'light' }}
+                      className="h-9 w-full rounded-full border border-slate-200 bg-white px-3 text-sm text-slate-900 outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-500/20"
+                    />
+                  )}
+                  <p className="mt-1 pl-2 text-[11px] text-slate-400">
+                    {routineLoading
+                      ? 'Checking your timetable…'
+                      : routineDays.length
+                        ? `Class days: ${routineDays.map((d) => d.slice(0, 3)).join(', ')}`
+                        : 'Not on your timetable — any date allowed'}
+                  </p>
                 </div>
-              )}
-              {curriculumLoading && (
-                <p className="mt-2 text-[11px] text-slate-400 flex items-center gap-1">
-                  <span className="animate-spin inline-block w-3 h-3 border border-slate-300 border-t-blue-500 rounded-full" />
-                  Loading curriculum topics…
-                </p>
-              )}
-            </Card>
-            <div className="grid gap-3 sm:grid-cols-3">
-              <Card>
-                <Field label="Lesson Date">
-                  <input
-                    type="date"
-                    value={chapter.lessonDate}
-                    onChange={(e) => onUpdate({ ...chapter, lessonDate: e.target.value })}
-                    style={{ colorScheme: 'light', color: '#1e293b', backgroundColor: 'white', borderColor: '#e2e8f0' }}
-                    className="h-10 w-full rounded-lg border px-3 text-sm focus:outline-none focus:ring-2 focus:ring-blue-300"
-                  />
-                </Field>
-              </Card>
-              <Card>
-                <Field label="Day">
+                <div>
+                  <InfoLabel icon={Calendar} optional>Day</InfoLabel>
                   <input
                     value={dayLabel || ''}
                     readOnly
-                    placeholder="Auto-filled"
-                    style={{ color: '#64748b', backgroundColor: '#f8fafc', borderColor: '#e2e8f0' }}
-                    className="h-10 w-full rounded-lg border px-3 text-sm"
+                    placeholder="e.g. Monday, Day 1"
+                    className="h-9 w-full rounded-full border border-slate-200 bg-slate-50 px-3 text-sm text-slate-600 outline-none placeholder:text-slate-400 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-300"
                   />
-                </Field>
-              </Card>
-              <Card>
-                <Field label="Duration">
+                </div>
+                <div>
+                  <InfoLabel icon={Clock} required>Duration</InfoLabel>
+                  <div className="flex gap-2">
                   <select
                     value={customDurationSelected ? '__custom__' : chapter.duration}
                     onChange={(e) => {
                       if (e.target.value === '__custom__') {
                         setCustomDurationSelected(true);
-                        if ((durations || []).includes(chapter.duration)) {
-                          onUpdate({ ...chapter, duration: '' });
-                        }
+                        if ((durations || []).includes(chapter.duration)) onUpdate({ ...chapter, duration: '' });
                         return;
                       }
                       setCustomDurationSelected(false);
                       onUpdate({ ...chapter, duration: e.target.value });
                     }}
-                    style={{ colorScheme: 'light', color: '#1e293b', backgroundColor: 'white', borderColor: '#e2e8f0' }}
-                    className="h-10 w-full rounded-lg border px-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-blue-300"
+                    style={{ colorScheme: 'light' }}
+                    className={`h-9 rounded-full border border-slate-200 bg-white px-3 text-sm text-slate-900 outline-none transition-all focus:border-blue-500 focus:ring-2 focus:ring-blue-500/20 ${customDurationSelected ? 'w-[120px] shrink-0' : 'w-full max-w-[220px]'}`}
                   >
                     <option value="" disabled>Select duration</option>
                     {(durations || []).map((d) => <option key={d} value={d}>{d}</option>)}
@@ -591,12 +712,20 @@ const DrawerModal = ({
                       onChange={(e) => onUpdate({ ...chapter, duration: e.target.value })}
                       placeholder="e.g. 75 Minutes"
                       aria-label="Custom lesson duration"
-                      style={{ color: '#1e293b', backgroundColor: 'white', borderColor: '#e2e8f0' }}
-                      className="mt-2 h-10 w-full rounded-lg border px-3 text-sm focus:outline-none focus:ring-2 focus:ring-blue-300"
+                      autoFocus
+                      className="h-9 min-w-0 flex-1 rounded-full border border-blue-300 bg-white px-3 text-sm text-slate-900 outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-500/20"
                     />
                   )}
-                </Field>
-              </Card>
+                  </div>
+                </div>
+              </div>
+
+              <div className="flex flex-col gap-2 rounded-xl bg-slate-50 px-3 py-2.5 sm:flex-row sm:items-center sm:gap-3 dark:bg-slate-800/60">
+                <span className="inline-flex w-fit shrink-0 items-center gap-1 rounded-full bg-blue-100 px-2.5 py-0.5 text-xs font-semibold text-blue-700 dark:bg-blue-900/50 dark:text-blue-300">
+                  <Info className="size-3.5" /> Tips
+                </span>
+                <p className="text-xs text-slate-600 dark:text-slate-300">Give a clear and meaningful chapter title, choose the lesson date, and set an appropriate duration (e.g. 30–60 minutes).</p>
+              </div>
             </div>
           </div>
         );
@@ -714,7 +843,7 @@ const DrawerModal = ({
                         value={obj}
                         onChange={(e) => updateObjective(i, e.target.value)}
                         placeholder={`Objective ${i + 1}…`}
-                        className="h-9 flex-1 text-sm"
+                        className="h-9 flex-1 rounded-full px-4 text-sm"
                         style={{ color: '#0f172a', caretColor: '#0f172a' }}
                       />
                       <button
@@ -766,7 +895,7 @@ const DrawerModal = ({
                       value={phase.description}
                       onChange={(e) => updateFlow(phase.id, 'description', e.target.value)}
                       placeholder="Brief description…"
-                      className="h-8 border-slate-200 bg-white text-xs text-slate-600 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-300"
+                      className="h-8 rounded-full border-slate-200 bg-white px-3 text-xs text-slate-600 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-300"
                       style={{ color: '#475569', caretColor: '#475569' }}
                     />
                   </div>
@@ -863,11 +992,34 @@ const DrawerModal = ({
             {/* Reference link */}
             <Card>
               <SectionTitle icon={FlaskConical} iconColor="text-purple-500">Article Reference</SectionTitle>
-              <Input
-                value={chapter.worksheetLink}
-                onChange={(e) => onUpdate({ ...chapter, worksheetLink: e.target.value })}
-                placeholder="Paste an article or reference URL…"
-              />
+              <div className="flex items-center gap-2">
+                <Input
+                  type="url"
+                  inputMode="url"
+                  value={chapter.worksheetLink || ''}
+                  onChange={(e) => onUpdate({ ...chapter, worksheetLink: e.target.value })}
+                  onPaste={(e) => {
+                    // Take the pasted text as-is (trimmed) so a link copied with
+                    // spaces / line breaks still lands in the field.
+                    const pasted = e.clipboardData?.getData('text');
+                    if (!pasted) return;
+                    e.preventDefault();
+                    onUpdate({ ...chapter, worksheetLink: pasted.trim() });
+                  }}
+                  placeholder="Paste an article or reference URL…"
+                  className="h-10 flex-1 rounded-full bg-white px-4 text-slate-900 caret-slate-900 dark:bg-slate-800 dark:text-white"
+                />
+                {/^https?:\/\//i.test(String(chapter.worksheetLink || '').trim()) && (
+                  <a
+                    href={String(chapter.worksheetLink).trim()}
+                    target="_blank"
+                    rel="noreferrer"
+                    className="inline-flex h-10 shrink-0 items-center rounded-full border border-slate-200 bg-white px-4 text-xs font-semibold text-blue-600 hover:bg-blue-50 dark:border-slate-700 dark:bg-slate-800"
+                  >
+                    Open link
+                  </a>
+                )}
+              </div>
             </Card>
 
             {/* Report uploads */}
@@ -1012,7 +1164,7 @@ const DrawerModal = ({
           hard: 'bg-red-100 text-red-700',
         };
 
-        const inputCls = 'w-full rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm text-slate-800 placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-indigo-300 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-100';
+        const inputCls = 'w-full rounded-full border border-slate-200 bg-white px-3 py-2 text-sm text-slate-800 placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-indigo-300 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-100';
         const selectCls = inputCls;
 
         return (
@@ -1088,7 +1240,7 @@ const DrawerModal = ({
                       </span>
                     </label>
                     <textarea
-                      className={`${inputCls} resize-y leading-7`}
+                      className={`${inputCls.replace('rounded-full', 'rounded-2xl')} resize-y leading-7`}
                       rows={6}
                       placeholder="Paste or type the reading passage here…"
                       value={readingForm.content}
@@ -1186,7 +1338,7 @@ const DrawerModal = ({
                   <div>
                     <label className="mb-1 block text-xs font-semibold uppercase tracking-wide text-slate-500">Question *</label>
                     <textarea
-                      className={`${inputCls} resize-y`}
+                      className={`${inputCls.replace('rounded-full', 'rounded-2xl')} resize-y`}
                       rows={3}
                       placeholder="e.g. Write an essay on global warming and its effects on the environment."
                       value={writingForm.question}
@@ -1197,7 +1349,7 @@ const DrawerModal = ({
                   <div>
                     <label className="mb-1 block text-xs font-semibold uppercase tracking-wide text-slate-500">Instructions <span className="font-normal normal-case text-slate-400">(optional)</span></label>
                     <textarea
-                      className={`${inputCls} resize-y`}
+                      className={`${inputCls.replace('rounded-full', 'rounded-2xl')} resize-y`}
                       rows={2}
                       placeholder="e.g. Use paragraphs. Include an introduction and conclusion. Write 150–200 words."
                       value={writingForm.instructions}
@@ -1418,116 +1570,169 @@ const DrawerModal = ({
           exit={{ opacity: 0, y: -16 }}
           transition={{ duration: 0.18 }}
           className={[
-            'flex min-w-0 w-full flex-col self-start overflow-hidden rounded-[22px] border border-[#e9edf2] bg-white shadow-[0_25px_50px_-24px_rgba(15,23,42,0.28)] sm:rounded-[28px] lg:h-full lg:min-h-0 dark:border-slate-700 dark:bg-slate-900',
+            'flex min-h-full min-w-0 w-full flex-1 flex-col text-slate-900 dark:text-slate-100 bg-gradient-to-br from-slate-50 via-blue-50/40 to-indigo-50/50 lg:h-full lg:min-h-0 lg:overflow-hidden dark:from-slate-950 dark:via-slate-950 dark:to-slate-900',
             isFullscreen
-              ? 'fixed inset-0 z-[100] h-screen w-screen rounded-none sm:rounded-none border-0'
+              ? 'fixed inset-0 z-[100] h-dvh w-screen overflow-hidden rounded-none sm:rounded-none border-0'
               : '',
           ].join(' ')}
         >
-          {/* Header */}
-          <div className="flex flex-wrap items-center justify-between gap-2 rounded-t-[22px] border-b border-[#ebf0f6] bg-[#fafcff] px-3 py-3 sm:rounded-t-[28px] sm:px-5 sm:py-4 dark:border-slate-800 dark:bg-slate-800/60">
-            <div className="flex min-w-0 items-center gap-2.5">
-              <div className="flex size-9 shrink-0 items-center justify-center rounded-2xl bg-[#eef2ff] text-[#2563eb]">
-                <BookOpen className="size-4" />
-              </div>
-              <h3 className="truncate text-lg font-semibold tracking-[-0.01em] text-[#0b2b4a] dark:text-white">
-              {chapter.title || 'Untitled Chapter'}
-              </h3>
-              <span className={`hidden rounded-full px-3 py-1 text-[11px] font-medium sm:inline-flex ${isPublished ? 'bg-emerald-100 text-emerald-700' : 'bg-[#dbe7fe] text-[#1e4f8a]'}`}>
-                {isPublished ? 'Published' : 'Draft'}
-              </span>
+          {/* ── Top bar ── */}
+          <div className="flex flex-wrap items-center gap-2 border-b border-slate-200/80 bg-white/90 px-3 py-2 backdrop-blur sm:gap-2.5 sm:px-5 dark:border-slate-800 dark:bg-slate-900/90">
+            <button type="button" onClick={onClose} aria-label="Close chapter" className="flex size-8 shrink-0 items-center justify-center rounded-full bg-white text-slate-700 shadow-sm ring-1 ring-slate-200 transition hover:bg-slate-50 active:scale-95 dark:bg-slate-800 dark:text-slate-200 dark:ring-slate-700">
+              <ArrowLeft className="size-4" />
+            </button>
+            <div className="flex size-8 shrink-0 items-center justify-center rounded-lg bg-gradient-to-br from-blue-500 to-indigo-600 text-white shadow-md">
+              <BookOpen className="size-4" />
             </div>
-            <div className="flex max-w-full flex-wrap items-center gap-1.5">
-              <Button variant="outline" size="sm" onClick={onSaveVersion} className="hidden gap-1 rounded-full border-[#dce2ea] text-xs sm:inline-flex">
-                <RefreshCcw className="size-3.5" /> Save Version
-              </Button>
-              <Button variant="outline" size="sm" onClick={exportPdf} className="gap-1 rounded-full border-[#dce2ea] text-xs">
-                <FileText className="size-3.5" /> Export PDF
-              </Button>
-              <Button
-                variant="outline"
-                size="sm"
+            <h3 className="min-w-0 truncate text-base font-bold tracking-tight text-slate-900 sm:text-lg dark:text-white">
+              {isPublished ? 'Edit Chapter' : 'Create Chapter'}
+            </h3>
+            <span className={`shrink-0 rounded-full px-2.5 py-0.5 text-[11px] font-semibold ${isPublished ? 'bg-emerald-100 text-emerald-700' : 'bg-blue-100 text-blue-700'}`}>
+              {isPublished ? 'Published' : 'Draft'}
+            </span>
+
+            <div className="ml-auto flex flex-wrap items-center gap-2">
+              {autosaveStatus && (
+                <CloudSaveStatus status={autosaveStatus} className="mr-1 hidden md:inline-flex" />
+              )}
+              <button type="button" onClick={onSaveVersion} className="inline-flex h-8 items-center gap-1.5 rounded-full border border-slate-200 bg-white px-3 text-xs font-semibold text-slate-700 shadow-sm transition hover:bg-slate-50 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-100">
+                <Save className="size-3.5" /><span className="hidden sm:inline">Save Draft</span>
+              </button>
+              <button type="button" onClick={exportPdf} className="inline-flex h-8 items-center gap-1.5 rounded-full border border-slate-200 bg-white px-3 text-xs font-semibold text-slate-700 shadow-sm transition hover:bg-slate-50 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-100">
+                <FileText className="size-3.5" /><span className="hidden sm:inline">Export PDF</span>
+              </button>
+              <span className="hidden h-7 w-px bg-slate-200 sm:block dark:bg-slate-700" />
+              <button
+                type="button"
                 onClick={toggleFullscreen}
-                className="gap-1 rounded-full border-[#dce2ea] text-xs"
                 aria-label={isFullscreen ? 'Exit fullscreen' : 'Enter fullscreen'}
                 title={isFullscreen ? 'Exit fullscreen' : 'View lesson plan in fullscreen'}
+                className="hidden size-8 items-center justify-center rounded-full text-slate-600 transition hover:bg-slate-100 sm:flex dark:text-slate-300 dark:hover:bg-slate-800"
               >
-                {isFullscreen ? <Minimize2 className="size-3.5" /> : <Maximize2 className="size-3.5" />}
-                <span className="hidden sm:inline">{isFullscreen ? 'Exit' : 'Fullscreen'}</span>
-              </Button>
-              <Button variant="ghost" size="icon-sm" onClick={onClose} aria-label="Close chapter" className="rounded-full text-slate-500 hover:bg-slate-100 hover:text-slate-800 dark:text-slate-400 dark:hover:text-white">
-                <X className="size-4" />
-              </Button>
+                {isFullscreen ? <Minimize2 className="size-4" /> : <Maximize2 className="size-4" />}
+              </button>
             </div>
           </div>
 
-          {/* Step navigation */}
-          <div className="overflow-x-auto border-b border-[#e9edf2] px-3 py-2 sm:px-5 sm:py-3 dark:border-slate-800">
-            <div className="mx-auto flex w-max min-w-full items-center justify-center gap-1 rounded-full border border-[#e2e8f0] bg-[#f8fafc] p-1">
-              {STEPS.map((step, index) => {
-                const isActive = index === currentStep;
-                const isDone = index < currentStep;
-                const Icon = step.icon;
-                return (
-                  <button
-                    key={step.key}
-                    type="button"
-                    onClick={() => goToStep(index)}
-                    aria-current={isActive ? 'step' : undefined}
-                    className={`inline-flex h-9 items-center gap-1.5 rounded-full px-3 text-xs font-medium transition-all ${isActive ? 'bg-[#eef2ff] font-semibold text-[#2563eb] shadow-sm' : isDone ? 'text-emerald-600 hover:bg-emerald-50' : 'text-[#475569] hover:bg-white hover:text-[#1e293b]'}`}
-                  >
-                    {isDone ? <CheckCircle2 className="size-3.5" /> : <Icon className="size-3.5" />}
-                    <span className="hidden sm:inline">{step.label}</span>
-                  </button>
-                );
-              })}
+          {/* ── Body: vertical stepper + step content ── */}
+          <div className="flex min-h-0 flex-1 flex-col bg-white lg:flex-row lg:overflow-hidden dark:bg-slate-900">
+            {/* Stepper (laptop / desktop) */}
+            <nav aria-label="Lesson plan steps" className="hidden w-60 shrink-0 flex-col overflow-y-auto border-r border-slate-200/80 bg-slate-50/60 p-2.5 lg:flex dark:border-slate-800 dark:bg-slate-900">
+              <ol className="flex min-h-full flex-col">
+                {STEPS.map((step, index) => {
+                  const isActive = index === currentStep;
+                  const status = stepStatus(step.key, chapter);
+                  const isDone = status === true;
+                  const isMissing = status === false && index < currentStep;
+                  return (
+                    <li key={step.key} className="relative flex min-h-[52px] flex-1 items-center">
+                      {index < STEPS.length - 1 && (
+                        <span aria-hidden="true" className={`absolute left-[22px] top-[calc(50%+8px)] h-[calc(100%-24px)] w-0.5 ${isDone ? 'bg-emerald-300' : 'bg-slate-200 dark:bg-slate-700'}`} />
+                      )}
+                      <button
+                        type="button"
+                        onClick={() => goToStep(index)}
+                        aria-current={isActive ? 'step' : undefined}
+                        className={`relative flex w-full items-start gap-2.5 rounded-xl px-2.5 py-2 text-left transition ${isActive ? 'bg-blue-50 dark:bg-blue-950/40' : 'hover:bg-slate-50 dark:hover:bg-slate-800/60'}`}
+                      >
+                        <span className={`flex size-6 shrink-0 items-center justify-center rounded-full text-[11px] font-bold ${isActive ? 'bg-blue-600 text-white shadow-md shadow-blue-500/30' : isDone ? 'bg-emerald-500 text-white' : isMissing ? 'bg-amber-400 text-white' : 'bg-slate-300 text-white dark:bg-slate-600'}`} title={isMissing ? 'Some required details are missing' : undefined}>
+                          {isDone && !isActive ? <Check className="size-3" strokeWidth={3} /> : isMissing ? '!' : index + 1}
+                        </span>
+                        <span className="min-w-0">
+                          <span className={`block text-[13px] font-semibold leading-tight ${isActive ? 'text-blue-700 dark:text-blue-300' : 'text-slate-900 dark:text-slate-100'}`}>{step.label}</span>
+                          <span className={`mt-0.5 block text-[11px] ${isMissing ? 'font-medium text-amber-600' : 'text-slate-500 dark:text-slate-400'}`}>{isMissing ? 'Details missing — tap to finish' : step.desc}</span>
+                        </span>
+                      </button>
+                    </li>
+                  );
+                })}
+              </ol>
+            </nav>
+
+            {/* Stepper (phone / tablet) */}
+            <div className="overflow-x-auto border-b border-slate-200/80 px-3 py-2 lg:hidden dark:border-slate-800">
+              <div className="flex w-max items-center gap-1.5 px-1">
+                {STEPS.map((step, index) => {
+                  const isActive = index === currentStep;
+                  const status = stepStatus(step.key, chapter);
+                  const isDone = status === true;
+                  const isMissing = status === false && index < currentStep;
+                  return (
+                    <button
+                      key={step.key}
+                      type="button"
+                      onClick={() => goToStep(index)}
+                      aria-current={isActive ? 'step' : undefined}
+                      className={`inline-flex h-9 items-center gap-1.5 rounded-full px-3 text-xs font-semibold transition ${isActive ? 'bg-blue-600 text-white shadow' : isDone ? 'bg-emerald-50 text-emerald-700' : isMissing ? 'bg-amber-50 text-amber-700 ring-1 ring-amber-200' : 'bg-white text-slate-600 ring-1 ring-slate-200 dark:bg-slate-900 dark:text-slate-300 dark:ring-slate-700'}`}
+                    >
+                      {isDone && !isActive ? <Check className="size-3.5" strokeWidth={3} /> : <span>{isMissing ? '!' : index + 1}</span>}
+                      <span className={isActive ? 'inline' : 'hidden sm:inline'}>{step.label}</span>
+                    </button>
+                  );
+                })}
+              </div>
+            </div>
+
+            {/* Step content */}
+            <div className="min-w-0 flex-1 lg:overflow-y-auto [&::-webkit-scrollbar]:w-1.5 [&::-webkit-scrollbar-thumb]:rounded-full [&::-webkit-scrollbar-thumb]:bg-slate-300 [&::-webkit-scrollbar-track]:bg-transparent">
+              <motion.div
+                key={currentStep}
+                initial={{ opacity: 0, x: 10 }}
+                animate={{ opacity: 1, x: 0 }}
+                transition={{ duration: 0.15 }}
+              >
+                {STEPS[currentStep].key === 'info' ? renderStep() : (
+                  <div className="min-h-full bg-white p-4 sm:p-6 dark:bg-slate-900">
+                    <StepHeading step={STEPS[currentStep]} />
+                    {renderStep()}
+                  </div>
+                )}
+              </motion.div>
             </div>
           </div>
 
-          {/* Step content */}
-          <div className="max-h-none min-w-0 overflow-y-auto bg-white p-3 sm:p-5 lg:min-h-0 lg:flex-1 [&::-webkit-scrollbar]:w-1.5 [&::-webkit-scrollbar-thumb]:rounded-full [&::-webkit-scrollbar-thumb]:bg-slate-300 hover:[&::-webkit-scrollbar-thumb]:bg-slate-400 dark:bg-slate-900 dark:[&::-webkit-scrollbar-thumb]:bg-slate-600 [&::-webkit-scrollbar-track]:bg-transparent">
-            <motion.div
-              key={currentStep}
-              initial={{ opacity: 0, x: 10 }}
-              animate={{ opacity: 1, x: 0 }}
-              transition={{ duration: 0.15 }}
-            >
-              {renderStep()}
-            </motion.div>
-          </div>
+          {/* ── Bottom bar ── */}
+          <div className="sticky bottom-0 z-10 border-t border-slate-200/80 bg-white/95 px-3 py-2 backdrop-blur sm:px-5 lg:static dark:border-slate-800 dark:bg-slate-900/95">
+            <div className="flex items-center justify-between gap-3">
+              {currentStep === 0 ? <span className="w-[72px] shrink-0 sm:w-[88px]" aria-hidden="true" /> : (
+              <button
+                type="button"
+                onClick={() => goToStep((s) => Math.max(0, s - 1))}
+                className="inline-flex h-9 shrink-0 items-center gap-1.5 rounded-full bg-white px-4 text-sm font-semibold text-slate-700 shadow-sm ring-1 ring-slate-200 transition hover:bg-slate-50 disabled:cursor-not-allowed disabled:text-slate-400 disabled:opacity-70 sm:px-5 dark:bg-slate-800 dark:text-slate-200 dark:ring-slate-700"
+              >
+                <ArrowLeft className="size-4" /> Back
+              </button>
+              )}
 
-          {/* Footer navigation */}
-          <div className="flex flex-wrap items-center justify-between gap-2 border-t border-[#ebf0f6] px-3 py-3 sm:px-5 sm:py-4 dark:border-slate-800">
-            <Button
-              variant="outline"
-              size="sm"
-              onClick={() => goToStep((s) => Math.max(0, s - 1))}
-              disabled={currentStep === 0}
-              className="gap-1 rounded-full border-0 bg-[#f1f5f9] text-slate-600 dark:text-slate-300"
-            >
-              <ChevronLeft className="size-4" /> Back
-            </Button>
-            <span className="text-xs text-slate-400 dark:text-slate-500">
-              Step <span className="font-semibold text-slate-600 dark:text-slate-300">{currentStep + 1}</span> / {STEPS.length}
-            </span>
-            {currentStep < STEPS.length - 1 ? (
-              <Button
-                size="sm"
-                onClick={() => goToStep((s) => s + 1)}
-                className="gap-1 rounded-full bg-[#2563eb] px-4 text-white shadow-[0_4px_8px_-4px_rgba(37,99,235,0.3)] hover:bg-blue-700 sm:px-6"
-              >
-                Next <ChevronRight className="size-4" />
-              </Button>
-            ) : (
-              <Button
-                size="sm"
-                onClick={onPublishChapter}
-                disabled={isPublishing}
-                className="gap-1 rounded-full bg-[#059669] px-4 text-white shadow-[0_4px_12px_-4px_rgba(5,150,105,0.4)] hover:bg-emerald-700 disabled:opacity-50 sm:px-6"
-              >
-                {isPublishing ? (isPublished ? 'Updating...' : 'Publishing...') : <><Send className="size-3.5" /> {isPublished ? 'Publish ' : 'Publish'}</>}
-              </Button>
-            )}
+              <div className="flex min-w-0 flex-1 items-center justify-center gap-3 text-xs text-slate-600 dark:text-slate-300">
+                <span className="shrink-0">Step <span className="font-semibold text-slate-900 dark:text-white">{currentStep + 1}</span> of {STEPS.length}</span>
+                <span className="hidden h-2 w-full max-w-[200px] overflow-hidden rounded-full bg-slate-200 sm:block dark:bg-slate-700">
+                  <span className="block h-full rounded-full bg-blue-600 transition-all duration-300" style={{ width: `${Math.round(((currentStep + 1) / STEPS.length) * 100)}%` }} />
+                </span>
+                <span className="hidden shrink-0 md:inline"><span className="font-semibold text-slate-900 dark:text-white">{Math.round(((currentStep + 1) / STEPS.length) * 100)}%</span> Complete</span>
+              </div>
+
+              {currentStep < STEPS.length - 1 ? (
+                <button
+                  type="button"
+                  onClick={() => goToStep((s) => s + 1)}
+                  className="inline-flex h-9 shrink-0 items-center gap-1.5 rounded-full bg-blue-600 px-4 text-sm font-semibold text-white shadow-lg shadow-blue-600/30 transition hover:bg-blue-700 active:scale-[.98] sm:px-5"
+                >
+                  <span className="sm:hidden">Next</span>
+                  <span className="hidden max-w-[220px] truncate sm:inline">Next: {STEPS[currentStep + 1].label}</span>
+                  <ArrowRight className="size-4" />
+                </button>
+              ) : (
+                <button
+                  type="button"
+                  onClick={onPublishChapter}
+                  disabled={isPublishing}
+                  className="inline-flex h-9 shrink-0 items-center gap-1.5 rounded-full bg-emerald-600 px-4 text-sm font-semibold text-white shadow-lg shadow-emerald-600/30 transition hover:bg-emerald-700 disabled:opacity-50 sm:px-5"
+                >
+                  {isPublishing ? (isPublished ? 'Updating...' : 'Publishing...') : <><Send className="size-4" /> Publish</>}
+                </button>
+              )}
+            </div>
           </div>
         </motion.section>
       )}

@@ -94,6 +94,16 @@ import { notificationId, readModuleSeenState, writeModuleSeenState } from '../ut
 const PORTAL_BASE = '/teacher';
 const API_BASE = (import.meta.env.VITE_API_URL || 'http://localhost:5000').replace(/\/$/, '');
 
+// Sidebar sections (admin-portal style headings). Items not listed fall into "More".
+const SIDEBAR_SECTIONS = [
+  { heading: 'Main', labels: ['Dashboard', 'Classes & Work'] },
+  { heading: 'Schedule', labels: ['Calendar', 'Timetable'] },
+  { heading: 'Examinations', labels: ['Exam Duty', 'Scan Exam QR'] },
+  { heading: 'Teaching', labels: ['Lesson Plan', 'Community Wall'] },
+  { heading: 'Communication', labels: ['PTM', 'Chat', 'Student Feedback', 'Excuse Letters'] },
+  { heading: 'Account', labels: ['Profile & Work'] },
+];
+
 const portalNavigation = [
   { icon: Home, label: 'Dashboard', path: `${PORTAL_BASE}/dashboard` },
   { icon: Users, label: 'Classes & Work', path: `${PORTAL_BASE}/classes` },
@@ -2118,6 +2128,56 @@ const TeacherPortalShell = () => {
     syncNotifications(notificationItems);
   }, [notificationItems, syncNotifications]);
 
+  const renderSidebarItem = (item) => {
+            const active = isItemActive(item.path);
+            const Icon = item.icon;
+            const notificationCount = getTeacherModuleNotificationCount(
+              notifications,
+              item.label === 'Notifications' ? 'notifications' : teacherNotificationModuleKeyForPath(item.path),
+              moduleSeenState,
+            ) + (item.path.endsWith('/community-wall') ? communityUnread.count : 0);
+            const badge = notificationCount > 0 && (
+              <span
+                data-testid={`teacher-module-notification-${teacherNotificationModuleKeyForPath(item.path)}`}
+                title={`${notificationCount} unread item${notificationCount === 1 ? '' : 's'} in ${item.label}`}
+                className={sidebarCollapsed
+                  ? 'absolute -right-1.5 -top-1.5 flex h-3.5 min-w-3.5 items-center justify-center rounded-full bg-red-500 px-1 text-[9px] font-bold text-white'
+                  : 'flex h-5 min-w-[1.25rem] items-center justify-center rounded-full bg-red-500 px-1.5 text-[10px] font-bold text-white'}
+              >
+                {notificationCount > 99 ? '99+' : notificationCount}
+              </span>
+            );
+            return (
+              <NavLink
+                key={item.path}
+                to={item.path}
+                title={sidebarCollapsed ? item.label : undefined}
+                aria-label={item.label}
+                onClick={() => { if (window.innerWidth < 1024) setSidebarOpen(false); }}
+                className={`group relative flex items-center gap-3 rounded-xl px-3 py-2.5 transition-colors duration-150 ${sidebarCollapsed ? 'lg:justify-center' : ''} ${active ? 'text-yellow-700' : 'text-gray-500 hover:bg-gray-50 hover:text-gray-900'}`}
+              >
+                {active && (
+                  <Motion.div
+                    layoutId="teacher-sidebar-active-pill"
+                    className="absolute inset-0 rounded-full bg-yellow-50"
+                    transition={{ type: 'spring', stiffness: 400, damping: 32 }}
+                  />
+                )}
+                <span className="relative z-10 shrink-0">
+                  <Icon
+                    size={22}
+                    className={`rounded-full p-1 transition-colors ${active ? 'bg-yellow-500 text-white' : 'bg-gray-100 text-gray-400 group-hover:text-yellow-500'}`}
+                  />
+                  {sidebarCollapsed && <span className="hidden lg:contents">{badge}</span>}
+                </span>
+                <span className={`relative z-10 flex flex-1 items-center gap-2 truncate text-sm ${sidebarCollapsed ? 'lg:hidden' : ''} ${active ? 'font-bold' : 'font-semibold'}`}>
+                  {item.label}
+                  {!sidebarCollapsed && badge}
+                </span>
+              </NavLink>
+            );
+  };
+
   return (
     <>
       <div className="flex h-screen h-dvh max-h-screen max-h-dvh min-h-0 overflow-hidden bg-gray-50">
@@ -2208,55 +2268,20 @@ const TeacherPortalShell = () => {
 
           {/* ── Navigation ── */}
           <nav className="teacher-sidebar-nav min-h-0 flex-1 space-y-0.5 overflow-y-auto overflow-x-hidden overscroll-contain px-2 py-3">
-            {portalNavigation.map((item) => {
-              const active = isItemActive(item.path);
-              const Icon = item.icon;
-              const notificationCount = getTeacherModuleNotificationCount(
-                notifications,
-                item.label === 'Notifications' ? 'notifications' : teacherNotificationModuleKeyForPath(item.path),
-                moduleSeenState,
-              ) + (item.path.endsWith('/community-wall') ? communityUnread.count : 0);
-              const badge = notificationCount > 0 && (
-                <span
-                  data-testid={`teacher-module-notification-${teacherNotificationModuleKeyForPath(item.path)}`}
-                  title={`${notificationCount} unread item${notificationCount === 1 ? '' : 's'} in ${item.label}`}
-                  className={sidebarCollapsed
-                    ? 'absolute -right-1.5 -top-1.5 flex h-3.5 min-w-3.5 items-center justify-center rounded-full bg-red-500 px-1 text-[9px] font-bold text-white'
-                    : 'flex h-5 min-w-[1.25rem] items-center justify-center rounded-full bg-red-500 px-1.5 text-[10px] font-bold text-white'}
-                >
-                  {notificationCount > 99 ? '99+' : notificationCount}
-                </span>
-              );
-              return (
-                <NavLink
-                  key={item.path}
-                  to={item.path}
-                  title={sidebarCollapsed ? item.label : undefined}
-                  aria-label={item.label}
-                  onClick={() => { if (window.innerWidth < 1024) setSidebarOpen(false); }}
-                  className={`group relative flex items-center gap-3 rounded-xl px-3 py-2.5 transition-colors duration-150 ${sidebarCollapsed ? 'lg:justify-center' : ''} ${active ? 'text-yellow-700' : 'text-gray-500 hover:bg-gray-50 hover:text-gray-900'}`}
-                >
-                  {active && (
-                    <Motion.div
-                      layoutId="teacher-sidebar-active-pill"
-                      className="absolute inset-0 rounded-full bg-yellow-50"
-                      transition={{ type: 'spring', stiffness: 400, damping: 32 }}
-                    />
-                  )}
-                  <span className="relative z-10 shrink-0">
-                    <Icon
-                      size={22}
-                      className={`rounded-full p-1 transition-colors ${active ? 'bg-yellow-500 text-white' : 'bg-gray-100 text-gray-400 group-hover:text-yellow-500'}`}
-                    />
-                    {sidebarCollapsed && <span className="hidden lg:contents">{badge}</span>}
-                  </span>
-                  <span className={`relative z-10 flex flex-1 items-center gap-2 truncate text-sm ${sidebarCollapsed ? 'lg:hidden' : ''} ${active ? 'font-bold' : 'font-semibold'}`}>
-                    {item.label}
-                    {!sidebarCollapsed && badge}
-                  </span>
-                </NavLink>
-              );
-            })}
+            {(() => {
+              const listed = new Set(SIDEBAR_SECTIONS.flatMap((sec) => sec.labels));
+              const sections = [
+                ...SIDEBAR_SECTIONS.map((sec) => ({ heading: sec.heading, items: sec.labels.map((l) => portalNavigation.find((n) => n.label === l)).filter(Boolean) })),
+                { heading: 'More', items: portalNavigation.filter((n) => !listed.has(n.label)) },
+              ].filter((sec) => sec.items.length);
+              return sections.flatMap((sec, secIdx) => [
+                <React.Fragment key={`sec-${sec.heading}`}>
+                  <p className={`select-none px-3 pb-1 text-[10px] font-bold uppercase tracking-wider text-gray-400 ${secIdx === 0 ? 'pt-1' : 'pt-4'} ${sidebarCollapsed ? 'lg:hidden' : ''}`}>{sec.heading}</p>
+                  {sidebarCollapsed && secIdx > 0 && <div className="mx-3 my-2 hidden border-t border-gray-100 lg:block" />}
+                </React.Fragment>,
+                ...sec.items.map(renderSidebarItem),
+              ]);
+            })()}
           </nav>
 
           {/* ── Footer: Logout ── */}
@@ -2435,7 +2460,9 @@ const TeacherPortalShell = () => {
                             className="mb-3 flex w-full items-center justify-center gap-2 rounded-full border border-emerald-200 bg-emerald-50 px-3.5 py-2 text-xs font-semibold text-emerald-700 transition-colors hover:bg-emerald-100 disabled:opacity-60"
                           >
                             <ArrowLeftRight size={15} strokeWidth={1.9} />
-                            {switchingAccount ? 'Switching…' : `Switch to Admin Panel${adminAccess.roleName ? ` (${adminAccess.roleName})` : ''}`}
+                            <span className="truncate" title={adminAccess.roleName ? `Switch to Admin Panel (${adminAccess.roleName})` : 'Switch to Admin Panel'}>
+                              {switchingAccount ? 'Switching…' : 'Switch to Admin'}
+                            </span>
                           </Motion.button>
                         )}
 
@@ -2641,7 +2668,7 @@ const TeacherPortalShell = () => {
                 <Route path="exam-duty/:notificationId" element={<TeacherExamDuty />} />
                 <Route path="community-wall" element={<TeacherAlcove />} />
                 <Route path="resource-library" element={<Navigate to="/teacher/community-wall" replace />} />
-                <Route path="lesson-plan" element={<div className="p-3 sm:p-5 lg:p-6"><AIPoweredTeaching /></div>} />
+                <Route path="lesson-plan" element={<div className="h-full min-h-0 p-2 sm:p-4 lg:p-6"><AIPoweredTeaching /></div>} />
                 <Route path="tryout" element={<TryoutManagement />} />
                 <Route path="ai-tools" element={<TeacherAIToolsPanel />} />
                 <Route path="live-monitor" element={<LiveExamMonitor />} />
@@ -2752,7 +2779,7 @@ const TeacherPortalShell = () => {
                                 onClick={handleSwitchToAdmin}
                                 className="flex w-full items-center gap-2.5 rounded-xl px-3 py-2.5 text-left text-sm font-medium text-emerald-700 transition hover:bg-emerald-50 disabled:opacity-60"
                               >
-                                <ArrowLeftRight size={16} /> Switch to Admin Panel
+                                <ArrowLeftRight size={16} /> Switch to Admin
                               </button>
                             )}
                             <button
