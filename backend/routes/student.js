@@ -5,6 +5,8 @@ const TeacherAllocation = require('../models/TeacherAllocation');
 const Class = require('../models/Class');
 const Section = require('../models/Section');
 const Subject = require('../models/Subject');
+const Timetable = require('../models/Timetable');
+const AcademicYear = require('../models/AcademicYear');
 const auth = require('../middleware/authStudent');
 const multer = require('multer');
 const { logger } = require('../utils/logger');
@@ -142,7 +144,7 @@ router.get('/allocated-subjects', auth, async (req, res) => {
     if (!schoolId) return res.status(400).json({ error: 'schoolId is required' });
 
     // Get student details
-    const student = await StudentUser.findOne({ _id: req.user.id, schoolId }).select('grade section');
+    const student = await StudentUser.findOne({ _id: req.user.id, schoolId }).select('grade section classId sectionId');
     if (!student) {
       logStudentPortalEvent(req, {
         feature: 'tryouts',
@@ -168,8 +170,13 @@ router.get('/allocated-subjects', auth, async (req, res) => {
     ]);
     const normalizedGrade = normalizeClassName(student.grade);
     const normalizedSection = normalizeText(student.section);
-    const classDoc = classCandidates.find((c) => normalizeClassName(c.name) === normalizedGrade) || null;
-    const sectionDoc = sectionCandidates.find((s) => normalizeText(s.name) === normalizedSection) || null;
+    const activeYear = await AcademicYear.findOne({ schoolId, isActive: true }).select('_id').lean();
+    const classDoc = classCandidates.find((c) => student.classId && String(c._id) === String(student.classId))
+      || classCandidates.find((c) => normalizeClassName(c.name) === normalizedGrade
+        && (!activeYear || String(c.academicYearId) === String(activeYear._id))
+        && (!campusId || !c.campusId || String(c.campusId) === String(campusId))) || null;
+    const sectionDoc = sectionCandidates.find((s) => String(s.classId) === String(classDoc?._id)
+      && (student.sectionId ? String(s._id) === String(student.sectionId) : normalizeText(s.name) === normalizedSection)) || null;
 
     if (!classDoc || !sectionDoc) {
       logStudentPortalEvent(req, {
@@ -214,7 +221,7 @@ router.get('/allocated-subjects', auth, async (req, res) => {
     // Find all teacher allocations for this class/section
     const allocations = await TeacherAllocation.find({
       schoolId,
-      ...(campusId ? { campusId } : {}),
+      ...(campusId ? { $or: [{ campusId }, { campusId: null }, { campusId: { $exists: false } }] } : {}),
       classId: classDoc._id,
       sectionId: sectionDoc._id,
       subjectId: { $ne: null }
@@ -222,6 +229,18 @@ router.get('/allocated-subjects', auth, async (req, res) => {
       .populate('subjectId', 'name code')
       .populate('teacherId', 'name')
       .lean();
+
+    if (!allocations.length) {
+      const timetables = await Timetable.find({
+        schoolId, classId: classDoc._id, sectionId: sectionDoc._id,
+        ...(campusId ? { $or: [{ campusId }, { campusId: null }, { campusId: { $exists: false } }] } : {}),
+      }).populate('entries.subjectId', 'name code').populate('entries.teacherId', 'name').lean();
+      timetables.forEach((timetable) => {
+        (timetable.entries || []).forEach((entry) => {
+          if (!entry.isBreak && entry.subjectId && entry.teacherId) allocations.push(entry);
+        });
+      });
+    }
 
     // Extract unique subjects with teacher info
     const subjectMap = new Map();

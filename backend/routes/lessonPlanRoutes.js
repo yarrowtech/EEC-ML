@@ -163,6 +163,7 @@ const resolveSmartLearningLinks = async (subjects) => {
   (subjects || []).forEach((subject) => {
     (subject.chapters || []).forEach((chapter) => {
       (chapter.uploads || []).forEach(resolveSingle);
+      (chapter.currentAttachments || []).forEach(resolveSingle);
       (chapter.topics || []).forEach((topic) => {
         (topic.subtopics || []).forEach((subtopic) => {
           (subtopic.worksheetUploads || []).forEach(resolveSingle);
@@ -2078,17 +2079,13 @@ router.delete('/teacher/smart-learning/chapter', authTeacher, async (req, res) =
       isDraft: false,
     };
     if (campusId) planFilter.campusId = campusId;
-    if (planId) planFilter._id = planId;
-
     const plans = await LessonPlan.find(planFilter);
-    const matchingPlans = planId
-      ? plans
-      : title
-        ? plans.filter((plan) => {
-            const planner = sanitizePlannerContent(plan.plannerContent);
-            return (planner.chapters || []).some((chapter) => normalizeLower(chapter?.title) === normalizeLower(title));
-          })
-        : plans;
+    const matchingPlans = plans.filter((plan) => {
+      if (planId && String(plan._id) === planId) return true;
+      if (!title) return false;
+      const planner = sanitizePlannerContent(plan.plannerContent);
+      return (planner.chapters || []).some((chapter) => normalizeLower(chapter?.title) === normalizeLower(title));
+    });
 
     if (!matchingPlans.length) {
       return res.json({
@@ -2122,7 +2119,7 @@ router.delete('/teacher/smart-learning/chapter', authTeacher, async (req, res) =
     let updatedPlans = 0;
     for (const plan of matchingPlans) {
       const planner = sanitizePlannerContent(plan.plannerContent);
-      const shouldArchiveWholePlan = planId && (planner.chapters || []).length <= 1;
+      const shouldArchiveWholePlan = String(plan._id) === planId && (planner.chapters || []).length <= 1;
       const remainingChapters = shouldArchiveWholePlan
         ? []
         : title
@@ -2177,13 +2174,62 @@ router.get('/student/smart-learning-map', authStudent, async (req, res) => {
       .lean();
     if (!student) return res.status(404).json({ error: 'Student not found' });
 
-    const classId = student.classId || null;
-    const sectionId = student.sectionId || null;
+    let classId = student.classId || null;
+    let sectionId = student.sectionId || null;
+    // Legacy student records store names only. Resolve them within the active
+    // session before checking allocations, rather than matching all years.
+    if (!classId || !sectionId) {
+      const activeYear = await AcademicYear.findOne({ schoolId, isActive: true }).select('_id').lean();
+      const classDoc = classId
+        ? await ClassModel.findOne({ _id: classId, schoolId }).select('_id').lean()
+        : await ClassModel.findOne({
+          schoolId,
+          name: classNameRegex(normalizeLower(student.grade)),
+          ...(activeYear ? { academicYearId: activeYear._id } : {}),
+          ...(campusId ? { campusId } : {}),
+        }).select('_id').lean();
+      if (!classDoc) return res.json({ subjects: [] });
+      classId = classDoc._id;
+      if (!sectionId) {
+        const sectionDoc = await Section.findOne({
+          schoolId,
+          classId,
+          name: { $regex: '^' + escapeRegex(normalizeLower(student.section)) + '$', $options: 'i' },
+        }).select('_id').lean();
+        sectionId = sectionDoc?._id || null;
+      }
+    }
+    if (!classId || !sectionId) return res.json({ subjects: [] });
+
+    const allocations = await TeacherAllocation.find({
+      schoolId,
+      classId,
+      sectionId,
+      subjectId: { $ne: null },
+      ...(campusId ? { $or: [{ campusId }, { campusId: null }, { campusId: { $exists: false } }] } : {}),
+    }).select('teacherId subjectId').lean();
+    const allocatedPairs = allocations.filter((allocation) => allocation.teacherId && allocation.subjectId)
+      .map((allocation) => ({ teacherId: allocation.teacherId, subjectId: allocation.subjectId }));
+    if (!allocatedPairs.length) {
+      const timetables = await Timetable.find({
+        schoolId, classId, sectionId,
+        ...(campusId ? { $or: [{ campusId }, { campusId: null }, { campusId: { $exists: false } }] } : {}),
+      }).select('entries').lean();
+      timetables.forEach((timetable) => {
+        (timetable.entries || []).forEach((entry) => {
+          if (entry.teacherId && entry.subjectId && !entry.isBreak) {
+            allocatedPairs.push({ teacherId: entry.teacherId, subjectId: entry.subjectId });
+          }
+        });
+      });
+    }
+    if (!allocatedPairs.length) return res.json({ subjects: [] });
 
     const planFilter = {
       schoolId,
       status: 'published',
-      isDraft: false
+      isDraft: false,
+      $or: allocatedPairs,
     };
     if (campusId) planFilter.campusId = campusId;
 
@@ -2601,6 +2647,27 @@ router.get('/student/smart-learning-map', authStudent, async (req, res) => {
         }
         const chapterEntry = subjectEntry.chapters.get(chapterKey);
         chapterEntry.meta = mergeChapterMeta(chapterEntry.meta, buildChapterMeta(plan, chapter));
+        // Keep an authoritative upload list from the most recently saved plan.
+        // The historical topic/material map below may contain older publications.
+        const attachmentVersion = new Date(plan.updatedAt || plan.createdAt || plan.date || 0).getTime();
+        if (chapterEntry.attachmentVersion === undefined || attachmentVersion > chapterEntry.attachmentVersion) {
+          chapterEntry.attachmentVersion = attachmentVersion;
+          const currentAttachments = normalizeStringList(plan.materialsNeeded).map((item) => parseResourceRef(item));
+          (chapter.topics || []).forEach((topic) => {
+            (topic.subTopics || []).forEach((sub) => {
+              normalizeStringList(sub.worksheets).forEach((item) => {
+                currentAttachments.push({ ...parseResourceRef(item), bucket: 'Worksheet' });
+              });
+              normalizeStringList(sub.studyMaterials).forEach((item) => {
+                currentAttachments.push({ ...parseResourceRef(item), bucket: 'Article Reference' });
+              });
+            });
+          });
+          chapterEntry.currentAttachments = currentAttachments.filter((item) => item.url).map((item, index) => ({
+            ...item,
+            id: `current-attachment-${plan._id}-${index}`,
+          }));
+        }
         const planUploads = normalizeStringList(plan.materialsNeeded).map((item, index) => {
           const resource = parseResourceRef(item);
           return {
@@ -2681,11 +2748,16 @@ router.get('/student/smart-learning-map', authStudent, async (req, res) => {
       key: subject.key,
       subjectId: subject.subjectId,
       title: subject.title,
-      chapters: Array.from(subject.chapters.values()).map((chapter) => ({
+      // Standalone/older teaching materials can create map entries, but only
+      // chapters backed by a published plan belong in the course chapter list.
+      chapters: Array.from(subject.chapters.values())
+        .filter((chapter) => Array.isArray(chapter.currentAttachments))
+        .map((chapter) => ({
         id: chapter.id,
         title: chapter.title,
         meta: chapter.meta || {},
         uploads: chapter.uploads || [],
+        currentAttachments: chapter.currentAttachments,
         topics: Array.from(chapter.topics.values()).map((topic) => ({
           id: topic.id,
           title: topic.title,
@@ -2706,6 +2778,14 @@ router.get('/student/smart-learning-map', authStudent, async (req, res) => {
       })),
     }));
 
+    // Keep the subject summary consistent with the published chapter list.
+    subjects.forEach((subject) => {
+      subject.topics = subject.chapters.flatMap((chapter) => chapter.topics.map((topic) => ({
+        title: topic.title,
+        subtopics: topic.subtopics.map((subtopic) => subtopic.title).filter(Boolean),
+        tryoutSections: [],
+      })));
+    });
     await resolveSmartLearningLinks(subjects);
 
     return res.json({ subjects });

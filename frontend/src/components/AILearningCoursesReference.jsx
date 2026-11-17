@@ -131,9 +131,13 @@ const getAttachmentDownloadUrl = (item) => {
   return match?.downloadUrl || getAttachmentUrl(item);
 };
 
-const getInlineDocumentUrl = (rawUrl = '') => {
+const getInlineDocumentUrl = (rawUrl = '', material = {}) => {
   const url = String(rawUrl || '').trim();
   if (!url) return '';
+  // Browser-native media should not go through Google's document viewer,
+  // which cannot preview images such as JFIF or video uploads.
+  const fileHint = `${url.split(/[?#]/)[0]} ${material.fileName || material.title || ''}`;
+  if (/\.(pdf|jpe?g|jfif|png|gif|webp|avif|svg|bmp|tiff?|mp4|mov|webm|mkv|avi)(?:\s|$)/i.test(fileHint)) return url;
   if (url.includes('docs.google.com/gview')) return url;
   return `https://docs.google.com/gview?embedded=1&url=${encodeURIComponent(url)}`;
 };
@@ -150,17 +154,17 @@ const formatDateLabel = (value) => {
 // description) so the Lesson Materials list can show a real thumbnail for
 // images and a named, type-appropriate icon for everything else.
 const MATERIAL_KIND_META = {
-  image: { label: 'Image', icon: ImageIcon, tile: 'bg-[#eefff3] text-[#006847]' },
+  image: { label: 'Image', icon: ImageIcon, tile: 'bg-emerald-400 text-white' },
   video: { label: 'Video', icon: Video, tile: 'bg-[#ffdbcb] text-[#9e4300]' },
-  ppt: { label: 'PPT', icon: Presentation, tile: 'bg-[#e2dfff] text-[#321ed2]' },
-  pdf: { label: 'PDF', icon: FileText, tile: 'bg-[#eff4ff] text-[#493ee5]' },
+  ppt: { label: 'PPT', icon: Presentation, tile: 'bg-amber-400 text-white' },
+  pdf: { label: 'PDF', icon: FileText, tile: 'bg-violet-400 text-white' },
   notes: { label: 'Notes', icon: NotebookText, tile: 'bg-[#eff4ff] text-[#493ee5]' },
   article: { label: 'Article', icon: Newspaper, tile: 'bg-[#eff4ff] text-[#464555]' },
 };
 const detectMaterialKind = (material) => {
-  const url = String(material?.url || material?.downloadUrl || '');
+  const url = `${material?.url || material?.downloadUrl || ''}#${material?.fileName || material?.title || ''}`;
   const hint = normalizeKey(`${material?.formatLabel || ''} ${material?.description || ''}`);
-  if (/\.(jpe?g|png|gif|webp|avif|svg)(\?|#|$)/i.test(url) || hint.includes('image')) return 'image';
+  if (/\.(jpe?g|jfif|png|gif|webp|avif|svg|bmp|tiff?)(\?|#|$)/i.test(url) || hint.includes('image')) return 'image';
   if (/\.(mp4|mov|webm|mkv|avi)(\?|#|$)/i.test(url) || hint.includes('video')) return 'video';
   if (/\.(ppt|pptx)(\?|#|$)/i.test(url) || hint.includes('presentation') || hint.includes('slide')) return 'ppt';
   if (/\.pdf(\?|#|$)/i.test(url) || hint.includes('pdf')) return 'pdf';
@@ -192,7 +196,7 @@ const MaterialQuickActions = ({ material, onRead }) => {
       )}
       {material.url && (
         <>
-          <a href={getInlineDocumentUrl(material.url)} target="_blank" rel="noreferrer" aria-label={`Open ${material.title || 'material'}`} title="Open" className="flex h-8 w-8 items-center justify-center rounded-full text-[#493ee5] transition-colors hover:bg-white">
+          <a href={getInlineDocumentUrl(material.url, material)} target="_blank" rel="noreferrer" aria-label={`Open ${material.title || 'material'}`} title="Open" className="flex h-8 w-8 items-center justify-center rounded-full text-[#493ee5] transition-colors hover:bg-white">
             <ExternalLink size={14} />
           </a>
           <a href={material.downloadUrl || material.url} download aria-label={`Download ${material.title || 'material'}`} title="Download" className="flex h-8 w-8 items-center justify-center rounded-full bg-[#493ee5] text-white transition-colors hover:bg-[#3a30c9]">
@@ -418,6 +422,7 @@ const AILearningCoursesReference = () => {
           fetchCachedJson(FEEDBACK_CONTEXT_ENDPOINT, { ttlMs: 5 * 60 * 1000, fetchOptions: { headers } }),
           fetchCachedJson(SMART_LEARNING_MAP_ENDPOINT, {
             ttlMs: 3 * 60 * 1000,
+            forceRefresh: true,
             fetchOptions: { headers },
           }).catch(() => ({ data: { subjects: [] } })),
         ]);
@@ -458,19 +463,21 @@ const AILearningCoursesReference = () => {
           const tKey = normalizeKey(m?.topicTitle || '');
           return chKey === topicKey || tKey === topicKey || chKey.includes(topicKey) || topicKey.includes(chKey);
         });
-        const mapped = filtered.map((m) => {
-          const firstAttachment = Array.isArray(m.attachments) ? m.attachments.find((a) => a?.url) : null;
-          return {
-            id: m._id || m.id || m.title,
-            title: String(m.title || '').trim() || 'Teaching Material',
+        const mapped = filtered.flatMap((m) => {
+          const attachments = Array.isArray(m.attachments) ? m.attachments.filter((a) => a?.url) : [];
+          return (attachments.length ? attachments : [null]).map((attachment, index) => ({
+            id: `${m._id || m.id || m.title}-${index}`,
+            title: attachment?.name || String(m.title || '').trim() || 'Teaching Material',
+            categoryLabel: String(m.subTopicTitle || m.typeLabel || 'Study Materials').trim(),
+            learningType: m.learningType || m.materialType || '',
             group: 'Material',
             description: String(m.typeLabel || m.category || m.subjectName || '').trim(),
             content: String(m.content || '').trim(),
-            url: firstAttachment?.url || '',
-            downloadUrl: firstAttachment?.downloadUrl || firstAttachment?.url || '',
+            url: attachment?.url || '',
+            downloadUrl: attachment?.downloadUrl || attachment?.url || '',
             publishedAt: m.publishedAt || m.createdAt || null,
             formatLabel: String(m.typeLabel || m.category || 'Material').trim(),
-          };
+          }));
         });
         setRealMaterials(mapped);
       })
@@ -566,6 +573,8 @@ const AILearningCoursesReference = () => {
         id: item?.id || item?._id || key,
         title,
         group,
+        categoryLabel: normalizeLabel(item?.bucket || item?.typeLabel || item?.learningType || 'Study Materials'),
+        learningType: item?.learningType || item?.materialType || '',
         description: item?.description || item?.typeLabel || item?.learningType || item?.paperType || item?.bucket || '',
         content: item?.content || item?.description || '',
         url,
@@ -575,6 +584,11 @@ const AILearningCoursesReference = () => {
       });
     };
 
+    const currentAttachments = selectedChapter?.currentAttachments || selectedTopicFromMap?.chapter?.currentAttachments;
+    if (Array.isArray(currentAttachments)) {
+      currentAttachments.forEach((upload) => addResource(upload, 'Material', upload.title));
+      return resources;
+    }
     const allowedMaterialBuckets = new Set(['study materials', 'presentations', 'images', 'experiments', 'report upload', 'additional resources']);
     mapScope.chapterUploads.forEach((upload) => {
       const bucket = normalizeKey(upload?.bucket);
@@ -583,12 +597,24 @@ const AILearningCoursesReference = () => {
     });
     mapScope.topics.forEach((topic) => {
       (topic.subtopics || []).forEach((subtopic) => {
-        (subtopic.materials || []).forEach((material) => addResource(material, 'Material', material?.title));
+        (subtopic.materials || []).forEach((material) => {
+          const attachments = (material.attachments || []).filter((attachment) => attachment?.url);
+          if (attachments.length) {
+            attachments.forEach((attachment) => addResource({
+              ...material,
+              ...attachment,
+              title: attachment.name || material.title,
+              typeLabel: material.typeLabel || subtopic.title,
+            }, 'Material', material.title));
+          } else {
+            addResource(material, 'Material', material?.title);
+          }
+        });
       });
     });
 
     return resources;
-  }, [mapScope]);
+  }, [mapScope, selectedChapter, selectedTopicFromMap]);
 
   const chapterAssessments = useMemo(() => {
     const resources = [];
@@ -630,10 +656,27 @@ const AILearningCoursesReference = () => {
     return resources;
   }, [mapScope]);
 
-  const learningMaterials = useMemo(
-    () => (realMaterials.length > 0 ? realMaterials : chapterMaterials),
-    [realMaterials, chapterMaterials],
-  );
+  const learningMaterials = useMemo(() => {
+    const seen = new Set();
+    // Chapter uploads retain the teacher's upload categories; prefer them over
+    // the same files in the automatically published material bundles.
+    const currentAttachments = selectedChapter?.currentAttachments || selectedTopicFromMap?.chapter?.currentAttachments;
+    // Never fall back to the historical material feed for attachments: it
+    // includes files from superseded publications of the same chapter.
+    const candidates = Array.isArray(currentAttachments) ? chapterMaterials : [];
+    return candidates.filter((material) => {
+      const url = String(material.url || material.downloadUrl || '').trim();
+      // Generated lesson text is not an attachment. Empty upload categories
+      // and assessment content must not become cards in the files section.
+      if (!url) return false;
+      const type = normalizeKey(`${material.categoryLabel || ''} ${material.learningType || ''}`);
+      if (/\b(assessment|assessments|practice|tryout)\b/.test(type)) return false;
+      const key = url.split(/[?#]/)[0];
+      if (seen.has(key)) return false;
+      seen.add(key);
+      return true;
+    });
+  }, [realMaterials, chapterMaterials, selectedChapter, selectedTopicFromMap]);
 
   const assessmentItems = useMemo(() => chapterAssessments, [chapterAssessments]);
 
@@ -1418,11 +1461,6 @@ const AILearningCoursesReference = () => {
                         <h2 className="text-base font-bold text-[#0d1c2e]">Attachments</h2>
                         <p className="text-sm text-[#64748b]">Notes, slides, videos and files shared by your teacher.</p>
                       </div>
-                      {learningMaterials.some((m) => m.url || m.downloadUrl) && (
-                        <button type="button" onClick={handleDownloadAllMaterials} className="inline-flex items-center gap-1.5 rounded-full bg-[#493ee5] px-4 py-2 text-sm font-bold text-white hover:bg-[#3a30c9]">
-                          <Download size={15} /> Download all
-                        </button>
-                      )}
                     </div>
                     {learningMaterials.length === 0 ? (
                       <div className="rounded-2xl border-2 border-dashed border-[#e2e8ff] py-14 text-center">
@@ -1431,42 +1469,42 @@ const AILearningCoursesReference = () => {
                         <p className="mt-1 text-sm text-[#64748b]">Your teacher hasn’t shared any files for this topic.</p>
                       </div>
                     ) : (
-                      <div className="grid gap-2.5 sm:grid-cols-2 lg:grid-cols-4">
-                        {(() => {
-                          // Titles arrive as "Subject • Topic • … • Worksheet"; show only the
-                          // last part (the material type), numbering repeats like "Uploaded Materials 2".
-                          const seen = {};
-                          return learningMaterials.map((material) => {
-                            const parts = String(material.title || '').split('•').map((p) => p.trim()).filter(Boolean);
-                            const base = parts[parts.length - 1] || 'Lesson material';
-                            seen[base] = (seen[base] || 0) + 1;
-                            return seen[base] > 1 ? `${base} ${seen[base]}` : base;
-                          });
-                        })().map((typeLabel, idx) => [learningMaterials[idx], typeLabel]).map(([material, typeLabel], idx) => {
+                      <div className="grid auto-rows-fr grid-cols-[repeat(auto-fill,minmax(min(100%,260px),1fr))] gap-3">
+                        {learningMaterials.map((material, idx) => {
                           const kind = detectMaterialKind(material);
                           const meta = MATERIAL_KIND_META[kind];
                           const Icon = meta.icon;
                           const materialUrl = material.url || material.downloadUrl;
+                          const categoryLabels = {
+                            'study materials': 'PDF / Documents',
+                            presentations: 'Presentations & Slides',
+                            images: 'Images & Diagrams',
+                            experiments: 'Videos & Experiments',
+                            'report upload': 'Class Notes',
+                            'additional resources': 'Additional Resources',
+                          };
+                          const category = categoryLabels[normalizeKey(material.categoryLabel)]
+                            || material.categoryLabel || 'Study Materials';
                           return (
-                            <div key={`${material.title || 'material'}-${idx}`} className="flex flex-col rounded-xl border border-[#e2e8ff] p-3 transition-shadow hover:shadow-md">
+                            <div key={`${material.title || 'material'}-${idx}`} className="flex min-w-0 flex-col gap-4 rounded-xl border border-[#e2e8ff] p-4 transition-shadow hover:shadow-md">
                               <div className="flex items-start gap-3">
                                 <div className={`flex h-9 w-9 shrink-0 items-center justify-center rounded-lg ${meta.tile}`}><Icon size={17} /></div>
                                 <div className="min-w-0">
-                                  <p className="line-clamp-2 text-sm font-bold text-[#0d1c2e]">{typeLabel}</p>
-                                  <p className="mt-0.5 text-xs font-semibold uppercase tracking-wide text-[#94a3b8]">{meta.label || kind}</p>
+                                  <p className="line-clamp-2 text-sm font-bold text-[#0d1c2e]">{category}</p>
+                                  <span className="mt-0.5 text-xs font-semibold uppercase tracking-wide bg-gray-400 text-white py-0.5 px-2 rounded-full">{meta.label || kind}</span>
                                 </div>
                               </div>
-                              <div className="mt-3 flex gap-1.5">
+                              <div className="mt-auto flex flex-wrap items-center gap-2 pt-1">
                                 {material.content && (
-                                  <button type="button" onClick={() => setActiveMaterial(material)} className="flex-1 rounded-xl bg-[#eff4ff] px-3 py-2 text-xs font-bold text-[#493ee5] hover:bg-[#e6eeff]">Read here</button>
+                                  <button type="button" onClick={() => setActiveMaterial(material)} className="inline-flex h-10 flex-1 items-center justify-center whitespace-nowrap rounded-xl bg-[#eff4ff] px-3 text-xs font-bold text-[#493ee5] hover:bg-[#e6eeff]">Read here</button>
                                 )}
                                 {materialUrl && (
-                                  <a href={getInlineDocumentUrl(materialUrl)} target="_blank" rel="noreferrer" className="inline-flex flex-1 items-center justify-center gap-1 rounded-xl bg-[#493ee5] px-3 py-2 text-xs font-bold text-white hover:bg-[#3a30c9]">
+                                  <a href={getInlineDocumentUrl(materialUrl, material)} target="_blank" rel="noreferrer" className="inline-flex h-10 flex-1 items-center justify-center gap-1.5 whitespace-nowrap rounded-xl bg-[#493ee5] px-3 text-xs font-bold text-white hover:bg-[#3a30c9]">
                                     <ExternalLink size={13} /> Open
                                   </a>
                                 )}
                                 {materialUrl && (
-                                  <a href={materialUrl} download aria-label={`Download ${material.title || 'file'}`} className="inline-flex items-center justify-center rounded-xl bg-[#eff4ff] px-3 py-2 text-[#493ee5] hover:bg-[#e6eeff]">
+                                  <a href={material.downloadUrl || materialUrl} download aria-label={`Download ${material.title || 'file'}`} className="inline-flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-[#eff4ff] text-[#493ee5] hover:bg-[#e6eeff]">
                                     <Download size={14} />
                                   </a>
                                 )}

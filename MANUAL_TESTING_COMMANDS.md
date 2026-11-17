@@ -560,3 +560,18 @@ npm test -- --runInBand src/components/__tests__/StudentFamilyServices.test.jsx 
 - Check dashboard Quick Actions open main menu pages and respect team view permissions.
 - Check student table headers and all data are centered on desktop and mobile.
 - Clicking a student name or photo should do nothing; the separate View Details button should still open details. Verify selection and other actions still work.
+
+## Student smart learning attachments
+
+- Open a topic's Attachments tab at mobile, tablet, and desktop widths. Check that cards fit without horizontal overflow, titles wrap cleanly, and action rows align at the bottom with equal-height buttons.
+- Check materials with text only, a file only, and both: Read here stays on one line and opens the reader; Open, individual downloads, and Download all still work.
+- Publish a chapter containing PDF, PPTX, JFIF, and worksheet uploads. Verify every file appears once in student Attachments with its filename, file-type icon, and teacher upload category, including when a published material contains multiple attachments.
+- Leave Videos & Experiments, Article Reference, Class Notes, and Additional Resources empty. Confirm they produce no attachment cards, generated text and assessments are excluded, and an uploaded worksheet remains visible.
+- Publish two plans with the same chapter title and different files, leaving Class Notes empty in the most recently saved plan. Confirm student Attachments shows only that plan's files and worksheet, with no older Cloudinary files or removed category cards. Also remove all files and republish: Attachments must show the empty state.
+- Reopen the topic immediately after republishing (within three minutes). Confirm a fresh map request runs and historical files never reappear while the current attachment list is empty or unavailable.
+- With one published chapter plan and standalone materials for other chapters in the same subject, open the student subject page. Confirm only the published chapter appears. An explicitly empty chapter list must not turn material topics into chapters; republishing should be reflected on the next visit.
+- Publish computer chapters from an unallocated teacher and from a teacher allocated only to science. Neither should appear in the student's computer course. Only the teacher allocated to computer for that student's class/section may contribute computer chapters. A student without subject allocations must receive no chapters.
+- For a student assigned through timetable entries only, confirm allocated subjects and the matching teacher's chapters still appear. With multiple classes containing section A, confirm subject lookup uses section A of the student's own class, preferring stored class/section IDs over names.
+- Delete a chapter with older duplicate publications: confirm it disappears from student chapters while unrelated chapters remain. Simulate a failed unpublish request: the teacher chapter must remain visible for retry, with no deletion-success message. A previously published chapter edited back to draft must still be unpublished when deleted.
+- Open older S3 PDF and JFIF uploads: confirm a browser preview opens without an automatic download. Check the preview response uses inline disposition and the appropriate PDF/image MIME type; the separate download button should still download the file.
+- On a subject chapter card, confirm the completion checkbox sits beside Start Lesson and the long subtopic introduction and "Click to mark as complete" prompt are hidden. Toggle the checkbox on and off: chapter progress should update and persist after reload without changing other chapters.

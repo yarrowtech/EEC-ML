@@ -678,18 +678,10 @@ const AIPoweredTeaching = () => {
     const chapterTitle = String(chapter?.title || '').trim();
     const publishedChapterTitle = String(chapter?.publishedChapterTitle || chapterTitle).trim();
     const publishedPlanId = toIdString(chapter?.publishedPlanId);
-    const isPublishedChapter = chapter?.status === 'published' && chapter?.isDraft === false;
+    const isPublishedChapter = Boolean(publishedPlanId) || chapter?.status === 'published';
 
 
-    const nextChapters = chapters.filter((ch) => ch.id !== id);
-    setSidebarCollapsed(false);
-    setChapters(nextChapters);
-    setOpenChapterIds((prev) => prev.filter((cid) => cid !== id));
     setAutosaveStatus('Deleting...');
-
-    if (autosaveTimerRef.current) clearTimeout(autosaveTimerRef.current);
-    autosaveStateRef.current = { ...autosaveStateRef.current, chapters: nextChapters };
-    await saveDraft();
 
     if (selectedClass && selectedSection && selectedSubject && isPublishedChapter && (publishedPlanId || publishedChapterTitle)) {
       try {
@@ -708,12 +700,19 @@ const AIPoweredTeaching = () => {
         if (!res.ok) throw new Error(data?.error || 'Failed to delete published chapter');
       } catch (err) {
         console.warn('Could not remove chapter from Smart Learning:', err?.message);
-        setAutosaveStatus('Deleted locally');
-        toast.error('Chapter deleted from this page, but Smart Learning cleanup failed');
+        setAutosaveStatus('Delete failed');
+        toast.error('Could not delete the published chapter. Please try again.');
         return;
       }
     }
 
+    const nextChapters = chapters.filter((ch) => ch.id !== id);
+    setSidebarCollapsed(false);
+    setChapters(nextChapters);
+    setOpenChapterIds((prev) => prev.filter((cid) => cid !== id));
+    if (autosaveTimerRef.current) clearTimeout(autosaveTimerRef.current);
+    autosaveStateRef.current = { ...autosaveStateRef.current, chapters: nextChapters };
+    await saveDraft();
     toast.success(`Chapter "${chapterTitle || 'Untitled Chapter'}" deleted`);
   };
 

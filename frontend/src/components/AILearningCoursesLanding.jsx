@@ -1,7 +1,7 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import { useNavigate, useLocation } from 'react-router-dom';
 import {
-  AlertCircle, ArrowLeft, ArrowRight, BookOpen, ChevronDown, ChevronRight, CheckCircle2,
+  AlertCircle, ArrowLeft, ArrowRight, BookOpen, ChevronRight, CheckCircle2,
   FlaskConical, Globe, Sparkles, Users, CalendarDays,
   Layers, Languages, Landmark, Leaf, Calculator, Palette, Music2,
   Search, Flag, Smile, List, Clock, FolderOpen,
@@ -114,9 +114,8 @@ const normalize = (value) => String(value || '').trim().toLowerCase();
 const SubjectTopicsView = ({ subject, onBack, style = DEFAULT_STYLE }) => {
   const SubjectIcon = style.icon;
   const navigate = useNavigate();
-  const { profile, smartLearningReminders = [] } = useStudentDashboard();
+  const { profile } = useStudentDashboard();
   const firstName = String(profile?.name || '').trim().split(/\s+/)[0] || '';
-  const [openChapterIndex, setOpenChapterIndex] = useState(-1);
   const [completedSubtopics, setCompletedSubtopics] = useState({});
   const [isProgressLoaded, setIsProgressLoaded] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
@@ -124,7 +123,7 @@ const SubjectTopicsView = ({ subject, onBack, style = DEFAULT_STYLE }) => {
   const topics = useMemo(() => Array.isArray(subject?.topics) ? subject.topics : [], [subject]);
   const chapters = useMemo(() => {
     const sourceChapters = Array.isArray(subject?.chapters) ? subject.chapters : [];
-    if (sourceChapters.length > 0) {
+    if (Array.isArray(subject?.chapters)) {
       return sourceChapters.map((chapter) => ({
         ...chapter,
         topics: (Array.isArray(chapter?.topics) ? chapter.topics : []).map((topic) => ({
@@ -192,11 +191,6 @@ const SubjectTopicsView = ({ subject, onBack, style = DEFAULT_STYLE }) => {
     const chapterTopics = chapter.topics || [];
     return chapterTopics.length > 0 && chapterTopics.every((topic) => topicProgress[topic.title]?.percentage === 100);
   }).length;
-
-  // Find the next incomplete topic to continue from
-  const nextIncompleteTopic = useMemo(() => {
-    return topics.find(topic => topicProgress[topic.title]?.percentage < 100);
-  }, [topics, topicProgress]);
 
   // "Your class" is a placeholder the allocated-subjects fetch falls back to
   // when the timetable didn't supply a real class/section label — not
@@ -308,24 +302,13 @@ const SubjectTopicsView = ({ subject, onBack, style = DEFAULT_STYLE }) => {
     }
   }, [isProgressLoaded, normalizedCompletedSubtopics, subject.key]);
 
-  const toggleSubtopicCompletion = (topicTitle, subtopic) => {
-    setCompletedSubtopics(prev => {
-      const topicSubtopics = prev[topicTitle] || [];
-      const isCompleted = topicSubtopics.includes(subtopic);
-
-      if (isCompleted) {
-        // Remove from completed
-        return {
-          ...prev,
-          [topicTitle]: topicSubtopics.filter(s => s !== subtopic)
-        };
-      } else {
-        // Add to completed
-        return {
-          ...prev,
-          [topicTitle]: [...topicSubtopics, subtopic]
-        };
-      }
+  const setChapterCompletion = (chapter, checked) => {
+    setCompletedSubtopics((previous) => {
+      const next = { ...previous };
+      (chapter.topics || []).forEach((topic) => {
+        next[topic.title] = checked ? [...new Set(topic.subtopics || [])] : [];
+      });
+      return next;
     });
   };
 
@@ -389,16 +372,6 @@ const SubjectTopicsView = ({ subject, onBack, style = DEFAULT_STYLE }) => {
         </div>
       </header>
 
-      {smartLearningReminders.length > 0 && (
-        <section aria-label="Reminders" className="flex items-center justify-between gap-3 rounded-xl border border-amber-200/90 bg-amber-50/90 px-4 py-2.5 text-amber-900 shadow-sm">
-          <div className="flex min-w-0 items-center gap-2.5">
-            <span className="h-2 w-2 shrink-0 rounded-full bg-amber-500 ring-4 ring-amber-100" />
-            <div className="truncate text-xs font-medium sm:text-sm"><span className="font-bold text-amber-950">You have unfinished Smart Learning work.</span><span className="ml-1 hidden text-amber-800 md:inline">Reminders stay here until the paper or worksheet is completed.</span></div>
-            {nextIncompleteTopic && <button type="button" onClick={() => openTopic(nextIncompleteTopic)} className="inline-flex shrink-0 items-center gap-1 rounded-lg bg-amber-500 px-2.5 py-1 text-xs font-bold text-white shadow-sm transition-colors hover:bg-amber-600">Continue <ArrowRight size={12} /></button>}
-          </div>
-          <span className="inline-flex shrink-0 items-center rounded-full bg-amber-200/70 px-2 py-0.5 text-xs font-bold text-amber-900">{smartLearningReminders.length} pending</span>
-        </section>
-      )}
 
       <section className="space-y-4">
         <div className="flex flex-col items-stretch justify-between gap-3 rounded-xl border border-slate-200 bg-white p-3.5 shadow-sm sm:flex-row sm:items-center">
@@ -414,7 +387,6 @@ const SubjectTopicsView = ({ subject, onBack, style = DEFAULT_STYLE }) => {
           <div className="space-y-2.5">
             {visibleChapterStats.map((entry) => {
               const { chapter, originalIndex, firstTopic, topicCount, subtopicCount, total, percentage, durationLabel, status } = entry;
-              const isOpen = openChapterIndex === originalIndex;
               const meta = CHAPTER_STATUS_META[status];
               const lessonLabel = !firstTopic ? 'No Topics' : status === 'completed' ? 'Review' : status === 'in-progress' || status === 'almost-done' ? 'Continue Lesson' : 'Start Lesson';
               return (
@@ -432,11 +404,11 @@ const SubjectTopicsView = ({ subject, onBack, style = DEFAULT_STYLE }) => {
                     </div>
                     <div className="flex items-center justify-between gap-4 border-t border-slate-100 pt-2.5 md:justify-end md:border-t-0 md:pt-0">
                       <div className="flex w-28 items-center gap-2 md:w-32"><div className="h-1.5 w-full overflow-hidden rounded-full bg-slate-100"><div className={`h-1.5 rounded-full ${meta.bar}`} style={{ width: `${percentage}%` }} /></div><span className="text-xs font-semibold text-slate-400">{percentage}%</span></div>
-                      <div className="flex items-center gap-2"><button type="button" onClick={() => openTopic(firstTopic)} disabled={!firstTopic} className={`inline-flex items-center gap-1.5 rounded-lg px-4 py-2 text-xs font-bold shadow-sm transition active:scale-[0.98] ${!firstTopic ? 'cursor-not-allowed bg-slate-100 text-slate-400' : 'bg-violet-600 text-white shadow-violet-600/25 hover:bg-violet-700'}`}>{lessonLabel}{firstTopic && <ArrowRight size={14} />}</button><button type="button" onClick={() => setOpenChapterIndex(isOpen ? -1 : originalIndex)} className={`rounded-md p-1.5 text-slate-400 transition hover:bg-slate-100 hover:text-slate-700 ${isOpen ? 'rotate-180' : ''}`} aria-label={`${isOpen ? 'Hide' : 'Show'} topics for ${chapter.title}`} aria-expanded={isOpen}><ChevronDown size={16} /></button></div>
+                      <div className="flex items-center gap-2"><input type="checkbox" checked={total > 0 && percentage === 100} disabled={total === 0} onChange={(event) => setChapterCompletion(chapter, event.target.checked)} aria-label={`Mark ${chapter.title} as complete`} className="h-5 w-5 shrink-0 cursor-pointer rounded border-slate-300 accent-violet-600 disabled:cursor-not-allowed" /><button type="button" onClick={() => openTopic(firstTopic)} disabled={!firstTopic} className={`inline-flex items-center gap-1.5 rounded-lg px-4 py-2 text-xs font-bold shadow-sm transition active:scale-[0.98] ${!firstTopic ? 'cursor-not-allowed bg-slate-100 text-slate-400' : 'bg-violet-600 text-white shadow-violet-600/25 hover:bg-violet-700'}`}>{lessonLabel}{firstTopic && <ArrowRight size={14} />}</button></div>
                     </div>
                   </div>
 
-                  {isOpen && <div className="mt-3 border-t border-slate-100 pt-3"><div className="mb-3 flex flex-wrap items-center justify-between gap-2 text-[10px] font-bold uppercase tracking-wider text-slate-400"><span>Module outline &amp; learning materials</span>{teacherName && <span className="normal-case font-semibold tracking-normal text-slate-500">Teacher: {teacherName}</span>}</div>{(chapter.topics || []).length > 0 ? <div className="space-y-2">{chapter.topics.map((topic) => { const topicProg = topicProgress[topic.title] || { total: 0, completed: 0 }; return <div key={topic.title} className="rounded-lg border border-slate-200 bg-slate-50/70 p-3"><div className="flex flex-col justify-between gap-2 sm:flex-row sm:items-center"><div className="min-w-0"><div className="flex flex-wrap items-center gap-2"><p className="truncate text-sm font-bold text-slate-900">{topic.title}</p>{topicProg.total > 0 && topicProg.completed >= topicProg.total && <span className="rounded-full bg-emerald-50 px-2 py-0.5 text-[10px] font-bold uppercase text-emerald-700">Completed</span>}</div><p className="text-xs text-slate-500">{topicProg.completed}/{topicProg.total} subtopics complete</p></div><button type="button" onClick={() => openTopic(topic)} className="shrink-0 self-start rounded-lg bg-violet-600 px-3.5 py-2 text-xs font-bold text-white transition hover:bg-violet-700 sm:self-auto">{topicProg.completed > 0 ? 'Continue Lesson' : 'Start Lesson'}</button></div>{topic.subtopics?.length > 0 && <div className="mt-3 space-y-1.5"><p className="text-[10px] font-semibold uppercase tracking-wide text-slate-400">Click to mark as complete</p>{topic.subtopics.map((subtopic, idx) => { const isSubtopicCompleted = (completedSubtopics[topic.title] || []).includes(subtopic); return <button type="button" key={`${subtopic}-${idx}`} onClick={() => toggleSubtopicCompletion(topic.title, subtopic)} className={`flex w-full items-center gap-3 rounded-lg border px-3 py-2 text-left transition hover:shadow-sm ${isSubtopicCompleted ? 'border-emerald-300/60 bg-emerald-50' : 'border-slate-200 bg-white hover:border-violet-300'}`}><span className={`flex h-5 w-5 shrink-0 items-center justify-center rounded-md ${isSubtopicCompleted ? 'bg-emerald-500' : 'border-2 border-violet-300 bg-white'}`}>{isSubtopicCompleted && <CheckCircle2 size={13} className="text-white" />}</span><span className={`text-sm font-medium ${isSubtopicCompleted ? 'text-emerald-700 line-through' : 'text-slate-700'}`}>{subtopic}</span></button>; })}</div>}</div>; })}</div> : <p className="text-sm italic text-slate-500">No topics available.</p>}</div>}
+
                 </article>
               );
             })}
@@ -498,6 +470,7 @@ const AILearningCoursesLanding = () => {
         // allocation request completes. Curriculum details can arrive second.
         const allocationResult = await fetchCachedJson(`${API_BASE}/api/student/allocated-subjects`, {
           ttlMs: CACHE_TTL,
+          forceRefresh: true,
           fetchOptions: { headers },
         });
         if (cancelled) return;
@@ -526,7 +499,7 @@ const AILearningCoursesLanding = () => {
           const separator = SMART_LEARNING_MAP_ENDPOINT.includes('?') ? '&' : '?';
           const mapResult = await fetchCachedJson(`${SMART_LEARNING_MAP_ENDPOINT}${separator}summary=true`, {
             ttlMs: CACHE_TTL,
-            forceRefresh: reloadKey > 0,
+            forceRefresh: true,
             fetchOptions: { headers },
           });
           if (!cancelled) {

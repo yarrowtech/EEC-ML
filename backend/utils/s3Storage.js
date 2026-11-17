@@ -73,7 +73,7 @@ const uploadStudyMaterial = async ({ buffer, schoolId, originalName, contentType
 };
 
 const getSignedS3Url = async ({
-  bucket, key, region, expiresIn = DEFAULT_SIGNED_URL_TTL_SECONDS, responseContentDisposition,
+  bucket, key, region, expiresIn = DEFAULT_SIGNED_URL_TTL_SECONDS, responseContentDisposition, responseContentType,
 }) => {
   const config = requireS3Config();
   const resolvedBucket = bucket || config.bucket;
@@ -85,6 +85,7 @@ const getSignedS3Url = async ({
       Bucket: resolvedBucket,
       Key: key,
       ...(responseContentDisposition && { ResponseContentDisposition: responseContentDisposition }),
+      ...(responseContentType && { ResponseContentType: responseContentType }),
     }),
     { expiresIn }
   );
@@ -117,8 +118,18 @@ const buildAttachmentDisposition = (name) => {
 
 const signAttachmentUrls = async (attachments = [], options = {}) => Promise.all(
   attachments.map(async (attachment) => {
-    const url = await getAttachmentDownloadUrl(attachment, options);
-    const isS3 = attachment.storageProvider === 's3' || Boolean(attachment.s3Key);
+    const extension = String(attachment.name || attachment.s3Key || parseS3Uri(attachment.url)?.key || '').split('.').pop().toLowerCase();
+    const previewTypes = {
+      pdf: 'application/pdf', jpg: 'image/jpeg', jpeg: 'image/jpeg', jfif: 'image/jpeg',
+      png: 'image/png', gif: 'image/gif', webp: 'image/webp', avif: 'image/avif',
+      svg: 'image/svg+xml', bmp: 'image/bmp', mp4: 'video/mp4', webm: 'video/webm', mov: 'video/quicktime',
+    };
+    const url = await getAttachmentDownloadUrl(attachment, {
+      ...options,
+      responseContentDisposition: 'inline',
+      ...(previewTypes[extension] ? { responseContentType: previewTypes[extension] } : {}),
+    });
+    const isS3 = attachment.storageProvider === 's3' || Boolean(attachment.s3Key || parseS3Uri(attachment.url)?.key);
     const downloadUrl = isS3
       ? await getAttachmentDownloadUrl(attachment, {
         ...options,
