@@ -1,21 +1,17 @@
 import React, { useState, useEffect, useMemo, useCallback } from 'react';
-import AddOnsPortal from './AddOnsPortal';
 import {
   BookOpen,
-  Download,
   FileText,
   File,
   Image as ImageIcon,
   Paperclip,
   Loader,
   Search,
-  Filter,
   Calendar,
   User,
   ChevronDown,
   AlertCircle,
   GraduationCap,
-  NotebookPen,
   ArrowUpRight,
 } from 'lucide-react';
 import toast from 'react-hot-toast';
@@ -31,7 +27,7 @@ const StudyMaterials = () => {
     .replace(/\/$/, '')
     .replace(/\/api$/, '');
   const STUDY_MATERIALS_ENDPOINT = `${API_BASE}/api/student/materials`;
-  const STUDY_MATERIALS_CACHE_TTL_MS = 2 * 60 * 1000;
+
 
   const token = localStorage.getItem('token');
 
@@ -45,25 +41,20 @@ const StudyMaterials = () => {
         return;
       }
 
-      const params = new URLSearchParams();
-      if (selectedSubject !== 'all') params.append('subject', selectedSubject);
-      if (searchQuery) params.append('search', searchQuery);
-
-      const url = `${STUDY_MATERIALS_ENDPOINT}?${params}`;
-      const response = await fetch(url, {
-        headers: {
-          'Authorization': `Bearer ${token}`,
-          'Content-Type': 'application/json',
-        },
-      });
-
-      if (!response.ok) {
-        const payload = await response.json().catch(() => ({}));
-        throw new Error(payload?.message || payload?.error || 'Failed to fetch materials');
-      }
-
-      const data = await response.json();
-      setMaterials(data.materials || []);
+      const collected = [];
+      let page = 1;
+      let pages = 1;
+      do {
+        const response = await fetch(`${STUDY_MATERIALS_ENDPOINT}?page=${page}&limit=50`, {
+          headers: { Authorization: `Bearer ${token}` },
+        });
+        const data = await response.json().catch(() => ({}));
+        if (!response.ok) throw new Error(data.message || data.error || 'Could not load your materials');
+        collected.push(...(Array.isArray(data.materials) ? data.materials : []));
+        pages = Number(data.pages) || 1;
+        page += 1;
+      } while (page <= pages);
+      setMaterials(collected);
     } catch (err) {
       console.error('Failed to fetch materials:', err);
       setError(err.message);
@@ -71,7 +62,7 @@ const StudyMaterials = () => {
     } finally {
       setLoading(false);
     }
-  }, [searchQuery, selectedSubject, token, STUDY_MATERIALS_ENDPOINT]);
+  }, [token, STUDY_MATERIALS_ENDPOINT]);
 
   useEffect(() => {
     const debounceTimer = setTimeout(() => {
@@ -157,285 +148,120 @@ const StudyMaterials = () => {
     return ['all', ...Array.from(subjectSet).sort()];
   }, [materials]);
 
-  // Filter materials
-  const filteredMaterials = useMemo(() => {
-    return materials.filter((material) => {
-      const matchesSearch =
-        !searchQuery ||
-        material.title?.toLowerCase().includes(searchQuery.toLowerCase()) ||
-        material.message?.toLowerCase().includes(searchQuery.toLowerCase());
-
-      const matchesSubject =
-        selectedSubject === 'all' || material.subjectName === selectedSubject;
-
-      return matchesSearch && matchesSubject;
+  const chapters = useMemo(() => {
+    const groups = new Map();
+    materials.forEach((material) => {
+      const subject = String(material.subjectName || 'Other subjects').trim();
+      const chapter = String(material.chapterTitle || material.topicTitle || 'General materials').trim();
+      const key = `${subject.toLowerCase()}::${chapter.toLowerCase()}`;
+      if (!groups.has(key)) groups.set(key, { key, subject, chapter, attachments: [], teachers: new Set(), date: null, seen: new Set() });
+      const group = groups.get(key);
+      const teacher = material.teacherName || material.createdByName || 'Your teacher';
+      const date = material.publishedAt || material.createdAt;
+      if (!group.date || new Date(date) > new Date(group.date)) group.date = date;
+      group.teachers.add(teacher);
+      (material.attachments || []).forEach((attachment) => {
+        const attachmentKey = String(attachment.url || attachment._id || '').split(/[?#]/)[0];
+        if (!attachmentKey || group.seen.has(attachmentKey)) return;
+        group.seen.add(attachmentKey);
+        group.attachments.push({ ...attachment, materialId: material._id, teacher, date });
+      });
     });
-  }, [materials, searchQuery, selectedSubject]);
+    return Array.from(groups.values()).filter((group) => group.attachments.length > 0);
+  }, [materials]);
 
-  if (loading) {
-    return (
-      <div className="min-h-screen bg-slate-50 p-4 sm:p-6">
-        <div className="mx-auto max-w-7xl">
-          <div className="rounded-2xl border border-slate-200 bg-white p-6 shadow-sm">
-            <div className="flex items-center justify-center py-12">
-              <div className="text-center">
-                <Loader className="mx-auto h-8 w-8 animate-spin text-indigo-600 mb-3" />
-                <p className="text-sm text-slate-500">Loading study materials...</p>
-              </div>
-            </div>
-          </div>
-        </div>
-      </div>
-    );
-  }
+  const filteredChapters = useMemo(() => chapters.filter((chapter) => {
+    const query = searchQuery.trim().toLowerCase();
+    return (selectedSubject === 'all' || chapter.subject === selectedSubject)
+      && (!query || [chapter.chapter, chapter.subject, ...chapter.teachers].join(' ').toLowerCase().includes(query));
+  }), [chapters, searchQuery, selectedSubject]);
+
+  const attachmentLabel = (attachment) => {
+    const hint = `${attachment.type || ''} ${attachment.name || ''} ${String(attachment.url || '').split('?')[0]}`;
+    if (/image|\.(jpe?g|jfif|png|webp|gif)/i.test(hint)) return 'Image';
+    if (/video|\.(mp4|webm|mov)/i.test(hint)) return 'Video';
+    if (/presentation|powerpoint|\.pptx?/i.test(hint)) return 'Slides';
+    if (/pdf/i.test(hint)) return 'PDF';
+    return 'Document';
+  };
 
   return (
-    <div className="min-h-screen bg-[radial-gradient(circle_at_top_left,_rgba(14,165,233,0.10),_transparent_28%),radial-gradient(circle_at_top_right,_rgba(249,115,22,0.10),_transparent_24%),linear-gradient(180deg,_#f8fafc_0%,_#eef4ff_100%)] p-4 sm:p-6">
-      <div className="mx-auto max-w-7xl space-y-5">
-        <section className="rounded-[28px] border border-slate-200/80 bg-white shadow-[0_18px_50px_-38px_rgba(15,23,42,0.35)]">
-          <div className="border-b border-slate-200 bg-slate-50/80 px-5 py-4 sm:px-6">
-            <div className="flex flex-col gap-3 lg:flex-row lg:items-center">
-              <div className="relative flex-1">
-                <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />
-                <input
-                  type="text"
-                  placeholder="Search materials by title or content..."
-                  value={searchQuery}
-                  onChange={(e) => setSearchQuery(e.target.value)}
-                  className="w-full rounded-2xl border border-slate-300 bg-white py-3 pl-10 pr-4 text-sm text-slate-700 shadow-sm outline-none transition focus:border-sky-400 focus:ring-4 focus:ring-sky-100"
-                />
-              </div>
+    <main className="min-h-full bg-[#f5f6fb] p-4 text-slate-900 sm:p-6">
+      <h1 className="mb-4 text-xl font-bold tracking-tight sm:text-2xl">Study Materials</h1>
 
-              <div className="relative lg:w-72">
-                <Filter className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />
-                <select
-                  value={selectedSubject}
-                  onChange={(e) => setSelectedSubject(e.target.value)}
-                  className="w-full appearance-none rounded-2xl border border-slate-300 bg-white py-3 pl-10 pr-10 text-sm font-medium text-slate-700 shadow-sm outline-none transition focus:border-sky-400 focus:ring-4 focus:ring-sky-100"
-                >
-                  {subjects.map((subject) => (
-                    <option key={subject} value={subject}>
-                      {subject === 'all' ? 'All Subjects' : subject}
-                    </option>
-                  ))}
-                </select>
-                <ChevronDown className="pointer-events-none absolute right-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />
-              </div>
-            </div>
-
-            {(searchQuery || selectedSubject !== 'all') && (
-              <div className="mt-3 flex flex-wrap items-center gap-2 text-sm text-slate-600">
-                <span className="font-medium">
-                  Showing {filteredMaterials.length} of {materials.length} materials
-                </span>
-                {searchQuery && (
-                  <span className="rounded-full border border-sky-200 bg-sky-50 px-3 py-1 text-xs font-semibold text-sky-700">
-                    Search: {searchQuery}
-                  </span>
-                )}
-                {selectedSubject !== 'all' && (
-                  <span className="rounded-full border border-violet-200 bg-violet-50 px-3 py-1 text-xs font-semibold text-violet-700">
-                    Subject: {selectedSubject}
-                  </span>
-                )}
-              </div>
-            )}
-          </div>
-
-          {error && (
-            <div className="border-b border-red-200 bg-red-50 px-5 py-3 text-sm text-red-700 sm:px-6">
-              <div className="flex items-center gap-2">
-                <AlertCircle className="h-4 w-4" />
-                {error}
-              </div>
-            </div>
-          )}
-
-          {filteredMaterials.length > 0 && (
-            <div className="p-4 sm:p-6">
-              <div className="grid grid-cols-1 gap-4 xl:grid-cols-2">
-                {filteredMaterials.map((material) => {
-                  const attachments = Array.isArray(material.attachments)
-                    ? material.attachments
-                    : [];
-                  const isExpanded = expandedMaterial === material._id;
-
-                  return (
-                    <article
-                      key={material._id}
-                      className="group rounded-[24px] border border-slate-200 bg-white p-5 shadow-sm transition hover:-translate-y-0.5 hover:border-sky-200 hover:shadow-[0_20px_45px_-35px_rgba(14,165,233,0.45)]"
-                    >
-                      <div className="flex items-start justify-between gap-4">
-                        <div className="min-w-0 flex-1">
-                          <div className="mb-3 flex flex-wrap items-center gap-2">
-                            {material.subjectName && (
-                              <span className="inline-flex items-center gap-1 rounded-full border border-sky-200 bg-sky-50 px-3 py-1 text-xs font-semibold text-sky-700">
-                                <GraduationCap className="h-3 w-3" />
-                                {material.subjectName}
-                              </span>
-                            )}
-                            {material.typeLabel && (
-                              <span className="inline-flex items-center gap-1 rounded-full border border-violet-200 bg-violet-50 px-3 py-1 text-xs font-semibold text-violet-700">
-                                <NotebookPen className="h-3 w-3" />
-                                {material.typeLabel}
-                              </span>
-                            )}
-                            {material.priority && (
-                              <span
-                                className={`inline-flex items-center rounded-full px-3 py-1 text-xs font-semibold ${
-                                  material.priority === 'high'
-                                    ? 'border border-red-200 bg-red-50 text-red-700'
-                                    : material.priority === 'medium'
-                                      ? 'border border-amber-200 bg-amber-50 text-amber-700'
-                                      : 'border border-emerald-200 bg-emerald-50 text-emerald-700'
-                                }`}
-                              >
-                                {material.priority}
-                              </span>
-                            )}
-                          </div>
-
-                          <h3 className="flex items-start gap-3 text-lg font-semibold leading-tight text-slate-900">
-                            <span className="mt-0.5 rounded-xl bg-slate-100 p-2 text-sky-600">
-                              <FileText className="h-4 w-4" />
-                            </span>
-                            <span className="min-w-0">{material.title}</span>
-                          </h3>
-                        </div>
-
-                        <div className="shrink-0 rounded-2xl border border-slate-200 bg-slate-50 px-3 py-2 text-right">
-                          <p className="text-lg font-bold text-slate-900">{attachments.length}</p>
-                          <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-500">Files</p>
-                        </div>
-                      </div>
-
-                      <p className="mt-4 text-sm leading-7 text-slate-600">
-                        {material.message || 'No description added by the teacher.'}
-                      </p>
-
-                      <div className="mt-5 grid grid-cols-1 gap-3 text-xs text-slate-500 sm:grid-cols-3">
-                        <div className="rounded-2xl bg-slate-50 px-3 py-3">
-                          <div className="flex items-center gap-2 font-medium text-slate-700">
-                            <User className="h-3.5 w-3.5 text-slate-400" />
-                            Teacher
-                          </div>
-                          <p className="mt-1 truncate">{material.createdByName || 'Teacher'}</p>
-                        </div>
-                        <div className="rounded-2xl bg-slate-50 px-3 py-3">
-                          <div className="flex items-center gap-2 font-medium text-slate-700">
-                            <Calendar className="h-3.5 w-3.5 text-slate-400" />
-                            Shared On
-                          </div>
-                          <p className="mt-1">{formatDate(material.createdAt)}</p>
-                        </div>
-                        <div className="rounded-2xl bg-slate-50 px-3 py-3">
-                          <div className="flex items-center gap-2 font-medium text-slate-700">
-                            <BookOpen className="h-3.5 w-3.5 text-slate-400" />
-                            Class
-                          </div>
-                          <p className="mt-1">
-                            {material.className || 'Class'}
-                            {material.sectionName ? ` - ${material.sectionName}` : ''}
-                          </p>
-                        </div>
-                      </div>
-
-                      {attachments.length > 0 && (
-                        <div className="mt-5 border-t border-slate-100 pt-4">
-                          <button
-                            onClick={() => {
-                              if (!isExpanded) {
-                                trackMaterialView(material._id);
-                              }
-                              setExpandedMaterial(isExpanded ? null : material._id);
-                            }}
-                            className="inline-flex items-center gap-2 rounded-full border border-sky-200 bg-sky-50 px-4 py-2 text-sm font-semibold text-sky-700 transition hover:bg-sky-100"
-                          >
-                            <Paperclip className="h-4 w-4" />
-                            {isExpanded ? 'Hide Attachments' : 'Open Attachments'}
-                            <span className="rounded-full bg-white px-2 py-0.5 text-xs text-sky-700">
-                              {attachments.length}
-                            </span>
-                            <ChevronDown className={`h-4 w-4 transition-transform ${isExpanded ? 'rotate-180' : ''}`} />
-                          </button>
-
-                          {isExpanded && (
-                            <div className="mt-4 grid grid-cols-1 gap-3">
-                              {attachments.map((attachment, idx) => {
-                                const FileIcon = getFileIcon(attachment?.type);
-                                const openUrl = getAttachmentOpenUrl(attachment);
-                                const attachmentBody = (
-                                  <>
-                                    <div className="rounded-xl bg-white p-2 shadow-sm">
-                                      <FileIcon className="h-5 w-5 text-sky-600" />
-                                    </div>
-                                    <div className="min-w-0 flex-1">
-                                      <p className="truncate text-sm font-semibold text-slate-900">
-                                        {attachment?.name || `File ${idx + 1}`}
-                                      </p>
-                                      <p className="mt-0.5 text-xs text-slate-500">
-                                        {openUrl
-                                          ? (formatFileSize(attachment?.size) || 'Open attachment')
-                                          : 'Unavailable — ask your teacher to upload this file again'}
-                                      </p>
-                                    </div>
-                                    <div className={`inline-flex items-center gap-1 rounded-full bg-white px-3 py-1.5 text-xs font-semibold shadow-sm ${openUrl ? 'text-slate-700' : 'text-slate-400'}`}>
-                                      {openUrl ? 'Open' : 'Unavailable'}
-                                      {openUrl && <ArrowUpRight className="h-3.5 w-3.5" />}
-                                    </div>
-                                  </>
-                                );
-
-                                return openUrl ? (
-                                  <a
-                                    key={attachment?._id || attachment?.url || idx}
-                                    href={openUrl}
-                                    target="_blank"
-                                    rel="noopener noreferrer"
-                                    onClick={() => trackMaterialView(material._id)}
-                                    className="flex items-center gap-3 rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 transition hover:border-sky-200 hover:bg-sky-50"
-                                  >
-                                    {attachmentBody}
-                                  </a>
-                                ) : (
-                                  <div
-                                    key={attachment?._id || attachment?.url || idx}
-                                    className="flex items-center gap-3 rounded-2xl border border-amber-200 bg-amber-50 px-4 py-3"
-                                  >
-                                    {attachmentBody}
-                                  </div>
-                                );
-                              })}
-                            </div>
-                          )}
-                        </div>
-                      )}
-                    </article>
-                  );
-                })}
-              </div>
-            </div>
-          )}
-
-          {filteredMaterials.length > 0 && (
-            <div className="border-t border-slate-200 bg-slate-50 px-5 py-3 text-sm text-slate-600 sm:px-6">
-              <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
-                <span>
-                  Showing {filteredMaterials.length} material{filteredMaterials.length !== 1 ? 's' : ''} from {materials.length} total
-                </span>
-                <button
-                  onClick={() => fetchMaterials({ forceRefresh: true })}
-                  className="font-semibold text-sky-700 transition hover:text-sky-800"
-                >
-                  Refresh materials
-                </button>
-              </div>
-            </div>
-          )}
-        </section>
-        <AddOnsPortal />
+      <div className="mb-5 grid gap-3 rounded-xl border border-slate-200/80 bg-white p-3 shadow-sm sm:grid-cols-[1fr_220px]">
+        <label className="relative">
+          <span className="sr-only">Search chapters, subjects or teachers</span>
+          <Search className="absolute left-3 top-3 h-4 w-4 text-slate-400" />
+          <input value={searchQuery} onChange={(event) => setSearchQuery(event.target.value)} placeholder="Search chapter, subject or teacher" className="w-full rounded-lg border border-slate-200 py-2.5 pl-9 pr-3 text-sm focus:outline-none focus:ring-2 focus:ring-violet-400" />
+        </label>
+        <label>
+          <span className="sr-only">Filter by subject</span>
+          <select value={selectedSubject} onChange={(event) => setSelectedSubject(event.target.value)} className="w-full rounded-lg border border-slate-200 bg-white px-3 py-2.5 text-sm">
+            {subjects.map((subject) => <option key={subject} value={subject}>{subject === 'all' ? 'All subjects' : subject}</option>)}
+          </select>
+        </label>
       </div>
-    </div>
+      {error && <div role="alert" className="mb-4 flex items-center gap-2 rounded-lg bg-red-50 p-3 text-sm text-red-700"><AlertCircle size={16} />{error}<button type="button" onClick={fetchMaterials} className="ml-auto shrink-0 font-semibold underline">Try again</button></div>}
+      {loading ? <div role="status" className="flex items-center justify-center gap-2 py-16 text-sm text-slate-500"><Loader className="h-5 w-5 animate-spin" />Loading your materials...</div> : filteredChapters.length === 0 ? (
+        <div className="rounded-xl border border-dashed border-slate-300 bg-white p-10 text-center">
+          <BookOpen className="mx-auto mb-3 h-8 w-8 text-violet-400" />
+          <h2 className="font-semibold">{chapters.length ? 'No chapters match your search' : 'No materials shared yet'}</h2>
+          <p className="mt-1 text-sm text-slate-500">{chapters.length ? 'Try another chapter name or choose All subjects.' : 'Files from your teacher will appear here when they are shared.'}</p>
+        </div>
+      ) : (
+        <>
+          <p className="mb-3 text-xs font-medium text-slate-500">{filteredChapters.length} chapter{filteredChapters.length === 1 ? '' : 's'}</p>
+          <div className="grid grid-cols-1 items-start gap-4">
+            {filteredChapters.map((chapter) => {
+              const expanded = expandedMaterial === chapter.key;
+              const palette = [
+                { strip: 'from-violet-500 to-indigo-500', tile: 'bg-violet-50 text-violet-600' },
+                { strip: 'from-emerald-500 to-teal-500', tile: 'bg-emerald-50 text-emerald-700' },
+                { strip: 'from-sky-500 to-blue-500', tile: 'bg-sky-50 text-sky-700' },
+                { strip: 'from-amber-400 to-orange-500', tile: 'bg-amber-50 text-amber-700' },
+              ];
+              const tone = palette[Array.from(chapter.subject).reduce((sum, letter) => sum + letter.charCodeAt(0), 0) % palette.length];
+              return (
+                <article key={chapter.key} className="group overflow-hidden rounded-2xl border border-slate-200/80 bg-white shadow-sm transition duration-200 hover:-translate-y-0.5 hover:shadow-lg hover:shadow-indigo-950/5">
+                  <div className={`h-1 bg-gradient-to-r ${tone.strip}`} />
+                  <div className="flex flex-wrap items-center gap-x-5 gap-y-3 px-4 py-3">
+                    <div className={`flex h-9 w-9 shrink-0 items-center justify-center rounded-lg ${tone.tile}`}><BookOpen size={19} /></div>
+                    <div className="flex min-w-0 flex-1 flex-wrap items-center gap-x-3 gap-y-1.5">
+                      <span className="inline-flex items-center gap-1.5 rounded-md bg-violet-50 px-2 py-1 text-xs font-semibold text-violet-700"><GraduationCap size={14} />{chapter.subject}</span>
+                      <h2 className="min-w-0 break-words text-sm font-bold leading-snug">{chapter.chapter}</h2>
+                    </div>
+                    <div className="flex flex-wrap items-center gap-x-4 gap-y-1.5 text-xs text-slate-500">
+                      <span className="inline-flex items-center gap-1"><User size={13} />Uploaded by {Array.from(chapter.teachers).join(', ')}</span>
+                      <span className="inline-flex items-center gap-1"><Calendar size={13} />{formatDate(chapter.date)}</span>
+                    </div>
+                    <button type="button" aria-expanded={expanded} aria-controls={`chapter-materials-${encodeURIComponent(chapter.key)}`} onClick={() => { setExpandedMaterial(expanded ? null : chapter.key); if (!expanded) [...new Set(chapter.attachments.map((item) => item.materialId))].forEach(trackMaterialView); }} className="ml-auto flex shrink-0 items-center justify-between gap-3 rounded-lg border border-indigo-100 bg-indigo-50/70 px-3 py-2 text-xs font-semibold text-indigo-700 transition hover:border-indigo-200 hover:bg-indigo-100 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-indigo-600">
+                      <span className="inline-flex items-center gap-2"><Paperclip size={15} />{chapter.attachments.length} attachment{chapter.attachments.length === 1 ? '' : 's'}</span>
+                      <span className="inline-flex items-center gap-1 text-xs">{expanded ? 'Hide' : 'View materials'}<ChevronDown size={15} className={expanded ? 'rotate-180' : ''} /></span>
+                    </button>
+                  </div>
+                  {expanded && <div id={`chapter-materials-${encodeURIComponent(chapter.key)}`} className="space-y-2 border-t border-indigo-100 bg-indigo-50/30 p-3">
+                    {chapter.attachments.map((attachment, index) => {
+                      const label = attachmentLabel(attachment);
+                      const Icon = getFileIcon(attachment.type);
+                      const url = getAttachmentOpenUrl(attachment);
+                      return <div key={attachment.url || index} className="flex flex-wrap items-center gap-3 rounded-lg border border-slate-200 bg-white p-3">
+                        <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-indigo-50 text-indigo-600"><Icon size={20} /></span>
+                        <div className="min-w-0 flex-1">
+                          <p className="text-sm font-semibold">{label} {index + 1}</p>
+                          <p className="mt-0.5 text-xs text-slate-500">{attachment.teacher} &middot; {formatDate(attachment.date)}{attachment.size ? ` / ${formatFileSize(attachment.size)}` : ''}</p>
+                        </div>
+                        {url ? <a href={url} target="_blank" rel="noopener noreferrer" onClick={() => trackMaterialView(attachment.materialId)} className="inline-flex items-center gap-1 rounded-lg bg-violet-600 px-3 py-2 text-xs font-semibold text-white hover:bg-violet-700">Open<ArrowUpRight size={13} /></a> : <span className="text-xs text-slate-500">Unavailable</span>}
+                      </div>;
+                    })}
+                  </div>}
+                </article>
+              );
+            })}
+          </div>
+        </>
+      )}
+    </main>
   );
 };
 

@@ -3,7 +3,7 @@ import {
   Home, Calendar, Users, FileText, BookOpen, LogOut,
   ChevronDown, ChevronRight, ChevronLeft, Trophy, Bell,
   MessageCircle, MessageSquare, Brain, X, BarChart3,
-  Heart, Star, Target, Zap, AlertOctagon, Video, Activity,
+  Heart, Star, Target, AlertOctagon, Video, Activity,
   GraduationCap, CalendarClock, ClipboardCheck, NotebookPen, FileBadge,
 } from 'lucide-react';
 
@@ -33,13 +33,14 @@ const MENU_ITEMS = [
   {
     id: 'learn', name: 'Learn', icon: GraduationCap,
     children: [
-      { id: 'learning', name: 'Learning Hub', icon: Brain },
+      { id: 'learning', name: 'AI Tutor', icon: Brain, matches: ['learning', 'smart-learning', 'smart-learning-tutor'] },
+      { id: 'smart-learning-courses', name: 'Subjects', icon: GraduationCap, matches: ['smart-learning-courses', 'smart-learning-courses-reference'] },
+      { id: 'practice-papers', name: 'Practice', icon: ClipboardCheck },
+      { id: 'study-materials', name: 'Materials', icon: BookOpen },
       { id: 'assignments', name: 'Assignments', icon: FileText },
-      { id: 'long-answer', name: 'Long Answer', icon: ClipboardCheck },
       { id: 'assignments-journal', name: 'Journal', icon: NotebookPen },
       { id: 'assignments-academic-alcove', name: 'Community Wall', icon: Target },
       { id: 'results', name: 'Results', icon: BarChart3 },
-      { id: 'mastery', name: 'Mastery Progress', icon: Zap },
       //{ id: 'error-analysis', name: 'Error Analysis', icon: ClipboardCheck },
     ],
   },
@@ -379,8 +380,7 @@ const Sidebar = ({ activeView, isOpen, setIsOpen }) => {
                     <div className="ml-3.5 mt-0.5 space-y-0.5 border-l-2 border-violet-100 pl-3">
                       {item.children.map((child) => {
                         const ChildIcon = child.icon;
-                        const childActive = activeView === child.id ||
-                          (child.id === 'learning' && LEARNING_HUB_VIEWS.includes(activeView));
+                        const childActive = activeView === child.id || Boolean(child.matches?.includes(activeView));
                         const childNotificationCount = getModuleCount(child.id);
                         return (
                           <button

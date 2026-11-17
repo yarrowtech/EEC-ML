@@ -118,67 +118,14 @@ const LearningHub = () => {
     });
   }, [location.pathname, activeTab.label]);
 
-  // Only offer Continue for a previous sitting (not the tab clicked a moment
-  // ago) — anything older than 5 minutes counts as "left the app".
+  // Show saved activity on Subjects without an age or different-page gate.
   const showContinue = Boolean(
-    lastActivity &&
-    lastActivity.path !== location.pathname &&
-    Date.now() - Number(lastActivity.at || 0) > 5 * 60 * 1000
+    activeTab.key === 'subjects' &&
+    !isSubjectDetail &&
+    lastActivity
   );
 
-  return (
-    <div
-      className="min-h-full w-full bg-[#f5f7fb] text-[#0f172a]"
-      style={{
-        backgroundImage: 'radial-gradient(at 0% 0%, rgba(139, 92, 246, 0.05) 0px, transparent 50%), radial-gradient(at 100% 100%, rgba(16, 185, 129, 0.05) 0px, transparent 50%)',
-      }}
-    >
-      {!isSubjectDetail && (
-      <div className="flex w-full flex-col gap-3 p-4 sm:px-5 sm:py-4">
-        <div className="flex flex-col gap-4">
-          <div>
-            <p className="text-xs font-semibold uppercase tracking-[0.05em] text-[#64748b]">One place to study</p>
-            <h1 className="text-xl font-bold text-[#0f172a]">Learning</h1>
-          </div>
-
-          <div
-            role="tablist"
-            aria-label="Learning sections"
-            className={`grid grid-cols-2 gap-1.5 rounded-xl p-1.5 sm:grid-cols-5 ${GLASS_PANEL}`}
-          >
-            {TABS.map((tab) => {
-              const Icon = tab.icon;
-              const active = tab.key === activeTab.key;
-              return (
-                <button
-                  key={tab.key}
-                  type="button"
-                  role="tab"
-                  aria-selected={active}
-                  onClick={() => { if (!active) navigate(tab.path); }}
-                  className={`flex min-w-0 items-center gap-2 rounded-lg px-2.5 py-2 text-left transition-all ${
-                    active
-                      ? 'border border-white/90 bg-white/80 shadow-[0_4px_12px_rgba(139,92,246,0.1)]'
-                      : 'border border-transparent hover:-translate-y-0.5 hover:bg-white/40'
-                  }`}
-                >
-                  <span
-                    className="flex size-8 shrink-0 items-center justify-center rounded-lg"
-                    style={{ backgroundColor: tab.iconBg, color: tab.iconColor }}
-                  >
-                    <Icon className="size-5" />
-                  </span>
-                  <span className={`min-w-0 flex-col ${active ? 'flex' : 'hidden sm:flex'}`}>
-                    <span className="block text-sm font-semibold leading-tight text-[#0f172a]">{tab.label}</span>
-                    <span className="mt-0.5 block truncate text-xs text-[#64748b]">{tab.hint}</span>
-                  </span>
-                </button>
-              );
-            })}
-          </div>
-        </div>
-
-        {showContinue && (
+  const continueCard = (showContinue && (
           <button
             type="button"
             onClick={() => navigate(lastActivity.path)}
@@ -203,8 +150,17 @@ const LearningHub = () => {
               Continue
             </span>
           </button>
-        )}
+        ));
 
+  return (
+    <div
+      className="min-h-full w-full bg-[#f5f7fb] text-[#0f172a]"
+      style={{
+        backgroundImage: 'radial-gradient(at 0% 0%, rgba(139, 92, 246, 0.05) 0px, transparent 50%), radial-gradient(at 100% 100%, rgba(16, 185, 129, 0.05) 0px, transparent 50%)',
+      }}
+    >
+      {activeTab.key === 'tutor' && (
+      <div className="flex w-full flex-col gap-3 p-4 sm:px-5 sm:py-4">
         {activeTab.key === 'tutor' && (
           <Motion.div
             key="tutor"
@@ -227,7 +183,7 @@ const LearningHub = () => {
           animate={{ opacity: 1, y: 0 }}
           transition={{ duration: 0.3, ease: [0.4, 0, 0.2, 1] }}
         >
-          <AILearningCoursesLanding />
+          <AILearningCoursesLanding continueCard={continueCard} />
         </Motion.div>
       )}
       {activeTab.key === 'practice' && (

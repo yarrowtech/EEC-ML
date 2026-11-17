@@ -17,7 +17,6 @@ import {
   ClipboardCheck,
   Flame,
   Sparkles,
-  Mic,
   Send,
   Rocket,
   Trophy,
@@ -65,8 +64,6 @@ import {
   Trash2,
   MessageSquarePlus,
   Images,
-  Volume2,
-  VolumeX,
 } from 'lucide-react';
 
 import { Card, CardContent } from '@/components/ui/card';
@@ -3695,10 +3692,7 @@ function AiTutorPanel({ onGeneratedStudyItem = () => {} }) {
   const attachmentInputRef = useRef(null);
   const chipsScrollRef = useRef(null);
   const composerRef = useRef(null);
-  const recognitionRef = useRef(null);
-  const [listening, setListening] = useState(false);
-  const [autoSpeak, setAutoSpeak] = useState(false);
-  const lastAutoSpokenIdRef = useRef(null);
+  const listening = false;
   const [copiedId, setCopiedId] = useState(null);
   const [showJump, setShowJump] = useState(false);
   const [historyOpen, setHistoryOpen] = useState(false);
@@ -3732,8 +3726,6 @@ function AiTutorPanel({ onGeneratedStudyItem = () => {} }) {
   const lastMessage = messages[messages.length - 1];
   const showFollowUps = !sending && lastMessage?.role === 'assistant'
     && !lastMessage.error && !lastMessage.thinking && !lastMessage.streaming;
-  const supportsVoice = typeof window !== 'undefined'
-    && (window.SpeechRecognition || window.webkitSpeechRecognition);
   const [typedPlaceholder, setTypedPlaceholder] = useState('');
 
   useEffect(() => {
@@ -3850,58 +3842,6 @@ function AiTutorPanel({ onGeneratedStudyItem = () => {} }) {
       setTimeout(() => setCopiedId((id) => (id === msg.id ? null : id)), 1600);
     }).catch(() => {});
   };
-  const toggleVoice = () => {
-    if (!supportsVoice) return;
-    if (listening) { recognitionRef.current?.stop(); return; }
-    const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
-    const rec = new SR();
-    rec.lang = 'en-US';
-    rec.interimResults = true;
-    rec.continuous = false;
-    rec.onresult = (event) => {
-      const transcript = Array.from(event.results).map((r) => r[0].transcript).join('');
-      setQuestion(transcript);
-    };
-    rec.onend = () => setListening(false);
-    rec.onerror = () => setListening(false);
-    recognitionRef.current = rec;
-    setListening(true);
-    rec.start();
-  };
-  useEffect(() => () => { try { recognitionRef.current?.stop(); } catch { /* noop */ } }, []);
-
-  // Voice Tutor output half of the loop: read a tutor answer aloud via the
-  // browser's native TTS engine. Strips markdown/LaTeX markup so the speech
-  // doesn't read out asterisks, dollar signs, or fenced code blocks.
-  const supportsSpeech = typeof window !== 'undefined' && 'speechSynthesis' in window;
-  const speakText = (text) => {
-    if (!supportsSpeech) return;
-    window.speechSynthesis.cancel();
-    const clean = String(text || '')
-      .replace(/```[\s\S]*?```/g, ' code block omitted ')
-      .replace(/\$\$?[^$]+\$\$?/g, ' formula omitted ')
-      .replace(/[*_#>`]/g, '')
-      .trim();
-    if (!clean) return;
-    const utterance = new SpeechSynthesisUtterance(clean);
-    utterance.rate = 1;
-    window.speechSynthesis.speak(utterance);
-  };
-  const stopSpeaking = () => {
-    if (supportsSpeech) window.speechSynthesis.cancel();
-  };
-  useEffect(() => () => { if (supportsSpeech) window.speechSynthesis.cancel(); }, [supportsSpeech]);
-
-  // When auto-speak is on, read the tutor's latest answer aloud as soon as it
-  // finishes streaming — completes the voice loop for a student who asked by mic.
-  useEffect(() => {
-    if (!autoSpeak) return;
-    const last = messages[messages.length - 1];
-    if (!last || last.role !== 'assistant' || last.streaming || last.error || !last.text) return;
-    if (lastAutoSpokenIdRef.current === last.id) return;
-    lastAutoSpokenIdRef.current = last.id;
-    speakText(last.text);
-  }, [autoSpeak, messages]);
   const streamTimersRef = useRef([]);
   const [canScrollChipsLeft, setCanScrollChipsLeft] = useState(false);
   const [canScrollChipsRight, setCanScrollChipsRight] = useState(false);
@@ -4710,50 +4650,6 @@ function AiTutorPanel({ onGeneratedStudyItem = () => {} }) {
               </TooltipTrigger>
               <TooltipContent>Attach notes or homework</TooltipContent>
             </Tooltip> */}
-
-            {supportsVoice && (
-              <Tooltip>
-                <TooltipTrigger asChild>
-                  <Motion.button
-                    type="button"
-                    onClick={toggleVoice}
-                    animate={listening ? { scale: [1, 1.12, 1] } : { scale: 1 }}
-                    transition={listening ? { duration: 1, repeat: Infinity } : { duration: 0.2 }}
-                    className={cn(
-                      'flex size-9 shrink-0 items-center justify-center rounded-xl transition-colors',
-                      listening
-                        ? 'bg-rose-500 text-white shadow-[0_0_0_4px_rgba(244,63,94,0.15)]'
-                        : 'text-[#5c655f] hover:bg-[#FEF3C7] hover:text-[#26332E]'
-                    )}
-                    aria-label={listening ? 'Stop voice input' : 'Speak your question'}
-                    aria-pressed={listening}
-                  >
-                    <Mic className="size-5" />
-                  </Motion.button>
-                </TooltipTrigger>
-                <TooltipContent>{listening ? 'Listening… tap to stop' : 'Speak your question'}</TooltipContent>
-              </Tooltip>
-            )}
-
-            {supportsSpeech && (
-              <Tooltip>
-                <TooltipTrigger asChild>
-                  <button
-                    type="button"
-                    onClick={() => { if (autoSpeak) stopSpeaking(); setAutoSpeak((v) => !v); }}
-                    className={cn(
-                      'flex size-9 shrink-0 items-center justify-center rounded-xl transition-colors',
-                      autoSpeak ? 'bg-[#F59E0B] text-white' : 'text-[#5c655f] hover:bg-[#FEF3C7] hover:text-[#26332E]'
-                    )}
-                    aria-label={autoSpeak ? 'Turn off reading answers aloud' : 'Turn on reading answers aloud'}
-                    aria-pressed={autoSpeak}
-                  >
-                    {autoSpeak ? <Volume2 className="size-5" /> : <VolumeX className="size-5" />}
-                  </button>
-                </TooltipTrigger>
-                <TooltipContent>{autoSpeak ? 'Voice replies on — tap to mute' : 'Read answers aloud automatically'}</TooltipContent>
-              </Tooltip>
-            )}
 
             <Textarea
               value={question}

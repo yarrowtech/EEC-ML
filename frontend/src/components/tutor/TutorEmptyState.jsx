@@ -41,7 +41,6 @@ export default function TutorEmptyState({
 
   let title = `What would you like to learn, ${studentName}?`;
   let description = 'Choose a subject first so every answer can use the right teacher material.';
-  let step = 1;
   if (loadingSubjects) {
     title = 'Preparing your learning space…';
     description = 'Loading your subjects and teacher-published chapters.';
@@ -51,11 +50,9 @@ export default function TutorEmptyState({
   } else if (needsTopic) {
     title = `Choose a chapter in ${selectedSubject.title}`;
     description = 'This keeps diagrams, examples, and explanations inside the correct lesson.';
-    step = 2;
   } else if (selectedSubject) {
     title = `Ready for ${selectedTopic || selectedSubject.title}`;
     description = 'Pick how you want to learn, or write your own question below.';
-    step = 3;
   }
 
   return (
@@ -64,18 +61,7 @@ export default function TutorEmptyState({
       animate={{ opacity: 1, y: 0 }}
       className="mx-auto flex min-h-full w-full max-w-2xl flex-col justify-center py-3"
     >
-      <div className="mb-5 flex justify-center gap-2" aria-label={`Tutor setup, step ${step} of 3`}>
-        {[1, 2, 3].map((item) => (
-          <span
-            key={item}
-            className={`h-1.5 rounded-full transition-all ${item === step ? 'w-10 bg-[#F59E0B]' : item < step ? 'w-5 bg-emerald-400' : 'w-5 bg-[#E7E3D9]'}`}
-          />
-        ))}
-      </div>
       <div className="text-center">
-        <div className="mx-auto mb-3 flex size-12 items-center justify-center rounded-2xl bg-[#FEF3C7] text-[#F59E0B]">
-          {needsSubject ? <BookOpen className="size-6" /> : needsTopic ? <MessageCircleQuestion className="size-6" /> : <Bot className="size-6" />}
-        </div>
         <p className="font-[Nunito] text-lg font-extrabold text-[#26332E]">{title}</p>
         <p className="mx-auto mt-1 max-w-md text-sm leading-relaxed text-[#78827B]">{description}</p>
       </div>

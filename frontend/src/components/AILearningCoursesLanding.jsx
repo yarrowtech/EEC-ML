@@ -439,7 +439,7 @@ const SubjectTopicsView = ({ subject, onBack, style = DEFAULT_STYLE }) => {
   );
 };
 
-const AILearningCoursesLanding = () => {
+const AILearningCoursesLanding = ({ continueCard = null }) => {
   const navigate = useNavigate();
   const location = useLocation();
   const [loading, setLoading] = useState(true);
@@ -669,6 +669,8 @@ const AILearningCoursesLanding = () => {
               <h1 className="text-xl font-bold tracking-tight sm:text-2xl">Your Subjects</h1>
               <p className="text-xs text-slate-600 sm:text-sm">Showing only subjects assigned to your class timetable.</p>
             </div>
+
+            {continueCard && <div className="mb-4">{continueCard}</div>}
 
             {error && (
               <div className="mb-6 flex flex-col gap-3 rounded-xl border border-red-200 bg-red-50 p-3 text-sm text-red-700 sm:flex-row sm:items-center sm:justify-between">
