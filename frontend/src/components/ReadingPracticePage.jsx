@@ -720,7 +720,16 @@ const ReadingHistory = ({ token }) => {
 
 // ─── Main page ────────────────────────────────────────────────────────────────
 
-const ReadingPracticePage = () => {
+// When `topics` is given (e.g. on a topic page), keep only items the teacher
+// made for that chapter/topic.
+const normTopic = (v) => String(v || '').trim().toLowerCase().replace(/[_\s]+/g, ' ');
+const filterByTopics = (items, topics) => {
+  const wanted = (topics || []).map(normTopic).filter(Boolean);
+  if (!wanted.length) return items;
+  return items.filter((x) => wanted.includes(normTopic(x.chapter)) || wanted.includes(normTopic(x.topic)));
+};
+
+const ReadingPracticePage = ({ topics } = {}) => {
   const token = localStorage.getItem('token');
   const [view, setView] = useState('list'); // list | session | history
   const [materials, setMaterials] = useState([]);
@@ -733,10 +742,11 @@ const ReadingPracticePage = () => {
       headers: { Authorization: `Bearer ${token}` },
     })
       .then((r) => r.json())
-      .then((d) => setMaterials(d.data || []))
+      .then((d) => setMaterials(filterByTopics(d.data || [], topics)))
       .catch(() => toast.error('Failed to load reading materials'))
       .finally(() => setLoading(false));
-  }, [token]);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [token, (topics || []).join('|')]);
 
   if (view === 'session' && selectedMaterial) {
     return (

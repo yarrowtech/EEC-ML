@@ -48,6 +48,7 @@ import { Progress, ProgressLabel, ProgressValue } from '@/components/ui/progress
 import { Textarea } from '@/components/ui/textarea';
 import RichTextEditor from './RichTextEditor';
 import CloudSaveStatus from './CloudSaveStatus';
+import ConfirmDialog from '../../../components/ConfirmDialog';
 import UploadDropzone from './UploadDropzone';
 import { InlineTryoutBuilder } from './TryoutBuilder';
 import RichTextMaterialEditor from '../RichTextMaterialEditor';
@@ -71,6 +72,22 @@ const STEPS = [
   { key: 'tryout',     label: 'Tryout',             icon: Play,           color: 'pink', desc: 'Quick assessment / quiz',    hint: 'Optional: add a short practice activity students can try. You can skip this step.' },
   { key: 'publish',    label: 'Review & Publish', icon: Send,  color: 'emerald', desc: 'Check and publish the chapter', hint: 'Check everything once, then press "Publish" so students can see this chapter.' },
 ];
+
+const escapeHtml = (v) => String(v || '').replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
+const textToParagraphs = (text) => String(text || '').split(/\n+/).map((line) => line.trim()).filter(Boolean).map((line) => `<p>${escapeHtml(line)}</p>`).join('');
+// "Did You Know?" is a list of facts. Older chapters stored one rich-text
+// blob; split that into facts (list items / paragraphs / lines).
+export const getDidYouKnowFacts = (chapter = {}) => {
+  if (Array.isArray(chapter.didYouKnowFacts)) return chapter.didYouKnowFacts;
+  const raw = String(chapter.didYouKnow || '');
+  if (!raw.trim()) return [];
+  const parts = /<li[\s>]/i.test(raw)
+    ? raw.split(/<\/li>/i)
+    : raw.split(/<\/p>|<br\s*\/?>|\n/i);
+  return parts
+    .map((p) => p.replace(/<[^>]*>/g, ' ').replace(/&nbsp;/g, ' ').replace(/\s+/g, ' ').trim())
+    .filter(Boolean);
+};
 
 const plainText = (v) => String(v || '').replace(/<[^>]*>/g, ' ').replace(/&nbsp;/g, ' ').trim();
 const countUploads = (uploads) => Object.values(uploads || {}).reduce((n, l) => n + (Array.isArray(l) ? l.length : 0), 0);
@@ -268,6 +285,8 @@ const DrawerModal = ({
   const [langTab, setLangTab] = useState('reading'); // 'reading' | 'writing'
   const [langSaving, setLangSaving] = useState(false);
   const [langItems, setLangItems] = useState({ reading: [], writing: [] });
+  // { id, mode, title } for the language item awaiting delete confirmation.
+  const [pendingLangDelete, setPendingLangDelete] = useState(null);
   const [langLoaded, setLangLoaded] = useState(false);
   const [readingForm, setReadingForm] = useState({
     title: '', contentType: 'paragraph', content: '', difficulty: 'medium',
@@ -489,8 +508,9 @@ const DrawerModal = ({
         ...baseChapter,
         ...(objectivesToApply ? { learningObjectives: objectivesSoFar } : {}),
         ...(flowToApply ? { instructionalFlow: flowToApply.map((phase, i) => ({ ...phase, description: flowTexts[i] })) } : {}),
-        ...(explanationToApply ? { explanation: explanationText } : {}),
-        ...(recapToApply ? { recap: recapText } : {}),
+        // The editors are rich text now: keep AI line breaks as paragraphs.
+        ...(explanationToApply ? { explanation: textToParagraphs(explanationText) } : {}),
+        ...(recapToApply ? { recap: textToParagraphs(recapText) } : {}),
       });
 
       if (!isDone) {
@@ -524,18 +544,23 @@ const DrawerModal = ({
       fetch(`${base}/api/reading-assessment/teacher/materials`, { headers: hdrs }).then((r) => r.json()).catch(() => ({ data: [] })),
       fetch(`${base}/api/writing-assessment/teacher/prompts`,   { headers: hdrs }).then((r) => r.json()).catch(() => ({ data: [] })),
     ]).then(([rm, wp]) => {
-      // Filter to materials for this chapter only (by chapter title match or just show all if no chapter)
-      const chTitle = chapter?.title || '';
-      const filterByChapter = (arr) => chTitle
-        ? arr.filter((x) => !x.chapter || x.chapter === chTitle)
-        : arr;
-      setLangItems({
-        reading: filterByChapter(rm.data || []),
-        writing: filterByChapter(wp.data || []),
-      });
+      setLangItems({ reading: rm.data || [], writing: wp.data || [] });
       setLangLoaded(true);
     });
   }, [currentStep, langLoaded, classId, chapter?.title]);
+
+  // Only items made for this chapter of this class/section/subject.
+  const chapterLang = React.useMemo(() => {
+    const norm = (v) => String(v || '').trim().toLowerCase().replace(/\s+/g, ' ');
+    const idOf = (v) => String(v?._id || v || '');
+    const title = norm(chapter?.title);
+    const matches = (x) => Boolean(title)
+      && norm(x.chapter) === title
+      && (!x.classId || !classId || idOf(x.classId) === String(classId))
+      && (!x.sectionId || !sectionId || idOf(x.sectionId) === String(sectionId))
+      && (!x.subjectId || !subjectId || idOf(x.subjectId) === String(subjectId));
+    return { reading: langItems.reading.filter(matches), writing: langItems.writing.filter(matches) };
+  }, [langItems, chapter?.title, classId, sectionId, subjectId]);
 
   React.useEffect(() => {
     if (Number.isInteger(externalStep) && externalStep !== currentStep) {
@@ -584,7 +609,7 @@ const DrawerModal = ({
     doc.text(`Date: ${chapter.lessonDate || '-'}`, 14, 30);
     doc.text(`Day: ${dayLabel || '-'}`, 14, 38);
     doc.text(`Introduction: ${(chapter.introductionText || '').replace(/<[^>]*>/g, '').slice(0, 300)}`, 14, 48, { maxWidth: 180 });
-    doc.text(`Explanation: ${(chapter.explanation || '').slice(0, 350)}`, 14, 85, { maxWidth: 180 });
+    doc.text(`Explanation: ${(chapter.explanation || '').replace(/<[^>]*>/g, ' ').replace(/&nbsp;/g, ' ').replace(/\s+/g, ' ').trim().slice(0, 350)}`, 14, 85, { maxWidth: 180 });
     doc.save(`${chapter.title || 'lesson-plan'}.pdf`);
   };
 
@@ -906,13 +931,11 @@ const DrawerModal = ({
             {/* Explanation */}
             <Card>
               <SectionTitle icon={ListChecks} iconColor="text-green-400">Step-by-Step Explanation</SectionTitle>
-              <Textarea
-                rows={5}
+              <RichTextEditor
                 value={chapter.explanation}
-                onChange={(e) => onUpdate({ ...chapter, explanation: e.target.value })}
-                placeholder="Walk through what you will teach — one step at a time…"
-                className="mb-3 resize-none"
-                style={{ color: '#0f172a', caretColor: '#0f172a' }}
+                onChange={(value) => onUpdate({ ...chapter, explanation: value })}
+                placeholder="Walk through what you will teach — one step at a time… (add images, tables and formatting from the toolbar)"
+                height={320}
               />
               
             </Card>
@@ -920,26 +943,61 @@ const DrawerModal = ({
             {/* Quick Recap */}
             <Card>
               <SectionTitle icon={CheckCircle2} iconColor="text-green-400">Quick Recap</SectionTitle>
-              <Textarea
-                rows={3}
+              <RichTextEditor
                 value={chapter.recap}
-                onChange={(e) => onUpdate({ ...chapter, recap: e.target.value })}
+                onChange={(value) => onUpdate({ ...chapter, recap: value })}
                 placeholder="Key points students must take away from this lesson…"
-                className="resize-none"
-                style={{ color: '#0f172a', caretColor: '#0f172a' }}
+                height={200}
               />
             </Card>
             {/* Did You Know? */}
             <Card>
               <SectionTitle icon={Lightbulb} iconColor="text-amber-400">Did You Know?</SectionTitle>
-              <Textarea
-                rows={3}
-                value={chapter.didYouKnow}
-                onChange={(e) => onUpdate({ ...chapter, didYouKnow: e.target.value })}
-                placeholder="A fun or surprising fact related to this lesson…"
-                className="resize-none"
-                style={{ color: '#0f172a', caretColor: '#0f172a' }}
-              />
+              {(() => {
+                const facts = getDidYouKnowFacts(chapter);
+                const saveFacts = (next) => onUpdate({
+                  ...chapter,
+                  didYouKnowFacts: next,
+                  // plain copy (one fact per line) for older readers / PDF
+                  didYouKnow: next.map((f) => String(f || '').trim()).filter(Boolean).join('\n'),
+                });
+                return (
+                  <div className="space-y-2">
+                    {facts.length === 0 && (
+                      <p className="text-xs text-slate-400">Add fun or surprising facts. Tip: write “Title: fact” (e.g. “CPU – The Brain of a Computer: It processes data and instructions.”) to give the fact a bold title.</p>
+                    )}
+                    {facts.map((fact, i) => (
+                      <div key={i} className="flex items-center gap-2">
+                        <span className="shrink-0 rounded-full bg-amber-100 px-2.5 py-1 text-[11px] font-bold text-amber-700 dark:bg-amber-900/40 dark:text-amber-300">
+                          Fact {i + 1}
+                        </span>
+                        <Input
+                          value={fact}
+                          onChange={(e) => saveFacts(facts.map((f, idx) => (idx === i ? e.target.value : f)))}
+                          placeholder={`Title: fact ${i + 1}… (e.g. Computers Are Used in Space!: Astronauts use computers…)`}
+                          className="h-9 flex-1 rounded-full px-4 text-sm"
+                          style={{ color: '#0f172a', caretColor: '#0f172a' }}
+                        />
+                        <button
+                          type="button"
+                          onClick={() => saveFacts(facts.filter((_, idx) => idx !== i))}
+                          aria-label={`Delete fact ${i + 1}`}
+                          className="rounded-lg p-1.5 text-slate-400 hover:bg-rose-50 hover:text-rose-500 dark:hover:bg-rose-950/30"
+                        >
+                          <Trash2 className="size-3.5" />
+                        </button>
+                      </div>
+                    ))}
+                    <button
+                      type="button"
+                      onClick={() => saveFacts([...facts, ''])}
+                      className="inline-flex items-center gap-1.5 rounded-full border border-dashed border-amber-300 bg-amber-50/60 px-3.5 py-1.5 text-xs font-semibold text-amber-700 transition hover:bg-amber-100"
+                    >
+                      <Plus className="size-3.5" /> Add {facts.length ? `fact ${facts.length + 1}` : 'a fact'}
+                    </button>
+                  </div>
+                );
+              })()}
             </Card>
           </div>
         );
@@ -1142,8 +1200,12 @@ const DrawerModal = ({
           }
         };
 
-        const deleteItem = async (id, mode) => {
-          if (!confirm('Remove this item?')) return;
+        const deleteItem = (id, mode) => {
+          const item = (langItems[mode] || []).find((x) => x._id === id);
+          setPendingLangDelete({ id, mode, title: item?.title || '' });
+        };
+
+        const deleteItemNow = async (id, mode) => {
           const base = API_BASE;
           const url = mode === 'reading'
             ? `${base}/api/reading-assessment/teacher/materials/${id}`
@@ -1169,6 +1231,19 @@ const DrawerModal = ({
 
         return (
           <div className="space-y-4">
+            <ConfirmDialog
+              open={Boolean(pendingLangDelete)}
+              onOpenChange={(open) => { if (!open) setPendingLangDelete(null); }}
+              onConfirm={() => {
+                const target = pendingLangDelete;
+                setPendingLangDelete(null);
+                if (target) deleteItemNow(target.id, target.mode);
+              }}
+              icon={Trash2}
+              title={pendingLangDelete?.mode === 'reading' ? 'Delete reading material?' : 'Delete writing prompt?'}
+              description={`"${pendingLangDelete?.title || 'This item'}" will be removed and students will no longer see it. This cannot be undone.`}
+              confirmLabel="Delete"
+            />
             {/* Sub-tab toggle */}
             <div className="mx-auto flex w-fit gap-1 rounded-xl border border-slate-200 bg-slate-50 p-1 dark:border-slate-700 dark:bg-slate-800/60">
               {[
@@ -1262,27 +1337,23 @@ const DrawerModal = ({
                 </div>
 
                 {/* Existing passages for this chapter */}
-                {langItems.reading.length > 0 && (
+                {chapterLang.reading.length > 0 && (
                   <div className="mt-5 space-y-2">
                     <p className="text-xs font-semibold uppercase tracking-wide text-slate-400">Saved Passages</p>
-                    {langItems.reading.map((item) => (
-                      <div key={item._id} className="flex items-center justify-between gap-3 rounded-xl border border-slate-100 bg-slate-50 px-3 py-2.5 dark:border-slate-700 dark:bg-slate-800/40">
-                        <div className="min-w-0 flex-1">
-                          <p className="truncate text-sm font-semibold text-slate-800 dark:text-slate-100">{item.title}</p>
-                          <div className="mt-0.5 flex items-center gap-2 text-[11px] text-slate-400">
-                            <span className="capitalize">{item.contentType}</span>
-                            <span>·</span>
-                            <span>{item.wordCount || 0} words</span>
-                            <span className={`rounded-full px-1.5 py-0.5 font-medium ${DIFF_COLORS[item.difficulty] || ''}`}>
-                              {item.difficulty}
-                            </span>
-                            {item.isPublished && <span className="text-emerald-600 font-medium">Published</span>}
-                          </div>
+                    {chapterLang.reading.map((item) => (
+                      <div key={item._id} className="flex items-center gap-3 rounded-xl border border-slate-100 bg-white px-3 py-2 dark:border-slate-700 dark:bg-slate-800/40">
+                        <p className="min-w-0 flex-1 truncate text-sm font-semibold text-slate-800 dark:text-slate-100" title={item.title}>{item.title}</p>
+                        <div className="flex shrink-0 flex-wrap items-center justify-end gap-1.5 text-[11px]">
+                          <span className="rounded-full bg-slate-100 px-2 py-0.5 font-medium capitalize text-slate-600 dark:bg-slate-700 dark:text-slate-300">{item.contentType || 'reading'}</span>
+                          {item.wordCount > 0 && <span className="rounded-full bg-slate-100 px-2 py-0.5 font-medium text-slate-600 dark:bg-slate-700 dark:text-slate-300">{item.wordCount} words</span>}
+                          {item.difficulty && <span className={`rounded-full px-2 py-0.5 font-medium capitalize ${DIFF_COLORS[item.difficulty] || 'bg-slate-100 text-slate-600'}`}>{item.difficulty}</span>}
+                          <span className={`rounded-full px-2 py-0.5 font-semibold ${item.isPublished ? 'bg-emerald-50 text-emerald-700' : 'bg-amber-50 text-amber-700'}`}>{item.isPublished ? 'Published' : 'Draft'}</span>
                         </div>
                         <button
                           type="button"
                           onClick={() => deleteItem(item._id, 'reading')}
-                          className="shrink-0 rounded-lg p-1.5 text-slate-400 hover:bg-red-50 hover:text-red-500 transition-colors"
+                          aria-label={`Delete ${item.title}`}
+                          className="shrink-0 rounded-full p-1.5 text-slate-400 transition-colors hover:bg-red-50 hover:text-red-500"
                         >
                           <Trash2 className="size-3.5" />
                         </button>
@@ -1382,27 +1453,23 @@ const DrawerModal = ({
                 </div>
 
                 {/* Existing prompts for this chapter */}
-                {langItems.writing.length > 0 && (
+                {chapterLang.writing.length > 0 && (
                   <div className="mt-5 space-y-2">
                     <p className="text-xs font-semibold uppercase tracking-wide text-slate-400">Saved</p>
-                    {langItems.writing.map((item) => (
-                      <div key={item._id} className="flex items-center justify-between gap-3 rounded-xl border border-slate-100 bg-slate-50 px-3 py-2.5 dark:border-slate-700 dark:bg-slate-800/40">
-                        <div className="min-w-0 flex-1">
-                          <p className="truncate text-sm font-semibold text-slate-800 dark:text-slate-100">{item.title}</p>
-                          <p className="mt-0.5 truncate text-[11px] text-slate-400">{item.question}</p>
-                          <div className="mt-0.5 flex items-center gap-2 text-[11px] text-slate-400">
-                            <span className="capitalize">{item.promptType}</span>
-                            {item.wordLimit > 0 && <><span>·</span><span>{item.wordLimit} word limit</span></>}
-                            <span className={`rounded-full px-1.5 py-0.5 font-medium ${DIFF_COLORS[item.difficulty] || ''}`}>
-                              {item.difficulty}
-                            </span>
-                            {item.isPublished && <span className="text-emerald-600 font-medium">Published</span>}
-                          </div>
+                    {chapterLang.writing.map((item) => (
+                      <div key={item._id} className="flex items-center gap-3 rounded-xl border border-slate-100 bg-white px-3 py-2 dark:border-slate-700 dark:bg-slate-800/40">
+                        <p className="min-w-0 flex-1 truncate text-sm font-semibold text-slate-800 dark:text-slate-100" title={item.title}>{item.title}</p>
+                        <div className="flex shrink-0 flex-wrap items-center justify-end gap-1.5 text-[11px]">
+                          <span className="rounded-full bg-slate-100 px-2 py-0.5 font-medium capitalize text-slate-600 dark:bg-slate-700 dark:text-slate-300">{item.promptType || 'writing'}</span>
+                          {item.wordLimit > 0 && <span className="rounded-full bg-slate-100 px-2 py-0.5 font-medium text-slate-600 dark:bg-slate-700 dark:text-slate-300">{item.wordLimit} word limit</span>}
+                          {item.difficulty && <span className={`rounded-full px-2 py-0.5 font-medium capitalize ${DIFF_COLORS[item.difficulty] || 'bg-slate-100 text-slate-600'}`}>{item.difficulty}</span>}
+                          <span className={`rounded-full px-2 py-0.5 font-semibold ${item.isPublished ? 'bg-emerald-50 text-emerald-700' : 'bg-amber-50 text-amber-700'}`}>{item.isPublished ? 'Published' : 'Draft'}</span>
                         </div>
                         <button
                           type="button"
                           onClick={() => deleteItem(item._id, 'writing')}
-                          className="shrink-0 rounded-lg p-1.5 text-slate-400 hover:bg-red-50 hover:text-red-500 transition-colors"
+                          aria-label={`Delete ${item.title}`}
+                          className="shrink-0 rounded-full p-1.5 text-slate-400 transition-colors hover:bg-red-50 hover:text-red-500"
                         >
                           <Trash2 className="size-3.5" />
                         </button>
@@ -1485,15 +1552,15 @@ const DrawerModal = ({
 
             <Card>
               <SectionTitle icon={Lightbulb} iconColor="text-amber-500">Introduction</SectionTitle>
-              <p className="whitespace-pre-wrap text-sm leading-relaxed text-slate-600 dark:text-slate-300">{chapter.introductionText?.trim() || 'No introduction added.'}</p>
+              {plainText(chapter.introductionText) ? <div className="rich-reader text-sm leading-relaxed text-slate-600 dark:text-slate-300" dangerouslySetInnerHTML={{ __html: chapter.introductionText }} /> : <p className="text-sm text-slate-400">No introduction added.</p>}
             </Card>
 
             <Card>
               <SectionTitle icon={ListChecks} iconColor="text-green-500">Content</SectionTitle>
               {reviewObjectives.length > 0 && <div className="mb-3"><p className="mb-1 text-[10px] font-bold uppercase tracking-wide text-slate-400">Learning objectives</p><ul className="list-disc space-y-1 pl-5 text-sm text-slate-600 dark:text-slate-300">{reviewObjectives.map((item, index) => <li key={`${item}-${index}`}>{item}</li>)}</ul></div>}
-              <p className="whitespace-pre-wrap text-sm leading-relaxed text-slate-600 dark:text-slate-300">{chapter.explanation?.trim() || 'No lesson content added.'}</p>
-              {chapter.recap?.trim() && <div className="mt-3 rounded-lg bg-slate-50 p-3 text-sm text-slate-600 dark:bg-slate-800/50 dark:text-slate-300"><span className="font-semibold">Recap: </span>{chapter.recap}</div>}
-              {chapter.didYouKnow?.trim() && <div className="mt-3 rounded-lg bg-amber-50 p-3 text-sm text-amber-900 dark:bg-amber-900/20 dark:text-amber-200"><span className="font-semibold">Did you know? </span>{chapter.didYouKnow}</div>}
+              {plainText(chapter.explanation) ? <div className="rich-reader text-sm leading-relaxed text-slate-600 dark:text-slate-300" dangerouslySetInnerHTML={{ __html: chapter.explanation }} /> : <p className="text-sm text-slate-400">No lesson content added.</p>}
+              {plainText(chapter.recap) && <div className="mt-3 rounded-lg bg-slate-50 p-3 text-sm text-slate-600 dark:bg-slate-800/50 dark:text-slate-300"><p className="mb-1 font-semibold">Recap</p><div className="rich-reader" dangerouslySetInnerHTML={{ __html: chapter.recap }} /></div>}
+              {getDidYouKnowFacts(chapter).some((f) => String(f).trim()) && <div className="mt-3 rounded-lg bg-amber-50 p-3 text-sm text-amber-900 dark:bg-amber-900/20 dark:text-amber-200"><p className="mb-1 font-semibold">Did you know?</p><ol className="space-y-1">{getDidYouKnowFacts(chapter).filter((f) => String(f).trim()).map((f, i) => <li key={i}><span className="font-semibold">Fact {i + 1}:</span> {f}</li>)}</ol></div>}
               {reviewFlow.length > 0 && <div className="mt-3 flex flex-wrap gap-2">{reviewFlow.map((step, index) => <span key={`${step.id || step.phase || index}`} className="rounded-full bg-blue-50 px-2.5 py-1 text-[11px] font-semibold text-blue-700 dark:bg-blue-900/30 dark:text-blue-300">{step.phase || `Step ${index + 1}`}</span>)}</div>}
             </Card>
 

@@ -1,7 +1,20 @@
 import React, { useEffect, useMemo, useRef } from 'react';
 import JoditEditor from 'jodit-react';
+import { API_BASE } from '@/config/api';
 
-const RichTextEditor = ({ value, onChange, placeholder }) => {
+// Word-style toolbar: text formatting, colours, lists, alignment, tables,
+// images, links. (No "source" button — teachers never need raw HTML.)
+const FULL_TOOLBAR = [
+  'bold', 'italic', 'underline', 'strikethrough', '|',
+  'superscript', 'subscript', '|',
+  'font', 'fontsize', 'paragraph', 'brush', '|',
+  'ul', 'ol', 'outdent', 'indent', '|',
+  'align', 'lineHeight', '|',
+  'image', 'table', 'link', 'hr', 'symbols', '|',
+  'eraser', 'undo', 'redo',
+];
+
+const RichTextEditor = ({ value, onChange, placeholder, height = 260 }) => {
   const editorRef = useRef(null);
 
   // Jodit only reports content on blur (recommended by jodit-react itself —
@@ -33,21 +46,50 @@ const RichTextEditor = ({ value, onChange, placeholder }) => {
   const config = useMemo(() => ({
     readonly: false,
     placeholder: placeholder || 'Start typing…',
-    height: 220,
+    height,
+    minHeight: 180,
     toolbarSticky: false,
+    toolbarAdaptive: true,
     statusbar: false,
     showCharsCounter: false,
     showWordsCounter: false,
     showXPathInStatusbar: false,
-    removeButtons: ['about', 'source', 'fullsize', 'copyformat', 'print'],
-    buttons: [
-      'bold', 'italic', 'underline', 'strikethrough', '|',
-      'ul', 'ol', '|',
-      'paragraph', 'fontsize', '|',
-      'align', '|',
-      'link', '|',
-      'undo', 'redo',
-    ],
+    askBeforePasteHTML: false,
+    askBeforePasteFromWord: false,
+    defaultActionOnPaste: 'insert_clear_html',
+    removeButtons: ['about', 'source', 'fullsize', 'copyformat', 'print', 'file', 'video'],
+    buttons: FULL_TOOLBAR,
+    buttonsMD: FULL_TOOLBAR,
+    buttonsSM: ['bold', 'italic', 'underline', '|', 'ul', 'ol', '|', 'image', 'link', '|', 'brush', 'paragraph', 'dots'],
+    buttonsXS: ['bold', 'italic', '|', 'ul', '|', 'image', 'dots'],
+    // Images: uploaded to Cloudinary so they get a permanent public link that
+    // students can load (inserted at a sensible width, resizable afterwards).
+    uploader: {
+      url: `${API_BASE}/api/uploads/cloudinary/single`,
+      format: 'json',
+      method: 'POST',
+      filesVariableName: () => 'file',
+      headers: { Authorization: `Bearer ${localStorage.getItem('token') || ''}` },
+      prepareData(formData) {
+        formData.append('folder', 'class_materials');
+        formData.append('tags', 'lesson-plan,inline-image');
+        return formData;
+      },
+      isSuccess: (resp) => Boolean(resp?.files?.[0]?.secure_url),
+      getMessage: (resp) => resp?.message || 'Image upload failed',
+      process: (resp) => ({
+        files: resp?.files?.[0]?.secure_url ? [resp.files[0].secure_url] : [],
+        path: '',
+        baseurl: '',
+        error: resp?.files?.[0]?.secure_url ? 0 : 1,
+        msg: resp?.message || '',
+      }),
+      defaultHandlerSuccess(data) {
+        (data?.files || []).forEach((url) => this.s.insertImage(url, null, 420));
+      },
+    },
+    image: { editSrc: true, useImageEditor: false },
+    imageDefaultWidth: 420,
     style: {
       fontSize: '14px',
       color: '#0f172a',
@@ -56,7 +98,7 @@ const RichTextEditor = ({ value, onChange, placeholder }) => {
     },
     editorCssClass: 'jodit-lesson-editor',
     theme: 'default',
-  }), [placeholder]);
+  }), [placeholder, height]);
 
   return (
     <JoditEditor

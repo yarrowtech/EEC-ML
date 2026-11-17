@@ -27,6 +27,12 @@ const lessonPlanSchema = new mongoose.Schema(
     explanation: { type: String, default: '' },
     recap: { type: String, default: '' },
     didYouKnow: { type: String, default: '' },
+    // Sanitised HTML of the same fields, so students see the teacher's
+    // formatting (bold, italic, lists, images). Plain fields stay for PDF/AI.
+    introductionHtml: { type: String, default: '' },
+    explanationHtml: { type: String, default: '' },
+    recapHtml: { type: String, default: '' },
+    didYouKnowHtml: { type: String, default: '' },
     materialsNeeded: [{ type: String, trim: true }],
     additionalNotes: { type: String, default: '' },
     plannerContent: {

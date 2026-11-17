@@ -318,7 +318,16 @@ const WritingHistory = ({ token }) => {
 
 // ─── Main page ────────────────────────────────────────────────────────────────
 
-const WritingPracticePage = () => {
+// When `topics` is given (e.g. on a topic page), keep only items the teacher
+// made for that chapter/topic.
+const normTopic = (v) => String(v || '').trim().toLowerCase().replace(/[_\s]+/g, ' ');
+const filterByTopics = (items, topics) => {
+  const wanted = (topics || []).map(normTopic).filter(Boolean);
+  if (!wanted.length) return items;
+  return items.filter((x) => wanted.includes(normTopic(x.chapter)) || wanted.includes(normTopic(x.topic)));
+};
+
+const WritingPracticePage = ({ topics } = {}) => {
   const token = localStorage.getItem('token');
   const [view, setView] = useState('list');
   const [prompts, setPrompts] = useState([]);
@@ -331,10 +340,11 @@ const WritingPracticePage = () => {
       headers: { Authorization: `Bearer ${token}` },
     })
       .then((r) => r.json())
-      .then((d) => setPrompts(d.data || []))
+      .then((d) => setPrompts(filterByTopics(d.data || [], topics)))
       .catch(() => toast.error('Failed to load writing prompts'))
       .finally(() => setLoading(false));
-  }, [token]);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [token, (topics || []).join('|')]);
 
   if (view === 'editor' && selectedPrompt) {
     return (

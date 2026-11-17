@@ -200,7 +200,10 @@ const DashboardContent = () => {
   // composer pinned to the bottom) instead of flowing/scrolling like a normal
   // page, so they skip the trailing bottom-nav spacer and get flex-1/min-h-0
   // treatment to receive a definite height from their ancestors.
+  // Topic reader scrolls inside its own panel on desktop (so its left nav can stay put).
+  const isTopicReaderPath = location.pathname.includes('/smart-learning-courses/subject/') && location.pathname.includes('/topic/') && !location.pathname.includes('/assessment/');
   const isFullscreenView = effectiveView === 'excuse-letter'
+    || (isTopicReaderPath && typeof window !== 'undefined' && window.innerWidth >= 1024)
     || effectiveView === 'assignments-journal'
     || (effectiveView === 'chat' && isChatBoxOpen)
     // Desktop chat fills the viewport (no page scroll) so it lines up with the sidebar.
@@ -212,10 +215,13 @@ const DashboardContent = () => {
 
   // Chat gets the full width on desktop: collapse the sidebar on entering it and
   // restore the previous state when leaving.
+  // The topic content reader also gets the full width (collapsed sidebar).
+  const isTopicReaderView = /\/smart-learning-courses\/subject\/[^/]+\/topic\/[^/]+\/?$/.test(location.pathname);
+  const collapseSidebarView = isChatView || isTopicReaderView;
   const sidebarBeforeChatRef = useRef(null);
   useEffect(() => {
     if (typeof window === 'undefined' || window.innerWidth < 1024) return;
-    if (isChatView) {
+    if (collapseSidebarView) {
       if (sidebarBeforeChatRef.current === null) {
         setSidebarOpen((open) => {
           sidebarBeforeChatRef.current = open;
@@ -226,7 +232,7 @@ const DashboardContent = () => {
       setSidebarOpen(sidebarBeforeChatRef.current);
       sidebarBeforeChatRef.current = null;
     }
-  }, [isChatView]);
+  }, [collapseSidebarView]);
 
   // Fade/remount key for the content area: LearningHub tabs share one key so
   // its own tab bar stays mounted while only its content swaps underneath.
@@ -354,7 +360,8 @@ const DashboardContent = () => {
           {/* The sticky element must be the header's wrapper (a direct child of
               the scroll container) — sticky on <header> alone did nothing
               because its parent was exactly the header's height. */}
-          {!isChatBoxOpen && (
+          {/* The topic reader is a focused full-height view — no portal header. */}
+          {!isChatBoxOpen && !isTopicReaderPath && (
             <div className={`sticky top-0 z-40 ${isChatView ? 'hidden lg:block' : ''}`}>
               <Header
                 sidebarOpen={sidebarOpen}

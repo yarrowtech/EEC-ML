@@ -8,10 +8,11 @@ import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { motion as Motion } from 'framer-motion';
 import { toast } from 'react-hot-toast';
-import { BookOpenCheck } from 'lucide-react';
+import { BookOpenCheck, Trash2 } from 'lucide-react';
+import ConfirmDialog from '../components/ConfirmDialog';
 import HeaderActions from './components/lesson-plan-builder/HeaderActions';
 import Sidebar from './components/lesson-plan-builder/Sidebar';
-import DrawerModal, { DEFAULT_INSTRUCTIONAL_FLOW } from './components/lesson-plan-builder/DrawerModal';
+import DrawerModal, { DEFAULT_INSTRUCTIONAL_FLOW, getDidYouKnowFacts } from './components/lesson-plan-builder/DrawerModal';
 import ChapterPreview from './components/lesson-plan-builder/ChapterPreview';
 import { assessmentTypes, durationOptions } from './components/lesson-plan-builder/mockData';
 
@@ -222,6 +223,8 @@ const AIPoweredTeaching = () => {
   const [openChapterIds, setOpenChapterIds] = useState([]);
   // Clicking a chapter shows a read-only preview; the step editor opens full-page.
   const [editorOpen, setEditorOpen] = useState(false);
+  // Chapter waiting for the delete confirmation dialog.
+  const [pendingDeleteId, setPendingDeleteId] = useState(null);
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
   const [draggedChapterId, setDraggedChapterId] = useState(null);
@@ -663,7 +666,12 @@ const AIPoweredTeaching = () => {
     touchAutosave();
   };
 
-  const handleDeleteChapter = async (id) => {
+  // Ask first (custom dialog); the actual delete runs from its confirm button.
+  const handleDeleteChapter = (id) => {
+    if (chapters.some((item) => item.id === id)) setPendingDeleteId(id);
+  };
+
+  const deleteChapterNow = async (id) => {
     const chapter = chapters.find((item) => item.id === id);
     if (!chapter) return;
 
@@ -672,13 +680,6 @@ const AIPoweredTeaching = () => {
     const publishedPlanId = toIdString(chapter?.publishedPlanId);
     const isPublishedChapter = chapter?.status === 'published' && chapter?.isDraft === false;
 
-    // Destructive + irreversible (also unpublishes it if already live) —
-    // confirm before deleting, matching the confirm() pattern used elsewhere
-    // in the teacher portal for exam/result/question deletes.
-    const confirmMessage = isPublishedChapter
-      ? `Delete "${chapterTitle || 'this chapter'}"? This will also remove it from the published lesson plan.`
-      : `Delete "${chapterTitle || 'this chapter'}"? This cannot be undone.`;
-    if (!window.confirm(confirmMessage)) return;
 
     const nextChapters = chapters.filter((ch) => ch.id !== id);
     setSidebarCollapsed(false);
@@ -1085,7 +1086,13 @@ const AIPoweredTeaching = () => {
       // Step-by-step explanation and quick recap from Content tab
       explanation: stripHtml(chapter.explanation) || '',
       recap: stripHtml(chapter.recap) || '',
-      didYouKnow: stripHtml(chapter.didYouKnow) || '',
+      // Facts, one per line (the student reader shows them as Fact 1, Fact 2…)
+      didYouKnow: getDidYouKnowFacts(chapter).map((f) => String(f).trim()).filter(Boolean).join('\n'),
+      // Formatted versions (bold/italic/images) for the student reader.
+      introductionHtml: chapter.introductionText || '',
+      explanationHtml: chapter.explanation || '',
+      recapHtml: chapter.recap || '',
+      didYouKnowHtml: '',
       materialsNeeded: Object.entries(chapter.contentUploads || {})
         .filter(([bucket]) => MATERIAL_BUCKETS.has(bucket))
         .flatMap(([bucket, files]) => (files || []).map((file) => serializeResourceRef(file, bucket)).filter(Boolean)),
@@ -1377,6 +1384,25 @@ const AIPoweredTeaching = () => {
           </div>
         </div>
       </Motion.div>
+
+      {(() => {
+        const pending = chapters.find((item) => item.id === pendingDeleteId);
+        const title = String(pending?.title || '').trim() || 'this chapter';
+        const published = pending?.status === 'published' && pending?.isDraft === false;
+        return (
+          <ConfirmDialog
+            open={Boolean(pending)}
+            onOpenChange={(open) => { if (!open) setPendingDeleteId(null); }}
+            onConfirm={() => { const id = pendingDeleteId; setPendingDeleteId(null); if (id) deleteChapterNow(id); }}
+            icon={Trash2}
+            title="Delete chapter?"
+            description={published
+              ? `"${title}" will be deleted and removed from the published lesson plan, so students will no longer see it. This cannot be undone.`
+              : `"${title}" and everything in it will be deleted. This cannot be undone.`}
+            confirmLabel="Delete chapter"
+          />
+        );
+      })()}
     </div>
   );
 };

@@ -4,7 +4,7 @@
  * or duplication is prohibited without prior written permission.
  */
 
-import React, { useEffect, useMemo, useRef, useState } from 'react';
+import React, { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { useLocation, useNavigate } from 'react-router-dom';
 import {
@@ -31,6 +31,10 @@ import {
   Lock,
   Sparkles,
   Rocket,
+  Monitor,
+  Zap,
+  Globe2,
+  Star,
   Compass,
   Video,
   Presentation,
@@ -41,6 +45,53 @@ import {
 import { fetchCachedJson } from '../utils/studentApiCache';
 import { PaperclipHorizontalIcon } from '@phosphor-icons/react';
 import { slugifyForUrl, deslugifyFromUrl } from '../utils/urlSlug';
+import A4Pages from './A4Pages';
+
+// "Did You Know?" fact cards — colour cycles amber → blue → purple → green.
+const FACT_THEMES = [
+  { card: 'border-amber-200 bg-amber-50/80', pill: 'bg-gradient-to-b from-amber-400 to-orange-500', title: 'bg-amber-100/90', divider: 'bg-amber-200', icon: 'text-amber-400', Icon: Sparkles },
+  { card: 'border-sky-200 bg-sky-50/80', pill: 'bg-gradient-to-b from-sky-400 to-blue-600', title: 'bg-sky-100/90', divider: 'bg-sky-200', icon: 'text-sky-400', Icon: Zap },
+  { card: 'border-violet-200 bg-violet-50/80', pill: 'bg-gradient-to-b from-violet-500 to-purple-600', title: 'bg-violet-100/90', divider: 'bg-violet-200', icon: 'text-violet-400', Icon: Star },
+  { card: 'border-emerald-200 bg-emerald-50/80', pill: 'bg-gradient-to-b from-emerald-400 to-green-600', title: 'bg-emerald-100/90', divider: 'bg-emerald-200', icon: 'text-emerald-400', Icon: Globe2 },
+];
+// "Title: description" / "Title – description" → a bold title + text;
+// otherwise the whole fact is the description.
+const splitFact = (text) => {
+  const t = String(text || '').trim();
+  // A colon wins over a dash, so "CPU – The Brain: …" keeps the whole title.
+  const m = t.match(/^([^:]{3,90}):(?!\/\/)\s*(.+)$/) || t.match(/^(.{3,80}?)\s[–—-]\s(.+)$/);
+  if (m && !/https?$/i.test(m[1])) return { title: m[1].trim(), body: m[2].trim() };
+  return { title: '', body: t };
+};
+
+// Split teacher HTML into top-level blocks (so it can flow across A4 pages),
+// dropping anything unsafe: scripts/embeds, inline event handlers, js: links.
+const BLOCKED_TAGS = 'script,style,iframe,object,embed,form,input,button,textarea,select,link,meta';
+const htmlToBlocks = (html) => {
+  if (!html || typeof DOMParser === 'undefined') return [];
+  const doc = new DOMParser().parseFromString(String(html), 'text/html');
+  doc.querySelectorAll(BLOCKED_TAGS).forEach((el) => el.remove());
+  doc.body.querySelectorAll('*').forEach((el) => {
+    Array.from(el.attributes).forEach((attr) => {
+      const name = attr.name.toLowerCase();
+      const value = String(attr.value || '').trim().toLowerCase();
+      if (name.startsWith('on') || ((name === 'href' || name === 'src') && value.startsWith('javascript:'))) el.removeAttribute(attr.name);
+    });
+    if (el.tagName === 'A') { el.setAttribute('target', '_blank'); el.setAttribute('rel', 'noopener noreferrer'); }
+  });
+  const out = [];
+  doc.body.childNodes.forEach((node) => {
+    if (node.nodeType === 3) {
+      const text = node.textContent.trim();
+      if (text) out.push(`<p>${text.replace(/[&<>]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;' }[c]))}</p>`);
+    } else if (node.nodeType === 1 && (node.textContent.trim() || node.querySelector('img'))) {
+      out.push(node.outerHTML);
+    }
+  });
+  return out;
+};
+import ReadingPracticePage from './ReadingPracticePage';
+import WritingPracticePage from './WritingPracticePage';
 import AILearningTryoutSection, { typeMeta, normalizeQuestionType } from './AILearningTryoutSection';
 
 const API_BASE = (import.meta.env.VITE_API_URL || 'http://localhost:5000').replace(/\/$/, '');
@@ -289,6 +340,8 @@ const AILearningCoursesReference = () => {
   const [activeMaterial, setActiveMaterial] = useState(null);
   const moduleRef = useRef(null);
   const detailsViewRef = useRef(null);
+  // The A4 lesson page — fullscreen opens just this page while reading.
+  const a4PageRef = useRef(null);
 
   // Extract topic from URL
   const urlMatch = location.pathname.match(/\/topic\/([^/]+)$/);
@@ -596,11 +649,15 @@ const AILearningCoursesReference = () => {
       ? selectedChapterMeta.instructionalFlow.filter((item) => item && typeof item === 'object')
       : []; 
     if (!flow.length) return [];
+    // "THE HOOK" → "Hook", "GUIDED PRACTICE" → "Guided Practice"
+    const prettyPhase = (v) => String(v || '').trim().replace(/^the\s+/i, '').toLowerCase().replace(/\b\w/g, (c) => c.toUpperCase());
     return flow.map((step, index) => ({
       id: step.id || `step-${index + 1}`,
       title: String(step.title || step.description || `Step ${index + 1}`).trim(),
       duration: Number(step.duration || 0) || 0,
       type: String(step.type || step.phase || `Step ${index + 1}`).trim(),
+      phase: prettyPhase(step.phase || step.type) || `Step ${index + 1}`,
+      description: String(step.description || step.title || '').trim(),
     }));
   }, [selectedChapterMeta]);
 
@@ -650,6 +707,12 @@ const AILearningCoursesReference = () => {
   const chapterExplanation = String(selectedChapterMeta.explanation || '').trim();
   const chapterRecap = String(selectedChapterMeta.recap || '').trim();
   const chapterDidYouKnow = String(selectedChapterMeta.didYouKnow || '').trim();
+  const chapterHtml = {
+    introduction: String(selectedChapterMeta.introductionHtml || '').trim(),
+    explanation: String(selectedChapterMeta.explanationHtml || '').trim(),
+    recap: String(selectedChapterMeta.recapHtml || '').trim(),
+    didYouKnow: String(selectedChapterMeta.didYouKnowHtml || '').trim(),
+  };
   const hasTopicData = Boolean(selectedChapter || selectedTopicFromMap?.topic);
 
   const chapterDateLabel = formatDateLabel(selectedChapterMeta.date || selectedChapter?.date);
@@ -694,8 +757,9 @@ const AILearningCoursesReference = () => {
   };
   const toggleDetailsFullscreen = async () => {
     try {
-      if (!document.fullscreenElement && detailsViewRef.current) {
-        await detailsViewRef.current.requestFullscreen();
+      const target = (detailTab === 'read' && a4PageRef.current) || detailsViewRef.current;
+      if (!document.fullscreenElement && target) {
+        await target.requestFullscreen();
       } else if (document.fullscreenElement) {
         await document.exitFullscreen();
       }
@@ -705,17 +769,24 @@ const AILearningCoursesReference = () => {
   };
   const introductionText = chapterIntroduction || readingContent.intro;
   const detailSections = useMemo(() => ([
-    { id: 'introduction', title: 'Introduction', text: introductionText },
-    ...(chapterExplanation ? [{ id: 'explanation', title: 'Explanation', text: chapterExplanation }] : []),
-    ...readingContent.sections.map((section, index) => ({
-      id: `section-${index + 1}`,
-      title: section.title,
-      text: section.text,
-    })),
-    ...(chapterRecap ? [{ id: 'recap', title: 'Quick Recap', text: chapterRecap }] : []),
-    ...(chapterDidYouKnow ? [{ id: 'did-you-know', title: 'Did You Know?', text: chapterDidYouKnow }] : []),
-  ]).filter((section) => String(section.text || '').trim()), [readingContent, introductionText, chapterExplanation, chapterRecap, chapterDidYouKnow]);
+    // Explanation is shown on the same page, right below the introduction.
+    {
+      id: 'introduction',
+      title: 'Introduction',
+      text: introductionText || chapterExplanation,
+      html: chapterIntroduction ? chapterHtml.introduction : (introductionText ? '' : chapterHtml.explanation),
+      explanation: introductionText ? chapterExplanation : '',
+      explanationHtml: introductionText ? chapterHtml.explanation : '',
+    },
+    ...(chapterRecap ? [{ id: 'recap', title: 'Quick Recap', text: chapterRecap, html: chapterHtml.recap }] : []),
+    ...(chapterDidYouKnow ? [{ id: 'did-you-know', title: 'Did You Know?', text: chapterDidYouKnow, html: chapterHtml.didYouKnow }] : []),
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  ]).filter((section) => String(section.text || '').trim()), [introductionText, chapterIntroduction, chapterExplanation, chapterInstructionalFlow, chapterRecap, chapterDidYouKnow, selectedChapterMeta]);
   const [isPracticeMode, setIsPracticeMode] = useState(false);
+  // Topic page tabs: read | files | practice, and the practice sub-section.
+  const [detailTab, setDetailTab] = useState('read');
+  const [practiceTab, setPracticeTab] = useState('tryout');
+  useEffect(() => { if (isPracticeMode) setDetailTab('practice'); }, [isPracticeMode]);
   // Populated by the embedded AILearningTryoutSection once it loads the
   // assigned questions, so the "Choose Your Format" list above it can group
   // them by type without re-fetching/re-deriving the same data itself.
@@ -739,51 +810,68 @@ const AILearningCoursesReference = () => {
   useEffect(() => {
     setIsPracticeMode(new URLSearchParams(location.search).get('mode') === 'practice');
   }, [location.search]);
-  const [activeDetailSection, setActiveDetailSection] = useState('introduction');
+  const [activeDetailSection, setActiveDetailSectionRaw] = useState('introduction');
+  const setActiveDetailSection = (id) => {
+    setActiveDetailSectionRaw(id);
+    window.requestAnimationFrame(() => detailsScrollRef.current?.scrollTo({ top: 0, behavior: 'smooth' }));
+  };
   const [readerFontScale, setReaderFontScale] = useState(1);
   const detailSectionRefs = useRef({});
   const detailsScrollRef = useRef(null);
 
-  useEffect(() => {
+  // Remember the scroll position without re-rendering on every scroll event:
+  // keep it in a ref and only push it to state (which saves progress) once the
+  // student stops scrolling. Writing state on every event — and an effect that
+  // wrote scrollTop straight back — made the page fight the student and shake.
+  // Desktop: the reader is its own scroll area (so the left nav stays fixed).
+  // Its wrappers don't pass down a height, so size it to the window directly:
+  // from where it starts on screen to the bottom of the viewport.
+  useLayoutEffect(() => {
     if (!isDetailsView) return undefined;
+    const fit = () => {
+      const el = detailsScrollRef.current;
+      if (!el) return;
+      if (document.fullscreenElement || window.innerWidth < 1024) { el.style.height = ''; return; }
+      const top = Math.max(0, el.getBoundingClientRect().top);
+      el.style.height = `${Math.max(320, window.innerHeight - top)}px`;
+    };
+    fit();
+    const id = window.requestAnimationFrame(fit); // after header/animations settle
+    window.addEventListener('resize', fit);
+    document.addEventListener('fullscreenchange', fit);
+    return () => {
+      window.cancelAnimationFrame(id);
+      window.removeEventListener('resize', fit);
+      document.removeEventListener('fullscreenchange', fit);
+    };
+  }, [isDetailsView, loading]);
 
-    const observer = new IntersectionObserver(
-      (entries) => {
-        const visible = entries
-          .filter((entry) => entry.isIntersecting)
-          .sort((a, b) => b.intersectionRatio - a.intersectionRatio);
-        if (visible[0]?.target?.id) {
-          setActiveDetailSection(visible[0].target.id);
-        }
-      },
-      { rootMargin: '-20% 0px -55% 0px', threshold: [0.2, 0.4, 0.6] }
-    );
-
-    detailSections.forEach((section) => {
-      const node = detailSectionRefs.current[section.id];
-      if (node) observer.observe(node);
-    });
-
-    return () => observer.disconnect();
-  }, [isDetailsView, detailSections]);
-
+  const scrollSaveTimerRef = useRef(null);
   const handleDetailsScroll = () => {
     const container = detailsScrollRef.current;
-    if (!container || !detailSections.length) return;
-    setSavedScrollTop(container.scrollTop);
-    const distanceFromBottom = container.scrollHeight - container.scrollTop - container.clientHeight;
-    if (distanceFromBottom <= 8) {
-      setActiveDetailSection(detailSections[detailSections.length - 1].id);
-    }
+    if (!container) return;
+    if (scrollSaveTimerRef.current) window.clearTimeout(scrollSaveTimerRef.current);
+    scrollSaveTimerRef.current = window.setTimeout(() => {
+      setSavedScrollTop(Math.round(container.scrollTop));
+    }, 600);
   };
+  useEffect(() => () => {
+    if (scrollSaveTimerRef.current) window.clearTimeout(scrollSaveTimerRef.current);
+  }, []);
 
+  // Restore the saved position once, when progress first loads — never again
+  // while the student is scrolling.
+  const scrollRestoredRef = useRef(false);
   useEffect(() => {
-    if (!isDetailsView || !progressLoaded || !detailsScrollRef.current) return undefined;
+    if (scrollRestoredRef.current || !isDetailsView || !progressLoaded || !detailsScrollRef.current) return undefined;
+    scrollRestoredRef.current = true;
+    const target = savedScrollTop;
     const frame = window.requestAnimationFrame(() => {
-      if (detailsScrollRef.current) detailsScrollRef.current.scrollTop = savedScrollTop;
+      if (detailsScrollRef.current) detailsScrollRef.current.scrollTop = target;
     });
     return () => window.cancelAnimationFrame(frame);
-  }, [isDetailsView, progressLoaded, savedScrollTop]);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [isDetailsView, progressLoaded]);
 
   const handleDownloadAllMaterials = () => {
     const downloadable = learningMaterials.filter((material) => material.url || material.downloadUrl);
@@ -990,328 +1078,502 @@ const AILearningCoursesReference = () => {
         <div
           ref={(node) => { detailsViewRef.current = node; detailsScrollRef.current = node; }}
           onScroll={handleDetailsScroll}
-          className={`w-full overflow-x-hidden overflow-y-auto bg-[#f8f9ff] p-3 sm:p-5 ${isFullscreen ? 'h-screen' : 'min-h-screen'}`}
+          className={`w-full overflow-x-hidden overflow-y-auto overscroll-contain p-3 sm:p-5 ${isFullscreen ? 'h-screen' : 'min-h-screen lg:min-h-0'}`}
           style={QUEST_FONT}
         >
-          {/* Nav row */}
-          <div className="mx-auto mb-4 flex max-w-[1280px] flex-wrap items-center gap-2.5">
-            <button
-              type="button"
-              onClick={closeDetailsPage}
-              className="inline-flex items-center gap-2 rounded-full bg-[#eff4ff] px-4 py-2 text-sm font-semibold text-[#493ee5] transition-colors hover:bg-[#e6eeff]"
-            >
-              <ArrowLeft size={14} /> Back to Chapters
-            </button>
-            <div className="flex items-center gap-1 rounded-full bg-[#eff4ff] p-1">
-              <button
-                type="button"
-                onClick={() => setReaderFontScale(1)}
-                aria-label="Normal text size"
-                className={`rounded-full px-3 py-1.5 text-xs font-bold transition-colors ${readerFontScale === 1 ? 'bg-[#493ee5] text-white' : 'text-[#464555] hover:bg-white/60'}`}
-              >
-                A
-              </button>
-              <button
-                type="button"
-                onClick={() => setReaderFontScale(1.15)}
-                aria-label="Larger text size"
-                className={`rounded-full px-3 py-1.5 text-sm font-bold transition-colors ${readerFontScale === 1.15 ? 'bg-[#493ee5] text-white' : 'text-[#464555] hover:bg-white/60'}`}
-              >
-                A+
-              </button>
-            </div>
-            {FULLSCREEN_SUPPORTED && (
-              <button
-                type="button"
-                onClick={toggleDetailsFullscreen}
-                className="rounded-full bg-[#eff4ff] p-2.5 text-[#464555] transition-colors hover:bg-[#e6eeff]"
-              >
-                {isFullscreen ? <Minimize2 size={16} /> : <Maximize2 size={16} />}
-              </button>
-            )}
-          </div>
+          {(() => {
+            const prettyTopic = String(topicSlug || '').replace(/[_-]+/g, ' ').trim();
+            const prettySubject = String(subjectSlug || '').replace(/[_-]+/g, ' ').trim();
+            const chapterLabel = mapScope.chapterTitle && normalizeKey(mapScope.chapterTitle) !== normalizeKey(topicSlug) ? mapScope.chapterTitle : '';
+            const stepsTotal = chapterInstructionalFlow.length;
+            const pct = topicCompleted ? 100 : stepsTotal ? Math.round((completedSteps.length / stepsTotal) * 100) : 0;
+            const topicFilters = [topicSlug, prettyTopic, mapScope.chapterTitle].filter(Boolean);
+            const tabs = [
+              { key: 'read', label: 'Read', icon: BookOpen, count: null },
+              { key: 'files', label: 'Attachments', icon: Paperclip, count: learningMaterials.length },
+              { key: 'practice', label: 'Practice', icon: Target, count: null },
+            ];
+            const practiceTabs = [
+              { key: 'tryout', label: 'Tryout questions', hint: 'Quick quiz on this topic', icon: Sparkles },
+              { key: 'papers', label: 'Practice papers', hint: `${practiceResources.length} from your teacher`, icon: ClipboardList },
+              { key: 'reading', label: 'Reading skills', hint: 'Read aloud & get feedback', icon: Newspaper },
+              { key: 'writing', label: 'Writing skills', hint: 'Write & get AI feedback', icon: NotebookText },
+            ];
+            const goTab = (key) => {
+              setDetailTab(key);
+              detailsScrollRef.current?.scrollTo({ top: 0, behavior: 'smooth' });
+            };
 
-          {/* Reader grid */}
-          <div className="mx-auto grid max-w-[1280px] grid-cols-1 items-start gap-6 lg:grid-cols-[minmax(0,1fr)_360px]">
-            {/* ── Book page ── */}
-            {!isPracticeMode && (
-              <div className="rounded-[2rem] bg-white p-5 shadow-sm sm:p-8">
-                {/* Chapter meta */}
-                <div className="mb-6 flex flex-wrap items-center justify-between gap-3 border-b border-[#d5e3fc] pb-5">
-                  <span className="rounded-full bg-[#e2dfff] px-3.5 py-1.5 text-[11px] font-bold uppercase tracking-wider text-[#321ed2]">
-                    {mapScope.chapterTitle || subjectSlug}
-                  </span>
-                  <span className="flex items-center gap-2 text-xs font-semibold text-[#464555]"><span className="rdr-dot" /> Lesson</span>
-                </div>
-
-                {/* Title */}
-                <p className="mb-2 text-xs font-bold uppercase tracking-wide text-[#493ee5]">✦ Topic Reader</p>
-                <h1 className="text-2xl font-bold tracking-tight text-[#0d1c2e] sm:text-4xl">{topicSlug}</h1>
-                <p className="mb-7 mt-2 text-sm italic text-[#464555] sm:text-base">
-                  {mapScope.label && mapScope.label !== topicSlug ? mapScope.label : `${subjectSlug} · Reading`}
-                </p>
-
-                {/* Theory sections */}
-                <div className="flex flex-col gap-4">
-                  {detailSections.length > 0 ? (
-                    detailSections.map((section) => (
-                      <div
-                        key={section.id}
-                        id={section.id}
-                        ref={(node) => { detailSectionRefs.current[section.id] = node; }}
-                        className={`rounded-[1.25rem] p-4 transition-colors sm:p-5 ${activeDetailSection === section.id ? 'bg-[#eff4ff]' : 'bg-[#f8f9ff]'}`}
-                      >
-                        <span className="mb-2 inline-block rounded-full bg-[#d5e3fc] px-3 py-0.5 text-[11px] font-bold uppercase tracking-wide text-[#0d1c2e]">
-                          {section.title}
-                        </span>
-                        <p className="leading-[1.85] text-[#464555]" style={{ fontSize: `${15 * readerFontScale}px` }}>
-                          {section.text}
-                        </p>
+            return (
+              <div className="mx-auto max-w-[1200px]">
+                {/* ── Top bar ── */}
+                <div className="mb-3 flex flex-wrap items-center gap-2">
+                  <button
+                    type="button"
+                    onClick={closeDetailsPage}
+                    className="inline-flex items-center gap-1.5 rounded-full bg-white px-3 py-1.5 text-xs font-semibold text-[#493ee5] shadow-sm ring-1 ring-[#e2e8ff] transition-colors hover:bg-[#eff4ff]"
+                  >
+                    <ArrowLeft size={15} /> Back to Chapters
+                  </button>
+                  <div className="ml-auto flex items-center gap-1.5">
+                    {detailTab === 'read' && (
+                      <div className="flex items-center gap-0.5 rounded-full bg-white p-1 shadow-sm ring-1 ring-[#e2e8ff]" aria-label="Text size">
+                        <button type="button" onClick={() => setReaderFontScale(1)} aria-label="Normal text size" className={`rounded-full px-3 py-1 text-xs font-bold ${readerFontScale === 1 ? 'bg-[#493ee5] text-white' : 'text-[#464555] hover:bg-[#eff4ff]'}`}>A</button>
+                        <button type="button" onClick={() => setReaderFontScale(1.15)} aria-label="Larger text size" className={`rounded-full px-3 py-1 text-sm font-bold ${readerFontScale === 1.15 ? 'bg-[#493ee5] text-white' : 'text-[#464555] hover:bg-[#eff4ff]'}`}>A+</button>
                       </div>
-                    ))
-                  ) : (
-                    <p className="py-8 text-center text-sm italic text-[#464555]">
-                      No reading content published for this topic yet.
-                    </p>
-                  )}
-                </div>
-              </div>
-            )}
-
-            {/* ── Sidebar ── */}
-            {!isPracticeMode && (
-              <div className="flex flex-col gap-5 lg:sticky lg:top-5">
-                {/* Learning objectives */}
-                <div className="rounded-[2rem] bg-white p-5 shadow-sm">
-                  <h2 className="text-base font-bold text-[#0d1c2e]">What you’ll learn</h2>
-                  {chapterLearningObjectives.length === 0 ? (
-                    <p className="mt-3 text-sm italic text-[#464555]">No objectives published yet.</p>
-                  ) : (
-                    <ul className="mt-3 space-y-2">
-                      {chapterLearningObjectives.map((objective, idx) => (
-                        <li key={idx} className="flex items-start gap-2 text-sm leading-5 text-[#464555]">
-                          <span className="mt-1 h-1.5 w-1.5 shrink-0 rounded-full bg-[#493ee5]" />
-                          <span>{objective}</span>
-                        </li>
-                      ))}
-                    </ul>
-                  )}
-                </div>
-
-                <div className="rounded-[2rem] bg-white p-5 shadow-sm">
-                  <div className="flex items-start justify-between gap-3">
-                    <div>
-                      <h2 className="text-base font-bold text-[#0d1c2e]">Learning steps</h2>
-                      <p className="mt-1 text-xs text-[#464555]">Mark each step when you finish it.</p>
-                    </div>
-                    <span className="shrink-0 text-xs font-bold text-[#493ee5]">{completedSteps.length}/{chapterInstructionalFlow.length}</span>
+                    )}
+                    {FULLSCREEN_SUPPORTED && (
+                      <button type="button" onClick={toggleDetailsFullscreen} aria-label={isFullscreen ? 'Exit fullscreen' : 'Fullscreen'} className="rounded-full bg-white p-2 text-[#464555] shadow-sm ring-1 ring-[#e2e8ff] hover:bg-[#eff4ff]">
+                        {isFullscreen ? <Minimize2 size={15} /> : <Maximize2 size={15} />}
+                      </button>
+                    )}
                   </div>
-                  <div className="mt-3 space-y-2">
-                    {chapterInstructionalFlow.length === 0 ? (
-                      <p className="text-sm italic text-[#464555]">No steps published yet.</p>
-                    ) : chapterInstructionalFlow.map((step, idx) => {
-                      const done = completedSteps.includes(step.id);
-                      const available = canUseFlowStep(idx);
+                </div>
+
+                {/* Page title for screen readers (the visual header was removed) */}
+                <h1 className="sr-only"><span>✦ Topic Reader</span> {String(topicSlug || '').replace(/[_-]+/g, ' ')}</h1>
+
+                {/* ── Body: sidebar navigation (laptop/desktop) + content ── */}
+                <div className="mt-4 lg:grid lg:grid-cols-[230px_minmax(0,1fr)] lg:items-start lg:gap-5">
+                  <aside className="hidden lg:sticky lg:top-0 lg:block">
+                    <nav aria-label="Topic navigation" className="max-h-[calc(100vh-5rem)] overflow-y-auto overscroll-contain rounded-2xl bg-white shadow-sm ring-1 ring-[#e2e8ff] [scrollbar-width:thin] [scrollbar-color:#c7c4ff_transparent] [&::-webkit-scrollbar]:w-1.5 [&::-webkit-scrollbar-thumb]:rounded-full [&::-webkit-scrollbar-thumb]:bg-[#c7c4ff] [&::-webkit-scrollbar-track]:bg-transparent">
+                      {/* Learn */}
+                      <div className="border-b border-[#eef2ff] px-2 py-1.5">
+                        <p className="px-2 pb-0.5 pt-0.5 text-[9.5px] font-bold uppercase tracking-wider text-[#94a3b8]">Learn</p>
+                        <button type="button" onClick={() => goTab('read')} className={`flex w-full items-center gap-2 rounded-lg px-2.5 py-1.5 text-left text-xs font-semibold transition-colors ${detailTab === 'read' ? 'bg-[#493ee5] text-white' : 'text-[#334155] hover:bg-[#f1f4ff]'}`}>
+                          <BookOpen size={14} /> Read lesson
+                        </button>
+                        {detailSections.length > 0 && (
+                          <ol className="mt-0.5 ml-4 space-y-0 border-l-2 border-[#e2e8ff] pl-2">
+                            {detailSections.map((section) => (
+                              <li key={section.id}>
+                                <button
+                                  type="button"
+                                  onClick={() => { setActiveDetailSection(section.id); goTab('read'); }}
+                                  className={`block w-full truncate rounded-md px-2 py-[5px] text-left text-xs font-medium transition-colors ${detailTab === 'read' && activeDetailSection === section.id ? 'bg-[#eff4ff] text-[#493ee5]' : 'text-[#334155] hover:bg-[#f8f9ff] hover:text-[#0d1c2e]'}`}
+                                >
+                                  {section.title}
+                                </button>
+                              </li>
+                            ))}
+                          </ol>
+                        )}
+                      </div>
+
+                      {/* Resources */}
+                      <div className="border-b border-[#eef2ff] px-2 py-1.5">
+                        <p className="px-2 pb-0.5 pt-0.5 text-[9.5px] font-bold uppercase tracking-wider text-[#94a3b8]">Resources</p>
+                        <button type="button" onClick={() => goTab('files')} className={`flex w-full items-center gap-2 rounded-lg px-2.5 py-1.5 text-left text-xs font-semibold transition-colors ${detailTab === 'files' ? 'bg-[#493ee5] text-white' : 'text-[#334155] hover:bg-[#f1f4ff]'}`}>
+                          <Paperclip size={14} /> Attachments
+                          {learningMaterials.length > 0 && <span className={`ml-auto rounded-full px-1.5 py-0.5 text-[10px] leading-none ${detailTab === 'files' ? 'bg-white/25' : 'bg-[#eff4ff] text-[#493ee5]'}`}>{learningMaterials.length}</span>}
+                        </button>
+                      </div>
+
+                      {/* Practice */}
+                      <div className="px-2 py-1.5">
+                        <p className="px-2 pb-0.5 pt-0.5 text-[9.5px] font-bold uppercase tracking-wider text-[#94a3b8]">Practice</p>
+                        {practiceTabs.map(({ key, label, icon: Icon }) => {
+                          const active = detailTab === 'practice' && practiceTab === key;
+                          return (
+                            <button
+                              key={key}
+                              type="button"
+                              onClick={() => { setPracticeTab(key); goTab('practice'); }}
+                              className={`flex w-full items-center gap-2 rounded-lg px-2.5 py-1.5 text-left text-xs font-semibold transition-colors ${active ? 'bg-[#493ee5] text-white' : 'text-[#334155] hover:bg-[#f1f4ff]'}`}
+                            >
+                              <Icon size={14} /> {label}
+                            </button>
+                          );
+                        })}
+                      </div>
+                    </nav>
+                  </aside>
+
+                  <div className="min-w-0">
+                {/* ── Tabs (phone / tablet) ── */}
+                <div className="sticky top-0 z-20 -mx-3 mt-0 lg:hidden bg-[#f8f9ff]/95 px-3 py-2 backdrop-blur sm:-mx-5 sm:px-5">
+                  <div role="tablist" aria-label="Topic sections" className="mx-auto grid max-w-md grid-cols-3 gap-1 rounded-full bg-white p-1 shadow-sm ring-1 ring-[#e2e8ff]">
+                    {tabs.map(({ key, label, icon: Icon, count }) => {
+                      const active = detailTab === key;
                       return (
                         <button
-                          key={step.id}
+                          key={key}
                           type="button"
-                          disabled={!available}
-                          onClick={() => toggleFlowStep(step.id, idx)}
-                          className={`flex w-full items-center gap-2 rounded-xl px-3 py-2 text-left text-xs font-semibold transition-colors ${done ? 'bg-emerald-50 text-emerald-700' : available ? 'bg-[#eff4ff] text-[#493ee5] hover:bg-[#e6eeff]' : 'cursor-not-allowed bg-slate-50 text-slate-400'}`}
+                          role="tab"
+                          aria-selected={active}
+                          onClick={() => goTab(key)}
+                          className={`flex items-center justify-center gap-1.5 rounded-full px-2 py-1.5 text-xs font-bold transition-colors ${active ? 'bg-[#493ee5] text-white shadow' : 'text-[#464555] hover:bg-[#eff4ff]'}`}
                         >
-                          {done ? <CheckCircle2 size={14} /> : <span className="flex h-4 w-4 items-center justify-center rounded-full border border-current text-[10px]">{idx + 1}</span>}
-                          <span className="min-w-0 flex-1 truncate">{step.title}</span>
-                          <span>{done ? 'Completed' : available ? 'Mark complete' : 'Locked'}</span>
+                          <Icon size={14} />
+                          <span>{label}</span>
+                          {count != null && count > 0 && (
+                            <span className={`rounded-full px-1.5 py-0.5 text-[10px] leading-none ${active ? 'bg-white/25 text-white' : 'bg-[#eff4ff] text-[#493ee5]'}`}>{count}</span>
+                          )}
                         </button>
                       );
                     })}
                   </div>
-                  <button
-                    type="button"
-                    onClick={markTopicComplete}
-                    className={`mt-3 flex w-full items-center justify-center gap-2 rounded-xl px-3 py-2.5 text-xs font-bold ${topicCompleted ? 'bg-emerald-100 text-emerald-700' : 'bg-[#493ee5] text-white hover:bg-[#3a30c9]'}`}
-                  >
-                    <CheckCircle2 size={14} /> {topicCompleted ? 'Topic completed' : 'Mark topic complete'}
-                  </button>
                 </div>
 
-                <div className="rounded-[2rem] bg-white p-5 shadow-sm">
-                  <div className="flex items-start justify-between gap-3">
-                    <div>
-                      <h2 className="text-base font-bold text-[#0d1c2e]">Lesson materials</h2>
-                      <p className="mt-1 text-xs text-[#464555]">Open or download your teacher’s resources.</p>
-                    </div>
-                    {learningMaterials.length > 0 && (
-                      <span className="shrink-0 rounded-full bg-[#eff4ff] px-2.5 py-1 text-[10px] font-bold text-[#493ee5]">{learningMaterials.length}</span>
+                {/* ══════════ READ ══════════ */}
+                {detailTab === 'read' && (
+                  <div
+                    ref={a4PageRef}
+                    className="mt-2 lg:mt-0 [&:fullscreen]:overflow-y-auto [&:fullscreen]:bg-slate-600 [&:fullscreen]:px-4 [&:fullscreen]:py-8"
+                  >
+                    {detailSections.length > 1 && (
+                      <nav aria-label="In this lesson" className="mx-auto mb-3 max-w-[210mm] rounded-xl bg-white p-3 shadow-sm lg:hidden">
+                        <p className="mb-2 text-xs font-bold uppercase tracking-wide text-[#493ee5]">In this lesson</p>
+                        <ol className="grid gap-1 sm:grid-cols-2">
+                          {detailSections.map((section, i) => (
+                            <li key={section.id}>
+                              <button
+                                type="button"
+                                onClick={() => setActiveDetailSection(section.id)}
+                                className={`flex w-full items-center gap-2 rounded-lg px-2 py-1 text-left text-[13px] transition-colors ${activeDetailSection === section.id ? 'bg-[#eff4ff] font-semibold text-[#493ee5]' : 'text-[#464555] hover:bg-[#f8f9ff]'}`}
+                              >
+                                <span className="flex h-5 w-5 shrink-0 items-center justify-center rounded-full bg-[#e2dfff] text-[10px] font-bold text-[#321ed2]">{i + 1}</span>
+                                <span className="truncate">{section.title}</span>
+                              </button>
+                            </li>
+                          ))}
+                        </ol>
+                      </nav>
                     )}
-                  </div>
-                  {learningMaterials.length === 0 ? (
-                    <p className="mt-3 text-sm italic text-[#464555]">No materials uploaded yet.</p>
-                  ) : (
-                    <div className="mt-3 space-y-2">
-                      {learningMaterials.map((material, idx) => {
-                        const kind = detectMaterialKind(material);
-                        const meta = MATERIAL_KIND_META[kind];
-                        const Icon = meta.icon;
-                        const materialUrl = material.url || material.downloadUrl;
+
+                    {(() => {
+                      const idx = Math.max(0, detailSections.findIndex((x) => x.id === activeDetailSection));
+                      const section = detailSections[idx];
+                      // Split long text into paragraph-sized blocks so it can flow across pages.
+                      const toParagraphs = (text, tone, prefix) => {
+                        const paras = String(text || '').split(/\n\s*\n|\n/).map((p) => p.trim()).filter(Boolean);
+                        const out = [];
+                        paras.forEach((p) => {
+                          const sentences = p.match(/[^.!?]+[.!?]*\s*/g) || [p];
+                          let chunk = '';
+                          sentences.forEach((sentence) => {
+                            if ((chunk + sentence).length > 450 && chunk) { out.push(chunk.trim()); chunk = ''; }
+                            chunk += sentence;
+                          });
+                          if (chunk.trim()) out.push(chunk.trim());
+                        });
+                        return out.map((t, i) => ({ id: `${prefix}-p${i}`, kind: 'text', text: t, tone }));
+                      };
+                      const tone = section?.id === 'recap' ? 'recap' : section?.id === 'did-you-know' ? 'tip' : '';
+                      // Teacher's formatted content → one block per top-level element.
+                      const toHtmlBlocks = (html, prefix) => htmlToBlocks(html).map((h, i) => ({ id: `${prefix}-h${i}`, kind: 'html', html: h, tone }));
+                      const bodyBlocks = (html, text, prefix) => (html ? toHtmlBlocks(html, prefix) : []).length
+                        ? toHtmlBlocks(html, prefix)
+                        : toParagraphs(text, tone, prefix);
+                      const blocks = section ? [
+                        { id: `${section.id}-h`, kind: 'heading', text: section.title, tone, sectionId: section.id },
+                        ...(section.id === 'did-you-know'
+                          // One card per fact, numbered like the teacher entered them.
+                          ? String(section.text || '').split(/\n+/).map((t) => t.trim()).filter(Boolean)
+                            .map((t, i) => ({ id: `dyk-${i}`, kind: 'fact', n: i + 1, text: t }))
+                          : bodyBlocks(section.html, section.text, section.id)),
+                        ...(section.explanation ? [
+                          { id: `${section.id}-exp-h`, kind: 'heading', text: 'Explanation', tone: '' },
+                          ...bodyBlocks(section.explanationHtml, section.explanation, `${section.id}-exp`),
+                        ] : []),
+                      ] : [{ id: 'empty', kind: 'empty', text: '' }];
+
+                      const renderBlock = (block) => {
+                        if (block.kind === 'empty') {
+                          return (
+                            <div className="py-14 text-center">
+                              <BookOpen size={32} className="mx-auto text-[#c7c4ff]" />
+                              <p className="mt-3 font-semibold text-[#0d1c2e]">Your teacher hasn’t added the lesson yet</p>
+                              <p className="mt-1 text-sm text-[#464555]">Check the attachments or try the practice questions meanwhile.</p>
+                            </div>
+                          );
+                        }
+                        if (block.kind === 'heading' && block.tone === 'tip') {
+                          return (
+                            <div className="relative flex items-center justify-center pb-5 pt-2">
+                              <Monitor aria-hidden="true" className="absolute left-0 top-1 hidden size-9 -rotate-6 text-sky-400 sm:block" strokeWidth={1.75} />
+                              <Rocket aria-hidden="true" className="absolute right-0 top-0 hidden size-9 rotate-12 text-rose-400 sm:block" strokeWidth={1.75} />
+                              <div className="flex items-center gap-3 rounded-full bg-white px-5 py-2 shadow-[0_6px_24px_-8px_rgba(73,62,229,0.35)] ring-1 ring-[#eef0ff]">
+                                <span className="flex size-10 items-center justify-center rounded-full bg-amber-100">
+                                  <Lightbulb className="size-6 text-amber-500" fill="#fde68a" />
+                                </span>
+                                <h2 className="relative font-extrabold tracking-tight text-[#0d1c2e]" style={{ fontSize: `${26 * readerFontScale}px` }}>
+                                  Did You <span className="text-[#7c3aed]">Know?</span>
+                                  <span aria-hidden="true" className="absolute -bottom-1 left-1/4 h-1.5 w-2/3 rounded-full bg-amber-400" />
+                                </h2>
+                              </div>
+                            </div>
+                          );
+                        }
+                        if (block.kind === 'heading') {
+                          return (
+                            <h2 className="flex items-center gap-2 pb-2 pt-3 font-bold text-[#0d1c2e]" style={{ fontSize: `${17 * readerFontScale}px` }}>
+                              {block.tone === 'tip' ? <Lightbulb size={18} className="text-amber-500" /> : block.tone === 'recap' ? <CheckCircle2 size={18} className="text-emerald-500" /> : <span className="h-5 w-1.5 rounded-full bg-[#493ee5]" />}
+                              {block.text}
+                            </h2>
+                          );
+                        }
+                        if (block.kind === 'fact') {
+                          return (
+                            <div className="pb-3">
+                              {(() => {
+                                const theme = FACT_THEMES[(block.n - 1) % FACT_THEMES.length];
+                                const { title, body } = splitFact(block.text);
+                                return (
+                                  <div className={`relative flex items-center gap-3 overflow-hidden rounded-2xl border p-3 shadow-sm sm:gap-4 sm:p-4 ${theme.card}`}>
+                                    <span className={`shrink-0 rounded-full px-3.5 py-1.5 font-extrabold text-white shadow-md ${theme.pill}`} style={{ fontSize: `${15 * readerFontScale}px` }}>
+                                      Fact {block.n}
+                                    </span>
+                                    <span aria-hidden="true" className={`w-0.5 self-stretch rounded-full ${theme.divider}`} />
+                                    <div className="min-w-0 flex-1 pr-6">
+                                      {title && (
+                                        <p className={`mb-1 inline-block rounded-full px-3 py-0.5 font-extrabold text-[#0d1c2e] ${theme.title}`} style={{ fontSize: `${15.5 * readerFontScale}px` }}>
+                                          {title}
+                                        </p>
+                                      )}
+                                      <p className="leading-[1.6] text-[#1e293b]" style={{ fontSize: `${14 * readerFontScale}px` }}>{body}</p>
+                                    </div>
+                                    <theme.Icon aria-hidden="true" className={`absolute right-3 top-1/2 size-6 -translate-y-1/2 opacity-60 ${theme.icon}`} />
+                                  </div>
+                                );
+                              })()}
+                            </div>
+                          );
+                        }
+                        if (block.kind === 'html') {
+                          const htmlTone = block.tone === 'recap' ? 'border-l-4 border-emerald-400 bg-emerald-50/60 px-3 py-2'
+                            : block.tone === 'tip' ? 'border-l-4 border-amber-400 bg-amber-50/70 px-3 py-2' : '';
+                          return (
+                            <div className="pb-3">
+                              <div
+                                className={`rich-reader leading-[1.75] text-[#334155] ${htmlTone}`}
+                                style={{ fontSize: `${14.5 * readerFontScale}px` }}
+                                // Sanitised on the server and again in htmlToBlocks().
+                                dangerouslySetInnerHTML={{ __html: block.html }}
+                              />
+                            </div>
+                          );
+                        }
+                        const toneCls = block.tone === 'recap' ? 'border-l-4 border-emerald-400 bg-emerald-50/60 px-3 py-2'
+                          : block.tone === 'tip' ? 'border-l-4 border-amber-400 bg-amber-50/70 px-3 py-2' : '';
                         return (
-                          <div key={`${material.title || 'material'}-${idx}`} className="flex items-center gap-2 rounded-xl bg-[#eff4ff] p-2.5">
-                            <div className={`flex h-8 w-8 shrink-0 items-center justify-center rounded-lg ${meta.tile}`}><Icon size={15} /></div>
-                            <p className="min-w-0 flex-1 truncate text-xs font-semibold text-[#0d1c2e]">{material.title || 'Lesson material'}</p>
-                            {material.content && (
-                              <button type="button" onClick={() => setActiveMaterial(material)} className="shrink-0 rounded-lg bg-white px-2 py-1 text-[10px] font-bold text-[#493ee5] hover:bg-[#e6eeff]">Read</button>
-                            )}
-                            {materialUrl && (
-                              <a href={getInlineDocumentUrl(materialUrl)} target="_blank" rel="noreferrer" className="shrink-0 rounded-lg bg-white px-2 py-1 text-[10px] font-bold text-[#493ee5] hover:bg-[#e6eeff]">Open</a>
-                            )}
+                          <div className="pb-3">
+                            <p className={`whitespace-pre-line leading-[1.75] text-[#334155] ${toneCls}`} style={{ fontSize: `${14.5 * readerFontScale}px` }}>{block.text}</p>
                           </div>
                         );
-                      })}
-                    </div>
-                  )}
-                  {learningMaterials.some((material) => material.url || material.downloadUrl) && (
-                    <button type="button" onClick={handleDownloadAllMaterials} className="mt-3 inline-flex items-center gap-1.5 text-xs font-bold text-[#493ee5] hover:underline">
-                      <Download size={13} /> Download all
-                    </button>
-                  )}
-                </div>
+                      };
 
-                <div className="rounded-[2rem] bg-[#eff4ff] p-5 shadow-sm">
-                  <p className="text-sm font-bold text-[#0d1c2e]">Practice Paper</p>
-                  <p className="mt-1 text-xs leading-5 text-[#464555]">Open the paper assigned for this topic.</p>
-                  <button
-                    type="button"
-                    onClick={openPracticePaperPage}
-                    className="mt-3 inline-flex w-full items-center justify-center gap-2 rounded-full bg-[#493ee5] px-4 py-3 text-sm font-bold text-white transition-colors hover:bg-[#3a30c9]"
-                  >
-                    Open Practice Paper <ArrowRight size={15} />
-                  </button>
-                </div>
-              </div>
-            )}
-
-            {/* ── Practice panel (full-span) ── */}
-            {isPracticeMode && (
-              <div className="col-span-full flex flex-col gap-6">
-              {/* Choose Your Format — every assigned question type, grouped */}
-              {practiceFormats.length > 0 && (
-                <div className="rounded-[2rem] bg-white p-5 shadow-sm sm:p-8">
-                  <div className="mb-6 flex flex-wrap items-center justify-between gap-3 border-b border-[#d5e3fc] pb-4">
-                    <h3 className="text-xl font-bold text-[#0d1c2e] sm:text-2xl">Choose Your Format</h3>
-                    <span className="rounded-full bg-[#eff4ff] px-3.5 py-1 text-xs font-semibold text-[#464555]">
-                      {practiceFormats.length} format{practiceFormats.length !== 1 ? 's' : ''}
-                    </span>
-                  </div>
-                  <div className="flex flex-col gap-3">
-                    {practiceFormats.map(({ type, label, icon: Icon, count }) => (
-                      <div
-                        key={type}
-                        className="flex flex-col items-start justify-between gap-3 rounded-2xl bg-[#eff4ff] p-4 sm:flex-row sm:items-center"
-                      >
-                        <div className="flex items-start gap-3">
-                          <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl bg-white text-[#493ee5] shadow-sm">
-                            <Icon size={20} />
+                      const renderHeader = (pageIndex) => (
+                        <div className="mb-4 flex items-start justify-between gap-3 border-b-2 border-[#493ee5] pb-3">
+                          <div className="min-w-0">
+                            <p className="text-[10px] font-bold uppercase tracking-widest text-[#493ee5]">{String(subjectSlug || '').replace(/[_-]+/g, ' ')}</p>
+                            <p className="truncate text-base font-extrabold text-[#0d1c2e] sm:text-lg">{String(topicSlug || '').replace(/[_-]+/g, ' ')}</p>
                           </div>
-                          <div>
-                            <p className="text-sm font-bold text-[#0d1c2e]">{label}</p>
-                            <p className="text-xs font-semibold text-[#464555]">{count} question{count !== 1 ? 's' : ''}</p>
-                          </div>
-                        </div>
-                        <button
-                          type="button"
-                          onClick={() => tryoutRef.current?.scrollToType(type)}
-                          className="inline-flex shrink-0 items-center gap-1 self-stretch justify-center rounded-full bg-white px-4 py-2 text-sm font-bold text-[#493ee5] shadow-sm transition-colors hover:bg-[#e6eeff] sm:self-auto"
-                        >
-                          Start {label} <ArrowRight size={14} />
-                        </button>
-                      </div>
-                    ))}
-                  </div>
-                </div>
-              )}
-
-              <div className="rounded-[2rem] bg-white p-5 shadow-sm sm:p-8">
-                {/* Panel header */}
-                <div className="mb-6 flex flex-wrap items-center justify-between gap-3 border-b border-[#d5e3fc] pb-4">
-                  <h3 className="text-xl font-bold text-[#0d1c2e] sm:text-2xl">Practice Paper</h3>
-                  <span className="rounded-full bg-[#eff4ff] px-3.5 py-1 text-xs font-semibold text-[#464555]">
-                    {practiceResources.length} resource{practiceResources.length !== 1 ? 's' : ''}
-                  </span>
-                </div>
-
-                {/* Resource list */}
-                <div className="mb-6 grid gap-3">
-                  {practiceResources.length === 0 ? (
-                    <div className="py-8 text-center">
-                      <p className="mb-1 text-sm italic text-[#464555]">
-                        No practice materials uploaded for this topic yet.
-                      </p>
-                      <p className="text-xs text-[#464555]">
-                        Try the interactive Tryout Section below!
-                      </p>
-                    </div>
-                  ) : (
-                    practiceResources.map((item, idx) => (
-                      <div key={item.id || idx} className="rounded-2xl bg-[#eff4ff] p-4">
-                        <p className="mb-2.5 text-sm text-[#0d1c2e]">
-                          <span className="mr-2 font-bold text-[#635bff]">
-                            {String(idx + 1).padStart(2, '0')}.
-                          </span>
-                          {item.title}
-                        </p>
-                        <div className="flex flex-wrap gap-2">
-                          {item.url && (
-                            <>
-                              <a href={getInlineDocumentUrl(item.url)} target="_blank" rel="noreferrer" className="rounded-full border border-[#493ee5]/30 bg-white px-3 py-1 text-xs font-semibold text-[#493ee5] hover:bg-[#eff4ff]">
-                                Open
-                              </a>
-                              <a href={item.url} download className="rounded-full border border-[#493ee5]/30 bg-white px-3 py-1 text-xs font-semibold text-[#493ee5] hover:bg-[#eff4ff]">
-                                Download
-                              </a>
-                            </>
-                          )}
-                          {item.content && (
+                          {pageIndex === 0 && FULLSCREEN_SUPPORTED && (
                             <button
                               type="button"
-                              onClick={() => setActiveMaterial(item)}
-                              className="rounded-full border border-[#493ee5]/30 bg-white px-3 py-1 text-xs font-semibold text-[#493ee5] hover:bg-[#eff4ff]"
+                              onClick={toggleDetailsFullscreen}
+                              aria-label={isFullscreen ? 'Exit fullscreen' : 'Open page in fullscreen'}
+                              title={isFullscreen ? 'Exit fullscreen' : 'Fullscreen'}
+                              className="shrink-0 rounded-full p-2 text-[#64748b] transition-colors hover:bg-[#eff4ff] hover:text-[#493ee5]"
                             >
-                              Read
+                              {isFullscreen ? <Minimize2 size={16} /> : <Maximize2 size={16} />}
                             </button>
                           )}
                         </div>
+                      );
+
+                      const prev = detailSections[idx - 1];
+                      const next = detailSections[idx + 1];
+                      return (
+                        <>
+                          <A4Pages blocks={blocks} renderBlock={renderBlock} renderHeader={renderHeader} deps={[readerFontScale]} />
+                          {detailSections.length > 1 && (
+                            <div className="mx-auto mt-5 flex max-w-[210mm] items-center justify-between gap-2">
+                              {prev ? (
+                                <button type="button" onClick={() => setActiveDetailSection(prev.id)} className="inline-flex min-w-0 items-center gap-1.5 rounded-full bg-white px-3.5 py-2 text-xs font-bold text-[#493ee5] shadow-sm ring-1 ring-[#e2e8ff] hover:bg-[#eff4ff]">
+                                  <ArrowLeft size={14} /> <span className="truncate">{prev.title}</span>
+                                </button>
+                              ) : <span />}
+                              <span className={`shrink-0 text-[11px] font-semibold ${isFullscreen ? 'text-white/80' : 'text-[#94a3b8]'}`}>{idx + 1} / {detailSections.length}</span>
+                              {next ? (
+                                <button type="button" onClick={() => setActiveDetailSection(next.id)} className="inline-flex min-w-0 items-center gap-1.5 rounded-full bg-[#493ee5] px-3.5 py-2 text-xs font-bold text-white hover:bg-[#3a30c9]">
+                                  <span className="truncate">{next.title}</span> <ArrowRight size={14} />
+                                </button>
+                              ) : <span />}
+                            </div>
+                          )}
+                        </>
+                      );
+                    })()}
+
+                  </div>
+                )}
+
+                {/* ══════════ ATTACHMENTS ══════════ */}
+                {detailTab === 'files' && (
+                  <div className="mt-2 rounded-2xl bg-white p-4 shadow-sm sm:p-5 lg:mt-0">
+                    <div className="mb-5 flex flex-wrap items-center justify-between gap-3">
+                      <div>
+                        <h2 className="text-base font-bold text-[#0d1c2e]">Attachments</h2>
+                        <p className="text-sm text-[#64748b]">Notes, slides, videos and files shared by your teacher.</p>
                       </div>
-                    ))
-                  )}
+                      {learningMaterials.some((m) => m.url || m.downloadUrl) && (
+                        <button type="button" onClick={handleDownloadAllMaterials} className="inline-flex items-center gap-1.5 rounded-full bg-[#493ee5] px-4 py-2 text-sm font-bold text-white hover:bg-[#3a30c9]">
+                          <Download size={15} /> Download all
+                        </button>
+                      )}
+                    </div>
+                    {learningMaterials.length === 0 ? (
+                      <div className="rounded-2xl border-2 border-dashed border-[#e2e8ff] py-14 text-center">
+                        <Paperclip size={30} className="mx-auto text-[#c7c4ff]" />
+                        <p className="mt-3 font-semibold text-[#0d1c2e]">No attachments yet</p>
+                        <p className="mt-1 text-sm text-[#64748b]">Your teacher hasn’t shared any files for this topic.</p>
+                      </div>
+                    ) : (
+                      <div className="grid gap-2.5 sm:grid-cols-2 lg:grid-cols-4">
+                        {(() => {
+                          // Titles arrive as "Subject • Topic • … • Worksheet"; show only the
+                          // last part (the material type), numbering repeats like "Uploaded Materials 2".
+                          const seen = {};
+                          return learningMaterials.map((material) => {
+                            const parts = String(material.title || '').split('•').map((p) => p.trim()).filter(Boolean);
+                            const base = parts[parts.length - 1] || 'Lesson material';
+                            seen[base] = (seen[base] || 0) + 1;
+                            return seen[base] > 1 ? `${base} ${seen[base]}` : base;
+                          });
+                        })().map((typeLabel, idx) => [learningMaterials[idx], typeLabel]).map(([material, typeLabel], idx) => {
+                          const kind = detectMaterialKind(material);
+                          const meta = MATERIAL_KIND_META[kind];
+                          const Icon = meta.icon;
+                          const materialUrl = material.url || material.downloadUrl;
+                          return (
+                            <div key={`${material.title || 'material'}-${idx}`} className="flex flex-col rounded-xl border border-[#e2e8ff] p-3 transition-shadow hover:shadow-md">
+                              <div className="flex items-start gap-3">
+                                <div className={`flex h-9 w-9 shrink-0 items-center justify-center rounded-lg ${meta.tile}`}><Icon size={17} /></div>
+                                <div className="min-w-0">
+                                  <p className="line-clamp-2 text-sm font-bold text-[#0d1c2e]">{typeLabel}</p>
+                                  <p className="mt-0.5 text-xs font-semibold uppercase tracking-wide text-[#94a3b8]">{meta.label || kind}</p>
+                                </div>
+                              </div>
+                              <div className="mt-3 flex gap-1.5">
+                                {material.content && (
+                                  <button type="button" onClick={() => setActiveMaterial(material)} className="flex-1 rounded-xl bg-[#eff4ff] px-3 py-2 text-xs font-bold text-[#493ee5] hover:bg-[#e6eeff]">Read here</button>
+                                )}
+                                {materialUrl && (
+                                  <a href={getInlineDocumentUrl(materialUrl)} target="_blank" rel="noreferrer" className="inline-flex flex-1 items-center justify-center gap-1 rounded-xl bg-[#493ee5] px-3 py-2 text-xs font-bold text-white hover:bg-[#3a30c9]">
+                                    <ExternalLink size={13} /> Open
+                                  </a>
+                                )}
+                                {materialUrl && (
+                                  <a href={materialUrl} download aria-label={`Download ${material.title || 'file'}`} className="inline-flex items-center justify-center rounded-xl bg-[#eff4ff] px-3 py-2 text-[#493ee5] hover:bg-[#e6eeff]">
+                                    <Download size={14} />
+                                  </a>
+                                )}
+                              </div>
+                            </div>
+                          );
+                        })}
+                      </div>
+                    )}
+                  </div>
+                )}
+
+                {/* ══════════ PRACTICE ══════════ */}
+                {detailTab === 'practice' && (
+                  <div className="mt-2 space-y-3 lg:mt-0">
+                    <div className="grid grid-cols-2 gap-2 lg:hidden">
+                      {practiceTabs.map(({ key, label, hint, icon: Icon }) => {
+                        const active = practiceTab === key;
+                        return (
+                          <button
+                            key={key}
+                            type="button"
+                            onClick={() => setPracticeTab(key)}
+                            className={`flex items-center gap-2.5 rounded-xl p-2.5 text-left transition-all ${active ? 'bg-[#493ee5] text-white shadow-lg shadow-indigo-500/25' : 'bg-white text-[#0d1c2e] shadow-sm ring-1 ring-[#e2e8ff] hover:ring-[#493ee5]/40'}`}
+                          >
+                            <span className={`flex h-8 w-8 shrink-0 items-center justify-center rounded-lg ${active ? 'bg-white/20' : 'bg-[#eff4ff] text-[#493ee5]'}`}><Icon size={16} /></span>
+                            <span className="min-w-0">
+                              <span className="block text-xs font-bold leading-tight">{label}</span>
+                              <span className={`block truncate text-[11px] ${active ? 'text-white/80' : 'text-[#64748b]'}`}>{hint}</span>
+                            </span>
+                          </button>
+                        );
+                      })}
+                    </div>
+
+                    {practiceTab === 'tryout' && (
+                      <div className="overflow-hidden rounded-2xl bg-white shadow-sm">
+                        {practiceFormats.length > 0 && (
+                          <div className="flex flex-wrap items-center gap-2 border-b border-[#e2e8ff] p-4">
+                            <span className="text-xs font-bold uppercase tracking-wide text-[#64748b]">Jump to:</span>
+                            {practiceFormats.map(({ type, label, icon: Icon, count }) => (
+                              <button key={type} type="button" onClick={() => tryoutRef.current?.scrollToType(type)} className="inline-flex items-center gap-1.5 rounded-full bg-[#eff4ff] px-3 py-1.5 text-xs font-bold text-[#493ee5] hover:bg-[#e6eeff]">
+                                <Icon size={13} /> {label} <span className="text-[#493ee5]/60">· {count}</span>
+                              </button>
+                            ))}
+                          </div>
+                        )}
+                        <AILearningTryoutSection
+                          ref={tryoutRef}
+                          assignedSubjectName={subjectSlug}
+                          assignedTopicName={topicSlug}
+                          onBack={() => goTab('read')}
+                          onQuestionsLoaded={setAssignedTryoutQuestions}
+                        />
+                      </div>
+                    )}
+
+                    {practiceTab === 'papers' && (
+                      <div className="rounded-2xl bg-white p-4 shadow-sm sm:p-5">
+                        <h2 className="text-base font-bold text-[#0d1c2e]">Practice papers</h2>
+                        <p className="mb-4 text-xs text-[#64748b]">Worksheets and papers your teacher set for this topic.</p>
+                        {practiceResources.length === 0 ? (
+                          <div className="rounded-2xl border-2 border-dashed border-[#e2e8ff] py-12 text-center">
+                            <ClipboardList size={30} className="mx-auto text-[#c7c4ff]" />
+                            <p className="mt-3 font-semibold text-[#0d1c2e]">No practice papers yet</p>
+                            <button type="button" onClick={() => setPracticeTab('tryout')} className="mt-3 text-sm font-bold text-[#493ee5] hover:underline">Try the tryout questions instead →</button>
+                          </div>
+                        ) : (
+                          <div className="grid gap-3 sm:grid-cols-2">
+                            {practiceResources.map((item, idx) => (
+                              <div key={item.id || idx} className="flex items-center gap-3 rounded-2xl border border-[#e2e8ff] p-4">
+                                <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-rose-50 text-sm font-extrabold text-rose-600">{String(idx + 1).padStart(2, '0')}</span>
+                                <p className="min-w-0 flex-1 truncate text-sm font-bold text-[#0d1c2e]" title={item.title}>{item.title}</p>
+                                <div className="flex shrink-0 gap-1.5">
+                                  {item.content && <button type="button" onClick={() => setActiveMaterial(item)} className="rounded-lg bg-[#eff4ff] px-2.5 py-1.5 text-xs font-bold text-[#493ee5]">Read</button>}
+                                  {item.url && <a href={getInlineDocumentUrl(item.url)} target="_blank" rel="noreferrer" className="rounded-lg bg-[#493ee5] px-2.5 py-1.5 text-xs font-bold text-white">Open</a>}
+                                  {item.url && <a href={item.url} download aria-label="Download" className="rounded-lg bg-[#eff4ff] px-2 py-1.5 text-[#493ee5]"><Download size={13} /></a>}
+                                </div>
+                              </div>
+                            ))}
+                          </div>
+                        )}
+                      </div>
+                    )}
+
+                    {practiceTab === 'reading' && (
+                      <div className="rounded-2xl bg-white p-4 shadow-sm sm:p-5">
+                        <h2 className="text-base font-bold text-[#0d1c2e]">Reading skills</h2>
+                        <p className="mb-4 text-xs text-[#64748b]">Pick a passage, read it aloud and get instant feedback.</p>
+                        <ReadingPracticePage topics={topicFilters} />
+                      </div>
+                    )}
+
+                    {practiceTab === 'writing' && (
+                      <div className="rounded-2xl bg-white p-4 shadow-sm sm:p-5">
+                        <h2 className="text-base font-bold text-[#0d1c2e]">Writing skills</h2>
+                        <p className="mb-4 text-xs text-[#64748b]">Choose a prompt, write your answer and get feedback.</p>
+                        <WritingPracticePage topics={topicFilters} />
+                      </div>
+                    )}
+                  </div>
+                )}
+                  </div>
                 </div>
-
-                {/* Panel footer */}
-                <div className="flex flex-wrap items-center justify-between gap-3 border-t border-[#d5e3fc] pt-4">
-                  <button
-                    type="button"
-                    onClick={() => setIsPracticeMode(false)}
-                    className="inline-flex items-center gap-2 text-sm font-semibold text-[#464555] hover:text-[#0d1c2e]"
-                  >
-                    <ArrowLeft size={14} /> Return to theory
-                  </button>
-                </div>
               </div>
-
-              {/* Interactive tryout — embedded directly, no separate page */}
-              <div className="overflow-hidden rounded-[2rem] bg-white shadow-sm">
-                <AILearningTryoutSection
-                  ref={tryoutRef}
-                  assignedSubjectName={subjectSlug}
-                  assignedTopicName={topicSlug}
-                  onBack={() => setIsPracticeMode(false)}
-                  onQuestionsLoaded={setAssignedTryoutQuestions}
-                />
-              </div>
-              </div>
-            )}
-          </div>
-
+            );
+          })()}
         </div>
 
         {activeMaterial && (

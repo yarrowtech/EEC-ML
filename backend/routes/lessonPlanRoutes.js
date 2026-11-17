@@ -36,6 +36,20 @@ const AI_SERVICE_URL = process.env.AI_SERVICE_URL || 'http://localhost:8000';
 const SUPPORTED_VECTOR_EXTENSIONS = new Set(['pdf', 'docx', 'pptx']);
 
 const normalizeString = (value) => String(value || '').trim();
+const DOMPurify = require('isomorphic-dompurify');
+// Teacher rich text → safe HTML (formatting + images only; no scripts/handlers).
+const RICH_TEXT_TAGS = ['p', 'br', 'b', 'strong', 'i', 'em', 'u', 's', 'strike', 'sub', 'sup', 'mark', 'span', 'div',
+  'h1', 'h2', 'h3', 'h4', 'h5', 'h6', 'ul', 'ol', 'li', 'blockquote', 'pre', 'code', 'hr',
+  'a', 'img', 'figure', 'figcaption', 'table', 'thead', 'tbody', 'tr', 'th', 'td'];
+const sanitizeRichText = (value) => {
+  const html = String(value || '').trim();
+  if (!html) return '';
+  return DOMPurify.sanitize(html, {
+    ALLOWED_TAGS: RICH_TEXT_TAGS,
+    ALLOWED_ATTR: ['href', 'target', 'rel', 'src', 'alt', 'title', 'width', 'height', 'style', 'colspan', 'rowspan'],
+    ALLOWED_URI_REGEXP: /^(?:https?:|data:image\/(?:png|jpe?g|gif|webp);base64,|\/)/i,
+  }).slice(0, 500000);
+};
 const normalizeLower = (value) => String(value || '').trim().toLowerCase();
 const escapeRegex = (value) => String(value || '').replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 // StudentUser.grade is usually a bare number ("5") while Class.name / the
@@ -975,6 +989,10 @@ const resolvePlanPayload = async ({ schoolId, campusId, payload, forcedTeacherId
     explanation,
     recap,
     didYouKnow,
+    introductionHtml,
+    explanationHtml,
+    recapHtml,
+    didYouKnowHtml,
     materialsNeeded,
     additionalNotes,
     plannerContent,
@@ -1041,6 +1059,10 @@ const resolvePlanPayload = async ({ schoolId, campusId, payload, forcedTeacherId
       explanation: normalizeString(explanation),
       recap: normalizeString(recap),
       didYouKnow: normalizeString(didYouKnow),
+      introductionHtml: sanitizeRichText(introductionHtml),
+      explanationHtml: sanitizeRichText(explanationHtml),
+      recapHtml: sanitizeRichText(recapHtml),
+      didYouKnowHtml: sanitizeRichText(didYouKnowHtml),
       materialsNeeded: Array.isArray(materialsNeeded)
         ? materialsNeeded.map((item) => normalizeString(item)).filter(Boolean)
         : [],
@@ -2307,10 +2329,25 @@ router.get('/student/smart-learning-map', authStudent, async (req, res) => {
         explanation: normalizeString(plan?.explanation) || '',
         recap: normalizeString(plan?.recap) || '',
         didYouKnow: normalizeString(plan?.didYouKnow) || '',
+        introductionHtml: plan?.introductionHtml || '',
+        explanationHtml: plan?.explanationHtml || '',
+        recapHtml: plan?.recapHtml || '',
+        didYouKnowHtml: plan?.didYouKnowHtml || '',
+        // When several published plans share a chapter, the most recently
+        // published/edited one must win (see mergeChapterMeta).
+        sourceUpdatedAt: new Date(plan?.updatedAt || plan?.publishedAt || plan?.createdAt || 0).getTime() || 0,
       };
     };
 
-    const mergeChapterMeta = (currentMeta = {}, nextMeta = {}) => ({
+    const mergeChapterMeta = (existingMeta = {}, incomingMeta = {}) => {
+      // nextMeta = the newer plan (its text wins), currentMeta = the older one
+      // (only fills gaps). Plans arrive newest-first, so without this the
+      // OLDEST plan's introduction overwrote a teacher's latest edit.
+      const incomingIsNewer = (incomingMeta.sourceUpdatedAt || 0) >= (existingMeta.sourceUpdatedAt || 0);
+      const nextMeta = incomingIsNewer ? incomingMeta : existingMeta;
+      const currentMeta = incomingIsNewer ? existingMeta : incomingMeta;
+      return {
+      sourceUpdatedAt: Math.max(existingMeta.sourceUpdatedAt || 0, incomingMeta.sourceUpdatedAt || 0),
       date: nextMeta.date || currentMeta.date || null,
       day: nextMeta.day || currentMeta.day || '',
       duration: nextMeta.duration || currentMeta.duration || '',
@@ -2322,7 +2359,13 @@ router.get('/student/smart-learning-map', authStudent, async (req, res) => {
       explanation: nextMeta.explanation || currentMeta.explanation || '',
       recap: nextMeta.recap || currentMeta.recap || '',
       didYouKnow: nextMeta.didYouKnow || currentMeta.didYouKnow || '',
-    });
+      // Formatted copy travels with the text it belongs to.
+      introductionHtml: nextMeta.introduction ? (nextMeta.introductionHtml || '') : (currentMeta.introductionHtml || ''),
+      explanationHtml: nextMeta.explanation ? (nextMeta.explanationHtml || '') : (currentMeta.explanationHtml || ''),
+      recapHtml: nextMeta.recap ? (nextMeta.recapHtml || '') : (currentMeta.recapHtml || ''),
+      didYouKnowHtml: nextMeta.didYouKnow ? (nextMeta.didYouKnowHtml || '') : (currentMeta.didYouKnowHtml || ''),
+      };
+    };
 
     const ensureChapterTopicSubTopic = (subjectEntry, plan, chapter, topic, subTopic) => {
       const chapterTitle = normalizeString(chapter?.title) || 'Chapter';

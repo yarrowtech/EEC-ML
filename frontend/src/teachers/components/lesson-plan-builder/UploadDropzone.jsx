@@ -1,5 +1,6 @@
 import React, { useRef, useState } from 'react';
 import { AnimatePresence, motion } from 'framer-motion';
+import ConfirmDialog from '../../../components/ConfirmDialog';
 import { CheckCircle2, FileImage, FileText, FileVideo, Presentation, Trash2, UploadCloud } from 'lucide-react';
 
 const formatSize = (bytes) => {
@@ -121,6 +122,7 @@ const FileRow = ({ file, onRemove }) => {
 const UploadDropzone = ({ title, files = [], accept, onAddFile, onRemoveFile }) => {
   const inputRef = useRef(null);
   const [isOver, setIsOver] = useState(false);
+  const [pendingRemove, setPendingRemove] = useState(null);
   const anyUploading = files.some((f) => f.isUploading);
 
   const addFiles = (list) => {
@@ -172,11 +174,20 @@ const UploadDropzone = ({ title, files = [], accept, onAddFile, onRemoveFile }) 
         <div className="mt-3 space-y-2">
           <AnimatePresence initial={false}>
             {files.map((file) => (
-              <FileRow key={file.id} file={file} onRemove={(id) => onRemoveFile(id, title)} />
+              <FileRow key={file.id} file={file} onRemove={() => setPendingRemove(file)} />
             ))}
           </AnimatePresence>
         </div>
       )}
+      <ConfirmDialog
+        open={Boolean(pendingRemove)}
+        onOpenChange={(open) => { if (!open) setPendingRemove(null); }}
+        onConfirm={() => { const f = pendingRemove; setPendingRemove(null); if (f) onRemoveFile(f.id, title); }}
+        icon={Trash2}
+        title="Delete file?"
+        description={`"${pendingRemove?.name || 'This file'}" will be removed from this chapter.`}
+        confirmLabel="Delete"
+      />
     </div>
   );
 };
