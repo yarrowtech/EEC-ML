@@ -203,6 +203,7 @@ const DashboardContent = () => {
   // Topic reader scrolls inside its own panel on desktop (so its left nav can stay put).
   const isTopicReaderPath = location.pathname.includes('/smart-learning-courses/subject/') && location.pathname.includes('/topic/') && !location.pathname.includes('/assessment/');
   const isSubjectChaptersPath = /\/smart-learning-courses\/subject\/[^/]+\/?$/.test(location.pathname);
+  const isSubjectsOverviewPath = /\/student\/smart-learning-courses\/?$/.test(location.pathname);
   const isAiTutorPath = /\/student\/(learning|smart-learning|smart-learning-tutor)\/?$/.test(location.pathname);
   const isFullscreenView = effectiveView === 'excuse-letter'
     || (isTopicReaderPath && typeof window !== 'undefined' && window.innerWidth >= 1024)
@@ -357,7 +358,7 @@ const DashboardContent = () => {
         />
         <div
           className={`flex-1 flex flex-col h-screen transition-all duration-300 ${sidebarOpen ? '' : ''
-            } ${isFullscreenView ? 'overflow-hidden' : 'overflow-y-auto custom-scrollbar'}`}
+            } ${isFullscreenView || isSubjectsOverviewPath ? 'overflow-hidden' : 'overflow-y-auto custom-scrollbar'}`}
         >
           {/* The sticky element must be the header's wrapper (a direct child of
               the scroll container) — sticky on <header> alone did nothing
@@ -378,7 +379,7 @@ const DashboardContent = () => {
               initial={{ opacity: 0, y: 6 }}
               animate={{ opacity: 1, y: 0 }}
               transition={{ duration: 0.38, ease: [0.4, 0, 0.2, 1] }}
-              className={`w-full flex flex-col ${isFullscreenView ? 'flex-1 min-h-0' : ''}`}
+              className={`w-full flex flex-col ${isFullscreenView || isSubjectsOverviewPath ? 'flex-1 min-h-0' : ''}`}
             >
               <Suspense
                 fallback={

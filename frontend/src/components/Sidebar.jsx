@@ -193,8 +193,8 @@ const Sidebar = ({ activeView, isOpen, setIsOpen }) => {
 
       {/* ── Sidebar shell — a soft white card on desktop, a flush drawer on mobile ── */}
       <div
-        className={`sidebar fixed inset-y-0 left-0 z-[60] flex h-dvh flex-col overflow-hidden border-r border-slate-100 bg-white shadow-2xl select-none transition-all duration-300 ease-in-out
-          lg:relative lg:inset-auto lg:z-50 lg:my-3 lg:ml-3 lg:h-[calc(100vh-1.5rem)] lg:rounded-2xl lg:border lg:shadow-[0_20px_40px_-12px_rgba(0,0,0,0.06),0_8px_24px_-6px_rgba(0,0,0,0.02)]
+        className={`sidebar fixed inset-y-0 left-0 z-[60] flex h-dvh shrink-0 flex-col overflow-hidden border-r border-slate-100 bg-white shadow-2xl select-none transition-all duration-300 ease-in-out
+          lg:relative lg:inset-auto lg:z-50 lg:my-3 lg:ml-3 lg:h-[calc(100dvh-1.5rem)] lg:rounded-2xl lg:border lg:shadow-[0_20px_40px_-12px_rgba(0,0,0,0.06),0_8px_24px_-6px_rgba(0,0,0,0.02)]
           ${isOpen ? 'w-64' : 'w-16'}
           ${isOpen ? 'translate-x-0' : '-translate-x-full lg:translate-x-0'}
         `}
@@ -283,7 +283,7 @@ const Sidebar = ({ activeView, isOpen, setIsOpen }) => {
 
         {/* ════════════════════════════════ NAV ════════════════════════════════ */}
         <nav
-          className={`flex-1 overflow-y-auto overflow-x-hidden ${collapsed ? 'px-2 py-3' : 'px-3 py-3'}`}
+          className={`min-h-0 flex-1 overflow-y-auto overflow-x-hidden ${collapsed ? 'px-2 py-3' : 'px-3 py-3'}`}
           style={{ scrollbarWidth: 'none' }}
         >
           <div className="space-y-0.5">
@@ -382,11 +382,12 @@ const Sidebar = ({ activeView, isOpen, setIsOpen }) => {
                         const ChildIcon = child.icon;
                         const childActive = activeView === child.id || Boolean(child.matches?.includes(activeView));
                         const childNotificationCount = getModuleCount(child.id);
+                        const isSubjectsItem = child.id === 'smart-learning-courses';
                         return (
                           <button
                             key={child.id}
                             onClick={(e) => { e.stopPropagation(); handleNavigation(child.id); }}
-                            className={`group flex w-full items-center gap-2.5 rounded-lg px-2.5 py-1.5 text-left text-[13px] transition-all duration-200 ${childActive
+                            className={`group flex w-full items-center gap-2.5 px-2.5 text-left text-[13px] transition-all duration-200 ${isSubjectsItem ? 'my-1 rounded-2xl border border-violet-200 py-2.5 shadow-sm' : 'rounded-lg py-1.5'} ${childActive
                                 ? 'bg-violet-50 font-semibold text-violet-700'
                                 : 'text-slate-500 hover:translate-x-0.5 hover:bg-violet-50/50 hover:text-violet-700'
                               }`}
@@ -420,7 +421,7 @@ const Sidebar = ({ activeView, isOpen, setIsOpen }) => {
         </nav>
 
         {/* ════════════════════════════════ FOOTER ════════════════════════════════ */}
-        <div className={`shrink-0 border-t border-slate-200 pb-[env(safe-area-inset-bottom)] ${collapsed ? 'px-2 py-3' : 'px-3 py-3'}`}>
+        <div className={`shrink-0 border-t border-slate-100 bg-white pt-3 pb-[calc(0.75rem+env(safe-area-inset-bottom))] ${collapsed ? 'px-2' : 'px-3'}`}>
 
           {/* Logout */}
           <div
@@ -433,7 +434,7 @@ const Sidebar = ({ activeView, isOpen, setIsOpen }) => {
               className={
                 collapsed
                   ? 'group flex h-10 w-full items-center justify-center rounded-lg text-slate-400 transition-all duration-200 hover:bg-red-50 hover:text-red-600'
-                  : 'group flex w-full items-center gap-3 rounded-full border border-transparent px-3 py-2.5 text-sm font-medium text-white transition-all duration-200 hover:translate-x-0.5 bg-red-500 hover:border-red-300 hover:bg-red-600'
+                  : 'group flex h-10 w-full items-center justify-center gap-2 rounded-xl bg-red-500 px-3 text-sm font-semibold text-white transition-colors duration-200 hover:bg-red-600 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-red-500'
               }
             >
               <LogOut

@@ -109,6 +109,12 @@ const STUDENT_MATERIALS_ENDPOINT = `${API_BASE}/api/student/materials`;
 // (bg-[#493ee5], rounded-[2rem]) directly in the JSX below rather than
 // composed from a shared object — only the font needs a real JS value.
 const QUEST_FONT = { fontFamily: "'Plus Jakarta Sans', ui-sans-serif, system-ui, sans-serif" };
+const LESSON_CONTENT_STYLE = { ...QUEST_FONT, userSelect: 'none', WebkitUserSelect: 'none' };
+const preventLessonCopy = (event) => {
+  if (event.target.closest?.('input, textarea, [contenteditable="true"]')) return;
+  event.preventDefault();
+};
+const LESSON_COPY_GUARDS = { onCopy: preventLessonCopy, onCut: preventLessonCopy };
 
 const normalizeKey = (value) => String(value || '').trim().toLowerCase();
 const normalizeLabel = (value) => String(value || '').trim();
@@ -1122,7 +1128,8 @@ const AILearningCoursesReference = () => {
           ref={(node) => { detailsViewRef.current = node; detailsScrollRef.current = node; }}
           onScroll={handleDetailsScroll}
           className={`w-full overflow-x-hidden overflow-y-auto overscroll-contain p-3 sm:p-5 ${isFullscreen ? 'h-screen' : 'min-h-screen lg:min-h-0'}`}
-          style={QUEST_FONT}
+          style={LESSON_CONTENT_STYLE}
+          {...LESSON_COPY_GUARDS}
         >
           {(() => {
             const prettyTopic = String(topicSlug || '').replace(/[_-]+/g, ' ').trim();
@@ -1677,7 +1684,7 @@ const AILearningCoursesReference = () => {
     const nextStep = nextStepIndex >= 0 ? chapterInstructionalFlow[nextStepIndex] : null;
 
     return (
-      <div ref={moduleRef} className={`min-h-screen w-full overflow-x-hidden bg-slate-50 ${isFullscreen ? 'h-screen overflow-y-auto' : ''}`} style={QUEST_FONT}>
+      <div ref={moduleRef} className={`min-h-screen w-full overflow-x-hidden bg-slate-50 ${isFullscreen ? 'h-screen overflow-y-auto' : ''}`} style={LESSON_CONTENT_STYLE} {...LESSON_COPY_GUARDS}>
         <div className="mx-auto w-full max-w-5xl px-4 py-5 sm:px-6 sm:py-8">
           <header className="mb-5 flex flex-wrap items-center justify-between gap-3">
             <div className="flex min-w-0 items-center gap-3">
@@ -1905,7 +1912,7 @@ const AILearningCoursesReference = () => {
   }
 
   return (
-    <div ref={moduleRef} className={`w-full overflow-y-auto overflow-x-hidden bg-[#f8f9ff] ${isFullscreen ? 'h-screen' : 'min-h-screen'}`} style={QUEST_FONT}>
+    <div ref={moduleRef} className={`w-full overflow-y-auto overflow-x-hidden bg-[#f8f9ff] ${isFullscreen ? 'h-screen' : 'min-h-screen'}`} style={LESSON_CONTENT_STYLE} {...LESSON_COPY_GUARDS}>
       <div className="mx-auto w-full max-w-[1180px] px-4 py-6 sm:px-6 sm:py-8">
         {/* Breadcrumb & Topic Eyebrow Bar */}
         <div className="mb-6 flex flex-wrap items-center justify-between gap-3">

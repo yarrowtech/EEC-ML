@@ -105,6 +105,7 @@ const LearningHub = () => {
 
   // Subject chapters and topic readers provide their own navigation.
   const isSubjectDetail = activeTab.key === 'subjects' && /\/subject\/[^/]+/.test(location.pathname);
+  const isSubjectsOverview = activeTab.key === 'subjects' && !isSubjectDetail;
 
   // Snapshot the last activity once per mount so the card offers where the
   // student left off previously, not the page they are currently on.
@@ -154,10 +155,7 @@ const LearningHub = () => {
 
   return (
     <div
-      className="min-h-full w-full bg-[#f5f7fb] text-[#0f172a]"
-      style={{
-        backgroundImage: 'radial-gradient(at 0% 0%, rgba(139, 92, 246, 0.05) 0px, transparent 50%), radial-gradient(at 100% 100%, rgba(16, 185, 129, 0.05) 0px, transparent 50%)',
-      }}
+      className={isSubjectsOverview ? 'flex min-h-0 w-full flex-1 flex-col overflow-hidden' : 'min-h-full w-full'}
     >
       {activeTab.key === 'tutor' && (
       <div className="flex w-full flex-col gap-3 p-4 sm:px-5 sm:py-4">
@@ -179,6 +177,7 @@ const LearningHub = () => {
       {activeTab.key === 'subjects' && (
         <Motion.div
           key="subjects"
+          className={isSubjectsOverview ? 'flex min-h-0 flex-1 flex-col overflow-hidden' : undefined}
           initial={{ opacity: 0, y: 6 }}
           animate={{ opacity: 1, y: 0 }}
           transition={{ duration: 0.3, ease: [0.4, 0, 0.2, 1] }}

@@ -655,8 +655,8 @@ const AILearningCoursesLanding = ({ continueCard = null }) => {
   }
 
   return (
-    <div className="min-h-full w-full bg-[#f8f9fd] px-4 py-4 text-slate-900 sm:px-5">
-      <div className="w-full">
+    <div className={`m-3 rounded-2xl border border-slate-200/80 bg-[#f8f9fd] px-4 py-4 text-slate-900 shadow-sm sm:m-4 sm:rounded-3xl sm:px-5 ${selectedSubject ? 'min-h-full' : 'flex min-h-0 flex-1 flex-col overflow-hidden'}`}>
+      <div className={selectedSubject ? 'w-full' : 'flex min-h-0 w-full flex-1 flex-col'}>
         {selectedSubject ? (
           <SubjectTopicsView
             subject={selectedSubject}
@@ -688,6 +688,7 @@ const AILearningCoursesLanding = ({ continueCard = null }) => {
               </div>
             )}
 
+            <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain pr-2 pb-2 custom-scrollbar" role="region" aria-label="Your subjects" tabIndex={0}>
             {loading ? (
               <div className="grid grid-cols-[repeat(auto-fit,minmax(min(100%,240px),1fr))] gap-3">
                 {[1, 2, 3].map((i) => (
@@ -767,6 +768,7 @@ const AILearningCoursesLanding = ({ continueCard = null }) => {
                 })}
               </div>
             )}
+            </div>
           </>
         )}
       </div>
