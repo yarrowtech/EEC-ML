@@ -6,9 +6,10 @@
 
 import React, { useEffect, useRef, useState } from 'react';
 import { motion as Motion } from 'framer-motion';
-import { GripVertical, Trash2 } from 'lucide-react';
+import { Trash2 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
+import { chapterCompletion } from './chapterProgress';
 
 const ChapterItem = ({ chapter, index = 0, total = 1, isActive, onClick, onDragStart, onDrop, onDelete, onRename }) => {
   const [isRenaming, setIsRenaming] = useState(false);
@@ -41,7 +42,9 @@ const ChapterItem = ({ chapter, index = 0, total = 1, isActive, onClick, onDragS
 
   const cancelRename = () => setIsRenaming(false);
 
-  const progress = total ? Math.round(((index + 1) / total) * 100) : 0;
+  // How much of this chapter is filled in (not its position in the list).
+  const progress = chapterCompletion(chapter);
+  void total;
   const status = chapter.status === 'published' && chapter.isDraft === false ? 'Published' : 'Draft';
   const statusClass = status === 'Published'
     ? 'bg-emerald-100 text-emerald-700 dark:bg-emerald-950/40 dark:text-emerald-300'
@@ -53,8 +56,6 @@ const ChapterItem = ({ chapter, index = 0, total = 1, isActive, onClick, onDragS
       // whileHover={{ y: -2, scale: 1.01 }}
       whileTap={{ scale: 0.99 }}
       transition={{ type: 'spring', stiffness: 360, damping: 26 }}
-      onDragOver={(event) => event.preventDefault()}
-      onDrop={() => onDrop(chapter.id)}
       onClick={() => { if (!isRenaming) onClick(); }}
       className={`group relative cursor-pointer overflow-hidden rounded-xl border p-2.5 transition-all focus-within:ring-2 focus-within:ring-indigo-300 ${isActive
           ? 'border-2 border-indigo-500/80 bg-indigo-50/50 shadow-[0_4px_14px_-2px_rgba(79,70,229,0.18)] ring-2 ring-indigo-500/10 dark:border-indigo-600 dark:bg-indigo-950/40'
@@ -69,20 +70,6 @@ const ChapterItem = ({ chapter, index = 0, total = 1, isActive, onClick, onDragS
       )}
 
       <div className={`flex items-center gap-1.5 ${isActive ? 'pl-1' : ''}`}>
-        <button
-          type="button"
-          draggable
-          onDragStart={(event) => {
-            event.stopPropagation();
-            onDragStart(chapter.id);
-          }}
-          className="cursor-grab rounded p-0.5 text-slate-300 transition hover:bg-slate-100 hover:text-slate-500 active:cursor-grabbing dark:hover:bg-slate-800"
-          aria-label={`Drag chapter ${chapter.title}`}
-          title="Drag to reorder"
-          onClick={stopActionEvent}
-        >
-          <GripVertical className="size-4" />
-        </button>
 
         {isRenaming ? (
           <div className="min-w-0 flex-1">
@@ -117,23 +104,28 @@ const ChapterItem = ({ chapter, index = 0, total = 1, isActive, onClick, onDragS
         ) : (
           <button type="button" className="min-w-0 flex-1 text-left focus-visible:outline-none">
             <div className="mb-2 flex items-center gap-2">
-              <span className={`flex size-5 shrink-0 items-center justify-center rounded-md text-[10px] font-bold ${isActive ? 'bg-indigo-600 text-white shadow-sm shadow-indigo-500/40' : 'bg-slate-100 text-slate-600 dark:bg-slate-800 dark:text-slate-400'}`}>
+              <span className={`flex size-5 shrink-0 items-center justify-center rounded-full text-[10px] font-bold ${isActive ? 'bg-indigo-600 text-white shadow-sm shadow-indigo-500/40' : 'bg-slate-100 text-slate-600 dark:bg-slate-800 dark:text-slate-400'}`}>
                 {index + 1}
               </span>
               <Badge className={`rounded px-1.5 py-0.5 text-[9px] font-semibold ${isActive ? 'bg-indigo-100 text-indigo-700 hover:bg-indigo-100' : 'bg-slate-100 text-slate-600 hover:bg-slate-100 dark:bg-slate-800 dark:text-slate-400'}`}>
                 {progress}%
               </Badge>
-              <Badge className={`rounded border px-1.5 py-0.5 text-[9px] font-semibold ${status === 'Published' ? 'border-emerald-200/60 bg-emerald-50 text-emerald-700' : statusClass}`}>
-                {status === 'Published' ? 'Publish' : 'Draft'}
+              <Badge className={`rounded-full border px-1.5 py-0.5 text-[9px] font-semibold ${status === 'Published' ? 'bg-emerald-500 text-white' : statusClass}`}>
+                {status === 'Published' ? 'Published' : 'Draft'}
               </Badge>
               {isActive && <span className="ml-auto size-1.5 rounded-full bg-indigo-500" />}
             </div>
 
             <p className={`truncate text-xs tracking-tight ${isActive ? 'font-bold text-indigo-950' : 'font-semibold text-slate-800 dark:text-slate-100'}`}>{chapter.title}</p>
+            {chapter.authorName && (
+              <p className={`mt-0.5 truncate text-[10px] font-medium ${chapter.readOnly ? 'text-violet-600' : 'text-slate-400'}`} title={chapter.readOnly ? 'View only — added by another teacher' : 'Added by you'}>
+                {chapter.readOnly ? `By ${chapter.authorName}` : 'By you'}
+              </p>
+            )}
           </button>
         )}
 
-        {!isRenaming && (
+        {!isRenaming && !chapter.readOnly && (
           <div className="flex shrink-0 items-center gap-0.5 pl-0.5">
             <Button
               variant="ghost"
@@ -141,11 +133,11 @@ const ChapterItem = ({ chapter, index = 0, total = 1, isActive, onClick, onDragS
               onPointerDown={stopActionPointer}
               onMouseDown={stopActionPointer}
               onClick={(event) => { stopActionEvent(event); onDelete?.(chapter.id); }}
-              className="rounded p-1 text-slate-300 hover:bg-rose-50 hover:text-rose-500"
+              className="rounded p-1 hover:bg-red-50 dark:hover:bg-red-950/40"
               title="Delete chapter"
               aria-label={`Delete chapter ${chapter.title}`}
             >
-              <Trash2 className="size-3.5" />
+              <Trash2 className="size-3.5 text-red-500" />
             </Button>
           </div>
         )}

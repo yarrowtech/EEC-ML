@@ -12,7 +12,9 @@ import { BookOpenCheck, Trash2 } from 'lucide-react';
 import ConfirmDialog from '../components/ConfirmDialog';
 import HeaderActions from './components/lesson-plan-builder/HeaderActions';
 import Sidebar from './components/lesson-plan-builder/Sidebar';
-import DrawerModal, { DEFAULT_INSTRUCTIONAL_FLOW, getDidYouKnowFacts } from './components/lesson-plan-builder/DrawerModal';
+import DrawerModal, { DEFAULT_INSTRUCTIONAL_FLOW } from './components/lesson-plan-builder/DrawerModal';
+import { getDidYouKnowFacts } from '../components/LessonFacts';
+import { knownUnits } from './components/lesson-plan-builder/chapterGroups';
 import ChapterPreview from './components/lesson-plan-builder/ChapterPreview';
 import { assessmentTypes, durationOptions } from './components/lesson-plan-builder/mockData';
 
@@ -77,6 +79,8 @@ const enrichChapter = (chapter) => ({
 });
 
 const toIdString = (value) => String(value || '').trim();
+// Chapters published by the other teachers of this class are shown read-only.
+const ownChaptersOnly = (list) => (Array.isArray(list) ? list.filter((chapter) => !chapter?.readOnly) : []);
 const normalizeChapterTitle = (value) => String(value || '').trim().toLowerCase().replace(/\s+/g, ' ');
 const getPlanTimestamp = (plan) => new Date(plan?.updatedAt || plan?.publishedAt || plan?.createdAt || 0).getTime() || 0;
 const getChapterTimestamp = (chapter) => {
@@ -138,6 +142,17 @@ const normalizeLoadedChapter = (chapter, plan, index) => {
   const planId = toIdString(plan?._id);
   const createdAt = source.createdAt || (planIsPublished ? plan?.createdAt : '') || '';
 
+  // A published plan's chapter (plannerContent) is only an outline; the lesson
+  // body lives on the plan itself and the files in its first sub-topic. Fall
+  // back to those so EVERY teacher rebuilds the same full chapter — otherwise a
+  // colleague (who has no draft copy) sees an emptier chapter and a lower %.
+  const firstSubTopic = source.topics?.[0]?.subTopics?.[0] || {};
+  const filesFromRefs = (refs, prefix) => (Array.isArray(refs) ? refs : []).map((raw, i) => {
+    const { title, url } = parseResourceRef(raw);
+    return title || url ? { id: `${prefix}-${planId || index}-${i}`, name: title || 'File', url, type: getFileType(title || url), isUploading: false } : null;
+  }).filter(Boolean);
+  const planText = (html, text) => String(html || text || '');
+
   return enrichChapter({
     ...source,
     // Each published plan holds exactly one chapter, and the planner always stamps its
@@ -145,8 +160,12 @@ const normalizeLoadedChapter = (chapter, plan, index) => {
     // that's actually unique per chapter. Falling back to source.id would collide across
     // every published chapter and make the sidebar unable to tell them apart.
     id: (planIsPublished ? planId : toIdString(source.id)) || publishedPlanId || `chapter-${index}`,
-    introductionText: source.introductionText || plan?.introductionText || '',
-    learningObjectives: source.learningObjectives || plan?.learningObjectives || [],
+    introductionText: source.introductionText || plan?.introductionText || planText(plan?.introductionHtml, plan?.introduction),
+    explanation: source.explanation || planText(plan?.explanationHtml, plan?.explanation),
+    recap: source.recap || planText(plan?.recapHtml, plan?.recap),
+    didYouKnow: source.didYouKnow || String(plan?.didYouKnow || ''),
+    duration: source.duration || plan?.duration || '',
+    learningObjectives: (Array.isArray(source.learningObjectives) && source.learningObjectives.length ? source.learningObjectives : null) || plan?.learningObjectives || [],
     publishedPlanId: publishedPlanId || null,
     createdAt,
     title: chapterTitle,
@@ -156,11 +175,15 @@ const normalizeLoadedChapter = (chapter, plan, index) => {
     contentUploads: hasAnyUploadedFile(source.contentUploads)
       ? { ...defaultContentUploads, ...source.contentUploads }
       : { ...defaultContentUploads, ...rebuildContentUploadsFromMaterialsNeeded(plan?.materialsNeeded) },
-    worksheetFiles: Array.isArray(source.worksheetFiles) ? source.worksheetFiles : [],
+    worksheetFiles: Array.isArray(source.worksheetFiles) && source.worksheetFiles.length
+      ? source.worksheetFiles
+      : filesFromRefs(firstSubTopic.worksheets, 'worksheet'),
     worksheetLink: source.worksheetLink || '',
     assessments: Array.isArray(source.assessments) ? source.assessments : [],
     history: Array.isArray(source.history) ? source.history : [],
-    tryouts: Array.isArray(source.tryouts) ? source.tryouts : [],
+    tryouts: Array.isArray(source.tryouts) && source.tryouts.length
+      ? source.tryouts
+      : (Array.isArray(firstSubTopic.tryoutSections) ? firstSubTopic.tryoutSections : []),
   });
 };
 
@@ -218,13 +241,17 @@ const writeStoredSelection = ({ classId = '', sectionId = '', subjectId = '' }) 
   localStorage.setItem(TEACHING_SELECTION_STORAGE_KEY, JSON.stringify(next));
 };
 
-const AIPoweredTeaching = () => {
+// `initialSelection` ({ classId, sectionId, subjectName }) opens the builder on
+// the class the teacher picked in Classes & Work instead of the last-used one.
+const AIPoweredTeaching = ({ initialSelection = null } = {}) => {
   const [chapters, setChapters] = useState([]);
   const [openChapterIds, setOpenChapterIds] = useState([]);
   // Clicking a chapter shows a read-only preview; the step editor opens full-page.
   const [editorOpen, setEditorOpen] = useState(false);
   // Chapter waiting for the delete confirmation dialog.
   const [pendingDeleteId, setPendingDeleteId] = useState(null);
+  // "New chapter" dialog: { unitNumber, unitTitle } while open
+  const [newUnit, setNewUnit] = useState(null);
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
   const [draggedChapterId, setDraggedChapterId] = useState(null);
@@ -410,13 +437,37 @@ const AIPoweredTeaching = () => {
         };
       });
 
-      const nextChapters = (latestDraft
+      const nextChapters = [...(latestDraft
         ? [
             ...restoredDraftChapters,
             ...publishedChapters.filter((chapter) => !matchedPublishedIds.has(chapter.publishedPlanId)),
           ]
         : publishedChapters
-      ).sort((a, b) => getChapterTimestamp(b) - getChapterTimestamp(a));
+      )].sort((a, b) => getChapterTimestamp(b) - getChapterTimestamp(a))
+        .map((chapter) => ({ ...chapter, authorName: 'You' }));
+
+      // Published chapters by the other teachers of this class/section/subject.
+      let sharedChapters = [];
+      try {
+        const q = new URLSearchParams({ classId, sectionId, subjectId });
+        const sharedRes = await fetch(`${API_BASE}/api/lesson-plans/teacher/class-shared?${q}`, { headers: authHeaders() });
+        const sharedPlans = sharedRes.ok ? await sharedRes.json().catch(() => []) : [];
+        sharedChapters = (Array.isArray(sharedPlans) ? sharedPlans : []).flatMap((plan, pi) => {
+          const plannerChapters = Array.isArray(plan?.plannerContent?.chapters) ? plan.plannerContent.chapters : [];
+          const raw = Array.isArray(plan?.rawChapters) ? plan.rawChapters : [];
+          const source = plannerChapters.length > 0 ? plannerChapters : raw;
+          return source.map((ch, ci) => ({
+            ...normalizeLoadedChapter(ch, plan, 5000 + pi * 100 + ci),
+            id: `shared-${toIdString(plan?._id)}-${ci}`,
+            readOnly: true,
+            authorName: plan?.authorName || 'Another teacher',
+            authorId: toIdString(plan?.teacherId),
+          }));
+        });
+      } catch {
+        // Shared chapters are optional — my own chapters still load.
+      }
+      nextChapters.push(...sharedChapters);
 
       if (requestSeq !== chapterLoadSeqRef.current) return;
 
@@ -465,7 +516,7 @@ const AIPoweredTeaching = () => {
           headers: authHeaders(),
           body: JSON.stringify({
             title: 'Lesson Plan Draft',
-            rawChapters: chapters,
+            rawChapters: ownChaptersOnly(chapters),
             classId: selectedClass,
             sectionId: selectedSection,
             subjectId: selectedSubject,
@@ -489,7 +540,7 @@ const AIPoweredTeaching = () => {
         headers: authHeaders(),
         body: JSON.stringify({
           title: 'Lesson Plan Draft',
-          rawChapters: chapters,
+          rawChapters: ownChaptersOnly(chapters),
           classId: selectedClass,
           sectionId: selectedSection,
           subjectId: selectedSubject,
@@ -552,7 +603,7 @@ const AIPoweredTeaching = () => {
       keepalive: true,
       body: JSON.stringify({
         title: 'Lesson Plan Draft',
-        rawChapters: snapshot.chapters,
+        rawChapters: ownChaptersOnly(snapshot.chapters),
         classId: snapshot.selectedClass,
         sectionId: snapshot.selectedSection,
         subjectId: snapshot.selectedSubject,
@@ -566,7 +617,14 @@ const AIPoweredTeaching = () => {
 
     const initializePage = async () => {
       try {
-        const storedSelection = readStoredSelection();
+        const fromClass = initialSelection && toIdString(initialSelection.classId)
+          ? {
+            classId: toIdString(initialSelection.classId),
+            sectionId: toIdString(initialSelection.sectionId),
+            subjectId: '',
+          }
+          : null;
+        const storedSelection = fromClass || readStoredSelection();
 
         const initialOptions = await loadOptions().catch((err) => {
           toast.error(err?.message || 'Failed to load teaching options');
@@ -595,6 +653,18 @@ const AIPoweredTeaching = () => {
         if (storedSelection.classId && storedSelection.sectionId) {
           setSelectedSection(storedSelection.sectionId);
           const sectionOptionsData = await loadOptions({ classId: storedSelection.classId, sectionId: storedSelection.sectionId });
+          // Opened from a class: pick that class's subject (by name), or the
+          // only subject, or the last-used one if it belongs to this class.
+          if (fromClass) {
+            const subjects = sectionOptionsData.subjects || [];
+            const wanted = String(initialSelection.subjectName || '').trim().toLowerCase();
+            const remembered = readStoredSelection();
+            const match = (wanted && subjects.find((s) => String(s?.subjectName || '').trim().toLowerCase() === wanted))
+              || (subjects.length === 1 ? subjects[0] : null)
+              || subjects.find((s) => toIdString(s?.subjectId) === remembered.subjectId);
+            storedSelection.subjectId = toIdString(match?.subjectId);
+            writeStoredSelection(storedSelection);
+          }
           const storedSubjectIsAvailable = (sectionOptionsData.subjects || [])
             .some((item) => toIdString(item?.subjectId) === storedSelection.subjectId);
           if (storedSelection.subjectId && !storedSubjectIsAvailable) {
@@ -639,11 +709,14 @@ const AIPoweredTeaching = () => {
   };
 
   const updateChapter = (id, updater) => {
-    setChapters((prev) => prev.map((chapter) => (chapter.id === id ? enrichChapter(updater(chapter)) : chapter)));
+    if (chapters.find((chapter) => chapter.id === id)?.readOnly) return;
+    setChapters((prev) => prev.map((chapter) => (chapter.id === id && !chapter.readOnly ? enrichChapter(updater(chapter)) : chapter)));
     touchAutosave();
   };
 
-  const handleAddChapter = () => {
+  // Lessons live inside chapters: `unit` = { unitNumber, unitTitle } of the
+  // chapter the new lesson belongs to (none → "Not in a chapter yet").
+  const handleAddChapter = (unit = null) => {
     const missing = [];
     if (!selectedClass) missing.push('class');
     if (!selectedSection) missing.push('section');
@@ -658,7 +731,17 @@ const AIPoweredTeaching = () => {
     }
 
     const nextId = `ch-${Date.now()}`;
-    const chapter = enrichChapter({ id: nextId, createdAt: new Date().toISOString(), title: 'Untitled Chapter', duration: durationOptions[0], description: '', files: [], assessments: [] });
+    const chapter = enrichChapter({
+      id: nextId,
+      createdAt: new Date().toISOString(),
+      title: 'Untitled Lesson',
+      duration: durationOptions[0],
+      description: '',
+      files: [],
+      assessments: [],
+      unitNumber: unit?.unitNumber || '',
+      unitTitle: unit?.unitTitle || '',
+    });
     setChapters((prev) => [chapter, ...prev]);
     setOpenChapterIds([nextId]);
     setActiveStep(0);
@@ -668,7 +751,12 @@ const AIPoweredTeaching = () => {
 
   // Ask first (custom dialog); the actual delete runs from its confirm button.
   const handleDeleteChapter = (id) => {
-    if (chapters.some((item) => item.id === id)) setPendingDeleteId(id);
+    const target = chapters.find((item) => item.id === id);
+    if (target?.readOnly) {
+      toast.error(`Only ${target.authorName || 'its author'} can delete this chapter.`);
+      return;
+    }
+    if (target) setPendingDeleteId(id);
   };
 
   const deleteChapterNow = async (id) => {
@@ -718,6 +806,7 @@ const AIPoweredTeaching = () => {
 
   const handleChapterDrop = (targetId) => {
     if (!draggedChapterId || draggedChapterId === targetId) return;
+    if (chapters.some((chapter) => (chapter.id === targetId || chapter.id === draggedChapterId) && chapter.readOnly)) return;
     setChapters((prev) => {
       const next = [...prev];
       const from = next.findIndex((item) => item.id === draggedChapterId);
@@ -1007,6 +1096,10 @@ const AIPoweredTeaching = () => {
 
   const handlePublishChapter = async (chapterId) => {
     const chapter = chapters.find(ch => ch.id === chapterId);
+    if (chapter?.readOnly) {
+      toast.error(`Only ${chapter.authorName || 'its author'} can publish this chapter.`);
+      return;
+    }
     if (!chapter) {
       toast.error('Chapter not found');
       return;
@@ -1018,7 +1111,7 @@ const AIPoweredTeaching = () => {
       return;
     }
 
-    if (!chapter.title || chapter.title === 'Untitled Chapter') {
+    if (!chapter.title || /^untitled (chapter|lesson)$/i.test(String(chapter.title).trim())) {
       toast.error('Please add a title to this chapter');
       return;
     }
@@ -1045,6 +1138,9 @@ const AIPoweredTeaching = () => {
       chapters: [{
         id: 'chapter-1',
         title: chapterTitle,
+        // textbook chapter → students see lessons grouped the same way
+        unitNumber: Number(chapter.unitNumber) > 0 ? Number(chapter.unitNumber) : null,
+        unitTitle: String(chapter.unitTitle || '').trim(),
         topics: [{
           id: 'topic-1',
           title: chapterTitle,
@@ -1220,6 +1316,9 @@ const AIPoweredTeaching = () => {
         transition={{ duration: 0.25, ease: 'easeOut' }}
         className="flex min-h-full w-full min-w-0 flex-col bg-white shadow-none lg:h-full lg:min-h-0 lg:overflow-hidden"
       >
+        {/* Inside a class (Classes & Work) the class/section/subject are already
+            chosen, so the selector header is not shown there. */}
+        {(!initialSelection || (subjectOptions.length > 1 && !selectedSubject)) && (
         <HeaderActions
           autosaveStatus={publishing ? 'Publishing...' : autosaveStatus}
           selectionDisabled={selectionChanging || publishing}
@@ -1267,6 +1366,7 @@ const AIPoweredTeaching = () => {
             localStorage.removeItem('currentLessonPlanDraft');
           })}
         />
+        )}
 
         <div className="flex min-w-0 flex-1 flex-col gap-2.5 p-2 sm:p-3 lg:h-full lg:min-h-0 lg:flex-row">
           <Sidebar
@@ -1279,7 +1379,19 @@ const AIPoweredTeaching = () => {
               setActiveStep(0);
               setEditorOpen(false);
             }}
-            onAdd={handleAddChapter}
+            onAdd={() => {
+              const used = knownUnits(chapters).map((u) => Number(u.unitNumber) || 0);
+              setNewUnit({ unitNumber: (used.length ? Math.max(...used) : 0) + 1, unitTitle: '' });
+            }}
+            onAddLesson={(unit) => handleAddChapter(unit)}
+            onRefresh={async () => {
+              if (!selectedClass || !selectedSection || !selectedSubject) return;
+              // save any unsaved edit first so the reload can't drop it
+              if (autosaveTimerRef.current) clearTimeout(autosaveTimerRef.current);
+              if (autosaveDirtyRef.current) await saveDraft();
+              await loadChaptersForSelection(selectedClass, selectedSection, selectedSubject);
+              toast.success('Lessons refreshed');
+            }}
             onDelete={handleDeleteChapter}
             onRename={(id, title) => updateChapter(id, (chapter) => ({ ...chapter, title }))}
             addDisabled={!selectedClass || !selectedSection || !selectedSubject}
@@ -1294,10 +1406,11 @@ const AIPoweredTeaching = () => {
               <>
                 <ChapterPreview
                   chapter={activeChapter}
-                  onEdit={() => setEditorOpen(true)}
+                  subjectName={selectedSubjectName}
+                  onEdit={activeChapter.readOnly ? undefined : () => setEditorOpen(true)}
                   onClose={() => handleCloseChapter(activeChapter.id)}
                 />
-                {editorOpen && createPortal(
+                {editorOpen && !activeChapter.readOnly && createPortal(
                   // Full-page editor, like the student admission form (portalled so
                   // the animated page wrapper cannot trap the fixed overlay).
                   <div className="fixed inset-0 z-[70] overflow-y-auto overscroll-contain bg-white lg:overflow-hidden dark:bg-slate-950">
@@ -1315,6 +1428,9 @@ const AIPoweredTeaching = () => {
                         classDisplayName={selectedClassName}
                         onClose={() => setEditorOpen(false)}
                         onPreview={() => setEditorOpen(false)}
+                        // dates already taken by the other chapters of this class (mine + colleagues')
+                        chapterOptions={knownUnits(chapters)}
+                        usedLessonDates={chapters.filter((c) => c.id !== activeChapter.id).map((c) => c.lessonDate).filter(Boolean)}
                         autosaveStatus={publishing ? 'Publishing...' : autosaveStatus}
                         onUpdate={(nextChapter) => updateChapter(nextChapter.id, () => nextChapter)}
                         onAddContentFile={(file, bucket) => addContentFile(activeChapter.id, file, bucket)}
@@ -1383,6 +1499,55 @@ const AIPoweredTeaching = () => {
           </div>
         </div>
       </Motion.div>
+
+      {newUnit && (
+        <div className="fixed inset-0 z-[80] flex items-center justify-center bg-slate-950/50 p-4" onClick={() => setNewUnit(null)}>
+          <form
+            onClick={(e) => e.stopPropagation()}
+            onSubmit={(e) => {
+              e.preventDefault();
+              const unitTitle = String(newUnit.unitTitle || '').trim();
+              if (!unitTitle) { toast.error('Give the chapter a name'); return; }
+              const unit = { unitNumber: Number(newUnit.unitNumber) > 0 ? Math.floor(Number(newUnit.unitNumber)) : '', unitTitle };
+              setNewUnit(null);
+              handleAddChapter(unit); // creates the chapter's first lesson
+            }}
+            className="w-full max-w-sm overflow-hidden rounded-2xl bg-white shadow-2xl"
+          >
+            <div className="h-1 bg-gradient-to-r from-indigo-500 to-violet-500" />
+            <div className="p-5">
+              <h3 className="text-base font-bold text-slate-900">New chapter</h3>
+              <p className="mt-0.5 text-xs text-slate-500">Create the chapter, then add its lessons one by one.</p>
+              <div className="mt-4 flex gap-2">
+                <label className="w-24 shrink-0">
+                  <span className="mb-1 block text-xs font-semibold text-slate-600">No.</span>
+                  <input
+                    type="number"
+                    min={1}
+                    value={newUnit.unitNumber}
+                    onChange={(e) => setNewUnit((u) => ({ ...u, unitNumber: e.target.value }))}
+                    className="h-10 w-full rounded-full border border-slate-200 px-3 text-sm text-slate-900 outline-none focus:border-indigo-500 focus:ring-2 focus:ring-indigo-500/20"
+                  />
+                </label>
+                <label className="min-w-0 flex-1">
+                  <span className="mb-1 block text-xs font-semibold text-slate-600">Chapter name</span>
+                  <input
+                    autoFocus
+                    value={newUnit.unitTitle}
+                    onChange={(e) => setNewUnit((u) => ({ ...u, unitTitle: e.target.value }))}
+                    placeholder="e.g. Computer Basics"
+                    className="h-10 w-full rounded-full border border-slate-200 px-3 text-sm text-slate-900 outline-none placeholder:text-slate-400 focus:border-indigo-500 focus:ring-2 focus:ring-indigo-500/20"
+                  />
+                </label>
+              </div>
+              <div className="mt-5 flex gap-2">
+                <button type="button" onClick={() => setNewUnit(null)} className="flex-1 rounded-xl border border-slate-200 py-2.5 text-sm font-semibold text-slate-600 hover:bg-slate-50">Cancel</button>
+                <button type="submit" className="flex-1 rounded-xl bg-indigo-600 py-2.5 text-sm font-bold text-white hover:bg-indigo-700">Create & add lesson</button>
+              </div>
+            </div>
+          </form>
+        </div>
+      )}
 
       {(() => {
         const pending = chapters.find((item) => item.id === pendingDeleteId);

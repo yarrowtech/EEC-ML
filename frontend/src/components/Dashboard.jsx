@@ -206,6 +206,8 @@ const DashboardContent = () => {
   const isSubjectsOverviewPath = /\/student\/smart-learning-courses\/?$/.test(location.pathname);
   const isContainedLearningPage = isSubjectsOverviewPath || /\/student\/study-materials\/?$/.test(location.pathname);
   const isAiTutorPath = /\/student\/(learning|smart-learning|smart-learning-tutor)\/?$/.test(location.pathname);
+  // Community Wall has its own page header — hide the portal header there.
+  const isCommunityWallPath = /\/student\/assignments-academic-alcove\/?$/.test(location.pathname);
   const isFullscreenView = effectiveView === 'excuse-letter'
     || (isTopicReaderPath && typeof window !== 'undefined' && window.innerWidth >= 1024)
     || effectiveView === 'assignments-journal'
@@ -365,7 +367,7 @@ const DashboardContent = () => {
               the scroll container) — sticky on <header> alone did nothing
               because its parent was exactly the header's height. */}
           {/* The topic reader is a focused full-height view — no portal header. */}
-          {!isChatBoxOpen && !isTopicReaderPath && !isSubjectChaptersPath && !isAiTutorPath && (
+          {!isChatBoxOpen && !isTopicReaderPath && !isSubjectChaptersPath && !isAiTutorPath && !isCommunityWallPath && (
             <div className={`sticky top-0 z-40 ${isChatView ? 'hidden lg:block' : ''}`}>
               <Header
                 sidebarOpen={sidebarOpen}

@@ -815,6 +815,9 @@ const sanitizePlannerContent = (value) => {
       return {
         id: normalizeString(chapter?.id) || `chapter-${chapterIndex + 1}`,
         title: normalizeString(chapter?.title),
+        // Textbook chapter this lesson belongs to (e.g. Chapter 1 — "Computer Basics").
+        unitNumber: Number.isFinite(Number(chapter?.unitNumber)) && Number(chapter?.unitNumber) > 0 ? Math.floor(Number(chapter.unitNumber)) : null,
+        unitTitle: normalizeString(chapter?.unitTitle).slice(0, 120),
         topics: topics.map((topic, topicIndex) => {
           const subTopics = Array.isArray(topic?.subTopics) ? topic.subTopics : [];
           return {
@@ -1323,6 +1326,55 @@ router.get('/teacher/my', authTeacher, async (req, res) => {
     res.json(plans);
   } catch (err) {
     res.status(500).json({ error: err.message });
+  }
+});
+
+// Published chapters by the OTHER teachers of the same class/section (and
+// subject) — read-only for the requesting teacher, tagged with the author.
+// Editing/deleting stays restricted to the owner by every write route
+// (they all filter by teacherId).
+router.get('/teacher/class-shared', authTeacher, async (req, res) => {
+  try {
+    const schoolId = resolveSchoolId(req);
+    const campusId = resolveCampusId(req);
+    const teacherId = req.user?.id || req.teacher?.id || null;
+    const classId = normalizeString(req.query?.classId);
+    const sectionId = normalizeString(req.query?.sectionId);
+    const subjectId = normalizeString(req.query?.subjectId);
+    if (!schoolId || !teacherId) return res.status(400).json({ error: 'schoolId and teacherId are required' });
+    if (!mongoose.Types.ObjectId.isValid(classId) || !mongoose.Types.ObjectId.isValid(sectionId)) {
+      return res.status(400).json({ error: 'classId and sectionId are required' });
+    }
+
+    // Only teachers who teach this class/section may see its shared plans.
+    const combos = await getAllocationCombos({ schoolId, campusId, classId, sectionId });
+    if (!combos.some((c) => String(c.teacherId) === String(teacherId))) {
+      return res.status(403).json({ error: 'You are not assigned to this class' });
+    }
+
+    const filter = {
+      schoolId,
+      classId,
+      sectionId,
+      teacherId: { $ne: teacherId },
+      status: 'published',
+      isDraft: false,
+    };
+    if (mongoose.Types.ObjectId.isValid(subjectId)) filter.subjectId = subjectId;
+    if (campusId) filter.campusId = campusId;
+
+    const plans = await LessonPlan.find(filter).sort({ date: -1, createdAt: -1 }).lean();
+    const nameById = new Map(combos.map((c) => [String(c.teacherId), c.teacherName]));
+    const missing = [...new Set(plans.map((p) => String(p.teacherId)).filter((id) => !nameById.has(id)))];
+    if (missing.length) {
+      const TeacherUser = require('../models/TeacherUser');
+      const teachers = await TeacherUser.find({ _id: { $in: missing } }).select('name').lean();
+      teachers.forEach((t) => nameById.set(String(t._id), t.name));
+    }
+    res.set('Cache-Control', 'no-store');
+    return res.json(plans.map((p) => ({ ...p, authorName: p.teacherName || nameById.get(String(p.teacherId)) || 'Another teacher' })));
+  } catch (err) {
+    return res.status(500).json({ error: err.message });
   }
 });
 
@@ -2379,6 +2431,8 @@ router.get('/student/smart-learning-map', authStudent, async (req, res) => {
         explanationHtml: plan?.explanationHtml || '',
         recapHtml: plan?.recapHtml || '',
         didYouKnowHtml: plan?.didYouKnowHtml || '',
+        unitNumber: Number(chapter?.unitNumber) > 0 ? Math.floor(Number(chapter.unitNumber)) : null,
+        unitTitle: normalizeString(chapter?.unitTitle),
         // When several published plans share a chapter, the most recently
         // published/edited one must win (see mergeChapterMeta).
         sourceUpdatedAt: new Date(plan?.updatedAt || plan?.publishedAt || plan?.createdAt || 0).getTime() || 0,
@@ -2394,6 +2448,8 @@ router.get('/student/smart-learning-map', authStudent, async (req, res) => {
       const currentMeta = incomingIsNewer ? existingMeta : incomingMeta;
       return {
       sourceUpdatedAt: Math.max(existingMeta.sourceUpdatedAt || 0, incomingMeta.sourceUpdatedAt || 0),
+      unitNumber: nextMeta.unitNumber || currentMeta.unitNumber || null,
+      unitTitle: nextMeta.unitTitle || currentMeta.unitTitle || '',
       date: nextMeta.date || currentMeta.date || null,
       day: nextMeta.day || currentMeta.day || '',
       duration: nextMeta.duration || currentMeta.duration || '',

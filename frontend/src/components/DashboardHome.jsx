@@ -139,11 +139,19 @@ const HeroCard = () => {
       initial={{ opacity: 0, y: 16 }}
       animate={{ opacity: 1, y: 0 }}
       transition={{ duration: 0.4, ease: [0.16, 1, 0.3, 1] }}
-      className={`relative flex h-full w-full flex-col overflow-hidden rounded-2xl ${hasCover ? 'bg-black' : 'bg-white'} shadow-[0px_4px_20px_rgba(0,0,0,0.03),0px_1px_3px_rgba(0,0,0,0.05)]`}
+      className={`relative flex h-full w-full flex-col overflow-hidden rounded-2xl ${hasCover ? 'bg-slate-800' : 'bg-white'} shadow-[0px_4px_20px_rgba(0,0,0,0.03),0px_1px_3px_rgba(0,0,0,0.05)]`}
     >
       {hasCover && (
+        // Left side: the same photo, blurred (frosted) instead of solid black,
+        // so the student details sit on a soft backdrop.
+        <div aria-hidden="true" className="pointer-events-none absolute inset-0 hidden overflow-hidden sm:block">
+          <div className="absolute inset-0 scale-110 bg-cover bg-center blur-2xl" style={{ backgroundImage: `url(${profile.schoolCoverImage})` }} />
+          <div className="absolute inset-0 bg-slate-900/35" />
+        </div>
+      )}
+      {hasCover && (
         // Photo fully clear on the right, fading on its left edge into the
-        // black card behind the student details.
+        // blurred backdrop behind the student details.
         <div
           aria-hidden="true"
           className="pointer-events-none absolute inset-y-0 right-0 hidden w-[75%] overflow-hidden sm:block"
@@ -153,7 +161,7 @@ const HeroCard = () => {
           }}
         >
           <div className="absolute inset-0 bg-cover bg-center" style={{ backgroundImage: `url(${profile.schoolCoverImage})` }} />
-          <div className="absolute inset-0 bg-linear-to-r from-black from-0% via-black/40 via-35% to-transparent to-70%" />
+          <div className="absolute inset-0 bg-linear-to-r from-slate-900/30 from-0% via-transparent via-35% to-transparent" />
         </div>
       )}
       {hasCover && (
@@ -172,7 +180,7 @@ const HeroCard = () => {
         {/* Left: profile info — centred on mobile, left-aligned from sm up */}
         <div
           className={`flex flex-col items-center gap-3 p-6 text-center sm:items-start sm:text-left ${
-            hasCover ? 'max-sm:m-3 max-sm:rounded-2xl max-sm:bg-black/60 max-sm:p-5 max-sm:backdrop-blur-[2px]' : ''
+            hasCover ? 'max-sm:m-3 max-sm:rounded-2xl max-sm:bg-slate-900/30 max-sm:p-5 max-sm:backdrop-blur-md max-sm:ring-1 max-sm:ring-white/20' : ''
           }`}
         >
           <div className="relative w-fit">

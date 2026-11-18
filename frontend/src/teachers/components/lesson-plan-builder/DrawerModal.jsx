@@ -48,6 +48,10 @@ import { Progress, ProgressLabel, ProgressValue } from '@/components/ui/progress
 import { Textarea } from '@/components/ui/textarea';
 import RichTextEditor from './RichTextEditor';
 import CloudSaveStatus from './CloudSaveStatus';
+import { stepStatus } from './chapterProgress';
+import { getDidYouKnowFacts } from '../../../components/LessonFacts';
+// re-exported for existing importers
+export { getDidYouKnowFacts };
 import ConfirmDialog from '../../../components/ConfirmDialog';
 import UploadDropzone from './UploadDropzone';
 import { InlineTryoutBuilder } from './TryoutBuilder';
@@ -75,39 +79,9 @@ const STEPS = [
 
 const escapeHtml = (v) => String(v || '').replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
 const textToParagraphs = (text) => String(text || '').split(/\n+/).map((line) => line.trim()).filter(Boolean).map((line) => `<p>${escapeHtml(line)}</p>`).join('');
-// "Did You Know?" is a list of facts. Older chapters stored one rich-text
-// blob; split that into facts (list items / paragraphs / lines).
-export const getDidYouKnowFacts = (chapter = {}) => {
-  if (Array.isArray(chapter.didYouKnowFacts)) return chapter.didYouKnowFacts;
-  const raw = String(chapter.didYouKnow || '');
-  if (!raw.trim()) return [];
-  const parts = /<li[\s>]/i.test(raw)
-    ? raw.split(/<\/li>/i)
-    : raw.split(/<\/p>|<br\s*\/?>|\n/i);
-  return parts
-    .map((p) => p.replace(/<[^>]*>/g, ' ').replace(/&nbsp;/g, ' ').replace(/\s+/g, ' ').trim())
-    .filter(Boolean);
-};
-
 const plainText = (v) => String(v || '').replace(/<[^>]*>/g, ' ').replace(/&nbsp;/g, ' ').trim();
-const countUploads = (uploads) => Object.values(uploads || {}).reduce((n, l) => n + (Array.isArray(l) ? l.length : 0), 0);
-// true = filled in, false = required but missing, null = optional and empty
-export const stepStatus = (key, chapter = {}) => {
-  switch (key) {
-    case 'info': {
-      const title = String(chapter.title || '').trim();
-      return Boolean(title && title !== 'Untitled Chapter' && chapter.lessonDate && String(chapter.duration || '').trim());
-    }
-    case 'materials': return countUploads(chapter.contentUploads) > 0;
-    case 'intro': return Boolean(plainText(chapter.introductionText));
-    case 'content': return Boolean(plainText(chapter.explanation));
-    case 'assessment': return ((chapter.worksheetFiles || []).length + (chapter.assessments || []).length) > 0;
-    case 'language': return null;
-    case 'tryout': return (chapter.tryouts || []).length > 0 ? true : null;
-    case 'publish': return chapter.status === 'published' && !chapter.isDraft ? true : null;
-    default: return null;
-  }
-};
+// step completeness lives in ./chapterProgress (shared with the chapter list)
+export { stepStatus };
 
 const WEEKDAYS = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
 const toIsoDate = (d) => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
@@ -216,6 +190,8 @@ const DrawerModal = ({
   classDisplayName = '',
   autosaveStatus = '',
   onPreview,
+  usedLessonDates = [],
+  chapterOptions = [],
 }) => {
   const [currentStep, setCurrentStep] = useState(0);
   const [customDurationSelected, setCustomDurationSelected] = useState(() => (
@@ -299,6 +275,8 @@ const DrawerModal = ({
   const [curriculumTopics, setCurriculumTopics] = useState([]);
   // Weekdays this class/section/subject is on the teacher's routine.
   const [routineDays, setRoutineDays] = useState([]);
+  // minutes of class per weekday for this class/section/subject (from the timetable)
+  const [routineMinutesByDay, setRoutineMinutesByDay] = useState({});
   const [routineLoading, setRoutineLoading] = useState(false);
   React.useEffect(() => {
     if (!classId || !sectionId) { setRoutineDays([]); return undefined; }
@@ -309,18 +287,49 @@ const DrawerModal = ({
       .then((data) => {
         if (cancelled) return;
         const schedule = data?.schedule || {};
-        const days = WEEKDAYS.filter((day) => (schedule[day] || []).some((e) => (
+        const matches = (e) => (
           String(e.classId || '') === String(classId)
           && String(e.sectionId || '') === String(sectionId)
           && (!subjectId || !e.subjectId || String(e.subjectId) === String(subjectId))
-        )));
+        );
+        const toMin = (t) => { const m = /^(\d{1,2}):(\d{2})/.exec(String(t || '')); return m ? Number(m[1]) * 60 + Number(m[2]) : null; };
+        const minutes = {};
+        WEEKDAYS.forEach((day) => {
+          const total = (schedule[day] || []).filter(matches).reduce((sum, e) => {
+            const a = toMin(e.startTime); const b = toMin(e.endTime);
+            return sum + (a != null && b != null && b > a ? b - a : 0);
+          }, 0);
+          if (total > 0) minutes[day] = total;
+        });
+        setRoutineMinutesByDay(minutes);
+        const days = WEEKDAYS.filter((day) => (schedule[day] || []).some(matches));
         setRoutineDays(days);
       })
       .catch(() => { if (!cancelled) setRoutineDays([]); })
       .finally(() => { if (!cancelled) setRoutineLoading(false); });
     return () => { cancelled = true; };
   }, [classId, sectionId, subjectId]);
-  const lessonDates = React.useMemo(() => buildLessonDates(routineDays), [routineDays]);
+  const usedDateSet = React.useMemo(
+    () => new Set((usedLessonDates || []).map((d) => String(d || '').slice(0, 10)).filter((d) => d && d !== String(chapter?.lessonDate || '').slice(0, 10))),
+    [usedLessonDates, chapter?.lessonDate],
+  );
+  const lessonDates = React.useMemo(
+    () => buildLessonDates(routineDays).filter((d) => !usedDateSet.has(toIsoDate(d))),
+    [routineDays, usedDateSet],
+  );
+
+  // Picking a date fills the duration with that day's timetable time.
+  const pickLessonDate = (value) => {
+    const weekday = value ? WEEKDAYS[new Date(`${value}T00:00:00`).getDay()] : '';
+    const mins = routineMinutesByDay[weekday];
+    if (mins) {
+      const label = `${mins} Minutes`;
+      setCustomDurationSelected(!(durations || []).includes(label));
+      onUpdate({ ...chapter, lessonDate: value, duration: label });
+    } else {
+      onUpdate({ ...chapter, lessonDate: value });
+    }
+  };
   const [curriculumLoading, setCurriculumLoading] = useState(false);
 
   React.useEffect(() => {
@@ -631,10 +640,54 @@ const DrawerModal = ({
             </div>
 
             <div className="space-y-4">
+              {/* Textbook chapter this lesson belongs to */}
               <div>
-                <InfoLabel icon={BookOpen} required>Chapter Title</InfoLabel>
+                <InfoLabel icon={Layers} required>Chapter</InfoLabel>
+                {chapterOptions.length > 0 && (
+                  <div className="mb-2 flex flex-wrap gap-1.5">
+                    {chapterOptions.map((u) => {
+                      const selected = Number(chapter.unitNumber || 0) === Number(u.unitNumber || 0) && String(chapter.unitTitle || '').trim() === u.unitTitle;
+                      return (
+                        <button
+                          key={u.label}
+                          type="button"
+                          onClick={() => onUpdate({ ...chapter, unitNumber: u.unitNumber || '', unitTitle: u.unitTitle })}
+                          className={`rounded-full px-3 py-1 text-xs font-semibold transition ${selected ? 'bg-indigo-600 text-white' : 'bg-indigo-50 text-indigo-700 hover:bg-indigo-100'}`}
+                        >
+                          {u.label}
+                        </button>
+                      );
+                    })}
+                  </div>
+                )}
+                <div className="flex gap-2">
+                  <div className="flex h-9 w-28 shrink-0 items-center rounded-full border border-slate-200 bg-white pl-3 text-sm text-slate-500">
+                    No.
+                    <input
+                      type="number"
+                      min={1}
+                      value={chapter.unitNumber || ''}
+                      onChange={(e) => onUpdate({ ...chapter, unitNumber: e.target.value ? Math.max(1, Math.floor(Number(e.target.value))) : '' })}
+                      placeholder="1"
+                      aria-label="Chapter number"
+                      className="h-full w-full min-w-0 rounded-full bg-transparent px-2 text-sm text-slate-900 outline-none"
+                    />
+                  </div>
+                  <input
+                    value={chapter.unitTitle || ''}
+                    onChange={(e) => onUpdate({ ...chapter, unitTitle: e.target.value })}
+                    placeholder="Chapter name (e.g. “Computer Basics”)"
+                    aria-label="Chapter name"
+                    className="h-9 min-w-0 flex-1 rounded-full border border-slate-200 bg-white px-3 text-sm text-slate-900 outline-none placeholder:text-slate-400 focus:border-blue-500 focus:ring-2 focus:ring-blue-500/20"
+                  />
+                </div>
+                <p className="mt-1 pl-2 text-[11px] text-slate-400">Lessons with the same chapter are grouped together for you and your students.</p>
+              </div>
+
+              <div>
+                <InfoLabel icon={BookOpen} required>Lesson Title</InfoLabel>
                 <input
-                  value={chapter.title === 'Untitled Chapter' ? '' : chapter.title}
+                  value={/^untitled (chapter|lesson)$/i.test(String(chapter.title || '').trim()) ? '' : chapter.title}
                   onChange={(e) => onUpdate({ ...chapter, title: e.target.value })}
                   placeholder="Enter chapter name (e.g. “Types of Plants”)"
                   className="h-10 w-full rounded-full border border-blue-500 bg-white px-3 text-sm text-slate-900 outline-none placeholder:text-slate-400 focus:ring-2 focus:ring-blue-500/20 dark:border-blue-400 dark:bg-slate-800 dark:text-white"
@@ -664,7 +717,7 @@ const DrawerModal = ({
                   {lessonDates.length > 0 ? (
                     <select
                       value={chapter.lessonDate || ''}
-                      onChange={(e) => onUpdate({ ...chapter, lessonDate: e.target.value })}
+                      onChange={(e) => pickLessonDate(e.target.value)}
                       style={{ colorScheme: 'light' }}
                       className="h-9 w-full rounded-full border border-slate-200 bg-white px-3 text-sm text-slate-900 outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-500/20"
                     >
@@ -687,7 +740,7 @@ const DrawerModal = ({
                       type="date"
                       min={toIsoDate(new Date())}
                       value={chapter.lessonDate}
-                      onChange={(e) => onUpdate({ ...chapter, lessonDate: e.target.value })}
+                      onChange={(e) => pickLessonDate(e.target.value)}
                       style={{ colorScheme: 'light' }}
                       className="h-9 w-full rounded-full border border-slate-200 bg-white px-3 text-sm text-slate-900 outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-500/20"
                     />
@@ -1677,6 +1730,15 @@ const DrawerModal = ({
                 className="hidden size-8 items-center justify-center rounded-full text-slate-600 transition hover:bg-slate-100 sm:flex dark:text-slate-300 dark:hover:bg-slate-800"
               >
                 {isFullscreen ? <Minimize2 className="size-4" /> : <Maximize2 className="size-4" />}
+              </button>
+              <button
+                type="button"
+                onClick={onClose}
+                aria-label="Close lesson form"
+                title="Close"
+                className="flex size-8 items-center justify-center rounded-full text-slate-500 transition hover:bg-rose-50 hover:text-rose-600 dark:text-slate-300 dark:hover:bg-rose-950/40"
+              >
+                <X className="size-4" />
               </button>
             </div>
           </div>

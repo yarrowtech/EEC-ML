@@ -19,6 +19,7 @@ const { logStudentPortalEvent, logStudentPortalError } = require('../utils/stude
 const { userNotificationsCache } = require('../utils/responseCache');
 const Admin = require('../models/Admin');
 const School = require('../models/School');
+const NotificationSeenState = require('../models/NotificationSeenState');
 
 const photoUrl = (value) => {
   if (!value) return '';
@@ -1063,6 +1064,62 @@ router.post('/user/read-all', authAnyUser, async (req, res) => {
       targetId: req.user?.id,
     });
     res.status(500).json({ error: err.message });
+  }
+});
+
+// ── Cross-device "seen" state ───────────────────────────────────────────
+// Read markers for items that are not Notification documents (e.g. ungraded
+// submission alerts) and per-module "visited" lists. Stored per user so
+// "mark all as read" on one device shows as read on every device.
+const SEEN_SCOPES = new Set(['teacher', 'student', 'parent', 'admin', 'staff', 'principal']);
+const MAX_SEEN_PER_KEY = 2000;
+const cleanSeenState = (raw) => {
+  const out = {};
+  if (!raw || typeof raw !== 'object') return out;
+  Object.entries(raw).slice(0, 50).forEach(([key, list]) => {
+    if (!/^[\w-]{1,64}$/.test(key) || !Array.isArray(list)) return;
+    out[key] = Array.from(new Set(list.map((v) => String(v || '').slice(0, 200)).filter(Boolean))).slice(-MAX_SEEN_PER_KEY);
+  });
+  return out;
+};
+
+router.get('/user/seen-state', authAnyUser, async (req, res) => {
+  // #swagger.tags = ['Notifications']
+  try {
+    const scope = String(req.query?.scope || '').toLowerCase();
+    if (!SEEN_SCOPES.has(scope)) return res.status(400).json({ error: 'Invalid scope' });
+    const userId = toObjectIdIfPossible(req.user?.id);
+    if (!userId) return res.status(401).json({ error: 'User not authenticated' });
+    const doc = await NotificationSeenState.findOne({ userId, scope }).select('seen').lean();
+    res.set('Cache-Control', 'no-store');
+    return res.json({ seen: cleanSeenState(doc?.seen) });
+  } catch (err) {
+    return res.status(500).json({ error: err.message });
+  }
+});
+
+// Merges (union) — never removes markers another device already saved.
+router.put('/user/seen-state', authAnyUser, async (req, res) => {
+  // #swagger.tags = ['Notifications']
+  try {
+    const scope = String(req.body?.scope || '').toLowerCase();
+    if (!SEEN_SCOPES.has(scope)) return res.status(400).json({ error: 'Invalid scope' });
+    const userId = toObjectIdIfPossible(req.user?.id);
+    if (!userId) return res.status(401).json({ error: 'User not authenticated' });
+    const incoming = cleanSeenState(req.body?.seen);
+    const existing = await NotificationSeenState.findOne({ userId, scope }).select('seen').lean();
+    const merged = cleanSeenState(existing?.seen);
+    Object.entries(incoming).forEach(([key, list]) => {
+      merged[key] = Array.from(new Set([...(merged[key] || []), ...list])).slice(-MAX_SEEN_PER_KEY);
+    });
+    await NotificationSeenState.updateOne(
+      { userId, scope },
+      { $set: { seen: merged, userType: String(req.userType || '') } },
+      { upsert: true }
+    );
+    return res.json({ seen: merged });
+  } catch (err) {
+    return res.status(500).json({ error: err.message });
   }
 });
 

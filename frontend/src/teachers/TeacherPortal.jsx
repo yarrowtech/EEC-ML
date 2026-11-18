@@ -4,7 +4,7 @@
  * or duplication is prohibited without prior written permission.
  */
 
-import React, { Component, Suspense, lazy, useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import React, { Component, Suspense, lazy, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { Routes, Route, NavLink, Outlet, useLocation, useNavigate, useParams, Navigate } from 'react-router-dom';
 import { AnimatePresence, motion as Motion } from 'framer-motion';
 import {
@@ -89,7 +89,7 @@ import DesktopNotificationPermissionModal from '../components/DesktopNotificatio
 import NotificationPopover from '../components/NotificationPopover';
 import ExamRoutineTable from '../components/ExamRoutineTable';
 import { AUTH_NOTICE, apiFetch, logoutAndRedirect, switchAccount } from '../utils/authSession';
-import { notificationId, readModuleSeenState, writeModuleSeenState } from '../utils/moduleNotificationUtils';
+import { notificationId, readModuleSeenState, writeModuleSeenState, fetchServerSeenState, mergeSeenStates, announceNotificationsChanged, NOTIFICATIONS_CHANGED_EVENT, NOTIFICATIONS_READ_ALL_EVENT } from '../utils/moduleNotificationUtils';
 
 const PORTAL_BASE = '/teacher';
 const API_BASE = (import.meta.env.VITE_API_URL || 'http://localhost:5000').replace(/\/$/, '');
@@ -99,7 +99,7 @@ const SIDEBAR_SECTIONS = [
   { heading: 'Main', labels: ['Dashboard', 'Classes & Work'] },
   { heading: 'Schedule', labels: ['Calendar', 'Timetable'] },
   { heading: 'Examinations', labels: ['Exam Duty', 'Scan Exam QR'] },
-  { heading: 'Teaching', labels: ['Lesson Plan', 'Community Wall'] },
+  { heading: 'Teaching', labels: ['Community Wall'] },
   { heading: 'Communication', labels: ['PTM', 'Chat', 'Student Feedback', 'Excuse Letters'] },
   { heading: 'Account', labels: ['Profile & Work'] },
 ];
@@ -114,7 +114,6 @@ const portalNavigation = [
   { icon: ClipboardCheck, label: 'Exam Duty', path: `${PORTAL_BASE}/exam-duty` },
   { icon: QrCode, label: 'Scan Exam QR', path: `${PORTAL_BASE}/exam-scan` },
   { icon: Library, label: 'Community Wall', path: `${PORTAL_BASE}/community-wall` },
-  { icon: Brain, label: 'Lesson Plan', path: `${PORTAL_BASE}/lesson-plan` },
   //{ icon: Brain, label: 'AI Tools', path: `${PORTAL_BASE}/ai-tools` },
   //{ icon: Activity, label: 'Live Monitor', path: `${PORTAL_BASE}/live-monitor` },
   { icon: CalendarCheck, label: 'PTM', path: `${PORTAL_BASE}/ptm` },
@@ -128,7 +127,7 @@ const mobileNavigation = [
   { icon: Home, label: 'Dashboard', path: `${PORTAL_BASE}/dashboard` },
   { icon: Users, label: 'Classes', path: `${PORTAL_BASE}/classes` },
   { icon: Clock, label: 'Timetable', path: `${PORTAL_BASE}/timetable` },
-  { icon: Sparkles, label: 'AI Copilot', path: `${PORTAL_BASE}/lesson-plan` },
+  { icon: Sparkles, label: 'Lesson Plan', path: `${PORTAL_BASE}/classes/current/lesson-plan` },
   { icon: CircleUser, label: 'Profile', action: 'profile' },
 ];
 
@@ -506,15 +505,26 @@ const TeacherNotifications = () => {
         headers: { 'Content-Type': 'application/json', authorization: `Bearer ${token}` },
       }, navigate);
       if (!response.ok) throw new Error('Unable to mark notification as read');
+      announceNotificationsChanged();
     } catch (err) {
       setError(err.message || 'Unable to mark notification as read');
       await loadNotifications({ silent: true });
     }
   }, [loadNotifications, navigate]);
 
+  // Bell / other tabs changed read state → refresh this list.
+  useEffect(() => {
+    const onChanged = () => loadNotifications({ silent: true });
+    window.addEventListener(NOTIFICATIONS_CHANGED_EVENT, onChanged);
+    return () => window.removeEventListener(NOTIFICATIONS_CHANGED_EVENT, onChanged);
+  }, [loadNotifications]);
+
   const markAllRead = async () => {
     const token = localStorage.getItem('token');
     setNotifications((previous) => previous.map((item) => ({ ...item, isRead: true })));
+    // The header bell also clears its extra items (ungraded submissions,
+    // Community Wall) and saves that to the server for other devices.
+    try { window.dispatchEvent(new Event(NOTIFICATIONS_READ_ALL_EVENT)); } catch { /* ignore */ }
     try {
       const response = await apiFetch(`${API_BASE}/api/notifications/user/read-all?kind=${view}`, {
         method: 'POST',
@@ -1085,6 +1095,15 @@ const ClassesHub = () => {
  */
 const CW_TABS = [
   {
+    id: 'lesson-plan',
+    label: 'Lesson Plan',
+    description: 'Build, preview and publish lesson plans for this class',
+    icon: Brain,
+    ownPaths: (rel) => rel === 'lesson-plan' || rel.startsWith('lesson-plan/'),
+    firstPath: 'lesson-plan',
+    subTabs: [],
+  },
+  {
     id: 'overview',
     label: 'Overview',
     description: 'Class-wide performance and attendance at a glance',
@@ -1159,6 +1178,40 @@ const SUB_TAB_ICONS = {
   'students/achievements': Sparkles,
   'assessments/exam': GraduationCap,
   'students/observations': Eye,
+};
+
+// Lesson Plan builder inside a class: opens on that class / section / subject.
+const ClassLessonPlan = () => {
+  const location = useLocation();
+  const { classId = 'current' } = useParams();
+  const picked = location.state?.classMongoId ? location.state : readRememberedClass();
+  const selection = picked?.classMongoId
+    ? { classId: picked.classMongoId, sectionId: picked.sectionMongoId || '', subjectName: picked.subjectName || '' }
+    : null;
+
+  // Fill the screen from where the card starts to the bottom of the window, so
+  // the chapter list and the preview scroll inside the card (not the page).
+  const boxRef = useRef(null);
+  useLayoutEffect(() => {
+    const fit = () => {
+      const el = boxRef.current;
+      if (!el) return;
+      const top = Math.max(0, el.getBoundingClientRect().top);
+      // keep clear of the phone/tablet bottom navigation bar
+      const bottomGap = window.innerWidth < 1024 ? 72 : 16;
+      el.style.height = `${Math.max(420, window.innerHeight - top - bottomGap)}px`;
+    };
+    fit();
+    const id = window.requestAnimationFrame(fit); // after the tabs/header settle
+    window.addEventListener('resize', fit);
+    return () => { window.cancelAnimationFrame(id); window.removeEventListener('resize', fit); };
+  }, []);
+
+  return (
+    <div ref={boxRef} className="flex min-h-0 flex-col overflow-hidden rounded-2xl border border-slate-200 bg-white">
+      <AIPoweredTeaching key={`${classId}:${selection?.classId || ''}:${selection?.sectionId || ''}`} initialSelection={selection} />
+    </div>
+  );
 };
 
 const ClassWorkspace = ({ notifications = [], seenState = {} }) => {
@@ -1691,6 +1744,8 @@ const TeacherPortalShell = () => {
     }
   }, [isChatRoute]);
   const isDashboardRoute = location.pathname === '/teacher/dashboard' || location.pathname === '/teacher';
+  // Class Lesson Plan builder is a focused workspace — no portal top header.
+  const isClassLessonPlanRoute = /^\/teacher\/classes\/[^/]+\/lesson-plan\/?$/.test(location.pathname);
   const isSmartPlannerRoute = location.pathname.includes('/teaching/lesson-planner') || location.pathname === '/teacher/lesson-plan';
   const isAttendanceRoute = location.pathname.includes('/students/attendance') || location.pathname.includes('/overview/attendance');
   // Class picker is a fixed, non-scrolling full-bleed screen.
@@ -1759,6 +1814,23 @@ const TeacherPortalShell = () => {
   const [notifLoading, setNotifLoading] = useState(false);
   const [notifError, setNotifError] = useState('');
   const [moduleSeenState, setModuleSeenState] = useState(() => readModuleSeenState('teacher'));
+  // Pick up "read" markers saved from the teacher's other devices.
+  useEffect(() => {
+    let cancelled = false;
+    const pull = async () => {
+      const server = await fetchServerSeenState('teacher');
+      if (cancelled || !server) return;
+      setModuleSeenState((prev) => {
+        const merged = mergeSeenStates(prev, server);
+        try { localStorage.setItem('moduleNotificationsSeen:teacher', JSON.stringify(merged)); } catch { /* ignore */ }
+        return merged;
+      });
+    };
+    pull();
+    const onVisible = () => { if (document.visibilityState === 'visible') pull(); };
+    document.addEventListener('visibilitychange', onVisible);
+    return () => { cancelled = true; document.removeEventListener('visibilitychange', onVisible); };
+  }, []);
   const profileRef = useRef(null);
   const notificationsRef = useRef(null);
   const mobileNotificationsRef = useRef(null);
@@ -2054,12 +2126,27 @@ const TeacherPortalShell = () => {
       }, navigate);
       if (!res.ok) throw new Error('Failed to mark all notifications as read');
       await fetchNotifs();
+      announceNotificationsChanged();
     } catch (err) {
       setNotifError(err.message || 'Failed to mark all as read');
       await fetchNotifs();
     }
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [fetchNotifs, navigate, communityUnread.markAllSeen]);
+  }, [fetchNotifs, navigate, communityUnread.markAllSeen, assignmentSubmissionNotifications]);
+
+  // "Mark all as read" pressed on the Notifications page → clear the bell too.
+  const markAllReadRef = useRef(markAllRead);
+  markAllReadRef.current = markAllRead;
+  useEffect(() => {
+    const onReadAll = () => markAllReadRef.current();
+    const onChanged = () => fetchNotifs();
+    window.addEventListener(NOTIFICATIONS_READ_ALL_EVENT, onReadAll);
+    window.addEventListener(NOTIFICATIONS_CHANGED_EVENT, onChanged);
+    return () => {
+      window.removeEventListener(NOTIFICATIONS_READ_ALL_EVENT, onReadAll);
+      window.removeEventListener(NOTIFICATIONS_CHANGED_EVENT, onChanged);
+    };
+  }, [fetchNotifs]);
 
   const dismissHeaderNotification = useCallback(async (id) => {
     if (!id) return;
@@ -2307,7 +2394,7 @@ const TeacherPortalShell = () => {
 
         <div className="flex h-screen h-dvh max-h-screen max-h-dvh min-h-0 min-w-0 flex-1 flex-col overflow-hidden">
           {/* Desktop header — same bar as the school admin portal */}
-          <header className="sticky top-0 z-30 hidden w-full lg:block">
+          <header className={`sticky top-0 z-30 hidden w-full ${isClassLessonPlanRoute ? '' : 'lg:block'}`}>
             <div className="flex items-center gap-3 border border-white/70 bg-indigo-50 px-5 py-2 shadow-[0_16px_44px_-12px_rgba(15,23,42,0.10),0_4px_12px_rgba(15,23,42,0.04)]">
               {/* <div className="min-w-0 leading-tight">
                 <p className="truncate text-[15px] font-semibold text-slate-900">
@@ -2500,7 +2587,7 @@ const TeacherPortalShell = () => {
             </div>
           </header>
 
-          <header className="sticky top-0 z-30 w-full border-b border-gray-100 bg-white/80 px-3 pt-[env(safe-area-inset-top)] backdrop-blur-xl sm:px-5 lg:hidden">
+          <header className={`sticky top-0 z-30 w-full border-b border-gray-100 bg-white/80 px-3 pt-[env(safe-area-inset-top)] backdrop-blur-xl sm:px-5 lg:hidden ${isClassLessonPlanRoute ? 'hidden' : ''}`}>
             <div className="flex h-14 items-center justify-between gap-2 sm:h-16 sm:gap-4">
               <button type="button" onClick={() => setSidebarOpen(true)} className="shrink-0 rounded-xl p-2 transition-all hover:bg-gray-100 active:scale-95" aria-label="Open all teacher options" aria-expanded={sidebarOpen}><Menu size={20} className="text-gray-600" /></button>
               <div className="flex min-w-0 flex-1 items-center justify-center gap-2">
@@ -2559,7 +2646,7 @@ const TeacherPortalShell = () => {
             </div>
           </header>
 
-          <main className={`flex-1 min-h-0 pb-[calc(3.5rem+env(safe-area-inset-bottom))] lg:pb-0 ${isSmartPlannerRoute ? 'p-0' : ''} ${hasContainedPageScroll ? 'overflow-hidden' : 'overflow-y-auto overscroll-contain'}`}>
+          <main className={`flex-1 min-h-0 pb-[calc(3.5rem+env(safe-area-inset-bottom))] lg:pb-0 ${isSmartPlannerRoute ? 'p-0' : ''} ${isClassLessonPlanRoute ? 'px-3 pt-[max(1rem,env(safe-area-inset-top))] sm:px-4 lg:px-6 lg:pt-5' : ''} ${hasContainedPageScroll ? 'overflow-hidden' : 'overflow-y-auto overscroll-contain'}`}>
             <div className={isChatRoute
               ? 'flex h-full min-h-0 flex-col'
               : isSmartPlannerRoute || isClassesHubRoute
@@ -2573,7 +2660,8 @@ const TeacherPortalShell = () => {
                 <Route path="dashboard" element={<TeacherDashboard />} />
                 <Route path="classes" element={<ClassesHub />} />
                 <Route path="classes/:classId" element={<ClassWorkspace notifications={notificationItems} seenState={moduleSeenState} />}>
-                  <Route index element={<Navigate to="overview/analytics" replace />} />
+                  <Route index element={<Navigate to="lesson-plan" replace />} />
+                  <Route path="lesson-plan" element={<ClassLessonPlan />} />
                   <Route
                     path="students"
                     element={
@@ -2668,7 +2756,7 @@ const TeacherPortalShell = () => {
                 <Route path="exam-duty/:notificationId" element={<TeacherExamDuty />} />
                 <Route path="community-wall" element={<TeacherAlcove />} />
                 <Route path="resource-library" element={<Navigate to="/teacher/community-wall" replace />} />
-                <Route path="lesson-plan" element={<div className="h-full min-h-0 p-2 sm:p-4 lg:p-6"><AIPoweredTeaching /></div>} />
+                <Route path="lesson-plan" element={<Navigate to="/teacher/classes/current/lesson-plan" replace />} />
                 <Route path="tryout" element={<TryoutManagement />} />
                 <Route path="ai-tools" element={<TeacherAIToolsPanel />} />
                 <Route path="live-monitor" element={<LiveExamMonitor />} />

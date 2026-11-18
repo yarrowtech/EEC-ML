@@ -1,3 +1,4 @@
+import { groupLessonsByUnit } from '../teachers/components/lesson-plan-builder/chapterGroups';
 import React, { useEffect, useMemo, useState } from 'react';
 import { useNavigate, useLocation } from 'react-router-dom';
 import {
@@ -403,9 +404,31 @@ const SubjectTopicsView = ({ subject, onBack, style = DEFAULT_STYLE }) => {
         ) : visibleChapterStats.length === 0 ? (
           <div className="rounded-xl border border-dashed border-slate-300 bg-white p-8 text-center shadow-sm"><p className="text-sm font-bold text-slate-700">No chapters match your search</p><button type="button" onClick={() => { setSearchQuery(''); setFilterMode('all'); }} className="mt-2 text-sm font-bold text-violet-600 hover:underline">Clear filters</button></div>
         ) : (
-          <div className="space-y-2.5">
-            {visibleChapterStats.map((entry) => {
+          <div className="space-y-5">
+            {(() => {
+              // Lessons grouped under the teacher's textbook chapters.
+              const groups = groupLessonsByUnit(visibleChapterStats.map((entry) => ({
+                ...entry,
+                unitNumber: entry.chapter?.meta?.unitNumber,
+                unitTitle: entry.chapter?.meta?.unitTitle,
+              })));
+              const showHeadings = groups.some((g) => g.key !== '__none__');
+              return groups.map((group) => (
+              <section key={group.key} className="space-y-2.5">
+                {showHeadings && (
+                  <div className="flex items-center gap-3">
+                    <span className={`flex h-8 shrink-0 items-center rounded-lg px-3 text-xs font-extrabold uppercase tracking-wide ${group.key === '__none__' ? 'bg-slate-100 text-slate-500' : 'bg-violet-600 text-white shadow-sm shadow-violet-600/25'}`}>
+                      {group.unitNumber ? `Chapter ${group.unitNumber}` : group.key === '__none__' ? 'Other lessons' : 'Chapter'}
+                    </span>
+                    {group.unitTitle && <h2 className="truncate text-base font-bold text-slate-900">{group.unitTitle}</h2>}
+                    <span className="h-px flex-1 bg-slate-200" />
+                    <span className="shrink-0 text-xs font-semibold text-slate-400">{group.lessons.length} lesson{group.lessons.length === 1 ? '' : 's'}</span>
+                  </div>
+                )}
+            {group.lessons.map((entry, lessonIndex) => {
               const { chapter, originalIndex, firstTopic, topicCount, subtopicCount, total, percentage, durationLabel, status } = entry;
+              const unitBadge = showHeadings ? 'LESSON' : 'UNIT';
+              const unitNo = showHeadings ? lessonIndex + 1 : originalIndex + 1;
               const meta = CHAPTER_STATUS_META[status];
               const lessonLabel = !firstTopic ? 'No Topics' : status === 'completed' ? 'Review' : status === 'in-progress' || status === 'almost-done' ? 'Continue Lesson' : 'Start Lesson';
               return (
@@ -413,7 +436,7 @@ const SubjectTopicsView = ({ subject, onBack, style = DEFAULT_STYLE }) => {
                   <div className="flex flex-col justify-between gap-4 md:flex-row md:items-center">
                     <div className="flex min-w-0 items-center gap-3.5">
                       <div className={`flex h-12 w-12 shrink-0 flex-col items-center justify-center rounded-lg border border-violet-100 bg-violet-50 text-center text-violet-700`}>
-                        {status === 'completed' ? <CheckCircle2 size={22} /> : <><span className="text-[9px] font-extrabold uppercase tracking-wider text-violet-600">UNIT</span><span className="text-sm font-black leading-none">{String(originalIndex + 1).padStart(2, '0')}</span></>}
+                        {status === 'completed' ? <CheckCircle2 size={22} /> : <><span className="text-[9px] font-extrabold uppercase tracking-wider text-violet-600">{unitBadge}</span><span className="text-sm font-black leading-none">{String(unitNo).padStart(2, '0')}</span></>}
                       </div>
                       <div className="min-w-0 space-y-1">
                         <div className="flex flex-wrap items-center gap-2"><span className={`rounded px-2 py-0.5 text-[10px] font-bold uppercase tracking-wide ${meta.chip}`}>{meta.label}</span>{classLabel && <><span className="text-slate-300">•</span><span className="text-xs font-semibold text-slate-500">Class {classLabel}</span></>}</div>
@@ -431,6 +454,9 @@ const SubjectTopicsView = ({ subject, onBack, style = DEFAULT_STYLE }) => {
                 </article>
               );
             })}
+              </section>
+              ));
+            })()}
           </div>
         )}
       </section>

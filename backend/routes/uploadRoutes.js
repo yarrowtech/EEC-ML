@@ -114,6 +114,30 @@ const resolveFolder = (req, res) => {
   return folder;
 };
 
+// Fresh, short-lived link to a teacher's own study material (the link saved at
+// upload time expires). Only keys inside the teacher's school folder are signed.
+router.post("/s3/study-material/sign", authTeacher, async (req, res) => {
+  // #swagger.tags = ['Uploads']
+  try {
+    if (!req.schoolId) return res.status(400).json({ message: "School is required" });
+    const items = Array.isArray(req.body?.files) ? req.body.files.slice(0, 50) : [];
+    const prefix = `schools/${String(req.schoolId)}/`;
+    const urls = await Promise.all(items.map(async (item) => {
+      const key = String(item?.s3Key || "").trim();
+      if (!key || !key.startsWith(prefix) || key.includes("..")) return "";
+      try {
+        return await getAttachmentDownloadUrl({ s3Key: key, s3Bucket: item?.s3Bucket, s3Region: item?.s3Region, storageProvider: "s3" });
+      } catch {
+        return "";
+      }
+    }));
+    return res.json({ urls });
+  } catch (e) {
+    console.error("S3 study material sign error:", e.message);
+    return res.status(503).json({ message: "Could not prepare the file preview" });
+  }
+});
+
 // Study materials use a private S3 bucket. The database stores the stable S3
 // key; clients receive a short-lived signed URL for immediate preview.
 router.post("/s3/study-material/single", authTeacher, upload.single("file"), async (req, res) => {

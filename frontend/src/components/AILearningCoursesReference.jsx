@@ -32,6 +32,9 @@ import {
   Sparkles,
   Rocket,
   Monitor,
+  Settings,
+  Timer,
+  Orbit,
   Zap,
   Globe2,
   Star,
@@ -46,23 +49,7 @@ import { fetchCachedJson } from '../utils/studentApiCache';
 import { PaperclipHorizontalIcon } from '@phosphor-icons/react';
 import { slugifyForUrl, deslugifyFromUrl } from '../utils/urlSlug';
 import A4Pages from './A4Pages';
-
-// "Did You Know?" fact cards — colour cycles amber → blue → purple → green.
-const FACT_THEMES = [
-  { card: 'border-amber-200 bg-amber-50/80', pill: 'bg-gradient-to-b from-amber-400 to-orange-500', title: 'bg-amber-100/90', divider: 'bg-amber-200', icon: 'text-amber-400', Icon: Sparkles },
-  { card: 'border-sky-200 bg-sky-50/80', pill: 'bg-gradient-to-b from-sky-400 to-blue-600', title: 'bg-sky-100/90', divider: 'bg-sky-200', icon: 'text-sky-400', Icon: Zap },
-  { card: 'border-violet-200 bg-violet-50/80', pill: 'bg-gradient-to-b from-violet-500 to-purple-600', title: 'bg-violet-100/90', divider: 'bg-violet-200', icon: 'text-violet-400', Icon: Star },
-  { card: 'border-emerald-200 bg-emerald-50/80', pill: 'bg-gradient-to-b from-emerald-400 to-green-600', title: 'bg-emerald-100/90', divider: 'bg-emerald-200', icon: 'text-emerald-400', Icon: Globe2 },
-];
-// "Title: description" / "Title – description" → a bold title + text;
-// otherwise the whole fact is the description.
-const splitFact = (text) => {
-  const t = String(text || '').trim();
-  // A colon wins over a dash, so "CPU – The Brain: …" keeps the whole title.
-  const m = t.match(/^([^:]{3,90}):(?!\/\/)\s*(.+)$/) || t.match(/^(.{3,80}?)\s[–—-]\s(.+)$/);
-  if (m && !/https?$/i.test(m[1])) return { title: m[1].trim(), body: m[2].trim() };
-  return { title: '', body: t };
-};
+import { DidYouKnowHeader, FactCard } from './LessonFacts';
 
 // Split teacher HTML into top-level blocks (so it can flow across A4 pages),
 // dropping anything unsafe: scripts/embeds, inline event handlers, js: links.
@@ -1316,6 +1303,10 @@ const AILearningCoursesReference = () => {
                         ? toHtmlBlocks(html, prefix)
                         : toParagraphs(text, tone, prefix);
                       const blocks = section ? [
+                        // "What you'll learn" opens the lesson (first page of the Introduction).
+                        ...(section.id === 'introduction' && chapterLearningObjectives.length
+                          ? [{ id: 'objectives', kind: 'objectives', items: chapterLearningObjectives }]
+                          : []),
                         { id: `${section.id}-h`, kind: 'heading', text: section.title, tone, sectionId: section.id },
                         ...(section.id === 'did-you-know'
                           // One card per fact, numbered like the teacher entered them.
@@ -1329,6 +1320,25 @@ const AILearningCoursesReference = () => {
                       ] : [{ id: 'empty', kind: 'empty', text: '' }];
 
                       const renderBlock = (block) => {
+                        if (block.kind === 'objectives') {
+                          return (
+                            <div className="pb-4">
+                              <div className="rounded-xl bg-[#f8f9ff] p-4 ring-1 ring-[#e8ebff]">
+                                <h2 className="mb-2 flex items-center gap-2 font-bold text-[#0d1c2e]" style={{ fontSize: `${15.5 * readerFontScale}px` }}>
+                                  <Target size={17} className="text-[#493ee5]" /> What you’ll learn
+                                </h2>
+                                <ul className="space-y-1.5">
+                                  {block.items.map((objective, i) => (
+                                    <li key={i} className="flex items-start gap-2 leading-[1.6] text-[#334155]" style={{ fontSize: `${14 * readerFontScale}px` }}>
+                                      <CheckCircle2 size={16} className="mt-0.5 shrink-0 text-emerald-500" />
+                                      <span>{objective}</span>
+                                    </li>
+                                  ))}
+                                </ul>
+                              </div>
+                            </div>
+                          );
+                        }
                         if (block.kind === 'empty') {
                           return (
                             <div className="py-14 text-center">
@@ -1339,21 +1349,7 @@ const AILearningCoursesReference = () => {
                           );
                         }
                         if (block.kind === 'heading' && block.tone === 'tip') {
-                          return (
-                            <div className="relative flex items-center justify-center pb-5 pt-2">
-                              <Monitor aria-hidden="true" className="absolute left-0 top-1 hidden size-9 -rotate-6 text-sky-400 sm:block" strokeWidth={1.75} />
-                              <Rocket aria-hidden="true" className="absolute right-0 top-0 hidden size-9 rotate-12 text-rose-400 sm:block" strokeWidth={1.75} />
-                              <div className="flex items-center gap-3 rounded-full bg-white px-5 py-2 shadow-[0_6px_24px_-8px_rgba(73,62,229,0.35)] ring-1 ring-[#eef0ff]">
-                                <span className="flex size-10 items-center justify-center rounded-full bg-amber-100">
-                                  <Lightbulb className="size-6 text-amber-500" fill="#fde68a" />
-                                </span>
-                                <h2 className="relative font-extrabold tracking-tight text-[#0d1c2e]" style={{ fontSize: `${26 * readerFontScale}px` }}>
-                                  Did You <span className="text-[#7c3aed]">Know?</span>
-                                  <span aria-hidden="true" className="absolute -bottom-1 left-1/4 h-1.5 w-2/3 rounded-full bg-amber-400" />
-                                </h2>
-                              </div>
-                            </div>
-                          );
+                          return <DidYouKnowHeader scale={readerFontScale} />;
                         }
                         if (block.kind === 'heading') {
                           return (
@@ -1366,27 +1362,7 @@ const AILearningCoursesReference = () => {
                         if (block.kind === 'fact') {
                           return (
                             <div className="pb-3">
-                              {(() => {
-                                const theme = FACT_THEMES[(block.n - 1) % FACT_THEMES.length];
-                                const { title, body } = splitFact(block.text);
-                                return (
-                                  <div className={`relative flex items-center gap-3 overflow-hidden rounded-2xl border p-3 shadow-sm sm:gap-4 sm:p-4 ${theme.card}`}>
-                                    <span className={`shrink-0 rounded-full px-3.5 py-1.5 font-extrabold text-white shadow-md ${theme.pill}`} style={{ fontSize: `${15 * readerFontScale}px` }}>
-                                      Fact {block.n}
-                                    </span>
-                                    <span aria-hidden="true" className={`w-0.5 self-stretch rounded-full ${theme.divider}`} />
-                                    <div className="min-w-0 flex-1 pr-6">
-                                      {title && (
-                                        <p className={`mb-1 inline-block rounded-full px-3 py-0.5 font-extrabold text-[#0d1c2e] ${theme.title}`} style={{ fontSize: `${15.5 * readerFontScale}px` }}>
-                                          {title}
-                                        </p>
-                                      )}
-                                      <p className="leading-[1.6] text-[#1e293b]" style={{ fontSize: `${14 * readerFontScale}px` }}>{body}</p>
-                                    </div>
-                                    <theme.Icon aria-hidden="true" className={`absolute right-3 top-1/2 size-6 -translate-y-1/2 opacity-60 ${theme.icon}`} />
-                                  </div>
-                                );
-                              })()}
+                              <FactCard n={block.n} text={block.text} scale={readerFontScale} />
                             </div>
                           );
                         }

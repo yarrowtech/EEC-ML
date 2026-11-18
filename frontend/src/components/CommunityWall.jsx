@@ -829,7 +829,7 @@ const CommunityWall = ({ role = 'teacher' }) => {
   };
 
   return (
-    <div className="min-h-screen bg-slate-50 text-slate-800">
+    <div className="min-h-screen text-slate-800">
       <div className="mx-auto grid max-w-[1280px] gap-4 px-4 py-4 xl:grid-cols-[minmax(0,1fr)_300px]">
         {/* Feed */}
         <main className="min-w-0 space-y-3">
