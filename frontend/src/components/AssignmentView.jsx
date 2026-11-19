@@ -461,7 +461,8 @@ const AssignmentView = forwardRef(({ defaultType = "school" }, ref) => {
       {/* ═══════════════ NON-JOURNAL VIEW ═══════════════ */}
       {assignmentType !== "journal" && (
         <div className="relative mx-auto max-w-7xl">
-          {/* ─── Tab Bar (switches between School / Practice / Lab / FlashCard) ─── */}
+          {/* Type switching lives in the sidebar now (Assignments / Practice / Lab / Flashcards). */}
+          {false && (<>
           <div className={`page-fade-in ${SURFACE_CARD} flex flex-wrap items-center justify-between gap-4 p-4 sm:px-6`}>
             <div>
               <h1 className="text-xl font-bold tracking-tight text-[#0f172a] sm:text-2xl">
@@ -490,8 +491,9 @@ const AssignmentView = forwardRef(({ defaultType = "school" }, ref) => {
             </div>
           </div>
 
+          </>)}
           {/* ─── Assignment Content ─── */}
-          <div className="relative mt-6">
+          <div className="relative">
             <Assignment assignmentType={assignmentType} />
           </div>
         </div>

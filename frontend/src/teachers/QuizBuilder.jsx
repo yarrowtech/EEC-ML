@@ -29,7 +29,7 @@ const blankQuestion = (type) => ({
   modelAnswer: '',
 });
 
-const blankSection = (type) => ({
+export const blankSection = (type) => ({
   key: nextKey(),
   type,
   title: TYPE_META[type].short,
@@ -83,7 +83,7 @@ export const validateQuiz = (sections = []) => {
     if (!sec.questions.length) return `Section ${SECTION_LETTERS[s]}: add at least one question.`;
     for (let i = 0; i < sec.questions.length; i += 1) {
       const q = sec.questions[i];
-      const where = `Section ${SECTION_LETTERS[s]}, Q${i + 1}`;
+      const where = sections.length === 1 ? `Question ${i + 1}` : `Section ${SECTION_LETTERS[s]}, Q${i + 1}`;
       if (!q.text.trim()) return `${where}: write the question.`;
       if (sec.type === 'mcq_single' || sec.type === 'mcq_multiple') {
         if (q.options.filter((o) => o.trim()).length < 2) return `${where}: add at least two options.`;
@@ -283,7 +283,7 @@ const QuestionEditor = ({ section, question, index, total, onChange, onRemove, o
   );
 };
 
-const QuizBuilder = ({ sections = [], onChange }) => {
+const QuizBuilder = ({ sections = [], onChange, allowedTypes = null }) => {
   const [importOpen, setImportOpen] = useState(false);
   const [importText, setImportText] = useState('');
   const [importError, setImportError] = useState('');
@@ -360,7 +360,7 @@ const QuizBuilder = ({ sections = [], onChange }) => {
                 <span className={`inline-flex items-center gap-1.5 rounded-md border px-2 py-1 text-[11px] font-bold ${meta.tone}`}><meta.icon className="size-3.5" /> Section {SECTION_LETTERS[sIdx]}</span>
                 <input value={section.title} onChange={(e) => updateSection(sIdx, { title: e.target.value })} className={`${inputCls} min-w-[160px] flex-1 py-1.5 font-semibold`} placeholder="Section title" />
                 <select value={section.type} onChange={(e) => changeSectionType(sIdx, e.target.value)} className="rounded-lg border border-slate-200 bg-white px-2 py-1.5 text-xs outline-none focus:border-blue-400">
-                  {QUIZ_TYPES.map((t) => <option key={t.key} value={t.key}>{t.label}</option>)}
+                  {(allowedTypes ? QUIZ_TYPES.filter((t) => allowedTypes.includes(t.key)) : QUIZ_TYPES).map((t) => <option key={t.key} value={t.key}>{t.label}</option>)}
                 </select>
                 <label className="flex items-center gap-1 text-[11px] text-slate-500">
                   <input type="number" min="0.5" step="0.5" value={section.marksPerQuestion} onChange={(e) => updateSection(sIdx, { marksPerQuestion: e.target.value })} className="w-14 rounded-lg border border-slate-200 px-2 py-1.5 text-center text-xs outline-none focus:border-blue-400" />
@@ -399,7 +399,7 @@ const QuizBuilder = ({ sections = [], onChange }) => {
       <div className="mt-3">
         <p className="mb-1.5 text-[11px] font-semibold text-slate-500">Add a section</p>
         <div className="flex flex-wrap gap-2">
-          {QUIZ_TYPES.map((t) => (
+          {(allowedTypes ? QUIZ_TYPES.filter((t) => allowedTypes.includes(t.key)) : QUIZ_TYPES).map((t) => (
             <button key={t.key} type="button" onClick={() => onChange([...sections, blankSection(t.key)])} className={`inline-flex items-center gap-1.5 rounded-lg border px-3 py-1.5 text-xs font-semibold transition hover:-translate-y-0.5 ${t.tone}`}><t.icon className="size-3.5" />{t.label}</button>
           ))}
         </div>

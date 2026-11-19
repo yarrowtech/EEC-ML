@@ -56,6 +56,9 @@ const VIEW_TITLES = {
   assignments: 'Assignments',
   'long-answer': 'Long Answer',
   'assignments-journal': 'Journal',
+  'assignments-practice': 'Practice Questions',
+  'assignments-lab': 'Virtual Lab',
+  'assignments-flashcards': 'Flashcards',
   'assignments-academic-alcove': 'Community Wall',
   'study-materials': 'Study Materials',
   'practice-papers': 'Practice Papers',
@@ -159,6 +162,9 @@ const normalizeViewFromPath = (pathname) => {
 // context update (notification / chat / reminder polling) unmounted and
 // remounted the whole page — the constant "refreshing" flash.
 const SchoolAssignmentView = (props) => <AssignmentView {...props} defaultType="school" />;
+const PracticeAssignmentView = (props) => <AssignmentView {...props} defaultType="eec" />;
+const LabAssignmentView = (props) => <AssignmentView {...props} defaultType="lab" />;
+const FlashcardAssignmentView = (props) => <AssignmentView {...props} defaultType="flashcard" />;
 const JournalAssignmentView = React.forwardRef((props, ref) => (
   <AssignmentView {...props} ref={ref} defaultType="journal" />
 ));
@@ -302,6 +308,9 @@ const DashboardContent = () => {
     assignments: SchoolAssignmentView,
     'long-answer': LongAnswerAssessment,
     'assignments-journal': JournalAssignmentView,
+    'assignments-practice': PracticeAssignmentView,
+    'assignments-lab': LabAssignmentView,
+    'assignments-flashcards': FlashcardAssignmentView,
     'assignments-academic-alcove': StudentCommunityWall,
     'study-materials': LearningHub,
     'practice-papers': LearningHub,

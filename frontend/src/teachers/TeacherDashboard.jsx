@@ -658,7 +658,7 @@ const TeacherDashboard = () => {
                 </div>
               ) : (
                 <div className="divide-y divide-slate-100">
-                  {visibleDeadlines.map((task) => {
+                  {visibleDeadlines.slice(0, 2).map((task) => {
                     const total = Number(task.totalStudents) || 0;
                     const done = Number(task.submittedCount) || 0;
                     const toGrade = Number(task.toGradeCount) || 0;

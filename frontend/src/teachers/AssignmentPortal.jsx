@@ -13,6 +13,8 @@ import { motion as Motion, AnimatePresence } from 'framer-motion';
 import { useNavigate, useParams, useLocation } from 'react-router-dom';
 import PracticeQuestions from './PracticeQuestions';
 import TryoutManagement from '../components/TryoutManagement';
+import AssignmentWorkspace from './AssignmentWorkspace';
+import CreateAssignmentPage from './CreateAssignmentPage';
 
 const API_BASE_URL = (import.meta.env.VITE_API_URL || 'http://localhost:5000').replace(/\/$/, '');
 
@@ -74,6 +76,7 @@ const AssignmentPortal = ({ view = 'manage', notificationCount = 0, siblingNotif
   // ─────────────────────────────────────────────────────────────────────────
   const [showModal, setShowModal] = useState(false);
   const [activityEditor, setActivityEditor] = useState(null);
+  const [createPageOpen, setCreatePageOpen] = useState(false);
   const [selectedAssignment, setSelectedAssignment] = useState(null);
   const [showDetailModal, setShowDetailModal] = useState(false);
   const [detailEditMode, setDetailEditMode] = useState(false);
@@ -1139,10 +1142,20 @@ const AssignmentPortal = ({ view = 'manage', notificationCount = 0, siblingNotif
   // ─────────────────────────────────────────────────────────────────────────
   // RENDER
   // ─────────────────────────────────────────────────────────────────────────
+  // The class this workspace is open on (from the URL slug / navigation state).
+  const workspaceClass = myClasses.find((cs) => (
+    location.state?.classMongoId
+      ? String(cs.classId) === String(location.state.classMongoId)
+      : makeClassSlug(cs.className, cs.sectionName) === classId
+  )) || null;
+
+  // Close the full-page creator once an assignment is created.
+  useEffect(() => { if (showCreateSuccessModal) setCreatePageOpen(false); }, [showCreateSuccessModal]);
+
   return (
-    <div className="min-h-screen bg-[#f4f7fc] p-3 sm:p-5">
+    <div className={activeTab === 'manage' ? '' : 'min-h-screen bg-[#f4f7fc] p-3 sm:p-5'}>
       {/* Content Area */}
-      <div className="p-4 md:p-6 space-y-6">
+      <div className={activeTab === 'manage' ? 'space-y-3' : 'p-4 md:p-6 space-y-6'}>
         {/* Error Banner */}
         {error && (
           <div className="flex items-center gap-2 px-3 py-2 rounded-xl bg-red-50 border border-red-100">
@@ -1154,7 +1167,39 @@ const AssignmentPortal = ({ view = 'manage', notificationCount = 0, siblingNotif
           </div>
         )}
 
-        {activeTab === 'manage' ? (
+        {activeTab === 'manage' && createPageOpen ? (
+          <CreateAssignmentPage
+            onBack={() => { setCreatePageOpen(false); setError(''); }}
+            newAssignment={newAssignment}
+            setNewAssignment={setNewAssignment}
+            handleCreate={handleCreate}
+            loading={loading}
+            error={error}
+            uploadingPdf={uploadingPdf}
+            handlePdfUpload={handlePdfUpload}
+            removePdfAttachment={removePdfAttachment}
+            availableLessonPlans={availableLessonPlans}
+            availableLessonPlanChapters={availableLessonPlanChapters}
+            workspaceClass={workspaceClass}
+            defaultSubject={location.state?.subjectName || ''}
+          />
+        ) : activeTab === 'manage' ? (
+          <AssignmentWorkspace
+            assignments={assignments}
+            submissions={submissions}
+            setSubmissions={setSubmissions}
+            loading={loading}
+            loadingSubmissions={loadingSubmissions}
+            currentClass={workspaceClass}
+            getAssignmentClassName={getAssignmentClassName}
+            getAssignmentSectionName={getAssignmentSectionName}
+            onCreate={() => { setError(''); setCreatePageOpen(true); }}
+            onOpenDetail={openAssignmentDetail}
+            onDelete={openDeleteModal}
+            onPublish={handlePublishAssignment}
+            publishingAssignments={publishingAssignments}
+          />
+        ) : activeTab === 'legacy-manage' ? (
           <ManageAssignments
             onEvaluateSubmissions={() => navigate(`${assignmentBasePath}/evaluate`)}
             notificationCount={notificationCount}

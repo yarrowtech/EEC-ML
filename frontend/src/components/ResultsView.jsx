@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import React, { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { useLocation } from 'react-router-dom';
 import {
   Award,
@@ -260,6 +260,21 @@ const ResultsView = () => {
   const [examFilter, setExamFilter] = useState('all');
   const [page, setPage] = useState(1);
   const [downloadingId, setDownloadingId] = useState('');
+  const [pick, setPick] = useState(null);
+  const [mobileDetail, setMobileDetail] = useState(false);
+  // One bordered panel that fills the screen; the lists scroll inside it.
+  const shellRef = useRef(null);
+  const [shellHeight, setShellHeight] = useState(null);
+  useLayoutEffect(() => {
+    const measure = () => {
+      const el = shellRef.current;
+      if (!el || window.innerWidth < 1024) { setShellHeight(null); return; }
+      setShellHeight(Math.max(520, window.innerHeight - el.getBoundingClientRect().top - 16));
+    };
+    measure();
+    window.addEventListener('resize', measure);
+    return () => window.removeEventListener('resize', measure);
+  }, [loading]);
 
   const fetchRequestIdRef = useRef(0);
 
@@ -504,268 +519,195 @@ const ResultsView = () => {
     );
   }
 
+  // ── selection: an exam id or 'assignments' ──────────────────────────
+  const firstExamId = filteredGroups[0]?._id ? String(filteredGroups[0]._id) : null;
+  const activePick = pick && (pick === 'assignments' ? assignmentResults.length > 0 : filteredGroups.some((g) => String(g._id) === pick))
+    ? pick
+    : (firstExamId || (assignmentResults.length ? 'assignments' : null));
+  const activeGroup = activePick && activePick !== 'assignments' ? filteredGroups.find((g) => String(g._id) === activePick) : null;
+  const activeEntry = activeGroup ? entriesById.get(String(activeGroup._id)) : null;
+
+  const stats = [
+    { label: 'Exams published', value: overview.examsTaken, icon: Award, tone: 'text-blue-600 bg-blue-50' },
+    { label: 'Average score', value: hasResults ? `${overview.averagePercentage.toFixed(1)}%` : '—', icon: Target, tone: 'text-amber-600 bg-amber-50' },
+    { label: 'Best exam', value: overview.topScore ? `${parseFloat(overview.topScore.percentage)}%` : '—', sub: overview.topScore?.examName, icon: TrendingUp, tone: 'text-emerald-600 bg-emerald-50' },
+    { label: 'Assignments graded', value: assignmentResults.length, icon: CheckCircle2, tone: 'text-violet-600 bg-violet-50' },
+  ];
+
   return (
-    <div className="space-y-5 bg-[radial-gradient(circle_at_top_left,_rgba(250,204,21,0.14),_transparent_24%),radial-gradient(circle_at_top_right,_rgba(251,146,60,0.12),_transparent_26%),linear-gradient(180deg,_#fffaf3_0%,_#f8fafc_100%)] p-3 pb-24 md:p-4 md:pb-6">
-      {/* <div className="relative overflow-hidden rounded-[28px] border border-amber-200/70 bg-gradient-to-r from-amber-400 via-orange-500 to-amber-500 p-5 text-white shadow-[0_28px_80px_-45px_rgba(249,115,22,0.65)] md:p-7">
-        <div className="absolute inset-0 opacity-20">
-          <div className="absolute -right-10 top-0 h-40 w-40 rounded-full bg-white/40 blur-3xl" />
-          <div className="absolute -left-12 bottom-0 h-32 w-32 rounded-full bg-yellow-100/50 blur-3xl" />
-        </div>
-
-        <div className="relative z-10 flex flex-col gap-5 lg:flex-row lg:items-end lg:justify-between">
-          <div className="max-w-2xl">
-            <div className="inline-flex items-center gap-2 rounded-full border border-white/30 bg-white/15 px-3 py-1 text-[11px] font-semibold uppercase tracking-[0.18em] text-white/90">
-              <Sparkles className="h-3.5 w-3.5" />
-              Academic Progress
-            </div>
-            <div className="mt-4 flex items-center gap-3">
-              <Trophy className="h-7 w-7 text-amber-100" />
-              <h1 className="text-2xl font-bold tracking-tight md:text-4xl">My Results</h1>
-            </div>
-            <p className="mt-2 text-sm leading-6 text-amber-50/95 md:text-base">
-              Track your published exam performance, review subject-wise marks, and download the official report card when it becomes available.
-            </p>
+    <div className="p-3 pb-24 md:p-4 md:pb-4">
+      <div
+        ref={shellRef}
+        style={shellHeight ? { height: shellHeight } : undefined}
+        className="flex min-h-[520px] flex-col overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm"
+      >
+        {/* ── Header strip ── */}
+        <div className="flex shrink-0 flex-wrap items-center gap-3 border-b border-slate-200 px-4 py-3">
+          <span className="flex size-10 items-center justify-center rounded-xl bg-amber-100 text-amber-600"><Trophy className="size-5" /></span>
+          <div className="min-w-0 flex-1">
+            <h1 className="text-[17px] font-bold leading-tight text-slate-900">My Results</h1>
+            <p className="text-[12px] text-slate-500">Pick an exam on the left to see your marks for every subject.</p>
           </div>
-
-          <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:min-w-[430px]">
-            <HeroMetric
-              label="Average"
-              value={`${overview.averagePercentage.toFixed(1)}%`}
-              helper={hasResults ? 'Across published exams' : 'Waiting for first result'}
-            />
-            <HeroMetric
-              label="Published"
-              value={overview.examsTaken}
-              helper={overview.examsTaken === 1 ? 'Exam available' : 'Exams available'}
-            />
-            <HeroMetric
-              label="Updated"
-              value={lastUpdated ? lastUpdated.toLocaleDateString() : 'Today'}
-              helper="Latest sync"
-            />
-          </div>
-        </div>
-      </div> */}
-      <PageHeader
-        title="Results"
-        eyebrow={activeAcademicSession ? `Session ${activeAcademicSession}` : undefined}
-        description="Published exam performance, subject-wise marks and your report card."
-      />
-      {activeAcademicSession && (
-        <div className="-mt-2 inline-flex items-center gap-2 rounded-full border border-amber-100 bg-amber-50 px-3 py-1 text-xs font-semibold text-amber-700">
-          <span className="h-2 w-2 rounded-full bg-amber-500" />
-          Active Session: {activeAcademicSession}
-        </div>
-      )}
-      {error && (
-        <div className="rounded-2xl border border-red-100 bg-red-50 px-4 py-3 text-sm text-red-700 flex items-center gap-2">
-          <AlertCircle size={16} className="shrink-0" />
-          {error}
-        </div>
-      )}
-
-      <div className="grid grid-cols-2 gap-3 xl:grid-cols-4">
-        <SummaryCard
-          icon={Award}
-          title="Published Exams"
-          value={overview.examsTaken}
-          subtitle={hasResults ? 'Results available now' : 'No published records yet'}
-          grad="from-blue-500 to-indigo-600"
-          shadow="shadow-blue-200/60"
-        />
-        <SummaryCard
-          icon={TrendingUp}
-          title="Best Exam"
-          value={overview.topScore ? `${parseFloat(overview.topScore.percentage)}%` : 'N/A'}
-          subtitle={overview.topScore?.examName || 'Awaiting published result'}
-          grad="from-emerald-500 to-teal-600"
-          shadow="shadow-emerald-200/60"
-        />
-        <SummaryCard
-          icon={Target}
-          title="Average Score"
-          value={`${parseFloat(overview.averagePercentage)}%`}
-          subtitle={hasResults ? 'Current published average' : 'Will appear after first result'}
-          grad="from-amber-400 to-orange-500"
-          shadow="shadow-amber-200/60"
-        />
-        <SummaryCard
-          icon={Calendar}
-          title="Latest Exam"
-          value={overview.recentExam?.examName || 'Not available'}
-          subtitle={overview.recentExam?.date ? formatDate(overview.recentExam.date) : 'No exam published'}
-          grad="from-purple-500 to-fuchsia-600"
-          shadow="shadow-purple-200/60"
-        />
-      </div>
-
-      {assignmentResults.length > 0 && (
-        <section className="rounded-2xl border border-indigo-100 bg-white p-4 shadow-sm md:p-5">
-          <div className="mb-4 flex items-center justify-between gap-3">
-            <div>
-              <h2 className="text-base font-bold text-slate-900">Published Assignment Results</h2>
-              <p className="mt-1 text-xs text-slate-500">Marks and feedback released by your teachers.</p>
-            </div>
-            <span className="rounded-full bg-indigo-50 px-3 py-1 text-xs font-bold text-indigo-700">
-              {assignmentResults.length}
+          {activeAcademicSession && (
+            <span className="inline-flex items-center gap-1.5 rounded-full bg-amber-50 px-3 py-1 text-[11.5px] font-semibold text-amber-700 ring-1 ring-amber-100">
+              <span className="size-1.5 rounded-full bg-amber-500" /> Session {activeAcademicSession}
             </span>
-          </div>
-          <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-3">
-            {assignmentResults.map((result) => (
-              <AssignmentResultCard key={result._id} result={result} />
-            ))}
-          </div>
-        </section>
-      )}
-
-      {effectiveExamGroups.length === 0 ? (
-        <div className="overflow-hidden rounded-[28px] border border-dashed border-amber-200 bg-white shadow-[0_18px_45px_-38px_rgba(15,23,42,0.35)]">
-          <div className="grid gap-0 lg:grid-cols-[1.2fr_0.8fr]">
-            <div className="border-b border-amber-100 bg-[linear-gradient(135deg,_rgba(254,243,199,0.55),_rgba(255,255,255,0.95))] p-6 sm:p-8 lg:border-b-0 lg:border-r">
-              <div className="inline-flex items-center gap-2 rounded-full border border-amber-200 bg-white px-3 py-1 text-xs font-semibold uppercase tracking-[0.16em] text-amber-700">
-                <ShieldCheck className="h-3.5 w-3.5" />
-                Awaiting Publication
-              </div>
-              <h2 className="mt-4 text-2xl font-bold tracking-tight text-slate-900">Exam results have not been published yet</h2>
-              <p className="mt-3 max-w-xl text-sm leading-7 text-slate-600">
-                Your school has not released an exam result for this term yet. Once marks are published, this page will automatically show your overall percentage, subject breakdown, grade, and downloadable report card.
-              </p>
-              <div className="mt-6 grid gap-3 sm:grid-cols-2">
-                <InfoTile
-                  icon={GraduationCap}
-                  title="What will appear here"
-                  copy="Exam name, marks, grade, pass or fail status, and subject-wise performance."
-                />
-                <InfoTile
-                  icon={BookOpen}
-                  title="What to do now"
-                  copy="Check with your class teacher or school noticeboard if you expected a published result already."
-                />
-              </div>
-            </div>
-
-            <div className="flex flex-col justify-center bg-slate-50/80 p-6 sm:p-8">
-              <div className="mx-auto flex h-20 w-20 items-center justify-center rounded-full bg-white shadow-sm">
-                <Trophy className="h-10 w-10 text-amber-300" />
-              </div>
-              <p className="mt-5 text-center text-sm font-semibold text-slate-700">
-                Nothing is missing from your account right now.
-              </p>
-              <p className="mt-2 text-center text-sm leading-6 text-slate-500">
-                This section will update as soon as the school publishes your exam record.
-              </p>
-            </div>
-          </div>
-        </div>
-      ) : (
-        <>
-          <div className="rounded-2xl border border-gray-100 bg-white p-4 shadow-sm md:p-5">
-            <div className="mb-3 flex items-center gap-2">
-              <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-indigo-50 text-indigo-600">
-                <Search className="h-4 w-4" />
-              </div>
-              <h3 className="text-sm font-bold text-gray-800">Find a Result</h3>
-            </div>
-            <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
-              <div>
-                <label className="mb-1 block text-xs font-semibold text-gray-500">Session</label>
-                <select
-                  value={sessionFilter}
-                  onChange={(e) => setSessionFilter(e.target.value)}
-                  className="w-full rounded-xl border border-gray-200 bg-gray-50 px-3 py-2.5 text-sm font-medium text-gray-700 outline-none focus:border-indigo-400 focus:ring-2 focus:ring-indigo-100"
-                >
-                  <option value="all">All Sessions</option>
-                  {sessionOptions.map((s) => (
-                    <option key={s} value={s}>{s}</option>
-                  ))}
-                </select>
-              </div>
-              <div>
-                <label className="mb-1 block text-xs font-semibold text-gray-500">Exam</label>
-                <select
-                  value={examFilter}
-                  onChange={(e) => setExamFilter(e.target.value)}
-                  className="w-full rounded-xl border border-gray-200 bg-gray-50 px-3 py-2.5 text-sm font-medium text-gray-700 outline-none focus:border-indigo-400 focus:ring-2 focus:ring-indigo-100"
-                >
-                  <option value="all">All Exams</option>
-                  {examOptionsForSession.map((g) => (
-                    <option key={g._id} value={g._id}>{g.title || 'Exam'}</option>
-                  ))}
-                </select>
-              </div>
-            </div>
-          </div>
-
-          {filteredCards.length > 0 && (
-            <TermTimeline cards={filteredCards} />
           )}
+        </div>
 
-          <div className="mt-4 space-y-4 flex flex-wrap justify-center gap-4">
-            {filteredGroups.length === 0 ? (
-              <div className="rounded-2xl border border-dashed border-gray-200 bg-gray-50 p-6 text-center text-sm text-gray-500">
-                No exams match this filter.
+        {/* ── Stats row (divided by borders) ── */}
+        <div className="grid shrink-0 grid-cols-2 divide-x divide-y divide-slate-200 border-b border-slate-200 md:grid-cols-4 md:divide-y-0">
+          {stats.map((s) => (
+            <div key={s.label} className="flex items-center gap-3 px-4 py-3">
+              <span className={`flex size-9 shrink-0 items-center justify-center rounded-lg ${s.tone}`}><s.icon className="size-4.5" /></span>
+              <div className="min-w-0">
+                <p className="text-[18px] font-bold leading-none text-slate-900">{s.value}</p>
+                <p className="mt-1 truncate text-[11px] text-slate-500">{s.label}{s.sub ? ` · ${s.sub}` : ''}</p>
               </div>
-            ) : (
-              pageGroups.map((g) => {
-                const entry = entriesById.get(String(g._id));
-                if (!entry?.card) {
-                  return (
-                    <div key={g._id} className="rounded-2xl border border-dashed border-gray-200 bg-gray-50 p-4 text-sm text-gray-500">
-                      No published result for {g.title || 'this exam'}.
-                    </div>
-                  );
-                }
+            </div>
+          ))}
+        </div>
+
+        {error && (
+          <div className="flex shrink-0 items-center gap-2 border-b border-red-100 bg-red-50 px-4 py-2 text-[12.5px] text-red-700">
+            <AlertCircle size={15} className="shrink-0" /> {error}
+          </div>
+        )}
+
+        {/* ── Body: list | details ── */}
+        <div className="grid min-h-0 flex-1 lg:grid-cols-[300px_minmax(0,1fr)]">
+          {/* left rail */}
+          <aside className={`min-h-0 flex-col border-slate-200 lg:flex lg:border-r ${mobileDetail ? 'hidden' : 'flex'}`}>
+            {sessionOptions.length > 1 && (
+              <div className="shrink-0 border-b border-slate-200 p-3">
+                <label className="mb-1 block text-[10.5px] font-semibold uppercase tracking-wide text-slate-400">Session</label>
+                <select value={sessionFilter} onChange={(e) => setSessionFilter(e.target.value)} className="h-8 w-full rounded-lg border border-slate-200 bg-slate-50 px-2.5 text-[12.5px] font-medium text-slate-700 outline-none focus:border-amber-400">
+                  <option value="all">All sessions</option>
+                  {sessionOptions.map((s) => <option key={s} value={s}>{s}</option>)}
+                </select>
+              </div>
+            )}
+            <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain p-2">
+              <p className="px-2 pb-1.5 pt-1 text-[10.5px] font-bold uppercase tracking-wide text-slate-400">Exams</p>
+              {filteredGroups.length === 0 ? (
+                <p className="rounded-xl bg-slate-50 px-3 py-4 text-center text-[12px] text-slate-500">No exam results published yet.</p>
+              ) : filteredGroups.map((g) => {
+                const card = entriesById.get(String(g._id))?.card;
+                const pct = card ? toNumber(card.percentage, 0) : null;
+                const active = activePick === String(g._id);
                 return (
-                  <ExamCard
+                  <button
                     key={g._id}
-                    exam={entry.card}
-                    onDownload={() => handleDownloadFor(g, entry.raw)}
-                    downloadingReportCard={downloadingId === String(g._id)}
+                    type="button"
+                    onClick={() => { setPick(String(g._id)); setMobileDetail(true); }}
+                    className={`relative mb-1 flex w-full items-center gap-2.5 rounded-xl px-3 py-2.5 text-left transition ${active ? 'bg-amber-50 ring-1 ring-amber-200' : 'hover:bg-slate-50'}`}
+                  >
+                    {active && <span className="absolute inset-y-2 left-0 w-1 rounded-r-full bg-amber-500" />}
+                    <span className="min-w-0 flex-1">
+                      <span className="block truncate text-[13px] font-semibold text-slate-900">{g.title || 'Exam'}</span>
+                      <span className="block truncate text-[11px] text-slate-500">{g.sessionLabel}{card?.grade ? ` · Grade ${card.grade}` : ''}</span>
+                    </span>
+                    {pct !== null && (
+                      <span className={`shrink-0 rounded-full px-2 py-0.5 text-[11px] font-bold ${pct >= 80 ? 'bg-emerald-100 text-emerald-700' : pct >= 50 ? 'bg-amber-100 text-amber-700' : 'bg-rose-100 text-rose-700'}`}>{pct.toFixed(0)}%</span>
+                    )}
+                    <ChevronRight className="size-4 shrink-0 text-slate-300" />
+                  </button>
+                );
+              })}
+
+              {assignmentResults.length > 0 && (
+                <>
+                  <p className="px-2 pb-1.5 pt-3 text-[10.5px] font-bold uppercase tracking-wide text-slate-400">Assignments</p>
+                  <button
+                    type="button"
+                    onClick={() => { setPick('assignments'); setMobileDetail(true); }}
+                    className={`relative flex w-full items-center gap-2.5 rounded-xl px-3 py-2.5 text-left transition ${activePick === 'assignments' ? 'bg-violet-50 ring-1 ring-violet-200' : 'hover:bg-slate-50'}`}
+                  >
+                    {activePick === 'assignments' && <span className="absolute inset-y-2 left-0 w-1 rounded-r-full bg-violet-500" />}
+                    <span className="min-w-0 flex-1">
+                      <span className="block text-[13px] font-semibold text-slate-900">Assignment marks</span>
+                      <span className="block text-[11px] text-slate-500">Marks & feedback from teachers</span>
+                    </span>
+                    <span className="rounded-full bg-violet-100 px-2 py-0.5 text-[11px] font-bold text-violet-700">{assignmentResults.length}</span>
+                    <ChevronRight className="size-4 shrink-0 text-slate-300" />
+                  </button>
+                </>
+              )}
+            </div>
+          </aside>
+
+          {/* right: details */}
+          <section className={`min-h-0 flex-col lg:flex ${mobileDetail ? 'flex' : 'hidden'}`}>
+            <button type="button" onClick={() => setMobileDetail(false)} className="m-3 mb-0 inline-flex items-center gap-1 self-start text-[12px] font-semibold text-amber-700 lg:hidden">
+              <ChevronLeft className="size-4" /> All results
+            </button>
+            <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain p-4">
+              {!activePick ? (
+                <div className="flex h-full flex-col items-center justify-center py-12 text-center">
+                  <span className="flex size-16 items-center justify-center rounded-full bg-amber-50"><Trophy className="size-8 text-amber-300" /></span>
+                  <p className="mt-3 text-[14px] font-semibold text-slate-800">No results yet</p>
+                  <p className="mt-1 max-w-sm text-[12.5px] text-slate-500">When your school publishes exam results or your teachers grade assignments, they will show up here.</p>
+                </div>
+              ) : activePick === 'assignments' ? (
+                <div>
+                  <p className="mb-3 text-[14px] font-bold text-slate-900">Published Assignment Results</p>
+                  <AssignmentResultsTable results={assignmentResults} />
+                </div>
+              ) : activeEntry?.card ? (
+                <div className="flex justify-center">
+                  <ExamCard
+                    exam={activeEntry.card}
+                    onDownload={() => handleDownloadFor(activeGroup, activeEntry.raw)}
+                    downloadingReportCard={downloadingId === String(activeGroup._id)}
                     showDownload
                   />
-                );
-              })
-            )}
-
-            {filteredGroups.length > RESULTS_PAGE_SIZE && (
-              <div className="flex items-center justify-center gap-1.5 pt-2">
-                <button
-                  type="button"
-                  onClick={() => setPage((p) => Math.max(1, p - 1))}
-                  disabled={page === 1}
-                  className="flex h-8 w-8 items-center justify-center rounded-lg border border-gray-200 text-gray-500 hover:bg-gray-50 disabled:cursor-not-allowed disabled:opacity-40"
-                >
-                  <ChevronLeft className="h-4 w-4" />
-                </button>
-                {Array.from({ length: totalPages }).map((_, idx) => (
-                  <button
-                    key={idx}
-                    type="button"
-                    onClick={() => setPage(idx + 1)}
-                    className={`h-8 min-w-8 rounded-lg px-2.5 text-xs font-bold transition-colors ${page === idx + 1
-                      ? 'bg-linear-to-r from-indigo-500 to-purple-600 text-white shadow-sm'
-                      : 'border border-gray-200 text-gray-500 hover:bg-gray-50'
-                      }`}
-                  >
-                    {idx + 1}
-                  </button>
-                ))}
-                <button
-                  type="button"
-                  onClick={() => setPage((p) => Math.min(totalPages, p + 1))}
-                  disabled={page === totalPages}
-                  className="flex h-8 w-8 items-center justify-center rounded-lg border border-gray-200 text-gray-500 hover:bg-gray-50 disabled:cursor-not-allowed disabled:opacity-40"
-                >
-                  <ChevronRight className="h-4 w-4" />
-                </button>
-              </div>
-            )}
-          </div>
-        </>
-      )}
+                </div>
+              ) : (
+                <p className="rounded-xl bg-slate-50 p-6 text-center text-[12.5px] text-slate-500">No published result for {activeGroup?.title || 'this exam'}.</p>
+              )}
+            </div>
+          </section>
+        </div>
+      </div>
     </div>
   );
 };
+
+// Assignment results as a simple table (one row per graded assignment).
+const AssignmentResultsTable = ({ results = [] }) => (
+  <div className="overflow-hidden rounded-xl border border-slate-200">
+    <div className="overflow-x-auto">
+      <table className="w-full min-w-[560px] text-left text-[12.5px]">
+        <thead className="bg-slate-50 text-[11px] font-semibold uppercase tracking-wide text-slate-500">
+          <tr>
+            <th className="w-12 px-3 py-2.5">Sl No</th>
+            <th className="px-3 py-2.5">Assignment</th>
+            <th className="px-3 py-2.5">Subject</th>
+            <th className="px-3 py-2.5">Submitted</th>
+            <th className="px-3 py-2.5">Marks</th>
+            <th className="px-3 py-2.5">Teacher Feedback</th>
+          </tr>
+        </thead>
+        <tbody className="divide-y divide-slate-100">
+          {results.map((result, idx) => {
+            const obtained = toNumber(result?.obtainedMarks, 0);
+            const total = toNumber(result?.totalMarks, 0);
+            return (
+              <tr key={result._id || idx} className="align-top transition hover:bg-slate-50/70">
+                <td className="px-3 py-2.5 font-semibold text-slate-500">{idx + 1}</td>
+                <td className="max-w-[200px] px-3 py-2.5"><p className="truncate font-semibold capitalize text-slate-900" title={result?.examName}>{result?.examName || 'Assignment'}</p></td>
+                <td className="px-3 py-2.5"><span className="rounded-full bg-indigo-50 px-2 py-0.5 text-[11px] font-semibold text-indigo-700">{result?.subject || 'Assignment'}</span></td>
+                <td className="whitespace-nowrap px-3 py-2.5 text-slate-600">{result?.date ? formatDate(result.date) : '—'}</td>
+                <td className="whitespace-nowrap px-3 py-2.5 text-slate-500"><span className="font-bold text-slate-900">{obtained}</span> / {total} marks</td>
+                <td className="max-w-[240px] px-3 py-2.5 text-slate-700">{result?.remarks ? <p className="line-clamp-2" title={result.remarks}>{result.remarks}</p> : <span className="text-slate-400">—</span>}</td>
+              </tr>
+            );
+          })}
+        </tbody>
+      </table>
+    </div>
+  </div>
+);
 
 const AssignmentResultCard = ({ result }) => {
   const obtainedMarks = toNumber(result?.obtainedMarks, 0);
@@ -775,44 +717,56 @@ const AssignmentResultCard = ({ result }) => {
     : toNumber(result?.percentage, 0);
   const tier = scoreTier(percentage);
   const passed = String(result?.status || '').toLowerCase() === 'pass';
+  const message = percentage >= 90 ? 'Excellent work!' : percentage >= 75 ? 'Great job!' : percentage >= 50 ? 'Good effort — keep going.' : 'Needs more practice.';
 
   return (
-    <article className={`rounded-2xl border ${tier.border} bg-slate-50 p-4`}>
-      <div className="flex items-start justify-between gap-3">
-        <div className="min-w-0">
-          <span className="inline-flex rounded-full bg-white px-2.5 py-1 text-[11px] font-bold text-indigo-700 shadow-sm">
-            {result?.subject || 'Assignment'}
+    <article className="overflow-hidden rounded-2xl border border-slate-200 bg-white">
+      {/* top: subject · title · date | score ring */}
+      <div className="flex items-center gap-3 p-3.5">
+        <div className="min-w-0 flex-1">
+          <span className="inline-flex items-center gap-1 rounded-full bg-indigo-50 px-2 py-0.5 text-[10.5px] font-bold text-indigo-700">
+            <BookOpen className="size-3" />{result?.subject || 'Assignment'}
           </span>
-          <h3 className="mt-2 truncate text-sm font-bold text-slate-900">
+          <h3 className="mt-1.5 truncate text-[14px] font-bold capitalize text-slate-900" title={result?.examName}>
             {result?.examName || 'Assignment'}
           </h3>
           {result?.date && (
-            <p className="mt-1 flex items-center gap-1 text-xs text-slate-500">
-              <Calendar className="h-3.5 w-3.5" />
-              Submitted {formatDate(result.date)}
+            <p className="mt-0.5 flex items-center gap-1 text-[11px] text-slate-500">
+              <Calendar className="size-3" /> Submitted {formatDate(result.date)}
             </p>
           )}
         </div>
-        <div className={`rounded-xl ${tier.soft} px-3 py-2 text-right`}>
-          <p className={`text-lg font-black ${tier.text}`}>{percentage}%</p>
-          {result?.grade && <p className={`text-xs font-bold ${tier.text}`}>Grade {result.grade}</p>}
+        <div className="relative flex size-16 shrink-0 items-center justify-center">
+          <div className="absolute inset-0"><Ring pct={percentage} size={64} stroke={7} color={tier.ring} label="Score" /></div>
+          <span className={`relative text-[14px] font-black ${tier.text}`}>{percentage}%</span>
         </div>
       </div>
 
-      <div className="mt-4 flex items-center justify-between gap-3 border-t border-slate-200 pt-3">
-        <p className="text-sm text-slate-600">
-          <span className="font-bold text-slate-900">{obtainedMarks}</span> / {totalMarks} marks
-        </p>
-        <span className={`inline-flex items-center gap-1 rounded-full px-2.5 py-1 text-xs font-bold ${passed ? 'bg-emerald-100 text-emerald-700' : 'bg-rose-100 text-rose-700'}`}>
-          {passed ? <CheckCircle2 className="h-3.5 w-3.5" /> : <XCircle className="h-3.5 w-3.5" />}
-          {passed ? 'Pass' : 'Needs work'}
-        </span>
+      {/* middle: marks + progress */}
+      <div className="border-t border-slate-100 px-3.5 py-2.5">
+        <div className="flex items-baseline justify-between gap-2">
+          <p className="text-[13px] text-slate-500">
+            <span className={`text-[18px] font-black ${tier.text}`}>{obtainedMarks}</span> / {totalMarks} marks
+          </p>
+          <div className="flex items-center gap-1.5">
+            {result?.grade && <span className={`rounded-md px-2 py-0.5 text-[11px] font-bold ${tier.soft} ${tier.text}`}>Grade {result.grade}</span>}
+            <span className={`inline-flex items-center gap-1 rounded-md px-2 py-0.5 text-[11px] font-bold ${passed ? 'bg-emerald-50 text-emerald-700' : 'bg-rose-50 text-rose-700'}`}>
+              {passed ? <CheckCircle2 className="size-3" /> : <XCircle className="size-3" />}
+              {passed ? 'Pass' : 'Needs work'}
+            </span>
+          </div>
+        </div>
+        <div className="mt-2 h-1.5 overflow-hidden rounded-full bg-slate-100">
+          <Motion.div initial={{ width: 0 }} animate={{ width: `${Math.min(100, Math.max(0, percentage))}%` }} transition={{ duration: 0.6, ease: 'easeOut' }} className={`h-full rounded-full ${tier.bar}`} />
+        </div>
+        <p className="mt-1.5 text-[11px] font-medium text-slate-500">{message}</p>
       </div>
 
+      {/* bottom: feedback */}
       {result?.remarks && (
-        <div className="mt-3 rounded-xl border border-indigo-100 bg-white p-3">
-          <p className="text-[11px] font-bold uppercase tracking-wide text-indigo-600">Teacher feedback</p>
-          <p className="mt-1 text-xs leading-5 text-slate-600">{result.remarks}</p>
+        <div className="border-t border-slate-100 bg-slate-50/70 px-3.5 py-2.5">
+          <p className="flex items-center gap-1 text-[10.5px] font-bold uppercase tracking-wide text-indigo-600">💬 Teacher feedback</p>
+          <p className="mt-0.5 text-[12.5px] italic leading-5 text-slate-700">{result.remarks}</p>
         </div>
       )}
     </article>

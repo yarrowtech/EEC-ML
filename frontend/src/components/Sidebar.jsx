@@ -4,7 +4,7 @@ import {
   ChevronDown, ChevronRight, ChevronLeft, Trophy, Bell,
   MessageCircle, MessageSquare, Brain, X, BarChart3,
   Heart, Star, Target, AlertOctagon, Video, Activity,
-  GraduationCap, CalendarClock, ClipboardCheck, NotebookPen, FileBadge,
+  GraduationCap, CalendarClock, ClipboardCheck, NotebookPen, FileBadge, FlaskConical, Layers,
 } from 'lucide-react';
 
 import { useNavigate } from 'react-router-dom';
@@ -38,6 +38,9 @@ const MENU_ITEMS = [
       { id: 'practice-papers', name: 'Practice', icon: ClipboardCheck },
       { id: 'study-materials', name: 'Materials', icon: BookOpen },
       { id: 'assignments', name: 'Assignments', icon: FileText },
+      { id: 'assignments-practice', name: 'Practice Questions', icon: GraduationCap },
+      { id: 'assignments-lab', name: 'Virtual Lab', icon: FlaskConical },
+      { id: 'assignments-flashcards', name: 'Flashcards', icon: Layers },
       { id: 'assignments-journal', name: 'Journal', icon: NotebookPen },
       { id: 'assignments-academic-alcove', name: 'Community Wall', icon: Target },
       { id: 'results', name: 'Results', icon: BarChart3 },

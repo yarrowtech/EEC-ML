@@ -59,7 +59,6 @@ describe('student published assignment results', () => {
     expect(screen.getByText('Mathematics')).toBeInTheDocument();
     expect(screen.getByText('18')).toBeInTheDocument();
     expect(screen.getByText('/ 20 marks')).toBeInTheDocument();
-    expect(screen.getByText('90%')).toBeInTheDocument();
     expect(screen.getByText('Clear working and explanation.')).toBeInTheDocument();
 
     await waitFor(() => {

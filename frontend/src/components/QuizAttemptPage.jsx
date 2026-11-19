@@ -119,13 +119,23 @@ const QuizAttemptPage = () => {
     setSubmitError('');
     integrity.current.autoSubmitted = auto;
     try {
-      await axios.post(`${API_BASE}/api/assignment/submit`, {
+      const { data: submitted } = await axios.post(`${API_BASE}/api/assignment/submit`, {
         assignmentId,
         quizAnswers: answers,
         integrityEvents: integrity.current,
       }, { headers: { Authorization: `Bearer ${localStorage.getItem('token')}` } });
       storage.remove(draftKey);
       clearStudentApiCacheByUrl(ASSIGNMENTS_ENDPOINT);
+      // MCQ / fill-in-the-blank tests are graded instantly — show the score now.
+      if (submitted?.publishedByTeacher) {
+        setAssignment((prev) => ({
+          ...prev,
+          publishedByTeacher: true,
+          score: submitted.score,
+          quizResult: submitted.quizResult || prev?.quizResult,
+          submissionStatus: 'graded',
+        }));
+      }
       setConfirmOpen(false);
       setPhase('done');
       exitFullscreen();

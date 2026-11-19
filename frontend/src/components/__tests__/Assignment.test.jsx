@@ -63,7 +63,7 @@ describe('student school assignment workflow', () => {
 
     renderAssignment();
 
-    await screen.findByText('Fractions homework');
+    await screen.findAllByText('Fractions homework');
     await user.click(screen.getByRole('button', { name: /open assignment/i }));
     const answer = screen.getByPlaceholderText(/write your answer/i);
     await user.type(answer, 'Equivalent fractions have the same value.');
@@ -108,7 +108,7 @@ describe('student school assignment workflow', () => {
 
     renderAssignment();
 
-    await screen.findByText('PDF worksheet');
+    await screen.findAllByText('PDF worksheet');
     await user.click(screen.getByRole('button', { name: /open assignment/i }));
     const file = new File(['pdf-data'], 'answer.pdf', { type: 'application/pdf' });
     await user.upload(screen.getByLabelText(/upload a pdf or photo/i), file);
@@ -152,7 +152,7 @@ describe('student school assignment workflow', () => {
 
     renderAssignment();
 
-    await screen.findByText('Photo worksheet');
+    await screen.findAllByText('Photo worksheet');
     await user.click(screen.getByRole('button', { name: /open assignment/i }));
     const file = new File(['photo-data'], 'answer.jpg', { type: 'image/jpeg' });
     await user.upload(screen.getByLabelText(/upload a pdf or photo/i), file);

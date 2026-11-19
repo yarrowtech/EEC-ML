@@ -50,6 +50,7 @@ import axios from 'axios';
 import { useLocation, useNavigate } from 'react-router-dom';
 import toast from 'react-hot-toast';
 import { fetchCachedJson, clearStudentApiCacheByUrl } from '../utils/studentApiCache';
+import StudentSchoolAssignments from './StudentSchoolAssignments';
 
 const LAB_EXPERIMENTS = [
   // ... (your LAB_EXPERIMENTS array here - unchanged)
@@ -134,9 +135,7 @@ const Assignment = ({ assignmentType }) => {
 
   // ─── Fetch assignments ──────────────────────────────────────────
   useEffect(() => {
-    if (assignmentType === 'school') {
-      fetchAssignments({ forceRefresh: true });
-    }
+    // School assignments are loaded by StudentSchoolAssignments.
   }, [assignmentType]);
 
   useEffect(() => {
@@ -887,6 +886,9 @@ const Assignment = ({ assignmentType }) => {
   // ─────────────────── RENDER ────────────────────────────────────────────
   const correctCount = practiceResults ? Object.values(practiceResults).filter((r) => r?.isCorrect).length : 0;
   const scorePercent = practiceResults && practiceQuestions.length ? Math.round((correctCount / practiceQuestions.length) * 100) : 0;
+
+  // School assignments use the new list + detail workspace.
+  if (assignmentType === 'school') return <StudentSchoolAssignments />;
 
   return (
     <div className="w-full">

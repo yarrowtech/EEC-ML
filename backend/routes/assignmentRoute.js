@@ -1360,7 +1360,19 @@ router.post("/submit", authStudent, async (req, res) => {
                     : `Auto-graded ${quizResult.autoScore}/${quizResult.objectiveMarks}.`,
                 aiGradingStatus: 'done',
             } : {}),
+            // Fully objective tests (MCQ / fill in the blanks / true-false):
+            // nothing left for the teacher to mark, so grade and release the
+            // result instantly. Quizzes with short answers still wait for review.
+            ...(isQuiz && !quizResult.pendingMarks ? {
+                score: quizResult.autoScore,
+                status: 'graded',
+                gradedAt: new Date(),
+                feedback: `Auto-graded: ${quizResult.autoScore}/${quizResult.objectiveMarks}`,
+                publishedByTeacher: true,
+                publishedAt: new Date(),
+            } : {}),
         };
+        const instantResult = isQuiz && !quizResult.pendingMarks;
 
         progress.submissions.push({
             assignmentId,
@@ -1439,8 +1451,14 @@ router.post("/submit", authStudent, async (req, res) => {
         }
 
         res.status(201).json({
-            message: 'Assignment submitted',
-            status,
+            message: instantResult ? 'Assignment submitted and graded' : 'Assignment submitted',
+            status: instantResult ? 'graded' : status,
+            ...(instantResult ? {
+                score: quizResult.autoScore,
+                totalMarks: quizResult.objectiveMarks,
+                quizResult: { autoScore: quizResult.autoScore, objectiveMarks: quizResult.objectiveMarks, pendingMarks: 0, breakdown: quizResult.breakdown },
+                publishedByTeacher: true,
+            } : {}),
             submittedAt: submissionData.submittedAt,
             submissionText: submissionData.submissionText,
             attachmentUrl: submissionData.attachmentUrl,

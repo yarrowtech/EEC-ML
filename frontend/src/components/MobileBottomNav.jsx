@@ -3,7 +3,7 @@ import {
   Home, FileBadge, BookOpen, Calendar, CalendarDays, MessageCircle, CircleUserRound,
   X, FileText, NotebookPen, Target, BarChart3, Users,
   Brain, Save, LogOut, GraduationCap, Bell, Heart, Zap,
-  ClipboardCheck,
+  ClipboardCheck, FlaskConical, Layers,
 } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 import { AUTH_NOTICE, logoutAndRedirect } from '../utils/authSession';
@@ -19,6 +19,9 @@ const subMenus = {
     items: [
       { id: 'learning',                    name: 'Learning Hub',  icon: Brain,         color: 'bg-amber-500',  desc: 'Lessons & tutor' },
       { id: 'assignments',                 name: 'Assignments',   icon: FileText,      color: 'bg-amber-600',  desc: 'Submit & track' },
+      { id: 'assignments-practice',        name: 'Practice Qs',   icon: GraduationCap, color: 'bg-amber-500',  desc: 'Self practice' },
+      { id: 'assignments-lab',             name: 'Virtual Lab',   icon: FlaskConical,  color: 'bg-amber-600',  desc: '3D experiments' },
+      { id: 'assignments-flashcards',      name: 'Flashcards',    icon: Layers,        color: 'bg-amber-500',  desc: 'Quick revision' },
       { id: 'assignments-journal',         name: 'Journal',       icon: NotebookPen,   color: 'bg-amber-500',  desc: 'My notes' },
       { id: 'assignments-academic-alcove', name: 'Community Wall', icon: Target,       color: 'bg-amber-600',  desc: 'Posts & polls' },
       { id: 'results',                     name: 'Results',       icon: BarChart3,     color: 'bg-amber-500',  desc: 'Grades' },
