@@ -778,6 +778,12 @@ router.delete("/teacher/delete/:id", authTeacher, async (req, res) => {
     }
 });
 
+// A fully objective quiz (MCQ / fill in the blanks / true-false) is marked by
+// the system on submit; its score is final and the teacher cannot change it.
+const isAutoGradedSubmission = (sub) => Boolean(
+    sub?.quizResult && Number(sub.quizResult.pendingMarks || 0) === 0
+);
+
 // Teachers grade assignment submission
 router.post("/teacher/grade", authTeacher, async (req, res) => {
   // #swagger.tags = ['Assignments']
@@ -817,6 +823,9 @@ router.post("/teacher/grade", authTeacher, async (req, res) => {
 
         if (submissionIndex === -1) {
             return res.status(404).json({ error: 'Submission not found' });
+        }
+        if (isAutoGradedSubmission(progress.submissions[submissionIndex])) {
+            return res.status(400).json({ error: 'This submission was auto-graded. Its marks cannot be changed.' });
         }
 
         progress.submissions[submissionIndex].score = numericScore;
@@ -1064,6 +1073,10 @@ router.post("/teacher/grade-bulk", authTeacher, async (req, res) => {
             );
             if (submissionIndex === -1) {
                 failed.push({ index, studentId, assignmentId, reason: 'Submission not found' });
+                return;
+            }
+            if (isAutoGradedSubmission(progress.submissions[submissionIndex])) {
+                failed.push({ index, studentId, assignmentId, reason: 'Auto-graded — marks cannot be changed' });
                 return;
             }
 

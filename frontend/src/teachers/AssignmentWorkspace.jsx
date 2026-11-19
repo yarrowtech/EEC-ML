@@ -6,6 +6,7 @@ import {
   ArrowLeft, ArrowRight, BookOpen, Calculator, CalendarDays, ClipboardCheck, Edit3, ExternalLink,
   FileText, FlaskConical, Globe2, Info, Laptop, Loader2, MessageSquareText, Plus, Search, Send,
   Trash2, X, Check, Palette, Music, Dumbbell, Languages,
+  Edit,
 } from 'lucide-react';
 
 const API_BASE_URL = (import.meta.env.VITE_API_URL || 'http://localhost:5000').replace(/\/$/, '');
@@ -32,11 +33,13 @@ const fmtDate = (value) => {
   return Number.isNaN(d.getTime()) ? '—' : d.toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' });
 };
 const isGraded = (sub) => sub.score !== null && sub.score !== undefined;
+// MCQ / fill-in-the-blank tests are marked by the system — the score is final.
+const isAutoGraded = (sub) => Boolean(sub?.quizResult && Number(sub.quizResult.pendingMarks || 0) === 0);
 
 const StatusPill = ({ status }) => {
   const map = {
-    evaluated: 'bg-emerald-50 text-emerald-700 ring-emerald-100',
-    pending: 'bg-amber-50 text-amber-700 ring-amber-100',
+    evaluated: 'bg-emerald-600 text-white',
+    pending: 'bg-amber-500 text-white ring-amber-100',
     draft: 'bg-slate-100 text-slate-600 ring-slate-200',
     waiting: 'bg-sky-50 text-sky-700 ring-sky-100',
   };
@@ -215,6 +218,7 @@ const AssignmentWorkspace = ({
   };
 
   const saveRow = async (sub) => {
+    if (isAutoGraded(sub)) { setMessage({ type: 'error', text: 'This test was auto-graded — its marks cannot be changed.' }); return; }
     const value = markValue(sub);
     const err = validate(sub, value);
     if (err) { setMessage({ type: 'error', text: err }); return; }
@@ -234,7 +238,7 @@ const AssignmentWorkspace = ({
   };
 
   const saveAll = async () => {
-    const changed = rows.filter((s) => drafts[s.submissionId] !== undefined || (String(activeSubId) === String(s.submissionId) && feedback !== (s.feedback || '') && markValue(s) !== ''));
+    const changed = rows.filter((s) => !isAutoGraded(s)).filter((s) => drafts[s.submissionId] !== undefined || (String(activeSubId) === String(s.submissionId) && feedback !== (s.feedback || '') && markValue(s) !== ''));
     if (!changed.length) { setMessage({ type: 'error', text: 'Enter marks or feedback before saving.' }); return; }
     for (const s of changed) { const err = validate(s, markValue(s)); if (err) { setMessage({ type: 'error', text: err }); return; } }
     const grades = changed.map((s) => ({
@@ -356,14 +360,14 @@ const AssignmentWorkspace = ({
         ) : (
           <>
             <div className="flex shrink-0 items-center gap-2.5 border-b border-slate-100 px-4 py-2.5">
-              <span className="flex size-8 items-center justify-center rounded-lg bg-violet-100 text-violet-600"><ClipboardCheck className="size-4" /></span>
+              {/* <span className="flex size-8 items-center justify-center rounded-lg bg-violet-100 text-violet-600"><ClipboardCheck className="size-4" /></span> */}
               <h2 className="flex-1 text-[15px] font-bold text-slate-900">Evaluate Assignment</h2>
               {selected.status === 'draft' && (
                 <button type="button" onClick={() => onPublish?.(selected)} disabled={publishingAssignments[selected._id]} className="inline-flex h-7 items-center gap-1 rounded-lg bg-emerald-600 px-2.5 text-[11px] font-semibold text-white hover:bg-emerald-700 disabled:opacity-60">
                   {publishingAssignments[selected._id] ? <Loader2 className="size-3 animate-spin" /> : <Send className="size-3" />} Publish
                 </button>
               )}
-              <button type="button" onClick={() => onOpenDetail?.(selected)} title="Edit details" aria-label="Edit details" className="flex size-7 items-center justify-center rounded-lg border border-slate-200 text-slate-500 hover:bg-slate-50"><Edit3 className="size-3.5" /></button>
+              <button type="button" onClick={() => onOpenDetail?.(selected)} title="Edit details" aria-label="Edit details" className="flex size-7 items-center justify-center rounded-lg border border-slate-200 text-slate-500 hover:bg-slate-50"><Edit className="size-3.5" /></button>
               <button type="button" onClick={() => onDelete?.(selected)} title="Delete" aria-label="Delete assignment" className="flex size-7 items-center justify-center rounded-lg border border-slate-200 text-slate-500 hover:border-red-200 hover:bg-red-50 hover:text-red-600"><Trash2 className="size-3.5" /></button>
               <button type="button" onClick={() => setSelectedId(null)} className="inline-flex h-7 items-center gap-1 rounded-lg border border-slate-200 px-2.5 text-[11px] font-semibold text-slate-700 hover:bg-slate-50 lg:hidden">
                 <ArrowLeft className="size-3" /> Back to List
@@ -425,6 +429,7 @@ const AssignmentWorkspace = ({
                     <tbody className="divide-y divide-slate-100">
                       {rows.map((s, i) => {
                         const graded = isGraded(s);
+                        const auto = isAutoGraded(s);
                         const isActive = String(activeSubId) === String(s.submissionId);
                         return (
                           <tr key={s.submissionId} onClick={() => pickRow(s)} className={`cursor-pointer transition ${isActive ? 'bg-blue-50/60' : 'hover:bg-slate-50/70'}`}>
@@ -441,6 +446,12 @@ const AssignmentWorkspace = ({
                                 const fullMarks = Number(s.totalMarks ?? selected.marks);
                                 const hasMax = Number.isFinite(fullMarks) && fullMarks > 0;
                                 return (
+                                  auto ? (
+                                    <span className="inline-flex items-center gap-1" title="Marked automatically — cannot be changed">
+                                      <span className="inline-flex h-7 min-w-14 items-center justify-center rounded-md bg-slate-100 px-2 text-[12px] font-bold text-slate-700">{s.score ?? s.quizResult?.autoScore ?? 0}</span>
+                                      {hasMax && <span className="text-[11px] text-slate-400">/ {fullMarks}</span>}
+                                    </span>
+                                  ) : (
                                   <span className="inline-flex items-center gap-1">
                                     <input
                                       type="number"
@@ -470,14 +481,19 @@ const AssignmentWorkspace = ({
                                     />
                                     {hasMax && <span className="text-[11px] text-slate-400">/ {fullMarks}</span>}
                                   </span>
+                                  )
                                 );
                               })()}
                             </td>
                             <td className="px-2.5 py-1.5"><StatusPill status={graded ? 'evaluated' : 'pending'} /></td>
                             <td className="px-2.5 py-1.5 text-right">
+                              {auto ? (
+                                <span className="inline-flex h-7 items-center gap-1 rounded-full bg-violet-700 px-2 text-[10.5px] font-semibold text-white" title="Marked automatically — cannot be changed">Auto-graded</span>
+                              ) : (
                               <button type="button" onClick={(e) => { e.stopPropagation(); pickRow(s); saveRow(s); }} disabled={rowSaving[s.submissionId]} className={`inline-flex h-7 min-w-[64px] items-center justify-center gap-1 rounded-md px-2.5 text-[11px] font-semibold text-white transition disabled:opacity-60 ${graded ? 'bg-blue-600 hover:bg-blue-700' : 'bg-blue-500 hover:bg-blue-600'}`}>
                                 {rowSaving[s.submissionId] ? <Loader2 className="size-3 animate-spin" /> : graded ? 'Update' : 'Evaluate'}
                               </button>
+                              )}
                             </td>
                           </tr>
                         );

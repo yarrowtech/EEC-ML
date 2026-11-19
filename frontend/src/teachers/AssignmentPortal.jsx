@@ -62,7 +62,7 @@ const makeClassSlug = (className, sectionName) =>
   `${String(className || '').trim()}-${String(sectionName || '').trim()}`
     .toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '');
 
-import QuizBuilder, { quizTotalMarks, toQuizPayload, validateQuiz } from './QuizBuilder';
+import QuizBuilder, { fromQuizPayload, quizTotalMarks, toQuizPayload, validateQuiz } from './QuizBuilder';
 
 const AssignmentPortal = ({ view = 'manage', notificationCount = 0, siblingNotificationCount = 0 }) => {
   const navigate = useNavigate();
@@ -77,6 +77,11 @@ const AssignmentPortal = ({ view = 'manage', notificationCount = 0, siblingNotif
   const [showModal, setShowModal] = useState(false);
   const [activityEditor, setActivityEditor] = useState(null);
   const [createPageOpen, setCreatePageOpen] = useState(false);
+  // Full-page edit (same form as create).
+  const [editingAssignment, setEditingAssignment] = useState(null);
+  const [editDraft, setEditDraft] = useState(null);
+  const [editSaving, setEditSaving] = useState(false);
+  const [editError, setEditError] = useState('');
   const [selectedAssignment, setSelectedAssignment] = useState(null);
   const [showDetailModal, setShowDetailModal] = useState(false);
   const [detailEditMode, setDetailEditMode] = useState(false);
@@ -569,6 +574,99 @@ const AssignmentPortal = ({ view = 'manage', notificationCount = 0, siblingNotif
     });
     setDetailEditMode(false);
     setShowDetailModal(true);
+  };
+
+  const openEditPage = (assignment) => {
+    const isQuiz = Array.isArray(assignment?.quizSections) && assignment.quizSections.length > 0;
+    setEditError('');
+    setEditingAssignment(assignment);
+    setEditDraft({
+      title: assignment?.title || '',
+      subject: assignment?.subject || '',
+      topic: assignment?.topic || '',
+      description: assignment?.description || '',
+      classId: resolveIdValue(assignment?.classId),
+      sectionId: resolveIdValue(assignment?.sectionId),
+      dueDate: toDateInputValue(assignment?.dueDate),
+      marks: assignment?.marks ?? 100,
+      status: assignment?.status || 'draft',
+      submissionFormat: assignment?.submissionFormat === 'pdf' ? 'pdf' : 'text',
+      type: isQuiz ? 'Quiz' : (assignment?.type || 'Assignment'),
+      difficulty: assignment?.difficulty || 'Medium',
+      isEssay: Boolean(assignment?.isEssay),
+      rubric: assignment?.rubric || '',
+      attachments: Array.isArray(assignment?.attachments) ? assignment.attachments : [],
+      timeLimit: assignment?.timeLimit || '',
+      quizSections: isQuiz ? fromQuizPayload(assignment.quizSections) : [],
+      sourceLessonPlanId: resolveIdValue(assignment?.sourceLessonPlanId),
+      chapterId: assignment?.chapterId || '',
+      chapterTitle: assignment?.chapterTitle || '',
+      topicTitle: assignment?.topicTitle || '',
+      subTopicTitle: assignment?.subTopicTitle || '',
+      lateSubmissions: Boolean(assignment?.lateSubmissions),
+    });
+  };
+
+  const handleEditSave = async (e) => {
+    e?.preventDefault?.();
+    if (!editingAssignment?._id || !editDraft) return;
+    const isQuiz = editDraft.type === 'Quiz';
+    if (isQuiz) {
+      const problem = validateQuiz(editDraft.quizSections || []);
+      if (problem) { setEditError(problem); return; }
+    }
+    setEditSaving(true);
+    setEditError('');
+    try {
+      const payload = {
+        title: editDraft.title,
+        description: editDraft.description,
+        topic: editDraft.topic,
+        dueDate: editDraft.dueDate,
+        marks: isQuiz ? quizTotalMarks(editDraft.quizSections) : editDraft.marks,
+        status: editDraft.status,
+        type: editDraft.type,
+        isEssay: editDraft.isEssay,
+        rubric: editDraft.rubric,
+        submissionFormat: isQuiz ? 'text' : editDraft.submissionFormat,
+        attachments: editDraft.attachments || [],
+        timeLimit: editDraft.timeLimit,
+        sourceLessonPlanId: editDraft.sourceLessonPlanId,
+        chapterId: editDraft.chapterId,
+        chapterTitle: editDraft.chapterTitle,
+        topicTitle: editDraft.topicTitle,
+        subTopicTitle: editDraft.subTopicTitle,
+        ...(isQuiz ? { quizSections: toQuizPayload(editDraft.quizSections) } : {}),
+      };
+      await axios.put(`${API_BASE_URL}/api/assignment/teacher/update/${editingAssignment._id}`, payload, { headers: { Authorization: `Bearer ${token()}` } });
+      await fetchAssignments();
+      setEditingAssignment(null);
+      setEditDraft(null);
+      setCreateSuccessMessage(payload.status === 'active' ? 'Assignment updated and published.' : 'Assignment changes saved.');
+      setShowCreateSuccessModal(true);
+    } catch (err) {
+      setEditError(err.response?.data?.error || 'Failed to update the assignment.');
+    } finally {
+      setEditSaving(false);
+    }
+  };
+
+  // Attachments for the edit form
+  const handleEditPdfUpload = async (e) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    try {
+      setUploadingPdf(true);
+      const formData = new FormData();
+      formData.append('file', file);
+      const { data } = await axios.post(`${API_BASE_URL}/api/uploads/cloudinary/single`, formData, { headers: { Authorization: `Bearer ${token()}`, 'Content-Type': 'multipart/form-data' } });
+      const up = data?.files?.[0];
+      if (up?.secure_url) setEditDraft((prev) => ({ ...prev, attachments: [...(prev.attachments || []), { name: up.originalName || file.name, url: up.secure_url }] }));
+    } catch {
+      setEditError('Failed to upload the file.');
+    } finally {
+      setUploadingPdf(false);
+    }
   };
 
   const handleDetailDraftChange = (key, value) => {
@@ -1167,7 +1265,24 @@ const AssignmentPortal = ({ view = 'manage', notificationCount = 0, siblingNotif
           </div>
         )}
 
-        {activeTab === 'manage' && createPageOpen ? (
+        {activeTab === 'manage' && editingAssignment && editDraft ? (
+          <CreateAssignmentPage
+            mode="edit"
+            onBack={() => { setEditingAssignment(null); setEditDraft(null); setEditError(''); }}
+            newAssignment={editDraft}
+            setNewAssignment={setEditDraft}
+            handleCreate={handleEditSave}
+            loading={editSaving}
+            error={editError}
+            uploadingPdf={uploadingPdf}
+            handlePdfUpload={handleEditPdfUpload}
+            removePdfAttachment={(i) => setEditDraft((prev) => ({ ...prev, attachments: (prev.attachments || []).filter((_, j) => j !== i) }))}
+            availableLessonPlans={availableLessonPlans}
+            availableLessonPlanChapters={availableLessonPlanChapters}
+            workspaceClass={workspaceClass}
+            defaultSubject={editDraft.subject}
+          />
+        ) : activeTab === 'manage' && createPageOpen ? (
           <CreateAssignmentPage
             onBack={() => { setCreatePageOpen(false); setError(''); }}
             newAssignment={newAssignment}
@@ -1194,7 +1309,7 @@ const AssignmentPortal = ({ view = 'manage', notificationCount = 0, siblingNotif
             getAssignmentClassName={getAssignmentClassName}
             getAssignmentSectionName={getAssignmentSectionName}
             onCreate={() => { setError(''); setCreatePageOpen(true); }}
-            onOpenDetail={openAssignmentDetail}
+            onOpenDetail={openEditPage}
             onDelete={openDeleteModal}
             onPublish={handlePublishAssignment}
             publishingAssignments={publishingAssignments}

@@ -78,6 +78,7 @@ const CreateAssignmentPage = ({
   availableLessonPlanChapters = [],
   workspaceClass,
   defaultSubject = '',
+  mode = 'create',
 }) => {
   const [kind, setKind] = useState(() => {
     const t = String(newAssignment.type || '').toLowerCase();
@@ -158,8 +159,23 @@ const CreateAssignmentPage = ({
   const isQuizLike = kind === 'quiz' || isAutoTest;
   const noTimeLimit = kind === 'assignment' || isWorksheet || isWriting;
   // Writing: word range is folded into the prompt students see.
-  const [wordMin, setWordMin] = useState('');
-  const [wordMax, setWordMax] = useState('');
+  const isEdit = mode === 'edit';
+  // Editing a writing task: pull the "Word limit: …" line back into the fields.
+  const initialWords = (() => {
+    const m = String(newAssignment.description || '').match(/Word limit:\s*(?:(\d+)\s*[–-]\s*(\d+)|up to (\d+)|at least (\d+))/i);
+    if (!m) return ['', ''];
+    if (m[1]) return [m[1], m[2]];
+    if (m[3]) return ['', m[3]];
+    return [m[4], ''];
+  })();
+  const [wordMin, setWordMin] = useState(initialWords[0]);
+  const [wordMax, setWordMax] = useState(initialWords[1]);
+  useEffect(() => {
+    if (!isEdit || kind !== 'writing') return;
+    setNewAssignment((prev) => ({ ...prev, description: String(prev.description || '').replace(/\n*Word limit:.*$/i, '').trimEnd() }));
+    // run once when the edit form opens
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
   const wordLine = () => {
     const lo = Number(wordMin) > 0 ? Number(wordMin) : null;
     const hi = Number(wordMax) > 0 ? Number(wordMax) : null;
@@ -226,8 +242,8 @@ const CreateAssignmentPage = ({
       <div className="flex shrink-0 items-center gap-3 border-b border-slate-200/80 bg-white/90 px-4 py-3 backdrop-blur sm:px-6">
         <button type="button" onClick={onBack} aria-label="Back to assignments" className="flex size-8 items-center justify-center rounded-full text-blue-600 hover:bg-blue-50"><ArrowLeft className="size-4.5" /></button>
         <div className="min-w-0">
-          <h1 className="text-[16px] font-bold text-slate-900">Create New Assignment</h1>
-          <p className="truncate text-[11.5px] text-slate-500">Design and assign activities to your students{classLine ? ` · ${classLine}` : ''}</p>
+          <h1 className="text-[16px] font-bold text-slate-900">{isEdit ? 'Edit Assignment' : 'Create New Assignment'}</h1>
+          <p className="truncate text-[11.5px] text-slate-500">{isEdit ? 'Update the details and save' : 'Design and assign activities to your students'}{classLine ? ` · ${classLine}` : ''}</p>
         </div>
       </div>
 
@@ -243,8 +259,10 @@ const CreateAssignmentPage = ({
                 <button
                   key={t.key}
                   type="button"
-                  onClick={() => pickKind(t.key)}
-                  className={`relative flex flex-col items-center rounded-xl border px-2 py-2.5 text-center transition hover:-translate-y-0.5 hover:shadow-sm ${active ? 'border-blue-500 bg-blue-50/70 ring-1 ring-blue-200' : `border-slate-200 ${t.bg}`}`}
+                  onClick={() => { if (!isEdit) pickKind(t.key); }}
+                  disabled={isEdit && !active}
+                  title={isEdit && !active ? 'The activity type cannot be changed after creating' : undefined}
+                  className={`relative flex flex-col items-center rounded-xl border px-2 py-2.5 text-center transition disabled:cursor-not-allowed disabled:opacity-40 disabled:hover:translate-y-0 disabled:hover:shadow-none hover:-translate-y-0.5 hover:shadow-sm ${active ? 'border-blue-500 bg-blue-50/70 ring-1 ring-blue-200' : `border-slate-200 ${t.bg}`}`}
                 >
                   {active && <span className="absolute right-1.5 top-1.5 flex size-4 items-center justify-center rounded-full bg-blue-600 text-white"><Check className="size-2.5" /></span>}
                   <t.icon className={`size-5 ${t.tone}`} />
@@ -466,11 +484,11 @@ const CreateAssignmentPage = ({
             <p className="text-[12.5px] font-bold text-slate-900">Review &amp; Publish</p>
             <p className="text-[11px] text-slate-500">Check your details before publishing.</p>
           </div>
-          <button type="button" onClick={reset} className="inline-flex h-8 items-center gap-1.5 rounded-lg border border-slate-200 bg-white px-3 text-[12px] font-semibold text-slate-700 hover:bg-slate-50"><RotateCcw className="size-3.5" /> Reset</button>
-          <button type="button" disabled={loading} onClick={() => submit('draft')} className="inline-flex h-8 items-center gap-1.5 rounded-lg border border-blue-200 bg-white px-3 text-[12px] font-semibold text-blue-700 hover:bg-blue-50 disabled:opacity-60"><Save className="size-3.5" /> Save as Draft</button>
+          {!isEdit && <button type="button" onClick={reset} className="inline-flex h-8 items-center gap-1.5 rounded-lg border border-slate-200 bg-white px-3 text-[12px] font-semibold text-slate-700 hover:bg-slate-50"><RotateCcw className="size-3.5" /> Reset</button>}
+          <button type="button" disabled={loading} onClick={() => submit('draft')} className="inline-flex h-8 items-center gap-1.5 rounded-lg border border-blue-200 bg-white px-3 text-[12px] font-semibold text-blue-700 hover:bg-blue-50 disabled:opacity-60"><Save className="size-3.5" /> {isEdit ? (newAssignment.status === 'active' ? 'Unpublish & Save as Draft' : 'Save as Draft') : 'Save as Draft'}</button>
           <button type="button" onClick={onBack} className="inline-flex h-8 items-center rounded-lg border border-slate-200 bg-white px-3 text-[12px] font-semibold text-slate-700 hover:bg-slate-50">Cancel</button>
           <button type="button" disabled={loading} onClick={() => submit('active')} className="inline-flex h-8 items-center gap-1.5 rounded-lg bg-blue-600 px-3.5 text-[12px] font-semibold text-white shadow-sm hover:bg-blue-700 disabled:opacity-60">
-            {loading ? <Loader2 className="size-3.5 animate-spin" /> : <Send className="size-3.5" />} Publish Now
+            {loading ? <Loader2 className="size-3.5 animate-spin" /> : <Send className="size-3.5" />} {isEdit ? (newAssignment.status === 'active' ? 'Save Changes' : 'Save & Publish') : 'Publish Now'}
           </button>
         </div>
       )}

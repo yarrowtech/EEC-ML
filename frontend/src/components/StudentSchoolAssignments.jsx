@@ -7,7 +7,7 @@ import { AnimatePresence, motion as Motion } from 'framer-motion';
 import {
   ArrowLeft, BookOpen, Calculator, CalendarDays, CheckCircle2, CheckSquare, ClipboardList, Clock, Download,
   FileText, FlaskConical, Globe2, Inbox, Laptop, Loader2, Paperclip, PenLine, Play, RefreshCw, Search,
-  Send, Star, Eye, Type, UploadCloud, X, Award, MessageSquareText, AlertTriangle,
+  Send, Star, ChevronDown, Type, UploadCloud, X, Award, MessageSquareText, AlertTriangle,
 } from 'lucide-react';
 import { fetchCachedJson, clearStudentApiCacheByUrl } from '../utils/studentApiCache';
 
@@ -29,12 +29,12 @@ const kindOf = (a) => {
   return 'assignment';
 };
 const KIND = {
-  assignment: { label: 'Assignment', icon: FileText, tone: 'bg-blue-100 text-blue-700', how: 'Read the instructions and type your answer.' },
-  worksheet: { label: 'Worksheet', icon: ClipboardList, tone: 'bg-violet-100 text-violet-700', how: 'Download the worksheet, fill it in, then upload a photo or PDF of it.' },
-  writing: { label: 'Writing', icon: PenLine, tone: 'bg-emerald-100 text-emerald-700', how: 'Read the prompt and write your answer below.' },
-  mcq: { label: 'MCQ Test', icon: CheckSquare, tone: 'bg-orange-100 text-orange-700', how: 'Choose the correct option for each question. You get your score instantly.' },
-  blank: { label: 'Fill in the Blanks', icon: Type, tone: 'bg-teal-100 text-teal-700', how: 'Type the missing word in each sentence. You get your score instantly.' },
-  quiz: { label: 'Quiz', icon: CheckSquare, tone: 'bg-purple-100 text-purple-700', how: 'Answer all questions, then submit.' },
+  assignment: { label: 'Assignment', icon: FileText, tone: 'bg-blue-100 text-blue-700', solid: 'bg-blue-600', how: 'Read the instructions and type your answer.' },
+  worksheet: { label: 'Worksheet', icon: ClipboardList, tone: 'bg-violet-100 text-violet-700', solid: 'bg-violet-600', how: 'Download the worksheet, fill it in, then upload a photo or PDF of it.' },
+  writing: { label: 'Writing', icon: PenLine, tone: 'bg-emerald-100 text-emerald-700', solid: 'bg-emerald-600', how: 'Read the prompt and write your answer below.' },
+  mcq: { label: 'MCQ Test', icon: CheckSquare, tone: 'bg-orange-100 text-orange-700', solid: 'bg-orange-500', how: 'Choose the correct option for each question. You get your score instantly.' },
+  blank: { label: 'Fill in the Blanks', icon: Type, tone: 'bg-teal-100 text-teal-700', solid: 'bg-teal-600', how: 'Type the missing word in each sentence. You get your score instantly.' },
+  quiz: { label: 'Quiz', icon: CheckSquare, tone: 'bg-purple-100 text-purple-700', solid: 'bg-purple-600', how: 'Answer all questions, then submit.' },
 };
 
 const SUBJECTS = [
@@ -310,41 +310,63 @@ const StudentSchoolAssignments = () => {
 
   return (
     <div className="space-y-3">
-      {/* summary + subject filter */}
-      <div className="flex flex-wrap items-center gap-2">
-        {[
-          { label: 'To do', value: summary.todo, tone: 'bg-blue-50 text-blue-700' },
-          { label: 'Due in 2 days', value: summary.dueSoon, tone: 'bg-amber-50 text-amber-700' },
-          { label: 'Graded', value: summary.graded, tone: 'bg-emerald-50 text-emerald-700' },
-        ].map((c) => (
-          <span key={c.label} className={`inline-flex items-center gap-1.5 rounded-full px-3 py-1 text-[12px] font-semibold ${c.tone}`}><b className="text-[14px]">{c.value}</b> {c.label}</span>
-        ))}
-        <div className="ml-auto flex max-w-full gap-1 overflow-x-auto [scrollbar-width:none]">
-          {['all', ...subjects].map((s) => (
-            <button key={s} type="button" onClick={() => setSubject(s)} className={`shrink-0 rounded-full px-3 py-1 text-[12px] font-semibold transition ${subject === s ? 'bg-violet-600 text-white' : 'bg-white text-slate-600 ring-1 ring-slate-200 hover:bg-slate-50'}`}>
-              {s === 'all' ? 'All subjects' : s}
-            </button>
+      <div ref={wrapRef} style={height ? { height } : undefined} className="flex min-h-[460px] flex-col overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm">
+        {/* header */}
+        <div className="flex shrink-0 items-center gap-3 border-b border-slate-200 px-4 py-3">
+          <span className="flex size-10 items-center justify-center rounded-xl bg-violet-100 text-violet-600"><ClipboardList className="size-5" /></span>
+          <div className="min-w-0 flex-1">
+            <h1 className="text-[17px] font-bold leading-tight text-slate-900">My Assignments</h1>
+            <p className="text-[12px] text-slate-500">Click <b>View</b> on any assignment to open it, do the work and submit.</p>
+          </div>
+          <button type="button" onClick={() => load(true)} aria-label="Refresh" title="Refresh" className="flex size-8 items-center justify-center rounded-full text-slate-500 hover:bg-slate-100"><RefreshCw className={`size-4 ${loading ? 'animate-spin' : ''}`} /></button>
+        </div>
+
+        {/* summary — divided by borders */}
+        <div className="grid shrink-0 grid-cols-3 divide-x divide-slate-200 border-b border-slate-200">
+          {[
+            { label: 'To do', value: summary.todo, icon: FileText, tone: 'bg-blue-50 text-blue-600' },
+            { label: 'Due in 2 days', value: summary.dueSoon, icon: Clock, tone: 'bg-amber-50 text-amber-600' },
+            { label: 'Graded', value: summary.graded, icon: Award, tone: 'bg-emerald-50 text-emerald-600' },
+          ].map((c) => (
+            <div key={c.label} className="flex items-center gap-3 px-4 py-2.5">
+              <span className={`hidden size-8 shrink-0 items-center justify-center rounded-lg sm:flex ${c.tone}`}><c.icon className="size-4" /></span>
+              <div className="min-w-0">
+                <p className="text-[17px] font-bold leading-none text-slate-900">{c.value}</p>
+                <p className="mt-1 truncate text-[11px] text-slate-500">{c.label}</p>
+              </div>
+            </div>
           ))}
         </div>
-      </div>
 
-      <div ref={wrapRef} style={height ? { height } : undefined} className="flex min-h-[460px] flex-col overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm">
-        {/* tabs + search */}
-        <div className="flex shrink-0 flex-wrap items-center gap-2 border-b border-slate-200 px-3 pt-2">
+        {/* tabs | search + subject */}
+        <div className="flex shrink-0 flex-wrap items-end gap-x-3 gap-y-2 border-b border-slate-200 px-3 pt-2">
           <div className="flex overflow-x-auto overflow-y-hidden [scrollbar-width:none]">
             {TABS.map((t) => (
-              <button key={t.key} type="button" onClick={() => setTab(t.key)} className={`relative inline-flex shrink-0 items-center gap-1.5 px-2.5 pb-2 pt-1 text-[12.5px] font-semibold ${tab === t.key ? 'text-violet-700' : 'text-slate-500 hover:text-slate-800'}`}>
+              <button key={t.key} type="button" onClick={() => setTab(t.key)} className={`relative inline-flex shrink-0 items-center gap-1.5 px-2.5 pb-2.5 pt-1 text-[12.5px] font-semibold ${tab === t.key ? 'text-violet-700' : 'text-slate-500 hover:text-slate-800'}`}>
                 {t.label}
                 <span className={`rounded-full px-1.5 text-[10px] font-bold ${tab === t.key ? 'bg-violet-600 text-white' : 'bg-slate-100 text-slate-600'}`}>{counts[t.key]}</span>
                 {tab === t.key && <Motion.span layoutId="stu-tab" className="absolute inset-x-1 bottom-0 h-0.5 rounded-full bg-violet-600" />}
               </button>
             ))}
           </div>
-          <div className="relative mb-2 ml-auto w-full sm:w-64">
-            <Search className="pointer-events-none absolute left-3 top-1/2 size-3.5 -translate-y-1/2 text-slate-400" />
-            <input value={query} onChange={(e) => setQuery(e.target.value)} placeholder="Search assignments…" className="h-8 w-full rounded-full border border-slate-200 bg-slate-50 pl-8 pr-3 text-[12px] outline-none focus:border-violet-300 focus:bg-white" />
+          <div className="mb-2 ml-auto flex w-full items-center gap-2 sm:w-auto">
+            <div className="relative min-w-0 flex-1 sm:w-60 sm:flex-none">
+              <Search className="pointer-events-none absolute left-3 top-1/2 size-3.5 -translate-y-1/2 text-slate-400" />
+              <input value={query} onChange={(e) => setQuery(e.target.value)} placeholder="Search assignments…" className="h-8 w-full rounded-full border border-slate-200 bg-slate-50 pl-8 pr-3 text-[12px] outline-none focus:border-violet-300 focus:bg-white" />
+            </div>
+            <div className="relative shrink-0">
+              <select
+                value={subject}
+                onChange={(e) => setSubject(e.target.value)}
+                aria-label="Filter by subject"
+                className="h-8 appearance-none rounded-full border border-slate-200 bg-white pl-3 pr-8 text-[12px] font-semibold text-slate-700 outline-none focus:border-violet-300"
+              >
+                <option value="all">All subjects</option>
+                {subjects.map((sub) => <option key={sub} value={sub}>{sub}</option>)}
+              </select>
+              <ChevronDown className="pointer-events-none absolute right-2.5 top-1/2 size-3.5 -translate-y-1/2 text-slate-400" />
+            </div>
           </div>
-          <button type="button" onClick={() => load(true)} aria-label="Refresh" className="mb-2 flex size-8 items-center justify-center rounded-full text-slate-500 hover:bg-slate-100"><RefreshCw className={`size-3.5 ${loading ? 'animate-spin' : ''}`} /></button>
         </div>
 
         {/* table */}
@@ -376,7 +398,6 @@ const StudentSchoolAssignments = () => {
                 </tr>
               ) : list.map((a, idx) => {
                 const K = KIND[a.kind];
-                const S = subjectStyle(a.subject);
                 const chip = dueChip(a);
                 return (
                   <tr key={a.id} className="transition hover:bg-violet-50/40">
@@ -387,11 +408,10 @@ const StudentSchoolAssignments = () => {
                     </td>
                     <td className="px-4 py-2.5">
                       <span className="inline-flex items-center gap-2">
-                        <span className={`flex size-7 items-center justify-center rounded-lg ${S.tone}`}><S.icon className="size-3.5" /></span>
                         <span className="text-slate-700">{a.subject || 'General'}</span>
                       </span>
                     </td>
-                    <td className="px-4 py-2.5"><span className={`inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-[10.5px] font-semibold ${K.tone}`}><K.icon className="size-3" />{K.label}</span></td>
+                    <td className="px-4 py-2.5"><span className={`inline-flex items-center gap-1 rounded-full px-2.5 py-0.5 text-[10.5px] font-semibold text-white ${K.solid}`}>{K.label}</span></td>
                     <td className="px-4 py-2.5 text-slate-600">{fmtDate(a.dueDate)}</td>
                     <td className="px-4 py-2.5">
                       {a.state === 'todo' && <span className={`rounded-full px-2 py-0.5 text-[10.5px] font-semibold ${chip.cls}`}>{chip.text}</span>}
@@ -400,7 +420,7 @@ const StudentSchoolAssignments = () => {
                     </td>
                     <td className="px-4 py-2.5 text-right">
                       <button type="button" aria-label={`Open assignment ${a.title}`} onClick={() => setSelectedId(a.id)} className="inline-flex h-8 items-center gap-1.5 rounded-lg bg-violet-600 px-3.5 text-[12px] font-semibold text-white shadow-sm hover:bg-violet-700">
-                        <Eye className="size-3.5" /> View
+                        View
                       </button>
                     </td>
                   </tr>

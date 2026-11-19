@@ -180,7 +180,7 @@ const AssignmentView = forwardRef(({ defaultType = "school" }, ref) => {
 
   /* ═══════════════ RENDER ═══════════════ */
   return (
-    <div className={assignmentType === "journal" ? "w-full h-full overflow-hidden" : "w-full min-h-screen bg-[#f8f9ff] px-4 md:px-6 py-5 pb-24 md:pb-6 overflow-x-hidden"}>
+    <div className={assignmentType === "journal" ? "w-full h-full overflow-hidden" : "w-full min-h-screen md:px-4 py-5 pb-24 md:pb-6 overflow-x-hidden"}>
 
       {/* ═══════════════ JOURNAL — FOLIO (glass / purple) ═══════════════ */}
       {assignmentType === "journal" && (
