@@ -926,6 +926,7 @@ const resolveLessonPlansForAttendance = async ({
     sectionName: { $regex: `^${escapeRegex(normalizedSection)}$`, $options: 'i' },
     subject: { $regex: `^${escapeRegex(normalizedSubjectText)}$`, $options: 'i' },
     date: { $gte: startOfDay(targetDate), $lte: endOfDay(targetDate) },
+    status: { $ne: 'archived' },
   };
   if (campusId) filter.campusId = campusId;
 
@@ -1118,9 +1119,17 @@ router.get('/teacher/students', authTeacher, async (req, res) => {
     if (campusId) baseFilter.campusId = campusId;
     const activeSessionName = await resolveActiveAcademicSessionName(schoolId);
 
-    const scopeStudents = await StudentUser.find(baseFilter)
-      .select('name username studentCode grade section roll attendance attendanceSummary admissionDate createdAt profilePic')
+    const allStudents = await StudentUser.find({ ...baseFilter, isArchived: { $ne: true } })
+      .select('name username studentCode grade section roll attendance attendanceSummary admissionDate createdAt profilePic academicYear status')
       .lean();
+    // Only students of the current active academic year who are still enrolled.
+    const INACTIVE_STATUSES = new Set(['left', 'inactive', 'passed out', 'passedout', 'alumni', 'transferred', 'graduated', 'archived']);
+    const scopeStudents = allStudents.filter((student) => {
+      if (INACTIVE_STATUSES.has(normalizeText(student.status).toLowerCase())) return false;
+      const year = normalizeText(student.academicYear);
+      if (activeSessionName && year && !areSessionsEquivalent(year, activeSessionName)) return false;
+      return true;
+    });
 
     let scopedStudents = scopeStudents;
     if (!isSubstituteMode) {

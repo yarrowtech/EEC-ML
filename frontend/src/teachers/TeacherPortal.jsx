@@ -43,6 +43,13 @@ import {
   CheckCircle2,
   Search,
   QrCode,
+  Heart,
+  Smile,
+  NotebookPen,
+  Lightbulb,
+  Target,
+  Contact,
+  Award,
 } from 'lucide-react';
 import { Button } from '../components/ui/button';
 import { useTenant } from '../context/TenantContext';
@@ -53,6 +60,7 @@ const HealthUpdatesAdvanced = lazy(() => import('./HealthUpdatesAdvanced'));
 const ParentMeetings = lazy(() => import('./ParentMeetings'));
 const AssignmentPortal = lazy(() => import('./AssignmentPortal'));
 const AttendanceManagement = lazy(() => import('./AttendanceManagement'));
+const StudentDirectory = lazy(() => import('./StudentDirectory'));
 const ClassAttendanceOverview = lazy(() => import('./ClassAttendanceOverview'));
 import TeacherDashboard from './TeacherDashboard';
 const SmartTeachingLessonPlanner = lazy(() => import('./SmartTeachingLessonPlanner'));
@@ -1095,15 +1103,6 @@ const ClassesHub = () => {
  */
 const CW_TABS = [
   {
-    id: 'lesson-plan',
-    label: 'Lesson Plan',
-    description: 'Build, preview and publish lesson plans for this class',
-    icon: Brain,
-    ownPaths: (rel) => rel === 'lesson-plan' || rel.startsWith('lesson-plan/'),
-    firstPath: 'lesson-plan',
-    subTabs: [],
-  },
-  {
     id: 'overview',
     label: 'Overview',
     description: 'Class-wide performance and attendance at a glance',
@@ -1116,68 +1115,107 @@ const CW_TABS = [
     ],
   },
   {
+    id: 'lesson-plan',
+    label: 'Lesson Plan',
+    description: 'Build, preview and publish lesson plans for this class',
+    icon: Brain,
+    ownPaths: (rel) => rel === 'lesson-plan' || rel.startsWith('lesson-plan/'),
+    firstPath: 'lesson-plan',
+    subTabs: [],
+  },
+  {
     id: 'students',
     label: 'Students',
     description: 'Manage and track student related activities',
     icon: Users,
     ownPaths: (rel) =>
       rel === 'students' ||
+      rel.startsWith('students/directory') ||
       rel.startsWith('students/health') ||
       rel.startsWith('students/attendance') ||
       rel.startsWith('students/achievements') ||
       rel.startsWith('assignments') ||
       rel === 'reports' ||
       rel.startsWith('assessments'),
-    firstPath: 'students/health-records',
+    firstPath: 'students/directory',
     subTabs: [
+      { label: 'Student Directory', path: 'students/directory' },
       { label: 'Student Health Records', path: 'students/health-records', notificationKey: 'health' },
       { label: 'Attendance', path: 'students/attendance', notificationKey: 'attendance' },
       { label: 'Assignments', path: 'assignments/manage', notificationKey: 'assignments' },
-      // { label: 'Evaluate Submissions', path: 'assignments/evaluate', notificationKey: 'assignments-evaluate' },
       { label: 'Achievements', path: 'students/achievements', notificationKey: 'achievements' },
-      { label: 'Exam', path: 'assessments/exam', notificationKey: 'assessments' },
+      { label: 'Exams & Results', path: 'assessments/exam', notificationKey: 'assessments' },
     ],
   },
   {
     id: 'observations',
     label: 'Observations',
-    description: 'Observe student wellbeing and behaviour',
+    description: 'Academic and behavioural observations and progress notes',
     icon: Eye,
-    ownPaths: (rel) =>
-      rel.startsWith('students/observations') ||
-      rel.includes('ai-learning'),
-    firstPath: 'students/observations',
+    ownPaths: (rel) => rel.startsWith('observations/'),
+    firstPath: 'observations/academic',
     subTabs: [
-      { label: 'Emotional Wellbeing', path: 'students/observations' },
+      { label: 'Academic Observations', path: 'observations/academic' },
+      { label: 'Behavioural Observations', path: 'observations/behavioural' },
+      { label: 'Student Progress Notes', path: 'observations/progress-notes' },
+    ],
+  },
+  {
+    id: 'wellbeing',
+    label: 'Emotional Wellbeing',
+    description: 'Check-ins, mood and wellbeing of the class',
+    icon: Heart,
+    ownPaths: (rel) => rel.startsWith('wellbeing/') || rel.startsWith('students/observations'),
+    firstPath: 'wellbeing/overview',
+    subTabs: [
+      { label: 'Wellbeing Overview', path: 'wellbeing/overview' },
+      { label: 'Emotional Check-ins', path: 'wellbeing/check-ins' },
+      { label: 'Mood Tracking', path: 'wellbeing/mood' },
+      { label: 'Wellbeing Observations', path: 'wellbeing/observations' },
     ],
   },
   {
     id: 'ai',
-    label: 'AI',
-    description: 'AI assistant and teaching tools',
-    icon: BarChart3,
+    label: 'AI Assistant',
+    description: 'AI insights and recommendations for this class',
+    icon: Sparkles,
     ownPaths: (rel) =>
+      rel.startsWith('ai/') ||
       rel === 'teaching' ||
-      rel.startsWith('teaching/ai') ||
-      rel.startsWith('teaching/lesson-planner') ||
-      rel.startsWith('teaching/class-notes') ||
-      rel.startsWith('teaching/practice') ||
-      rel.startsWith('teaching/study'),
-    firstPath: 'teaching/ai-assistant',
-    subTabs: [],
+      rel.startsWith('teaching/') ||
+      rel.startsWith('students/analytics') ||
+      rel.includes('ai-learning'),
+    firstPath: 'ai/insights',
+    subTabs: [
+      { label: 'AI Class Insights', path: 'ai/insights' },
+      { label: 'Student Performance Analysis', path: 'ai/performance' },
+      { label: 'Learning Gap Detection', path: 'ai/learning-gaps' },
+      { label: 'AI Recommendations', path: 'ai/recommendations' },
+    ],
   },
 ];
 
 const SUB_TAB_ICONS = {
   'overview/analytics': BarChart3,
   'overview/attendance': CalendarCheck,
+  'students/directory': Contact,
   'students/health-records': Activity,
   'students/attendance': CalendarCheck,
   'assignments/manage': FileText,
   'assignments/evaluate': ClipboardCheck,
-  'students/achievements': Sparkles,
+  'students/achievements': Award,
   'assessments/exam': GraduationCap,
-  'students/observations': Eye,
+  'observations/academic': BookOpen,
+  'observations/behavioural': Eye,
+  'observations/progress-notes': NotebookPen,
+  'wellbeing/overview': Heart,
+  'wellbeing/check-ins': Smile,
+  'wellbeing/mood': Activity,
+  'wellbeing/observations': Eye,
+  'ai/insights': Sparkles,
+  'ai/performance': BarChart3,
+  'ai/learning-gaps': Target,
+  'ai/recommendations': Lightbulb,
 };
 
 // Lesson Plan builder inside a class: opens on that class / section / subject.
@@ -1381,6 +1419,16 @@ const ClassWorkspace = ({ notifications = [], seenState = {} }) => {
     window.addEventListener('resize', measure);
     return () => window.removeEventListener('resize', measure);
   }, [activeTab.id]);
+  // Keep the submenu card inside the workspace (it would otherwise slide under the
+  // sidebar for the first tab); the caret still points at the hovered tab.
+  const subPanelRef = useRef(null);
+  const [panelBox, setPanelBox] = useState({ w: 0, wrapW: 0 });
+  useLayoutEffect(() => {
+    const el = subPanelRef.current;
+    const wrap = menuWrapRef.current;
+    if (!el || !wrap) return;
+    setPanelBox({ w: el.offsetWidth, wrapW: wrap.clientWidth });
+  }, [hoverTabId]);
   const openSubmenu = (tabId, el) => {
     setHoverTabId(tabId);
     const wrap = menuWrapRef.current?.getBoundingClientRect();
@@ -1389,7 +1437,12 @@ const ClassWorkspace = ({ notifications = [], seenState = {} }) => {
   };
   // Hovering a main tab previews its children; otherwise the active tab's children show.
   const hoverTab = CW_TABS.find((t) => t.id === hoverTabId);
-  const panelTab = hoverTab && hoverTab.subTabs.length > 0 ? hoverTab : null;
+  // The active tab's children are always shown as a second row; hovering another tab previews its children.
+  const hoverHasSubs = Boolean(hoverTab && hoverTab.subTabs.length > 0);
+  const anchorX = caretX ?? panelBox.wrapW / 2;
+  const panelLeft = Math.max(0, Math.min(anchorX - panelBox.w / 2, panelBox.wrapW - panelBox.w));
+  const caretInPanel = Math.max(24, Math.min(anchorX - panelLeft, panelBox.w - 24));
+  const panelTab = hoverHasSubs ? hoverTab : null;
   const hasSubTabs = Boolean(panelTab);
   const activeSub = activeTab.subTabs.find((sub) => rel === sub.path || rel.startsWith(`${sub.path}/`));
 
@@ -1407,7 +1460,7 @@ const ClassWorkspace = ({ notifications = [], seenState = {} }) => {
   ) : null);
 
   return (
-    <div className={`mx-auto max-w-[1240px] space-y-3 ${rel === 'overview/analytics' ? 'p-3 sm:p-5 lg:p-6' : ''}`}>
+    <div className={`mx-auto max-w-[1240px] space-y-3 ${rel === 'overview/analytics' ? 'pb-3 sm:pb-5 lg:pb-6' : ''}`}>
 
       {/* ── Header: back · title · switch class · date ── */}
       <div className="flex flex-wrap items-center gap-3">
@@ -1482,20 +1535,22 @@ const ClassWorkspace = ({ notifications = [], seenState = {} }) => {
         </div>
       </div>
 
-      {/* ── Sub-tab bar ── */}
+      {/* ── Sub-tab bar (reserved row when the active tab has children) ── */}
+      <div className="relative" style={{ height: 0 }}>
       {hasSubTabs && (
         <Motion.div
           key="cw-submenu"
-          initial={{ opacity: 0, y: -6, left: caretX ?? '50%' }}
-          animate={{ opacity: 1, y: 0, left: caretX ?? '50%' }}
+          ref={subPanelRef}
+          initial={{ opacity: 0, y: -6, left: panelLeft }}
+          animate={{ opacity: 1, y: 0, left: panelLeft }}
           transition={{ duration: 0.18, ease: 'easeOut', left: { type: 'spring', stiffness: 420, damping: 34 } }}
-          style={{ x: '-50%' }}
-          className="absolute top-full z-30 w-max max-w-[calc(100vw-2rem)] pt-3"
+          className="absolute top-0 z-30 w-max max-w-full pt-3"
         >
           {/* Card is centred under the hovered tab, so the caret always sits on it. */}
           <span
             aria-hidden="true"
-            className="absolute left-1/2 top-[5px] z-10 h-3.5 w-3.5 -translate-x-1/2 rotate-45 border-l border-t border-slate-200 bg-white"
+            style={{ left: caretInPanel }}
+            className="absolute top-[5px] z-10 h-3.5 w-3.5 -translate-x-1/2 rotate-45 border-l border-t border-slate-200 bg-white"
           />
           <div className="relative w-fit max-w-full rounded-full border border-slate-200 bg-white p-1.5 shadow-[0_10px_30px_-12px_rgba(15,23,42,0.15)]">
             <div className="flex items-stretch overflow-x-auto">
@@ -1527,6 +1582,7 @@ const ClassWorkspace = ({ notifications = [], seenState = {} }) => {
           </div>
         </Motion.div>
       )}
+      </div>
       </div>
 
       {/* Child route */}
@@ -1746,6 +1802,11 @@ const TeacherPortalShell = () => {
   const isDashboardRoute = location.pathname === '/teacher/dashboard' || location.pathname === '/teacher';
   // Class Lesson Plan builder is a focused workspace — no portal top header.
   const isClassLessonPlanRoute = /^\/teacher\/classes\/[^/]+\/lesson-plan\/?$/.test(location.pathname);
+  const isClassesListRoute = /^\/teacher\/classes\/?$/.test(location.pathname);
+  // Inside a class workspace (/teacher/classes/:id/...) the workspace has its own header.
+  const isClassWorkspaceRoute = /^\/teacher\/classes\/[^/]+\/(?!communication)/.test(location.pathname);
+  const isCommunityWallRoute = /^\/teacher\/community-wall\/?$/.test(location.pathname);
+  const hideTopHeader = isClassLessonPlanRoute || isClassesListRoute || isClassWorkspaceRoute || isCommunityWallRoute;
   const isSmartPlannerRoute = location.pathname.includes('/teaching/lesson-planner') || location.pathname === '/teacher/lesson-plan';
   const isAttendanceRoute = location.pathname.includes('/students/attendance') || location.pathname.includes('/overview/attendance');
   // Class picker is a fixed, non-scrolling full-bleed screen.
@@ -2394,7 +2455,7 @@ const TeacherPortalShell = () => {
 
         <div className="flex h-screen h-dvh max-h-screen max-h-dvh min-h-0 min-w-0 flex-1 flex-col overflow-hidden">
           {/* Desktop header — same bar as the school admin portal */}
-          <header className={`sticky top-0 z-30 hidden w-full ${isClassLessonPlanRoute ? '' : 'lg:block'}`}>
+          <header className={`sticky top-0 z-30 hidden w-full ${hideTopHeader ? '' : 'lg:block'}`}>
             <div className="flex items-center gap-3 border border-white/70 bg-indigo-50 px-5 py-2 shadow-[0_16px_44px_-12px_rgba(15,23,42,0.10),0_4px_12px_rgba(15,23,42,0.04)]">
               {/* <div className="min-w-0 leading-tight">
                 <p className="truncate text-[15px] font-semibold text-slate-900">
@@ -2587,7 +2648,7 @@ const TeacherPortalShell = () => {
             </div>
           </header>
 
-          <header className={`sticky top-0 z-30 w-full border-b border-gray-100 bg-white/80 px-3 pt-[env(safe-area-inset-top)] backdrop-blur-xl sm:px-5 lg:hidden ${isClassLessonPlanRoute ? 'hidden' : ''}`}>
+          <header className={`sticky top-0 z-30 w-full border-b border-gray-100 bg-white/80 px-3 pt-[env(safe-area-inset-top)] backdrop-blur-xl sm:px-5 lg:hidden ${hideTopHeader ? 'hidden' : ''}`}>
             <div className="flex h-14 items-center justify-between gap-2 sm:h-16 sm:gap-4">
               <button type="button" onClick={() => setSidebarOpen(true)} className="shrink-0 rounded-xl p-2 transition-all hover:bg-gray-100 active:scale-95" aria-label="Open all teacher options" aria-expanded={sidebarOpen}><Menu size={20} className="text-gray-600" /></button>
               <div className="flex min-w-0 flex-1 items-center justify-center gap-2">
@@ -2646,7 +2707,7 @@ const TeacherPortalShell = () => {
             </div>
           </header>
 
-          <main className={`flex-1 min-h-0 pb-[calc(3.5rem+env(safe-area-inset-bottom))] lg:pb-0 ${isSmartPlannerRoute ? 'p-0' : ''} ${isClassLessonPlanRoute ? 'px-3 pt-[max(1rem,env(safe-area-inset-top))] sm:px-4 lg:px-6 lg:pt-5' : ''} ${hasContainedPageScroll ? 'overflow-hidden' : 'overflow-y-auto overscroll-contain'}`}>
+          <main className={`flex-1 min-h-0 pb-[calc(3.5rem+env(safe-area-inset-bottom))] lg:pb-0 ${isSmartPlannerRoute ? 'p-0' : ''} ${isClassesListRoute || isCommunityWallRoute ? 'pt-[env(safe-area-inset-top)]' : ''} ${isClassWorkspaceRoute && !isClassLessonPlanRoute ? 'px-3 pt-[max(1rem,env(safe-area-inset-top))] sm:px-4 lg:px-6 lg:pt-5' : ''} ${isClassLessonPlanRoute ? 'px-3 pt-[max(1rem,env(safe-area-inset-top))] sm:px-4 lg:px-6 lg:pt-5' : ''} ${hasContainedPageScroll ? 'overflow-hidden' : 'overflow-y-auto overscroll-contain'}`}>
             <div className={isChatRoute
               ? 'flex h-full min-h-0 flex-col'
               : isSmartPlannerRoute || isClassesHubRoute
@@ -2660,7 +2721,7 @@ const TeacherPortalShell = () => {
                 <Route path="dashboard" element={<TeacherDashboard />} />
                 <Route path="classes" element={<ClassesHub />} />
                 <Route path="classes/:classId" element={<ClassWorkspace notifications={notificationItems} seenState={moduleSeenState} />}>
-                  <Route index element={<Navigate to="lesson-plan" replace />} />
+                  <Route index element={<Navigate to="overview/analytics" replace />} />
                   <Route path="lesson-plan" element={<ClassLessonPlan />} />
                   <Route
                     path="students"
@@ -2679,7 +2740,19 @@ const TeacherPortalShell = () => {
                   <Route path="overview/attendance" element={<ClassAttendanceOverview />} />
                   <Route path="students/attendance" element={<AttendanceManagement />} />
                   <Route path="students/health-records" element={<HealthUpdatesAdvanced />} />
-                  <Route path="students/observations" element={<StudentObservationOverview />} />
+                  <Route path="students/observations" element={<Navigate to="../../wellbeing/observations" relative="path" replace />} />
+                  <Route path="students/directory" element={<StudentDirectory />} />
+                  <Route path="observations/academic" element={<PlaceholderModule icon={BookOpen} title="Academic Observations" description="Record observations about each student and their academic work. Coming soon." />} />
+                  <Route path="observations/behavioural" element={<PlaceholderModule icon={Eye} title="Behavioural Observations" description="Record classroom behaviour observations. Coming soon." />} />
+                  <Route path="observations/progress-notes" element={<PlaceholderModule icon={NotebookPen} title="Student Progress Notes" description="Keep running progress notes for each student. Coming soon." />} />
+                  <Route path="wellbeing/overview" element={<PlaceholderModule icon={Heart} title="Wellbeing Overview" description="A summary of emotional wellbeing across the class. Coming soon." />} />
+                  <Route path="wellbeing/check-ins" element={<PlaceholderModule icon={Smile} title="Emotional Check-ins" description="Student emotional check-ins. Coming soon." />} />
+                  <Route path="wellbeing/mood" element={<PlaceholderModule icon={Activity} title="Mood Tracking" description="Mood trends over time. Coming soon." />} />
+                  <Route path="wellbeing/observations" element={<StudentObservationOverview />} />
+                  <Route path="ai/insights" element={<GenerateAIPathPortal />} />
+                  <Route path="ai/performance" element={<StudentAnalyticsPortal />} />
+                  <Route path="ai/learning-gaps" element={<PlaceholderModule icon={Target} title="Learning Gap Detection" description="AI-detected learning gaps for this class. Coming soon." />} />
+                  <Route path="ai/recommendations" element={<PlaceholderModule icon={Lightbulb} title="AI Recommendations" description="AI teaching recommendations for this class. Coming soon." />} />
                   <Route path="students/achievements" element={<TeacherAchievements />} />
                   <Route path="students/analytics" element={<StudentAnalyticsPortal />} />
                   <Route path="students/:studentId/ai-learning/:subject" element={<AILearningPath />} />

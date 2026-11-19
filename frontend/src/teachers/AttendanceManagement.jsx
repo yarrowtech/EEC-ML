@@ -4,20 +4,19 @@
  * or duplication is prohibited without prior written permission.
  */
 
-import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import React, { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { useOutletContext } from 'react-router-dom';
 import {
   Calendar,
-  CalendarCheck,
   CheckCheck,
   ClipboardCheck,
   BookOpen,
   MapPin,
   Printer,
   Search,
+  X,
   School,
   Users,
-  BarChart3,
   Save,
   Loader2,
   Download,
@@ -88,7 +87,7 @@ const parseRollForSort = (roll) => {
 const selectCls = 'h-9 w-full appearance-none rounded-xl border border-slate-200 bg-white px-3 pr-8 text-[13px] font-medium text-slate-800 shadow-sm outline-none transition focus:border-blue-300 focus:ring-2 focus:ring-blue-100 disabled:bg-slate-50 disabled:text-slate-600';
 const FilterBox = ({ icon: Icon, tone, label, children }) => (
   <div className="flex min-w-0 flex-1 items-end gap-2">
-    <span className={`flex size-9 shrink-0 items-center justify-center rounded-xl ${tone}`}><Icon className="size-4.5" /></span>
+    {Icon && <span className={`flex size-9 shrink-0 items-center justify-center rounded-xl ${tone}`}><Icon className="size-4.5" /></span>}
     <label className="min-w-0 flex-1">
       <span className="mb-1 block text-[11px] text-slate-500">{label}</span>
       <span className="relative block">
@@ -137,6 +136,22 @@ const AttendanceManagement = () => {
   const [subjectOptions, setSubjectOptions] = useState([]);
   const [attendanceData, setAttendanceData] = useState({});
   const [lessonPlanContext, setLessonPlanContext] = useState(null);
+  // Desktop: the page fills the screen exactly (no page scroll); the student
+  // list and the left panel scroll inside themselves.
+  const [searchOpen, setSearchOpen] = useState(false);
+  const pageRef = useRef(null);
+  const [pageHeight, setPageHeight] = useState(null);
+  useLayoutEffect(() => {
+    const measure = () => {
+      const el = pageRef.current;
+      if (!el || window.innerWidth < 1024) { setPageHeight(null); return; }
+      const top = el.getBoundingClientRect().top;
+      setPageHeight(Math.max(440, window.innerHeight - top - 32));
+    };
+    measure();
+    window.addEventListener('resize', measure);
+    return () => window.removeEventListener('resize', measure);
+  }, []);
   const [schoolMeta, setSchoolMeta] = useState({
     schoolName: 'School',
     schoolAddress: '',
@@ -605,257 +620,91 @@ const AttendanceManagement = () => {
     const key = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`;
     return { key, label: d.toLocaleDateString('en-GB', { month: 'long', year: 'numeric' }) };
   });
-  const attendanceRate = students.length ? Math.round((presentCount / students.length) * 1000) / 10 : 0;
   const AVATAR_TONES = ['bg-rose-100 text-rose-600', 'bg-sky-100 text-sky-700', 'bg-violet-100 text-violet-700', 'bg-amber-100 text-amber-700', 'bg-emerald-100 text-emerald-700'];
   return (
     <Motion.div
+      ref={pageRef}
       initial={{ opacity: 0, y: 12 }}
       animate={{ opacity: 1, y: 0 }}
       transition={{ duration: 0.35, ease: [0.16, 1, 0.3, 1] }}
-      className="mx-auto w-full min-w-0 max-w-[1240px] space-y-3"
+      style={pageHeight ? { height: pageHeight } : undefined}
+      className="mx-auto grid w-full min-w-0 max-w-[1240px] gap-3 lg:grid-cols-[320px_minmax(0,1fr)]"
     >
-      {/* ── School + date bar ── */}
-      <section className="flex flex-wrap items-center gap-4 rounded-2xl border border-slate-100 bg-white p-3.5 shadow-sm">
-        <div className="flex min-w-0 flex-1 items-center gap-3">
-          <div className="flex size-14 shrink-0 items-center justify-center overflow-hidden rounded-2xl bg-blue-50">
+      {/* ── LEFT: school · date · subject · lesson plan ── */}
+      <aside className="flex min-h-0 flex-col gap-3 overflow-y-auto overscroll-contain rounded-2xl border border-slate-100 bg-white p-4 shadow-sm">
+        <div className="flex items-center gap-2.5">
+          <div className="flex size-10 shrink-0 items-center justify-center overflow-hidden rounded-xl bg-blue-50">
             {canShowSchoolLogo ? (
               <img src={schoolMeta.schoolLogo} alt={schoolMeta.schoolName || 'School'} className="size-full object-cover" onError={() => setSchoolLogoFailed(true)} />
             ) : (
-              <School className="size-6 text-blue-600" />
+              <School className="size-5 text-blue-600" />
             )}
           </div>
-          <div className="min-w-0">
-            <p className="truncate text-[15px] font-bold text-slate-900">{schoolMeta.schoolName || 'School'}</p>
-            <p className="truncate text-[12px] text-slate-500">
-              {schoolMeta.schoolAddress ? <><MapPin className="mr-1 inline size-3" />{schoolMeta.schoolAddress}</> : 'Teacher attendance workspace'}
-            </p>
-          </div>
+          <p className="min-w-0 text-[13.5px] font-bold leading-tight text-slate-900">{schoolMeta.schoolName || 'School'}</p>
         </div>
-        <div className="flex items-center gap-3 border-slate-100 md:border-l md:pl-4">
-          <div>
-            <p className="text-[11px] text-slate-500">{sessionLabel} · Class {classLabel} · Sec {sectionLabel}</p>
-            <p className="flex items-center gap-2 text-[14px] font-bold text-slate-900">
-              <Calendar className="size-4 text-slate-600" /> {dateBig}
-              <span className="text-[12px] font-normal text-slate-500">{weekdayLabel}</span>
-            </p>
-          </div>
+        <div className="rounded-xl bg-gradient-to-br from-blue-600 to-indigo-500 px-3 py-2 text-white shadow-sm">
+          <p className="flex items-center gap-1.5 text-[13px] font-semibold"><Calendar className="size-3.5" /> {dateBig} <span className="font-normal text-white/80">· {weekdayLabel}</span></p>
+          <p className="mt-0.5 text-[10.5px] text-white/75">{sessionLabel} · Class {classLabel} · Sec {sectionLabel}{subject.trim() ? ` · ${subject.trim()}` : ''}</p>
         </div>
-        <div className="flex flex-wrap items-center gap-2">
-          {/* <span className="relative">
-            <Calendar className="pointer-events-none absolute left-3 top-1/2 size-4 -translate-y-1/2 text-slate-500" />
-            <select value={selectedMonth} onChange={(e) => setSelectedMonth(e.target.value)} aria-label="Attendance month" className={`${selectCls} w-44 pl-9`}>
-              {monthChoices.map((m) => <option key={m.key} value={m.key}>{m.label}</option>)}
-            </select>
-            <ChevronDown className="pointer-events-none absolute right-2.5 top-1/2 size-4 -translate-y-1/2 text-slate-500" />
-          </span> */}
-          <button type="button" onClick={printAttendance} disabled={loading || !hasRequiredHierarchyFilters} className="inline-flex h-9 items-center gap-1.5 rounded-full border border-slate-200 bg-white px-3.5 text-[13px] font-medium text-slate-700 shadow-sm transition hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-50">
-            <Printer className="size-4" /> Print
-          </button>
-          {/* <button type="button" onClick={exportToPDF} disabled={!hasRequiredHierarchyFilters || students.length === 0 || loading} className="inline-flex h-9 items-center gap-1.5 rounded-xl border border-blue-200 bg-blue-50 px-3.5 text-[13px] font-medium text-blue-700 shadow-sm transition hover:bg-blue-100 disabled:cursor-not-allowed disabled:opacity-50">
-            <Download className="size-4" /> Export
-          </button> */}
-        </div>
-      </section>
 
-      {/* ── Filters ── */}
-      <section className="rounded-2xl border border-slate-100 bg-white p-3.5 shadow-sm">
-        <div className="flex flex-wrap items-end gap-3">
-          {/* Class & section come from the class the teacher opened; they're
-              only selectable when covering another class (substitute mode). */}
-          {isSubstituteMode && (
-            <>
-              <FilterBox icon={Users} tone="bg-blue-50 text-blue-600" label="Class">
-                <select
-                  value={selectedClass}
-                  onChange={(e) => { setSelectedClass(e.target.value); setSelectedSection(''); }}
-                  className={selectCls}
-                  aria-label="Substitute class"
-                >
-                  <option value="">Select class</option>
-                  {classOptions.map((c) => <option key={c} value={c}>{c}</option>)}
-                </select>
-              </FilterBox>
-              <FilterBox icon={Users} tone="bg-emerald-50 text-emerald-600" label="Section">
-                <select
-                  value={selectedSection}
-                  onChange={(e) => setSelectedSection(e.target.value)}
-                  disabled={!selectedClass}
-                  className={selectCls}
-                  aria-label="Substitute section"
-                >
-                  <option value="">{selectedClass ? 'Select section' : 'Select class first'}</option>
-                  {sectionOptions.map((s) => <option key={s} value={s}>{s}</option>)}
-                </select>
-              </FilterBox>
-            </>
-          )}
-          <FilterBox icon={BookOpen} tone="bg-emerald-50 text-emerald-600" label="Subject">
-            <select value={subject} onChange={(e) => setSubject(e.target.value)} className={`${selectCls} border-blue-300`} aria-label="Subject">
-              {subjectOptions.length === 0 && <option value="">All Subjects</option>}
-              {subjectTabs.map((tab) => <option key={tab} value={tab}>{tab}</option>)}
-            </select>
-          </FilterBox>
-          <label className="flex h-9 shrink-0 cursor-pointer items-center gap-2 text-[12px] leading-tight text-slate-600">
+        {/* Subject comes from the class workspace; the pickers only appear when
+            covering another class (substitute attendance). */}
+        <div className="border-t border-slate-100 pt-3">
+          <label className="flex cursor-pointer items-center gap-2 text-[12px] leading-tight text-slate-600">
             <input type="checkbox" checked={isSubstituteMode} onChange={(e) => setIsSubstituteMode(e.target.checked)} className="size-4 accent-blue-600" />
             <span>Substitute attendance<br /><span className="text-slate-400">(covering another class)</span></span>
           </label>
-        </div>
-      </section>
-
-      {/* ── Main: attendance + lesson plan ── */}
-      <div className="grid min-w-0 gap-3 lg:grid-cols-[minmax(0,1fr)_300px]">
-        <section className="min-w-0 rounded-2xl border border-slate-100 bg-white p-4 shadow-sm">
-          <div className="mb-3 flex flex-wrap items-center justify-between gap-3">
-            <div className="flex items-center gap-3">
-              <span className="flex size-10 items-center justify-center rounded-xl bg-blue-50 text-blue-600"><CalendarCheck className="size-5" /></span>
-              <div>
-                <h2 className="text-[16px] font-semibold text-slate-900">Today&apos;s Attendance</h2>
-                <p className="text-[12px] text-slate-500">{dateBig} · {weekdayLabel}</p>
-              </div>
-            </div>
-            <div className="flex flex-wrap gap-2">
-              {[
-                { icon: Users, value: students.length, label: 'Students', cls: 'bg-slate-50', ic: 'text-blue-600', vc: 'text-slate-900' },
-                { icon: CheckCheck, value: presentCount, label: 'Present', cls: 'bg-emerald-50', ic: 'text-emerald-600', vc: 'text-emerald-700' },
-                { icon: Users, value: absentCount, label: 'Absent', cls: 'bg-red-50', ic: 'text-red-500', vc: 'text-red-600' },
-                { icon: BarChart3, value: `${attendanceRate}%`, label: 'Attendance', cls: 'bg-blue-50', ic: 'text-blue-600', vc: 'text-slate-900' },
-              ].map((c) => (
-                <div key={c.label} className={`flex items-center gap-2 rounded-xl px-3 py-1.5 ${c.cls}`}>
-                  <c.icon className={`size-4 ${c.ic}`} />
-                  <div className="leading-tight">
-                    <p className={`text-[14px] font-bold ${c.vc}`}>{c.value}</p>
-                    <p className="text-[10.5px] text-slate-500">{c.label}</p>
+          <AnimatePresence initial={false}>
+            {isSubstituteMode && (
+              <Motion.div
+                initial={{ height: 0, opacity: 0 }}
+                animate={{ height: 'auto', opacity: 1 }}
+                exit={{ height: 0, opacity: 0 }}
+                transition={{ duration: 0.22, ease: 'easeOut' }}
+                className="overflow-hidden"
+              >
+                <div className="space-y-2.5 pt-3">
+                  <div className="grid grid-cols-2 gap-2">
+                  <FilterBox label="Class">
+                    <select value={selectedClass} onChange={(e) => { setSelectedClass(e.target.value); setSelectedSection(''); }} className={selectCls} aria-label="Substitute class">
+                      <option value="">Select class</option>
+                      {classOptions.map((c) => <option key={c} value={c}>{c}</option>)}
+                    </select>
+                  </FilterBox>
+                  <FilterBox label="Section">
+                    <select value={selectedSection} onChange={(e) => setSelectedSection(e.target.value)} disabled={!selectedClass} className={selectCls} aria-label="Substitute section">
+                      <option value="">{selectedClass ? 'Select section' : 'Class first'}</option>
+                      {sectionOptions.map((sec) => <option key={sec} value={sec}>{sec}</option>)}
+                    </select>
+                  </FilterBox>
                   </div>
+                  <FilterBox label="Subject">
+                    <select value={subject} onChange={(e) => setSubject(e.target.value)} className={selectCls} aria-label="Subject">
+                      {subjectOptions.length === 0 && <option value="">All Subjects</option>}
+                      {subjectTabs.map((tab) => <option key={tab} value={tab}>{tab}</option>)}
+                    </select>
+                  </FilterBox>
                 </div>
-              ))}
-            </div>
-          </div>
-
-          <div className="mb-3 flex flex-wrap items-center gap-2">
-            <button type="button" onClick={() => markAllAttendance(STATUS.PRESENT)} disabled={areAllMarkedPresent || isAttendanceLocked} className="inline-flex h-9 items-center gap-1.5 rounded-full bg-blue-600 px-4 text-[13px] font-semibold text-white shadow-sm transition hover:bg-blue-700 disabled:cursor-not-allowed disabled:opacity-50">
-              <CheckCheck className="size-4" /> Mark All
-            </button>
-            <button type="button" onClick={() => markAllAttendance(STATUS.ABSENT)} disabled={areAllMarkedAbsent || isAttendanceLocked} className="inline-flex h-9 items-center gap-1.5 rounded-full border border-slate-200 bg-white px-4 text-[13px] font-medium text-slate-700 shadow-sm transition hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-50">
-              <span className="text-base leading-none">×</span> Uncheck All
-            </button>
-            <div className="relative ml-auto w-full sm:w-64">
-              <Search className="absolute left-3 top-1/2 size-4 -translate-y-1/2 text-slate-400" />
-              <input value={searchTerm} onChange={(e) => setSearchTerm(e.target.value)} placeholder="Search student..." className="h-9 w-full rounded-xl border border-slate-200 bg-white pl-9 pr-3 text-[13px] outline-none transition focus:border-blue-300" />
-            </div>
-          </div>
-
-          <div className="max-h-[420px] min-w-0 overflow-auto overscroll-contain rounded-xl border border-slate-100">
-            {!hasRequiredHierarchyFilters ? (
-              <div className="flex min-h-[240px] flex-col items-center justify-center px-5 text-center">
-                <Loader2 className="mb-3 size-7 animate-spin text-blue-400" />
-                <p className="text-sm font-medium text-slate-700">Loading class roster…</p>
-                <p className="mt-1 text-xs text-slate-400">Resolving class and section details</p>
-              </div>
-            ) : loading ? (
-              <div className="flex min-h-[240px] flex-col items-center justify-center gap-2 text-sm text-slate-500"><Loader2 className="size-6 animate-spin text-blue-500" /> Loading students...</div>
-            ) : students.length === 0 ? (
-              <div className="flex min-h-[240px] flex-col items-center justify-center text-center"><Users className="mb-3 size-8 text-slate-300" /><p className="text-sm font-medium text-slate-600">No students found</p><p className="mt-1 text-xs text-slate-400">Try adjusting your filters</p></div>
-            ) : (
-              <table className="w-full min-w-[560px] text-left text-[13px]">
-                <thead className="sticky top-0 z-10 bg-slate-50 text-[12px] text-slate-600">
-                  <tr>
-                    <th className="w-14 px-3 py-2.5 font-medium text-center">Roll</th>
-                    <th className="px-3 py-2.5 font-medium">Student Name</th>
-                    <th className="px-3 py-2.5 font-medium text-center">User ID</th>
-                    <th className="px-3 py-2.5 font-medium text-center">Attendance</th>
-                  </tr>
-                </thead>
-                <tbody className="divide-y divide-slate-100">
-                  {students.map((student, index) => {
-                    const isPresent = (attendanceData[student._id] || STATUS.ABSENT) === STATUS.PRESENT;
-                    return (
-                      <tr key={student._id} className="text-slate-800 transition-colors hover:bg-slate-50/60">
-                        <td className="px-3 py-2 text-slate-600 text-center">{student.roll || '—'}</td>
-                        <td className="px-3 py-2 text-center">
-                          <span className="flex items-center justify-start gap-2.5">
-                            <StudentAvatar student={student} toneClass={AVATAR_TONES[index % AVATAR_TONES.length]} />
-                            <span className="truncate font-medium">{student.name || '—'}</span>
-                          </span>
-                        </td>
-                        <td className="px-3 py-2 font-mono text-[11.5px] text-slate-500 text-center">{student.username || '—'}</td>
-                        <td className="px-3 py-2 text-center">
-                          <label className="inline-flex cursor-pointer items-center gap-2">
-                            <input
-                              type="checkbox"
-                              checked={isPresent}
-                              disabled={isAttendanceLocked}
-                              onChange={(e) => toggleStudentPresent(student._id, e.target.checked)}
-                              aria-label={`Mark ${student.name || 'student'} present`}
-                              className="size-[18px] cursor-pointer rounded accent-green-600 disabled:cursor-not-allowed disabled:opacity-50"
-                            />
-                            <span className={`text-[12px] font-medium ${isPresent ? 'text-green-600' : 'text-red-500'}`}></span>
-                          </label>
-                        </td>
-                      </tr>
-                    );
-                  })}
-                </tbody>
-              </table>
-            )}
-          </div>
-
-          {/* Footer (inside the card — not a full-width bar) */}
-          <div className="mt-3 flex flex-col items-start justify-between gap-3 border-t border-slate-100 pt-3 sm:flex-row sm:items-center">
-            <div className="flex items-center gap-3">
-              <span className="flex size-9 items-center justify-center rounded-xl bg-green-50 text-green-600"><Users className="size-4.5" /></span>
-              <div className="leading-tight">
-                <p className="text-[14px] font-bold text-slate-900">{presentCount} present · {absentCount} absent</p>
-                <p className="text-[11.5px] text-slate-500">Last updated: today {updatedTime}</p>
-              </div>
-            </div>
-            <div className="flex items-center gap-2">
-              {/* <button type="button" onClick={exportToPDF} disabled={!hasRequiredHierarchyFilters || students.length === 0 || loading} className="inline-flex h-9 items-center gap-1.5 rounded-xl border border-slate-200 bg-white px-4 text-[13px] font-medium text-slate-700 shadow-sm transition hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-50">
-                <Download className="size-4" /> Export
-              </button> */}
-              <button type="button" onClick={saveAttendance} disabled={saving || loading || isAttendanceLocked || !hasRequiredHierarchyFilters || students.length === 0} className="inline-flex h-9 items-center gap-1.5 rounded-full bg-blue-600 px-5 text-[13px] font-semibold text-white shadow-sm transition hover:bg-blue-700 disabled:cursor-not-allowed disabled:opacity-50">
-                {saving ? <Loader2 className="size-4 animate-spin" /> : <Save className="size-4" />} Save
-              </button>
-            </div>
-          </div>
-
-          <AnimatePresence>
-            {(error || success || isAttendanceLocked) && (
-              <Motion.div initial={{ opacity: 0, y: 6 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: -6 }} className="mt-3 space-y-2">
-                {error && <p className="rounded-xl border border-red-100 bg-red-50 px-3 py-2 text-xs font-medium text-red-600">{error}</p>}
-                {success && <p className="rounded-xl border border-emerald-100 bg-emerald-50 px-3 py-2 text-xs font-medium text-emerald-700">{success}</p>}
-                {isAttendanceLocked && <p className="rounded-xl border border-amber-100 bg-amber-50 px-3 py-2 text-xs font-medium text-amber-700">{attendanceLockReason}</p>}
               </Motion.div>
             )}
           </AnimatePresence>
-        </section>
+        </div>
 
-        {/* ── Lesson plan ── */}
-        <aside className="h-fit rounded-2xl border border-slate-100 bg-white p-4 shadow-sm">
-          <div className="mb-3 flex items-center gap-3">
-            <span className="flex size-10 items-center justify-center rounded-xl bg-blue-50 text-blue-600"><BookOpen className="size-5" /></span>
-            <div className="min-w-0">
-              <h2 className="text-[14px] font-semibold text-slate-900">Lesson Plan for selected date</h2>
-              <p className="truncate text-[11.5px] text-slate-500">{selectedDate} · {selectedClass || '—'} · {selectedSection || '—'} · {subject.trim() || 'All subjects'}</p>
-            </div>
-          </div>
+        {/* Lesson plan */}
+        <div className="border-t border-slate-100 pt-3">
+          <p className="mb-2 flex items-center gap-2 text-[12.5px] font-semibold text-slate-800"><BookOpen className="size-4 text-blue-600" /> Lesson plan for today</p>
           {isSubstituteMode || !subject.trim() ? (
-            <div className="flex flex-col items-center justify-center rounded-xl bg-slate-50 px-4 py-10 text-center">
-              <span className="mb-3 flex size-12 items-center justify-center rounded-full bg-white text-slate-400 shadow-sm"><ClipboardCheck className="size-6" /></span>
-              <p className="text-[13px] text-slate-500">{isSubstituteMode ? 'Lesson plans are not shown in substitute mode.' : 'Pick a subject to see its lesson plan.'}</p>
-            </div>
+            <p className="rounded-xl bg-slate-50 px-3 py-4 text-center text-[12px] text-slate-500">{isSubstituteMode ? 'Lesson plans are not shown in substitute mode.' : 'Pick a subject to see its lesson plan.'}</p>
           ) : !lessonPlanContext?.plans?.length ? (
-            <div className="flex flex-col items-center justify-center rounded-xl bg-slate-50 px-4 py-10 text-center">
-              <span className="mb-3 flex size-12 items-center justify-center rounded-full bg-white text-slate-400 shadow-sm"><ClipboardCheck className="size-6" /></span>
-              <p className="text-[13px] text-slate-500">No lesson plan found<br />for this date/subject.</p>
-            </div>
+            <p className="rounded-xl bg-slate-50 px-3 py-4 text-center text-[12px] text-slate-500">No lesson plan for this date/subject.</p>
           ) : (
             <div className="space-y-2">
               {lessonPlanContext.plans.map((plan) => (
-                <div key={plan.id} className="rounded-xl border border-slate-100 bg-slate-50 px-3 py-2.5">
-                  <p className="text-[13px] font-medium text-slate-900">{plan.title || 'Untitled Lesson Plan'}</p>
+                <div key={plan.id} className="rounded-xl border border-slate-100 bg-slate-50 px-3 py-2">
+                  <p className="truncate text-[12.5px] font-medium text-slate-900">{plan.title || 'Untitled Lesson Plan'}</p>
                   <div className="mt-1 flex items-center justify-between gap-2">
-                    <p className="text-[11px] text-slate-500">{(plan.date || selectedDate || '').toString().slice(0, 10)} · {plan.subject || subject.trim()}</p>
-                    <span className={`rounded-md px-2 py-0.5 text-[10.5px] font-semibold ${plan.status === 'completed' ? 'bg-emerald-50 text-emerald-700' : plan.status === 'in_progress' ? 'bg-blue-50 text-blue-700' : 'bg-amber-50 text-amber-700'}`}>
+                    <p className="text-[10.5px] text-slate-500">{plan.date ? toLocalDateString(new Date(plan.date)) : selectedDate}</p>
+                    <span className={`rounded-md px-2 py-0.5 text-[10px] font-semibold ${plan.status === 'completed' ? 'bg-emerald-50 text-emerald-700' : plan.status === 'in_progress' ? 'bg-blue-50 text-blue-700' : 'bg-amber-50 text-amber-700'}`}>
                       {plan.status === 'completed' ? 'Completed' : plan.status === 'in_progress' ? 'In Progress' : 'Pending'}
                     </span>
                   </div>
@@ -863,8 +712,166 @@ const AttendanceManagement = () => {
               ))}
             </div>
           )}
-        </aside>
-      </div>
+        </div>
+      </aside>
+
+      {/* ── RIGHT: student list ── */}
+      <section className="flex min-h-0 min-w-0 flex-col rounded-2xl border border-slate-100 bg-white p-4 shadow-sm">
+        <div className="mb-3 flex shrink-0 flex-wrap items-center gap-2">
+          <div className="flex min-w-0 items-center gap-3">
+            <div className="min-w-0">
+              <h2 className="truncate text-[16px] font-semibold text-slate-900">Today&apos;s Attendance</h2>
+              <p className="truncate text-[12px] text-slate-500">{subject.trim() || 'All subjects'}</p>
+            </div>
+          </div>
+
+          <div className="ml-auto flex min-w-0 items-center gap-2">
+            {/* Mark All · Uncheck All · 🔍 — the search field opens over the two buttons */}
+            <AnimatePresence mode="wait" initial={false}>
+              {searchOpen ? (
+                <Motion.div
+                  key="att-search"
+                  initial={{ width: 0, opacity: 0 }}
+                  animate={{ width: 240, opacity: 1 }}
+                  exit={{ width: 0, opacity: 0 }}
+                  transition={{ duration: 0.22, ease: 'easeOut' }}
+                  className="relative overflow-hidden"
+                >
+                  <Search className="pointer-events-none absolute left-3 top-1/2 size-4 -translate-y-1/2 text-slate-400" />
+                  <input
+                    autoFocus
+                    value={searchTerm}
+                    onChange={(e) => setSearchTerm(e.target.value)}
+                    onKeyDown={(e) => { if (e.key === 'Escape') { setSearchOpen(false); setSearchTerm(''); } }}
+                    placeholder="Search student..."
+                    className="h-9 w-[240px] rounded-full border border-slate-200 bg-white pl-9 pr-3 text-[13px] outline-none transition focus:border-blue-300"
+                  />
+                </Motion.div>
+              ) : (
+                <Motion.div
+                  key="att-actions"
+                  initial={{ opacity: 0, x: 8 }}
+                  animate={{ opacity: 1, x: 0 }}
+                  exit={{ opacity: 0, x: 8 }}
+                  transition={{ duration: 0.18 }}
+                  className="flex items-center gap-2"
+                >
+              <button type="button" onClick={() => markAllAttendance(STATUS.PRESENT)} disabled={areAllMarkedPresent || isAttendanceLocked} className="inline-flex h-9 shrink-0 items-center gap-1.5 rounded-full bg-blue-600 px-4 text-[13px] font-semibold text-white shadow-sm transition hover:bg-blue-700 disabled:cursor-not-allowed disabled:opacity-50">
+                <CheckCheck className="size-4" /> Mark All
+              </button>
+              <button type="button" onClick={() => markAllAttendance(STATUS.ABSENT)} disabled={areAllMarkedAbsent || isAttendanceLocked} className="inline-flex h-9 shrink-0 items-center gap-1.5 rounded-full border border-slate-200 bg-white px-4 text-[13px] font-medium text-slate-700 shadow-sm transition hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-50">
+                <span className="text-base leading-none">×</span> Uncheck All
+              </button>
+                </Motion.div>
+              )}
+            </AnimatePresence>
+            <button
+              type="button"
+              onClick={() => { if (searchOpen) { setSearchOpen(false); setSearchTerm(''); } else setSearchOpen(true); }}
+              aria-label={searchOpen ? 'Close search' : 'Search students'}
+              title={searchOpen ? 'Close search' : 'Search'}
+              className={`flex size-9 shrink-0 items-center justify-center overflow-hidden rounded-full border transition-colors ${searchOpen ? 'border-slate-300 bg-slate-100 text-slate-700' : 'border-slate-200 bg-white text-slate-500 hover:bg-slate-50 hover:text-slate-800'}`}
+            >
+              <AnimatePresence mode="wait" initial={false}>
+                <Motion.span
+                  key={searchOpen ? 'x' : 's'}
+                  initial={{ rotate: -180, scale: 0.4, opacity: 0 }}
+                  animate={{ rotate: 0, scale: 1, opacity: 1 }}
+                  exit={{ rotate: 180, scale: 0.4, opacity: 0 }}
+                  transition={{ duration: 0.2 }}
+                  className="flex"
+                >
+                  {searchOpen ? <X className="size-4" /> : <Search className="size-4" />}
+                </Motion.span>
+              </AnimatePresence>
+            </button>
+            <button
+              type="button"
+              onClick={printAttendance}
+              disabled={loading || !hasRequiredHierarchyFilters}
+              aria-label="Print attendance"
+              title="Print"
+              className="flex size-9 shrink-0 items-center justify-center rounded-full border border-slate-200 bg-white text-slate-500 transition hover:bg-slate-50 hover:text-slate-800 disabled:cursor-not-allowed disabled:opacity-50"
+            >
+              <Printer className="size-4" />
+            </button>
+          </div>
+        </div>
+
+        <div className="min-h-[240px] min-w-0 flex-1 overflow-auto overscroll-contain rounded-xl border border-slate-100">
+          {!hasRequiredHierarchyFilters ? (
+            <div className="flex h-full min-h-[240px] flex-col items-center justify-center px-5 text-center">
+              <Loader2 className="mb-3 size-7 animate-spin text-blue-400" />
+              <p className="text-sm font-medium text-slate-700">Loading class roster…</p>
+              <p className="mt-1 text-xs text-slate-400">Resolving class and section details</p>
+            </div>
+          ) : loading ? (
+            <div className="flex h-full min-h-[240px] flex-col items-center justify-center gap-2 text-sm text-slate-500"><Loader2 className="size-6 animate-spin text-blue-500" /> Loading students...</div>
+          ) : students.length === 0 ? (
+            <div className="flex h-full min-h-[240px] flex-col items-center justify-center text-center"><Users className="mb-3 size-8 text-slate-300" /><p className="text-sm font-medium text-slate-600">No students found</p><p className="mt-1 text-xs text-slate-400">Try adjusting your filters</p></div>
+          ) : (
+            <table className="w-full min-w-[520px] text-left text-[13px]">
+              <thead className="sticky top-0 z-10 bg-slate-50 text-[12px] text-slate-600">
+                <tr>
+                  <th className="w-14 px-3 py-2 text-center font-medium">Roll</th>
+                  <th className="px-3 py-2 font-medium">Student Name</th>
+                  <th className="px-3 py-2 text-center font-medium">User ID</th>
+                  <th className="px-3 py-2 text-center font-medium">Attendance</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-slate-100">
+                {students.map((student, index) => {
+                  const isPresent = (attendanceData[student._id] || STATUS.ABSENT) === STATUS.PRESENT;
+                  return (
+                    <tr key={student._id} className="text-slate-800 transition-colors hover:bg-slate-50/60">
+                      <td className="px-3 py-1.5 text-center text-slate-600">{student.roll || '—'}</td>
+                      <td className="px-3 py-1.5">
+                        <span className="flex items-center gap-2.5">
+                          <StudentAvatar student={student} toneClass={AVATAR_TONES[index % AVATAR_TONES.length]} />
+                          <span className="truncate font-medium">{student.name || '—'}</span>
+                        </span>
+                      </td>
+                      <td className="px-3 py-1.5 text-center font-mono text-[11.5px] text-slate-500">{student.username || '—'}</td>
+                      <td className="px-3 py-1.5 text-center">
+                        <label className="inline-flex cursor-pointer items-center gap-2">
+                          <input
+                            type="checkbox"
+                            checked={isPresent}
+                            disabled={isAttendanceLocked}
+                            onChange={(e) => toggleStudentPresent(student._id, e.target.checked)}
+                            aria-label={`Mark ${student.name || 'student'} present`}
+                            className="size-[18px] cursor-pointer rounded accent-green-600 disabled:cursor-not-allowed disabled:opacity-50"
+                          />
+                        </label>
+                      </td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          )}
+        </div>
+
+        <AnimatePresence>
+          {(error || success || isAttendanceLocked) && (
+            <Motion.div initial={{ opacity: 0, y: 6 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: -6 }} className="mt-2 shrink-0 space-y-1.5">
+              {error && <p className="rounded-xl border border-red-100 bg-red-50 px-3 py-1.5 text-xs font-medium text-red-600">{error}</p>}
+              {success && <p className="rounded-xl border border-emerald-100 bg-emerald-50 px-3 py-1.5 text-xs font-medium text-emerald-700">{success}</p>}
+              {isAttendanceLocked && <p className="rounded-xl border border-amber-100 bg-amber-50 px-3 py-1.5 text-xs font-medium text-amber-700">{attendanceLockReason}</p>}
+            </Motion.div>
+          )}
+        </AnimatePresence>
+
+        <div className="mt-3 flex shrink-0 items-center justify-between gap-3 border-t border-slate-100 pt-3">
+          <div className="leading-tight">
+            <p className="text-[14px] font-bold text-slate-900">{presentCount} present · {absentCount} absent</p>
+            <p className="text-[11.5px] text-slate-500">Last updated: today {updatedTime}</p>
+          </div>
+          <button type="button" onClick={saveAttendance} disabled={saving || loading || isAttendanceLocked || !hasRequiredHierarchyFilters || students.length === 0} className="inline-flex h-9 items-center gap-1.5 rounded-full bg-blue-600 px-5 text-[13px] font-semibold text-white shadow-sm transition hover:bg-blue-700 disabled:cursor-not-allowed disabled:opacity-50">
+            {saving ? <Loader2 className="size-4 animate-spin" /> : <Save className="size-4" />} Save
+          </button>
+        </div>
+      </section>
     </Motion.div>
   );
 };

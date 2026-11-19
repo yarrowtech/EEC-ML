@@ -45,6 +45,9 @@ const router = express.Router();
 // TTL bounds staleness from writes made elsewhere (attendance, assignments).
 const teacherDashboardCache = createResponseCache({ ttlMs: 30 * 1000 });
 router.use(teacherDashboardCache.invalidateOnWrite);
+// Student directory / roster: rarely changes, so keep it a little longer.
+const teacherStudentsCache = createResponseCache({ ttlMs: 2 * 60 * 1000 });
+router.use(teacherStudentsCache.invalidateOnWrite);
 
 // Teacher check-in/out, leave and expense writes feed the admin HR screens —
 // drop the admin HR response cache so those show the change immediately.
@@ -155,6 +158,22 @@ const studentIsWithinScope = (student, scope = []) => {
     if (!scopeSection) return true;
     return studentSection === scopeSection;
   });
+};
+
+// Only students enrolled in the active academic year (not archived / left).
+const INACTIVE_STUDENT_STATUSES = new Set(['left', 'inactive', 'passed out', 'passedout', 'alumni', 'transferred', 'graduated', 'archived']);
+const sessionToken = (value) => String(value || '').replace(/\s+/g, '').replace(/[–—/]/g, '-').toLowerCase();
+const loadActiveYearName = async (schoolId) => {
+  if (!schoolId) return '';
+  const year = await AcademicYear.findOne({ schoolId, isActive: true }).select('name').lean();
+  return String(year?.name || '').trim();
+};
+const isCurrentStudent = (student, activeYearName) => {
+  if (student?.isArchived) return false;
+  if (INACTIVE_STUDENT_STATUSES.has(String(student?.status || '').trim().toLowerCase())) return false;
+  const year = String(student?.academicYear || '').trim();
+  if (activeYearName && year && sessionToken(year) !== sessionToken(activeYearName)) return false;
+  return true;
 };
 
 const startOfDay = (value) => {
@@ -533,10 +552,11 @@ router.get('/', authTeacher, teacherDashboardCache.cache, async (req, res) => {
       buildTeacherScope({ schoolId, campusId, teacherId }),
       // Only recent attendance is used (today + last few marked days).
       StudentUser.find(studentFilter)
-        .select({ name: 1, grade: 1, section: 1, attendanceSummary: 1, attendance: { $slice: -60 } })
+        .select({ name: 1, grade: 1, section: 1, status: 1, isArchived: 1, academicYear: 1, attendanceSummary: 1, attendance: { $slice: -60 } })
         .lean(),
     ]);
-    const scopedStudents = students.filter((student) => studentIsWithinScope(student, scope));
+    const currentYearName = String((await activeYearP)?.name || '').trim();
+    const scopedStudents = students.filter((student) => studentIsWithinScope(student, scope) && isCurrentStudent(student, currentYearName));
     const studentIds = scopedStudents.map((student) => student._id);
 
     const today = new Date();
@@ -1118,7 +1138,7 @@ router.get('/allocations', authTeacher, teacherDashboardCache.cache, async (req,
   }
 });
 
-router.get('/students', authTeacher, async (req, res) => {
+router.get('/students', authTeacher, teacherStudentsCache.cache, async (req, res) => {
   // #swagger.tags = ['Teacher Dashboard']
   try {
     const schoolId = req.schoolId || req.user?.schoolId || null;
@@ -1155,9 +1175,13 @@ router.get('/students', authTeacher, async (req, res) => {
 
     // Fetch students
     const students = await StudentUser.find(studentFilter)
-      .select('name username rollNumber grade section className sectionName campusId campusName attendance attendanceSummary profilePic')
+      .select('name username rollNumber roll grade section className sectionName campusId campusName attendance attendanceSummary profilePic status isArchived academicYear admissionNumber gender dob bloodGroup mobile email address fatherName fatherPhone motherName motherPhone guardianName guardianPhone guardianEmail guardianRelation')
       .sort({ grade: 1, section: 1, rollNumber: 1 })
-      .lean();
+      .lean()
+      .then(async (rows) => {
+        const yearName = await loadActiveYearName(schoolId);
+        return rows.filter((student) => isCurrentStudent(student, yearName));
+      });
 
     // Format students with their class-section labels
     const formattedStudents = students
@@ -1181,6 +1205,23 @@ router.get('/students', authTeacher, async (req, res) => {
           campusName: student.campusName,
           profilePic: student.profilePic,
           attendance: student.attendance || [],
+          // directory details (class teacher / subject teacher of this section)
+          roll: student.roll ?? null,
+          admissionNumber: student.admissionNumber || '',
+          gender: student.gender || '',
+          dob: student.dob || '',
+          bloodGroup: student.bloodGroup || '',
+          mobile: student.mobile || '',
+          email: student.email || '',
+          address: student.address || '',
+          fatherName: student.fatherName || '',
+          fatherPhone: student.fatherPhone || '',
+          motherName: student.motherName || '',
+          motherPhone: student.motherPhone || '',
+          guardianName: student.guardianName || '',
+          guardianPhone: student.guardianPhone || '',
+          guardianEmail: student.guardianEmail || '',
+          guardianRelation: student.guardianRelation || '',
         };
       });
 
