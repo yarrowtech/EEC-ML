@@ -150,7 +150,12 @@ const startSchedulers = () => {
 };
 
 const connectDatabase = async () => {
-  await mongoose.connect(process.env.MONGODB_URL);
+  const mongoUrl = process.env.MONGODB_URL?.trim();
+  if (!mongoUrl) {
+    throw new Error('MONGODB_URL is required. Configure it in backend/.env or the server environment.');
+  }
+
+  await mongoose.connect(mongoUrl);
   logger.info('MongoDB Connected');
   await fixChatThreadIndexes();
   await ensureAdminRoles();

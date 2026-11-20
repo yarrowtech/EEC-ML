@@ -284,7 +284,6 @@ const io = configureSocketServer(httpServer, corsOrigin, tenantResolver, redisCl
 app.set('io', io);
 
 // ── Database ──────────────────────────────────────────────────────────────────
-connectDatabase().catch((err) => logger.error({ err }, 'MongoDB connection failed'));
 
 // ── Keep-alive ────────────────────────────────────────────────────────────────
 const KEEP_ALIVE_ENABLED = process.env.KEEP_ALIVE_ENABLED !== 'false';
@@ -333,7 +332,13 @@ httpServer.on('error', (err) => {
   throw err;
 });
 
-startServer(HOST).catch((err) => {
-  logger.error({ err }, '[server] Startup failed');
-  process.exitCode = 1;
-});
+connectDatabase()
+  .catch((err) => {
+    logger.error({ err }, 'MongoDB connection or initialization failed');
+    process.exit(1);
+  })
+  .then(() => startServer(HOST))
+  .catch((err) => {
+    logger.error({ err }, '[server] Startup failed');
+    process.exitCode = 1;
+  });

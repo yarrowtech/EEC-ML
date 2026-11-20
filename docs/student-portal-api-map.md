@@ -392,6 +392,8 @@ Frontend file:
 ---
 
 ## URL: http://localhost:5173/student/chat
+
+The student portal's top navigation is hidden on this page at all screen widths.
 ## URL: http://localhost:5173/student/communication
 1. Entry server + route mounts  
 `backend/index.js`  

@@ -178,7 +178,7 @@ describe('Dashboard', () => {
     expect(latestMobileNavProps?.activeView).toBe('attendance');
   });
 
-  test('hides the student header and mobile footer when the chat box is open on a phone', async () => {
+  test('hides the student header in chat and the mobile footer when a thread opens on a phone', async () => {
     mockPathname = '/student/chat';
     // The take-over only happens below the desktop breakpoint.
     const originalWidth = window.innerWidth;
@@ -187,7 +187,7 @@ describe('Dashboard', () => {
     render(<Dashboard />);
 
     expect(await screen.findByTestId('student-chat-view')).toBeInTheDocument();
-    expect(screen.getByTestId('header')).toBeInTheDocument();
+    expect(screen.queryByTestId('header')).not.toBeInTheDocument();
     expect(screen.getByTestId('mobile-bottom-nav')).toBeInTheDocument();
 
     act(() => {

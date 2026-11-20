@@ -6,7 +6,7 @@ See [multi-tenant Razorpay payments](../docs/multi-tenant-payments.md) for per-s
 
 1. Copy `.env.example` to `.env`
 2. Configure required values:
-   - `MONGODB_URL`
+   - `MONGODB_URL` points to a database reachable from the machine running the backend. The example uses local MongoDB at `127.0.0.1:27017`, so start MongoDB on that machine. For Atlas, use the database user's connection string and add the backend machine's public IP to the project's IP access list.
    - `JWT_SECRET`
    - `CORS_ORIGINS`
    - `CORS_ALLOW_LAN=true` for access from phones on the same private Wi-Fi
@@ -23,6 +23,8 @@ npm install
 ```
 
 ## Development
+
+Each clone needs its own `backend/.env`. The API starts listening after MongoDB initializes. If startup fails, check the backend terminal for the connection error before retrying login.
 
 ```bash
 npm run dev

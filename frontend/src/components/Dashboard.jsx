@@ -376,7 +376,7 @@ const DashboardContent = () => {
               the scroll container) — sticky on <header> alone did nothing
               because its parent was exactly the header's height. */}
           {/* The topic reader is a focused full-height view — no portal header. */}
-          {!isChatBoxOpen && !isTopicReaderPath && !isSubjectChaptersPath && !isAiTutorPath && !isCommunityWallPath && (
+          {effectiveView !== 'chat' && !isChatBoxOpen && !isTopicReaderPath && !isSubjectChaptersPath && !isAiTutorPath && !isCommunityWallPath && (
             <div className={`sticky top-0 z-40 ${isChatView ? 'hidden lg:block' : ''}`}>
               <Header
                 sidebarOpen={sidebarOpen}
