@@ -133,7 +133,7 @@ router.get('/teacher/students', authTeacher, async (req, res) => {
     }
 
     const schoolStudents = await StudentUser.find({ ...filter, status: 'Active' })
-      .select('name grade section roll academicYear')
+      .select('name grade section roll academicYear profilePic')
       .sort({ grade: 1, section: 1, roll: 1 })
       .lean();
     const allStudents = schoolStudents.filter((student) => studentIsWithinTeacherScope(student, scope));

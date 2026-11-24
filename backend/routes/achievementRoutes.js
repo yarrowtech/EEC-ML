@@ -12,6 +12,9 @@ const Section = require('../models/Section');
 const { uploadBufferToCloudinary } = require('../utils/cloudinaryUpload');
 
 const router = express.Router();
+const { teacherAchievementsCache } = require('../utils/responseCache');
+// Any successful write here (upload / bulk / edit / delete) drops cached lists.
+router.use(teacherAchievementsCache.invalidateOnWrite);
 
 // Certificate upload — a single photo or PDF, capped at 2MB.
 const CERTIFICATE_MAX_BYTES = 2 * 1024 * 1024;
@@ -57,6 +60,7 @@ const uploadCertificateFile = async (file, { studentId }) => {
   return result?.secure_url || '';
 };
 
+// Strip the storage URL before sending an achievement to the client.const toSafeAchievement = (doc) => {  if (!doc) return doc;  const plain = typeof doc.toObject === 'function' ? doc.toObject() : { ...doc };  const { certificateUrl, ...rest } = plain;  return { ...rest, hasCertificate: Boolean(certificateUrl) };};
 const normalize = (value = '') => String(value || '').trim();
 const normalizeLower = (value = '') => normalize(value).toLowerCase();
 const escapeRegexLiteral = (value = '') => String(value).replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
@@ -197,7 +201,7 @@ const createAchievementNotifications = async ({
   }
 };
 
-router.get('/teacher/list', authTeacher, async (req, res) => {
+router.get('/teacher/list', authTeacher, teacherAchievementsCache.cache, async (req, res) => {
   try {
     const schoolId = req.schoolId || req.teacher?.schoolId || null;
     const campusId = req.campusId || null;
@@ -267,8 +271,10 @@ router.get('/teacher/list', authTeacher, async (req, res) => {
         date: achievement?.date || null,
         description: achievement?.description || '',
         category: achievement?.category || 'Academic',
-        certificateUrl: achievement?.certificateUrl || '',
+        // Raw storage URL is never sent; the client loads it via the secure /certificate route.
+        hasCertificate: Boolean(achievement?.certificateUrl),
         awardType: achievement?.awardType || '',
+        issuer: achievement?.issuer || '',
       }));
     });
 
@@ -368,7 +374,7 @@ router.post('/teacher/upload', authTeacher, withCertificate, async (req, res) =>
     const created = student.achievements[student.achievements.length - 1];
     res.status(201).json({
       message: 'Achievement uploaded successfully',
-      achievement: created,
+      achievement: toSafeAchievement(created),
     });
   } catch (err) {
     console.error('Teacher achievement upload error:', err);
@@ -505,10 +511,183 @@ router.put('/teacher/:studentId/:achievementId', authTeacher, withCertificate, a
     await student.save();
 
     const updated = student.achievements.find((item) => String(item?._id) === String(achievementId)) || null;
-    res.json({ message: 'Achievement updated successfully', achievement: updated });
+    res.json({ message: 'Achievement updated successfully', achievement: toSafeAchievement(updated) });
   } catch (err) {
     console.error('Teacher achievement update error:', err);
     res.status(500).json({ error: err.message || 'Unable to update achievement' });
+  }
+});
+
+
+// Bulk upload: one request records the same achievement for many students.
+// The certificate is uploaded to Cloudinary once and shared; notifications are
+// sent in the background so the teacher gets an instant response.
+router.post('/teacher/upload-bulk', authTeacher, withCertificate, async (req, res) => {
+  try {
+    const schoolId = req.schoolId || req.teacher?.schoolId || null;
+    const campusId = req.campusId || null;
+    const teacherId = req.teacher?.id || req.user?.id || null;
+    if (!schoolId || !teacherId) {
+      return res.status(400).json({ error: 'schoolId and teacherId are required' });
+    }
+
+    let rawIds = req.body?.studentIds;
+    if (typeof rawIds === 'string') {
+      try { rawIds = JSON.parse(rawIds); } catch { rawIds = rawIds.split(','); }
+    }
+    const studentIds = [...new Set((Array.isArray(rawIds) ? rawIds : []).map((id) => normalize(id)).filter(Boolean))];
+    const title = normalize(req.body?.title);
+    const dateValue = req.body?.date;
+    const description = normalize(req.body?.description);
+    const category = normalize(req.body?.category) || 'Academic';
+
+    if (!studentIds.length) return res.status(400).json({ error: 'Select at least one student' });
+    if (studentIds.length > 200) return res.status(400).json({ error: 'Too many students in one request (max 200)' });
+    if (studentIds.some((id) => !mongoose.isValidObjectId(id))) {
+      return res.status(400).json({ error: 'Invalid studentId in list' });
+    }
+    if (!title) return res.status(400).json({ error: 'Title is required' });
+    if (!dateValue) return res.status(400).json({ error: 'Achievement date is required' });
+    const achievementDate = new Date(dateValue);
+    if (Number.isNaN(achievementDate.getTime())) {
+      return res.status(400).json({ error: 'Invalid achievement date' });
+    }
+
+    const students = await StudentUser.find({
+      _id: { $in: studentIds },
+      schoolId,
+      ...(campusId ? { campusId } : {}),
+    }).select('name grade className class section sectionName fatherName motherName guardianName campusId').lean();
+    const studentMap = new Map(students.map((s) => [String(s._id), s]));
+
+    // Authorize every student (class-teacher check) in parallel.
+    const authzResults = await Promise.all(studentIds.map(async (id) => {
+      const student = studentMap.get(id);
+      if (!student) return { id, error: 'Student not found' };
+      const authz = await resolveClassTeacherAuthorization({ schoolId, campusId, teacherId, student });
+      return authz?.error ? { id, error: authz.error } : { id, student };
+    }));
+    const allowed = authzResults.filter((r) => r.student);
+    const failed = authzResults.filter((r) => r.error).map(({ id, error }) => ({ studentId: id, error }));
+    if (!allowed.length) {
+      return res.status(403).json({ error: failed[0]?.error || 'Not allowed', failed });
+    }
+
+    const [teacherDoc, certificateUrl] = await Promise.all([
+      TeacherUser.findById(teacherId).select('name').lean(),
+      req.file
+        ? uploadCertificateFile(req.file, { studentId: 'bulk' }).catch((uploadErr) => {
+          console.error('Achievement certificate upload error:', uploadErr);
+          return null;
+        })
+        : Promise.resolve(''),
+    ]);
+    if (certificateUrl === null) {
+      return res.status(502).json({ error: 'Could not upload the certificate. Please try again.' });
+    }
+    const teacherDisplayName = normalize(teacherDoc?.name || req.teacher?.name || req.teacher?.username);
+
+    const achievement = {
+      title,
+      date: achievementDate,
+      description,
+      category: ['Academic', 'Extra-Curricular', 'Sports', 'Other'].includes(category) ? category : 'Academic',
+      awardType: certificateUrl ? 'Certificate' : 'Achievement',
+      issuer: teacherDisplayName ? `Class Teacher - ${teacherDisplayName}` : 'Class Teacher',
+      ...(certificateUrl ? { certificateUrl } : {}),
+    };
+
+    // Each student gets their own subdocument (own _id) via $push.
+    const writeResults = await Promise.allSettled(allowed.map(({ id }) =>
+      StudentUser.updateOne({ _id: id, schoolId }, { $push: { achievements: { ...achievement } } })));
+    const saved = [];
+    writeResults.forEach((r, i) => {
+      const { id, student } = allowed[i];
+      if (r.status === 'fulfilled') saved.push(student);
+      else failed.push({ studentId: id, error: r.reason?.message || 'Save failed' });
+    });
+
+    res.status(201).json({
+      message: `Achievement added for ${saved.length} student${saved.length === 1 ? '' : 's'}`,
+      savedCount: saved.length,
+      savedStudentIds: saved.map((s) => String(s._id)),
+      failed,
+      hasCertificate: Boolean(certificateUrl),
+    });
+
+    // Fire notifications after responding — the teacher doesn't wait on them.
+    setImmediate(() => {
+      Promise.allSettled(saved.map((student) => createAchievementNotifications({
+        schoolId,
+        campusId,
+        teacherId,
+        teacherName: teacherDisplayName,
+        student,
+        achievementTitle: title,
+        achievementCategory: achievement.category,
+      }))).then((results) => {
+        results.filter((r) => r.status === 'rejected')
+          .forEach((r) => console.error('Achievement notification creation error:', r.reason));
+      });
+    });
+  } catch (err) {
+    console.error('Teacher achievement bulk upload error:', err);
+    if (!res.headersSent) res.status(500).json({ error: err.message || 'Unable to upload achievements' });
+  }
+});
+
+
+// Secure certificate access: the client never sees the Cloudinary URL. The
+// class teacher fetches the file through this authenticated route and renders
+// it from a local blob: URL.
+const CERT_PROXY_ALLOWED_HOST = /(^|\.)cloudinary\.com$/i;
+router.get('/teacher/:studentId/:achievementId/certificate', authTeacher, async (req, res) => {
+  try {
+    const schoolId = req.schoolId || req.teacher?.schoolId || null;
+    const campusId = req.campusId || null;
+    const teacherId = req.teacher?.id || req.user?.id || null;
+    const { studentId, achievementId } = req.params || {};
+    if (!schoolId || !teacherId) return res.status(400).json({ error: 'schoolId and teacherId are required' });
+    if (!mongoose.isValidObjectId(studentId) || !mongoose.isValidObjectId(achievementId)) {
+      return res.status(400).json({ error: 'Invalid id' });
+    }
+
+    const student = await StudentUser.findOne({
+      _id: studentId,
+      schoolId,
+      ...(campusId ? { campusId } : {}),
+    }).select('name grade className class section sectionName achievements').lean();
+    if (!student) return res.status(404).json({ error: 'Student not found' });
+
+    const authz = await resolveClassTeacherAuthorization({ schoolId, campusId, teacherId, student });
+    if (authz?.error) return res.status(authz.statusCode || 403).json({ error: authz.error });
+
+    const achievement = (student.achievements || []).find((a) => String(a?._id) === String(achievementId));
+    const url = achievement?.certificateUrl;
+    if (!url) return res.status(404).json({ error: 'No certificate uploaded' });
+
+    let parsed;
+    try { parsed = new URL(url); } catch { return res.status(502).json({ error: 'Stored certificate URL is invalid' }); }
+    if (parsed.protocol !== 'https:' || !CERT_PROXY_ALLOWED_HOST.test(parsed.hostname)) {
+      return res.status(502).json({ error: 'Certificate source not allowed' });
+    }
+
+    const upstream = await fetch(parsed.toString(), { signal: AbortSignal.timeout(15000) });
+    if (!upstream.ok) return res.status(502).json({ error: 'Could not load certificate' });
+    const contentType = upstream.headers.get('content-type') || 'application/octet-stream';
+    const buffer = Buffer.from(await upstream.arrayBuffer());
+
+    res.set({
+      'Content-Type': contentType,
+      'Content-Length': String(buffer.length),
+      'Content-Disposition': 'inline',
+      'Cache-Control': 'private, no-store',
+      'X-Content-Type-Options': 'nosniff',
+    });
+    return res.send(buffer);
+  } catch (err) {
+    console.error('Achievement certificate proxy error:', err);
+    if (!res.headersSent) res.status(500).json({ error: 'Unable to load certificate' });
   }
 });
 

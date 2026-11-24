@@ -94,4 +94,8 @@ const holidayCache = createResponseCache({ ttlMs: 5 * 60 * 1000 });
 // entries, and the TTL bounds staleness from writes by teachers/admins.
 const studentDashboardCache = createResponseCache({ ttlMs: 60 * 1000, maxEntries: 20000 });
 
-module.exports = { createResponseCache, studentDashboardCache, parentAttendanceCache, userNotificationsCache, parentFeesCache, teacherAnalyticsCache, chatCache, holidayCache };
+// Teacher achievement records list. Cleared by any write in achievementRoutes;
+// TTL bounds staleness from student edits made elsewhere.
+const teacherAchievementsCache = createResponseCache({ ttlMs: 60 * 1000, maxEntries: 2000 });
+
+module.exports = { createResponseCache, teacherAchievementsCache, studentDashboardCache, parentAttendanceCache, userNotificationsCache, parentFeesCache, teacherAnalyticsCache, chatCache, holidayCache };
