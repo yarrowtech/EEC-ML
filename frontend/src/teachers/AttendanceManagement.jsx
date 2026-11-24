@@ -21,6 +21,7 @@ import {
   Loader2,
   Download,
   ChevronDown,
+  CalendarX2,
 } from 'lucide-react';
 import { motion as Motion, AnimatePresence } from 'framer-motion';
 import jsPDF from 'jspdf';
@@ -159,6 +160,9 @@ const AttendanceManagement = () => {
     campusName: '',
   });
   const [schoolLogoFailed, setSchoolLogoFailed] = useState(false);
+  // Teacher's weekly routine ({ Monday: [...periods], ... }); null until loaded
+  // (or if it couldn't be loaded — then attendance is never blocked by it).
+  const [routineSchedule, setRoutineSchedule] = useState(null);
   const hasRequiredHierarchyFilters = useMemo(
     () => Boolean(selectedSession && selectedClass && selectedSection),
     [selectedSession, selectedClass, selectedSection]
@@ -331,6 +335,9 @@ const AttendanceManagement = () => {
         });
         if (routineRes.ok) {
           const routineData = await routineRes.json().catch(() => ({}));
+          if (routineData?.schedule && typeof routineData.schedule === 'object') {
+            setRoutineSchedule(routineData.schedule);
+          }
           if (trySetMetaFromPayload(routineData)) return;
         }
       } catch {
@@ -508,6 +515,19 @@ const AttendanceManagement = () => {
     () => students.length > 0 && students.every((student) => (attendanceData[student._id] || STATUS.ABSENT) === STATUS.ABSENT),
     [students, attendanceData]
   );
+
+  // Today's periods this teacher has with the selected class/section.
+  const todaysPeriods = useMemo(() => {
+    if (!routineSchedule) return null;
+    const dayName = new Date(nowTick).toLocaleDateString('en-US', { weekday: 'long' });
+    const norm = (v) => String(v || '').trim().toLowerCase();
+    return (Array.isArray(routineSchedule[dayName]) ? routineSchedule[dayName] : []).filter((p) => (
+      norm(p.className) === norm(selectedClass)
+      && (!selectedSection || !p.sectionName || norm(p.sectionName) === norm(selectedSection))
+    ));
+  }, [routineSchedule, nowTick, selectedClass, selectedSection]);
+  // Substitute teachers cover classes outside their routine, so never block them.
+  const noClassToday = !isSubstituteMode && Array.isArray(todaysPeriods) && todaysPeriods.length === 0;
 
   const canShowSchoolLogo = Boolean(schoolMeta.schoolLogo && !schoolLogoFailed);
 
@@ -805,6 +825,15 @@ const AttendanceManagement = () => {
               <p className="text-sm font-medium text-slate-700">Loading class roster…</p>
               <p className="mt-1 text-xs text-slate-400">Resolving class and section details</p>
             </div>
+          ) : noClassToday ? (
+            <div className="flex h-full min-h-[240px] flex-col items-center justify-center px-5 text-center">
+              <span className="mb-3 flex size-12 items-center justify-center rounded-full bg-amber-50 text-amber-500"><CalendarX2 className="size-6" /></span>
+              <p className="text-sm font-semibold text-slate-700">No classes scheduled today</p>
+              <p className="mt-1 max-w-sm text-xs text-slate-400">
+                You don't have a period with Class {selectedClass}{selectedSection ? `-${selectedSection}` : ''} in today's routine, so there's no attendance to mark.
+                Covering for another teacher? Turn on substitute mode.
+              </p>
+            </div>
           ) : loading ? (
             <div className="flex h-full min-h-[240px] flex-col items-center justify-center gap-2 text-sm text-slate-500"><Loader2 className="size-6 animate-spin text-blue-500" /> Loading students...</div>
           ) : students.length === 0 ? (
@@ -867,7 +896,7 @@ const AttendanceManagement = () => {
             <p className="text-[14px] font-bold text-slate-900">{presentCount} present · {absentCount} absent</p>
             <p className="text-[11.5px] text-slate-500">Last updated: today {updatedTime}</p>
           </div>
-          <button type="button" onClick={saveAttendance} disabled={saving || loading || isAttendanceLocked || !hasRequiredHierarchyFilters || students.length === 0} className="inline-flex h-9 items-center gap-1.5 rounded-full bg-blue-600 px-5 text-[13px] font-semibold text-white shadow-sm transition hover:bg-blue-700 disabled:cursor-not-allowed disabled:opacity-50">
+          <button type="button" onClick={saveAttendance} disabled={saving || loading || noClassToday || isAttendanceLocked || !hasRequiredHierarchyFilters || students.length === 0} className="inline-flex h-9 items-center gap-1.5 rounded-full bg-blue-600 px-5 text-[13px] font-semibold text-white shadow-sm transition hover:bg-blue-700 disabled:cursor-not-allowed disabled:opacity-50">
             {saving ? <Loader2 className="size-4 animate-spin" /> : <Save className="size-4" />} Save
           </button>
         </div>

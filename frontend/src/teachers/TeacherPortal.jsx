@@ -1131,7 +1131,6 @@ const CW_TABS = [
     ownPaths: (rel) =>
       rel === 'students' ||
       rel.startsWith('students/directory') ||
-      rel.startsWith('students/health') ||
       rel.startsWith('students/attendance') ||
       rel.startsWith('students/achievements') ||
       rel.startsWith('assignments') ||
@@ -1140,7 +1139,6 @@ const CW_TABS = [
     firstPath: 'students/directory',
     subTabs: [
       { label: 'Student Directory', path: 'students/directory' },
-      { label: 'Student Health Records', path: 'students/health-records', notificationKey: 'health' },
       { label: 'Attendance', path: 'students/attendance', notificationKey: 'attendance' },
       { label: 'Assignments', path: 'assignments/manage', notificationKey: 'assignments' },
       { label: 'Achievements', path: 'students/achievements', notificationKey: 'achievements' },
@@ -1150,14 +1148,12 @@ const CW_TABS = [
   {
     id: 'observations',
     label: 'Observations',
-    description: 'Academic and behavioural observations and progress notes',
+    description: 'Student health records',
     icon: Eye,
-    ownPaths: (rel) => rel.startsWith('observations/'),
-    firstPath: 'observations/academic',
+    ownPaths: (rel) => rel.startsWith('observations/') || rel.startsWith('students/health'),
+    firstPath: 'students/health-records',
     subTabs: [
-      { label: 'Academic Observations', path: 'observations/academic' },
-      { label: 'Behavioural Observations', path: 'observations/behavioural' },
-      { label: 'Student Progress Notes', path: 'observations/progress-notes' },
+      { label: 'Student Health Records', path: 'students/health-records', notificationKey: 'health' },
     ],
   },
   {
@@ -2749,9 +2745,7 @@ const TeacherPortalShell = () => {
                   <Route path="students/health-records" element={<HealthUpdatesAdvanced />} />
                   <Route path="students/observations" element={<Navigate to="../../wellbeing/observations" relative="path" replace />} />
                   <Route path="students/directory" element={<StudentDirectory />} />
-                  <Route path="observations/academic" element={<PlaceholderModule icon={BookOpen} title="Academic Observations" description="Record observations about each student and their academic work. Coming soon." />} />
-                  <Route path="observations/behavioural" element={<PlaceholderModule icon={Eye} title="Behavioural Observations" description="Record classroom behaviour observations. Coming soon." />} />
-                  <Route path="observations/progress-notes" element={<PlaceholderModule icon={NotebookPen} title="Student Progress Notes" description="Keep running progress notes for each student. Coming soon." />} />
+                  <Route path="observations/*" element={<Navigate to="../students/health-records" replace />} />
                   <Route path="wellbeing/overview" element={<PlaceholderModule icon={Heart} title="Wellbeing Overview" description="A summary of emotional wellbeing across the class. Coming soon." />} />
                   <Route path="wellbeing/check-ins" element={<PlaceholderModule icon={Smile} title="Emotional Check-ins" description="Student emotional check-ins. Coming soon." />} />
                   <Route path="wellbeing/mood" element={<PlaceholderModule icon={Activity} title="Mood Tracking" description="Mood trends over time. Coming soon." />} />
