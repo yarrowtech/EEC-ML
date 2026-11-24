@@ -9,6 +9,7 @@ const { generatePassword } = require('../utils/generator');
 const { generateTeacherCode, generateTeacherCodeForAdmin } = require('../utils/codeGenerator');
 const adminAuth = require('../middleware/adminAuth');
 const rateLimit = require('../middleware/rateLimit');
+const loginAttemptGuard = require('../middleware/loginAttemptGuard');
 const { isStrongPassword, passwordPolicyMessage } = require('../utils/passwordPolicy');
 const School = require('../models/School');
 const Admin = require('../models/Admin');
@@ -202,7 +203,7 @@ router.post('/register', adminAuth, async (req, res) => {
 });
 
 // Login Teacher
-router.post('/login', rateLimit({ windowMs: 60 * 1000, max: 20, keyGenerator: rateLimit.loginKeyGenerator, skipSuccessfulRequests: true }), async (req, res) => {
+router.post('/login', rateLimit({ windowMs: 60 * 1000, max: 20, keyGenerator: rateLimit.loginKeyGenerator, skipSuccessfulRequests: true }), loginAttemptGuard, async (req, res) => {
   // #swagger.tags = ['Teachers']
   const rawUsername = req.body?.username;
   const rawPassword = req.body?.password;

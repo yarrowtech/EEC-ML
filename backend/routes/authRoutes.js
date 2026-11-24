@@ -11,6 +11,7 @@ const Principal = require('../models/Principal');
 const StaffUser = require('../models/StaffUser');
 const School = require('../models/School');
 const rateLimit = require('../middleware/rateLimit');
+const loginAttemptGuard = require('../middleware/loginAttemptGuard');
 const { generateTeacherCode } = require('../utils/codeGenerator');
 const { logAuthEvent } = require('../utils/authEventLogger');
 const { resolveLoginPlatformScope } = require('../utils/authLoginScope');
@@ -247,7 +248,7 @@ router.post('/login', rateLimit({
   max: 20,
   keyGenerator: rateLimit.loginKeyGenerator,
   skipSuccessfulRequests: true,
-}), async (req, res) => {
+}), loginAttemptGuard, async (req, res) => {
   const rawUsername = req.body?.username;
   const rawPassword = req.body?.password;
   if (typeof rawUsername !== 'string' || typeof rawPassword !== 'string') {

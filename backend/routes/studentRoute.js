@@ -423,6 +423,7 @@ const resolveTeacherFeedbackAvailability = async (schoolId) => {
   };
 };
 const rateLimit = require('../middleware/rateLimit');
+const loginAttemptGuard = require('../middleware/loginAttemptGuard');
 const { isStrongPassword, passwordPolicyMessage } = require('../utils/passwordPolicy');
 const authStudent = require('../middleware/authStudent');
 const { logAuthEvent } = require('../utils/authEventLogger');
@@ -851,7 +852,7 @@ router.post('/register', adminAuth, async (req, res) => {
 });
 
 // Login Student
-router.post('/login', rateLimit({ windowMs: 60 * 1000, max: 20, keyGenerator: rateLimit.loginKeyGenerator, skipSuccessfulRequests: true }), async (req, res) => {
+router.post('/login', rateLimit({ windowMs: 60 * 1000, max: 20, keyGenerator: rateLimit.loginKeyGenerator, skipSuccessfulRequests: true }), loginAttemptGuard, async (req, res) => {
   // #swagger.tags = ['Students']
   const rawUsername = req.body?.username;
   const rawStudentId = req.body?.studentId;

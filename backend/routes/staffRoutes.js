@@ -7,6 +7,7 @@ const { generateUsername, generatePassword } = require('../utils/generator');
 const { generateEmployeeCode } = require('../utils/codeGenerator');
 const adminAuth = require('../middleware/adminAuth');
 const rateLimit = require('../middleware/rateLimit');
+const loginAttemptGuard = require('../middleware/loginAttemptGuard');
 const authStaff = require('../middleware/authStaff');
 const { logAuthEvent } = require('../utils/authEventLogger');
 
@@ -96,7 +97,7 @@ router.post('/register', adminAuth, async (req, res) => {
 });
 
 // Login Staff
-router.post('/login', rateLimit({ windowMs: 60 * 1000, max: 20, keyGenerator: rateLimit.loginKeyGenerator, skipSuccessfulRequests: true }), async (req, res) => {
+router.post('/login', rateLimit({ windowMs: 60 * 1000, max: 20, keyGenerator: rateLimit.loginKeyGenerator, skipSuccessfulRequests: true }), loginAttemptGuard, async (req, res) => {
   // #swagger.tags = ['Staff']
   const rawUsername = req.body?.username;
   const rawPassword = req.body?.password;

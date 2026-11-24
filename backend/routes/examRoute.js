@@ -263,37 +263,57 @@ const getTeacherDisplayName = async (teacherId) => {
   return teacher?.name || teacher?.employeeCode || 'Teacher';
 };
 
-const notifyAdminTeacherResultUpload = async ({
-  schoolId,
-  campusId,
-  teacherId,
-  teacherName,
-  exam,
-  uploadedCount = 1,
-  multipleExams = false,
-}) => {
-  if (!schoolId || !teacherId) return;
+// Teachers often save marks one student at a time (one request per row), so a
+// class of 28 used to produce 28 admin notifications. Uploads for the same
+// teacher + exam are now (1) batched in memory for a few seconds and (2) merged
+// into the admin's recent notification for that exam instead of creating new ones.
+const RESULT_UPLOAD_BATCH_MS = 4000;
+const RESULT_UPLOAD_MERGE_WINDOW_MS = 30 * 60 * 1000;
+const pendingResultUploads = new Map();
 
+const buildResultUploadMessage = ({ actor, exam, count, multipleExams }) => {
+  if (multipleExams) {
+    return `${actor} uploaded ${count} result entries across multiple exams. Review and publish results.`;
+  }
   const subjectName = String(exam?.subject || exam?.subjectId?.name || '').trim();
   const className = String(getExamClassName(exam) || '').trim();
   const sectionName = String(getExamSectionName(exam) || '').trim();
-  const examTitle = String(exam?.title || '').trim();
+  const examBits = [String(exam?.title || '').trim(), subjectName].filter(Boolean).join(' - ');
+  const classBits = [className, sectionName].filter(Boolean).join(' / ');
+  return `${actor} uploaded ${count} result entr${count === 1 ? 'y' : 'ies'} for ${examBits || 'an exam'}${classBits ? ` (${classBits})` : ''}. Review and publish results.`;
+};
+
+const flushTeacherResultUpload = async ({
+  schoolId, campusId, teacherId, teacherName, exam, uploadedCount, multipleExams,
+}) => {
+  const subjectName = String(exam?.subject || exam?.subjectId?.name || '').trim();
+  const className = String(getExamClassName(exam) || '').trim();
+  const sectionName = String(getExamSectionName(exam) || '').trim();
   const actor = teacherName || 'Teacher';
 
-  let message = '';
-  if (multipleExams) {
-    message = `${actor} uploaded ${uploadedCount} result entries across multiple exams. Review and publish results.`;
-  } else {
-    const examBits = [examTitle, subjectName].filter(Boolean).join(' - ');
-    const classBits = [className, sectionName].filter(Boolean).join(' / ');
-    message = `${actor} uploaded ${uploadedCount} result entr${uploadedCount === 1 ? 'y' : 'ies'} for ${examBits || 'an exam'}${classBits ? ` (${classBits})` : ''}. Review and publish results.`;
+  // Merge into this teacher's recent notification for the same exam.
+  if (!multipleExams && exam?._id) {
+    const existing = await Notification.findOne({
+      schoolId,
+      title: 'Teacher Uploaded Results',
+      createdByTeacherId: teacherId,
+      'relatedEntity.entityId': exam._id,
+      updatedAt: { $gte: new Date(Date.now() - RESULT_UPLOAD_MERGE_WINDOW_MS) },
+    }).sort({ updatedAt: -1 });
+    if (existing) {
+      const prior = Number((/uploaded (\d+) result/.exec(existing.message || '') || [])[1] || 0);
+      existing.message = buildResultUploadMessage({ actor, exam, count: prior + uploadedCount, multipleExams });
+      existing.readBy = []; // surface it as unread again
+      await existing.save();
+      return;
+    }
   }
 
   await Notification.create({
     schoolId,
     campusId: campusId || null,
     title: 'Teacher Uploaded Results',
-    message,
+    message: buildResultUploadMessage({ actor, exam, count: uploadedCount, multipleExams }),
     audience: 'Admin',
     type: 'result',
     priority: 'high',
@@ -309,6 +329,37 @@ const notifyAdminTeacherResultUpload = async ({
     createdByTeacherId: teacherId,
     createdByName: actor,
   });
+};
+
+const notifyAdminTeacherResultUpload = async ({
+  schoolId,
+  campusId,
+  teacherId,
+  teacherName,
+  exam,
+  uploadedCount = 1,
+  multipleExams = false,
+}) => {
+  if (!schoolId || !teacherId) return;
+  const key = `${schoolId}:${teacherId}:${multipleExams ? 'multi' : String(exam?._id || 'none')}`;
+  const pending = pendingResultUploads.get(key);
+  if (pending) {
+    clearTimeout(pending.timer);
+    pending.args.uploadedCount += Number(uploadedCount) || 0;
+    pending.args.exam = exam || pending.args.exam;
+  }
+  const entry = pending || {
+    args: { schoolId, campusId, teacherId, teacherName, exam, uploadedCount: Number(uploadedCount) || 0, multipleExams },
+  };
+  // Timers keep the AsyncLocalStorage tenant context they were created in.
+  entry.timer = setTimeout(() => {
+    pendingResultUploads.delete(key);
+    flushTeacherResultUpload(entry.args).catch((err) => {
+      console.warn('Teacher result-upload notification failed', err?.message);
+    });
+  }, RESULT_UPLOAD_BATCH_MS);
+  if (entry.timer.unref) entry.timer.unref();
+  pendingResultUploads.set(key, entry);
 };
 
 const normalizeText = (value) => String(value || '').trim().toLowerCase();

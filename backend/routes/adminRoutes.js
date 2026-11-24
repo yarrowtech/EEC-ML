@@ -11,6 +11,7 @@ const School = require('../models/School');
 const Organization = require('../models/Organization');
 const adminAuth = require('../middleware/adminAuth');
 const rateLimit = require('../middleware/rateLimit');
+const loginAttemptGuard = require('../middleware/loginAttemptGuard');
 const { isStrongPassword, passwordPolicyMessage } = require('../utils/passwordPolicy');
 const { generatePassword } = require('../utils/generator');
 const { sendSchoolApprovalEmail } = require('../utils/mailer');
@@ -134,7 +135,7 @@ router.post('/register', async (req, res) => {
 });
 
 // Login
-router.post('/login', rateLimit({ windowMs: 60 * 1000, max: 20, keyGenerator: rateLimit.loginKeyGenerator, skipSuccessfulRequests: true }), async (req, res) => {
+router.post('/login', rateLimit({ windowMs: 60 * 1000, max: 20, keyGenerator: rateLimit.loginKeyGenerator, skipSuccessfulRequests: true }), loginAttemptGuard, async (req, res) => {
   // #swagger.tags = ['Admin Auth']
   const rawUsername = req.body?.username;
   const rawPassword = req.body?.password;

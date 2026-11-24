@@ -66,6 +66,21 @@ const LoginForm = () => {
   const [loginError, setLoginError] = useState('');
   const [resetNotice, setResetNotice] = useState('');
   const [isLoading, setIsLoading] = useState(false);
+  // Set after too many wrong attempts — login stays disabled until it passes.
+  const [lockedUntil, setLockedUntil] = useState(0);
+  const [, setLockTick] = useState(0);
+  useEffect(() => {
+    if (!lockedUntil) return undefined;
+    const t = setInterval(() => {
+      if (Date.now() >= lockedUntil) {
+        setLockedUntil(0);
+        setLoginError('');
+      }
+      setLockTick((n) => n + 1);
+    }, 1000);
+    return () => clearInterval(t);
+  }, [lockedUntil]);
+  const isLocked = lockedUntil > Date.now();
   const navigate = useNavigate();
   const location = useLocation();
 
@@ -162,8 +177,6 @@ const LoginForm = () => {
     if (name === 'password') {
       if (!value) {
         setErrors(prev => ({ ...prev, password: 'Password is required' }));
-      } else if (!resetMode && value.length < 6) {
-        setErrors(prev => ({ ...prev, password: 'Password must be at least 6 characters' }));
       }
     }
     if (name === 'newPassword') {
@@ -187,10 +200,10 @@ const LoginForm = () => {
     if (!formData.username.trim()) {
       newErrors.username = 'User ID is required';
     }
+    // Login never hints at password rules — a wrong/short password is just
+    // sent and comes back as a plain "login failed".
     if (!formData.password) {
       newErrors.password = 'Password is required';
-    } else if (formData.password.length < 6) {
-      newErrors.password = 'Password must be at least 6 characters';
     }
     setErrors(newErrors);
     return Object.keys(newErrors).length === 0;
@@ -324,8 +337,20 @@ const LoginForm = () => {
 
       const data = await res.json().catch(() => ({}));
       if (!res.ok) {
-        throw new Error(data?.error || data?.message || 'Invalid credentials. Please check your User ID and password.');
+        if (res.status === 429 || data?.code === 'LOGIN_LOCKED') {
+          const secs = Number(data?.retryAfterSeconds || res.headers.get('Retry-After') || 0);
+          if (secs > 0) setLockedUntil(Date.now() + secs * 1000);
+          throw new Error(data?.error || 'Maximum login attempts reached. Please try again later.');
+        }
+        const base = res.status === 401
+          ? 'Login failed. Invalid User ID or password'
+          : (data?.error || data?.message || 'Login failed. Invalid User ID or password');
+        const left = Number(data?.attemptsLeft);
+        throw new Error(Number.isFinite(left) && left > 0
+          ? `${base}. ${left} attempt${left === 1 ? '' : 's'} left.`
+          : base);
       }
+      setLockedUntil(0);
 
       if (data?.requiresPasswordReset) {
         setResetMode(true);
@@ -809,7 +834,7 @@ const LoginForm = () => {
               {/* Submit */}
               <Motion.button
                 type="submit"
-                disabled={isLoading}
+                disabled={isLoading || (!resetMode && isLocked)}
                 whileHover={{ scale: isLoading ? 1 : 1.01, y: isLoading ? 0 : -2 }}
                 whileTap={{ scale: isLoading ? 1 : 0.98 }}
                 className="w-full h-14 lg:h-12 mt-1 rounded-full font-bold text-sm text-white transition-shadow disabled:opacity-60 disabled:cursor-not-allowed flex items-center justify-center gap-2.5 shadow-lg shadow-amber-300/40 hover:enabled:shadow-xl hover:enabled:shadow-amber-400/50"
@@ -823,7 +848,7 @@ const LoginForm = () => {
                 ) : (
                   <>
                     {/* <ArrowRight size={17} /> */}
-                    {resetMode ? 'Reset & Log In' : 'Log In'}
+                    {resetMode ? 'Reset & Log In' : isLocked ? `Try again in ${Math.max(1, Math.ceil((lockedUntil - Date.now()) / 60000))} min` : 'Log In'}
                   </>
                 )}
               </Motion.button>

@@ -8,6 +8,7 @@ const Principal = require('../models/Principal');
 const School = require('../models/School');
 const TeacherUser = require('../models/TeacherUser');
 const rateLimit = require('../middleware/rateLimit');
+const loginAttemptGuard = require('../middleware/loginAttemptGuard');
 const { isStrongPassword, passwordPolicyMessage } = require('../utils/passwordPolicy');
 const adminAuth = require('../middleware/adminAuth');
 const principalAuth = require('../middleware/principalAuth');
@@ -80,7 +81,7 @@ router.post('/register', adminAuth, async (req, res) => {
   }
 });
 
-router.post('/login', rateLimit({ windowMs: 60 * 1000, max: 20, keyGenerator: rateLimit.loginKeyGenerator, skipSuccessfulRequests: true }), async (req, res) => {
+router.post('/login', rateLimit({ windowMs: 60 * 1000, max: 20, keyGenerator: rateLimit.loginKeyGenerator, skipSuccessfulRequests: true }), loginAttemptGuard, async (req, res) => {
   // #swagger.tags = ['Principals']
   const rawUsername = req.body?.username;
   const rawEmail = req.body?.email;

@@ -19,6 +19,7 @@ const adminAuth = require('../middleware/adminAuth');
 const authParent = require('../middleware/authParent');
 const { generateUsername, generatePassword } = require('../utils/generator');
 const rateLimit = require('../middleware/rateLimit');
+const loginAttemptGuard = require('../middleware/loginAttemptGuard');
 const { isStrongPassword, passwordPolicyMessage } = require('../utils/passwordPolicy');
 const { logAuthEvent } = require('../utils/authEventLogger');
 const { resolveParentChildren } = require('../utils/parentChildren');
@@ -440,7 +441,7 @@ router.post('/register', adminAuth, async (req, res) => {
 });
 
 // Parent Login
-router.post('/login', rateLimit({ windowMs: 60 * 1000, max: 20, keyGenerator: rateLimit.loginKeyGenerator, skipSuccessfulRequests: true }), async (req, res) => {
+router.post('/login', rateLimit({ windowMs: 60 * 1000, max: 20, keyGenerator: rateLimit.loginKeyGenerator, skipSuccessfulRequests: true }), loginAttemptGuard, async (req, res) => {
   // #swagger.tags = ['Parents']
   const rawUsername = req.body?.username;
   const rawPassword = req.body?.password;
