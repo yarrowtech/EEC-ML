@@ -1317,7 +1317,9 @@ const ClassWorkspace = ({ notifications = [], seenState = {} }) => {
             sectionName: sn,
             classMongoId: primary?.classId?._id || primary?.classId?.id || '',
             sectionMongoId: primary?.sectionId?._id || primary?.sectionId?.id || '',
-            subjectName: primary?.subjectId?.name || primary?.subjectName || '',
+            subjectName: rememberedAllocation
+              ? remembered.subjectName
+              : primary?.subjectId?.name || primary?.subjectName || '',
           },
         });
       } catch {
@@ -1382,22 +1384,27 @@ const ClassWorkspace = ({ notifications = [], seenState = {} }) => {
           setSectionName(sn);
           // Any direct navigation into a real class-section (not just the
           // "Classes & Work" picker) keeps "current" in sync with it too.
+          const remembered = readRememberedClass();
           rememberCurrentClass({
             slug: classId,
             className: cn,
             sectionName: sn,
             classMongoId: alloc?.classId?._id || alloc?.classId?.id || '',
             sectionMongoId: alloc?.sectionId?._id || alloc?.sectionId?.id || '',
-            subjectName: alloc?.subjectId?.name || alloc?.subjectName || '',
+            subjectName: location.state?.subjectName
+              ?? (remembered?.slug === classId ? remembered.subjectName : ''),
           });
         }
       } catch { /* keep fallback */ }
     };
     load();
     return () => { cancelled = true; };
-  }, [classId, location.state?.classMongoId, location.state?.className, location.state?.sectionMongoId, location.state?.sectionName]);
+  }, [classId, location.state?.classMongoId, location.state?.className, location.state?.sectionMongoId, location.state?.sectionName, location.state?.subjectName]);
 
   // ── Active tab ────────────────────────────────────────────
+  const rememberedSelection = readRememberedClass();
+  const selectedSubjectName = location.state?.subjectName
+    ?? (rememberedSelection?.slug === classId ? rememberedSelection.subjectName : '');
   const rel = location.pathname.replace(basePath, '').replace(/^\//, '');
   const activeTab = useMemo(() => CW_TABS.find((t) => t.ownPaths(rel)) ?? CW_TABS[0], [rel]);
   const [hoverTabId, setHoverTabId] = useState(null);
@@ -1597,7 +1604,7 @@ const ClassWorkspace = ({ notifications = [], seenState = {} }) => {
             className="pointer-events-none absolute -top-[6px] z-10 h-3.5 w-3.5 -translate-x-1/2 rotate-45 border-l border-t border-slate-200 bg-white"
           />
         )}
-        <Outlet context={{ className, sectionName }} />
+        <Outlet context={{ className, sectionName, subjectName: selectedSubjectName }} />
       </div>
 
     </div>

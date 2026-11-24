@@ -182,34 +182,24 @@ const getTeacherScopeKeys = async ({ schoolId, campusId, teacherId }) => {
   const keys = new Set();
   if (!schoolId || !teacherId) return keys;
 
-  const allocations = await TeacherAllocation.find({
-    schoolId,
-    teacherId,
-    ...(campusId
-      ? { $or: [{ campusId }, { campusId: null }, { campusId: { $exists: false } }] }
-      : {}),
-  })
-    .select('classId sectionId subjectId')
-    .lean();
+  const campusFilter = campusId
+    ? { $or: [{ campusId }, { campusId: null }, { campusId: { $exists: false } }] }
+    : {};
 
-  if (allocations.length) {
-    allocations.forEach((item) => {
-      if (!item?.classId || !item?.sectionId) return;
-      const classId = toIdString(item.classId);
-      const sectionId = toIdString(item.sectionId);
-      const subjectId = item.subjectId ? toIdString(item.subjectId) : '*';
-      keys.add(buildScopeKey(classId, sectionId, subjectId));
-    });
-    return keys;
-  }
+  // The dashboard includes timetable subjects even when explicit allocations exist.
+  const [allocations, timetables] = await Promise.all([
+    TeacherAllocation.find({ schoolId, teacherId, ...campusFilter })
+      .select('classId sectionId subjectId')
+      .lean(),
+    Timetable.find({ schoolId, 'entries.teacherId': teacherId, ...campusFilter })
+      .select('classId sectionId entries.teacherId entries.subjectId')
+      .lean(),
+  ]);
 
-  const timetables = await Timetable.find({
-    schoolId,
-    ...(campusId ? { campusId } : {}),
-    'entries.teacherId': teacherId,
-  })
-    .select('classId sectionId entries.teacherId entries.subjectId')
-    .lean();
+  allocations.forEach((item) => {
+    if (!item?.classId || !item?.sectionId) return;
+    keys.add(buildScopeKey(item.classId, item.sectionId, item.subjectId));
+  });
 
   timetables.forEach((tt) => {
     const classId = toIdString(tt.classId);
@@ -687,6 +677,8 @@ const { createResponseCache } = require('../utils/responseCache');
 // Parent exam schedule: 60s per-parent cache; any exam write here clears it.
 const parentScheduleCache = createResponseCache({ ttlMs: 60 * 1000 });
 router.use(parentScheduleCache.invalidateOnWrite);
+const teacherExamCache = createResponseCache({ ttlMs: 15 * 1000, maxEntries: 200 });
+router.use(teacherExamCache.invalidateOnWrite);
 
 /* ══════════════════════════════════════════════════════════
    EXAM GROUPS  (parent level)
@@ -1990,7 +1982,11 @@ router.post("/results", adminOrTeacherAuth, async (req, res) => {
 });
 
 // List results for an exam (admin/teacher)
-router.get("/results", adminOrTeacherAuth, async (req, res) => {
+const isTeacherResultsOverview = (req) => req.userType === 'teacher' && req.query.teacherOverview === 'true';
+
+router.get("/results", adminOrTeacherAuth, (req, res, next) => {
+  return isTeacherResultsOverview(req) ? teacherExamCache.cache(req, res, next) : next();
+}, async (req, res) => {
   // #swagger.tags = ['Exams']
     try {
         const schoolId = req.schoolId || req.user?.schoolId || null;
@@ -2000,10 +1996,12 @@ router.get("/results", adminOrTeacherAuth, async (req, res) => {
         const filter = { schoolId, ...(campusId ? { campusId } : {}) };
         if (examId) filter.examId = examId;
         if (studentId) filter.studentId = studentId;
-        const results = await ExamResult.find(filter)
-            .populate('studentId', 'name grade section roll academicYear')
-            .populate('examId', 'title subject date term grade section classId sectionId subjectId marks')
-            .lean();
+        const overview = isTeacherResultsOverview(req);
+        const query = ExamResult.find(filter)
+            .populate('examId', 'title subject date term grade section classId sectionId subjectId marks');
+        if (overview && !grade && !section) query.select('examId status published');
+        else query.populate('studentId', 'name grade section roll academicYear');
+        const results = await query.lean();
 
         let scopedResults = results;
         if (req.userType === 'teacher') {
@@ -2026,6 +2024,10 @@ router.get("/results", adminOrTeacherAuth, async (req, res) => {
             : true;
           return matchesGrade && matchesSection && matchesSubject;
         });
+
+        if (overview) {
+          return res.json(filtered.map(({ examId, status, published }) => ({ examId: examId?._id, status, published })));
+        }
 
         // Optionally enrich with rank, percentile, and pre/post delta when examId is known
         if (enrich === 'true' && examId) {
@@ -2269,6 +2271,7 @@ router.get("/results/exam-students", adminOrTeacherAuth, async (req, res) => {
           marks: existing?.marks ?? null,
           gradeValue: existing?.grade || '',
           status: existing?.status || null,
+          remarks: existing?.remarks || '',
           published: Boolean(existing?.published),
         };
       })
@@ -2993,7 +2996,7 @@ router.put("/results/:id/publish", adminAuth, async (req, res) => {
 });
 
 // Teacher exam management (scoped by allocations)
-router.get('/teacher/manage', teacherAuth, async (req, res) => {
+router.get('/teacher/manage', teacherAuth, teacherExamCache.cache, async (req, res) => {
   try {
     const schoolId = req.schoolId || req.user?.schoolId || null;
     const campusId = req.campusId || req.user?.campusId || null;
@@ -3010,6 +3013,17 @@ router.get('/teacher/manage', teacherAuth, async (req, res) => {
       .sort({ date: -1, createdAt: -1 })
       .lean();
     exams = exams.filter((exam) => canTeacherManageExam(scopeKeys, exam));
+
+    if (req.query.includeStudentCounts === 'true') {
+      const countsByRoster = new Map();
+      exams = await Promise.all(exams.map(async (exam) => {
+        const roster = JSON.stringify([getExamClassName(exam).trim(), getExamSectionName(exam).trim()]);
+        if (!countsByRoster.has(roster)) {
+          countsByRoster.set(roster, resolveExamStudentCount({ schoolId, campusId, exam }));
+        }
+        return { ...exam, rosterCount: await countsByRoster.get(roster) };
+      }));
+    }
 
     res.status(200).json(exams);
   } catch (err) {

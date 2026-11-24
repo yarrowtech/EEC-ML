@@ -4,6 +4,7 @@
 // own its data, so the TTL only bounds staleness from writes elsewhere.
 const createResponseCache = ({ ttlMs = 30 * 1000, maxEntries = 1000 } = {}) => {
   const store = new Map(); // key -> { body, expires }
+  let generation = 0;
 
   const keyOf = (req) => [
     req.user?.id || req.admin?.id || 'anon',
@@ -12,7 +13,10 @@ const createResponseCache = ({ ttlMs = 30 * 1000, maxEntries = 1000 } = {}) => {
     req.originalUrl,
   ].join(':');
 
-  const clear = () => store.clear();
+  const clear = () => {
+    generation += 1;
+    store.clear();
+  };
 
   // Drop only one user's entries (keys start with their id).
   const clearUser = (userId) => {
@@ -32,9 +36,10 @@ const createResponseCache = ({ ttlMs = 30 * 1000, maxEntries = 1000 } = {}) => {
       return res.json(hit.body);
     }
     if (hit) store.delete(key);
+    const requestGeneration = generation;
     const originalJson = res.json.bind(res);
     res.json = (body) => {
-      if (res.statusCode === 200) {
+      if (res.statusCode === 200 && requestGeneration === generation) {
         if (store.size >= maxEntries) store.delete(store.keys().next().value);
         store.set(key, { body, expires: Date.now() + ttlMs });
       }
