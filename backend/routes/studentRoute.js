@@ -2025,7 +2025,7 @@ router.get('/assignments', authStudent, async (req, res) => {
 });
 
 // Get Student Results
-router.get('/results', authStudent, async (req, res) => {
+const studentResultsHandler = async (req, res) => {
   // #swagger.tags = ['Students']
   try {
     logStudentPortalEvent(req, {
@@ -2146,7 +2146,10 @@ router.get('/results', authStudent, async (req, res) => {
     (req.log || logger).error({ err }, 'Results error');
     res.status(400).json({ error: err.message });
   }
-});
+};
+router.get('/results', authStudent, studentResultsHandler);
+// Reused by the parent portal (routes/parentResultsRoutes.js).
+router.studentResultsHandler = studentResultsHandler;
 
 // Get Student Schedule/Routine
 router.get('/schedule', authStudent, studentDashboardCache.cache, async (req, res) => {

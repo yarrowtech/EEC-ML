@@ -14,6 +14,8 @@ const School = require('../models/School');
 const Principal = require('../models/Principal');
 const Notification = require('../models/Notification');
 const ClassModel = require('../models/Class');
+const AcademicYear = require('../models/AcademicYear');
+const PromotionHistory = require('../models/PromotionHistory');
 const Section = require('../models/Section');
 const Subject = require('../models/Subject');
 const TeacherAllocation = require('../models/TeacherAllocation');
@@ -1872,6 +1874,25 @@ const adminOrTeacherAuth = async (req, res, next) => {
     return teacherAuth(req, res, next);
 };
 
+const PUBLISHED_RESULT_LOCK = 'Published results are locked. Ask an admin to unpublish this result before editing it.';
+const teacherResultWriteFilter = (isTeacher) => isTeacher ? { published: { $ne: true } } : {};
+
+const upsertResult = async (filter, updates, isTeacher) => {
+  try {
+    return await ExamResult.findOneAndUpdate(
+      { ...filter, ...teacherResultWriteFilter(isTeacher) },
+      updates,
+      { new: true, upsert: true, runValidators: true }
+    );
+  } catch (err) {
+    // The unique exam/student index blocks inserting a replacement for a locked result.
+    if (isTeacher && err.code === 11000 && await ExamResult.exists({ ...filter, published: true })) {
+      throw Object.assign(new Error(PUBLISHED_RESULT_LOCK), { status: 409 });
+    }
+    throw err;
+  }
+};
+
 router.post("/results", adminOrTeacherAuth, async (req, res) => {
   // #swagger.tags = ['Exams']
     try {
@@ -1919,7 +1940,7 @@ router.post("/results", adminOrTeacherAuth, async (req, res) => {
           return res.status(400).json({ error: scoreResult.error });
         }
 
-        const result = await ExamResult.findOneAndUpdate(
+        const result = await upsertResult(
             { examId, studentId, schoolId, ...(campusId ? { campusId } : {}) },
             {
                 schoolId,
@@ -1932,7 +1953,7 @@ router.post("/results", adminOrTeacherAuth, async (req, res) => {
                 status: scoreResult.status,
                 createdBy: req.user?.id || req.admin?.id || null,
             },
-            { new: true, upsert: true, runValidators: true }
+            req.userType === 'teacher'
         );
 
         if (req.userType === 'teacher') {
@@ -1977,7 +1998,7 @@ router.post("/results", adminOrTeacherAuth, async (req, res) => {
 
         res.status(201).json(result);
     } catch (err) {
-        res.status(400).json({ error: err.message });
+        res.status(err.status === 409 ? 409 : 400).json({ error: err.message });
     }
 });
 
@@ -2338,7 +2359,14 @@ router.get("/results/admin", adminAuth, async (req, res) => {
 });
 
 // Student fetch their results
-router.get("/results/me", authStudent, studentDashboardCache.cache, async (req, res) => {
+const studentResultsCacheMw = (req, res, next) => {
+  if (req.query.refresh === 'true') {
+    studentDashboardCache.clearUser(req.user.id);
+    return next();
+  }
+  return studentDashboardCache.cache(req, res, next);
+};
+const studentExamResultsHandler = async (req, res) => {
   // #swagger.tags = ['Exams']
     try {
         const schoolId = req.schoolId || req.user?.schoolId || null;
@@ -2346,20 +2374,40 @@ router.get("/results/me", authStudent, studentDashboardCache.cache, async (req, 
         const campusId = req.campusId || null;
         const studentId = req.user.id;
 
-        const results = await ExamResult.find({
-          schoolId,
-          studentId,
-          published: true,
-          ...(campusId ? { campusId } : {}),
-        })
+        const scope = { schoolId, ...(campusId ? { campusId } : {}) };
+        const [results, student, activeYear, promotions] = await Promise.all([
+          ExamResult.find({ ...scope, studentId, published: true })
             .populate('examId', 'title subject date term grade section classId sectionId subjectId groupId marks')
             .populate('studentId', 'name roll grade section academicYear studentCode admissionNumber username')
-            .lean();
+            .lean(),
+          StudentUser.findOne({ ...scope, _id: studentId }).select('classId grade academicYear').lean(),
+          AcademicYear.findOne({ schoolId, isActive: true }).select('name').lean(),
+          PromotionHistory.find({ ...scope, studentIds: studentId })
+            .select('fromClass fromAcademicYear toClass toAcademicYear').lean(),
+        ]);
+
+        const groupIds = [...new Set(results.map(result => toIdString(result.examId?.groupId)).filter(Boolean))];
+        const classIds = [...new Set([student?.classId, ...results.map(result => result.examId?.classId)].map(toIdString).filter(Boolean))];
+        const [groups, classes] = await Promise.all([
+          groupIds.length ? ExamGroup.find({ ...scope, _id: { $in: groupIds } })
+            .select('classId sectionId startDate endDate').lean() : [],
+          classIds.length ? ClassModel.find({ ...scope, _id: { $in: classIds } })
+            .select('name academicYearId').populate({ path: 'academicYearId', select: 'name', match: { schoolId } }).lean() : [],
+        ]);
+        const groupsById = new Map(groups.map(group => [toIdString(group._id), group]));
+        const classesById = new Map(classes.map(classDoc => [toIdString(classDoc._id), classDoc]));
+        const studentClass = classesById.get(toIdString(student?.classId));
 
         // Enrich each result with rank, percentile, and pre/post delta in parallel
         const enriched = await Promise.all(results.map(async (result) => {
           const examId = result.examId?._id || result.examId;
           if (!examId) return result;
+          const group = groupsById.get(toIdString(result.examId?.groupId));
+          const groupMatchesExam = group && ['classId', 'sectionId'].every(field =>
+            !group[field] || !result.examId[field] || toIdString(group[field]) === toIdString(result.examId[field])
+          );
+          const examGroupSchedule = groupMatchesExam ? { startDate: group.startDate, endDate: group.endDate } : null;
+          const examClass = classesById.get(toIdString(result.examId?.classId));
 
           // All published results for the same exam (for rank/percentile)
           const allForExam = await ExamResult.find({ examId, published: true, schoolId }).select('marks studentId').lean();
@@ -2391,10 +2439,27 @@ router.get("/results/me", authStudent, studentDashboardCache.cache, async (req, 
             }
           }
 
-          return { ...result, rank, percentile, total, delta };
+          return {
+            ...result,
+            examGroupSchedule,
+            examSession: examClass?.academicYearId?.name || '',
+            examClassName: examClass?.name || result.examId?.grade || '',
+            rank, percentile, total, delta,
+          };
         }));
 
-        res.json({ success: true, data: enriched });
+        res.json({
+          success: true,
+          data: enriched,
+          academicContext: {
+            activeSession: activeYear?.name || studentClass?.academicYearId?.name || student?.academicYear || '',
+            className: studentClass?.name || student?.grade || '',
+            history: promotions.flatMap(promotion => [
+              { session: promotion.fromAcademicYear, className: promotion.fromClass },
+              { session: promotion.toAcademicYear, className: promotion.toClass },
+            ]),
+          },
+        });
         logStudentPortalEvent(req, {
             feature: 'results',
             action: 'exam_results.fetch',
@@ -2415,7 +2480,10 @@ router.get("/results/me", authStudent, studentDashboardCache.cache, async (req, 
         });
         res.status(500).json({ error: err.message });
     }
-});
+};
+router.get('/results/me', authStudent, studentResultsCacheMw, studentExamResultsHandler);
+// Reused by the parent portal (routes/parentResultsRoutes.js).
+router.studentExamResultsHandler = studentExamResultsHandler;
 
 // Bulk upload results via Excel (admin/teacher)
 router.post("/results/bulk-upload", adminOrTeacherAuth, upload.single('file'), async (req, res) => {
@@ -2547,7 +2615,7 @@ router.post("/results/bulk-upload", adminOrTeacherAuth, upload.single('file'), a
                         : scoreResult.status === 'fail' ? 'Not Promoted'
                         : '';
 
-                    await ExamResult.findOneAndUpdate(
+                    await upsertResult(
                         { examId, studentId, schoolId, ...(campusId ? { campusId } : {}) },
                         {
                         schoolId,
@@ -2560,7 +2628,7 @@ router.post("/results/bulk-upload", adminOrTeacherAuth, upload.single('file'), a
                         status: scoreResult.status,
                         createdBy: req.user?.id || req.admin?.id || null,
                         },
-                        { new: true, upsert: true, runValidators: true }
+                        isTeacherUser
                     );
 
                     successCount++;
@@ -2780,13 +2848,19 @@ router.put("/results/:id", adminOrTeacherAuth, async (req, res) => {
     }
 
     const updated = await ExamResult.findOneAndUpdate(
-      { _id: id, schoolId, ...(campusId ? { campusId } : {}) },
+      { _id: id, schoolId, ...(campusId ? { campusId } : {}), ...teacherResultWriteFilter(req.userType === 'teacher') },
       updates,
       { new: true, runValidators: true }
     )
       .populate('studentId', 'name grade section roll academicYear')
       .populate('examId', 'title subject date term grade section classId sectionId subjectId')
       .lean();
+
+    if (!updated) {
+      return req.userType === 'teacher'
+        ? res.status(409).json({ error: PUBLISHED_RESULT_LOCK })
+        : res.status(404).json({ error: 'Result not found' });
+    }
 
     if (req.userType === 'teacher') {
       const teacherId = req.user?.id || null;
@@ -2862,7 +2936,14 @@ router.delete("/results/:id", adminOrTeacherAuth, async (req, res) => {
       _id: id,
       schoolId,
       ...(campusId ? { campusId } : {}),
+      ...teacherResultWriteFilter(req.userType === 'teacher'),
     }).lean();
+
+    if (!deleted) {
+      return req.userType === 'teacher'
+        ? res.status(409).json({ error: PUBLISHED_RESULT_LOCK })
+        : res.status(404).json({ error: 'Result not found' });
+    }
 
     res.status(200).json({ message: 'Result deleted successfully' });
   } catch (err) {

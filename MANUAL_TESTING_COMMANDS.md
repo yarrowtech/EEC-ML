@@ -9,7 +9,8 @@ This guide shows you all the commands you can use to manually test your applicat
 The following cross-portal workflows are implemented and covered by focused tests:
 
 - Teacher assignment publication → student visibility → written/PDF submission → teacher grading → published result.
-- Student Results shows only teacher-published assignment marks and feedback.
+- Student Results shows only teacher-published assignment marks and feedback. For a published exam, verify the card shows the start and end dates for the student's class and section. The summary, score chart, grade, and download should appear to the left of the subject breakdown on wide layouts and above it on narrow layouts.
+- For a student with results in two sessions, verify Student Results starts with the active session selected, the dropdown shows both sessions with their class names, and selecting both shows exams from both years. Use Refresh and verify the selected sessions stay selected.
 - Student Fees shows student-scoped invoices, receipts, and online payment status.
 - Student Health Record and Emotional Wellbeing show persisted school data, with truthful empty states instead of mock records.
 - Students can submit and track complaints and view PTMs scheduled for them. PTM confirmation/rescheduling remains parent-only.
@@ -23,13 +24,14 @@ Focused verification commands are listed in the assignment and parity checklists
 1. Sign in as a teacher with different subject allocations in two sections of the same class.
 2. In Classes & Work, select a class, section, and subject. Open Exams & Results, then refresh the page. Confirm the header identifies the selected class and section and Marks Entry displays only the selected subject.
 3. Return to Classes & Work and choose a different subject in the same class and section. Reopen Exams & Results and confirm Marks Entry follows the new selection.
-4. Confirm the Create Exam form and standalone Exams list and search are absent. Scheduled exams should show a locked state, while completed exams offer Enter Marks and Bulk Upload.
+4. Confirm the Create Exam form and standalone Exams list and search are absent. Scheduled exams should show a locked state, while completed exams without results offer Enter Marks and Bulk Upload. Save marks and verify Edit remains available and Bulk Upload disappears.
 5. Open Enter Marks for a completed exam. Verify the roster opens in a modal over Exam Results and shows the student count, roll numbers, names and student codes, marks, grades, status, and remarks. Close it and confirm the exam remains on screen.
 6. Enter a score for one student, mark another Absent, and deselect a third. Click Auto Fill and confirm it fills only blank marks for selected students who aren't absent. Save, reopen the roster, and confirm scores, statuses, and remarks persist.
 7. Repeat with a teacher whose subject is assigned in the timetable and who also has a separate teacher allocation. Confirm the teacher can open the roster and save marks for the timetabled subject.
 8. Verify the exam table sits directly below the Exam Results header and uses the full width. Check that Pass rate is calculated per exam from entered results (for example, 3 passes out of 4 results displays 75%) and shows a dash for an exam without results.
 9. Verify the subject appears beside the class and section in the header. In the table, verify the term, date, and maximum marks appear below the exam name and Marked students shows the number of entered results over the roster count (for example, 30/30). On a narrow screen, scroll the table horizontally to reach Actions. As an admin, publish some results and reload the teacher page to check the partial count. Publish the remaining results and verify Result status shows Published. Unpublish all results and verify it shows Unpublished after reload.
 10. With network throttling enabled, open Exam Results in a fresh tab and verify the table skeleton is visible until the data loads. Navigate away and back in the same tab within a minute and verify the previous table appears immediately while requests refresh it. Repeating the teacher exam and result overview requests within 15 seconds should return an `X-Cache: HIT` before a write. Save marks or publish results and verify the refreshed table reflects the change.
+11. As an admin, publish all entered results for a completed exam. Reload the teacher page and verify Locked replaces Edit. Unpublish one result and verify Edit returns and the published student rows stay locked. Attempt to save a result from a teacher roster that was open before the admin published it and verify the API rejects the change.
 
 ## Frontend Testing Commands
 

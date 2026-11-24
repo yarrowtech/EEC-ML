@@ -49,7 +49,7 @@ import { readCachedNotifications, writeCachedNotifications } from '../utils/noti
 
 const ParentDashboard = lazy(() => import('./ParentDashboard'));
 const ChildGrowthAnalytics = lazy(() => import('./ChildGrowthAnalytics'));
-const AcademicReport = lazy(() => import('./AcademicReport'));
+const ParentResults = lazy(() => import('./ParentResults'));
 const AttendanceReport = lazy(() => import('./AttendanceReport'));
 const AchievementsView = lazy(() => import('./AchievementsView'));
 const HealthReport = lazy(() => import('./HealthReport'));
@@ -1298,7 +1298,7 @@ const ParentPortal = () => {
             <Route path="routine" element={<ClassRoutine />} />
             <Route path="exam-routine" element={<ExamRoutine />} />
             <Route path="admit-cards" element={<AdmitCardsView mode="parent" />} />
-            <Route path="academic" element={<AcademicReport />} />
+            <Route path="academic" element={<ParentResults />} />
             <Route path="fees" element={<FeesPayment />} />
             <Route path="health" element={<HealthReport />} />
             <Route path="complaints" element={<ComplaintManagementSystem />} />

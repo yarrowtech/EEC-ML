@@ -4,7 +4,7 @@ import { useParams, useLocation, useNavigate, useOutletContext } from 'react-rou
 import { AUTH_NOTICE, logoutAndRedirect } from '../utils/authSession';
 import { AnimatePresence, motion as Motion } from 'framer-motion';
 import {
-  CheckCircle2, Edit2,
+  Edit2,
   GraduationCap, Loader2, Save, X, FileUp, Lock, Download,
   Edit,
 } from 'lucide-react';
@@ -299,7 +299,7 @@ const ClassExamResults = ({ classSlug, classId, sectionId, subjectName, cacheKey
         studentId: String(s._id), name: s.name, roll: s.roll, studentCode: s.studentCode,
         marks: s.status === 'absent' ? '' : s.marks ?? '', grade: s.gradeValue || '',
         status: s.status || '', remarks: s.remarks || '',
-        included: true, changed: false, published: s.published,
+        included: !s.published, changed: false, published: s.published,
       })));
     } catch (err) {
       setError(err.message || 'Failed to load students');
@@ -326,7 +326,7 @@ const ClassExamResults = ({ classSlug, classId, sectionId, subjectName, cacheKey
 
   const handleSaveMarks = async () => {
     if (!marksExam) return;
-    const toSave = marksRows.filter(r => r.included && r.changed && (r.status === 'absent' || r.marks !== '' || r.status));
+    const toSave = marksRows.filter(r => !r.published && r.included && r.changed && (r.status === 'absent' || r.marks !== '' || r.status));
     if (!toSave.length) { setError('Enter marks or select Absent for at least one student'); return; }
     const invalid = toSave.find(r => r.status !== 'absent'
       && (r.marks === '' || !Number.isFinite(Number(r.marks)) || Number(r.marks) < 0 || Number(r.marks) > maxMarks));
@@ -489,8 +489,9 @@ const ClassExamResults = ({ classSlug, classId, sectionId, subjectName, cacheKey
                   const marked = ex.resultCount ?? 0;
                   const passRate = marked ? `${Math.round((ex.passCount / marked) * 100)}%` : '—';
                   const published = ex.publishedCount ?? 0;
+                  const resultsLocked = published > 0 && published === marked;
                   const publicationStatus = published === 0 ? 'Unpublished'
-                    : published === marked ? 'Published'
+                    : resultsLocked ? 'Published'
                     : `${published} of ${marked} published`;
                   return (
                     <tr key={ex._id} className="align-middle hover:bg-slate-50">
@@ -511,14 +512,20 @@ const ClassExamResults = ({ classSlug, classId, sectionId, subjectName, cacheKey
                         </span>
                       </td>
                       <td className="px-2.5 py-3">
-                        {isDone ? (
-                              <div className="flex items-center gap-1.5 whitespace-nowrap">
+                        {resultsLocked ? (
+                          <span className="inline-flex items-center gap-1.5 rounded-lg bg-slate-100 px-3 py-1.5 text-xs font-medium text-slate-600" title="An admin must unpublish results before they can be edited">
+                            <Lock size={12} aria-hidden="true" /> Locked
+                          </span>
+                        ) : isDone ? (
+                          <div className="flex items-center gap-1.5 whitespace-nowrap">
                             <button type="button" onClick={() => openMarksEntry(ex)} className="inline-flex items-center gap-1.5 rounded-full bg-indigo-600 px-3 py-1.5 text-xs font-semibold text-white hover:bg-indigo-700 transition">
-                              <Edit size={12} /> {ex.resultCount ? 'Edit' : 'Enter Marks'}
+                              <Edit size={12} /> {marked ? 'Edit' : 'Enter Marks'}
                             </button>
-                            <button type="button" onClick={() => { setUploadExam(ex); setUploadFile(null); setUploadErrors([]); }} className="inline-flex items-center gap-1.5 rounded-full border border-violet-200 bg-violet-50 px-3 py-1.5 text-xs font-semibold text-violet-700 hover:bg-violet-100 transition">
-                              <FileUp size={12} /> Bulk
-                            </button>
+                            {marked === 0 && (
+                              <button type="button" onClick={() => { setUploadExam(ex); setUploadFile(null); setUploadErrors([]); }} className="inline-flex items-center gap-1.5 rounded-full border border-violet-200 bg-violet-50 px-3 py-1.5 text-xs font-semibold text-violet-700 hover:bg-violet-100 transition">
+                                <FileUp size={12} /> Bulk
+                              </button>
+                            )}
                           </div>
                         ) : (
                           <span className="inline-flex shrink-0 items-center gap-1.5 rounded-lg bg-slate-100 px-3 py-1.5 text-xs font-medium text-slate-500" title="Marks can be entered once the exam is completed">
@@ -577,10 +584,11 @@ const ClassExamResults = ({ classSlug, classId, sectionId, subjectName, cacheKey
                             <input
                               type="checkbox"
                               aria-label="Include all students"
-                              checked={marksRows.every(r => r.included)}
+                              checked={marksRows.some(r => !r.published) && marksRows.every(r => r.published || r.included)}
+                              disabled={marksRows.every(r => r.published)}
                               onChange={e => {
                                 const included = e.target.checked;
-                                setMarksRows(rows => rows.map(r => ({ ...r, included })));
+                                setMarksRows(rows => rows.map(r => r.published ? r : { ...r, included }));
                               }}
                               className="accent-indigo-600"
                             />
@@ -597,13 +605,13 @@ const ClassExamResults = ({ classSlug, classId, sectionId, subjectName, cacheKey
                         {marksRows.map(r => (
                           <tr key={r.studentId} className="hover:bg-slate-50">
                             <td className="p-3">
-                              <input type="checkbox" aria-label={`Include ${r.name}`} checked={r.included}
+                              <input type="checkbox" aria-label={`Include ${r.name}`} checked={r.included} disabled={r.published}
                                 onChange={e => updateMarksRow(r.studentId, { included: e.target.checked, changed: r.changed })}
                                 className="accent-indigo-600" />
                             </td>
                             <td className="whitespace-nowrap p-3 text-slate-600">{r.roll ?? '—'}</td>
                             <th scope="row" className="whitespace-nowrap p-3 font-semibold text-slate-900">
-                              {r.name}{r.published && <CheckCircle2 size={12} className="ml-1 inline text-emerald-600" title="Published" />}
+                              {r.name}{r.published && <Lock size={12} className="ml-1 inline text-slate-500" title="Published and locked" />}
                               {r.studentCode && <div className="text-xs font-normal text-slate-500">{r.studentCode}</div>}
                             </th>
                             <td className="p-3">
@@ -638,7 +646,7 @@ const ClassExamResults = ({ classSlug, classId, sectionId, subjectName, cacheKey
               </fieldset>
               <div className="flex flex-wrap items-center justify-between gap-3">
                 <p className="text-sm text-slate-600">Auto Fill sets blank marks to {maxMarks} for selected students. Review entries before saving.</p>
-                <button type="button" onClick={handleSaveMarks} disabled={loadingMarks || savingMarks || !marksRows.length}
+                <button type="button" onClick={handleSaveMarks} disabled={loadingMarks || savingMarks || marksRows.every(r => r.published)}
                   className="inline-flex items-center gap-2 rounded-xl bg-indigo-600 px-4 py-2 text-sm font-semibold text-white hover:bg-indigo-700 disabled:opacity-60">
                   <Save size={14} /> {savingMarks ? 'Saving…' : 'Save Marks'}
                 </button>

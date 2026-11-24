@@ -19,6 +19,7 @@ const ExamGroup = require('../models/ExamGroup');
 const TeacherAllocation = require('../models/TeacherAllocation');
 const Principal = require('../models/Principal');
 const { logStudentPortalEvent, logStudentPortalError } = require('../utils/studentPortalLogger');
+const { summarizeStudentAttendance } = require('../utils/sessionAttendance');
 
 const router = express.Router();
 const { createResponseCache } = require('../utils/responseCache');
@@ -118,6 +119,12 @@ const resolveTemplate = async ({ schoolId, campusId }) => {
       .map((value) => String(value || '').trim())
       .filter((value, index, all) => value && all.findIndex((v) => v.toLowerCase() === value.toLowerCase()) === index)
       .join(' | ');
+  // Saved template lines can carry repeats too ("phone | phone | mail | mail").
+  const dedupedContactLine = String(schoolContactLine || '')
+    .split('|')
+    .map((v) => v.trim())
+    .filter((v, i, all) => v && all.findIndex((x) => x.toLowerCase() === v.toLowerCase()) === i)
+    .join(' | ');
   const logoUrl = template?.logoUrlOverride || school?.logo?.secure_url || school?.logo?.url || '';
 
   return {
@@ -125,7 +132,7 @@ const resolveTemplate = async ({ schoolId, campusId }) => {
     ...(template || {}),
     schoolName,
     schoolAddressLine,
-    schoolContactLine,
+    schoolContactLine: dedupedContactLine,
     logoUrl,
   };
 };
@@ -214,6 +221,28 @@ const buildReportCards = async ({
     .populate('examId', 'title subject term date marks grade section classId sectionId')
     .sort({ createdAt: -1 })
     .lean();
+
+  // Academic-year attendance per student (best-effort — never blocks the card).
+  const attendanceMap = await summarizeStudentAttendance(students, { schoolId, campusId })
+    .catch((err) => {
+      console.warn('report card attendance summary failed', err?.message);
+      return new Map();
+    });
+  // Fallback when the session summary is unavailable: stored summary, else raw marks.
+  const attendanceFallback = (student) => {
+    const s = student.attendanceSummary;
+    if (s && Number(s.schoolDays) > 0) return s;
+    const days = new Map();
+    (Array.isArray(student.attendance) ? student.attendance : []).forEach((a) => {
+      const d = a?.date ? new Date(a.date) : null;
+      if (!d || Number.isNaN(d.getTime())) return;
+      const key = d.toISOString().slice(0, 10);
+      if (!days.has(key) || a.status === 'present') days.set(key, a.status);
+    });
+    if (!days.size) return null;
+    const present = [...days.values()].filter((v) => v === 'present').length;
+    return { schoolDays: days.size, presentDays: present, percentage: Math.round((present / days.size) * 100) };
+  };
 
   const byStudent = new Map();
   results.forEach((result) => {
@@ -305,6 +334,19 @@ const buildReportCards = async ({
       grade: student.grade || '',
       section: student.section || '',
       academicYear: academicYearName || student.academicYear || '',
+      profilePic: student.profilePic || '',
+      fatherName: student.fatherName || student.guardianName || '',
+      dob: student.dob || '',
+      attendance: (() => {
+        let a = attendanceMap.get(String(student._id));
+        if (!a || !(Number(a.schoolDays) > 0)) a = attendanceFallback(student) || a;
+        if (!a) return null;
+        return {
+          totalDays: Number(a.schoolDays || 0),
+          presentDays: Number(a.presentDays || 0),
+          percentage: a.percentage ?? null,
+        };
+      })(),
       totals: {
         obtainedMarks: totalObtained,
         totalMarks,
@@ -607,7 +649,7 @@ router.post('/report-cards/bulk', adminAuth, async (req, res) => {
     }
 
     const students = await StudentUser.find(studentFilter)
-      .select('name roll grade section academicYear admissionNumber username studentCode')
+      .select('name roll grade section academicYear admissionNumber username studentCode profilePic fatherName guardianName dob attendance attendanceSummary')
       .sort({ roll: 1, name: 1 })
       .lean();
 
@@ -669,7 +711,7 @@ router.get('/report-cards/me', authStudent, async (req, res) => {
       schoolId,
       ...(campusId ? { campusId } : {}),
     })
-      .select('name roll grade section academicYear admissionNumber username studentCode')
+      .select('name roll grade section academicYear admissionNumber username studentCode profilePic fatherName guardianName dob attendance attendanceSummary')
       .lean();
 
     if (!student) return res.status(404).json({ error: 'Student not found' });
@@ -856,7 +898,7 @@ router.get('/report-cards/parent', authParent, parentReportCache.cache, async (r
         ...scopeFilter,
         _id: { $in: parent.childrenIds },
       })
-        .select('name roll grade section academicYear admissionNumber username studentCode')
+        .select('name roll grade section academicYear admissionNumber username studentCode profilePic fatherName guardianName dob attendance attendanceSummary')
         .sort({ roll: 1, name: 1 })
         .lean();
     } else if (Array.isArray(parent.children) && parent.children.length > 0) {
@@ -866,7 +908,7 @@ router.get('/report-cards/parent', authParent, parentReportCache.cache, async (r
           ...scopeFilter,
           name: { $in: childNames },
         })
-          .select('name roll grade section academicYear admissionNumber username studentCode')
+          .select('name roll grade section academicYear admissionNumber username studentCode profilePic fatherName guardianName dob attendance attendanceSummary')
           .sort({ roll: 1, name: 1 })
           .lean();
       }

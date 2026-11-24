@@ -193,6 +193,12 @@ const ReportCardPreview = ({ card, template, onDownload, downloading }) => {
 /* ════════════════════════════════════ */
 const ReportCardManagement = ({ setShowAdminHeader }) => {
   useEffect(() => { setShowAdminHeader?.(true); }, [setShowAdminHeader]);
+  // A modal on another admin page can leave <body> scroll-locked; this page
+  // relies on window scrolling, so make sure it's released here.
+  useEffect(() => {
+    document.body.style.overflow = '';
+    document.documentElement.style.overflow = '';
+  }, []);
 
   const token = localStorage.getItem('token');
   const authH = () => ({ 'Content-Type': 'application/json', authorization: `Bearer ${token}` });
@@ -513,7 +519,7 @@ const ReportCardManagement = ({ setShowAdminHeader }) => {
 
         {/* ── template settings (collapsible) ── */}
         {showSettings && (
-          <div className="bg-white rounded-2xl border border-slate-200 shadow-sm p-5">
+          <div className="bg-white rounded-2xl border border-slate-200 shadow-sm p-5 max-h-[70vh] overflow-y-auto">
             <h2 className="font-semibold text-slate-800 mb-4 text-sm">Report Card Template</h2>
             <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
               <input className={inp} placeholder="Report Card Title" value={template.title} onChange={e => setTemplate(p => ({ ...p, title: e.target.value }))} />
