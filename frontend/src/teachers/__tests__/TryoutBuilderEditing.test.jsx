@@ -19,12 +19,14 @@ describe('Tryout editing and navigation', () => {
   test('retains a new draft after Back and leaving the tab', async () => {
     const user = userEvent.setup();
     render(<Harness />);
+    await user.click(screen.getByRole('button', { name: /^Write one yourself/ }));
     await user.click(screen.getByRole('button', { name: /Multiple Choice/ }));
     await user.type(screen.getByRole('textbox', { name: 'Question' }), 'New draft');
     expect(screen.queryByRole('button', { name: 'Generate With AI' })).not.toBeInTheDocument();
     await user.click(screen.getByRole('button', { name: 'Back' }));
     await user.click(screen.getByRole('button', { name: 'Toggle tryout tab' }));
     await user.click(screen.getByRole('button', { name: 'Toggle tryout tab' }));
+    await user.click(screen.getByRole('button', { name: /^Section 1/ }));
     const edit = screen.getByRole('button', { name: 'Edit question 1' });
     edit.focus();
     await user.keyboard('{Enter}');
@@ -34,10 +36,12 @@ describe('Tryout editing and navigation', () => {
   test('retains existing edits on leaving the tab without Done', async () => {
     const user = userEvent.setup();
     render(<Harness initial={[question('one', 'Original')]} />);
+    await user.click(screen.getByRole('button', { name: /^Section 1/ }));
     await user.click(screen.getByRole('button', { name: 'Edit question 1' }));
     await user.type(screen.getByRole('textbox', { name: 'Question' }), ' updated');
     await user.click(screen.getByRole('button', { name: 'Toggle tryout tab' }));
     await user.click(screen.getByRole('button', { name: 'Toggle tryout tab' }));
+    await user.click(screen.getByRole('button', { name: /^Section 1/ }));
     await user.click(screen.getByRole('button', { name: 'Edit question 1' }));
     expect(screen.getByRole('textbox', { name: 'Question' })).toHaveValue('Original updated');
   });
@@ -46,6 +50,7 @@ describe('Tryout editing and navigation', () => {
     const user = userEvent.setup();
     const save = jest.fn();
     render(<InlineTryoutBuilder tryouts={[question('one', 'First'), question('two', 'Second')]} onSaveTryouts={save} />);
+    await user.click(screen.getByRole('button', { name: /^Section 1/ }));
     await user.click(screen.getByRole('button', { name: 'Edit question 2' }));
     await user.click(screen.getByRole('button', { name: 'Delete question 1' }));
     await user.type(screen.getByRole('textbox', { name: 'Question' }), ' edited');
@@ -56,6 +61,7 @@ describe('Tryout editing and navigation', () => {
     const user = userEvent.setup();
     const save = jest.fn();
     render(<InlineTryoutBuilder tryouts={[question('one', 'Choose')]} onSaveTryouts={save} />);
+    await user.click(screen.getByRole('button', { name: /^Section 1/ }));
     await user.click(screen.getByRole('button', { name: 'Edit question 1' }));
     await user.click(screen.getByRole('button', { name: 'Remove option 1' }));
     expect(save.mock.calls.at(-1)[0][0]).toMatchObject({ options: ['B', 'C', 'D'], correctAnswer: 1 });

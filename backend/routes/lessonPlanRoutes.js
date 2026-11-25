@@ -2837,11 +2837,20 @@ router.get('/student/smart-learning-map', authStudent, async (req, res) => {
     }));
 
     // Keep the subject summary consistent with the published chapter list.
+    // Carry over the teacher's tryout questions collected above (keyed by
+    // topic title) — rebuilding the list must not drop them, or students get
+    // an empty Practice → Tryout tab.
     subjects.forEach((subject) => {
+      const tryoutsByTopic = new Map();
+      subject.topics.forEach((topic) => {
+        const key = normalizeLower(topic.title);
+        if (!Array.isArray(topic.tryoutSections) || !topic.tryoutSections.length) return;
+        tryoutsByTopic.set(key, [...(tryoutsByTopic.get(key) || []), ...topic.tryoutSections]);
+      });
       subject.topics = subject.chapters.flatMap((chapter) => chapter.topics.map((topic) => ({
         title: topic.title,
         subtopics: topic.subtopics.map((subtopic) => subtopic.title).filter(Boolean),
-        tryoutSections: [],
+        tryoutSections: tryoutsByTopic.get(normalizeLower(topic.title)) || [],
       })));
     });
     await resolveSmartLearningLinks(subjects);
@@ -3387,18 +3396,13 @@ router.post('/student/tryout-submit', authStudent, async (req, res) => {
     const normalizedSubjectName = normalizeString(subjectName);
     const normalizedTopicTitle = normalizeString(topicTitle);
 
-    const existing = await TryoutResult.findOne({
+    // Tryouts are practice — every submission is kept as a new attempt.
+    const previousAttempts = await TryoutResult.countDocuments({
       studentId: req.userId,
       schoolId,
       subjectName: normalizedSubjectName,
       topicTitle: normalizedTopicTitle,
-    }).lean();
-    if (existing) {
-      return res.status(409).json({
-        error: 'You have already submitted this tryout.',
-        result: existing,
-      });
-    }
+    });
 
     const answerDocs = questions.map((q, i) => {
       const studentAnswer = answers[i];
@@ -3487,6 +3491,27 @@ router.post('/student/tryout-submit', authStudent, async (req, res) => {
           autoScore = total > 0 ? correctCount / total : null;
         }
         correctAnswer = q.items.map((item, idx) => ({ item, pair: q.pairs[idx] }));
+      } else if (qType === 'image_highlighter' && Array.isArray(q.answerRegions) && q.answerRegions.length) {
+        // Teacher-drawn correct areas vs student boxes (all in % of the image).
+        // A correct area is found when a student box covers its centre or
+        // overlaps ≥30% of it. Boxes that touch no correct area count against.
+        const submitted = Array.isArray(studentAnswer?.value) ? studentAnswer.value : [];
+        const box = (r) => ({ x: Number(r.x) || 0, y: Number(r.y) || 0, w: Math.max(0, Number(r.w) || 0), h: Math.max(0, Number(r.h) || 0) });
+        const regions = q.answerRegions.map(box).filter((r) => r.w > 0 && r.h > 0);
+        const marks = submitted.map(box).filter((m) => m.w > 0 && m.h > 0);
+        const overlap = (a, b) => Math.max(0, Math.min(a.x + a.w, b.x + b.w) - Math.max(a.x, b.x)) * Math.max(0, Math.min(a.y + a.h, b.y + b.h) - Math.max(a.y, b.y));
+        const hits = (m, r) => {
+          const cx = r.x + r.w / 2; const cy = r.y + r.h / 2;
+          const coversCentre = cx >= m.x && cx <= m.x + m.w && cy >= m.y && cy <= m.y + m.h;
+          return coversCentre || overlap(m, r) >= 0.3 * r.w * r.h;
+        };
+        const found = regions.filter((r) => marks.some((m) => hits(m, r))).length;
+        const wrong = marks.filter((m) => !regions.some((r) => hits(m, r) || overlap(m, r) > 0)).length;
+        if (regions.length) {
+          isCorrect = found === regions.length && wrong === 0;
+          autoScore = found / (regions.length + wrong);
+        }
+        correctAnswer = q.answerRegions.map((r) => ({ x: r.x, y: r.y, w: r.w, h: r.h, label: r.label || '' }));
       }
 
       return {
@@ -3511,6 +3536,7 @@ router.post('/student/tryout-submit', authStudent, async (req, res) => {
       subjectName: normalizedSubjectName,
       chapterTitle: normalizeString(chapterTitle),
       topicTitle: normalizedTopicTitle,
+      attemptNumber: previousAttempts + 1,
       answers: answerDocs,
       totalQuestions: questions.length,
       autoGradedCount: autoGradedAnswers.length,
@@ -3518,7 +3544,7 @@ router.post('/student/tryout-submit', authStudent, async (req, res) => {
       status: 'submitted',
     });
 
-    return res.status(201).json({ success: true, result: { _id: result._id, autoScore, autoGradedCount: autoGradedAnswers.length, totalQuestions: questions.length } });
+    return res.status(201).json({ success: true, result: { _id: result._id, attemptNumber: result.attemptNumber, autoScore, autoGradedCount: autoGradedAnswers.length, totalQuestions: questions.length } });
   } catch (err) {
     return res.status(500).json({ error: err.message });
   }

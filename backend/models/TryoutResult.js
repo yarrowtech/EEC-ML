@@ -17,6 +17,8 @@ const tryoutResultSchema = new mongoose.Schema({
   chapterTitle: { type: String, default: '' },
   topicTitle: { type: String, default: '' },
   answers: [answerSchema],
+  // 1 for the first try; students may practise the same tryout again.
+  attemptNumber: { type: Number, default: 1 },
   totalQuestions: { type: Number, default: 0 },
   autoGradedCount: { type: Number, default: 0 },
   autoScore: { type: Number, default: null },

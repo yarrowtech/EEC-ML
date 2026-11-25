@@ -38,7 +38,6 @@ const MENU_ITEMS = [
       { id: 'practice-papers', name: 'Practice', icon: ClipboardCheck },
       { id: 'study-materials', name: 'Materials', icon: BookOpen },
       { id: 'assignments', name: 'Assignments', icon: FileText },
-      { id: 'assignments-practice', name: 'Practice Questions', icon: GraduationCap },
       { id: 'assignments-lab', name: 'Virtual Lab', icon: FlaskConical },
       { id: 'assignments-flashcards', name: 'Flashcards', icon: Layers },
       { id: 'assignments-journal', name: 'Journal', icon: NotebookPen },

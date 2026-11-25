@@ -44,9 +44,9 @@ describe('InlineTryoutBuilder AI generation — RAG-grounded, non-mcq types', ()
       />
     );
 
-    await user.click(screen.getByText('AI question generator'));
+    await user.click(screen.getByRole('button', { name: /^Generate with AI/ }));
     await user.selectOptions(screen.getAllByRole('combobox')[2], 'choice_matrix');
-    await user.click(screen.getByRole('button', { name: /Generate With AI|Append AI Questions/i }));
+    await user.click(screen.getByRole('button', { name: /^Generate \d+ question/ }));
 
     expect(await screen.findByText(/Mark each statement about photosynthesis/i)).toBeInTheDocument();
     expect(global.fetch).toHaveBeenCalledWith(
@@ -81,10 +81,10 @@ describe('InlineTryoutBuilder AI generation — RAG-grounded, non-mcq types', ()
       />
     );
 
-    await user.click(screen.getByText('AI question generator'));
+    await user.click(screen.getByRole('button', { name: /^Generate with AI/ }));
     const typeSelect = screen.getAllByRole('combobox')[2];
     await user.selectOptions(typeSelect, 'cloze_text');
-    await user.click(screen.getByRole('button', { name: /Generate With AI|Append AI Questions/i }));
+    await user.click(screen.getByRole('button', { name: /^Generate \d+ question/ }));
 
     expect(await screen.findByText(/Water boils at/i)).toBeInTheDocument();
   });
@@ -106,8 +106,8 @@ describe('InlineTryoutBuilder AI generation — RAG-grounded, non-mcq types', ()
       />
     );
 
-    await user.click(screen.getByText('AI question generator'));
-    await user.click(screen.getByRole('button', { name: /Generate With AI|Append AI Questions/i }));
+    await user.click(screen.getByRole('button', { name: /^Generate with AI/ }));
+    await user.click(screen.getByRole('button', { name: /^Generate \d+ question/ }));
 
     expect(await screen.findByText(/No indexed material matched/i)).toBeInTheDocument();
   });

@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
 import { motion as Motion, AnimatePresence } from 'framer-motion';
 import {
   X,
@@ -20,11 +20,15 @@ import {
   Eye,
   Play,
   Zap,
+  ClipboardList,
+  Download,
+  FileSpreadsheet,
 } from 'lucide-react';
 import toast from 'react-hot-toast';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Textarea } from '@/components/ui/textarea';
+import { downloadTryoutTemplate, parseTryoutExcel, EXCEL_TEMPLATES } from './tryoutExcel';
 
 const API_BASE = (import.meta.env.VITE_API_URL || 'http://localhost:5000').replace(/\/$/, '');
 
@@ -922,9 +926,14 @@ const FileUploadCreator = ({ question, onChange }) => {
 const ImageHighlighterCreator = ({ question, onChange }) => {
   const [questionText, setQuestionText] = useState(question.question || '');
   const [imageUrl, setImageUrl] = useState(question.imageUrl || '');
+  // Correct areas the student must find, in % of the image so they fit any screen size.
+  const [regions, setRegions] = useState(Array.isArray(question.answerRegions) ? question.answerRegions : []);
+  const [drawStart, setDrawStart] = useState(null);
+  const [drawCurrent, setDrawCurrent] = useState(null);
+  const imageBoxRef = React.useRef(null);
 
   const handleUpdate = (updates) => {
-    onChange({ ...question, ...updates });
+    onChange({ ...question, question: questionText, imageUrl, answerRegions: regions, ...updates });
   };
 
   const handleImageUpload = (e) => {
@@ -933,10 +942,50 @@ const ImageHighlighterCreator = ({ question, onChange }) => {
       const reader = new FileReader();
       reader.onloadend = () => {
         setImageUrl(reader.result);
-        handleUpdate({ imageUrl: reader.result });
+        setRegions([]); // old areas don't fit a new picture
+        handleUpdate({ imageUrl: reader.result, answerRegions: [] });
       };
       reader.readAsDataURL(file);
     }
+  };
+
+  const pointFrom = (e) => {
+    const rect = imageBoxRef.current.getBoundingClientRect();
+    return {
+      x: Math.min(100, Math.max(0, ((e.clientX - rect.left) / rect.width) * 100)),
+      y: Math.min(100, Math.max(0, ((e.clientY - rect.top) / rect.height) * 100)),
+    };
+  };
+
+  const finishRegion = () => {
+    if (drawStart && drawCurrent) {
+      const r = {
+        id: `region-${Date.now()}`,
+        x: Math.min(drawStart.x, drawCurrent.x),
+        y: Math.min(drawStart.y, drawCurrent.y),
+        w: Math.abs(drawCurrent.x - drawStart.x),
+        h: Math.abs(drawCurrent.y - drawStart.y),
+        label: '',
+      };
+      if (r.w > 1.5 && r.h > 1.5) {
+        const next = [...regions, r];
+        setRegions(next);
+        handleUpdate({ answerRegions: next });
+      }
+    }
+    setDrawStart(null);
+    setDrawCurrent(null);
+  };
+
+  const updateRegion = (id, patch) => {
+    const next = regions.map((r) => (r.id === id ? { ...r, ...patch } : r));
+    setRegions(next);
+    handleUpdate({ answerRegions: next });
+  };
+  const removeRegion = (id) => {
+    const next = regions.filter((r) => r.id !== id);
+    setRegions(next);
+    handleUpdate({ answerRegions: next });
   };
 
   return (
@@ -950,12 +999,12 @@ const ImageHighlighterCreator = ({ question, onChange }) => {
             setQuestionText(e.target.value);
             handleUpdate({ question: e.target.value });
           }}
-          placeholder="Draw on the image to highlight healthy vs unhealthy items..."
+          placeholder="e.g. Mark the CPU and the monitor in the picture."
           rows={3}
         />
       </div>
       <div>
-        <label className="block text-sm font-medium text-slate-700 dark:text-slate-200 mb-1">Upload Image</label>
+        <label className="block text-sm font-medium text-slate-700 dark:text-slate-200 mb-1">{imageUrl ? 'Change image' : 'Upload Image'}</label>
         <input
           aria-label="Upload Image"
           type="file"
@@ -963,12 +1012,63 @@ const ImageHighlighterCreator = ({ question, onChange }) => {
           onChange={handleImageUpload}
           className="block w-full text-sm border rounded-md file:bg-purple-600 file:text-white file:px-4 file:py-2 file:border-0 file:rounded-lg file:cursor-pointer hover:file:bg-purple-700"
         />
-        {imageUrl && (
-          <div className="mt-2">
-            <img src={imageUrl} alt="Preview" className="max-w-xs rounded-lg border" />
-          </div>
-        )}
       </div>
+
+      {imageUrl && (
+        <div className="rounded-xl border border-emerald-200 bg-emerald-50/50 p-3">
+          <p className="text-sm font-semibold text-slate-800">Mark the correct answer areas</p>
+          <p className="mb-3 text-xs text-slate-600">
+            Drag on the picture to draw a box around each place the student must find. Students get marks when their boxes cover these areas.
+          </p>
+          <div
+            ref={imageBoxRef}
+            className="relative inline-block max-w-full cursor-crosshair touch-none select-none overflow-hidden rounded-lg border border-slate-300"
+            onPointerDown={(e) => { e.preventDefault(); e.currentTarget.setPointerCapture?.(e.pointerId); const p = pointFrom(e); setDrawStart(p); setDrawCurrent(p); }}
+            onPointerMove={(e) => { if (drawStart) setDrawCurrent(pointFrom(e)); }}
+            onPointerUp={finishRegion}
+          >
+            <img src={imageUrl} alt="Question" draggable={false} className="block max-h-[420px] max-w-full" />
+            {regions.map((r, i) => (
+              <div key={r.id} className="pointer-events-none absolute rounded border-2 border-emerald-500 bg-emerald-400/20" style={{ left: `${r.x}%`, top: `${r.y}%`, width: `${r.w}%`, height: `${r.h}%` }}>
+                <span className="absolute -left-0.5 -top-0.5 flex size-5 items-center justify-center rounded-br-md bg-emerald-600 text-[10px] font-bold text-white">{i + 1}</span>
+              </div>
+            ))}
+            {drawStart && drawCurrent && (
+              <div
+                className="pointer-events-none absolute rounded border-2 border-dashed border-emerald-600 bg-emerald-400/10"
+                style={{
+                  left: `${Math.min(drawStart.x, drawCurrent.x)}%`,
+                  top: `${Math.min(drawStart.y, drawCurrent.y)}%`,
+                  width: `${Math.abs(drawCurrent.x - drawStart.x)}%`,
+                  height: `${Math.abs(drawCurrent.y - drawStart.y)}%`,
+                }}
+              />
+            )}
+          </div>
+
+          {regions.length === 0 ? (
+            <p className="mt-2 text-xs font-medium text-amber-700">No correct areas yet — without them this question is marked by you by hand.</p>
+          ) : (
+            <ul className="mt-3 space-y-1.5">
+              {regions.map((r, i) => (
+                <li key={r.id} className="flex items-center gap-2">
+                  <span className="flex size-6 shrink-0 items-center justify-center rounded-full bg-emerald-600 text-[11px] font-bold text-white">{i + 1}</span>
+                  <Input
+                    aria-label={`Name for area ${i + 1}`}
+                    value={r.label || ''}
+                    onChange={(e) => updateRegion(r.id, { label: e.target.value })}
+                    placeholder="Name (optional), e.g. CPU"
+                    className="h-8 text-xs"
+                  />
+                  <button type="button" onClick={() => removeRegion(r.id)} aria-label={`Remove area ${i + 1}`} className="rounded p-1.5 text-slate-400 hover:bg-red-50 hover:text-red-600">
+                    <Trash2 className="size-3.5" />
+                  </button>
+                </li>
+              ))}
+            </ul>
+          )}
+        </div>
+      )}
     </div>
   );
 };
@@ -1015,6 +1115,8 @@ const TryoutBuilder = ({
   };
 
   const handleEditQuestion = (index) => {
+    setCreatingNew(false);
+    setBulkResult(null);
     setEditingIndex(index);
     setCurrentQuestion({ ...localTryouts[index] });
     setSelectedType(localTryouts[index].type);
@@ -1219,6 +1321,62 @@ export const InlineTryoutBuilder = ({
   const [aiDifficulty, setAiDifficulty] = useState('medium');
   const [aiQuestionType, setAiQuestionType] = useState('mcq');
   const [aiAppend, setAiAppend] = useState(true);
+  // null = "how do you want to add?" choices; 'ai' | 'paste' | 'manual'
+  const [addMode, setAddMode] = useState(null);
+  const [pasteText, setPasteText] = useState('');
+  // Excel bulk upload for the selected question type
+  const [creatingNew, setCreatingNew] = useState(false);
+  const [bulkBusy, setBulkBusy] = useState(false);
+  const [bulkResult, setBulkResult] = useState(null); // { added, errors: [{row, message}] }
+  const [excelType, setExcelType] = useState('mcq');
+  // Fit the two panels into the visible part of the scrolling drawer, so each
+  // panel scrolls on its own instead of the whole drawer scrolling.
+  const bodyRef = React.useRef(null);
+  const [bodyHeight, setBodyHeight] = useState(null);
+  React.useLayoutEffect(() => {
+    const el = bodyRef.current;
+    if (!el) return undefined;
+    const findScroller = (node) => {
+      for (let n = node?.parentElement; n; n = n.parentElement) {
+        const oy = getComputedStyle(n).overflowY;
+        if (oy === 'auto' || oy === 'scroll') return n;
+      }
+      return null;
+    };
+    const measure = () => {
+      if (window.innerWidth < 768) { setBodyHeight(null); return; }
+      const scroller = findScroller(el);
+      const bottom = Math.min(window.innerHeight, scroller ? scroller.getBoundingClientRect().bottom : window.innerHeight);
+      // Position relative to the scroller's content, so a scrolled drawer doesn't skew it.
+      const top = el.getBoundingClientRect().top + (scroller ? scroller.scrollTop : 0);
+      setBodyHeight(Math.max(360, Math.round(bottom - top - 16)));
+    };
+    measure();
+    window.addEventListener('resize', measure);
+    return () => window.removeEventListener('resize', measure);
+  }, []);
+
+  // Left list: sections are collapsed until clicked (accordion).
+  const [openSections, setOpenSections] = useState(() => new Set());
+  const toggleSection = (type) => setOpenSections((prev) => {
+    const next = new Set(prev);
+    if (next.has(type)) next.delete(type); else next.add(type);
+    return next;
+  });
+  // Keep the section of the question being edited open.
+  const editingType = editingIndex !== null ? localTryouts[editingIndex]?.type : null;
+  useEffect(() => {
+    if (editingType) setOpenSections((prev) => (prev.has(editingType) ? prev : new Set(prev).add(editingType)));
+  }, [editingType]);
+  // Open the sections that just received new questions (AI / Excel / paste), so the teacher sees them.
+  const prevCountRef = React.useRef(localTryouts.length);
+  useEffect(() => {
+    const prevCount = prevCountRef.current;
+    prevCountRef.current = localTryouts.length;
+    if (localTryouts.length <= prevCount) return;
+    const added = new Set(localTryouts.slice(prevCount).map((q) => q.type));
+    setOpenSections((prev) => new Set([...prev, ...added]));
+  }, [localTryouts]);
 
   const extractJsonArray = (text) => {
     const cleaned = text.replace(/```(?:json)?/gi, '').trim();
@@ -1446,6 +1604,8 @@ export const InlineTryoutBuilder = ({
   };
 
   const handleSelectType = (typeId) => {
+    setCreatingNew(true);
+    setBulkResult(null);
     setSelectedType(typeId);
     setEditingIndex(null);
     setCurrentQuestion({ type: typeId, id: `tryout-${Date.now()}` });
@@ -1504,212 +1664,469 @@ export const InlineTryoutBuilder = ({
 
   const CreatorComponent = selectedType ? QUESTION_CREATORS[selectedType] : null;
 
-  return (
-    <div className="overflow-hidden rounded-xl border border-slate-200 bg-white">
-      {/* Header */}
-      {!selectedType && <details className="border-b border-slate-200 px-5 py-4">
-        <summary className="cursor-pointer rounded text-sm font-medium text-slate-600 focus-visible:outline focus-visible:outline-2 focus-visible:outline-slate-600">AI question generator</summary>
-        <div className="mt-4 flex flex-col gap-4">
-          <fieldset disabled={generating} className="grid min-w-0 w-full gap-2 sm:grid-cols-2 xl:grid-cols-4">
-            <div>
-              <label className="block text-xs font-semibold uppercase tracking-wide text-slate-600">Count</label>
-              <select
-                aria-label="Count"
-                value={aiCount}
-                onChange={(e) => setAiCount(Number(e.target.value))}
-                className="mt-1 w-full rounded-md border border-slate-300 bg-white px-2.5 py-2 text-sm text-slate-900"
-              >
-                {[1, 3, 5, 10].map((count) => (
-                  <option key={count} value={count}>{count} question{count !== 1 ? 's' : ''}</option>
-                ))}
-              </select>
-            </div>
-            <div>
-              <label className="block text-xs font-semibold uppercase tracking-wide text-slate-600">Difficulty</label>
-              <select
-                aria-label="Difficulty"
-                value={aiDifficulty}
-                onChange={(e) => setAiDifficulty(e.target.value)}
-                className="mt-1 w-full rounded-md border border-slate-300 bg-white px-2.5 py-2 text-sm text-slate-900"
-              >
-                {['easy', 'medium', 'hard'].map((level) => (
-                  <option key={level} value={level}>{level.charAt(0).toUpperCase() + level.slice(1)}</option>
-                ))}
-              </select>
-            </div>
-            <div>
-              <label className="block text-xs font-semibold uppercase tracking-wide text-slate-600">Question Type</label>
-              <select
-                aria-label="Question Type"
-                value={aiQuestionType}
-                onChange={(e) => setAiQuestionType(e.target.value)}
-                className="mt-1 w-full rounded-md border border-slate-300 bg-white px-2.5 py-2 text-sm text-slate-900"
-              >
-                {TRYOUT_TYPES.map((type) => (
-                  <option key={type.id} value={type.id}>{type.label}</option>
-                ))}
-              </select>
-            </div>
-            <div>
-              <label className="block text-xs font-semibold uppercase tracking-wide text-slate-600">Mode</label>
-                <div className="mt-1 grid grid-cols-2 gap-1 rounded-md border border-slate-300 bg-white p-1 text-sm">
-                <button
-                  type="button"
-                  onClick={() => setAiAppend(true)}
-                  aria-pressed={aiAppend}
-                  className={`rounded-md px-3 py-1.5 font-medium transition-colors ${aiAppend ? 'bg-rose-500 text-white' : 'text-slate-600 hover:bg-slate-100'}`}
-                >
-                  Append
-                </button>
-                <button
-                  type="button"
-                  onClick={() => setAiAppend(false)}
-                  aria-pressed={!aiAppend}
-                  className={`rounded-md px-3 py-1.5 font-medium transition-colors ${!aiAppend ? 'bg-rose-500 text-white' : 'text-slate-600 hover:bg-slate-100'}`}
-                >
-                  Replace
-                </button>
-              </div>
-            </div>
-          </fieldset>
+  // ── Excel bulk upload (per question type) ──
+  const handleBulkFile = async (file, type = selectedType) => {
+    if (!file || !type) return;
+    setBulkBusy(true);
+    setBulkResult(null);
+    try {
+      const { questions, errors } = await parseTryoutExcel(file, type);
+      if (questions.length) {
+        // Drop the empty draft started for this type, if nothing was typed in it yet.
+        const draftIdx = editingIndex;
+        const draft = draftIdx !== null ? localTryouts[draftIdx] : null;
+        const draftIsEmpty = draft && draft.id === currentQuestion.id && !String(draft.question || draft.text || '').trim();
+        const base = draftIsEmpty ? localTryouts.filter((_, i) => i !== draftIdx) : localTryouts;
+        const updated = [...base, ...questions];
+        setLocalTryouts(updated);
+        onSaveTryouts(updated);
+        toast.success(`${questions.length} question${questions.length === 1 ? '' : 's'} added from Excel`);
+        if (!errors.length) {
+          setSelectedType(null);
+          setEditingIndex(null);
+          setCurrentQuestion({});
+          setCreatingNew(false);
+          setAddMode(null);
+        } else if (draftIsEmpty) {
+          setEditingIndex(null);
+        }
+      } else if (!errors.length) {
+        errors.push({ row: 0, message: 'The file has no questions — fill at least one row.' });
+      }
+      setBulkResult({ added: questions.length, errors });
+    } catch (err) {
+      setBulkResult({ added: 0, errors: [{ row: 0, message: err?.message || 'Could not read this file. Use the downloaded template (.xlsx).' }] });
+    } finally {
+      setBulkBusy(false);
+    }
+  };
 
-          <div className="flex shrink-0 items-center justify-end">
-            <Button
-              variant="outline"
-              size="sm"
-              onClick={generateAiTryouts}
-              disabled={generating}
-              className="h-9 w-full bg-slate-900 text-xs text-white hover:bg-slate-700 sm:w-auto"
-            >
-              <Zap className="size-3 mr-2" />
-              {generating ? 'Generating…' : aiAppend ? 'Generate With AI' : 'Replace with AI Questions'}
-            </Button>
-          </div>
-        </div>
-        <p className="mt-3 text-xs text-slate-500">
-          AI will generate {aiCount} {TRYOUT_TYPES.find((t) => t.id === aiQuestionType)?.label || 'MCQ'} question{aiCount !== 1 ? 's' : ''} for “{topicTitle || 'this chapter'}” at {aiDifficulty} difficulty.
-        </p>
-      </details>}
-      {aiError && (
-        <div role="alert" className="px-4 py-3 text-sm text-red-700 bg-red-50">
-          {aiError}
+  const bulkResultView = bulkResult && (bulkResult.added > 0 || bulkResult.errors.length > 0) ? (
+    <div className="mt-3 space-y-1 text-xs">
+      {bulkResult.added > 0 && <p className="font-semibold text-emerald-700">✓ {bulkResult.added} question{bulkResult.added === 1 ? '' : 's'} added.</p>}
+      {bulkResult.errors.length > 0 && (
+        <div role="alert" className="max-h-32 overflow-y-auto rounded-lg border border-amber-200 bg-amber-50 p-2 text-amber-800">
+          <p className="mb-1 font-semibold">{bulkResult.errors.length} row{bulkResult.errors.length === 1 ? '' : 's'} skipped — fix and upload again:</p>
+          {bulkResult.errors.map((e, i) => <p key={i}>{e.row ? `Row ${e.row}: ` : ''}{e.message}</p>)}
         </div>
       )}
+    </div>
+  ) : null;
 
-      <div className="flex flex-col md:flex-row">
+  const selectedTypeLabel = TRYOUT_TYPES.find((type) => type.id === selectedType)?.label || 'question';
+  const bulkStrip = selectedType && creatingNew && EXCEL_TEMPLATES[selectedType] ? (
+    <div className="mb-5 rounded-xl border border-emerald-200 bg-emerald-50/60 p-4">
+      <div className="flex flex-wrap items-center gap-3">
+        <span className="flex size-9 shrink-0 items-center justify-center rounded-full bg-emerald-600 text-white"><FileSpreadsheet className="size-4" /></span>
+        <div className="min-w-0 flex-1">
+          <p className="text-sm font-semibold text-slate-800">Many {selectedTypeLabel} questions? Upload them from Excel</p>
+          <p className="text-xs text-slate-600">1. Download the template · 2. Fill one question per row · 3. Upload the file</p>
+        </div>
+        <div className="flex flex-wrap items-center gap-2">
+          <Button type="button" variant="outline" size="sm" onClick={() => downloadTryoutTemplate(selectedType, selectedTypeLabel)} className="h-8 border-emerald-300 bg-white text-xs text-emerald-700 hover:bg-emerald-50">
+            <Download className="size-3 mr-1.5" /> Download template
+          </Button>
+          <label className={`inline-flex h-8 cursor-pointer items-center rounded-md bg-emerald-600 px-3 text-xs font-medium text-white hover:bg-emerald-700 ${bulkBusy ? 'pointer-events-none opacity-60' : ''}`}>
+            <FileUp className="size-3 mr-1.5" /> {bulkBusy ? 'Reading…' : 'Upload Excel'}
+            <input type="file" accept=".xlsx,.xls,.csv" className="sr-only" aria-label={`Upload ${selectedTypeLabel} Excel`} onChange={(e) => { handleBulkFile(e.target.files?.[0]); e.target.value = ''; }} />
+          </label>
+        </div>
+      </div>
+      {bulkResultView}
+      <div className="mt-3 flex items-center gap-2 text-[11px] font-semibold uppercase tracking-wide text-slate-400">
+        <span className="h-px flex-1 bg-slate-200" /> or write one below <span className="h-px flex-1 bg-slate-200" />
+      </div>
+    </div>
+  ) : null;
+
+  // ── Paste / bulk import ──
+  const PASTE_EXAMPLE = `1. What is the brain of the computer?
+A) Monitor
+B) CPU
+C) Keyboard
+D) Mouse
+Answer: B
+
+2. Which device is used to type?
+A) Printer
+B) Speaker
+C) Keyboard
+D) Scanner
+Answer: C`;
+  const pastePreview = useMemo(() => (pasteText.trim() ? parseAiQuestions(pasteText) : []), [pasteText]);
+  const pasteMissingAnswers = pastePreview.filter((q) => !(q.options || []).some((o) => o?.isCorrect)).length;
+
+  const importPasted = () => {
+    if (!pastePreview.length) { toast.error('No questions found. Follow the format shown in the example.'); return; }
+    const imported = pastePreview.map((q, i) => normalizeAiQuestion({ ...q, type: 'mcq' }, i));
+    const updated = [...localTryouts, ...imported];
+    setLocalTryouts(updated);
+    onSaveTryouts(updated);
+    setPasteText('');
+    setAddMode(null);
+    toast.success(`${imported.length} question${imported.length === 1 ? '' : 's'} added`);
+  };
+
+  const loadPasteFile = (file) => {
+    if (!file) return;
+    const reader = new FileReader();
+    reader.onload = () => setPasteText(String(reader.result || ''));
+    reader.readAsText(file);
+  };
+
+
+  const ADD_OPTIONS = [
+    { key: 'ai', icon: Zap, title: 'Generate with AI', desc: 'Get ready-made questions for this chapter in seconds.', tone: 'bg-violet-600' },
+    { key: 'excel', icon: FileSpreadsheet, title: 'Upload from Excel', desc: 'Fill our ready template in Excel and upload many questions at once.', tone: 'bg-emerald-600' },
+    { key: 'paste', icon: ClipboardList, title: 'Paste questions', desc: 'Copy MCQs from Word or a document and paste them all at once.', tone: 'bg-sky-600' },
+    { key: 'manual', icon: PenTool, title: 'Write one yourself', desc: 'Pick a question type and type it in.', tone: 'bg-rose-500' },
+  ];
+
+  const openMode = (key) => { setAddMode(key); setSelectedType(null); setEditingIndex(null); setCurrentQuestion({}); setAiError(''); setBulkResult(null); };
+
+  // Questions grouped by type — the same sections students see in the practice exam.
+  const sectionGroups = useMemo(() => {
+    const groups = [];
+    localTryouts.forEach((q, index) => {
+      let group = groups.find((g) => g.type === q.type);
+      if (!group) { group = { type: q.type, label: TRYOUT_TYPES.find((t) => t.id === q.type)?.label || q.type, items: [] }; groups.push(group); }
+      group.items.push({ q, index });
+    });
+    return groups;
+  }, [localTryouts]);
+
+  const deleteAll = () => {
+    if (!window.confirm(`Delete all ${localTryouts.length} tryout questions? This cannot be undone.`)) return;
+    setLocalTryouts([]);
+    onSaveTryouts([]);
+    handleCancel();
+    setAddMode(null);
+  };
+
+  const editingExisting = !creatingNew && editingIndex !== null && editingIndex < localTryouts.length;
+
+  const typeButton = (type) => (
+    <button
+      key={type.id}
+      type="button"
+      disabled={generating}
+      onClick={() => { handleSelectType(type.id); setAddMode(null); }}
+      className="flex items-center gap-3 rounded-xl border border-slate-200 bg-white p-3 text-left transition hover:border-rose-300 hover:bg-rose-50/40 focus-visible:outline focus-visible:outline-2 focus-visible:outline-rose-500"
+    >
+      <span className="flex size-9 shrink-0 items-center justify-center rounded-lg bg-rose-50 text-rose-600"><type.icon className="size-4" /></span>
+      <span className="min-w-0">
+        <span className="block text-sm font-semibold text-slate-800">{type.label}</span>
+        <span className="mt-0.5 block text-xs leading-4 text-slate-500">{type.description}</span>
+      </span>
+    </button>
+  );
+
+  const panelHeader = (title, subtitle) => (
+    <div className="mb-4 flex items-center gap-3 border-b border-slate-100 pb-3">
+      <Button variant="ghost" size="sm" onClick={() => { setAddMode(null); handleCancel(); }} className="h-8 gap-1.5 px-2 text-xs text-slate-600 hover:bg-slate-100">
+        <ArrowLeft className="size-3.5" /> Back
+      </Button>
+      <div className="min-w-0">
+        <p className="text-sm font-semibold text-slate-800">{title}</p>
+        {subtitle && <p className="mt-0.5 text-xs text-slate-500">{subtitle}</p>}
+      </div>
+    </div>
+  );
+
+  return (
+    <div className="overflow-hidden rounded-xl border border-slate-200 bg-white">
+      {/* Summary bar */}
+      <div className="flex flex-wrap items-center gap-3 border-b border-slate-200 bg-slate-50 px-5 py-3">
+        <div className="min-w-0 flex-1">
+          <p className="text-sm font-semibold text-slate-800">
+            {localTryouts.length ? `${localTryouts.length} tryout question${localTryouts.length === 1 ? '' : 's'} ready` : 'No tryout questions yet'}
+          </p>
+          <p className="text-xs text-slate-500">
+            {localTryouts.length
+              ? 'Students will practise these in Practice → Tryout questions. Each question type becomes a section.'
+              : 'Add a few practice questions for this chapter. This step is optional.'}
+          </p>
+        </div>
+      </div>
+
+      {aiError && (
+        <div role="alert" className="px-5 py-3 text-sm text-red-700 bg-red-50">{aiError}</div>
+      )}
+
+      <div ref={bodyRef} style={bodyHeight ? { height: bodyHeight } : undefined} className="flex flex-col md:min-h-[360px] md:flex-row">
         {/* Left: question list */}
-        {localTryouts.length > 0 && <div className="w-full shrink-0 border-b border-slate-200 p-3 md:w-52 md:border-b-0 md:border-r">
-          <div className="mb-2 flex items-center justify-between px-1">
-            <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">Questions</p>
-            <span className="text-xs text-slate-500">{localTryouts.length}</span>
-          </div>
-          {localTryouts.length === 0 ? (
-            <div className="rounded-xl border border-dashed border-slate-300 bg-white px-4 py-6 text-center">
-              <FileText className="mx-auto size-5 text-slate-300" />
-              <p className="mt-2 text-xs font-medium text-slate-600">No questions yet</p>
-              <p className="mt-1 text-[11px] leading-4 text-slate-400">Add one from the question types.</p>
+        {localTryouts.length > 0 && (
+          <div className="flex w-full shrink-0 flex-col border-b border-slate-200 md:h-full md:min-h-0 md:overflow-hidden md:w-72 md:border-b-0 md:border-r">
+            <div className="flex shrink-0 items-center justify-between gap-2 border-b border-slate-100 px-3 py-2.5">
+              <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">Your questions ({localTryouts.length})</p>
+              <button type="button" onClick={() => openMode('manual')} className="inline-flex items-center gap-1 rounded-full bg-rose-500 px-2.5 py-1 text-[11px] font-semibold text-white hover:bg-rose-600">
+                <Plus className="size-3" /> Add more
+              </button>
             </div>
-          ) : (
-            <div className="space-y-2">
-              {localTryouts.map((tryout, index) => {
-                const typeInfo = TRYOUT_TYPES.find(t => t.id === tryout.type);
+            <div className="min-h-0 flex-1 space-y-2 overflow-y-auto overscroll-contain p-3">
+              {sectionGroups.map((group, gi) => {
+                const open = openSections.has(group.type);
+                const TypeIcon = TRYOUT_TYPES.find((t) => t.id === group.type)?.icon || FileText;
                 return (
-                  <div
-                    key={tryout.id || index}
-                    className={`rounded-lg p-2 transition-colors text-xs ${
-                      editingIndex === index
-                        ? 'bg-slate-100'
-                        : 'hover:bg-slate-50'
-                    }`}
+                <div key={group.type} className={`overflow-hidden rounded-xl border ${open ? 'border-rose-200' : 'border-slate-200'}`}>
+                  <button
+                    type="button"
+                    onClick={() => toggleSection(group.type)}
+                    aria-expanded={open}
+                    className={`flex w-full items-center gap-2 px-3 py-2.5 text-left text-xs font-bold transition ${open ? 'bg-rose-50 text-rose-700' : 'bg-white text-slate-700 hover:bg-slate-50'}`}
                   >
-                    <div className="flex items-center justify-between gap-2">
-                      <button type="button" disabled={generating} onClick={() => handleEditQuestion(index)} aria-pressed={editingIndex === index} aria-label={`Edit question ${index + 1}`} className="min-w-0 flex-1 rounded text-left focus-visible:outline focus-visible:outline-2 focus-visible:outline-rose-600">
-                        <span className="flex items-center gap-1">
-                        <span className="font-medium text-slate-700">Q{index + 1} · {typeInfo?.label || tryout.type}</span>
-                        </span>
-                        <span className="mt-1 block line-clamp-2 break-words text-slate-600">{tryout.question || tryout.text || `Question ${index + 1}`}</span>
-                      </button>
-                      <button
-                        type="button"
-                        disabled={generating}
-                        aria-label={`Delete question ${index + 1}`}
-                        onClick={(e) => { e.stopPropagation(); handleDeleteQuestion(index); }}
-                        className="shrink-0 p-2 rounded hover:bg-red-50"
-                      >
-                        <Trash2 className="size-3.5 text-slate-500" />
-                      </button>
-                    </div>
+                    <span className={`flex size-7 shrink-0 items-center justify-center rounded-full ${open ? 'bg-rose-500 text-white' : 'bg-slate-100 text-slate-600'}`}><TypeIcon className="size-3.5" /></span>
+                    <span className="min-w-0 flex-1">
+                      <span className="block text-[10px] font-semibold uppercase tracking-wide opacity-70">Section {gi + 1}</span>
+                      <span className="block truncate">{group.label.replace(/ \(MCQ\)$/, '')}</span>
+                    </span>
+                    <span className="rounded-full bg-white px-2 py-px text-[11px] text-slate-600 ring-1 ring-slate-200">{group.items.length}</span>
+                    <ChevronDown className={`size-4 shrink-0 transition-transform ${open ? 'rotate-180' : ''}`} />
+                  </button>
+                  {open && (
+                  <div className="space-y-1 border-t border-rose-100 bg-white p-1.5">
+                    {group.items.map(({ q: tryout, index }) => {
+                      const active = editingIndex === index && !creatingNew;
+                      return (
+                        <div key={tryout.id || index} className={`group flex items-start gap-2 rounded-lg border p-2 text-xs transition ${active ? 'border-rose-300 bg-rose-50' : 'border-transparent hover:border-slate-200 hover:bg-slate-50'}`}>
+                          <span className={`mt-0.5 flex size-6 shrink-0 items-center justify-center rounded-full text-[11px] font-bold ${active ? 'bg-rose-500 text-white' : 'bg-slate-200 text-slate-700'}`}>{index + 1}</span>
+                          <button type="button" disabled={generating} onClick={() => { handleEditQuestion(index); setAddMode(null); }} aria-pressed={active} aria-label={`Edit question ${index + 1}`} title="Click to edit" className="min-w-0 flex-1 text-left leading-5 text-slate-700 focus-visible:outline-2 focus-visible:outline-rose-600">
+                            <span className="line-clamp-2 wrap-break-word">{tryout.question || tryout.text || 'Untitled question'}</span>
+                          </button>
+                          <button
+                            type="button"
+                            disabled={generating}
+                            aria-label={`Delete question ${index + 1}`}
+                            title="Delete question"
+                            onClick={(e) => { e.stopPropagation(); handleDeleteQuestion(index); }}
+                            className="shrink-0 rounded p-1 text-slate-300 opacity-0 transition group-hover:opacity-100 hover:bg-red-50 hover:text-red-600 focus-visible:opacity-100"
+                          >
+                            <Trash2 className="size-3.5" />
+                          </button>
+                        </div>
+                      );
+                    })}
                   </div>
+                  )}
+                </div>
                 );
               })}
             </div>
-          )}
-        </div>}
+            <div className="mt-auto shrink-0 border-t border-slate-100 px-3 py-2">
+              <button type="button" onClick={deleteAll} disabled={generating} className="text-[11px] font-semibold text-slate-400 hover:text-red-600">Delete all questions</button>
+            </div>
+          </div>
+        )}
 
-        {/* Right: type picker or creator */}
-        <div className="min-w-0 flex-1 bg-white p-5 sm:p-6">
-          {!selectedType && editingIndex === null ? (
+        {/* Right: choose how to add / AI / paste / type picker / editor */}
+        <div className="min-h-0 min-w-0 flex-1 overflow-y-auto overscroll-contain bg-white p-5 sm:p-6">
+          {selectedType || editingIndex !== null ? (
             <div>
-              <div className="mb-4 flex items-start justify-between gap-3">
-                <div>
-                  <p className="text-sm font-semibold text-slate-800">Add a question</p>
-                  <p className="mt-1 text-xs text-slate-500">Choose a question type.</p>
+              {panelHeader(editingExisting ? `Edit question ${editingIndex + 1} of ${localTryouts.length}` : 'New question', TRYOUT_TYPES.find((type) => type.id === selectedType)?.label)}
+              {bulkStrip}
+              {CreatorComponent && (
+                <CreatorComponent
+                  key={currentQuestion.id || `${selectedType}-${editingIndex}`}
+                  question={currentQuestion}
+                  onChange={handleQuestionChange}
+                />
+              )}
+              <div className="mt-5 flex flex-wrap items-center justify-between gap-3 border-t border-slate-100 pt-4">
+                <p className="text-xs text-slate-500">✓ Saved automatically as you type.</p>
+                <div className="flex items-center gap-2">
+                  {editingExisting && (
+                    <>
+                      <Button type="button" variant="outline" size="sm" disabled={editingIndex === 0} onClick={() => handleEditQuestion(editingIndex - 1)} className="h-8 text-xs">
+                        <ArrowLeft className="size-3 mr-1" /> Previous
+                      </Button>
+                      <Button type="button" variant="outline" size="sm" disabled={editingIndex >= localTryouts.length - 1} onClick={() => handleEditQuestion(editingIndex + 1)} className="h-8 text-xs">
+                        Next →
+                      </Button>
+                    </>
+                  )}
+                  <Button onClick={handleSaveQuestion} size="sm" className="bg-rose-500 text-xs text-white hover:bg-rose-600">
+                    <Save className="size-3 mr-1" /> {editingExisting ? 'Done' : 'Add question'}
+                  </Button>
                 </div>
               </div>
-              <div className="grid grid-cols-[repeat(auto-fit,minmax(min(100%,210px),1fr))] gap-2">
-                {TRYOUT_TYPES.map(type => (
-                  <button
-                    key={type.id}
-                    type="button"
-                    disabled={generating}
-                    onClick={() => handleSelectType(type.id)}
-                    className="flex items-center gap-3 rounded-lg p-3 text-left transition-colors hover:bg-slate-50 focus-visible:outline focus-visible:outline-2 focus-visible:outline-slate-600"
-                  >
-                    <div className="shrink-0">
-                      <type.icon className="size-4 text-slate-500" />
-                    </div>
-                    <div className="min-w-0">
-                      <p className="text-xs font-medium text-slate-700">{type.label}</p>
-                      <p className="mt-0.5 text-xs leading-4 text-slate-600">{type.description}</p>
-                    </div>
+            </div>
+          ) : addMode === 'ai' ? (
+            <div>
+              {panelHeader('Generate with AI', `Questions for “${topicTitle || 'this chapter'}”`)}
+              <fieldset disabled={generating} className="grid min-w-0 gap-3 sm:grid-cols-3">
+                <label className="block">
+                  <span className="text-xs font-semibold text-slate-600">How many?</span>
+                  <select aria-label="Count" value={aiCount} onChange={(e) => setAiCount(Number(e.target.value))} className="mt-1 w-full rounded-lg border border-slate-300 bg-white px-2.5 py-2 text-sm text-slate-900">
+                    {[1, 3, 5, 10].map((count) => <option key={count} value={count}>{count} question{count !== 1 ? 's' : ''}</option>)}
+                  </select>
+                </label>
+                <label className="block">
+                  <span className="text-xs font-semibold text-slate-600">Difficulty</span>
+                  <select aria-label="Difficulty" value={aiDifficulty} onChange={(e) => setAiDifficulty(e.target.value)} className="mt-1 w-full rounded-lg border border-slate-300 bg-white px-2.5 py-2 text-sm text-slate-900">
+                    {['easy', 'medium', 'hard'].map((level) => <option key={level} value={level}>{level.charAt(0).toUpperCase() + level.slice(1)}</option>)}
+                  </select>
+                </label>
+                <label className="block">
+                  <span className="text-xs font-semibold text-slate-600">Question type</span>
+                  <select aria-label="Question Type" value={aiQuestionType} onChange={(e) => setAiQuestionType(e.target.value)} className="mt-1 w-full rounded-lg border border-slate-300 bg-white px-2.5 py-2 text-sm text-slate-900">
+                    {TRYOUT_TYPES.map((type) => <option key={type.id} value={type.id}>{type.label}</option>)}
+                  </select>
+                </label>
+              </fieldset>
+              {localTryouts.length > 0 && (
+                <div className="mt-4 flex flex-wrap items-center gap-2 text-xs text-slate-600">
+                  <span className="font-semibold">You already have {localTryouts.length} question{localTryouts.length === 1 ? '' : 's'}:</span>
+                  <div className="inline-flex rounded-lg border border-slate-300 p-0.5">
+                    <button type="button" onClick={() => setAiAppend(true)} aria-pressed={aiAppend} className={`rounded-md px-3 py-1 font-medium ${aiAppend ? 'bg-rose-500 text-white' : 'text-slate-600 hover:bg-slate-100'}`}>Add to them</button>
+                    <button type="button" onClick={() => setAiAppend(false)} aria-pressed={!aiAppend} className={`rounded-md px-3 py-1 font-medium ${!aiAppend ? 'bg-rose-500 text-white' : 'text-slate-600 hover:bg-slate-100'}`}>Replace them</button>
+                  </div>
+                </div>
+              )}
+              <div className="mt-5 flex flex-wrap items-center justify-between gap-3 border-t border-slate-100 pt-4">
+                <p className="text-xs text-slate-500">You can edit or delete any generated question afterwards.</p>
+                <Button size="sm" onClick={async () => { await generateAiTryouts(); setAddMode(null); }} disabled={generating} className="bg-violet-600 text-xs text-white hover:bg-violet-700">
+                  <Zap className="size-3 mr-1.5" />
+                  {generating ? 'Generating…' : `Generate ${aiCount} question${aiCount !== 1 ? 's' : ''}`}
+                </Button>
+              </div>
+            </div>
+          ) : addMode === 'excel' ? (
+            <div>
+              {panelHeader('Upload from Excel', 'Add many questions at once using our template')}
+              <ol className="space-y-5">
+                <li>
+                  <p className="mb-2 flex items-center gap-2 text-sm font-semibold text-slate-800">
+                    <span className="flex size-6 items-center justify-center rounded-full bg-emerald-600 text-xs font-bold text-white">1</span>
+                    Choose the question type
+                  </p>
+                  <div className="flex flex-wrap gap-2 pl-8">
+                    {TRYOUT_TYPES.map((type) => (
+                      <button
+                        key={type.id}
+                        type="button"
+                        onClick={() => { setExcelType(type.id); setBulkResult(null); }}
+                        aria-pressed={excelType === type.id}
+                        className={`inline-flex items-center gap-1.5 rounded-full border px-3 py-1.5 text-xs font-semibold transition ${excelType === type.id ? 'border-emerald-600 bg-emerald-600 text-white' : 'border-slate-200 bg-white text-slate-600 hover:border-emerald-300'}`}
+                      >
+                        <type.icon className="size-3.5" /> {type.label.replace(/ \(MCQ\)$/, '')}
+                      </button>
+                    ))}
+                  </div>
+                  <p className="mt-2 pl-8 text-xs text-slate-500">{EXCEL_TEMPLATES[excelType]?.help}</p>
+                </li>
+                <li>
+                  <p className="mb-2 flex items-center gap-2 text-sm font-semibold text-slate-800">
+                    <span className="flex size-6 items-center justify-center rounded-full bg-emerald-600 text-xs font-bold text-white">2</span>
+                    Download the template and fill it in Excel
+                  </p>
+                  <div className="pl-8">
+                    <Button type="button" variant="outline" size="sm" onClick={() => downloadTryoutTemplate(excelType, TRYOUT_TYPES.find((t) => t.id === excelType)?.label)} className="h-9 border-emerald-300 bg-white text-xs text-emerald-700 hover:bg-emerald-50">
+                      <Download className="size-3.5 mr-1.5" /> Download {TRYOUT_TYPES.find((t) => t.id === excelType)?.label.replace(/ \(MCQ\)$/, '')} template
+                    </Button>
+                    <p className="mt-1.5 text-xs text-slate-500">One question per row. The file has an example row and a “How to fill” sheet.</p>
+                  </div>
+                </li>
+                <li>
+                  <p className="mb-2 flex items-center gap-2 text-sm font-semibold text-slate-800">
+                    <span className="flex size-6 items-center justify-center rounded-full bg-emerald-600 text-xs font-bold text-white">3</span>
+                    Upload the filled file
+                  </p>
+                  <div className="pl-8">
+                    <label className={`flex cursor-pointer flex-col items-center justify-center rounded-xl border-2 border-dashed border-emerald-300 bg-emerald-50/50 px-4 py-6 text-center transition hover:bg-emerald-50 ${bulkBusy ? 'pointer-events-none opacity-60' : ''}`}>
+                      <FileUp className="size-6 text-emerald-600" />
+                      <span className="mt-2 text-sm font-semibold text-emerald-800">{bulkBusy ? 'Reading your file…' : 'Click to choose your Excel file'}</span>
+                      <span className="mt-0.5 text-xs text-slate-500">.xlsx, .xls or .csv</span>
+                      <input type="file" accept=".xlsx,.xls,.csv" className="sr-only" aria-label="Upload Excel file" onChange={(e) => { handleBulkFile(e.target.files?.[0], excelType); e.target.value = ''; }} />
+                    </label>
+                    {bulkResultView}
+                  </div>
+                </li>
+              </ol>
+            </div>
+          ) : addMode === 'paste' ? (
+            <div>
+              {panelHeader('Paste questions', 'Multiple-choice questions, one after another')}
+              <div className="grid gap-4 lg:grid-cols-[1fr_220px]">
+                <div>
+                  <Textarea
+                    value={pasteText}
+                    onChange={(e) => setPasteText(e.target.value)}
+                    placeholder={PASTE_EXAMPLE}
+                    rows={12}
+                    aria-label="Paste questions"
+                    className="font-mono text-xs"
+                  />
+                  <div className="mt-2 flex flex-wrap items-center gap-3 text-xs">
+                    <label className="inline-flex cursor-pointer items-center gap-1.5 font-semibold text-sky-700 hover:underline">
+                      <FileUp className="size-3.5" /> Load from a .txt file
+                      <input type="file" accept=".txt,text/plain" className="sr-only" onChange={(e) => { loadPasteFile(e.target.files?.[0]); e.target.value = ''; }} />
+                    </label>
+                    <button type="button" onClick={() => setPasteText(PASTE_EXAMPLE)} className="font-semibold text-slate-500 hover:underline">Fill example</button>
+                  </div>
+                </div>
+                <div className="rounded-xl bg-slate-50 p-3 text-xs text-slate-600">
+                  <p className="mb-1.5 font-semibold text-slate-800">Format</p>
+                  <ul className="list-disc space-y-1 pl-4">
+                    <li>Number each question: <code>1.</code></li>
+                    <li>Options on new lines: <code>A)</code> <code>B)</code> <code>C)</code> <code>D)</code></li>
+                    <li>Then <code>Answer: B</code></li>
+                    <li>Optional: <code>Explanation: …</code></li>
+                  </ul>
+                </div>
+              </div>
+              <div className="mt-4 flex flex-wrap items-center justify-between gap-3 border-t border-slate-100 pt-4">
+                <p className={`text-xs font-medium ${pastePreview.length ? 'text-emerald-700' : 'text-slate-500'}`}>
+                  {pasteText.trim()
+                    ? pastePreview.length
+                      ? `${pastePreview.length} question${pastePreview.length === 1 ? '' : 's'} found${pasteMissingAnswers ? ` · ${pasteMissingAnswers} without an Answer line (option A will be marked correct — check them)` : ''}`
+                      : 'No questions recognised yet — check the format.'
+                    : 'Paste your questions to see how many are found.'}
+                </p>
+                <Button size="sm" onClick={importPasted} disabled={!pastePreview.length} className="bg-sky-600 text-xs text-white hover:bg-sky-700">
+                  <Plus className="size-3 mr-1" /> Add {pastePreview.length || ''} question{pastePreview.length === 1 ? '' : 's'}
+                </Button>
+              </div>
+            </div>
+          ) : addMode === 'manual' ? (
+            <div>
+              {panelHeader('Add a question', 'Choose a question type')}
+              <div className="grid gap-2 sm:grid-cols-2 xl:grid-cols-3">{TRYOUT_TYPES.map(typeButton)}</div>
+              <div className="mt-5 flex flex-wrap items-center gap-2 border-t border-slate-100 pt-4 text-xs">
+                <span className="font-semibold text-slate-500">Adding many at once?</span>
+                {ADD_OPTIONS.filter((o) => o.key !== 'manual').map((opt) => (
+                  <button key={opt.key} type="button" disabled={generating} onClick={() => openMode(opt.key)} className="inline-flex items-center gap-1.5 rounded-full border border-slate-200 bg-white px-3 py-1.5 font-semibold text-slate-700 hover:border-slate-300 hover:bg-slate-50">
+                    <opt.icon className="size-3.5" /> {opt.title}
                   </button>
                 ))}
               </div>
             </div>
           ) : (
             <div>
-              <div className="mb-4 flex items-center justify-between border-b border-slate-100 pb-3">
-                <Button
-                  variant="ghost"
-                  size="sm"
-                  onClick={handleCancel}
-                  className="order-first h-8 gap-1.5 px-2 text-xs text-slate-600 hover:bg-slate-100"
-                >
-                  <ArrowLeft className="size-3.5" />
-                  Back
-                </Button>
-                <div className="mr-auto ml-3">
-                  <p className="text-sm font-semibold text-slate-800">
-                  {editingIndex !== null ? 'Edit Question' : 'New Question'}
-                  </p>
-                  <p className="mt-0.5 text-xs text-slate-500">{TRYOUT_TYPES.find((type) => type.id === selectedType)?.label}</p>
+              {localTryouts.length > 0 && (
+                <div className="mb-5 flex items-start gap-3 rounded-xl border border-emerald-200 bg-emerald-50 p-4">
+                  <CheckCircle2 className="mt-0.5 size-5 shrink-0 text-emerald-600" />
+                  <div className="text-sm">
+                    <p className="font-semibold text-emerald-900">{localTryouts.length} question{localTryouts.length === 1 ? ' is' : 's are'} saved for this chapter.</p>
+                    <p className="mt-0.5 text-xs text-emerald-800">Click any question on the left to check or edit it. When you’re happy, go to the next step. Want more? Pick an option below.</p>
+                  </div>
                 </div>
-              </div>
-              <div>
-                {CreatorComponent && (
-                  <CreatorComponent
-                    key={currentQuestion.id || `${selectedType}-${editingIndex}`}
-                    question={currentQuestion}
-                    onChange={handleQuestionChange}
-                  />
-                )}
-              </div>
-              <div className="mt-5 flex flex-wrap items-center justify-between gap-3 border-t border-slate-100 pt-4">
-                <p className="text-xs text-slate-600">Changes are kept in your lesson-plan draft.</p>
-                <Button onClick={handleSaveQuestion} size="sm" className="bg-slate-900 text-xs text-white hover:bg-slate-700">
-                  <Save className="size-3 mr-1" />
-                  {editingIndex !== null ? 'Done' : 'Add Question'}
-                </Button>
+              )}
+              <p className="text-sm font-semibold text-slate-800">{localTryouts.length ? 'Add more questions' : 'How do you want to add questions?'}</p>
+              <p className="mt-1 text-xs text-slate-500">Pick any option — you can mix them.</p>
+              <div className="mt-4 grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
+                {ADD_OPTIONS.map((opt) => (
+                  <button
+                    key={opt.key}
+                    type="button"
+                    disabled={generating}
+                    onClick={() => openMode(opt.key)}
+                    className="group flex flex-col items-start rounded-xl border border-slate-200 bg-white p-4 text-left transition hover:-translate-y-0.5 hover:border-slate-300 hover:shadow-md focus-visible:outline focus-visible:outline-2 focus-visible:outline-rose-500"
+                  >
+                    <span className={`flex size-10 items-center justify-center rounded-full text-white shadow-sm ${opt.tone}`}><opt.icon className="size-5" /></span>
+                    <span className="mt-3 text-sm font-semibold text-slate-800">{opt.title}</span>
+                    <span className="mt-1 text-xs leading-5 text-slate-500">{opt.desc}</span>
+                  </button>
+                ))}
               </div>
             </div>
           )}

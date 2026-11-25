@@ -79,7 +79,7 @@ const htmlToBlocks = (html) => {
 };
 import ReadingPracticePage from './ReadingPracticePage';
 import WritingPracticePage from './WritingPracticePage';
-import AILearningTryoutSection, { typeMeta, normalizeQuestionType } from './AILearningTryoutSection';
+import AILearningTryoutSection from './AILearningTryoutSection';
 
 const API_BASE = (import.meta.env.VITE_API_URL || 'http://localhost:5000').replace(/\/$/, '');
 const DASHBOARD_ENDPOINT = `${API_BASE}/api/student/auth/dashboard`;
@@ -828,15 +828,6 @@ const AILearningCoursesReference = () => {
   // them by type without re-fetching/re-deriving the same data itself.
   const [assignedTryoutQuestions, setAssignedTryoutQuestions] = useState([]);
   const tryoutRef = useRef(null);
-  const practiceFormats = useMemo(() => {
-    const groups = new Map();
-    assignedTryoutQuestions.forEach((question) => {
-      const type = normalizeQuestionType(question?.type);
-      if (!groups.has(type)) groups.set(type, { type, ...typeMeta(type), count: 0 });
-      groups.get(type).count += 1;
-    });
-    return Array.from(groups.values());
-  }, [assignedTryoutQuestions]);
   // The route doesn't remount when only the query string changes (e.g.
   // navigating from the overview page straight into ?mode=practice), so a
   // plain lazy-init read of the query param would miss that navigation —
@@ -1103,7 +1094,6 @@ const AILearningCoursesReference = () => {
   const markTopicComplete = () => setTopicCompleted((previous) => !previous);
 
   if (isDetailsView) {
-    const practiceResources = assessmentItems;
     return (
       <>
         <style>{`
@@ -1132,7 +1122,6 @@ const AILearningCoursesReference = () => {
             ];
             const practiceTabs = [
               { key: 'tryout', label: 'Tryout questions', hint: 'Quick quiz on this topic', icon: Sparkles },
-              { key: 'papers', label: 'Practice papers', hint: `${practiceResources.length} from your teacher`, icon: ClipboardList },
               { key: 'reading', label: 'Reading skills', hint: 'Read aloud & get feedback', icon: Newspaper },
               { key: 'writing', label: 'Writing skills', hint: 'Write & get AI feedback', icon: NotebookText },
             ];
@@ -1525,16 +1514,6 @@ const AILearningCoursesReference = () => {
 
                     {practiceTab === 'tryout' && (
                       <div className="overflow-hidden rounded-2xl bg-white shadow-sm">
-                        {practiceFormats.length > 0 && (
-                          <div className="flex flex-wrap items-center gap-2 border-b border-[#e2e8ff] p-4">
-                            <span className="text-xs font-bold uppercase tracking-wide text-[#64748b]">Jump to:</span>
-                            {practiceFormats.map(({ type, label, icon: Icon, count }) => (
-                              <button key={type} type="button" onClick={() => tryoutRef.current?.scrollToType(type)} className="inline-flex items-center gap-1.5 rounded-full bg-[#eff4ff] px-3 py-1.5 text-xs font-bold text-[#493ee5] hover:bg-[#e6eeff]">
-                                <Icon size={13} /> {label} <span className="text-[#493ee5]/60">· {count}</span>
-                              </button>
-                            ))}
-                          </div>
-                        )}
                         <AILearningTryoutSection
                           ref={tryoutRef}
                           assignedSubjectName={subjectSlug}
@@ -1542,34 +1521,6 @@ const AILearningCoursesReference = () => {
                           onBack={() => goTab('read')}
                           onQuestionsLoaded={setAssignedTryoutQuestions}
                         />
-                      </div>
-                    )}
-
-                    {practiceTab === 'papers' && (
-                      <div className="rounded-2xl bg-white p-4 shadow-sm sm:p-5">
-                        <h2 className="text-base font-bold text-[#0d1c2e]">Practice papers</h2>
-                        <p className="mb-4 text-xs text-[#64748b]">Worksheets and papers your teacher set for this topic.</p>
-                        {practiceResources.length === 0 ? (
-                          <div className="rounded-2xl border-2 border-dashed border-[#e2e8ff] py-12 text-center">
-                            <ClipboardList size={30} className="mx-auto text-[#c7c4ff]" />
-                            <p className="mt-3 font-semibold text-[#0d1c2e]">No practice papers yet</p>
-                            <button type="button" onClick={() => setPracticeTab('tryout')} className="mt-3 text-sm font-bold text-[#493ee5] hover:underline">Try the tryout questions instead →</button>
-                          </div>
-                        ) : (
-                          <div className="grid gap-3 sm:grid-cols-2">
-                            {practiceResources.map((item, idx) => (
-                              <div key={item.id || idx} className="flex items-center gap-3 rounded-2xl border border-[#e2e8ff] p-4">
-                                <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-rose-50 text-sm font-extrabold text-rose-600">{String(idx + 1).padStart(2, '0')}</span>
-                                <p className="min-w-0 flex-1 truncate text-sm font-bold text-[#0d1c2e]" title={item.title}>{item.title}</p>
-                                <div className="flex shrink-0 gap-1.5">
-                                  {item.content && <button type="button" onClick={() => setActiveMaterial(item)} className="rounded-lg bg-[#eff4ff] px-2.5 py-1.5 text-xs font-bold text-[#493ee5]">Read</button>}
-                                  {item.url && <a href={getInlineDocumentUrl(item.url)} target="_blank" rel="noreferrer" className="rounded-lg bg-[#493ee5] px-2.5 py-1.5 text-xs font-bold text-white">Open</a>}
-                                  {item.url && <a href={item.url} download aria-label="Download" className="rounded-lg bg-[#eff4ff] px-2 py-1.5 text-[#493ee5]"><Download size={13} /></a>}
-                                </div>
-                              </div>
-                            ))}
-                          </div>
-                        )}
                       </div>
                     )}
 

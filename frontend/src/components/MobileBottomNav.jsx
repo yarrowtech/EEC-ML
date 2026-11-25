@@ -19,7 +19,6 @@ const subMenus = {
     items: [
       { id: 'learning',                    name: 'Learning Hub',  icon: Brain,         color: 'bg-amber-500',  desc: 'Lessons & tutor' },
       { id: 'assignments',                 name: 'Assignments',   icon: FileText,      color: 'bg-amber-600',  desc: 'Submit & track' },
-      { id: 'assignments-practice',        name: 'Practice Qs',   icon: GraduationCap, color: 'bg-amber-500',  desc: 'Self practice' },
       { id: 'assignments-lab',             name: 'Virtual Lab',   icon: FlaskConical,  color: 'bg-amber-600',  desc: '3D experiments' },
       { id: 'assignments-flashcards',      name: 'Flashcards',    icon: Layers,        color: 'bg-amber-500',  desc: 'Quick revision' },
       { id: 'assignments-journal',         name: 'Journal',       icon: NotebookPen,   color: 'bg-amber-500',  desc: 'My notes' },
