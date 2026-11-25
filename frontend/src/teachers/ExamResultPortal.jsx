@@ -1,6 +1,7 @@
 import React, { useCallback, useEffect, useId, useMemo, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { useParams, useLocation, useNavigate, useOutletContext } from 'react-router-dom';
+import toast from 'react-hot-toast';
 import { AUTH_NOTICE, logoutAndRedirect } from '../utils/authSession';
 import { AnimatePresence, motion as Motion } from 'framer-motion';
 import {
@@ -617,7 +618,16 @@ const ClassExamResults = ({ classSlug, classId, sectionId, subjectName, cacheKey
                             <td className="p-3">
                               <input type="number" min="0" max={maxMarks} step="any" aria-label={`Marks for ${r.name}`}
                                 disabled={!r.included || r.status === 'absent'} value={r.marks}
-                                onChange={e => updateMarksRow(r.studentId, marksFields(e.target.value))}
+                                onKeyDown={e => { if (['-', '+', 'e', 'E'].includes(e.key)) e.preventDefault(); }}
+                                onChange={e => {
+                                  const v = e.target.value;
+                                  // Block anything outside 0..maxMarks — the HTML max attribute alone doesn't stop typing.
+                                  if (v !== '' && (!Number.isFinite(Number(v)) || Number(v) < 0 || Number(v) > maxMarks)) {
+                                    toast.error(`Marks must be between 0 and ${maxMarks}`, { id: 'marks-range' });
+                                    return;
+                                  }
+                                  updateMarksRow(r.studentId, marksFields(v));
+                                }}
                                 className={`${IC} max-w-24 disabled:bg-slate-100`} />
                             </td>
                             <td className="p-3 font-semibold text-slate-700">{r.grade || '—'}</td>

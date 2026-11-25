@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useMemo, useCallback } from 'react';
+import React, { useState, useEffect, useMemo, useCallback, useRef } from 'react';
 import {
   BookOpen,
   FileText,
@@ -10,18 +10,26 @@ import {
   Calendar,
   User,
   ChevronDown,
+  ChevronRight,
+  ArrowLeft,
+  X,
   AlertCircle,
   GraduationCap,
   ArrowUpRight,
 } from 'lucide-react';
 import toast from 'react-hot-toast';
+import { motion as Motion } from 'framer-motion';
 
 const StudyMaterials = () => {
   const [materials, setMaterials] = useState([]);
+  const [searchOpen, setSearchOpen] = useState(false);
+  const searchInputRef = useRef(null);
+  // Focus once the box has started sliding open.
+  useEffect(() => { if (searchOpen) searchInputRef.current?.focus(); }, [searchOpen]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
   const [searchQuery, setSearchQuery] = useState('');
-  const [selectedSubject, setSelectedSubject] = useState('all');
+  const [selectedSubject, setSelectedSubject] = useState(null); // null = subject list
   const [expandedMaterial, setExpandedMaterial] = useState(null);
   const API_BASE = (import.meta.env.VITE_API_URL || 'http://localhost:5000')
     .replace(/\/$/, '')
@@ -137,16 +145,6 @@ const StudyMaterials = () => {
     }
   };
 
-  // Get unique subjects for filter
-  const subjects = useMemo(() => {
-    const subjectSet = new Set();
-    materials.forEach((material) => {
-      if (material.subjectName) {
-        subjectSet.add(material.subjectName);
-      }
-    });
-    return ['all', ...Array.from(subjectSet).sort()];
-  }, [materials]);
 
   const chapters = useMemo(() => {
     const groups = new Map();
@@ -170,11 +168,50 @@ const StudyMaterials = () => {
     return Array.from(groups.values()).filter((group) => group.attachments.length > 0);
   }, [materials]);
 
+  // One card per subject: chapter + file count and latest upload.
+  const subjects = useMemo(() => {
+    const map = new Map();
+    chapters.forEach((c) => {
+      const s = map.get(c.subject) || { name: c.subject, chapters: 0, files: 0, date: null };
+      s.chapters += 1; s.files += c.attachments.length;
+      if (!s.date || new Date(c.date) > new Date(s.date)) s.date = c.date;
+      map.set(c.subject, s);
+    });
+    return Array.from(map.values()).sort((a, b) => a.name.localeCompare(b.name));
+  }, [chapters]);
+
+  const filteredSubjects = useMemo(() => {
+    const query = searchQuery.trim().toLowerCase();
+    return subjects.filter((s) => !query || s.name.toLowerCase().includes(query));
+  }, [subjects, searchQuery]);
+
+  const closeSearch = () => { setSearchOpen(false); setSearchQuery(''); };
+
+  const openSubject = (name) => { setSelectedSubject(name); closeSearch(); setExpandedMaterial(null); };
+  const backToSubjects = () => { setSelectedSubject(null); closeSearch(); setExpandedMaterial(null); };
+
+  const toneFor = (subject) => {
+    const palette = [
+      { strip: 'from-violet-500 to-indigo-500', tile: 'bg-violet-50 text-violet-600', badge: 'bg-violet-700' },
+      { strip: 'from-emerald-500 to-teal-500', tile: 'bg-emerald-50 text-emerald-700', badge: 'bg-emerald-700' },
+      { strip: 'from-sky-500 to-blue-500', tile: 'bg-sky-50 text-sky-700', badge: 'bg-sky-700' },
+      { strip: 'from-amber-400 to-orange-500', tile: 'bg-amber-50 text-amber-700', badge: 'bg-amber-700' },
+    ];
+    return palette[Array.from(subject).reduce((sum, letter) => sum + letter.charCodeAt(0), 0) % palette.length];
+  };
+
   const filteredChapters = useMemo(() => chapters.filter((chapter) => {
     const query = searchQuery.trim().toLowerCase();
-    return (selectedSubject === 'all' || chapter.subject === selectedSubject)
+    return chapter.subject === selectedSubject
       && (!query || [chapter.chapter, chapter.subject, ...chapter.teachers].join(' ').toLowerCase().includes(query));
-  }), [chapters, searchQuery, selectedSubject]);
+  })
+    // Chapter order: by the first number in the title (Chapter 1, 2 … 10), then alphabetically.
+    // Titles without a number (e.g. "General materials") go last.
+    .sort((a, b) => {
+      const na = Number(a.chapter.match(/\d+/)?.[0] ?? Infinity);
+      const nb = Number(b.chapter.match(/\d+/)?.[0] ?? Infinity);
+      return na !== nb ? na - nb : a.chapter.localeCompare(b.chapter, undefined, { numeric: true });
+    }), [chapters, searchQuery, selectedSubject]);
 
   const attachmentLabel = (attachment) => {
     const hint = `${attachment.type || ''} ${attachment.name || ''} ${String(attachment.url || '').split('?')[0]}`;
@@ -187,49 +224,76 @@ const StudyMaterials = () => {
 
   return (
     <main className="m-3 flex min-h-0 flex-1 flex-col overflow-hidden rounded-2xl border border-slate-200/80 bg-[#f8f9fd] p-4 text-slate-900 shadow-sm sm:rounded-3xl sm:px-5">
-      <h1 className="mb-4 shrink-0 text-xl font-bold tracking-tight sm:text-2xl">Study Materials</h1>
-
-      <div className="mb-5 grid shrink-0 gap-3 rounded-xl border border-slate-200/80 bg-white p-3 shadow-sm sm:grid-cols-[1fr_220px]">
-        <label className="relative">
-          <span className="sr-only">Search chapters, subjects or teachers</span>
-          <Search className="absolute left-3 top-3 h-4 w-4 text-slate-400" />
-          <input value={searchQuery} onChange={(event) => setSearchQuery(event.target.value)} placeholder="Search chapter, subject or teacher" className="w-full rounded-lg border border-slate-200 py-2.5 pl-9 pr-3 text-sm focus:outline-none focus:ring-2 focus:ring-violet-400" />
-        </label>
-        <label>
-          <span className="sr-only">Filter by subject</span>
-          <select value={selectedSubject} onChange={(event) => setSelectedSubject(event.target.value)} className="w-full rounded-lg border border-slate-200 bg-white px-3 py-2.5 text-sm">
-            {subjects.map((subject) => <option key={subject} value={subject}>{subject === 'all' ? 'All subjects' : subject}</option>)}
-          </select>
-        </label>
+      <div className="mb-5 flex shrink-0 items-center gap-3">
+        {selectedSubject && (
+          <button type="button" onClick={backToSubjects} className="inline-flex shrink-0 items-center gap-1.5 rounded-full border border-slate-200 bg-white px-3 py-2 text-xs font-semibold text-slate-700 shadow-sm hover:bg-slate-50">
+            <ArrowLeft size={14} /> All subjects
+          </button>
+        )}
+        <div className={`min-w-0 flex-1 ${searchOpen ? 'hidden sm:block' : ''}`}>
+          <h1 className="truncate text-xl font-bold tracking-tight sm:text-2xl">{selectedSubject || 'Study Materials'}</h1>
+          {!selectedSubject && <p className="mt-0.5 text-sm text-slate-500">Choose a subject to see the materials your teachers shared.</p>}
+        </div>
+        <div className={`ml-auto flex items-center gap-2 ${searchOpen ? 'flex-1 sm:flex-none' : ''}`}>
+          <label aria-hidden={!searchOpen} className={`relative block overflow-hidden p-0.5 transition-all duration-300 ease-out ${searchOpen ? 'w-full max-w-72 opacity-100 sm:w-72' : 'w-0 max-w-0 opacity-0'}`}>
+              <span className="sr-only">{selectedSubject ? 'Search chapters or teachers' : 'Search subjects'}</span>
+              <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />
+              <input ref={searchInputRef} tabIndex={searchOpen ? 0 : -1} value={searchQuery} onChange={(event) => setSearchQuery(event.target.value)} onKeyDown={(event) => { if (event.key === 'Escape') closeSearch(); }} placeholder={selectedSubject ? 'Search chapter or teacher' : 'Search subject'} className="w-full rounded-full border border-slate-200 bg-white py-2 pl-9 pr-3 text-sm shadow-sm focus:outline-none focus:ring-2 focus:ring-violet-400" />
+            </label>
+          <button type="button" onClick={() => (searchOpen ? closeSearch() : setSearchOpen(true))} aria-label={searchOpen ? 'Close search' : 'Open search'} title={searchOpen ? 'Close search' : 'Search'} className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full border border-slate-200 bg-white text-slate-600 shadow-sm hover:bg-slate-50 hover:text-slate-900">
+            <Motion.span key={searchOpen ? 'x' : 's'} initial={{ rotate: -90, scale: 0.6, opacity: 0 }} animate={{ rotate: 0, scale: 1, opacity: 1 }} transition={{ duration: 0.2 }} className="flex">{searchOpen ? <X size={16} /> : <Search size={16} />}</Motion.span>
+          </button>
+        </div>
       </div>
       {error && <div role="alert" className="mb-4 flex items-center gap-2 rounded-lg bg-red-50 p-3 text-sm text-red-700"><AlertCircle size={16} />{error}<button type="button" onClick={fetchMaterials} className="ml-auto shrink-0 font-semibold underline">Try again</button></div>}
       <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain pr-2 pb-2 custom-scrollbar" role="region" aria-label="Chapter materials" tabIndex={0}>
-      {loading ? <div role="status" className="flex items-center justify-center gap-2 py-16 text-sm text-slate-500"><Loader className="h-5 w-5 animate-spin" />Loading your materials...</div> : filteredChapters.length === 0 ? (
+      {loading ? <div role="status" className="flex items-center justify-center gap-2 py-16 text-sm text-slate-500"><Loader className="h-5 w-5 animate-spin" />Loading your materials...</div> : !selectedSubject ? (
+        filteredSubjects.length === 0 ? (
+          <div className="rounded-xl border border-dashed border-slate-300 bg-white p-10 text-center">
+            <BookOpen className="mx-auto mb-3 h-8 w-8 text-violet-400" />
+            <h2 className="font-semibold">{subjects.length ? 'No subjects match your search' : 'No materials shared yet'}</h2>
+            <p className="mt-1 text-sm text-slate-500">{subjects.length ? 'Try another subject name.' : 'Files from your teacher will appear here when they are shared.'}</p>
+          </div>
+        ) : (
+          <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-3">
+            {filteredSubjects.map((subject) => {
+              const tone = toneFor(subject.name);
+              return (
+                <button key={subject.name} type="button" onClick={() => openSubject(subject.name)} className="group overflow-hidden rounded-2xl border border-slate-200/80 bg-white text-left shadow-sm transition duration-200 hover:-translate-y-0.5 hover:shadow-lg hover:shadow-indigo-950/5 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-indigo-600">
+                  <div className={`h-1 bg-gradient-to-r ${tone.strip}`} />
+                  <div className="flex items-center gap-3 p-4">
+                    <div className={`flex h-11 w-11 shrink-0 items-center justify-center rounded-full ${tone.badge} text-white shadow-sm`}><GraduationCap size={22} /></div>
+                    <div className="min-w-0 flex-1">
+                      <h2 className="truncate text-base font-bold">{subject.name}</h2>
+                      <p className="mt-0.5 text-xs text-slate-500">{subject.chapters} chapter{subject.chapters === 1 ? '' : 's'} · {subject.files} file{subject.files === 1 ? '' : 's'}</p>
+                      <p className="mt-0.5 text-[11px] text-slate-400">Last updated {formatDate(subject.date)}</p>
+                    </div>
+                    <ChevronRight size={18} className="shrink-0 text-slate-400 transition group-hover:translate-x-0.5 group-hover:text-indigo-600" />
+                  </div>
+                </button>
+              );
+            })}
+          </div>
+        )
+      ) : filteredChapters.length === 0 ? (
         <div className="rounded-xl border border-dashed border-slate-300 bg-white p-10 text-center">
           <BookOpen className="mx-auto mb-3 h-8 w-8 text-violet-400" />
-          <h2 className="font-semibold">{chapters.length ? 'No chapters match your search' : 'No materials shared yet'}</h2>
-          <p className="mt-1 text-sm text-slate-500">{chapters.length ? 'Try another chapter name or choose All subjects.' : 'Files from your teacher will appear here when they are shared.'}</p>
+          <h2 className="font-semibold">No chapters match your search</h2>
+          <p className="mt-1 text-sm text-slate-500">Try another chapter or teacher name.</p>
         </div>
       ) : (
         <>
           <p className="mb-3 text-xs font-medium text-slate-500">{filteredChapters.length} chapter{filteredChapters.length === 1 ? '' : 's'}</p>
           <div className="grid grid-cols-1 items-start gap-4">
-            {filteredChapters.map((chapter) => {
+            {filteredChapters.map((chapter, chapterIndex) => {
               const expanded = expandedMaterial === chapter.key;
-              const palette = [
-                { strip: 'from-violet-500 to-indigo-500', tile: 'bg-violet-50 text-violet-600' },
-                { strip: 'from-emerald-500 to-teal-500', tile: 'bg-emerald-50 text-emerald-700' },
-                { strip: 'from-sky-500 to-blue-500', tile: 'bg-sky-50 text-sky-700' },
-                { strip: 'from-amber-400 to-orange-500', tile: 'bg-amber-50 text-amber-700' },
-              ];
-              const tone = palette[Array.from(chapter.subject).reduce((sum, letter) => sum + letter.charCodeAt(0), 0) % palette.length];
+              const tone = toneFor(chapter.subject);
               return (
                 <article key={chapter.key} className="group overflow-hidden rounded-2xl border border-slate-200/80 bg-white shadow-sm transition duration-200 hover:-translate-y-0.5 hover:shadow-lg hover:shadow-indigo-950/5">
                   <div className={`h-1 bg-gradient-to-r ${tone.strip}`} />
                   <div className="flex flex-wrap items-center gap-x-5 gap-y-3 px-4 py-3">
-                    <div className={`flex h-9 w-9 shrink-0 items-center justify-center rounded-lg ${tone.tile}`}><BookOpen size={19} /></div>
+                    <div className={`flex h-9 w-9 shrink-0 items-center justify-center rounded-full ${tone.badge} text-sm font-bold text-white shadow-sm`} aria-label={`Chapter ${chapterIndex + 1}`}>{chapterIndex + 1}</div>
                     <div className="flex min-w-0 flex-1 flex-wrap items-center gap-x-3 gap-y-1.5">
-                      <span className="inline-flex items-center gap-1.5 rounded-md bg-violet-50 px-2 py-1 text-xs font-semibold text-violet-700"><GraduationCap size={14} />{chapter.subject}</span>
                       <h2 className="min-w-0 break-words text-sm font-bold leading-snug">{chapter.chapter}</h2>
                     </div>
                     <div className="flex flex-wrap items-center gap-x-4 gap-y-1.5 text-xs text-slate-500">

@@ -3,6 +3,7 @@ const router = express.Router();
 const mongoose = require('mongoose');
 const TeachingMaterial = require('../models/TeachingMaterial');
 const StudentUser = require('../models/StudentUser');
+const AcademicYear = require('../models/AcademicYear');
 const authStudent = require('../middleware/authStudent');
 const { signAttachmentUrls } = require('../utils/s3Storage');
 
@@ -103,6 +104,20 @@ router.get('/', async (req, res, next) => {
       ]
     };
 
+    // Current session only: materials tagged with the active academic year,
+    // plus legacy untagged materials created inside that year's date range.
+    const activeYear = await AcademicYear.findOne({ schoolId: req.schoolId, isActive: true })
+      .select('_id name startDate endDate').lean();
+    if (activeYear) {
+      const legacy = { academicYearId: null };
+      if (activeYear.startDate || activeYear.endDate) {
+        legacy.createdAt = {};
+        if (activeYear.startDate) legacy.createdAt.$gte = activeYear.startDate;
+        if (activeYear.endDate) legacy.createdAt.$lte = activeYear.endDate;
+      }
+      filters.$and.push({ $or: [{ academicYearId: activeYear._id }, legacy] });
+    }
+
     // Apply optional filters
     if (subject && mongoose.Types.ObjectId.isValid(subject)) filters.subjectId = new mongoose.Types.ObjectId(subject);
     if (category) filters.category = category;
@@ -136,6 +151,7 @@ router.get('/', async (req, res, next) => {
     res.json({
       success: true,
       materials: materialsWithSignedUrls,
+      session: activeYear ? { _id: activeYear._id, name: activeYear.name } : null,
       total,
       page: parseInt(page),
       limit: parseInt(limit),
