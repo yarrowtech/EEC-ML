@@ -362,14 +362,14 @@ const DashboardContent = () => {
 
   return (
     <>
-      <div className="min-h-screen w-full bg-gray-200/80 flex relative overflow-hidden">
+      <div className="h-dvh min-h-dvh w-full bg-gray-200/80 flex relative overflow-hidden">
         <Sidebar
           activeView={effectiveView}
           isOpen={sidebarOpen}
           setIsOpen={setSidebarOpen}
         />
         <div
-          className={`flex-1 flex flex-col h-screen transition-all duration-300 ${sidebarOpen ? '' : ''
+          className={`flex-1 flex flex-col h-dvh min-w-0 transition-all duration-300 ${sidebarOpen ? '' : ''
             } ${isFullscreenView || isContainedLearningPage ? 'overflow-hidden' : 'overflow-y-auto custom-scrollbar'}`}
         >
           {/* The sticky element must be the header's wrapper (a direct child of
@@ -404,7 +404,7 @@ const DashboardContent = () => {
               </Suspense>
             </Motion.div>
             {!isFullscreenView && (
-              <div className="h-16 sm:h-18 lg:hidden shrink-0" aria-hidden="true" />
+              <div className="h-16 sm:h-18 lg:hidden shrink-0" style={{ marginBottom: 'env(safe-area-inset-bottom, 0px)' }} aria-hidden="true" />
             )}
           </main>
         </div>

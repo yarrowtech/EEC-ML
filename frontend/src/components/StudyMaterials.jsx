@@ -17,6 +17,7 @@ import {
   Download,
 } from 'lucide-react';
 import toast from 'react-hot-toast';
+import FileTypeIcon, { fileKindOf, fileKindName } from './FileTypeIcon';
 import { motion as Motion } from 'framer-motion';
 
 const StudyMaterials = () => {
@@ -78,12 +79,6 @@ const StudyMaterials = () => {
     }, 300);
     return () => clearTimeout(debounceTimer);
   }, [fetchMaterials]);
-
-  const getFileIcon = (type) => {
-    if (type?.startsWith('image/')) return ImageIcon;
-    if (type === 'application/pdf') return FileText;
-    return File;
-  };
 
   const formatFileSize = (bytes) => {
     if (!bytes) return '';
@@ -234,14 +229,8 @@ const StudyMaterials = () => {
         .join(' ').toLowerCase().includes(query));
   }, [chapters, searchQuery, selectedSubject]);
 
-  const attachmentLabel = (attachment) => {
-    const hint = `${attachment.type || ''} ${attachment.name || ''} ${String(attachment.url || '').split('?')[0]}`;
-    if (/image|\.(jpe?g|jfif|png|webp|gif)/i.test(hint)) return 'Image';
-    if (/video|\.(mp4|webm|mov)/i.test(hint)) return 'Video';
-    if (/presentation|powerpoint|\.pptx?/i.test(hint)) return 'Slides';
-    if (/pdf/i.test(hint)) return 'PDF';
-    return 'Document';
-  };
+  // Real file kind (PDF, Word document, Excel sheet, Slides, Image, …).
+  const attachmentLabel = (attachment) => fileKindName(fileKindOf(attachment));
 
   return (
     <main className="m-3 flex min-h-0 flex-1 flex-col overflow-hidden rounded-2xl border border-slate-200/80 bg-[#f8f9fd] p-4 text-slate-900 shadow-sm sm:rounded-3xl sm:px-5">
@@ -253,7 +242,7 @@ const StudyMaterials = () => {
         )}
         <div className={`min-w-0 flex-1 ${searchOpen ? 'hidden sm:block' : ''}`}>
           <h1 className="truncate text-xl font-bold tracking-tight sm:text-2xl">{selectedSubject || 'Study Materials'}</h1>
-          {!selectedSubject && <p className="mt-0.5 text-sm text-slate-500">Choose a subject to see the materials your teachers shared.</p>}
+          {/* {!selectedSubject && <p className="mt-0.5 text-sm text-slate-500">Choose a subject to see the materials your teachers shared.</p>} */}
         </div>
         <div className={`ml-auto flex items-center gap-2 ${searchOpen ? 'flex-1 sm:flex-none' : ''}`}>
           <label aria-hidden={!searchOpen} className={`relative block overflow-hidden p-0.5 transition-all duration-300 ease-out ${searchOpen ? 'w-full max-w-72 opacity-100 sm:w-72' : 'w-0 max-w-0 opacity-0'}`}>
@@ -346,19 +335,26 @@ const StudyMaterials = () => {
                           {topicOpen && <div id={topicPanelId} className="space-y-2 border-t border-indigo-100 bg-slate-50 p-3">
                             {topic.attachments.map((attachment, index) => {
                               const label = attachmentLabel(attachment);
-                              const Icon = getFileIcon(attachment.type);
+                              const kind = fileKindOf(attachment);
                               const url = getAttachmentOpenUrl(attachment);
                               const downloadUrl = getSafeAttachmentUrl(attachment.downloadUrl) || getSafeAttachmentUrl(attachment.url);
                               return (
                                 <div key={attachment.url || index} className="flex flex-wrap items-center gap-3 rounded-lg border border-slate-200 bg-white p-3">
-                                  <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-indigo-50 text-indigo-600"><Icon size={20} /></span>
+                                  {/* real file-type icon: red PDF, blue Word, green Excel, orange Slides… */}
+                                  <FileTypeIcon kind={kind} size={40} />
                                   <div className="min-w-0 flex-1">
-                                    <p className="text-sm font-semibold">{label} {index + 1}</p>
+                                    {/* the file name itself opens the file (no separate Open button) */}
+                                    {url ? (
+                                      <a href={url} target="_blank" rel="noopener noreferrer" onClick={() => trackMaterialView(attachment.materialId)} title="Open file" className="text-sm font-semibold text-violet-700 underline decoration-violet-300 decoration-2 underline-offset-4 transition hover:text-violet-900 hover:decoration-violet-700">
+                                        {label} {index + 1}
+                                      </a>
+                                    ) : (
+                                      <p className="text-sm font-semibold">{label} {index + 1} <span className="text-xs font-normal text-slate-500">(unavailable)</span></p>
+                                    )}
                                     <p className="mt-0.5 text-xs text-slate-600">Posted by: {attachment.teacher} &middot; {formatDate(attachment.date)}{attachment.size ? ` / ${formatFileSize(attachment.size)}` : ''}</p>
                                   </div>
-                                  {url ? <a href={url} target="_blank" rel="noopener noreferrer" onClick={() => trackMaterialView(attachment.materialId)} className="inline-flex items-center gap-1 rounded-lg bg-violet-600 px-3 py-2 text-xs font-semibold text-white hover:bg-violet-700">Open<ArrowUpRight size={13} /></a> : <span className="text-xs text-slate-500">Unavailable</span>}
                                   {downloadUrl && (
-                                    <a href={downloadUrl} download={attachment.name || true} target="_blank" rel="noopener noreferrer" onClick={() => trackMaterialActivity(attachment.materialId, 'download', { attachmentName: attachment.name || label })} className="inline-flex items-center gap-1 rounded-lg border border-violet-200 px-3 py-2 text-xs font-semibold text-violet-700 hover:bg-violet-50">
+                                    <a href={downloadUrl} download={attachment.name || true} target="_blank" rel="noopener noreferrer" onClick={() => trackMaterialActivity(attachment.materialId, 'download', { attachmentName: attachment.name || label })} className="inline-flex items-center gap-1 rounded-full bg-violet-700 px-3.5 py-2 text-xs font-semibold text-white shadow-sm hover:bg-violet-800">
                                       <Download size={13} /> Download
                                     </a>
                                   )}
