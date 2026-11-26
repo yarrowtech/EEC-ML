@@ -591,3 +591,15 @@ npm test -- --runInBand src/components/__tests__/StudentFamilyServices.test.jsx 
 - Open older S3 PDF and JFIF uploads: confirm a browser preview opens without an automatic download. Check the preview response uses inline disposition and the appropriate PDF/image MIME type; the separate download button should still download the file.
 - In Study Materials, confirm records from the same subject/chapter combine into one card with the attachment count, uploading teachers, and latest shared date. Expand View materials: each attachment shows a generic file-type label, uploader, date, and working Open link; filenames must not be visible. Search chapters/subjects/teachers and switch subject filters without losing available filter options. Verify the no-materials and no-search-results states.
 - On a subject chapter card, confirm the completion checkbox sits beside Start Lesson and the long subtopic introduction and "Click to mark as complete" prompt are hidden. Toggle the checkbox on and off: chapter progress should update and persist after reload without changing other chapters.
+## Student timetable class details
+
+1. Assign a room with a building and floor to a timetable period for the student's class and section.
+2. Sign in as the student, open `/student/routine`, and select the subject. Verify that the modal shows the assigned building, floor, room number, and room name if configured. Repeat in the mobile day view.
+3. Open a class with only a legacy room number and verify the number still appears, with “To be announced” for the building and floor. Open a break and verify it has no location fields.
+
+## Student exams
+
+1. Open `/student/exams` at desktop and phone widths. Verify the schedule spans the available content width, uses row dividers, and starts without summary tiles.
+2. Switch between All exams, Scheduled, and Completed. Search by subject and filter by term. Verify Clear filters restores the full list.
+3. Verify a published exam shows all subjects, including groups with more than five, with dates, times, and venues where available. Check that Download schedule opens the PDF download and Practice test opens the named subject's mock exam.
+4. Verify unpublished exams explain when subject dates and rooms will appear. Follow View results and confirm it opens the student Results page.

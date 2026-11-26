@@ -192,13 +192,13 @@ const StudentNotificationCenter = () => {
           <div className="flex items-center justify-between gap-3">
             <div>
               <p className="text-sm font-bold text-indigo-950">Smart Learning reminders</p>
-              <p className="mt-1 text-xs text-indigo-700">These stay visible until you finish the task.</p>
+              <p className="mt-1 text-xs text-indigo-700">Tryouts from your teachers, with your latest score.</p>
             </div>
             <button type="button" onClick={() => navigate('/student/smart-learning-courses')} className="rounded-lg bg-indigo-600 px-3 py-2 text-xs font-bold text-white hover:bg-indigo-700">Open</button>
           </div>
           <div className="mt-3 space-y-2">
             {smartLearningReminders.slice(0, 4).map((reminder) => (
-              <div key={reminder.id} className="rounded-xl bg-white px-3 py-2 text-xs font-semibold text-indigo-900">{reminder.kind}: {reminder.title}</div>
+              <div key={reminder.id} className="rounded-xl bg-white px-3 py-2 text-xs font-semibold text-indigo-900">{reminder.kind}: {reminder.title}{reminder.detail && <span className="ml-1 font-normal text-indigo-700">· {reminder.detail}</span>}</div>
             ))}
           </div>
         </section>

@@ -1,5 +1,6 @@
 const { buildTeacherAllocationScope, studentIsWithinTeacherScope, scopeAllowsRequest } = require('./teacherAllocationScope');
 const StudentUser = require('../models/StudentUser');
+const { getCurrentSessionName, sessionStudentClause, withSession } = require('./currentSession');
 const escape = (s) => String(s).replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 
 async function scopedStudents(req) {
@@ -15,7 +16,9 @@ async function scopedStudents(req) {
   if (req.campusId) filter.campusId = req.campusId;
   if (className) filter.grade = { $regex: '^(?:Class\\s+)?' + escape(className.replace(/^class\s+/i, '')) + '$', $options: 'i' };
   if (section) filter.section = { $regex: '^' + escape(section) + '$', $options: 'i' };
-  const students = await StudentUser.find(filter).select('_id name roll grade section attendance attendanceSummary profilePic').lean();
+  // Only this session's students (not those already set up for next session).
+  const sessionClause = sessionStudentClause(await getCurrentSessionName(schoolId));
+  const students = await StudentUser.find(withSession(filter, sessionClause)).select('_id name roll grade section attendance attendanceSummary profilePic').lean();
   return students.filter((s) => studentIsWithinTeacherScope(s, scope));
 }
 

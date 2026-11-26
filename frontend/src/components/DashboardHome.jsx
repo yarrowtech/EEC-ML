@@ -552,10 +552,10 @@ const SmartLearningReminders = ({ reminders }) => (
   <section className="flex h-full flex-col rounded-2xl bg-white p-3 shadow-sm" aria-label="Smart Learning reminders">
     <div className="-mx-3 -mt-3 mb-2 flex items-center justify-between gap-2 rounded-t-2xl border-b border-gray-100 bg-gray-100 px-3 py-2.5">
       <p className="text-sm font-bold text-[#0f172a]">Smart Learning Reminders</p>
-      <Link to="/student/smart-learning-courses" className="text-[11.5px] font-bold text-indigo-600 hover:text-indigo-700">View all →</Link>
+      <Link to="/student/practice-papers" className="text-[11.5px] font-bold text-indigo-600 hover:text-indigo-700">View all →</Link>
     </div>
     {reminders.length === 0 ? (
-      <p className="mt-2 text-xs text-[#64748b]">All caught up — nothing missed. 🎉</p>
+      <p className="mt-2 text-xs text-[#64748b]">No tryouts yet — your teachers' practice questions will show here.</p>
     ) : (
       <ul className="space-y-2">
         {reminders.slice(0, 2).map((reminder) => {
@@ -563,8 +563,8 @@ const SmartLearningReminders = ({ reminders }) => (
           const tone = onTrack
             ? { tag: 'bg-emerald-50 text-emerald-700', ring: '#10b981', btn: 'bg-emerald-600 hover:bg-emerald-700', label: 'On track', action: 'Continue' }
             : reminder.status === 'not_started' && !reminder.progress
-              ? { tag: 'bg-red-500 text-white', ring: '#6366f1', btn: 'bg-indigo-600 hover:bg-indigo-700', label: 'New', action: 'Start now' }
-              : { tag: 'bg-amber-50 text-amber-700', ring: '#f59e0b', btn: 'bg-amber-500 hover:bg-amber-600', label: 'Recommended', action: 'Revise now' };
+              ? { tag: 'bg-red-500 text-white', ring: '#6366f1', btn: 'bg-indigo-600 hover:bg-indigo-700', label: 'New', action: 'Practise now' }
+              : { tag: 'bg-amber-50 text-amber-700', ring: '#f59e0b', btn: 'bg-amber-500 hover:bg-amber-600', label: 'Practise again', action: 'Practise' };
           const heading = [reminder.subject || 'General', chapterLabel(reminder.chapter)].filter(Boolean).join(' · ');
           return (
             <li key={reminder.id} className="rounded-xl border border-gray-100 p-2.5">
@@ -576,7 +576,7 @@ const SmartLearningReminders = ({ reminders }) => (
                 <ReminderRing value={reminder.progress || 0} color={tone.ring} />
                 <div className="min-w-0 flex-1">
                   <p className="truncate text-[13px] font-semibold text-[#0f172a]">{reminder.topic || reminder.title}</p>
-                  <p className="text-[11px] text-[#64748b]">{reminder.kind} · based on learning progress</p>
+                  <p className="text-[11px] text-[#64748b]">{reminder.detail || `${reminder.kind} · based on learning progress`}</p>
                 </div>
                 <Link to={reminder.path} className={`shrink-0 rounded-full px-2.5 py-1 text-[11px] font-bold text-white transition ${tone.btn}`}>{tone.action}</Link>
               </div>

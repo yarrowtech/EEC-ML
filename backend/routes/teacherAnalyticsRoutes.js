@@ -2,6 +2,9 @@ const express = require('express');
 const router = express.Router();
 const { teacherAnalyticsCache } = require('../utils/responseCache');
 router.use(teacherAnalyticsCache.invalidateOnWrite);
+const { attachCurrentSession, withSession } = require('../utils/currentSession');
+// Only this session's students (not those already set up for next session).
+router.use(attachCurrentSession);
 const mongoose = require('mongoose');
 const authTeacher = require('../middleware/authTeacher');
 const StudentUser = require('../models/StudentUser');
@@ -75,7 +78,7 @@ const requireTeacherScope = async (req, res, { className, section, subject } = {
 // Builds a student-query filter restricted to the teacher's allocated
 // class/section pairs, honoring an optional explicit className/section
 // (already validated against scope by requireTeacherScope).
-const buildScopedStudentFilter = (schoolId, scope, { className, section } = {}) => {
+const buildScopedStudentFilter = (schoolId, scope, { className, section } = {}, sessionClause = null) => {
   const or = [];
   scope.forEach((item) => {
     if (className && String(className).replace(/^class\s+/i, '').toLowerCase() !== item.normalizedClass) return;
@@ -86,7 +89,7 @@ const buildScopedStudentFilter = (schoolId, scope, { className, section } = {}) 
       : classClause;
     or.push(clause);
   });
-  return { schoolId, ...(or.length ? { $or: or } : { _id: { $in: [] } }) };
+  return withSession({ schoolId, ...(or.length ? { $or: or } : { _id: { $in: [] } }) }, sessionClause);
 };
 
 // ── Compute composite at-risk score for a student ────────────────────────────
@@ -155,7 +158,7 @@ router.get('/at-risk', authTeacher, teacherAnalyticsCache.cache, async (req, res
     const scope = await requireTeacherScope(req, res, { className, section });
     if (!scope) return;
 
-    const filter = buildScopedStudentFilter(schoolId, scope, { className, section });
+    const filter = buildScopedStudentFilter(schoolId, scope, { className, section }, req.sessionClause);
 
     const students = await StudentUser.find(filter)
       .select('name roll grade section attendance attendanceSummary profilePic')
@@ -231,7 +234,7 @@ router.get('/class-trends', authTeacher, teacherAnalyticsCache.cache, async (req
     const scope = await requireTeacherScope(req, res, { className, section });
     if (!scope) return;
 
-    const filter = buildScopedStudentFilter(schoolId, scope, { className, section });
+    const filter = buildScopedStudentFilter(schoolId, scope, { className, section }, req.sessionClause);
 
     const students = await StudentUser.find(filter).select('_id grade section attendance attendanceSummary').lean();
     const studentIds = students.map((s) => s._id);
@@ -495,7 +498,7 @@ router.get('/class-gaps', authTeacher, teacherAnalyticsCache.cache, async (req, 
     const scope = await requireTeacherScope(req, res, { className, section, subject });
     if (!scope) return;
 
-    const filter = buildScopedStudentFilter(schoolId, scope, { className, section });
+    const filter = buildScopedStudentFilter(schoolId, scope, { className, section }, req.sessionClause);
 
     const students = await StudentUser.find(filter).select('_id name').lean();
     const studentIds = students.map((s) => s._id);
@@ -559,7 +562,7 @@ router.get('/student-mastery-all', authTeacher, teacherAnalyticsCache.cache, asy
     const scope = await requireTeacherScope(req, res, { className, section, subject });
     if (!scope) return;
 
-    const studentFilter = buildScopedStudentFilter(schoolId, scope, { className, section });
+    const studentFilter = buildScopedStudentFilter(schoolId, scope, { className, section }, req.sessionClause);
 
     const students = await StudentUser.find(studentFilter)
       .select('name roll grade section profilePic')
@@ -717,7 +720,7 @@ router.get('/term-comparison', authTeacher, teacherAnalyticsCache.cache, async (
     const scope = await requireTeacherScope(req, res, { className, section, subject });
     if (!scope) return;
 
-    const filter = buildScopedStudentFilter(schoolId, scope, { className, section });
+    const filter = buildScopedStudentFilter(schoolId, scope, { className, section }, req.sessionClause);
 
     const students = await StudentUser.find(filter).select('_id').lean();
     const studentIds = students.map((s) => s._id);
@@ -796,7 +799,7 @@ router.get('/cohort', authTeacher, teacherAnalyticsCache.cache, async (req, res)
         if (className) filter.$or = [{ grade: className }, { grade: `Class ${className}` }];
         if (sectionName) filter.section = sectionName;
 
-        const students = await StudentUser.find(filter).select('_id attendance attendanceSummary').lean();
+        const students = await StudentUser.find(withSession(filter, req.sessionClause)).select('_id attendance attendanceSummary').lean();
         const studentIds = students.map((s) => s._id);
         if (!studentIds.length) return { className, sectionName, subjectName, avgScore: null, avgAtt: null, studentCount: 0 };
 
@@ -929,7 +932,7 @@ router.get('/low-mastery', authTeacher, teacherAnalyticsCache.cache, async (req,
     // class/section pairs — previously it averaged mastery across every
     // student in the school for the subject.
     const scopedIds = await StudentUser
-      .find(buildScopedStudentFilter(schoolId, scope))
+      .find(buildScopedStudentFilter(schoolId, scope, {}, req.sessionClause))
       .distinct('_id');
     if (!scopedIds.length) return res.json({ success: true, data: [] });
 
@@ -960,7 +963,7 @@ router.get('/mastery-heatmap', authTeacher, teacherAnalyticsCache.cache, async (
     const scope = await requireTeacherScope(req, res, { className, section });
     if (!scope) return;
 
-    const filter = buildScopedStudentFilter(schoolId, scope, { className, section });
+    const filter = buildScopedStudentFilter(schoolId, scope, { className, section }, req.sessionClause);
     const rawStudents = await StudentUser.find(filter).select('_id name roll grade section profilePic').lean();
     const students = rawStudents.map((s) => ({
       ...s,
@@ -1011,7 +1014,7 @@ router.get('/improvement-trends', authTeacher, teacherAnalyticsCache.cache, asyn
     const recentStart = now - N * DAY;
     const priorStart = recentStart - N * DAY;
 
-    const filter = buildScopedStudentFilter(schoolId, scope, { className, section });
+    const filter = buildScopedStudentFilter(schoolId, scope, { className, section }, req.sessionClause);
     const students = await StudentUser.find(filter).select('_id name roll profilePic').lean();
     const studentIds = students.map((st) => st._id);
     const subjectFilter = String(req.query.subject || '').trim().toLowerCase();
@@ -1152,8 +1155,8 @@ router.get('/error-breakdown', authTeacher, teacherAnalyticsCache.cache, async (
     // one, fall back to the teacher's allocated class/section pairs rather than
     // every student in the school.
     const studentIds   = await StudentUser.distinct('_id', classId
-      ? { schoolId: req.schoolId, classId }
-      : buildScopedStudentFilter(req.schoolId, scope));
+      ? withSession({ schoolId: req.schoolId, classId }, req.sessionClause)
+      : buildScopedStudentFilter(req.schoolId, scope, {}, req.sessionClause));
     const matchFilter = { schoolId: req.schoolId, studentId: { $in: studentIds } };
     if (subject) matchFilter.subject = { $regex: subject, $options: 'i' };
 
@@ -1194,8 +1197,8 @@ router.get('/class-insights', authTeacher, teacherAnalyticsCache.cache, async (r
     // pairs — this handler aggregates mastery and forwards it to the LLM, so an
     // unscoped query would leak the whole school's data into the prompt.
     const studentFilter = classId
-      ? { schoolId: req.schoolId, classId }
-      : buildScopedStudentFilter(req.schoolId, scope);
+      ? withSession({ schoolId: req.schoolId, classId }, req.sessionClause)
+      : buildScopedStudentFilter(req.schoolId, scope, {}, req.sessionClause);
     const students = await StudentUser.find(studentFilter).select('_id name grade section').lean();
 
     const filter = { schoolId: req.schoolId, studentId: { $in: students.map((s) => s._id) } };
@@ -1261,7 +1264,7 @@ router.post('/outcome-studies', authTeacher, async (req, res) => {
 
     const scope = await requireTeacherScope(req, res, { className, section, subject });
     if (!scope) return;
-    const students = await StudentUser.find(buildScopedStudentFilter(schoolId, scope, { className, section }))
+    const students = await StudentUser.find(buildScopedStudentFilter(schoolId, scope, { className, section }, req.sessionClause))
       .select('_id').lean();
     if (!students.length) return res.status(422).json({ error: 'No students in scope for this class/section' });
 

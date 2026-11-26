@@ -31,48 +31,52 @@ const LEARNING_HUB_VIEWS = [
 const MENU_ITEMS = [
   { id: 'dashboard', name: 'Dashboard', icon: Home },
   {
-    id: 'learn', name: 'Learn', icon: GraduationCap,
+    id: 'learn', name: 'Academics', icon: GraduationCap,
     children: [
+      { id: 'smart-learning-courses', name: 'My Subjects', icon: GraduationCap, matches: ['smart-learning-courses', 'smart-learning-courses-reference'] },
       { id: 'learning', name: 'AI Tutor', icon: Brain, matches: ['learning', 'smart-learning', 'smart-learning-tutor'] },
-      { id: 'smart-learning-courses', name: 'Subjects', icon: GraduationCap, matches: ['smart-learning-courses', 'smart-learning-courses-reference'] },
-      { id: 'practice-papers', name: 'Practice', icon: ClipboardCheck },
-      { id: 'study-materials', name: 'Materials', icon: BookOpen },
+      { id: 'study-materials', name: 'Study Materials', icon: BookOpen },
       { id: 'assignments', name: 'Assignments', icon: FileText },
+      { id: 'practice-papers', name: 'Practice', icon: ClipboardCheck },
       { id: 'assignments-lab', name: 'Virtual Lab', icon: FlaskConical },
-      { id: 'assignments-journal', name: 'Journal', icon: NotebookPen },
-      { id: 'assignments-academic-alcove', name: 'Community Wall', icon: Target },
+      { id: 'assignments-journal', name: 'Learning Journal', icon: NotebookPen },
       { id: 'results', name: 'Results', icon: BarChart3 },
-      //{ id: 'error-analysis', name: 'Error Analysis', icon: ClipboardCheck },
     ],
   },
   {
-    id: 'school', name: 'School', icon: BookOpen,
+    id: 'school', name: 'School Life', icon: BookOpen,
     children: [
-      { id: 'routine', name: 'Timetable', icon: Calendar },
+      { id: 'routine', name: 'Class Timetable', icon: Calendar },
       { id: 'attendance', name: 'Attendance', icon: Users },
-      { id: 'exams', name: 'Exams', icon: FileText },
+      { id: 'exams', name: 'Examinations', icon: FileText },
       { id: 'admit-cards', name: 'Admit Cards', icon: FileBadge },
       { id: 'lesson-plan-status', name: 'Syllabus', icon: BookOpen },
-      { id: 'holidays', name: 'Holidays', icon: CalendarClock },
+      { id: 'holidays', name: 'Holidays & Events', icon: CalendarClock },
       { id: 'noticeboard', name: 'Notice Board', icon: Bell },
     ],
   },
   {
-    id: 'messages', name: 'Messages', icon: MessageSquare,
+    id: 'messages', name: 'Communication', icon: MessageSquare,
     children: [
-      { id: 'chat', name: 'Chat', icon: MessageCircle },
+      { id: 'chat', name: 'Messages & Chat', icon: MessageCircle },
       { id: 'teacherfeedback', name: 'Teacher Feedback', icon: Star },
-      { id: 'meetings', name: 'Parent Meetings', icon: Video },
-      { id: 'excuse-letter', name: 'Excuse Letter', icon: FileText },
-      { id: 'complaints', name: 'Complaints', icon: AlertOctagon },
+      { id: 'meetings', name: 'Parent-Teacher Meetings', icon: Video },
+      { id: 'excuse-letter', name: 'Leave / Excuse Letters', icon: FileText },
+      { id: 'complaints', name: 'Complaints & Support', icon: AlertOctagon },
     ],
   },
   {
-    id: 'wellbeing', name: 'Wellbeing', icon: Heart,
+    id: 'wellbeing', name: 'Wellbeing & Development', icon: Heart,
     children: [
       { id: 'wellbeing', name: 'Emotional Wellbeing', icon: Heart },
-      { id: 'health', name: 'Health Record', icon: Activity },
-      { id: 'achievements', name: 'Achievements', icon: Trophy },
+      { id: 'health', name: 'Health Records', icon: Activity },
+      { id: 'achievements', name: 'Achievements & Awards', icon: Trophy },
+    ],
+  },
+  {
+    id: 'community', name: 'Community', icon: Target,
+    children: [
+      { id: 'assignments-academic-alcove', name: 'Community Wall', icon: Target },
     ],
   },
 ];
@@ -383,13 +387,12 @@ const Sidebar = ({ activeView, isOpen, setIsOpen }) => {
                         const ChildIcon = child.icon;
                         const childActive = activeView === child.id || Boolean(child.matches?.includes(activeView));
                         const childNotificationCount = getModuleCount(child.id);
-                        const isSubjectsItem = child.id === 'smart-learning-courses';
                         return (
                           <button
                             key={child.id}
                             aria-current={childActive ? 'page' : undefined}
                             onClick={(e) => { e.stopPropagation(); handleNavigation(child.id); }}
-                            className={`group flex w-full items-center gap-2.5 px-2.5 text-left text-[13px] transition-all duration-200 ${isSubjectsItem ? `my-1 rounded-2xl border py-2.5 ${childActive ? 'border-violet-200 shadow-sm' : 'border-transparent'}` : 'rounded-lg py-1.5'} ${childActive
+                            className={`group flex w-full items-center gap-2.5 px-2.5 text-left text-[13px] transition-all duration-200 rounded-lg py-1.5 ${childActive
                                 ? 'bg-violet-50 font-semibold text-violet-700'
                                 : 'text-slate-500 hover:translate-x-0.5 hover:bg-violet-50/50 hover:text-violet-700'
                               }`}

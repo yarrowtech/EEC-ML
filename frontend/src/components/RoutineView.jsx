@@ -1,6 +1,6 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { jsPDF } from 'jspdf';
-import { Calendar, Clock, MapPin, BookOpen, AlertCircle, RefreshCcw, Download } from 'lucide-react';
+import { Calendar, Clock, MapPin, BookOpen, AlertCircle, RefreshCcw, Download, X, User, Hash, CalendarDays, Building2, Layers } from 'lucide-react';
 import { useStudentDashboard } from './StudentDashboardContext';
 import { clearCacheEntry, readCacheEntry, writeCacheEntry } from '../utils/studentCache';
 import { fetchCachedJson } from '../utils/studentApiCache';
@@ -184,7 +184,10 @@ const normalizeTimetablePayload = (payload) => {
           entry.teacher?.name ||
           entry.teacherName ||
           entry.instructor),
-      room: entry.isBreak ? '' : (entry.room || entry.location || 'TBD'),
+      room: entry.isBreak ? '' : (entry.roomId?.roomNumber || entry.room || entry.location),
+      roomLabel: entry.roomLabel || entry.roomId?.label,
+      building: entry.building || entry.roomId?.buildingId?.name || entry.roomId?.floorId?.buildingId?.name,
+      floor: entry.floor || entry.roomId?.floorId?.name || entry.roomId?.floorId?.floorCode,
       className: timetable?.classId?.name || entry.className || entry.class,
       sectionName: timetable?.sectionId?.name || entry.sectionName || entry.section,
       isBreak: Boolean(entry.isBreak),
@@ -227,6 +230,13 @@ const RoutineView = () => {
   const [error, setError] = useState(null);
   const [lastUpdated, setLastUpdated] = useState(null);
   const [silentRefreshing, setSilentRefreshing] = useState(false);
+  const [openSession, setOpenSession] = useState(null); // { session, day, timeLabel } shown in the details modal
+  useEffect(() => {
+    if (!openSession) return undefined;
+    const onKey = (e) => { if (e.key === 'Escape') setOpenSession(null); };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, [openSession]);
 
   const fetchSchedule = useCallback(async ({ silent = false, forceRefresh = false } = {}) => {
     try {
@@ -751,210 +761,135 @@ const RoutineView = () => {
 
   if (loading) {
     return (
-      <div className="min-h-screen bg-slate-50 px-4 pt-4 pb-4 sm:p-6 space-y-4">
-        <div className="h-28 bg-white rounded-2xl shadow-sm animate-pulse" />
-        <div className="h-52 bg-white rounded-2xl shadow-sm animate-pulse" />
+      <div className="m-3 flex min-h-0 flex-1 flex-col gap-3">
+        <div className="h-16 rounded-2xl bg-white shadow-sm animate-pulse" />
+        <div className="min-h-[300px] flex-1 rounded-2xl bg-white shadow-sm animate-pulse" />
       </div>
     );
   }
 
+  // Same look as the teacher timetable: one colour per subject (cells + legend),
+  // a colour per weekday header, today highlighted.
+  const SUBJECT_TONES = [
+    { cell: 'bg-[#dcf5e6] border-l-[#16a34a]', dot: 'bg-[#16a34a]', text: 'text-[#15803d]' },
+    { cell: 'bg-[#dbe7fe] border-l-[#2563eb]', dot: 'bg-[#2563eb]', text: 'text-[#1d4ed8]' },
+    { cell: 'bg-[#ece2fe] border-l-[#9333ea]', dot: 'bg-[#9333ea]', text: 'text-[#7e22ce]' },
+    { cell: 'bg-[#fdf0d2] border-l-[#f59e0b]', dot: 'bg-[#f59e0b]', text: 'text-[#b45309]' },
+    { cell: 'bg-[#fde0e0] border-l-[#ef4444]', dot: 'bg-[#ef4444]', text: 'text-[#b91c1c]' },
+    { cell: 'bg-[#d5f3f1] border-l-[#14b8a6]', dot: 'bg-[#14b8a6]', text: 'text-[#0f766e]' },
+    { cell: 'bg-[#fce7f3] border-l-[#ec4899]', dot: 'bg-[#ec4899]', text: 'text-[#be185d]' },
+  ];
+  const DAY_TONES = ['#2563eb', '#9333ea', '#16a34a', '#f59e0b', '#ef4444', '#14b8a6', '#ec4899'];
+  const subjectOf = (session) => session?.course || session?.subject || session?.title || 'Class';
+  const uniqueSubjects = [];
+  dayOrder.forEach((day) => (filteredSchedule[day] || []).forEach((s) => {
+    if (!isBreakSession(s) && !uniqueSubjects.includes(subjectOf(s))) uniqueSubjects.push(subjectOf(s));
+  }));
+  const toneFor = (subject) => SUBJECT_TONES[Math.max(0, uniqueSubjects.indexOf(subject)) % SUBJECT_TONES.length];
+  // Mon–Sat always; Sunday only if something is scheduled on it.
+  const visibleDays = dayOrder.filter((day) => day !== 'sunday' || (filteredSchedule.sunday || []).length > 0);
+
+
   return (
-    <div className="min-h-screen bg-slate-50 px-4 pt-4 pb-4 sm:p-6 space-y-6">
-      <div className="relative overflow-hidden rounded-2xl bg-linear-to-br from-indigo-500 via-indigo-600 to-purple-600 p-5 shadow-lg shadow-indigo-200/60 sm:p-6">
-        <div className="pointer-events-none absolute -right-8 -top-8 h-36 w-36 rounded-full bg-white/10" />
-        <div className="pointer-events-none absolute -bottom-10 left-1/3 h-28 w-28 rounded-full bg-white/10" />
-        <div className="relative flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
+    // Edge-to-edge card (same frame as Materials / Practice); the week fits on screen.
+    <div className="m-3 flex min-h-0 flex-1 flex-col overflow-hidden rounded-2xl border border-slate-200/80 bg-white text-[#0f1b3d] shadow-sm sm:rounded-3xl">
+      {/* header */}
+      <header className="flex shrink-0 flex-wrap items-center gap-3 border-b border-slate-200 px-4 py-3 sm:px-5">
+        <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-[#2563eb] text-white shadow-sm">
+          <Calendar size={19} />
+        </span>
+        <div className="min-w-0 flex-1">
+          <h1 className="text-lg font-bold leading-tight">Class Timetable</h1>
+        </div>
+        <span className="hidden text-[11px] text-slate-400 md:inline">
+          {lastUpdated ? `Updated ${lastUpdated.toLocaleString(undefined, { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' })}` : 'Syncing…'}
+        </span>
+        <button
+          type="button"
+          onClick={() => fetchSchedule({ silent: true, forceRefresh: true })}
+          disabled={silentRefreshing}
+          className="inline-flex items-center gap-1.5 rounded-full border border-slate-200 bg-white px-3 py-1.5 text-xs font-semibold text-slate-700 shadow-sm transition hover:bg-slate-50 disabled:cursor-wait disabled:opacity-60"
+        >
+          <RefreshCcw className={`h-3.5 w-3.5 ${silentRefreshing ? 'animate-spin' : ''}`} /> {silentRefreshing ? 'Refreshing' : 'Refresh'}
+        </button>
+        <button
+          type="button"
+          onClick={downloadPDF}
+          disabled={totalSessions === 0}
+          className="inline-flex items-center gap-1.5 rounded-full bg-[#2563eb] px-3 py-1.5 text-xs font-semibold text-white shadow-[0_4px_12px_rgba(37,99,235,0.3)] transition hover:bg-[#1d4ed8] disabled:cursor-not-allowed disabled:opacity-50"
+        >
+          <Download className="h-3.5 w-3.5" /> Download PDF
+        </button>
+      </header>
+
+      {error && (
+        <div className="flex shrink-0 items-center gap-2 border-b border-red-100 bg-red-50 px-5 py-2 text-sm text-red-700">
+          <AlertCircle size={16} className="shrink-0" /> {error}
+        </div>
+      )}
+
+      {totalSessions === 0 ? (
+        <div className="flex flex-1 items-center justify-center p-8 text-center">
           <div>
-            <div className="mb-2 flex items-center gap-3">
-              <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl bg-white/20 backdrop-blur-sm">
-                <Calendar className="h-5.5 w-5.5 text-white" />
-              </div>
-              <h1 className="text-xl font-bold text-white sm:text-2xl">Class Routine</h1>
-            </div>
-            <p className="flex flex-wrap items-center gap-x-2 gap-y-1 text-sm text-white/80">
-              {/* <span>Student view only</span> */}
-              {(profile?.academicYear || profile?.session) && (
-                <span className="rounded-full bg-white/15 px-2 py-0.5 text-xs font-semibold">
-                  Session {profile?.academicYear || profile?.session}
-                </span>
-              )}
-              {(profile?.className || profile?.grade) && (
-                <span className="rounded-full bg-white/15 px-2 py-0.5 text-xs font-semibold">
-                  Class {profile?.className || profile?.grade}
-                </span>
-              )}
-              {(profile?.sectionName || profile?.section) && (
-                <span className="rounded-full bg-white/15 px-2 py-0.5 text-xs font-semibold">
-                  Section {profile?.sectionName || profile?.section}
-                </span>
-              )}
-            </p>
-          </div>
-          <div className="flex flex-col items-start gap-2 md:items-end md:text-right">
-            <div className="flex flex-wrap items-center gap-x-3 gap-y-0.5 text-sm text-white/85">
-              <p>
-                Total: <span className="font-bold text-white">{totalSessions} sessions</span>
-              </p>
-              <p className="text-xs text-white/60">
-                {lastUpdated
-                  ? `Updated ${lastUpdated.toLocaleString(undefined, {
-                      month: 'short',
-                      day: 'numeric',
-                      hour: 'numeric',
-                      minute: '2-digit',
-                    })}`
-                  : 'Waiting for first sync...'}
-              </p>
-            </div>
-            <div className="flex items-center gap-2">
-              <button
-                type="button"
-                onClick={downloadPDF}
-                disabled={totalSessions === 0}
-                className="inline-flex items-center gap-1.5 rounded-full bg-white px-3 py-1.5 text-xs font-semibold text-indigo-700 shadow-sm transition-colors hover:bg-indigo-50 disabled:cursor-not-allowed disabled:opacity-40"
-              >
-                <Download className="h-3.5 w-3.5" />
-                Download PDF
-              </button>
-              <button
-                type="button"
-                onClick={() => fetchSchedule({ silent: true, forceRefresh: true })}
-                disabled={silentRefreshing}
-                className="inline-flex items-center gap-2 rounded-full border border-white/30 bg-white/10 px-3 py-1.5 text-xs font-semibold text-white transition-colors hover:bg-white/20 disabled:cursor-not-allowed disabled:opacity-60"
-              >
-                <RefreshCcw
-                  className={`h-3.5 w-3.5 ${silentRefreshing ? 'animate-spin' : ''}`}
-                />
-                {silentRefreshing ? 'Refreshing' : 'Refresh'}
-              </button>
-            </div>
+            <p className="text-lg font-semibold text-slate-800">No timetable yet</p>
+            <p className="mt-2 text-sm text-slate-500">Your school hasn't set a timetable for your class and section yet.</p>
           </div>
         </div>
-        {error && (
-          <div className="relative mt-4 flex items-center rounded-lg border border-white/30 bg-white/15 px-3 py-2 text-sm text-white">
-            <AlertCircle size={16} className="mr-2 shrink-0" />
-            {error}
-          </div>
-        )}
-      </div>
-
-      <div className="bg-white rounded-2xl shadow-sm border border-slate-200 p-4">
-        {totalSessions === 0 ? (
-          <div className="rounded-xl border border-dashed border-slate-300 bg-slate-50 p-8 text-center">
-            <p className="text-lg font-semibold text-slate-800">No routine assigned yet</p>
-            <p className="text-sm text-slate-500 mt-2">
-              Please ask your school admin to assign timetable for your class and section.
-            </p>
-          </div>
-        ) : (
-          <>
-            {/* Mobile / tablet: day tabs + session cards */}
-            <div className="sm:hidden">
-              <div className="flex overflow-x-auto gap-2 mb-4 pb-1 -mx-4 px-4 scrollbar-hide">
-                {dayOrder.map((day) => {
-                  const isToday = day === todayKey;
-                  const active = selectedDay === day;
+      ) : (
+        <>
+          {/* Phone: day tabs + that day's classes */}
+          <div className="min-h-0 flex-1 overflow-y-auto p-3 sm:hidden">
+            <div className="-mx-3 mb-3 flex gap-2 overflow-x-auto px-3 pb-1">
+              {visibleDays.map((day, i) => {
+                const active = selectedDay === day;
+                return (
+                  <button
+                    key={day}
+                    type="button"
+                    onClick={() => setSelectedDay(day)}
+                    className="shrink-0 rounded-full px-4 py-2 text-sm font-semibold transition"
+                    style={active ? { backgroundColor: DAY_TONES[i], color: '#fff' } : { backgroundColor: `${DAY_TONES[i]}14`, color: DAY_TONES[i] }}
+                  >
+                    {dayLabels[day].slice(0, 3)}{day === todayKey ? ' •' : ''}
+                  </button>
+                );
+              })}
+            </div>
+            {daySessions.length ? (
+              <ul className="space-y-2">
+                {daySessions.map((session, index) => {
+                  const isBreak = isBreakSession(session);
+                  const tone = toneFor(subjectOf(session));
+                  const timeLabel = session.time || `${session.startTime || '--'}${session.endTime ? ` - ${session.endTime}` : ''}`;
                   return (
-                    <button
-                      key={day}
-                      onClick={() => setSelectedDay(day)}
-                      className={`shrink-0 flex items-center gap-1.5 px-4 py-2 rounded-xl text-sm font-semibold transition-all active:scale-95 ${
-                        active
-                          ? 'bg-linear-to-r from-indigo-500 to-purple-600 text-white shadow-md shadow-indigo-200'
-                          : 'bg-slate-100 text-slate-600'
-                      }`}
-                    >
-                      {dayLabels[day].slice(0, 3)}
-                      {isToday && <span className={`h-1.5 w-1.5 rounded-full ${active ? 'bg-white' : 'bg-indigo-500'}`} />}
-                      {filteredSchedule[day]?.length ? (
-                        <span className={`text-[10px] rounded-full px-1.5 py-0.5 ${
-                          active ? 'bg-white/25 text-white' : 'bg-slate-300 text-slate-600'
-                        }`}>
-                          {filteredSchedule[day].length}
-                        </span>
-                      ) : null}
-                    </button>
+                    <li key={session.id || `${selectedDay}-${index}`} onClick={() => setOpenSession({ session, day: selectedDay, timeLabel })} className={`cursor-pointer rounded-lg border-l-[3px] px-3 py-2 ${isBreak ? 'border-l-amber-400 bg-amber-50' : tone.cell}`}>
+                      <p className="flex items-center gap-1.5 text-[11px] text-slate-500"><Clock size={11} /> {timeLabel}</p>
+                      <p className={`mt-0.5 text-sm font-bold ${isBreak ? 'text-amber-800' : tone.text}`}>{subjectOf(session)}</p>
+                      {!isBreak && (
+                        <p className="text-xs text-slate-600">{[session.instructor || session.teacher, session.room || session.location ? `Rm ${session.room || session.location}` : null].filter(Boolean).join(' · ') || 'TBA'}</p>
+                      )}
+                    </li>
                   );
                 })}
-              </div>
+              </ul>
+            ) : (
+              <p className="rounded-lg bg-slate-50 p-6 text-center text-sm text-slate-500">No classes on {dayLabels[selectedDay]}.</p>
+            )}
+          </div>
 
-              {daySessions.length > 0 ? (
-                <div className="space-y-3">
-                  {daySessions.map((session, index) => {
-                    const isBreak = isBreakSession(session);
-                    const style = getSubjectStyle(session.course || session.subject || session.title);
-                    const timeLabel = session.time || `${session.startTime || '--'}${session.endTime ? ` - ${session.endTime}` : ''}`;
-                    return (
-                      <div
-                        key={session.id || `${selectedDay}-${index}`}
-                        className={`rounded-2xl border p-4 shadow-sm transition-transform active:scale-[0.99] ${
-                          isBreak ? 'border-amber-200 bg-amber-50' : `${style.border} ${style.bg}`
-                        }`}
-                      >
-                        <div className="flex items-center justify-between mb-2">
-                          <span className={`text-[10px] uppercase font-semibold tracking-wider ${isBreak ? 'text-amber-600' : style.text}`}>
-                            {session.type || (isBreak ? 'Break' : `Period ${session.period || index + 1}`)}
-                          </span>
-                          <span className={`inline-flex items-center gap-1 text-xs font-medium px-2 py-0.5 rounded-full ${
-                            isBreak ? 'bg-amber-100 text-amber-700' : style.chip
-                          }`}>
-                            <Clock size={11} />
-                            {timeLabel}
-                          </span>
-                        </div>
-                        <h3 className={`text-base font-bold flex items-center gap-2 ${isBreak ? 'text-amber-800' : 'text-slate-900'}`}>
-                          <BookOpen size={15} className={isBreak ? 'text-amber-500' : style.text} />
-                          {session.course || session.subject || session.title || 'Class'}
-                        </h3>
-                        {!isBreak && (
-                          <div className="flex flex-wrap items-center gap-x-3 gap-y-0.5 mt-1.5">
-                            {(session.instructor || session.teacher) && (
-                              <span className="text-xs text-slate-500">
-                                {session.instructor || session.teacher}
-                              </span>
-                            )}
-                            {(session.room || session.location) && (
-                              <span className={`inline-flex items-center gap-1 text-xs ${style.text}`}>
-                                <MapPin size={11} />
-                                {session.room || session.location}
-                              </span>
-                            )}
-                          </div>
-                        )}
-                      </div>
-                    );
-                  })}
-                </div>
-              ) : (
-                <div className="rounded-xl border border-slate-200 bg-slate-50 p-6 text-center text-slate-600">
-                  No classes scheduled for {dayLabels[selectedDay]}. Please select another day.
-                </div>
-              )}
-            </div>
-
-            {/* Desktop / large tablet: weekly grid */}
-            <div className="hidden sm:block overflow-x-auto rounded-xl border border-slate-200">
-              <table className="min-w-[900px] w-full border-collapse">
-                <thead>
-                  <tr className="bg-slate-100">
-                    <th className="text-center text-sm font-semibold text-slate-700 px-4 py-3 border-b border-slate-200">
-                      Time
-                    </th>
-                    {dayOrder.map((day) => {
+          {/* Desktop: the whole week, filling the card */}
+          <div className="hidden min-h-0 flex-1 flex-col sm:flex">
+            <div className="min-h-0 flex-1 overflow-auto">
+              <table className="h-full w-full min-w-[820px] table-fixed border-collapse text-[12px]">
+                <thead className="sticky top-0 z-10">
+                  <tr>
+                    <th className="w-[170px] whitespace-nowrap border-b border-r border-slate-200 bg-[#f8fafc] px-3 py-2 text-left font-semibold text-[#475569]">Time</th>
+                    {visibleDays.map((day, i) => {
                       const isToday = day === todayKey;
                       return (
-                        <th
-                          key={`head-${day}`}
-                          className={`text-left text-sm font-semibold px-4 py-3 border-b border-slate-200 ${
-                            isToday ? 'bg-indigo-600 text-white' : 'text-slate-700'
-                          }`}
-                        >
-                          <span className="inline-flex items-center gap-1.5">
-                            {dayLabels[day]}
-                            {isToday && (
-                              <span className="rounded-full bg-white/25 px-1.5 py-0.5 text-[10px] font-bold">Today</span>
-                            )}
-                          </span>
+                        <th key={day} className="border-b border-r border-slate-200 px-1.5 py-2 last:border-r-0" style={{ backgroundColor: isToday ? DAY_TONES[i] : '#ffffff', boxShadow: isToday ? undefined : `inset 0 -2px 0 ${DAY_TONES[i]}` }}>
+                          <span className="text-[12px] font-bold" style={{ color: isToday ? '#fff' : DAY_TONES[i] }}>{dayLabels[day]}</span>
+                          {isToday && <span className="ml-1 rounded-full bg-white/25 px-1.5 text-[9px] font-semibold text-white">Today</span>}
                         </th>
                       );
                     })}
@@ -962,42 +897,31 @@ const RoutineView = () => {
                 </thead>
                 <tbody>
                   {weeklySlots.map((slot) => (
-                    <tr key={`row-${slot.timeLabel}`} className="align-center">
-                      <td className="px-4 py-3 text-sm font-medium text-slate-700 border-b border-slate-100 bg-slate-50">
-                        {slot.timeLabel}
+                    <tr key={slot.timeLabel}>
+                      <td className="border-b border-r border-slate-200 bg-[#fbfcfe] px-3 py-1 font-medium">
+                        <span className="flex items-center gap-1.5 whitespace-nowrap"><Clock size={12} className="shrink-0 text-[#94a3b8]" />{slot.timeLabel}</span>
                       </td>
-                      {dayOrder.map((day) => {
+                      {visibleDays.map((day) => {
                         const session = weeklyMatrix[day]?.[slot.timeLabel];
-                        const isToday = day === todayKey;
-                        const style = session ? getSubjectStyle(session.course || session.subject || session.title) : null;
+                        const todayCol = day === todayKey ? 'bg-[#f5f9ff]' : '';
+                        if (!session) return <td key={day} className={`border-b border-r border-slate-200 text-center text-[#cbd5e1] last:border-r-0 ${todayCol}`}>–</td>;
+                        const isBreak = isBreakSession(session);
+                        const tone = toneFor(subjectOf(session));
                         return (
-                          <td
-                            key={`cell-${day}-${slot.timeLabel}`}
-                            className={`px-3 py-3 border-b border-slate-100 ${isToday ? 'bg-indigo-50/40' : ''}`}
-                          >
-                            {session ? (
-                              <div
-                                className={`rounded-lg border px-3 py-2 ${
-                                  isBreakSession(session)
-                                    ? 'border-amber-200 bg-amber-50'
-                                    : `${style.border} ${style.bg}`
-                                }`}
-                              >
-                                <p className={`text-sm font-semibold ${isBreakSession(session) ? 'text-amber-800' : 'text-slate-900'}`}>
-                                  {session.course || session.subject || session.title || 'Class'}
+                          <td key={day} className={`border-b border-r border-slate-200 p-1 last:border-r-0 ${todayCol}`}>
+                            <button
+                              type="button"
+                              onClick={() => setOpenSession({ session, day, timeLabel: slot.timeLabel })}
+                              title="View class details"
+                              className={`block h-full w-full rounded-md border-l-[3px] px-2 py-1 text-left transition hover:shadow-md hover:brightness-95 ${isBreak ? 'border-l-amber-400 bg-amber-50' : tone.cell}`}
+                            >
+                              <p className={`truncate font-bold ${isBreak ? 'text-amber-800' : tone.text}`}>{subjectOf(session)}</p>
+                              {!isBreak && (
+                                <p className="truncate text-[11px] text-[#475569]">
+                                  {[session.instructor || session.teacher, session.room || session.location ? `Rm ${session.room || session.location}` : null].filter(Boolean).join(' · ') || 'TBA'}
                                 </p>
-                                {!isBreakSession(session) && (
-                                  <p className={`text-xs mt-1 ${style.text}`}>
-                                    {session.instructor || session.teacher || 'TBA'}
-                                    {(session.room || session.location) ? ` | ${session.room || session.location}` : ''}
-                                  </p>
-                                )}
-                              </div>
-                            ) : (
-                              <div className="rounded-lg border border-dashed border-slate-200 px-3 py-2 text-xs text-slate-400 text-center">
-                                --
-                              </div>
-                            )}
+                              )}
+                            </button>
                           </td>
                         );
                       })}
@@ -1006,9 +930,64 @@ const RoutineView = () => {
                 </tbody>
               </table>
             </div>
-          </>
-        )}
-      </div>
+            {/* legend */}
+            <div className="flex shrink-0 flex-wrap items-center gap-x-4 gap-y-1.5 border-t border-slate-200 px-5 py-2.5 text-[12px] text-[#475569]">
+              {uniqueSubjects.map((subject) => (
+                <span key={subject} className="flex items-center gap-1.5"><span className={`h-2.5 w-2.5 rounded-full ${toneFor(subject).dot}`} />{subject}</span>
+              ))}
+              <span className="flex items-center gap-1.5"><span className="h-2.5 w-2.5 rounded-full bg-amber-400" />Break</span>
+              <span className="flex items-center gap-1.5"><span className="h-2.5 w-2.5 rounded-full bg-[#cbd5e1]" />Free</span>
+            </div>
+          </div>
+        </>
+      )}
+
+      {/* Class details modal */}
+      {openSession && (() => {
+        const { session, day, timeLabel } = openSession;
+        const isBreak = isBreakSession(session);
+        const tone = toneFor(subjectOf(session));
+        const dayIndex = visibleDays.indexOf(day);
+        const accent = DAY_TONES[dayIndex >= 0 ? dayIndex : 0];
+        const details = [
+          { label: 'Day', value: dayLabels[day] + (day === todayKey ? ' (Today)' : ''), icon: CalendarDays },
+          { label: 'Time', value: timeLabel || '—', icon: Clock },
+          { label: 'Period', value: isBreak ? 'Break' : (session.period ? `Period ${session.period}` : '—'), icon: Hash },
+          !isBreak && { label: 'Teacher', value: session.instructor || session.teacher || 'To be announced', icon: User },
+          !isBreak && { label: 'Building', value: session.building || 'To be announced', icon: Building2 },
+          !isBreak && { label: 'Floor', value: session.floor || 'To be announced', icon: Layers },
+          !isBreak && { label: 'Room number', value: session.room || session.location || 'To be announced', icon: MapPin },
+          !isBreak && session.roomLabel && session.roomLabel !== session.room && { label: 'Room name', value: session.roomLabel, icon: MapPin },
+          (profile?.className || profile?.grade) && { label: 'Class', value: [profile?.className || profile?.grade, profile?.sectionName || profile?.section].filter(Boolean).join(' - '), icon: BookOpen },
+        ].filter(Boolean);
+        return (
+          <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/50 p-4 backdrop-blur-sm" role="presentation" onMouseDown={(e) => e.target === e.currentTarget && setOpenSession(null)}>
+            <div role="dialog" aria-modal="true" aria-label={`${subjectOf(session)} class details`} className="max-h-[calc(100dvh-2rem)] w-full max-w-sm overflow-y-auto rounded-2xl bg-white shadow-2xl">
+              <div className={`flex items-start justify-between gap-3 border-l-4 px-4 py-3 ${isBreak ? 'border-l-amber-400 bg-amber-50' : tone.cell}`}>
+                <div className="min-w-0">
+                  <p className="text-[11px] font-semibold uppercase tracking-wide" style={{ color: accent }}>{isBreak ? 'Break' : 'Class details'}</p>
+                  <h3 className={`truncate text-lg font-bold ${isBreak ? 'text-amber-800' : tone.text}`}>{subjectOf(session)}</h3>
+                </div>
+                <button type="button" onClick={() => setOpenSession(null)} aria-label="Close" className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full text-[#475569] hover:bg-white/70"><X size={16} /></button>
+              </div>
+              <div className="grid grid-cols-2 gap-2 p-4">
+                {details.map(({ label, value, icon: Icon }) => (
+                  <div key={label} className="flex items-start gap-2 rounded-xl border border-slate-200 px-3 py-2">
+                    <Icon size={15} className="mt-0.5 shrink-0 text-slate-400" />
+                    <div className="min-w-0">
+                      <p className="text-[11px] text-slate-500">{label}</p>
+                      <p className="break-words text-[13px] font-semibold text-[#0f1b3d]">{value}</p>
+                    </div>
+                  </div>
+                ))}
+              </div>
+              {(session.notes || session.description) && (
+                <p className="border-t border-slate-100 px-4 py-3 text-xs text-slate-600">{session.notes || session.description}</p>
+              )}
+            </div>
+          </div>
+        );
+      })()}
     </div>
   );
 };

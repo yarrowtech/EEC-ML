@@ -210,7 +210,7 @@ const DashboardContent = () => {
   const isTopicReaderPath = location.pathname.includes('/smart-learning-courses/subject/') && location.pathname.includes('/topic/') && !location.pathname.includes('/assessment/');
   const isSubjectChaptersPath = /\/smart-learning-courses\/subject\/[^/]+\/?$/.test(location.pathname);
   const isSubjectsOverviewPath = /\/student\/smart-learning-courses\/?$/.test(location.pathname);
-  const isContainedLearningPage = isSubjectsOverviewPath || /\/student\/(study-materials|practice-papers)\/?$/.test(location.pathname);
+  const isContainedLearningPage = isSubjectsOverviewPath || /\/student\/(study-materials|practice-papers|routine)\/?$/.test(location.pathname);
   const isAiTutorPath = /\/student\/(learning|smart-learning|smart-learning-tutor)\/?$/.test(location.pathname);
   // Community Wall has its own page header — hide the portal header there.
   const isCommunityWallPath = /\/student\/assignments-academic-alcove\/?$/.test(location.pathname);

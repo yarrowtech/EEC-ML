@@ -1,4 +1,5 @@
 const express = require('express');
+const { sessionStudentClause, withSession } = require('../utils/currentSession');
 const mongoose = require('mongoose');
 const router = express.Router();
 const { teacherAnalyticsCache } = require('../utils/responseCache');
@@ -76,12 +77,15 @@ const loadVisibleStudents = async (req, res, { grade, section, subject, academic
   if (req.campusId) studentFilter.campusId = req.campusId;
   applyGradeAndSectionFilter(studentFilter, { grade, section });
 
-  if (academicYearId && mongoose.isValidObjectId(academicYearId)) {
-    const year = await AcademicYear.findOne({ _id: academicYearId, schoolId }).select('name').lean();
-    if (year?.name) {
-      studentFilter.academicYear = new RegExp(`^${escapeRegex(year.name.trim())}$`, 'i');
-    }
-  }
+  // Only the chosen session's students — by default the school's current (active)
+  // session, so students already set up for the next session don't appear in
+  // this year's class analytics. Students with no session recorded (older data)
+  // are kept.
+  const year = academicYearId && mongoose.isValidObjectId(academicYearId)
+    ? await AcademicYear.findOne({ _id: academicYearId, schoolId }).select('name').lean()
+    : await AcademicYear.findOne({ schoolId, isActive: true }).select('name').lean();
+  const sessionClause = sessionStudentClause(year?.name ? year.name.trim() : null);
+  if (sessionClause) Object.assign(studentFilter, withSession({}, sessionClause));
 
   const students = await StudentUser.find(studentFilter)
     .select('name grade section roll academicYear campusId profilePic')

@@ -6,6 +6,7 @@ const authTeacher = require('../middleware/authTeacher');
 const StudentUser = require('../models/StudentUser');
 const StudentProgress = require('../models/StudentProgress');
 const { scopedStudents } = require('../utils/analyticsScope');
+const { getCurrentSessionName, sessionStudentClause, withSession } = require('../utils/currentSession');
 const {
   computeAllScores,
 } = require('../services/mlEngine');
@@ -15,7 +16,9 @@ async function getStudentsForClass({ schoolId, className, section }) {
   const filter = { schoolId };
   if (className) filter.grade = { $regex: `^${className}$`, $options: 'i' };
   if (section) filter.section = { $regex: `^${section}$`, $options: 'i' };
-  return StudentUser.find(filter).select('_id name roll grade section').lean();
+  // Only this session's students (not those already set up for next session).
+  const sessionClause = sessionStudentClause(await getCurrentSessionName(schoolId));
+  return StudentUser.find(withSession(filter, sessionClause)).select('_id name roll grade section').lean();
 }
 
 async function buildClassScores(students, schoolId) {

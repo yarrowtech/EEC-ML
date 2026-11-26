@@ -4,11 +4,15 @@ import { fetchCachedJson, peekCachedJson } from '../utils/studentApiCache';
 import { STUDENT_API_BASE, STUDENT_DASHBOARD_TTL_MS } from '../utils/studentDashboardPrefetch';
 import { AUTH_NOTICE, logoutAndRedirect } from '../utils/authSession';
 import { slugifyForUrl } from '../utils/urlSlug';
+import { loadSmartLearningSubjects } from '../utils/smartLearningMap';
 
 // Deep link to the practice-paper page for one subject/topic; ?paper / ?worksheet opens the item.
-const reminderPath = (subject, topic, param, id) => (subject && topic
-  ? `/student/smart-learning-courses/subject/${slugifyForUrl(subject)}/topic/${slugifyForUrl(topic)}/assessment/practice-paper?${param}=${id}`
-  : '/student/smart-learning-courses');
+// Topic page opened on its Practice tab (tryout questions).
+const tryoutPath = (subject, topic) => (subject && topic
+  ? `/student/smart-learning-courses/subject/${slugifyForUrl(subject)}/topic/${slugifyForUrl(topic)}?view=details&mode=practice`
+  : '/student/practice-papers');
+const normKey = (v) => String(v || '').trim().toLowerCase().replace(/[_-]+/g, ' ');
+
 import { useNotifications } from '../hooks/useNotifications';
 import {
   getStudentNotificationModule,
@@ -172,20 +176,52 @@ export const StudentDashboardProvider = ({ children }) => {
     const token = localStorage.getItem('token');
     if (!token || typeof fetch !== 'function' || localStorage.getItem('userType') !== 'Student') return;
     const headers = { Authorization: `Bearer ${token}` };
+    // Tryouts the teacher added (from the shared Smart Learning map), each with the
+    // student's own latest score. Not-yet-practised tryouts come first, then the
+    // lowest scores, so the dashboard nudges toward what needs practice.
     try {
-      const [paperPayload, assignmentPayload] = await Promise.all([
-        fetch(`${import.meta.env.VITE_API_URL}/api/practice-papers/student/papers?limit=100`, { headers }).then((r) => r.ok ? r.json() : null),
-        fetch(`${import.meta.env.VITE_API_URL}/api/assignment/student/assignments`, { headers }).then((r) => r.ok ? r.json() : null),
+      const [subjects, resultsPayload] = await Promise.all([
+        loadSmartLearningSubjects(),
+        fetch(`${import.meta.env.VITE_API_URL}/api/lesson-plans/student/tryout-results`, { headers }).then((r) => (r.ok ? r.json() : null)),
       ]);
-      const papers = (Array.isArray(paperPayload?.papers) ? paperPayload.papers : []).filter((paper) => paper.studentStatus !== 'completed');
-      const assignments = (Array.isArray(assignmentPayload) ? assignmentPayload : []).filter((assignment) => {
-        const type = String(assignment?.type || '').toLowerCase();
-        return type.includes('worksheet') && !['submitted', 'graded', 'late'].includes(String(assignment?.submissionStatus || '').toLowerCase());
+      const results = Array.isArray(resultsPayload?.results) ? resultsPayload.results : [];
+      const reminders = [];
+      subjects.forEach((subject) => {
+        const subjectKeys = new Set([normKey(subject.key), normKey(subject.title)]);
+        const chapterOf = new Map();
+        (subject.chapters || []).forEach((ch) => (ch.topics || []).forEach((t) => {
+          if (!chapterOf.has(normKey(t.title))) chapterOf.set(normKey(t.title), ch.title || '');
+        }));
+        const seen = new Set();
+        (subject.topics || []).forEach((topic) => {
+          const questions = Array.isArray(topic.tryoutSections) ? topic.tryoutSections.filter((q) => q && typeof q === 'object') : [];
+          const topicKey = normKey(topic.title);
+          if (!questions.length || seen.has(topicKey)) return;
+          seen.add(topicKey);
+          // results are newest first
+          const mine = results.filter((r) => subjectKeys.has(normKey(r.subjectName)) && normKey(r.topicTitle) === topicKey);
+          const latest = mine[0] || null;
+          const score = latest && typeof latest.autoScore === 'number' ? latest.autoScore : null;
+          reminders.push({
+            id: `tryout-${normKey(subject.key || subject.title)}-${topicKey}`,
+            kind: 'Tryout',
+            subject: subject.title || subject.key || '',
+            chapter: chapterOf.get(topicKey) || '',
+            topic: topic.title,
+            title: topic.title,
+            status: mine.length ? 'attempted' : 'not_started',
+            progress: score ?? 0,
+            attempts: mine.length,
+            questionCount: questions.length,
+            detail: mine.length
+              ? `Your score ${score ?? '—'}${score !== null ? '%' : ''} · ${mine.length} attempt${mine.length === 1 ? '' : 's'}`
+              : `Not practised yet · ${questions.length} question${questions.length === 1 ? '' : 's'}`,
+            path: tryoutPath(subject.key || subject.title, topic.title),
+          });
+        });
       });
-      setSmartLearningReminders([
-        ...papers.map((paper) => ({ id: `paper-${paper._id}`, kind: 'Practice paper', subject: paper.subjectName || paper.subject?.name || paper.subject || '', chapter: paper.chapterTitle || paper.chapter || '', topic: paper.topicTitle || paper.subTopicTitle || paper.topics?.[0] || paper.chapterTitle || paper.chapter || '', title: paper.title, status: paper.studentStatus || 'not_started', progress: Number(paper.progressPercent) || 0, path: reminderPath(paper.subjectName || paper.subject?.name || paper.subject, paper.topicTitle || paper.chapterTitle || paper.chapter || paper.subTopicTitle, 'paper', paper._id) })),
-        ...assignments.map((assignment) => ({ id: `worksheet-${assignment._id}`, kind: 'Worksheet', subject: assignment.subject || '', chapter: assignment.chapterTitle || '', topic: assignment.topicTitle || assignment.topic || assignment.subTopicTitle || assignment.chapterTitle || '', title: assignment.title, status: 'not_started', progress: 0, path: reminderPath(assignment.subjectName || assignment.subject, assignment.topicTitle || assignment.topic || assignment.chapterTitle, 'worksheet', assignment._id) })),
-      ]);
+      reminders.sort((x, y) => (x.status === y.status ? x.progress - y.progress : x.status === 'not_started' ? -1 : 1));
+      setSmartLearningReminders(reminders);
     } catch {
       // keep existing reminders on transient network errors
     }
