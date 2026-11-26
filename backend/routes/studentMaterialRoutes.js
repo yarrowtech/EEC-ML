@@ -2,6 +2,7 @@ const express = require('express');
 const router = express.Router();
 const mongoose = require('mongoose');
 const TeachingMaterial = require('../models/TeachingMaterial');
+const LessonPlan = require('../models/LessonPlan');
 const StudentUser = require('../models/StudentUser');
 const AcademicYear = require('../models/AcademicYear');
 const authStudent = require('../middleware/authStudent');
@@ -141,11 +142,26 @@ router.get('/', async (req, res, next) => {
       .lean();
 
     const total = await TeachingMaterial.countDocuments(filters);
+    const planIds = [...new Set(materials.map((material) => material.sourceLessonPlanId).filter(Boolean).map(String))];
+    const plans = planIds.length
+      ? await LessonPlan.find({ _id: { $in: planIds }, schoolId: req.schoolId })
+        .select('plannerContent.chapters.id plannerContent.chapters.title plannerContent.chapters.unitTitle plannerContent.chapters.unitNumber')
+        .lean()
+      : [];
+    const chaptersByPlan = new Map(plans.map((plan) => [String(plan._id), plan.plannerContent?.chapters || []]));
     const materialsWithSignedUrls = await Promise.all(
-      materials.map(async (material) => ({
-        ...material,
-        attachments: await signAttachmentUrls(material.attachments || []),
-      }))
+      materials.map(async (material) => {
+        const chapters = chaptersByPlan.get(String(material.sourceLessonPlanId)) || [];
+        const chapter = chapters.find((entry) => entry.title === material.chapterTitle)
+          || chapters.find((entry) => entry.id === material.chapterId)
+          || (chapters.length === 1 ? chapters[0] : null);
+        return {
+          ...material,
+          unitTitle: chapter?.unitTitle || '',
+          unitNumber: chapter?.unitNumber || null,
+          attachments: await signAttachmentUrls(material.attachments || []),
+        };
+      })
     );
 
     res.json({

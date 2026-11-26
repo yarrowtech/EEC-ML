@@ -20,10 +20,13 @@ jest.mock('../utils/logger', () => ({
 const mockStudentUser = { findById: jest.fn() };
 const mockTeachingMaterial = { find: jest.fn(), countDocuments: jest.fn() };
 const mockPracticePaper = { find: jest.fn(), countDocuments: jest.fn() };
+const mockLessonPlan = { find: jest.fn() };
 
 jest.mock('../models/StudentUser', () => mockStudentUser);
 jest.mock('../models/TeachingMaterial', () => mockTeachingMaterial);
 jest.mock('../models/PracticePaper', () => mockPracticePaper);
+jest.mock('../models/LessonPlan', () => mockLessonPlan);
+jest.mock('../models/AcademicYear', () => ({ findOne: () => ({ select: () => ({ lean: async () => null }) }) }));
 
 const makePlacementQuery = () => {
   const query = {
@@ -77,5 +80,38 @@ describe('student learning resource placement queries', () => {
     expect(studentQuery.select.mock.invocationCallOrder[0]).toBeLessThan(
       studentQuery.lean.mock.invocationCallOrder[0]
     );
+  });
+
+  test('adds textbook chapter details to materials from an existing lesson plan', async () => {
+    const planId = '69859a64fed654f01eae2b82';
+    const materialQuery = makeListQuery();
+    materialQuery.lean.mockResolvedValue([{
+      chapterTitle: 'Introduction to Computers',
+      topicTitle: 'Introduction to Computers',
+      sourceLessonPlanId: planId,
+      attachments: [],
+    }]);
+    mockTeachingMaterial.find.mockReturnValue(materialQuery);
+    const planQuery = makeListQuery();
+    planQuery.lean.mockResolvedValue([{
+      _id: planId,
+      plannerContent: { chapters: [{ title: 'Introduction to Computers', unitTitle: 'Computer Basics', unitNumber: 1 }] },
+    }]);
+    mockLessonPlan.find.mockReturnValue(planQuery);
+    const app = express();
+    app.use('/student/materials', studentMaterialRoutes);
+
+    const response = await request(app).get('/student/materials');
+
+    expect(response.status).toBe(200);
+    expect(response.body.materials).toEqual([expect.objectContaining({
+      unitTitle: 'Computer Basics',
+      unitNumber: 1,
+      topicTitle: 'Introduction to Computers',
+    })]);
+    expect(mockLessonPlan.find).toHaveBeenCalledWith({
+      _id: { $in: [planId] },
+      schoolId: '69859a64fed654f01eae2b80',
+    });
   });
 });

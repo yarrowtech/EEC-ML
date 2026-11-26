@@ -591,6 +591,18 @@ npm test -- --runInBand src/components/__tests__/StudentFamilyServices.test.jsx 
 - Open older S3 PDF and JFIF uploads: confirm a browser preview opens without an automatic download. Check the preview response uses inline disposition and the appropriate PDF/image MIME type; the separate download button should still download the file.
 - In Study Materials, confirm records from the same subject/chapter combine into one card with the attachment count, uploading teachers, and latest shared date. Expand View materials: each attachment shows a generic file-type label, uploader, date, and working Open link; filenames must not be visible. Search chapters/subjects/teachers and switch subject filters without losing available filter options. Verify the no-materials and no-search-results states.
 - On a subject chapter card, confirm the completion checkbox sits beside Start Lesson and the long subtopic introduction and "Click to mark as complete" prompt are hidden. Toggle the checkbox on and off: chapter progress should update and persist after reload without changing other chapters.
+## Student study materials by chapter
+
+1. Publish a lesson named Introduction to Computers with an attachment under the textbook chapter Computer Basics.
+2. Open `/student/study-materials` as an assigned student and select the subject. Click Computer Basics to reveal its topics, then click Introduction to Computers to show all its attachments. Search for the topic and verify the chapter is found.
+3. Open a standalone attachment without lesson-plan metadata and verify it is still available.
+4. Verify topics show their chapter and topic numbers, such as `1.1 Introduction to Computers`, and keep the same number after searching. Check that attachments show “Posted by” and that Download saves a stored file while Open previews it.
+
+## Student profile cover photo
+
+1. Set a school cover photo and open `/student/profile` as one of its students. Verify the blurred cover fills the banner at desktop and phone widths and that the profile text and photo controls remain readable.
+2. Open the profile for a school without a cover and verify the yellow gradient appears.
+
 ## Student health records
 
 1. In the teacher portal, save a health check-in for a student through Student Health Records.

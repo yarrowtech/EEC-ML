@@ -5,6 +5,7 @@ import {
 } from 'lucide-react';
 import { getPoints } from '../utils/points';
 import { isPushSupported, isPushEnabled, subscribeToPush, unsubscribeFromPush } from '../utils/webPush';
+import { useStudentDashboard } from './StudentDashboardContext';
 
 const initialProfile = {
   name: 'Student',
@@ -70,6 +71,18 @@ const resolveDobValue = (payload = {}) =>
   || '';
 
 const ProfileUpdate = () => {
+  const dashboard = useStudentDashboard();
+  const schoolCoverImage = dashboard?.profile?.schoolCoverImage;
+  const coverBackdrop = schoolCoverImage && (
+    <img
+      key={schoolCoverImage}
+      src={schoolCoverImage}
+      alt=""
+      aria-hidden="true"
+      className="pointer-events-none absolute inset-0 h-full w-full scale-105 object-cover object-center blur-[3px] brightness-75"
+      onError={(event) => { event.currentTarget.hidden = true; }}
+    />
+  );
   const [profile, setProfile] = useState(initialProfile);
   const [preview, setPreview] = useState('');
   const [success, setSuccess] = useState(false);
@@ -606,6 +619,7 @@ const ProfileUpdate = () => {
           <div className="absolute -bottom-8 -left-8 w-40 h-40 rounded-full bg-white/10" />
           <div className="absolute bottom-4 right-8 w-12 h-12 rounded-full bg-white/10" />
 
+          {coverBackdrop}
           <div className="relative flex flex-col items-center">
             {/* Avatar with halo rings */}
             <div className="relative mb-3">
@@ -764,6 +778,7 @@ const ProfileUpdate = () => {
               <div className="absolute top-6 right-16 w-20 h-20 rounded-full bg-white/10" />
               <div className="absolute -bottom-10 -left-10 w-36 h-36 rounded-full bg-white/10" />
 
+              {coverBackdrop}
               <div className="relative flex items-end gap-6">
                 {/* Avatar */}
                 <div className="relative shrink-0">
