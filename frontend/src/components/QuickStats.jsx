@@ -18,18 +18,18 @@ const StatCard = ({ stat, theme, loading }) => {
     <Link
       to={stat.to}
       aria-label={`Open ${stat.title}`}
-      className={`relative block h-full overflow-hidden rounded-xl border border-gray-100 bg-white p-2.5 shadow-sm lg:rounded-2xl lg:p-5 transition-transform hover:shadow-md hover:-translate-y-0.5 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-indigo-500`}
+      className={`relative block h-full overflow-hidden rounded-xl border border-gray-100 bg-white p-2.5 shadow-sm lg:rounded-2xl lg:p-3.5 transition-transform hover:shadow-md hover:-translate-y-0.5 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-indigo-500`}
     >
       {/* Light decorative circle bleeding in from the top-right corner */}
       {/* top border in the card's icon colour */}
       <div className={`pointer-events-none absolute inset-x-0 top-0 z-[5] h-1 ${theme.topBar}`} aria-hidden="true" />
-      <div className={`pointer-events-none absolute -right-6 -top-6 h-16 w-16 rounded-full lg:-right-8 lg:-top-8 lg:h-28 lg:w-28 ${theme.circle}`} aria-hidden="true" />
+      <div className={`pointer-events-none absolute -right-6 -top-6 h-16 w-16 rounded-full lg:-right-7 lg:-top-7 lg:h-20 lg:w-20 ${theme.circle}`} aria-hidden="true" />
 
       <div className="relative z-10">
         {/* Icon + badge */}
-        <div className="mb-1.5 flex items-start justify-between gap-1 lg:mb-3">
-          <div className={`flex h-7 w-7 shrink-0 items-center justify-center rounded-full shadow-md lg:h-10 lg:w-10 ${theme.iconBg}`}>
-            <Icon className="size-3.5 text-white lg:size-5" />
+        <div className="mb-1.5 flex items-start justify-between gap-1 lg:mb-2">
+          <div className={`flex h-7 w-7 shrink-0 items-center justify-center rounded-full shadow-md lg:h-8 lg:w-8 ${theme.iconBg}`}>
+            <Icon className="size-3.5 text-white lg:size-4" />
           </div>
           <span className={`max-w-22.5 truncate rounded-full px-1.5 py-0.5 text-[9px] font-bold lg:px-2 lg:text-[10px] ${stat.badgeClass || theme.badge}`}>
             {loading ? '…' : stat.change}
@@ -37,8 +37,8 @@ const StatCard = ({ stat, theme, loading }) => {
         </div>
 
         {/* Value */}
-        <p className={`text-lg font-bold leading-none text-[#0f172a] lg:text-2xl`}>
-          {loading ? <span className="inline-block h-5 w-10 animate-pulse rounded-lg bg-gray-100 lg:h-7 lg:w-14" /> : stat.value}
+        <p className={`text-lg font-bold leading-none text-[#0f172a] lg:text-xl`}>
+          {loading ? <span className="inline-block h-5 w-10 animate-pulse rounded-lg bg-gray-100 lg:h-6 lg:w-12" /> : stat.value}
         </p>
         <p className={`mt-0.5 truncate text-[11px] font-semibold text-[#64748b] lg:mt-1 lg:text-xs`}>{stat.title}</p>
         {stat.subtitle && <p className="mt-0.5 line-clamp-1 text-[9.5px] font-medium text-[#94a3b8] lg:line-clamp-none lg:text-[10px]">{stat.subtitle}</p>}

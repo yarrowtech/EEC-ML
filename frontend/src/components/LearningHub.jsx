@@ -106,7 +106,9 @@ const LearningHub = () => {
   // Subject chapters and topic readers provide their own navigation.
   const isSubjectDetail = activeTab.key === 'subjects' && /\/subject\/[^/]+/.test(location.pathname);
   const isSubjectsOverview = activeTab.key === 'subjects' && !isSubjectDetail;
-  const isContainedPage = isSubjectsOverview || activeTab.key === 'materials' || activeTab.key === 'practice';
+  // One subject's chapter list (…/subject/computer) — not a topic reader. It scrolls inside its card.
+  const isSubjectChapters = activeTab.key === 'subjects' && /\/subject\/[^/]+\/?$/.test(location.pathname);
+  const isContainedPage = isSubjectsOverview || isSubjectChapters || activeTab.key === 'materials' || activeTab.key === 'practice';
 
   // Snapshot the last activity once per mount so the card offers where the
   // student left off previously, not the page they are currently on.
@@ -178,7 +180,7 @@ const LearningHub = () => {
       {activeTab.key === 'subjects' && (
         <Motion.div
           key="subjects"
-          className={isSubjectsOverview ? 'flex min-h-0 flex-1 flex-col overflow-hidden' : undefined}
+          className={isSubjectsOverview || isSubjectChapters ? 'flex min-h-0 flex-1 flex-col overflow-hidden' : undefined}
           initial={{ opacity: 0, y: 6 }}
           animate={{ opacity: 1, y: 0 }}
           transition={{ duration: 0.3, ease: [0.4, 0, 0.2, 1] }}

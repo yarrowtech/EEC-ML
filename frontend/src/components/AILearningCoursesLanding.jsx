@@ -136,7 +136,6 @@ const SubjectTopicsView = ({ subject, onBack, style = DEFAULT_STYLE }) => {
   const SubjectIcon = style.icon;
   const navigate = useNavigate();
   const { profile } = useStudentDashboard();
-  const firstName = String(profile?.name || '').trim().split(/\s+/)[0] || '';
   const [completedSubtopics, setCompletedSubtopics] = useState({});
   const [isProgressLoaded, setIsProgressLoaded] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
@@ -333,8 +332,6 @@ const SubjectTopicsView = ({ subject, onBack, style = DEFAULT_STYLE }) => {
     });
   };
 
-  const moodLead = firstName ? `Keep going, ${firstName}!` : 'Keep going!';
-  const moodTrail = progress === 0 ? 'Ready to dive in?' : progress === 100 ? 'Subject complete!' : `You're ${progress}% through.`;
 
   const openTopic = (topic) => {
     if (!topic?.title) return;
@@ -345,7 +342,7 @@ const SubjectTopicsView = ({ subject, onBack, style = DEFAULT_STYLE }) => {
   };
 
   return (
-    <div className="space-y-5" style={SUBJECT_CARD_FONT}>
+    <div className="space-y-3 sm:space-y-5" style={SUBJECT_CARD_FONT}>
       <div className="flex items-center justify-between gap-3">
         <button
           type="button"
@@ -361,32 +358,28 @@ const SubjectTopicsView = ({ subject, onBack, style = DEFAULT_STYLE }) => {
         )}
       </div>
 
-      <header className="relative overflow-hidden rounded-2xl border border-violet-100 bg-gradient-to-r from-white via-white to-violet-50/60 px-5 py-4 shadow-sm sm:px-6">
+      <header className="relative overflow-hidden rounded-2xl border border-violet-100 bg-gradient-to-r from-white via-white to-violet-50/60 px-4 py-3 shadow-sm sm:px-6 sm:py-4">
         <div aria-hidden="true" className="pointer-events-none absolute -right-16 -top-16 h-48 w-48 rounded-full bg-violet-200/25 blur-3xl" />
-        <div className="relative z-10 flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
-          <div className="min-w-0 space-y-1.5">
-            <div className="flex flex-wrap items-center gap-2.5">
-              <h1 className="text-xl font-extrabold leading-none tracking-tight text-slate-900 sm:text-2xl">{subject.title} Chapters</h1>
-              <span className="inline-flex items-center gap-1 rounded-full bg-violet-600 px-2.5 py-0.5 text-[11px] font-bold text-white shadow-sm">
-                <CheckCircle2 size={12} /> PUBLISHED
-              </span>
-              <span className="inline-flex items-center gap-1 rounded-full border border-violet-200 bg-violet-50 px-2.5 py-0.5 text-[11px] font-bold text-violet-700">
-                <BookOpen size={12} /> {chapters.length} Unit{chapters.length === 1 ? '' : 's'}
-              </span>
-            </div>
-            <p className="text-xs text-slate-500 sm:text-sm">Choose a chapter to open its topics, materials, and lesson content.</p>
-          </div>
-
-          {chapters.length > 0 && (
-            <div className="flex flex-wrap items-center gap-3 rounded-xl border border-slate-200/80 bg-white/90 px-3.5 py-2 shadow-sm">
-              <div className="flex items-center gap-2.5 border-r border-slate-200/80 pr-3">
-                <div className="flex h-8 w-8 items-center justify-center rounded-lg border border-violet-100 bg-violet-50 text-violet-600"><Flag size={15} /></div>
-                <div>
-                  <div className="flex items-baseline gap-1"><span className="text-base font-black leading-none text-slate-900">{completedChapterCount}/{chapters.length}</span><span className="text-[10px] font-bold uppercase tracking-wide text-slate-400">Chapters</span></div>
-                  <div className="mt-1 flex items-center gap-1.5"><div className="h-1.5 w-14 overflow-hidden rounded-full bg-slate-100"><div className="h-1.5 rounded-full bg-violet-600 transition-all" style={{ width: `${progress}%` }} /></div><span className="text-[10px] font-semibold text-violet-700">{progress}%</span></div>
-                </div>
+        {/* Title on the left, chapters done on the right, full-width progress below. */}
+        <div className="relative z-10 space-y-2.5">
+          <div className="flex items-center justify-between gap-3">
+            <h1 className="min-w-0 text-lg font-extrabold leading-tight tracking-tight text-slate-900 sm:text-2xl">{subject.title} Chapters</h1>
+            {chapters.length > 0 && (
+              <div className="flex shrink-0 items-center gap-2">
+                <span className="flex h-8 w-8 items-center justify-center rounded-lg border border-violet-100 bg-violet-50 text-violet-600"><Flag size={15} /></span>
+                <span className="flex items-baseline gap-1">
+                  <span className="text-base font-black leading-none text-slate-900">{completedChapterCount}/{chapters.length}</span>
+                  <span className="text-[10px] font-bold uppercase tracking-wide text-slate-400">Chapters</span>
+                </span>
               </div>
-              <div className="flex items-center gap-2 text-xs text-slate-700"><span className="flex h-5 w-5 items-center justify-center rounded-full bg-amber-100 text-[11px] text-amber-600">😊</span><strong className="font-semibold">{moodLead}</strong></div>
+            )}
+          </div>
+          {chapters.length > 0 && (
+            <div className="flex items-center gap-2.5" aria-label={`${progress}% completed`}>
+              <div className="h-2 min-w-0 flex-1 overflow-hidden rounded-full bg-slate-100">
+                <div className="h-2 rounded-full bg-violet-600 transition-all" style={{ width: `${progress}%` }} />
+              </div>
+              <span className="shrink-0 text-xs font-bold text-violet-700">{progress}% completed</span>
             </div>
           )}
         </div>
@@ -394,10 +387,6 @@ const SubjectTopicsView = ({ subject, onBack, style = DEFAULT_STYLE }) => {
 
 
       <section className="space-y-4">
-        <div className="flex flex-col items-stretch justify-between gap-3 rounded-xl border border-slate-200 bg-white p-3.5 shadow-sm sm:flex-row sm:items-center">
-          <div><h2 className="text-lg font-bold tracking-tight text-slate-900">{chapters.length > 0 ? 'Uploaded Chapters' : 'Lesson Content'}</h2><p className="text-xs text-slate-500">Select a module to view materials, notes, and quiz sheets</p></div>
-          {chapters.length > 0 && <div className="flex flex-col items-stretch gap-2.5 sm:flex-row sm:items-center"><div className="relative w-full sm:w-64"><Search className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" size={15} /><input type="text" value={searchQuery} onChange={(event) => setSearchQuery(event.target.value)} placeholder="Search chapters & topics..." className="w-full rounded-lg border-slate-200 py-2 pl-9 pr-3 text-xs text-slate-800 placeholder:text-slate-400 focus:border-violet-500 focus:ring-violet-500" /></div><div className="flex items-center gap-1 rounded-lg bg-slate-100/90 p-1 text-xs font-semibold"><button type="button" onClick={() => setFilterMode('all')} className={`rounded-md px-3 py-1.5 transition ${filterMode === 'all' ? 'bg-violet-600 text-white shadow-sm' : 'text-slate-600 hover:bg-white/60'}`}>All ({chapters.length})</button><button type="button" onClick={() => setFilterMode('in-progress')} className={`rounded-md px-3 py-1.5 transition ${filterMode === 'in-progress' ? 'bg-violet-600 text-white shadow-sm' : 'text-slate-600 hover:bg-white/60'}`}>In Progress ({inProgressChapterCount})</button><button type="button" onClick={() => setFilterMode('completed')} className={`rounded-md px-3 py-1.5 transition ${filterMode === 'completed' ? 'bg-violet-600 text-white shadow-sm' : 'text-slate-600 hover:bg-white/60'}`}>Completed ({completedChapterCount})</button></div></div>}
-        </div>
 
         {chapters.length === 0 ? (
           <div className="rounded-xl border border-dashed border-violet-200 bg-white p-10 text-center shadow-sm"><div className="mx-auto mb-4 flex h-14 w-14 items-center justify-center rounded-full bg-violet-50"><BookOpen className="text-violet-600" size={28} /></div><p className="text-lg font-bold text-slate-800">No Lesson Plans Published Yet</p><p className="mx-auto mt-1 max-w-md text-sm text-slate-500">Your teacher hasn't published any lesson plans for <span className="font-semibold">{subject.title}</span> yet.</p></div>
@@ -416,13 +405,13 @@ const SubjectTopicsView = ({ subject, onBack, style = DEFAULT_STYLE }) => {
               return groups.map((group) => (
               <section key={group.key} className="space-y-2.5">
                 {showHeadings && (
-                  <div className="flex items-center gap-3">
-                    <span className={`flex h-8 shrink-0 items-center rounded-lg px-3 text-xs font-extrabold uppercase tracking-wide ${group.key === '__none__' ? 'bg-slate-100 text-slate-500' : 'bg-violet-600 text-white shadow-sm shadow-violet-600/25'}`}>
+                  <div className="flex items-center gap-2 sm:gap-3">
+                    <span className={`flex h-7 shrink-0 items-center rounded-lg px-2.5 text-[11px] font-extrabold uppercase tracking-wide sm:h-8 sm:px-3 sm:text-xs ${group.key === '__none__' ? 'bg-slate-100 text-slate-500' : 'bg-violet-600 text-white shadow-sm shadow-violet-600/25'}`}>
                       {group.unitNumber ? `Chapter ${group.unitNumber}` : group.key === '__none__' ? 'Other lessons' : 'Chapter'}
                     </span>
-                    {group.unitTitle && <h2 className="truncate text-base font-bold text-slate-900">{group.unitTitle}</h2>}
-                    <span className="h-px flex-1 bg-slate-200" />
-                    <span className="shrink-0 text-xs font-semibold text-slate-400">{group.lessons.length} lesson{group.lessons.length === 1 ? '' : 's'}</span>
+                    {group.unitTitle && <h2 className="min-w-0 truncate text-sm font-bold text-slate-900 sm:text-base">{group.unitTitle}</h2>}
+                    <span className="hidden h-px flex-1 bg-slate-200 sm:block" />
+                    <span className="ml-auto shrink-0 text-[11px] font-semibold text-slate-400 sm:ml-0 sm:text-xs">{group.lessons.length} lesson{group.lessons.length === 1 ? '' : 's'}</span>
                   </div>
                 )}
             {group.lessons.map((entry, lessonIndex) => {
@@ -433,20 +422,20 @@ const SubjectTopicsView = ({ subject, onBack, style = DEFAULT_STYLE }) => {
               const lessonLabel = !firstTopic ? 'No Topics' : status === 'completed' ? 'Review' : status === 'in-progress' || status === 'almost-done' ? 'Continue Lesson' : 'Start Lesson';
               return (
                 <article key={chapter.id || `${chapter.title}-${originalIndex}`} className="group overflow-hidden rounded-xl border border-slate-200 bg-white p-3.5 shadow-sm transition-all duration-200 hover:border-violet-400 hover:shadow-md">
-                  <div className="flex flex-col justify-between gap-4 md:flex-row md:items-center">
-                    <div className="flex min-w-0 items-center gap-3.5">
+                  <div className="flex flex-col justify-between gap-3 lg:flex-row lg:items-center lg:gap-4">
+                    <div className="flex min-w-0 items-start gap-3 sm:items-center sm:gap-3.5">
                       <div className={`flex h-12 w-12 shrink-0 flex-col items-center justify-center rounded-lg border border-violet-100 bg-violet-50 text-center text-violet-700`}>
                         {status === 'completed' ? <CheckCircle2 size={22} /> : <><span className="text-[9px] font-extrabold uppercase tracking-wider text-violet-600">{unitBadge}</span><span className="text-sm font-black leading-none">{String(unitNo).padStart(2, '0')}</span></>}
                       </div>
                       <div className="min-w-0 space-y-1">
                         <div className="flex flex-wrap items-center gap-2"><span className={`rounded px-2 py-0.5 text-[10px] font-bold uppercase tracking-wide ${meta.chip}`}>{meta.label}</span>{classLabel && <><span className="text-slate-300">•</span><span className="text-xs font-semibold text-slate-500">Class {classLabel}</span></>}</div>
-                        <h3 className="truncate text-base font-bold text-slate-900 transition-colors group-hover:text-violet-700">{chapter.title}</h3>
-                        <div className="flex flex-wrap items-center gap-3 text-xs font-medium text-slate-500"><span className="inline-flex items-center gap-1"><Layers size={13} className="text-slate-400" />{topicCount} topic{topicCount === 1 ? '' : 's'}</span><span className="text-slate-300">•</span><span className="inline-flex items-center gap-1"><List size={13} className="text-slate-400" />{subtopicCount} subtopic{subtopicCount === 1 ? '' : 's'}</span>{durationLabel && <><span className="text-slate-300">•</span><span className="inline-flex items-center gap-1"><Clock size={13} className="text-slate-400" />{durationLabel}</span></>}{chapter.teacherName && <><span className="text-slate-300">?</span><span className="inline-flex items-center gap-1"><Users size={13} className="text-slate-400" />{chapter.teacherName}</span></>}</div>
+                        <h3 className="line-clamp-2 text-[15px] font-bold leading-snug text-slate-900 transition-colors group-hover:text-violet-700 sm:text-base lg:truncate">{chapter.title}</h3>
+                        <div className="flex flex-wrap items-center gap-x-2.5 gap-y-1 text-xs font-medium text-slate-500 sm:gap-x-3"><span className="inline-flex items-center gap-1"><Layers size={13} className="text-slate-400" />{topicCount} topic{topicCount === 1 ? '' : 's'}</span><span className="text-slate-300">•</span><span className="inline-flex items-center gap-1"><List size={13} className="text-slate-400" />{subtopicCount} subtopic{subtopicCount === 1 ? '' : 's'}</span>{durationLabel && <><span className="text-slate-300">•</span><span className="inline-flex items-center gap-1"><Clock size={13} className="text-slate-400" />{durationLabel}</span></>}{chapter.teacherName && <><span className="text-slate-300">•</span><span className="inline-flex items-center gap-1"><Users size={13} className="text-slate-400" />{chapter.teacherName}</span></>}</div>
                       </div>
                     </div>
-                    <div className="flex items-center justify-between gap-4 border-t border-slate-100 pt-2.5 md:justify-end md:border-t-0 md:pt-0">
-                      <div className="flex w-28 items-center gap-2 md:w-32"><div className="h-1.5 w-full overflow-hidden rounded-full bg-slate-100"><div className={`h-1.5 rounded-full ${meta.bar}`} style={{ width: `${percentage}%` }} /></div><span className="text-xs font-semibold text-slate-400">{percentage}%</span></div>
-                      <div className="flex items-center gap-2"><button type="button" onClick={() => openTopic(firstTopic)} disabled={!firstTopic} className={`inline-flex items-center gap-1.5 rounded-lg px-4 py-2 text-xs font-bold shadow-sm transition active:scale-[0.98] ${!firstTopic ? 'cursor-not-allowed bg-slate-100 text-slate-400' : 'bg-violet-600 text-white shadow-violet-600/25 hover:bg-violet-700'}`}>{lessonLabel}{firstTopic && <ArrowRight size={14} />}</button><input type="checkbox" checked={total > 0 && percentage === 100} disabled={total === 0} onChange={(event) => setChapterCompletion(chapter, event.target.checked)} aria-label={`Mark ${chapter.title} as complete`} className="h-5 w-5 shrink-0 cursor-pointer rounded border-slate-300 accent-violet-600 disabled:cursor-not-allowed" /></div>
+                    <div className="flex items-center justify-between gap-3 border-t border-slate-100 pt-2.5 lg:justify-end lg:gap-4 lg:border-t-0 lg:pt-0">
+                      <div className="flex min-w-0 flex-1 items-center gap-2 sm:max-w-xs lg:w-32 lg:flex-none"><div className="h-1.5 w-full overflow-hidden rounded-full bg-slate-100"><div className={`h-1.5 rounded-full ${meta.bar}`} style={{ width: `${percentage}%` }} /></div><span className="text-xs font-semibold text-slate-400">{percentage}%</span></div>
+                      <div className="flex shrink-0 items-center gap-2"><button type="button" onClick={() => openTopic(firstTopic)} disabled={!firstTopic} className={`inline-flex items-center gap-1.5 rounded-lg px-4 py-2.5 text-xs font-bold sm:py-2 shadow-sm transition active:scale-[0.98] ${!firstTopic ? 'cursor-not-allowed bg-slate-100 text-slate-400' : 'bg-violet-600 text-white shadow-violet-600/25 hover:bg-violet-700'}`}>{lessonLabel}{firstTopic && <ArrowRight size={14} />}</button><input type="checkbox" checked={total > 0 && percentage === 100} disabled={total === 0} onChange={(event) => setChapterCompletion(chapter, event.target.checked)} aria-label={`Mark ${chapter.title} as complete`} className="h-5 w-5 shrink-0 cursor-pointer rounded border-slate-300 accent-violet-600 disabled:cursor-not-allowed" /></div>
                     </div>
                   </div>
 

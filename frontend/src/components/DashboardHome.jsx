@@ -180,7 +180,7 @@ const HeroCard = () => {
       <div className="relative z-10 grid flex-1 grid-cols-1 sm:grid-cols-2">
         {/* Left: profile info — centred on mobile, left-aligned from sm up */}
         <div
-          className={`flex flex-col items-center gap-3 p-6 text-center sm:items-start sm:text-left md:max-lg:gap-2 md:max-lg:p-4 ${
+          className={`flex flex-col items-center gap-3 p-6 text-center sm:items-start sm:text-left md:max-lg:gap-2 md:max-lg:p-4 lg:gap-2 lg:p-4 ${
             hasCover ? 'max-sm:m-3 max-sm:rounded-2xl max-sm:bg-slate-900/30 max-sm:p-5 max-sm:backdrop-blur-md max-sm:ring-1 max-sm:ring-white/20' : ''
           }`}
         >
@@ -189,19 +189,19 @@ const HeroCard = () => {
               <img
                 src={profileImage}
                 alt=""
-                className="h-20 w-20 rounded-full border-[3px] border-gray-100 object-cover md:max-lg:h-14 md:max-lg:w-14"
+                className="h-20 w-20 rounded-full border-[3px] border-gray-100 object-cover md:max-lg:h-14 md:max-lg:w-14 lg:h-16 lg:w-16"
                 onError={(e) => { e.target.style.display = 'none'; }}
               />
             ) : (
-              <div className="flex h-20 w-20 items-center justify-center rounded-full border-2 border-gray-100 bg-[#eef2ff] md:max-lg:h-14 md:max-lg:w-14">
-                <span className="select-none text-2xl font-bold text-[#4f46e5] md:max-lg:text-lg">{initials}</span>
+              <div className="flex h-20 w-20 items-center justify-center rounded-full border-2 border-gray-100 bg-[#eef2ff] md:max-lg:h-14 md:max-lg:w-14 lg:h-16 lg:w-16">
+                <span className="select-none text-2xl font-bold text-[#4f46e5] md:max-lg:text-lg lg:text-xl">{initials}</span>
               </div>
             )}
             <span className="absolute bottom-1 right-1 h-3.5 w-3.5 rounded-full border-2 border-white bg-emerald-400 md:max-lg:bottom-0 md:max-lg:right-0 md:max-lg:h-3 md:max-lg:w-3" />
           </div>
 
           <div>
-            <h1 className={`text-2xl font-bold leading-tight tracking-tight md:max-lg:text-lg ${hasCover ? 'text-white' : 'text-[#0f172a]'}`}>
+            <h1 className={`text-2xl font-bold leading-tight tracking-tight md:max-lg:text-lg lg:text-xl ${hasCover ? 'text-white' : 'text-[#0f172a]'}`}>
               {studentData.name || 'Student'}
             </h1>
             {studentData.username && (
@@ -229,14 +229,14 @@ const HeroCard = () => {
 
         {/* Right: campus illustration (only when the school has no cover photo) */}
         {!hasCover && (
-          <div className="relative hidden min-h-[220px] sm:block md:max-lg:min-h-[140px]">
+          <div className="relative hidden min-h-[220px] sm:block md:max-lg:min-h-[140px] lg:min-h-[160px]">
             <CampusIllustration />
             <div className="pointer-events-none absolute inset-0 bg-linear-to-l from-transparent via-white/0 to-white/60" />
           </div>
         )}
       </div>
       {/* Daily Boost sits inside the card; over the photo a soft bottom shade keeps the white text readable. */}
-      <div className={`relative z-10 px-6 pb-4 pt-2 md:max-lg:px-4 md:max-lg:pb-3 md:max-lg:pt-0 ${hasCover ? 'bg-linear-to-t from-black/70 to-transparent' : ''}`}>
+      <div className={`relative z-10 px-6 pb-4 pt-2 md:max-lg:px-4 md:max-lg:pb-3 md:max-lg:pt-0 lg:px-4 lg:pb-3 lg:pt-0 ${hasCover ? 'bg-linear-to-t from-black/70 to-transparent' : ''}`}>
         <DailyBoost dark={hasCover} />
       </div>
     </Motion.div>
