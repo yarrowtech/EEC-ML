@@ -128,10 +128,41 @@ describe('AILearningCoursesLanding loading', () => {
       </MemoryRouter>
     );
 
-    fireEvent.click(await screen.findByRole('button', { name: 'Start Lesson' }));
+    fireEvent.click(await screen.findByRole('link', { name: 'Open Chapter 7' }));
 
     expect(await screen.findByText('Scoped topic page')).toBeInTheDocument();
     expect(screen.getByText('Query: ?view=details')).toBeInTheDocument();
     expect(screen.getByText('Seeded topic data')).toBeInTheDocument();
+  });
+  test('"Mark as done" survives a page refresh (topics load after the page)', async () => {
+    const subjects = { data: { subjects: [{ _id: 'subject-1', name: 'Computer', teachers: [{ id: 't1', name: 'Koushik' }] }] } };
+    const map = { data: { subjects: [{
+      key: 'computer', title: 'Computer', subjectId: 'subject-1',
+      chapters: [{ id: 'c1', title: 'Introduction to Computers', topics: [{ title: 'Introduction to Computers', subtopics: [{ title: 'Overview' }] }] }],
+      topics: [{ title: 'Introduction to Computers', subtopics: ['Overview'] }],
+    }] } };
+    // The curriculum map arrives a moment after the subjects, like a real refresh.
+    fetchCachedJson.mockImplementation((url) => (url.includes('/smart-learning-map')
+      ? new Promise((resolve) => setTimeout(() => resolve(map), 30))
+      : Promise.resolve(subjects)));
+    const route = ['/student/smart-learning-courses/subject/computer'];
+
+    const first = render(<MemoryRouter initialEntries={route}><AILearningCoursesLanding /></MemoryRouter>);
+    const box = await screen.findByRole('checkbox', { name: 'Mark Introduction to Computers as done' });
+    fireEvent.click(box);
+    expect(box).toBeChecked();
+    // ticking the box must not open the lesson
+    expect(screen.queryByText('Scoped topic page')).not.toBeInTheDocument();
+    first.unmount();
+
+    // "refresh"
+    render(<MemoryRouter initialEntries={route}><AILearningCoursesLanding /></MemoryRouter>);
+    await waitFor(() => expect(screen.getByRole('checkbox', { name: 'Mark Introduction to Computers as done' })).toBeChecked());
+
+    // clicking the lesson card opens the topic page
+    fireEvent.click(screen.getByRole('link', { name: 'Open Introduction to Computers' }));
+    expect(await screen.findByText('Scoped topic page')).toBeInTheDocument();
+    expect(screen.getByText('Query: ?view=details')).toBeInTheDocument();
+    expect(JSON.parse(localStorage.getItem('smart-learning-progress-computer'))).toEqual({ 'Introduction to Computers': ['Overview'] });
   });
 });

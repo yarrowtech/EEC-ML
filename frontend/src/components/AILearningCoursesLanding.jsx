@@ -5,7 +5,7 @@ import {
   AlertCircle, ArrowLeft, ArrowRight, BookOpen, ChevronRight, CheckCircle2,
   FlaskConical, Globe, Sparkles, Users, CalendarDays,
   Layers, Languages, Landmark, Leaf, Calculator, Palette, Music2,
-  Search, Flag, Smile, List, Clock, FolderOpen,
+  Search, Flag, Smile, List, Clock, FolderOpen, PlayCircle,
 } from 'lucide-react';
 import AILearningCoursesReference from './AILearningCoursesReference';
 import AILearningPracticePaperPage from './AILearningPracticePaperPage';
@@ -95,10 +95,10 @@ const DEFAULT_STYLE = CARD_STYLES[4]; // amber — fallback while a subject's gr
 // position in the list plus its own progress decide which tier it lands in
 // (see chapterStats in SubjectTopicsView). Purely presentational.
 const CHAPTER_STATUS_META = {
-  completed: { chip: 'bg-emerald-50 text-emerald-700', label: 'Completed', tile: 'bg-emerald-50 text-emerald-700', bar: 'bg-emerald-500' },
-  'almost-done': { chip: 'bg-violet-50 text-violet-700', label: 'Almost Done', tile: 'bg-violet-50 text-violet-700', bar: 'bg-violet-500' },
-  'in-progress': { chip: 'bg-amber-50 text-amber-700', label: 'In Progress', tile: 'bg-violet-50 text-violet-700', bar: 'bg-amber-500' },
-  ready: { chip: 'bg-violet-50 text-violet-700', label: 'Ready to Start', tile: 'bg-violet-50 text-violet-700', bar: 'bg-violet-500' },
+  completed: { chip: 'bg-emerald-600 text-white', label: 'Done', tile: 'bg-emerald-50 text-emerald-700', bar: 'bg-emerald-500' },
+  'almost-done': { chip: 'bg-violet-50 text-violet-700', label: 'Almost done', tile: 'bg-violet-50 text-violet-700', bar: 'bg-violet-500' },
+  'in-progress': { chip: 'bg-amber-50 text-amber-700', label: 'In progress', tile: 'bg-violet-50 text-violet-700', bar: 'bg-amber-500' },
+  ready: { chip: 'bg-slate-100 text-slate-600', label: 'Not started', tile: 'bg-violet-50 text-violet-700', bar: 'bg-violet-500' },
   'up-next': { chip: 'bg-slate-100 text-slate-500', label: 'Up Next', tile: 'bg-slate-100 text-slate-400', bar: 'bg-slate-300' },
   upcoming: { chip: 'bg-slate-100 text-slate-500', label: 'Upcoming', tile: 'bg-slate-100 text-slate-400', bar: 'bg-slate-300' },
 };
@@ -262,6 +262,31 @@ const SubjectTopicsView = ({ subject, onBack, style = DEFAULT_STYLE }) => {
     });
   }, [chapters, topicProgress]);
 
+  // What a student will find in each lesson — shown as plain-language chips.
+  const contentsOf = (chapter) => {
+    const titles = new Set((chapter.topics || []).map((t) => normalize(t.title)));
+    const subjectTopics = (Array.isArray(subject?.topics) ? subject.topics : []).filter((t) => titles.has(normalize(t.title)));
+    const files = (Array.isArray(chapter.currentAttachments) ? chapter.currentAttachments : Array.isArray(chapter.uploads) ? chapter.uploads : []).length;
+    const practice = subjectTopics.reduce((n, t) => n + (Array.isArray(t.tryoutSections) ? t.tryoutSections.length : 0), 0);
+    const labs = subjectTopics.reduce((n, t) => n + (Array.isArray(t.labExperiments) ? t.labExperiments.length : 0), 0);
+    return { files, practice, labs };
+  };
+  const ContentsChips = ({ chapter }) => {
+    const { labs } = contentsOf(chapter);
+    if (!labs) return null;
+    const chip = 'inline-flex items-center gap-1 rounded-full bg-slate-50 px-2 py-0.5 text-[11px] font-semibold text-slate-600 ring-1 ring-slate-200';
+    return (
+      <div className="flex flex-wrap gap-1.5" aria-label="What's inside">
+        {labs > 0 && <span className={chip}><FlaskConical size={12} className="text-emerald-500" /> {labs} lab experiment{labs === 1 ? '' : 's'}</span>}
+      </div>
+    );
+  };
+  // The one lesson to do next: the first unfinished lesson (in progress first).
+  const nextEntry = chapterStats.find((c) => c.firstTopic && (c.status === 'in-progress' || c.status === 'almost-done'))
+    || chapterStats.find((c) => c.firstTopic && c.status !== 'completed')
+    || null;
+  const allDone = chapterStats.length > 0 && chapterStats.every((c) => c.status === 'completed');
+
   const inProgressChapterCount = chapterStats.filter((c) => c.status === 'in-progress' || c.status === 'almost-done').length;
 
   const visibleChapterStats = useMemo(() => {
@@ -313,6 +338,10 @@ const SubjectTopicsView = ({ subject, onBack, style = DEFAULT_STYLE }) => {
   // Save completed subtopics to localStorage whenever it changes
   useEffect(() => {
     if (!isProgressLoaded) return;
+    // After a refresh the subject's topics arrive a moment later. Saving before
+    // then would filter every saved lesson out as "unknown" and wipe the
+    // student's "Mark as done" progress — so wait until the topics are known.
+    if (!topics.length) return;
     const storageKey = `smart-learning-progress-${subject.key}`;
     try {
       localStorage.setItem(storageKey, JSON.stringify(normalizedCompletedSubtopics));
@@ -320,7 +349,7 @@ const SubjectTopicsView = ({ subject, onBack, style = DEFAULT_STYLE }) => {
       // Storage full/unavailable (private mode, quota exceeded) — progress
       // tracking is best-effort and must not crash the page.
     }
-  }, [isProgressLoaded, normalizedCompletedSubtopics, subject.key]);
+  }, [isProgressLoaded, normalizedCompletedSubtopics, subject.key, topics.length]);
 
   const setChapterCompletion = (chapter, checked) => {
     setCompletedSubtopics((previous) => {
@@ -358,15 +387,15 @@ const SubjectTopicsView = ({ subject, onBack, style = DEFAULT_STYLE }) => {
         )}
       </div>
 
-      <header className="relative overflow-hidden rounded-2xl border border-violet-100 bg-gradient-to-r from-white via-white to-violet-50/60 px-4 py-3 shadow-sm sm:px-6 sm:py-4">
-        <div aria-hidden="true" className="pointer-events-none absolute -right-16 -top-16 h-48 w-48 rounded-full bg-violet-200/25 blur-3xl" />
+      <header className="relative overflow-hidden px-4 py-3 sm:px-6 sm:py-4">
+        <div aria-hidden="true" className="pointer-events-none absolute -right-16 -top-16 h-48 w-48" />
         {/* Title on the left, chapters done on the right, full-width progress below. */}
         <div className="relative z-10 space-y-2.5">
           <div className="flex items-center justify-between gap-3">
             <h1 className="min-w-0 text-lg font-extrabold leading-tight tracking-tight text-slate-900 sm:text-2xl">{subject.title} Chapters</h1>
             {chapters.length > 0 && (
               <div className="flex shrink-0 items-center gap-2">
-                <span className="flex h-8 w-8 items-center justify-center rounded-lg border border-violet-100 bg-violet-50 text-violet-600"><Flag size={15} /></span>
+                {/* <span className="flex h-8 w-8 items-center justify-center rounded-lg border border-violet-100 bg-violet-50 text-violet-600"><Flag size={15} /></span> */}
                 <span className="flex items-baseline gap-1">
                   <span className="text-base font-black leading-none text-slate-900">{completedChapterCount}/{chapters.length}</span>
                   <span className="text-[10px] font-bold uppercase tracking-wide text-slate-400">Chapters</span>
@@ -385,6 +414,36 @@ const SubjectTopicsView = ({ subject, onBack, style = DEFAULT_STYLE }) => {
         </div>
       </header>
 
+      {/* {nextEntry && (
+        <section className="rounded-2xl border border-violet-200 bg-linear-to-r from-violet-600 to-indigo-600 p-4 text-white shadow-md shadow-violet-600/20 sm:p-5" aria-label="What to do next">
+          <p className="text-[11px] font-bold uppercase tracking-wide text-white/75">{nextEntry.percentage > 0 ? 'Continue where you left off' : 'Start here'}</p>
+          <div className="mt-1 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+            <div className="min-w-0">
+              <h2 className="text-lg font-extrabold leading-snug">{nextEntry.chapter.title}</h2>
+              <p className="mt-0.5 text-xs text-white/80">
+                {nextEntry.chapter.meta?.unitNumber ? `Chapter ${nextEntry.chapter.meta.unitNumber} · ` : ''}
+                {nextEntry.percentage > 0 ? `${nextEntry.percentage}% done` : 'Not started yet'}
+                {nextEntry.durationLabel ? ` · about ${nextEntry.durationLabel.toLowerCase()}` : ''}
+              </p>
+            </div>
+            <button type="button" onClick={() => openTopic(nextEntry.firstTopic)} className="inline-flex shrink-0 items-center justify-center gap-2 rounded-full bg-white px-5 py-2.5 text-sm font-bold text-violet-700 shadow-sm transition hover:bg-violet-50 active:scale-[0.98]">
+              <PlayCircle size={17} /> {nextEntry.percentage > 0 ? 'Continue lesson' : 'Start lesson'}
+            </button>
+          </div>
+          <ol className="mt-3 flex flex-wrap gap-x-4 gap-y-1 border-t border-white/20 pt-3 text-[11.5px] text-white/85">
+            <li><b className="text-white">1.</b> Read the lesson</li>
+            <li><b className="text-white">2.</b> Open the files</li>
+            <li><b className="text-white">3.</b> Try the practice</li>
+            <li><b className="text-white">4.</b> Mark it done ✓</li>
+          </ol>
+        </section>
+      )} */}
+      {allDone && (
+        <section className="flex items-center gap-3 rounded-2xl border border-emerald-200 bg-emerald-50 p-4 text-emerald-900" aria-label="All lessons done">
+          <CheckCircle2 size={22} className="shrink-0 text-emerald-600" />
+          <p className="text-sm"><b>You've finished every lesson in {subject.title}.</b> Open any lesson below to revise.</p>
+        </section>
+      )}
 
       <section className="space-y-4">
 
@@ -406,10 +465,12 @@ const SubjectTopicsView = ({ subject, onBack, style = DEFAULT_STYLE }) => {
               <section key={group.key} className="space-y-2.5">
                 {showHeadings && (
                   <div className="flex items-center gap-2 sm:gap-3">
-                    <span className={`flex h-7 shrink-0 items-center rounded-lg px-2.5 text-[11px] font-extrabold uppercase tracking-wide sm:h-8 sm:px-3 sm:text-xs ${group.key === '__none__' ? 'bg-slate-100 text-slate-500' : 'bg-violet-600 text-white shadow-sm shadow-violet-600/25'}`}>
-                      {group.unitNumber ? `Chapter ${group.unitNumber}` : group.key === '__none__' ? 'Other lessons' : 'Chapter'}
-                    </span>
-                    {group.unitTitle && <h2 className="min-w-0 truncate text-sm font-bold text-slate-900 sm:text-base">{group.unitTitle}</h2>}
+                    <div className={`flex min-w-0 items-center rounded-full border border-slate-200 bg-white shadow-sm ${group.unitTitle ? 'pr-4' : ''}`}>
+                      <span className={`flex h-7 shrink-0 items-center rounded-full px-3 text-[11px] font-extrabold uppercase tracking-wide sm:h-8 sm:text-xs ${group.key === '__none__' ? 'bg-slate-100 text-slate-500' : 'bg-violet-600 text-white shadow-sm shadow-violet-600/25'}`}>
+                        {group.unitNumber ? `Chapter ${group.unitNumber}` : group.key === '__none__' ? 'Other lessons' : 'Chapter'}
+                      </span>
+                      {group.unitTitle && <h2 className="ml-2.5 min-w-0 truncate text-sm font-bold text-slate-900 sm:text-base">{group.unitTitle}</h2>}
+                    </div>
                     <span className="hidden h-px flex-1 bg-slate-200 sm:block" />
                     <span className="ml-auto shrink-0 text-[11px] font-semibold text-slate-400 sm:ml-0 sm:text-xs">{group.lessons.length} lesson{group.lessons.length === 1 ? '' : 's'}</span>
                   </div>
@@ -419,27 +480,49 @@ const SubjectTopicsView = ({ subject, onBack, style = DEFAULT_STYLE }) => {
               const unitBadge = showHeadings ? 'LESSON' : 'UNIT';
               const unitNo = showHeadings ? lessonIndex + 1 : originalIndex + 1;
               const meta = CHAPTER_STATUS_META[status];
-              const lessonLabel = !firstTopic ? 'No Topics' : status === 'completed' ? 'Review' : status === 'in-progress' || status === 'almost-done' ? 'Continue Lesson' : 'Start Lesson';
               return (
-                <article key={chapter.id || `${chapter.title}-${originalIndex}`} className="group overflow-hidden rounded-xl border border-slate-200 bg-white p-3.5 shadow-sm transition-all duration-200 hover:border-violet-400 hover:shadow-md">
-                  <div className="flex flex-col justify-between gap-3 lg:flex-row lg:items-center lg:gap-4">
-                    <div className="flex min-w-0 items-start gap-3 sm:items-center sm:gap-3.5">
-                      <div className={`flex h-12 w-12 shrink-0 flex-col items-center justify-center rounded-lg border border-violet-100 bg-violet-50 text-center text-violet-700`}>
-                        {status === 'completed' ? <CheckCircle2 size={22} /> : <><span className="text-[9px] font-extrabold uppercase tracking-wider text-violet-600">{unitBadge}</span><span className="text-sm font-black leading-none">{String(unitNo).padStart(2, '0')}</span></>}
+                // The whole card opens the lesson; the right side has "Mark as done" + an arrow.
+                <article
+                  key={chapter.id || `${chapter.title}-${originalIndex}`}
+                  role={firstTopic ? 'link' : undefined}
+                  tabIndex={firstTopic ? 0 : undefined}
+                  aria-label={firstTopic ? `Open ${chapter.title}` : undefined}
+                  onClick={() => firstTopic && openTopic(firstTopic)}
+                  onKeyDown={(e) => { if (firstTopic && (e.key === 'Enter' || e.key === ' ') && e.target === e.currentTarget) { e.preventDefault(); openTopic(firstTopic); } }}
+                  className={`group overflow-hidden rounded-xl border border-slate-200 bg-white p-3.5 shadow-sm transition-all duration-200 ${firstTopic ? 'cursor-pointer hover:border-violet-400 hover:shadow-md focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-violet-500' : 'opacity-70'}`}
+                >
+                  <div className="flex items-center gap-3 sm:gap-4">
+                    <div className="flex min-w-0 flex-1 items-start gap-3 sm:items-center sm:gap-3.5">
+                      <div className="flex h-12 w-12 shrink-0 flex-col items-center justify-center rounded-lg border border-violet-100 bg-violet-50 text-center text-violet-700">
+                        <span className="text-[9px] font-extrabold uppercase tracking-wider text-violet-600">{unitBadge}</span><span className="text-sm font-black leading-none">{String(unitNo).padStart(2, '0')}</span>
                       </div>
                       <div className="min-w-0 space-y-1">
-                        <div className="flex flex-wrap items-center gap-2"><span className={`rounded px-2 py-0.5 text-[10px] font-bold uppercase tracking-wide ${meta.chip}`}>{meta.label}</span>{classLabel && <><span className="text-slate-300">•</span><span className="text-xs font-semibold text-slate-500">Class {classLabel}</span></>}</div>
+                        <div className="flex flex-wrap items-center gap-2">{status !== 'ready' && <span className={`inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-[10.5px] font-bold ${meta.chip}`}>{status === 'completed' ? <CheckCircle2 size={11} /> : <Clock size={11} />}{meta.label}</span>}{nextEntry === entry && <span className="rounded-full bg-violet-600 px-2 py-0.5 text-[10.5px] font-bold text-white">Next</span>}</div>
                         <h3 className="line-clamp-2 text-[15px] font-bold leading-snug text-slate-900 transition-colors group-hover:text-violet-700 sm:text-base lg:truncate">{chapter.title}</h3>
-                        <div className="flex flex-wrap items-center gap-x-2.5 gap-y-1 text-xs font-medium text-slate-500 sm:gap-x-3"><span className="inline-flex items-center gap-1"><Layers size={13} className="text-slate-400" />{topicCount} topic{topicCount === 1 ? '' : 's'}</span><span className="text-slate-300">•</span><span className="inline-flex items-center gap-1"><List size={13} className="text-slate-400" />{subtopicCount} subtopic{subtopicCount === 1 ? '' : 's'}</span>{durationLabel && <><span className="text-slate-300">•</span><span className="inline-flex items-center gap-1"><Clock size={13} className="text-slate-400" />{durationLabel}</span></>}{chapter.teacherName && <><span className="text-slate-300">•</span><span className="inline-flex items-center gap-1"><Users size={13} className="text-slate-400" />{chapter.teacherName}</span></>}</div>
+                        <div className="flex flex-wrap items-center gap-x-2.5 gap-y-1 text-xs font-medium text-slate-500 sm:gap-x-3">{durationLabel && <span className="inline-flex items-center gap-1"><Clock size={13} className="text-slate-400" />About {durationLabel.toLowerCase()}</span>}{chapter.teacherName && <><span className="text-slate-300">•</span><span className="inline-flex items-center gap-1"><Users size={13} className="text-slate-400" />By {chapter.teacherName}</span></>}</div>
+                        <ContentsChips chapter={chapter} />
                       </div>
                     </div>
-                    <div className="flex items-center justify-between gap-3 border-t border-slate-100 pt-2.5 lg:justify-end lg:gap-4 lg:border-t-0 lg:pt-0">
-                      <div className="flex min-w-0 flex-1 items-center gap-2 sm:max-w-xs lg:w-32 lg:flex-none"><div className="h-1.5 w-full overflow-hidden rounded-full bg-slate-100"><div className={`h-1.5 rounded-full ${meta.bar}`} style={{ width: `${percentage}%` }} /></div><span className="text-xs font-semibold text-slate-400">{percentage}%</span></div>
-                      <div className="flex shrink-0 items-center gap-2"><button type="button" onClick={() => openTopic(firstTopic)} disabled={!firstTopic} className={`inline-flex items-center gap-1.5 rounded-lg px-4 py-2.5 text-xs font-bold sm:py-2 shadow-sm transition active:scale-[0.98] ${!firstTopic ? 'cursor-not-allowed bg-slate-100 text-slate-400' : 'bg-violet-600 text-white shadow-violet-600/25 hover:bg-violet-700'}`}>{lessonLabel}{firstTopic && <ArrowRight size={14} />}</button><input type="checkbox" checked={total > 0 && percentage === 100} disabled={total === 0} onChange={(event) => setChapterCompletion(chapter, event.target.checked)} aria-label={`Mark ${chapter.title} as complete`} className="h-5 w-5 shrink-0 cursor-pointer rounded border-slate-300 accent-violet-600 disabled:cursor-not-allowed" /></div>
+                    <div className="flex shrink-0 items-center gap-2 sm:gap-3">
+                      {/* clicking the checkbox must not open the lesson */}
+                      <label
+                        onClick={(e) => e.stopPropagation()}
+                        onKeyDown={(e) => e.stopPropagation()}
+                        className={`flex items-center gap-1.5 rounded-lg px-2 py-1.5 text-xs font-semibold transition ${total === 0 ? 'cursor-not-allowed opacity-40' : 'cursor-pointer hover:bg-emerald-50'} ${total > 0 && percentage === 100 ? 'text-emerald-700' : 'text-slate-600'}`}
+                      >
+                        <input
+                          type="checkbox"
+                          checked={total > 0 && percentage === 100}
+                          disabled={total === 0}
+                          onChange={(e) => setChapterCompletion(chapter, e.target.checked)}
+                          aria-label={`Mark ${chapter.title} as done`}
+                          className="h-4 w-4 cursor-pointer rounded border-slate-300 accent-emerald-600 disabled:cursor-not-allowed"
+                        />
+                        <span className="hidden sm:inline">Mark as done</span>
+                      </label>
+                      {firstTopic && <ChevronRight size={20} aria-hidden="true" className="shrink-0 text-slate-400 transition group-hover:translate-x-0.5 group-hover:text-violet-600" />}
                     </div>
                   </div>
-
-
                 </article>
               );
             })}
