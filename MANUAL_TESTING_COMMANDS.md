@@ -591,6 +591,12 @@ npm test -- --runInBand src/components/__tests__/StudentFamilyServices.test.jsx 
 - Open older S3 PDF and JFIF uploads: confirm a browser preview opens without an automatic download. Check the preview response uses inline disposition and the appropriate PDF/image MIME type; the separate download button should still download the file.
 - In Study Materials, confirm records from the same subject/chapter combine into one card with the attachment count, uploading teachers, and latest shared date. Expand View materials: each attachment shows a generic file-type label, uploader, date, and working Open link; filenames must not be visible. Search chapters/subjects/teachers and switch subject filters without losing available filter options. Verify the no-materials and no-search-results states.
 - On a subject chapter card, confirm the completion checkbox sits beside Start Lesson and the long subtopic introduction and "Click to mark as complete" prompt are hidden. Toggle the checkbox on and off: chapter progress should update and persist after reload without changing other chapters.
+## Student health records
+
+1. In the teacher portal, save a health check-in for a student through Student Health Records.
+2. Sign in as that student and open `/student/health`. Verify the date, teacher, status, health issue, scores, and notes appear when provided. Save an update for the same date and refresh to verify the updated record appears once.
+3. Sign in as a different student and verify the record does not appear.
+
 ## Student timetable class details
 
 1. Assign a room with a building and floor to a timetable period for the student's class and section.

@@ -3,9 +3,13 @@ import { Activity, AlertCircle, HeartPulse, Loader2, ShieldCheck } from 'lucide-
 
 const API_BASE = (import.meta.env.VITE_API_URL || 'http://localhost:5000').replace(/\/$/, '');
 const valueOrPending = (value) => String(value || '').trim() || 'Not recorded';
+const STATUS_LABELS = { good: 'Good', moderate: 'Moderate', at_risk: 'At risk' };
+const ISSUE_LABELS = { headache: 'Headache', fatigue: 'Fatigue', fever: 'Fever', stomach_ache: 'Stomach ache', other: 'Other' };
+const ISSUE_REPORTED = { yes: 'Yes', maybe: 'Possible', no: 'No' };
+const recordDateFormat = new Intl.DateTimeFormat('en-IN', { dateStyle: 'medium', timeZone: 'UTC' });
 
 const StudentHealthReport = () => {
-  const [data, setData] = useState({ profile: {}, observations: [] });
+  const [data, setData] = useState({ profile: {}, healthRecords: [], observations: [] });
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
 
@@ -20,6 +24,7 @@ const StudentHealthReport = () => {
         if (!response.ok) throw new Error(payload?.error || 'Unable to load health information');
         setData({
           profile: payload?.profile || {},
+          healthRecords: Array.isArray(payload?.healthRecords) ? payload.healthRecords : [],
           observations: Array.isArray(payload?.observations) ? payload.observations : [],
         });
       } catch (err) {
@@ -44,6 +49,47 @@ const StudentHealthReport = () => {
 
       {!error && (
         <>
+          <section className="rounded-2xl border border-slate-200 bg-white p-5">
+            <h2 className="flex items-center gap-2 font-bold text-slate-900">
+              <HeartPulse className="h-5 w-5 text-rose-500" /> Teacher health records
+            </h2>
+            {data.healthRecords.length === 0 ? (
+              <p className="mt-3 text-sm text-slate-600">Your teachers haven’t added any health records yet.</p>
+            ) : (
+              <ul className="mt-3 divide-y divide-slate-200">
+                {data.healthRecords.map((record) => {
+                  const date = new Date(record.date);
+                  const fields = [
+                    ['Overall status', STATUS_LABELS[record.overallStatus]],
+                    ['Health issue reported', ISSUE_REPORTED[record.issueToday]],
+                    ['Health issue', record.issueToday !== 'no' && ISSUE_LABELS[record.issueTag]],
+                    ['Mood', record.mood != null && `${record.mood}/100`],
+                    ['Behavior', record.behavior != null && `${record.behavior}/100`],
+                  ].filter(([, value]) => value);
+                  return (
+                    <li key={record.id} className="py-4">
+                      <div className="flex flex-wrap items-baseline justify-between gap-1">
+                        <p className="font-semibold text-slate-900">{record.teacherName}</p>
+                        {record.date && !Number.isNaN(date.getTime()) && (
+                          <time dateTime={record.date} className="text-sm text-slate-600">{recordDateFormat.format(date)}</time>
+                        )}
+                      </div>
+                      <dl className="mt-2 grid grid-cols-2 gap-x-4 gap-y-2 text-sm lg:grid-cols-3">
+                        {fields.map(([label, value]) => (
+                          <div key={label}>
+                            <dt className="text-slate-600">{label}</dt>
+                            <dd className="font-medium text-slate-900">{value}</dd>
+                          </div>
+                        ))}
+                      </dl>
+                      {record.notes && <p className="mt-3 whitespace-pre-wrap break-words text-sm text-slate-700">{record.notes}</p>}
+                    </li>
+                  );
+                })}
+              </ul>
+            )}
+          </section>
+
           <section className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
             {[
               ['Blood group', valueOrPending(data.profile.bloodGroup)],

@@ -538,6 +538,7 @@ Mounted APIs and handlers:
 
 All endpoints use `backend/middleware/authStudent.js` and scope reads to the authenticated student and school/campus:
 - `GET /api/student/auth/health`
+  - Returns the student profile, teacher-entered daily check-ins in `healthRecords` sorted newest first, and teacher observations shared with the family in `observations`.
 - `GET /api/student/auth/wellbeing`
 - `GET /api/student/auth/complaints`
 - `POST /api/student/auth/complaints`
@@ -546,6 +547,7 @@ All endpoints use `backend/middleware/authStudent.js` and scope reads to the aut
 Database models:
 - `backend/models/StudentUser.js`
 - `backend/models/StudentObservation.js`
+- `backend/models/StudentHealthLog.js`
 - `backend/models/Wellbeing.js`
 - `backend/models/SupportRequest.js`
 - `backend/models/ParentMeeting.js`

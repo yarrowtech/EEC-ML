@@ -61,16 +61,16 @@ const MENU_ITEMS = [
       { id: 'chat', name: 'Messages & Chat', icon: MessageCircle },
       { id: 'teacherfeedback', name: 'Teacher Feedback', icon: Star },
       { id: 'meetings', name: 'Parent-Teacher Meetings', icon: Video },
-      { id: 'excuse-letter', name: 'Leave / Excuse Letters', icon: FileText },
+      { id: 'excuse-letter', name: 'Leave Letters', icon: FileText },
       { id: 'complaints', name: 'Complaints & Support', icon: AlertOctagon },
     ],
   },
   {
-    id: 'wellbeing', name: 'Wellbeing & Development', icon: Heart,
+    id: 'wellbeing', name: 'Wellbeing', icon: Heart,
     children: [
       { id: 'wellbeing', name: 'Emotional Wellbeing', icon: Heart },
       { id: 'health', name: 'Health Records', icon: Activity },
-      { id: 'achievements', name: 'Achievements & Awards', icon: Trophy },
+      { id: 'achievements', name: 'Achievements', icon: Trophy },
     ],
   },
   {

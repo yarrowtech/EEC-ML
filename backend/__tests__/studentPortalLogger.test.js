@@ -121,6 +121,8 @@ jest.mock('../models/TeacherAllocation', () => mockTeacherAllocation);
 jest.mock('../models/Section', () => mockSection);
 jest.mock('../models/SupportRequest', () => mockSupportRequest);
 jest.mock('../models/StudentObservation', () => mockStudentObservation);
+const mockStudentHealthLog = { find: jest.fn() };
+jest.mock('../models/StudentHealthLog', () => mockStudentHealthLog);
 jest.mock('../models/Wellbeing', () => mockWellbeing);
 jest.mock('../models/MasteryScore', () => mockMasteryScore);
 jest.mock('../models/PracticeAttempt', () => mockPracticeAttempt);
@@ -211,6 +213,7 @@ describe('student portal logger coverage', () => {
     mockSection.findOne.mockReturnValue(makeQuery(null));
     mockSupportRequest.find.mockReturnValue(makeQuery([]));
     mockStudentObservation.find.mockReturnValue(makeQuery([]));
+    mockStudentHealthLog.find.mockReturnValue(makeQuery([]));
     mockWellbeing.findOne.mockReturnValue(makeQuery(null));
     mockMasteryScore.find.mockReturnValue(makeQuery([]));
     mockPracticeAttempt.countDocuments.mockReturnValue(makeQuery(0));
@@ -487,7 +490,13 @@ describe('student portal logger coverage', () => {
     });
   });
 
-  test('returns the student health profile and only shared teacher observations', async () => {
+  test('health records reference the registered teacher model', () => {
+    const healthLog = jest.requireActual('../models/StudentHealthLog');
+    const teacher = jest.requireActual('../models/TeacherUser');
+    expect(healthLog.schema.path('teacherId').options.ref).toBe(teacher.modelName);
+  });
+
+  test('returns the signed-in student’s health records, profile, and shared observations', async () => {
     mockStudentUser.findOne.mockReturnValue(makeQuery({
       _id: 'student-1',
       name: 'Ada',
@@ -504,10 +513,36 @@ describe('student portal logger coverage', () => {
       healthObservations: { energy: 'Good' },
     }]));
 
-    const response = await request(app).get('/student-route/health');
+    const healthRecordsQuery = makeQuery([{
+      _id: 'health-log-1',
+      date: '2026-08-21',
+      teacherId: { name: 'Teacher Two' },
+      overallStatus: 'moderate',
+      issueToday: 'yes',
+      issueTag: 'headache',
+      mood: 0,
+      behavior: null,
+      notes: 'Reported a headache.',
+    }]);
+    mockStudentHealthLog.find.mockReturnValue(healthRecordsQuery);
+
+    const response = await request(app).get('/student-route/health').query({ studentId: 'another-student' });
 
     expect(response.status).toBe(200);
     expect(response.body.profile).toEqual(expect.objectContaining({ bloodGroup: 'O+', allergies: 'Peanuts' }));
+    expect(response.body.healthRecords).toEqual([{
+      id: 'health-log-1',
+      date: '2026-08-21',
+      teacherName: 'Teacher Two',
+      overallStatus: 'moderate',
+      issueToday: 'yes',
+      issueTag: 'headache',
+      mood: 0,
+      behavior: null,
+      notes: 'Reported a headache.',
+    }]);
+    expect(mockStudentHealthLog.find).toHaveBeenCalledWith({ studentId: 'student-1', schoolId: 'school-1' });
+    expect(healthRecordsQuery.sort).toHaveBeenCalledWith({ date: -1 });
     expect(response.body.observations).toEqual([
       expect.objectContaining({ teacherName: 'Teacher One', healthObservations: { energy: 'Good' } }),
     ]);

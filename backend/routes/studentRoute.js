@@ -25,6 +25,7 @@ const { normalizeClassName } = require('../utils/teacherAllocationScope');
 const School = require('../models/School');
 const SupportRequest = require('../models/SupportRequest');
 const StudentObservation = require('../models/StudentObservation');
+const StudentHealthLog = require('../models/StudentHealthLog');
 const StudentEnrollmentDraft = require('../models/StudentEnrollmentDraft');
 const Wellbeing = require('../models/Wellbeing');
 const Principal = require('../models/Principal');
@@ -1107,7 +1108,7 @@ router.get('/achievements', authStudent, async (req, res) => {
   }
 });
 
-// Student-safe health profile and teacher observations explicitly shared with family.
+// Health profile, daily teacher check-ins, and observations shared with family.
 router.get('/health', authStudent, async (req, res) => {
   try {
     const schoolId = req.schoolId || req.user.schoolId;
@@ -1116,16 +1117,19 @@ router.get('/health', authStudent, async (req, res) => {
       .lean();
     if (!student) return res.status(404).json({ error: 'Student not found' });
 
-    const observations = await StudentObservation.find({
-      schoolId,
-      studentId: req.user.id,
-      source: 'teacher',
-      parentNotification: true,
-    })
-      .sort({ recordedAt: -1 })
-      .limit(30)
-      .populate('teacherId', 'name')
-      .lean();
+    const studentScope = { schoolId, studentId: req.user.id };
+    const [observations, healthRecords] = await Promise.all([
+      StudentObservation.find({ ...studentScope, source: 'teacher', parentNotification: true })
+        .sort({ recordedAt: -1 })
+        .limit(30)
+        .populate('teacherId', 'name')
+        .lean(),
+      StudentHealthLog.find(studentScope)
+        .select('date teacherId overallStatus issueToday issueTag mood behavior notes')
+        .sort({ date: -1 })
+        .populate('teacherId', 'name')
+        .lean(),
+    ]);
 
     return res.json({
       profile: {
@@ -1138,6 +1142,17 @@ router.get('/health', authStudent, async (req, res) => {
         allergies: student.allergies || '',
         immunizationStatus: student.immunizationStatus || '',
       },
+      healthRecords: healthRecords.map((record) => ({
+        id: record._id,
+        date: record.date,
+        teacherName: record.teacherId?.name || 'Teacher',
+        overallStatus: record.overallStatus,
+        issueToday: record.issueToday,
+        issueTag: record.issueTag,
+        mood: record.mood,
+        behavior: record.behavior,
+        notes: record.notes,
+      })),
       observations: observations.map((item) => ({
         id: item._id,
         recordedAt: item.recordedAt,

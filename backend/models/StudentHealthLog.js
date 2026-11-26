@@ -5,7 +5,7 @@ const mongoose = require('mongoose');
 const studentHealthLogSchema = new mongoose.Schema({
   schoolId:  { type: mongoose.Schema.Types.ObjectId, ref: 'School',      required: true, index: true },
   studentId: { type: mongoose.Schema.Types.ObjectId, ref: 'StudentUser', required: true, index: true },
-  teacherId: { type: mongoose.Schema.Types.ObjectId, ref: 'Teacher' },
+  teacherId: { type: mongoose.Schema.Types.ObjectId, ref: 'TeacherUser' },
   date:      { type: String, required: true }, // YYYY-MM-DD (school-local day)
 
   overallStatus: { type: String, enum: ['good', 'moderate', 'at_risk'], default: 'good' },
