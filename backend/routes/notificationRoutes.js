@@ -834,9 +834,19 @@ router.get('/user', authAnyUser, userNotificationsCache.cache, async (req, res) 
     // won't let a plain $set touch createdAt on an update, but it always
     // bumps updatedAt, so that's the reliable "how recently did this change"
     // signal for sorting.
-    const items = await Notification.find(filter)
+    const rawItems = await Notification.find(filter)
       .sort({ updatedAt: -1 })
       .lean();
+    // Older lesson-plan publishes created the same "new content" notice on every
+    // re-publish — show each one once (newest copy).
+    const seenSmartTeaching = new Set();
+    const items = rawItems.filter((item) => {
+      if (item.title !== 'New Smart Teaching content published') return true;
+      const key = [item.message, String(item.classId || ''), String(item.sectionId || '')].join('|');
+      if (seenSmartTeaching.has(key)) return false;
+      seenSmartTeaching.add(key);
+      return true;
+    });
 
     const unseenViewIds = items
       .filter((item) => !(item.viewedBy || []).some((v) => String(v.userId) === String(userId)))

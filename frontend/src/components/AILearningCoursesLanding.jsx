@@ -681,8 +681,8 @@ const AILearningCoursesLanding = ({ continueCard = null }) => {
   }
 
   return (
-    <div className={`m-3 rounded-2xl border border-slate-200/80 bg-[#f8f9fd] px-4 py-4 text-slate-900 shadow-sm sm:m-4 sm:rounded-3xl sm:px-5 ${selectedSubject ? 'min-h-full' : 'flex min-h-0 flex-1 flex-col overflow-hidden'}`}>
-      <div className={selectedSubject ? 'w-full' : 'flex min-h-0 w-full flex-1 flex-col'}>
+    <div className={`m-3 rounded-2xl border border-slate-200/80 bg-[#f8f9fd] px-4 py-4 text-slate-900 shadow-sm sm:m-4 sm:rounded-3xl sm:px-5 flex min-h-0 flex-1 flex-col overflow-hidden`}>
+      <div className={selectedSubject ? 'min-h-0 w-full flex-1 overflow-y-auto overscroll-contain pr-1 custom-scrollbar' : 'flex min-h-0 w-full flex-1 flex-col'}>
         {selectedSubject ? (
           <SubjectTopicsView
             subject={selectedSubject}

@@ -13,6 +13,8 @@
     "tenant:migrate:apply": "node scripts/migrateOrganizations.js --apply",
     "payments:migrate": "node scripts/migratePaymentGateways.js",
     "payments:migrate:apply": "node scripts/migratePaymentGateways.js --apply",
+    "notifications:dedupe-smart-teaching": "node scripts/dedupeSmartTeachingNotifications.js",
+    "notifications:dedupe-smart-teaching:apply": "node scripts/dedupeSmartTeachingNotifications.js --apply",
     "payments:migrate-modes": "node scripts/migratePaymentGatewayModes.js",
     "payments:migrate-modes:apply": "node scripts/migratePaymentGatewayModes.js --apply",
     "assignments:migrate-sessions": "node scripts/backfillAssignmentAcademicYears.js",

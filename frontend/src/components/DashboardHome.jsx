@@ -12,6 +12,7 @@ import { Skeleton } from './ui/skeleton';
 import { fetchCachedJson, peekCachedJson } from '../utils/studentApiCache';
 import { STUDENT_API_BASE, STUDENT_DASHBOARD_TTL_MS } from '../utils/studentDashboardPrefetch';
 import { useStudentDashboard } from './StudentDashboardContext';
+import FileTypeIcon, { fileKindOf } from './FileTypeIcon';
 
 const API_BASE = STUDENT_API_BASE;
 
@@ -179,7 +180,7 @@ const HeroCard = () => {
       <div className="relative z-10 grid flex-1 grid-cols-1 sm:grid-cols-2">
         {/* Left: profile info — centred on mobile, left-aligned from sm up */}
         <div
-          className={`flex flex-col items-center gap-3 p-6 text-center sm:items-start sm:text-left ${
+          className={`flex flex-col items-center gap-3 p-6 text-center sm:items-start sm:text-left md:max-lg:gap-2 md:max-lg:p-4 ${
             hasCover ? 'max-sm:m-3 max-sm:rounded-2xl max-sm:bg-slate-900/30 max-sm:p-5 max-sm:backdrop-blur-md max-sm:ring-1 max-sm:ring-white/20' : ''
           }`}
         >
@@ -188,19 +189,19 @@ const HeroCard = () => {
               <img
                 src={profileImage}
                 alt=""
-                className="h-20 w-20 rounded-full border-[3px] border-gray-100 object-cover"
+                className="h-20 w-20 rounded-full border-[3px] border-gray-100 object-cover md:max-lg:h-14 md:max-lg:w-14"
                 onError={(e) => { e.target.style.display = 'none'; }}
               />
             ) : (
-              <div className="flex h-20 w-20 items-center justify-center rounded-full border-2 border-gray-100 bg-[#eef2ff]">
-                <span className="select-none text-2xl font-bold text-[#4f46e5]">{initials}</span>
+              <div className="flex h-20 w-20 items-center justify-center rounded-full border-2 border-gray-100 bg-[#eef2ff] md:max-lg:h-14 md:max-lg:w-14">
+                <span className="select-none text-2xl font-bold text-[#4f46e5] md:max-lg:text-lg">{initials}</span>
               </div>
             )}
-            <span className="absolute bottom-1 right-1 h-3.5 w-3.5 rounded-full border-2 border-white bg-emerald-400" />
+            <span className="absolute bottom-1 right-1 h-3.5 w-3.5 rounded-full border-2 border-white bg-emerald-400 md:max-lg:bottom-0 md:max-lg:right-0 md:max-lg:h-3 md:max-lg:w-3" />
           </div>
 
           <div>
-            <h1 className={`text-2xl font-bold leading-tight tracking-tight ${hasCover ? 'text-white' : 'text-[#0f172a]'}`}>
+            <h1 className={`text-2xl font-bold leading-tight tracking-tight md:max-lg:text-lg ${hasCover ? 'text-white' : 'text-[#0f172a]'}`}>
               {studentData.name || 'Student'}
             </h1>
             {studentData.username && (
@@ -228,14 +229,14 @@ const HeroCard = () => {
 
         {/* Right: campus illustration (only when the school has no cover photo) */}
         {!hasCover && (
-          <div className="relative hidden min-h-[220px] sm:block">
+          <div className="relative hidden min-h-[220px] sm:block md:max-lg:min-h-[140px]">
             <CampusIllustration />
             <div className="pointer-events-none absolute inset-0 bg-linear-to-l from-transparent via-white/0 to-white/60" />
           </div>
         )}
       </div>
       {/* Daily Boost sits inside the card; over the photo a soft bottom shade keeps the white text readable. */}
-      <div className={`relative z-10 px-6 pb-4 pt-2 ${hasCover ? 'bg-linear-to-t from-black/70 to-transparent' : ''}`}>
+      <div className={`relative z-10 px-6 pb-4 pt-2 md:max-lg:px-4 md:max-lg:pb-3 md:max-lg:pt-0 ${hasCover ? 'bg-linear-to-t from-black/70 to-transparent' : ''}`}>
         <DailyBoost dark={hasCover} />
       </div>
     </Motion.div>
@@ -587,6 +588,96 @@ const SmartLearningReminders = ({ reminders }) => (
     )}
   </section>
 );
+
+// ── Recent study materials (upright tablet: fills the space beside Quick Links) ──
+const MATERIALS_URL = `${STUDENT_API_BASE}/api/student/materials?page=1&limit=6`;
+const safeHttpUrl = (raw) => {
+  try {
+    const u = new URL(String(raw || ''));
+    return u.protocol === 'https:' || u.protocol === 'http:' ? u.href : '';
+  } catch {
+    return '';
+  }
+};
+
+const RecentMaterials = ({ className = '' }) => {
+  const [materials, setMaterials] = useState(() => peekCachedJson(MATERIALS_URL)?.data?.materials || []);
+  const [loading, setLoading] = useState(() => !peekCachedJson(MATERIALS_URL));
+
+  useEffect(() => {
+    let cancelled = false;
+    fetchCachedJson(MATERIALS_URL, { ttlMs: 2 * 60 * 1000 })
+      .then(({ data }) => { if (!cancelled) setMaterials(Array.isArray(data?.materials) ? data.materials : []); })
+      .catch(() => {})
+      .finally(() => { if (!cancelled) setLoading(false); });
+    return () => { cancelled = true; };
+  }, []);
+
+  // One row per file, newest first.
+  const files = materials.flatMap((m) => (m.attachments || []).map((a) => ({
+    key: `${m._id}-${a.url || a.name}`,
+    name: a.name || m.chapterTitle || m.title || 'Study material',
+    subject: m.subjectName || '',
+    chapter: m.chapterTitle || m.topicTitle || '',
+    date: m.publishedAt || m.createdAt,
+    url: safeHttpUrl(a.url),
+    attachment: a,
+  }))).slice(0, 4);
+
+  return (
+    <div className={`flex h-full flex-col rounded-2xl bg-white p-4 shadow-sm ${className}`}>
+      <div className="-mx-4 -mt-4 mb-3 flex items-center justify-between gap-2 rounded-t-2xl border-b border-gray-100 bg-gray-100 px-4 py-3">
+        <h2 className="flex items-center gap-2 text-sm font-bold text-[#0f172a]"><BookOpen size={16} className="text-[#4f46e5]" aria-hidden="true" /> Recent Study Materials</h2>
+        <Link to="/student/study-materials" className="text-[11.5px] font-bold text-indigo-600 hover:text-indigo-700">View all →</Link>
+      </div>
+      {loading ? (
+        <div className="space-y-2">{[0, 1, 2].map((i) => <div key={i} className="h-10 animate-pulse rounded-lg bg-gray-100" />)}</div>
+      ) : files.length === 0 ? (
+        <p className="text-xs text-[#64748b]">No study materials shared yet.</p>
+      ) : (
+        <ul className="space-y-1.5">
+          {files.map((f) => {
+            const content = (
+              <>
+                <FileTypeIcon kind={fileKindOf(f.attachment)} size={30} />
+                <span className="min-w-0 flex-1">
+                  <span className="block truncate text-[13px] font-semibold text-[#0f172a]">{f.name}</span>
+                  <span className="block truncate text-[11px] text-[#64748b]">{[f.subject, f.chapter].filter(Boolean).join(' · ')}</span>
+                </span>
+                {f.date && <span className="shrink-0 text-[10.5px] text-[#94a3b8]">{new Date(f.date).toLocaleDateString(undefined, { day: 'numeric', month: 'short' })}</span>}
+              </>
+            );
+            return (
+              <li key={f.key}>
+                {f.url ? (
+                  <a href={f.url} target="_blank" rel="noopener noreferrer" className="flex items-center gap-2.5 rounded-lg p-1.5 transition hover:bg-gray-50">{content}</a>
+                ) : (
+                  <Link to="/student/study-materials" className="flex items-center gap-2.5 rounded-lg p-1.5 transition hover:bg-gray-50">{content}</Link>
+                )}
+              </li>
+            );
+          })}
+        </ul>
+      )}
+    </div>
+  );
+};
+
+// Shown (and fetched) only on an upright tablet: 768px – 1023px wide.
+const TABLET_PORTRAIT_QUERY = '(min-width: 768px) and (max-width: 1023.98px)';
+const useTabletPortrait = () => {
+  const get = () => typeof window !== 'undefined' && typeof window.matchMedia === 'function' && window.matchMedia(TABLET_PORTRAIT_QUERY).matches;
+  const [match, setMatch] = useState(get);
+  useEffect(() => {
+    if (typeof window === 'undefined' || typeof window.matchMedia !== 'function') return undefined;
+    const mq = window.matchMedia(TABLET_PORTRAIT_QUERY);
+    const onChange = () => setMatch(mq.matches);
+    mq.addEventListener?.('change', onChange);
+    return () => mq.removeEventListener?.('change', onChange);
+  }, []);
+  return match;
+};
+const TabletRecentMaterials = () => (useTabletPortrait() ? <RecentMaterials /> : null);
 
 const QuickLinks = ({ setActiveView }) => {
   const { unreadChatCount } = useStudentDashboard();
@@ -941,6 +1032,8 @@ const DashboardHome = ({ setActiveView }) => {
             <SmartLearningReminders reminders={smartLearningReminders} />
             <TodaySchedule setActiveView={setActiveView} />
             <QuickLinks setActiveView={setActiveView} />
+            {/* Upright tablet only: fills the empty space beside Quick Links in the 2-column grid */}
+            <TabletRecentMaterials />
           </div>
 
           {/* Progress Trend */}
@@ -967,3 +1060,4 @@ const DashboardHome = ({ setActiveView }) => {
 };
 
 export default DashboardHome;
+export { RecentMaterials, TabletRecentMaterials };

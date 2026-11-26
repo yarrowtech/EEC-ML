@@ -353,28 +353,48 @@ const buildSourceMaterialPayloads = ({ plan, chapter, topic, subTopic, chapterIn
   };
 };
 
+// Publishing / re-publishing / editing a chapter runs this every time — students
+// must get ONE "new content" notice per sub-topic, not one per save. The
+// dedupeKey (unique) identifies the sub-topic; older notices from before the key
+// existed are matched by their text and class so they don't get a twin either.
 const createPublishedStudentNotification = async ({ schoolId, campusId, plan, chapterTitle, topicTitle, subTopicTitle }) => {
   const messageParts = [plan.subject || 'Subject', chapterTitle, topicTitle, subTopicTitle].filter(Boolean);
-  await Notification.create({
+  const title = 'New Smart Teaching content published';
+  const message = `${messageParts.join(' • ')} is now available in Smart Learning.`;
+  const dedupeKey = ['smart-teaching', String(schoolId), String(plan._id), ...[chapterTitle, topicTitle, subTopicTitle].map((v) => normalizeLower(v))].join(':');
+  const existing = await Notification.findOne({
     schoolId,
-    campusId: campusId || null,
-    title: 'New Smart Teaching content published',
-    message: `${messageParts.join(' • ')} is now available in Smart Learning.`,
-    audience: 'Student',
-    classId: plan.classId,
-    sectionId: plan.sectionId,
-    subjectId: plan.subjectId,
-    createdByType: 'teacher',
-    createdByTeacherId: plan.teacherId,
-    createdByName: plan.teacherName || '',
-    className: plan.className || '',
-    sectionName: plan.sectionName || '',
-    subjectName: plan.subject || '',
-    type: 'class_note',
-    typeLabel: 'Smart Learning content',
-    priority: 'medium',
-    category: 'academic',
-  });
+    $or: [
+      { dedupeKey },
+      { dedupeKey: { $exists: false }, title, message, classId: plan.classId, sectionId: plan.sectionId },
+    ],
+  }).select('_id').lean();
+  if (existing) return;
+  try {
+    await Notification.create({
+      dedupeKey,
+      schoolId,
+      campusId: campusId || null,
+      title,
+      message,
+      audience: 'Student',
+      classId: plan.classId,
+      sectionId: plan.sectionId,
+      subjectId: plan.subjectId,
+      createdByType: 'teacher',
+      createdByTeacherId: plan.teacherId,
+      createdByName: plan.teacherName || '',
+      className: plan.className || '',
+      sectionName: plan.sectionName || '',
+      subjectName: plan.subject || '',
+      type: 'class_note',
+      typeLabel: 'Smart Learning content',
+      priority: 'medium',
+      category: 'academic',
+    });
+  } catch (err) {
+    if (err?.code !== 11000) throw err; // a parallel publish already created it
+  }
 };
 
 const publishSmartLearningArtifacts = async ({ schoolId, campusId, plan, chapter, topic, subTopic, chapterIndex, topicIndex, subTopicIndex, publishAssignment = true, publishPracticePaper = true }) => {
@@ -3679,3 +3699,5 @@ router.patch('/teacher/tryout-submissions/:id/grade', authTeacher, async (req, r
 });
 
 module.exports = router;
+// exposed for tests
+router.__test = { createPublishedStudentNotification };

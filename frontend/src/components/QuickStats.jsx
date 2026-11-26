@@ -6,10 +6,10 @@ import { fetchCachedJson } from '../utils/studentApiCache';
 
 // White cards; the colour lives only in the round icon badge.
 const CARD_THEMES = [
-  { iconBg: 'bg-linear-to-br from-sky-500 to-blue-600 shadow-blue-500/30', badge: 'bg-blue-500 text-white', circle: 'bg-blue-100/70' },
-  { iconBg: 'bg-linear-to-br from-amber-400 to-orange-500 shadow-orange-500/30', badge: 'bg-orange-500 text-white', circle: 'bg-orange-100/70' },
-  { iconBg: 'bg-linear-to-br from-emerald-500 to-teal-600 shadow-emerald-500/30', badge: 'bg-emerald-500 text-white', circle: 'bg-emerald-100/70' },
-  { iconBg: 'bg-linear-to-br from-violet-500 to-fuchsia-600 shadow-violet-500/30', badge: 'bg-violet-500 text-white', circle: 'bg-violet-100/70' },
+  { iconBg: 'bg-linear-to-br from-sky-500 to-blue-600 shadow-blue-500/30', badge: 'bg-blue-500 text-white', circle: 'bg-blue-100/70', topBar: 'bg-linear-to-r from-sky-500 to-blue-600' },
+  { iconBg: 'bg-linear-to-br from-amber-400 to-orange-500 shadow-orange-500/30', badge: 'bg-orange-500 text-white', circle: 'bg-orange-100/70', topBar: 'bg-linear-to-r from-amber-400 to-orange-500' },
+  { iconBg: 'bg-linear-to-br from-emerald-500 to-teal-600 shadow-emerald-500/30', badge: 'bg-emerald-500 text-white', circle: 'bg-emerald-100/70', topBar: 'bg-linear-to-r from-emerald-500 to-teal-600' },
+  { iconBg: 'bg-linear-to-br from-violet-500 to-fuchsia-600 shadow-violet-500/30', badge: 'bg-violet-500 text-white', circle: 'bg-violet-100/70', topBar: 'bg-linear-to-r from-violet-500 to-fuchsia-600' },
 ];
 
 const StatCard = ({ stat, theme, loading }) => {
@@ -18,28 +18,30 @@ const StatCard = ({ stat, theme, loading }) => {
     <Link
       to={stat.to}
       aria-label={`Open ${stat.title}`}
-      className={`relative block h-full overflow-hidden rounded-2xl border border-gray-100 bg-white p-4 sm:p-5 shadow-sm transition-transform hover:shadow-md hover:-translate-y-0.5 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-indigo-500`}
+      className={`relative block h-full overflow-hidden rounded-xl border border-gray-100 bg-white p-2.5 shadow-sm lg:rounded-2xl lg:p-5 transition-transform hover:shadow-md hover:-translate-y-0.5 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-indigo-500`}
     >
       {/* Light decorative circle bleeding in from the top-right corner */}
-      <div className={`pointer-events-none absolute -right-8 -top-8 h-28 w-28 rounded-full ${theme.circle}`} aria-hidden="true" />
+      {/* top border in the card's icon colour */}
+      <div className={`pointer-events-none absolute inset-x-0 top-0 z-[5] h-1 ${theme.topBar}`} aria-hidden="true" />
+      <div className={`pointer-events-none absolute -right-6 -top-6 h-16 w-16 rounded-full lg:-right-8 lg:-top-8 lg:h-28 lg:w-28 ${theme.circle}`} aria-hidden="true" />
 
       <div className="relative z-10">
         {/* Icon + badge */}
-        <div className="flex items-start justify-between mb-3">
-          <div className={`flex h-10 w-10 items-center justify-center rounded-full shadow-md ${theme.iconBg}`}>
-            <Icon size={20} className="text-white" />
+        <div className="mb-1.5 flex items-start justify-between gap-1 lg:mb-3">
+          <div className={`flex h-7 w-7 shrink-0 items-center justify-center rounded-full shadow-md lg:h-10 lg:w-10 ${theme.iconBg}`}>
+            <Icon className="size-3.5 text-white lg:size-5" />
           </div>
-          <span className={`rounded-full px-2 py-0.5 text-[10px] font-bold ${stat.badgeClass || theme.badge} max-w-22.5 truncate`}>
+          <span className={`max-w-22.5 truncate rounded-full px-1.5 py-0.5 text-[9px] font-bold lg:px-2 lg:text-[10px] ${stat.badgeClass || theme.badge}`}>
             {loading ? '…' : stat.change}
           </span>
         </div>
 
         {/* Value */}
-        <p className={`text-2xl font-bold leading-none text-[#0f172a]`}>
-          {loading ? <span className="inline-block h-7 w-14 rounded-lg bg-gray-100 animate-pulse" /> : stat.value}
+        <p className={`text-lg font-bold leading-none text-[#0f172a] lg:text-2xl`}>
+          {loading ? <span className="inline-block h-5 w-10 animate-pulse rounded-lg bg-gray-100 lg:h-7 lg:w-14" /> : stat.value}
         </p>
-        <p className={`mt-1 text-xs font-semibold text-[#64748b]`}>{stat.title}</p>
-        {stat.subtitle && <p className="mt-0.5 text-[10px] font-medium text-[#94a3b8]">{stat.subtitle}</p>}
+        <p className={`mt-0.5 truncate text-[11px] font-semibold text-[#64748b] lg:mt-1 lg:text-xs`}>{stat.title}</p>
+        {stat.subtitle && <p className="mt-0.5 line-clamp-1 text-[9.5px] font-medium text-[#94a3b8] lg:line-clamp-none lg:text-[10px]">{stat.subtitle}</p>}
       </div>
     </Link>
   );
@@ -186,7 +188,7 @@ const QuickStats = ({ square = false }) => {
   }, [dashboardStats, loading, assignmentSummary, examSummary]);
 
   return (
-    <div className={square ? 'grid h-full grid-cols-2 grid-rows-2 gap-3' : 'grid grid-cols-2 lg:grid-cols-4 gap-3 sm:gap-4'}>
+    <div className={square ? 'grid grid-cols-2 gap-2 md:grid-cols-4 lg:h-full lg:grid-cols-2 lg:grid-rows-2 lg:gap-3' : 'grid grid-cols-2 gap-2 md:grid-cols-4 lg:gap-4'}>
       {stats.map((stat, i) => (
         <StatCard key={i} stat={stat} theme={CARD_THEMES[i]} loading={loading} />
       ))}
