@@ -8,6 +8,8 @@ const { createResponseCache } = require('../utils/responseCache');
 // here (create/update/publish/submit/grade/delete) clears it immediately.
 const parentHomeworkCache = createResponseCache({ ttlMs: 30 * 1000 });
 router.use(parentHomeworkCache.invalidateOnWrite);
+const { invalidateSmartLearningMapOnContentWrite } = require('../utils/responseCache');
+router.use(invalidateSmartLearningMapOnContentWrite);
 const crypto = require('crypto');
 const Assignment = require('../models/Assignment');
 const adminAuth = require('../middleware/adminAuth');

@@ -2,9 +2,11 @@ import React, { useEffect, useState, useRef, useMemo, forwardRef, useImperativeH
 import { useNavigate } from "react-router-dom";
 import {
   Plus, Trash2, BookOpen, FlaskConical, Layers, PenLine, GraduationCap,
-  ChevronRight, Save, Clock, Search, CheckCircle2,
+  ChevronRight, Clock, Search, CheckCircle2, X, Maximize2, Minimize2,
 } from "lucide-react";
 import PointsBadge from "./PointsBadge";
+import MoodIcon from "./MoodIcon";
+import { MOOD_GROUPS, MOOD_OPTIONS, MOOD_EMOJIS } from "../utils/moods";
 import Assignment from "./Assignment";
 import { fetchCachedJson, clearStudentApiCacheByUrl } from "../utils/studentApiCache";
 
@@ -32,6 +34,27 @@ const AssignmentView = forwardRef(({ defaultType = "school" }, ref) => {
   const skipAutosaveRef = useRef(false);
   const [showMobileIndex, setShowMobileIndex] = useState(false);
   const [journalSearch, setJournalSearch] = useState("");
+  const [journalSession, setJournalSession] = useState(null); // { name, startDate, endDate } of the active school year
+  const [openMonths, setOpenMonths] = useState({}); // "YYYY-MM" -> open?
+  const [moodPickerOpen, setMoodPickerOpen] = useState(false);
+  // Full-screen diary (browser Fullscreen API on the diary card).
+  const diaryRef = useRef(null);
+  const [diaryFullscreen, setDiaryFullscreen] = useState(false);
+  useEffect(() => {
+    const onChange = () => setDiaryFullscreen(Boolean(document.fullscreenElement) && document.fullscreenElement === diaryRef.current);
+    document.addEventListener("fullscreenchange", onChange);
+    return () => document.removeEventListener("fullscreenchange", onChange);
+  }, []);
+  const toggleDiaryFullscreen = async () => {
+    try {
+      if (document.fullscreenElement) await document.exitFullscreen();
+      else await diaryRef.current?.requestFullscreen?.();
+    } catch { /* browser refused — nothing to do */ }
+  };
+  const [diarySearchOpen, setDiarySearchOpen] = useState(false);
+  const diarySearchRef = useRef(null);
+  useEffect(() => { if (diarySearchOpen) diarySearchRef.current?.focus(); }, [diarySearchOpen]);
+  const closeDiarySearch = () => { setDiarySearchOpen(false); setJournalSearch(""); };
 
   useEffect(() => { setAssignmentType(defaultType); }, [defaultType]);
   useEffect(() => { if (assignmentType === "journal") loadJournalEntries(); }, [assignmentType]);
@@ -65,6 +88,7 @@ const AssignmentView = forwardRef(({ defaultType = "school" }, ref) => {
         fetchOptions: { headers },
       });
       setJournalEntries((Array.isArray(payload?.entries) ? payload.entries : []).map(normalizeEntry));
+      setJournalSession(payload?.session || null);
       setAutosaveLabel("Saved");
     } catch (err) {
       console.error("Journal load error:", err);
@@ -128,14 +152,23 @@ const AssignmentView = forwardRef(({ defaultType = "school" }, ref) => {
   }));
 
   /* Autosave debounce */
+  const pendingSaveRef = useRef(false);
+  const latestSaveRef = useRef(handleSaveDraft);
+  latestSaveRef.current = handleSaveDraft;
   useEffect(() => {
     if (assignmentType !== "journal") return;
     if (skipAutosaveRef.current) { skipAutosaveRef.current = false; return; }
     if (!journalTitle.trim() && !journalContent.trim()) { setAutosaveLabel("Saved"); return; }
     setAutosaveLabel("Saving\u2026");
-    const t = setTimeout(() => handleSaveDraft(), 1200);
+    pendingSaveRef.current = true;
+    const t = setTimeout(() => { pendingSaveRef.current = false; handleSaveDraft(); }, 1200);
     return () => clearTimeout(t);
   }, [journalTitle, journalContent, journalTags, journalMood, assignmentType]);
+
+  /* No manual save button \u2014 so flush a pending autosave when the student leaves the page. */
+  useEffect(() => () => {
+    if (pendingSaveRef.current) { pendingSaveRef.current = false; latestSaveRef.current(); }
+  }, []);
 
   /* ─── Type tabs config ─── */
   const typeTabs = [
@@ -145,8 +178,9 @@ const AssignmentView = forwardRef(({ defaultType = "school" }, ref) => {
     { key: "flashcard", label: "FlashCard", icon: Layers },
   ];
 
-  const moodOptions = ["Happy", "Neutral", "Curious", "Challenged", "Excited"];
-  const moodEmojis = { Happy: "\u{1F60A}", Neutral: "\u{1F610}", Curious: "\u{1F914}", Challenged: "\u{1F4AA}", Excited: "\u{1F389}" };
+  // Mood list shared with the teacher Health & Wellbeing page.
+  const moodOptions = MOOD_OPTIONS;
+  const moodEmojis = MOOD_EMOJIS;
 
   const entriesWithIndex = useMemo(() => {
     const counts = {};
@@ -182,281 +216,319 @@ const AssignmentView = forwardRef(({ defaultType = "school" }, ref) => {
   return (
     <div className={assignmentType === "journal" ? "w-full h-full overflow-hidden" : "w-full min-h-screen md:px-4 py-5 pb-24 md:pb-6 overflow-x-hidden"}>
 
-      {/* ═══════════════ JOURNAL — FOLIO (glass / purple) ═══════════════ */}
-      {assignmentType === "journal" && (
-        <div className="relative mx-auto h-full max-w-7xl overflow-y-auto custom-scrollbar px-1 pb-6">
-          {/* Ambient glow */}
-          <div className="pointer-events-none absolute inset-0 -z-10 overflow-hidden rounded-2xl">
-            <div className="absolute -top-24 -left-24 h-96 w-96 rounded-full bg-[#ede9fe]/70 blur-[100px]" />
-            <div className="absolute top-1/4 -right-20 h-[26rem] w-[26rem] rounded-full bg-[#e0f2fe]/70 blur-[110px]" />
-            <div className="absolute bottom-0 left-1/3 h-80 w-80 rounded-full bg-[#f3e8ff]/60 blur-[100px]" />
-          </div>
+      {/* ═══════════════ JOURNAL — DIARY (edge to edge) ═══════════════ */}
+      {assignmentType === "journal" && (() => {
+        const moodOf = (m) => moodEmojis[m] || moodEmojis.Neutral;
+        const selected = entriesWithIndex.find((e) => e.id === selectedEntryId) || null;
+        const pageDate = new Date(selected?.createdAt || Date.now());
+        const pageDateLabel = pageDate.toLocaleDateString("en-US", { weekday: "long", day: "numeric", month: "long", year: "numeric" });
+        const wordCount = (journalContent || "").replace(/<[^>]*>/g, "").trim().split(/\s+/).filter(Boolean).length;
+        // Diary index: every month of the school session (start → this month), newest first.
+        // Inside a month only the days the student actually wrote on are listed.
+        const monthKey = (d) => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`;
+        const dayKey = (d) => `${monthKey(d)}-${String(d.getDate()).padStart(2, "0")}`;
+        const today = new Date();
+        const entryDate = (e) => new Date(e.createdAt || e.updatedAt);
+        const datedEntries = filteredEntries.map((entry) => ({ entry, d: entryDate(entry) })).filter(({ d }) => !Number.isNaN(d.getTime()));
+        const sessionStart = journalSession?.startDate ? new Date(journalSession.startDate) : null;
+        const earliestEntry = datedEntries.reduce((min, { d }) => (!min || d < min ? d : min), null);
+        const rangeStart = sessionStart && !Number.isNaN(sessionStart.getTime()) ? sessionStart : (earliestEntry || today);
+        const monthKeys = [];
+        for (let c = new Date(rangeStart.getFullYear(), rangeStart.getMonth(), 1); c <= today; c = new Date(c.getFullYear(), c.getMonth() + 1, 1)) {
+          monthKeys.push(monthKey(c));
+        }
+        // pages written outside the session (e.g. last year) still get their month
+        datedEntries.forEach(({ d }) => { if (!monthKeys.includes(monthKey(d))) monthKeys.push(monthKey(d)); });
+        monthKeys.sort().reverse();
+        const months = monthKeys.map((key) => {
+          const [y, m] = key.split("-").map(Number);
+          const items = datedEntries.filter(({ d }) => monthKey(d) === key).sort((x, z) => z.d - x.d);
+          const days = [];
+          items.forEach((it) => {
+            const k = dayKey(it.d);
+            let day = days.find((x) => x.key === k);
+            if (!day) { day = { key: k, d: it.d, entries: [] }; days.push(day); }
+            day.entries.push(it.entry);
+          });
+          return { key, label: new Date(y, m - 1, 1).toLocaleDateString("en-US", { month: "long", year: "numeric" }), days, count: items.length };
+        });
+        const searching = Boolean(journalSearch.trim());
+        const visibleMonths = searching ? months.filter((mo) => mo.count > 0) : months;
+        const selectedMonth = selected ? monthKey(entryDate(selected)) : null;
+        const isMonthOpen = (key) => (searching ? true : openMonths[key] ?? (key === (selectedMonth || monthKey(today))));
+        const toggleMonth = (key) => setOpenMonths((prev) => ({ ...prev, [key]: !isMonthOpen(key) }));
+        const startNewPage = () => { resetJournalForm(); setShowMobileIndex(false); };
+        const LINE = 32; // px — ruled-paper line height; text uses the same line height
+        // Grow the writing area with its text (wrapped lines too), snapped to whole rules.
+        const growToRules = (el) => {
+          if (!el) return;
+          el.style.height = "auto";
+          el.style.height = `${Math.max(14, Math.ceil(el.scrollHeight / LINE) + 1) * LINE}px`;
+        };
 
-          {/* Sticky header */}
-          <div className="sticky top-0 z-20 -mx-1 mb-4 flex items-center justify-between gap-3 rounded-2xl border border-[#8b5cf6]/25 bg-white/70 px-4 py-3 shadow-sm backdrop-blur-xl sm:px-6">
-            <div className="flex items-center gap-3">
-              <div className="flex size-9 items-center justify-center rounded-xl border border-[#8b5cf6]/30 bg-[#8b5cf6]/10 text-[#8b5cf6]">
-                <BookOpen className="size-4.5" />
+        return (
+          // Same frame as Materials / Practice: lines up with the floating top bar and the sidebar.
+          <div ref={diaryRef} className={`flex min-h-0 flex-col overflow-hidden bg-white text-[#0f172a] ${diaryFullscreen ? "h-full w-full" : "m-3 h-[calc(100%-1.5rem)] rounded-2xl border border-slate-200/80 shadow-sm sm:rounded-3xl"}`}>
+            {/* ── Top bar ── */}
+            <header className="flex shrink-0 items-center gap-3 border-b border-slate-200 px-4 py-3 sm:px-6">
+              <span className="flex size-10 shrink-0 items-center justify-center rounded-full bg-[#8b5cf6] text-white shadow-sm">
+                <BookOpen className="size-5" />
+              </span>
+              <div className="min-w-0 flex-1">
+                <h1 className="text-lg font-bold leading-tight">My Diary</h1>
+                <p className="truncate text-xs text-slate-500">Write a page about your day — what you learned, how you felt.</p>
               </div>
-              <div>
-                <h1 className="text-[17px] font-bold leading-none tracking-tight text-[#0f172a]">My Journal</h1>
-                <p className="mt-0.5 text-[10px] font-semibold uppercase tracking-widest text-[#94a3b8]">Personal growth notebook</p>
-              </div>
-            </div>
-            <div className="flex items-center gap-2 sm:gap-3">
-              <div
-                className={`flex items-center gap-1.5 rounded-xl border px-2.5 py-1 text-[11px] font-semibold ${
-                  autosaveLabel === "Saved"
-                    ? "border-[#10b981]/30 bg-[#ecfdf5] text-[#10b981]"
-                    : autosaveLabel.includes("Saving")
-                      ? "border-amber-200 bg-amber-50 text-amber-700"
-                      : "border-red-200 bg-red-50 text-red-600"
+              <span
+                className={`hidden items-center gap-1.5 rounded-full px-3 py-1 text-xs font-semibold sm:inline-flex ${
+                  autosaveLabel === "Saved" ? "bg-emerald-600 text-white" : autosaveLabel.includes("Saving") ? "bg-amber-500 text-white" : "bg-red-600 text-white"
                 }`}
               >
                 {autosaveLabel === "Saved" ? <CheckCircle2 className="size-3.5" /> : <Clock className="size-3.5" />}
-                <span className="hidden sm:inline">{autosaveLabel}</span>
-              </div>
-            </div>
-          </div>
-
-          <div className="flex flex-col gap-5 lg:flex-row lg:items-start">
-            {/* ─── LEFT: Ledger ─── */}
-            <aside className="flex w-full shrink-0 flex-col gap-3 lg:w-80">
+                {autosaveLabel === "Saved" ? "Saved" : autosaveLabel}
+              </span>
               <button
-                onClick={() => { resetJournalForm(); setShowMobileIndex(false); }}
-                className="group flex w-full items-center justify-center gap-2 rounded-xl border border-[#8b5cf6]/25 bg-white/70 px-4 py-2.5 shadow-sm backdrop-blur-xl transition-all duration-200 hover:-translate-y-0.5 hover:bg-white/90"
+                type="button"
+                onClick={startNewPage}
+                className="inline-flex shrink-0 items-center gap-1.5 rounded-full bg-[#8b5cf6] px-4 py-2 text-sm font-semibold text-white shadow-sm hover:bg-purple-600"
               >
-                <span className="flex size-6 items-center justify-center rounded-lg bg-[#8b5cf6]/15 text-[#8b5cf6] transition-colors duration-200 group-hover:bg-[#8b5cf6] group-hover:text-white">
-                  <Plus className="size-3.5 transition-transform duration-200 group-hover:rotate-90" />
-                </span>
-                <span className="text-[14px] font-semibold text-[#0f172a]">New Entry</span>
+                <Plus className="size-4" /> New page
               </button>
-
-              <div className="flex flex-col gap-2.5 rounded-2xl border border-[#8b5cf6]/25 bg-white/70 p-3 shadow-sm backdrop-blur-xl">
-                <div className="flex items-center justify-between rounded-xl bg-[#f5f3ff]/70 p-1 text-[13px]">
-                  <span className="flex-1 rounded-lg bg-white/90 py-1 text-center font-semibold text-[#8b5cf6] shadow-sm">
-                    All ({journalEntries.length})
-                  </span>
-                </div>
-                <div className="relative flex items-center">
-                  <Search className="pointer-events-none absolute left-3 size-4 text-[#64748b]" />
-                  <input
-                    value={journalSearch}
-                    onChange={(e) => setJournalSearch(e.target.value)}
-                    placeholder="Filter by title, tag, or text..."
-                    className="w-full rounded-xl border border-[#8b5cf6]/25 bg-white/60 py-1.5 pl-9 pr-3 text-[13px] text-[#0f172a] placeholder:text-[#94a3b8] transition-all duration-200 focus:border-[#8b5cf6] focus:bg-white/90 focus:outline-none"
-                  />
-                </div>
-              </div>
-
-              {/* Mobile index toggle */}
               <button
-                className="flex w-full items-center justify-between rounded-xl border border-[#8b5cf6]/25 bg-white/70 px-4 py-3 backdrop-blur-xl lg:hidden"
-                onClick={() => setShowMobileIndex((prev) => !prev)}
+                type="button"
+                onClick={toggleDiaryFullscreen}
+                aria-label={diaryFullscreen ? "Exit full screen" : "Full screen"}
+                title={diaryFullscreen ? "Exit full screen (Esc)" : "Full screen"}
+                className="flex size-9 shrink-0 items-center justify-center rounded-full border border-slate-200 bg-white text-slate-600 shadow-sm transition hover:bg-slate-50 hover:text-slate-900"
               >
-                <span className="text-sm font-bold text-[#0f172a]">Entries ({filteredEntries.length})</span>
-                <ChevronRight className={`size-4 text-[#94a3b8] transition-transform duration-200 ${showMobileIndex ? "rotate-90" : ""}`} />
+                {diaryFullscreen ? <Minimize2 className="size-4" /> : <Maximize2 className="size-4" />}
               </button>
+            </header>
 
-              <div
-                className={`${showMobileIndex ? "flex" : "hidden"} max-h-[560px] flex-col gap-3 overflow-y-auto pr-1 custom-scrollbar lg:flex`}
-              >
-                {journalLoading && (
-                  <div className="flex flex-col items-center justify-center gap-3 py-12 text-[#94a3b8]">
-                    <div className="h-6 w-6 animate-spin rounded-full border-2 border-[#ede9fe] border-t-[#8b5cf6]" />
-                    <span className="text-xs">Loading entries…</span>
-                  </div>
-                )}
+            <div className="flex min-h-0 flex-1">
+              {/* ── Left: diary index ── */}
+              <aside className={`${showMobileIndex ? "flex" : "hidden"} w-full shrink-0 flex-col border-r border-slate-200 bg-[#faf9ff] lg:flex lg:w-80`}>
+                {/* pages count + search icon; the search box slides open in its place */}
+                <div className="flex h-14 shrink-0 items-center gap-2 border-b border-slate-200 px-3">
+                  <p className={`min-w-0 shrink-0 overflow-hidden whitespace-nowrap text-xs font-semibold uppercase tracking-wide text-slate-500 transition-all duration-300 ease-out ${diarySearchOpen ? "max-w-0 opacity-0" : "max-w-[12rem] opacity-100"}`}>
+                    {journalEntries.length} page{journalEntries.length === 1 ? "" : "s"} written
+                  </p>
+                  <label aria-hidden={!diarySearchOpen} className={`relative ml-auto block overflow-hidden p-0.5 transition-all duration-300 ease-out ${diarySearchOpen ? "w-full opacity-100" : "w-0 opacity-0"}`}>
+                    <span className="sr-only">Search my diary</span>
+                    <Search className="pointer-events-none absolute left-3 top-1/2 size-4 -translate-y-1/2 text-slate-400" />
+                    <input
+                      ref={diarySearchRef}
+                      tabIndex={diarySearchOpen ? 0 : -1}
+                      value={journalSearch}
+                      onChange={(e) => setJournalSearch(e.target.value)}
+                      onKeyDown={(e) => { if (e.key === "Escape") closeDiarySearch(); }}
+                      placeholder="Search my diary…"
+                      className="w-full rounded-full border border-slate-200 bg-white py-1.5 pl-9 pr-3 text-sm focus:border-[#8b5cf6] focus:outline-none focus:ring-2 focus:ring-[#8b5cf6]/20"
+                    />
+                  </label>
+                  <button
+                    type="button"
+                    onClick={() => (diarySearchOpen ? closeDiarySearch() : setDiarySearchOpen(true))}
+                    aria-label={diarySearchOpen ? "Close search" : "Search my diary"}
+                    title={diarySearchOpen ? "Close search" : "Search"}
+                    className={`${diarySearchOpen ? "" : "ml-auto"} flex size-9 shrink-0 items-center justify-center rounded-full border border-slate-200 bg-white text-slate-600 shadow-sm transition hover:bg-slate-50 hover:text-slate-900`}
+                  >
+                    <span key={diarySearchOpen ? "x" : "s"} className="flex animate-[diary-icon-in_200ms_ease-out]">
+                      {diarySearchOpen ? <X className="size-4" /> : <Search className="size-4" />}
+                    </span>
+                  </button>
+                  <style>{"@keyframes diary-icon-in{from{transform:rotate(-90deg) scale(.6);opacity:0}to{transform:none;opacity:1}}"}</style>
+                </div>
 
-                {!journalLoading && filteredEntries.map((entry) => {
-                  const isSelected = selectedEntryId === entry.id;
-                  const moodDotColors = {
-                    Happy: "#22c55e",
-                    Excited: "#f59e0b",
-                    Curious: "#6366f1",
-                    Challenged: "#ef4444",
-                    Neutral: "#94a3b8",
-                  };
-                  const snippet = (entry.content || "").trim().slice(0, 110);
-                  return (
-                    <div
-                      key={entry.id}
-                      onClick={() => loadEntry(entry)}
-                      className={`group relative cursor-pointer rounded-2xl border p-4 shadow-sm backdrop-blur-xl transition-all duration-200 ease-out hover:-translate-y-0.5 ${
-                        isSelected
-                          ? "border-[#8b5cf6] bg-white/85 ring-2 ring-[#8b5cf6]/20"
-                          : "border-[#8b5cf6]/20 bg-white/60 hover:bg-white/80"
-                      }`}
-                    >
-                      {isSelected && <div className="absolute bottom-4 left-0 top-4 w-1.5 rounded-r bg-[#8b5cf6]" />}
-                      <div className={`flex items-center justify-between ${isSelected ? "pl-2" : ""}`}>
-                        <span className={`text-[11px] font-semibold uppercase tracking-wider ${isSelected ? "text-[#8b5cf6]" : "text-[#94a3b8]"}`}>
-                          Entry #{entry._entryNumber}
-                        </span>
-                        <div className="flex items-center gap-2">
-                          <span className="text-[12px] font-medium text-[#64748b]">{entry._dateLabel}</span>
-                          <button
-                            onClick={(ev) => { ev.stopPropagation(); handleDeleteEntry(entry.id); }}
-                            className="rounded p-0.5 text-[#94a3b8] opacity-0 transition hover:text-red-500 group-hover:opacity-100"
-                          >
-                            <Trash2 className="size-3.5" />
-                          </button>
-                        </div>
-                      </div>
-                      <h3 className={`mt-1 line-clamp-1 text-[15px] font-bold text-[#0f172a] ${isSelected ? "pl-2" : ""}`}>
-                        {entry.title || "Untitled"}
-                      </h3>
-                      {snippet && (
-                        <p className={`mt-1 line-clamp-2 text-[13px] leading-relaxed text-[#64748b] ${isSelected ? "pl-2" : ""}`}>
-                          {snippet}
-                        </p>
-                      )}
-                      <div className={`mt-3 flex flex-wrap items-center gap-1.5 ${isSelected ? "pl-2" : ""}`}>
-                        <span className="size-2 shrink-0 rounded-full" style={{ background: moodDotColors[entry.mood] || "#94a3b8" }} />
-                        {(entry.tags || []).slice(0, 2).map((tag) => (
-                          <span key={tag} className="rounded-xl border border-[#8b5cf6]/30 bg-[#8b5cf6]/10 px-2 py-0.5 text-[11px] font-medium text-[#8b5cf6]">
-                            #{tag}
-                          </span>
-                        ))}
-                        <span className="ml-auto text-[11px] font-medium text-[#94a3b8]">{entry._wordCount}w</span>
-                      </div>
+                <div className="min-h-0 flex-1 overflow-y-auto custom-scrollbar">
+                  {journalLoading && journalEntries.length === 0 && (
+                    <div className="flex items-center justify-center gap-2 py-12 text-sm text-slate-400">
+                      <div className="size-5 animate-spin rounded-full border-2 border-[#ede9fe] border-t-[#8b5cf6]" /> Loading pages…
                     </div>
-                  );
-                })}
-
-                {!journalLoading && filteredEntries.length === 0 && journalEntries.length > 0 && (
-                  <div className="flex flex-col items-center gap-2 rounded-2xl border border-[#8b5cf6]/20 bg-white/50 py-12 text-[#94a3b8]">
-                    <Search className="size-8 opacity-40" />
-                    <p className="text-sm font-medium">No entries match &ldquo;{journalSearch}&rdquo;</p>
-                  </div>
-                )}
-
-                {!journalLoading && journalEntries.length === 0 && (
-                  <div className="flex flex-col items-center gap-2 rounded-2xl border border-[#8b5cf6]/20 bg-white/50 py-14 text-[#94a3b8]">
-                    <PenLine className="size-9 opacity-40" />
-                    <p className="text-sm font-medium">No entries yet</p>
-                    <p className="text-center text-xs opacity-70">Click &ldquo;New Entry&rdquo; to write your first page!</p>
-                  </div>
-                )}
-              </div>
-            </aside>
-
-            {/* ─── RIGHT: Writing canvas ─── */}
-            <section className="w-full flex-1 rounded-2xl border border-[#8b5cf6]/25 bg-white/70 p-6 shadow-sm backdrop-blur-xl md:p-8">
-              {/* Top meta bar */}
-              <div className="flex flex-wrap items-center justify-between gap-3 border-b border-[#8b5cf6]/20 pb-5">
-                <span className="rounded-xl border border-[#8b5cf6]/30 bg-[#8b5cf6]/10 px-3 py-1 text-[11px] font-bold uppercase text-[#8b5cf6]">
-                  {selectedEntryId ? `Entry #${entriesWithIndex.find((e) => e.id === selectedEntryId)?._entryNumber ?? "new"}` : "New Entry"}
-                </span>
-                <span className="text-[12px] font-medium text-[#94a3b8]">
-                  {new Date().toLocaleDateString("en-US", { weekday: "long", month: "long", day: "numeric", year: "numeric" })}
-                </span>
-              </div>
-
-              {/* Title input */}
-              <div className="pb-4 pt-5">
-                <input
-                  type="text"
-                  value={journalTitle}
-                  onChange={(e) => setJournalTitle(e.target.value)}
-                  placeholder="Title this page..."
-                  className="w-full border-none bg-transparent p-0 text-[28px] font-bold leading-tight tracking-tight text-[#0f172a] placeholder:text-slate-200 focus:outline-none focus:ring-0 md:text-[32px]"
-                />
-              </div>
-
-              {/* Body */}
-              <div className="relative">
-                <textarea
-                  value={journalContent.replace(/<[^>]*>/g, "")}
-                  onChange={(e) => setJournalContent(e.target.value)}
-                  placeholder="Write about what you learned today..."
-                  className="w-full resize-none border-none bg-transparent p-0 text-[15px] leading-relaxed text-[#334155] placeholder:text-slate-200 focus:outline-none focus:ring-0"
-                  style={{ minHeight: "320px" }}
-                />
-              </div>
-
-              {/* Tags & Mood */}
-              <div className="mt-4 grid grid-cols-1 gap-6 border-t border-[#8b5cf6]/20 pt-5 md:grid-cols-2">
-                <div className="space-y-3">
-                  <label className="block text-[10px] font-bold uppercase tracking-widest text-[#94a3b8]">Categories &amp; Tags</label>
-                  <div className="flex flex-wrap gap-2">
-                    {(journalTags || "").split(",").map((t) => t.trim()).filter(Boolean).map((tag) => (
-                      <span
-                        key={tag}
-                        className="flex items-center gap-1 rounded-xl border border-[#8b5cf6]/30 bg-[#8b5cf6]/10 px-3 py-1 text-xs font-semibold text-[#8b5cf6]"
-                      >
-                        #{tag}
+                  )}
+                  {!journalLoading && journalEntries.length === 0 && !journalSession && (
+                    <div className="px-6 py-12 text-center">
+                      <PenLine className="mx-auto size-8 text-[#c4b5fd]" />
+                      <p className="mt-2 text-sm font-semibold text-slate-700">Your diary is empty</p>
+                      <p className="mt-1 text-xs text-slate-500">Tap <b>New page</b> and write your first page.</p>
+                    </div>
+                  )}
+                  {!journalLoading && journalEntries.length > 0 && filteredEntries.length === 0 && (
+                    <p className="px-6 py-12 text-center text-sm text-slate-500">No pages match “{journalSearch}”.</p>
+                  )}
+                  {(journalEntries.length > 0 || journalSession) && visibleMonths.map((mo) => {
+                    const open = isMonthOpen(mo.key);
+                    return (
+                      <section key={mo.key} className="border-b border-slate-200">
                         <button
                           type="button"
-                          onClick={() =>
-                            setJournalTags(
-                              (journalTags || "").split(",").map((t) => t.trim()).filter((t) => t && t !== tag).join(", ")
-                            )
-                          }
-                          className="ml-0.5 text-sm leading-none text-[#8b5cf6]/50 hover:text-[#8b5cf6]"
+                          onClick={() => toggleMonth(mo.key)}
+                          aria-expanded={open}
+                          className={`sticky top-0 z-10 flex w-full items-center gap-2 px-4 py-2.5 text-left transition ${open ? "bg-[#f3f0ff]" : "bg-[#faf9ff] hover:bg-[#f3f0ff]"}`}
                         >
-                          ×
+                          <span className={`text-sm font-bold ${open ? "text-[#6d28d9]" : "text-slate-700"}`}>{mo.label}</span>
+                          <span className={`ml-auto rounded-full px-2 py-px text-[11px] font-semibold ${mo.count ? "bg-[#7c3aed] text-white ring-1 ring-[#ddd6fe]" : "text-slate-400"}`}>
+                            {mo.count ? `${mo.count} page${mo.count === 1 ? "" : "s"}` : "No pages"}
+                          </span>
+                          <ChevronRight className={`size-4 shrink-0 text-slate-400 transition-transform ${open ? "rotate-90" : ""}`} />
                         </button>
-                      </span>
-                    ))}
+                        {open && (
+                          mo.days.length === 0 ? (
+                            <p className="border-t border-slate-200 bg-white px-4 py-3 text-xs text-slate-400">You didn’t write any pages this month.</p>
+                          ) : (
+                            <ul className="divide-y divide-slate-200 border-t border-slate-200 bg-white">
+                              {/* One row per page, each with its own day card (5 pages on the 19th → five "19 SAT" cards). */}
+                              {mo.days.flatMap((day) => day.entries.map((entry) => {
+                                const active = selectedEntryId === entry.id;
+                                const d = entryDate(entry);
+                                return (
+                                  <li key={entry.id} className={`group relative transition ${active ? "bg-[#f3f0ff]" : "hover:bg-slate-50"}`}>
+                                    {active && <span className="absolute inset-y-0 left-0 w-1 bg-[#8b5cf6]" />}
+                                    <button type="button" onClick={() => loadEntry(entry)} className="flex w-full items-center gap-3 px-3 py-2 pr-9 text-left">
+                                      <span className={`flex w-11 shrink-0 flex-col items-center rounded-lg border py-1 ${active ? "border-[#8b5cf6] bg-[#8b5cf6] text-white" : "border-slate-200 bg-white text-slate-700"}`}>
+                                        <span className="text-lg font-bold leading-none">{d.getDate()}</span>
+                                        <span className={`mt-0.5 text-[9px] font-semibold uppercase ${active ? "text-white/80" : "text-slate-400"}`}>{d.toLocaleDateString("en-US", { weekday: "short" })}</span>
+                                      </span>
+                                      <MoodIcon emoji={moodOf(entry.mood)} label={entry.mood} size={18} />
+                                      <span className="min-w-0 flex-1 truncate text-sm font-semibold text-slate-800">{entry.title || "Untitled page"}</span>
+                                    </button>
+                                    <button
+                                      type="button"
+                                      onClick={() => { if (window.confirm("Delete this diary page?")) handleDeleteEntry(entry.id); }}
+                                      aria-label={`Delete ${entry.title || "page"}`}
+                                      className="absolute right-2 top-1/2 -translate-y-1/2 rounded-full p-1.5 text-slate-400 transition hover:bg-red-50 hover:text-red-600"
+                                    >
+                                      <Trash2 className="size-3.5" />
+                                    </button>
+                                  </li>
+                                );
+                              }))}
+                            </ul>
+                          )
+                        )}
+                      </section>
+                    );
+                  })}
+                </div>
+              </aside>
+
+              {/* ── Right: the diary page ── */}
+              <section className={`${showMobileIndex ? "hidden" : "flex"} min-w-0 flex-1 flex-col lg:flex`}>
+                {/* page header: date + mood (kept off the paper so the paper stays clean) */}
+                <div className="shrink-0 border-b border-slate-200 bg-white px-4 py-3 sm:px-8">
+                  <div className="flex items-center gap-3">
+                    <button type="button" onClick={() => setShowMobileIndex(true)} className="inline-flex items-center gap-1 rounded-full border border-slate-200 bg-white px-3 py-1.5 text-xs font-semibold text-slate-600 lg:hidden">
+                      <ChevronRight className="size-3.5 rotate-180" /> All pages
+                    </button>
+                    <div className="min-w-0 flex-1">
+                      <p className="text-[11px] font-semibold uppercase tracking-wide text-red-600">{selected ? `Page ${selected._entryNumber}` : "New page"}</p>
+                      <p className="truncate font-serif text-lg font-semibold text-slate-900">{pageDateLabel}</p>
+                    </div>
+                    <span className="shrink-0 text-xs text-slate-400">{wordCount} word{wordCount === 1 ? "" : "s"}</span>
+                  </div>
+                  <div className="relative mt-2.5 flex items-center gap-2">
+                    <span className="text-xs font-semibold text-slate-500">Today I feel:</span>
+                    <button
+                      type="button"
+                      onClick={() => setMoodPickerOpen((v) => !v)}
+                      aria-expanded={moodPickerOpen}
+                      aria-haspopup="dialog"
+                      className={`inline-flex h-8 items-center gap-1.5 rounded-full border px-3 text-xs font-semibold transition ${moodPickerOpen ? "border-[#8b5cf6] bg-[#f5f3ff] text-[#6d28d9]" : "border-slate-200 bg-white text-slate-700 hover:border-[#c4b5fd]"}`}
+                    >
+                      <MoodIcon emoji={moodEmojis[journalMood] || moodEmojis.Neutral} label={journalMood} size={18} /> {journalMood}
+                      <ChevronRight className={`size-3.5 transition-transform ${moodPickerOpen ? "-rotate-90" : "rotate-90"}`} />
+                    </button>
+                    {moodPickerOpen && (
+                      <>
+                        <div className="fixed inset-0 z-20" onClick={() => setMoodPickerOpen(false)} aria-hidden="true" />
+                        <div role="dialog" aria-label="Choose how you feel" className="absolute left-0 top-full z-30 mt-2 w-[min(28rem,calc(100vw-3rem))] rounded-2xl border border-slate-200 bg-white p-3 shadow-xl">
+                          {MOOD_GROUPS.map((g) => (
+                            <div key={g.label} className="mb-2 last:mb-0">
+                              <p className="mb-1.5 text-[10px] font-bold uppercase tracking-wide text-slate-400">{g.label}</p>
+                              <div className="grid grid-cols-3 gap-1.5 sm:grid-cols-4">
+                                {g.moods.map(([m, emoji]) => (
+                                  <button
+                                    key={m}
+                                    type="button"
+                                    onClick={() => { setJournalMood(m); setMoodPickerOpen(false); }}
+                                    aria-pressed={journalMood === m}
+                                    className={`flex items-center gap-1.5 rounded-lg border px-2 py-1.5 text-xs font-semibold transition ${
+                                      journalMood === m ? "border-[#8b5cf6] bg-[#f5f3ff] text-[#6d28d9] ring-1 ring-[#8b5cf6]/30" : "border-slate-200 bg-white text-slate-700 hover:border-[#c4b5fd] hover:bg-[#faf9ff]"
+                                    }`}
+                                  >
+                                    <MoodIcon emoji={emoji} label={m} size={20} /> {m}
+                                  </button>
+                                ))}
+                              </div>
+                            </div>
+                          ))}
+                        </div>
+                      </>
+                    )}
+                  </div>
+                </div>
+
+                {/* ruled paper: white sheet, dark rules, red double margin line.
+                    Every line of text is exactly one rule high, so writing sits on the lines. */}
+                <div className="min-h-0 flex-1 overflow-y-auto bg-white custom-scrollbar">
+                  <div
+                    className="relative min-h-full pb-8 pr-6 sm:pr-10"
+                    style={{
+                      paddingTop: LINE,
+                      paddingLeft: 76,
+                      backgroundColor: "#ffffff",
+                      backgroundImage: [
+                        // red double margin line
+                        "linear-gradient(to right, transparent 56px, #ef4444 56px, #ef4444 57.5px, transparent 57.5px, transparent 60px, #ef4444 60px, #ef4444 61.5px, transparent 61.5px)",
+                        // dark ruled lines, one per LINE
+                        `repeating-linear-gradient(to bottom, transparent 0, transparent ${LINE - 1}px, rgba(15,23,42,0.28) ${LINE - 1}px, rgba(15,23,42,0.28) ${LINE}px)`,
+                      ].join(", "),
+                    }}
+                  >
+                    {/* title — one ruled line */}
                     <input
                       type="text"
-                      placeholder="+ Add Tag"
-                      className="w-24 rounded-xl border-2 border-dotted border-[#94a3b8]/40 bg-transparent px-3 py-1 text-xs font-bold text-[#94a3b8] transition focus:border-[#8b5cf6] focus:text-[#8b5cf6] focus:outline-none focus:ring-0"
-                      onKeyDown={(e) => {
-                        if ((e.key === "Enter" || e.key === ",") && e.currentTarget.value.trim()) {
-                          e.preventDefault();
-                          const newTag = e.currentTarget.value.trim().replace(/,$/, "");
-                          const existing = (journalTags || "").split(",").map((t) => t.trim()).filter(Boolean);
-                          if (newTag && !existing.includes(newTag)) {
-                            setJournalTags([...existing, newTag].join(", "));
-                          }
-                          e.currentTarget.value = "";
-                        }
-                      }}
+                      value={journalTitle}
+                      onChange={(e) => setJournalTitle(e.target.value)}
+                      placeholder="Title of today's page…"
+                      aria-label="Page title"
+                      className="block w-full border-none bg-transparent p-0 font-serif text-[22px] font-bold text-slate-900 placeholder:font-normal placeholder:text-slate-300 focus:outline-none focus:ring-0"
+                      style={{ height: LINE, lineHeight: `${LINE}px` }}
+                    />
+
+                    {/* writing — every row sits on a rule */}
+                    <textarea
+                      value={journalContent.replace(/<[^>]*>/g, "")}
+                      onChange={(e) => setJournalContent(e.target.value)}
+                      placeholder={"Dear Diary,\nToday I learned…"}
+                      aria-label="Write your diary page"
+                      className="block w-full resize-none overflow-hidden border-none bg-transparent p-0 font-serif text-[17px] text-slate-800 placeholder:text-slate-300 focus:outline-none focus:ring-0"
+                      style={{ lineHeight: `${LINE}px`, minHeight: LINE * 14 }}
+                      ref={growToRules}
+                      onInput={(e) => growToRules(e.currentTarget)}
                     />
                   </div>
                 </div>
 
-                <div className="space-y-3">
-                  <label className="block text-[10px] font-bold uppercase tracking-widest text-[#94a3b8]">Current Mood</label>
-                  <div className="flex gap-2">
-                    {moodOptions.map((m) => (
-                      <button
-                        key={m}
-                        type="button"
-                        onClick={() => setJournalMood(m)}
-                        title={m}
-                        className={`flex size-11 items-center justify-center rounded-xl border text-2xl transition-all ${
-                          journalMood === m
-                            ? "scale-110 border-[#8b5cf6] bg-[#f5f3ff] shadow-[0_0_0_2px_rgba(139,92,246,0.25)]"
-                            : "border-transparent bg-[#f8fafc] grayscale hover:grayscale-0"
-                        }`}
-                      >
-                        {moodEmojis[m]}
-                      </button>
-                    ))}
-                  </div>
+                {/* footer: save status */}
+                <div className="flex shrink-0 flex-wrap items-center gap-2 border-t border-slate-200 bg-white px-4 py-2.5 sm:px-8">
+                  <span className="ml-auto text-xs text-slate-500">
+                    {autosaveLabel === "Saved" ? "✓ Saves by itself as you write" : autosaveLabel.includes("Saving") ? "Saving…" : autosaveLabel}
+                  </span>
+                  {selected && (
+                    <button
+                      type="button"
+                      onClick={() => { if (window.confirm("Delete this diary page?")) handleDeleteEntry(selected.id); }}
+                      className="inline-flex items-center gap-1.5 rounded-full px-3 py-1 text-xs font-semibold text-slate-500 hover:bg-red-50 hover:text-red-600"
+                    >
+                      <Trash2 className="size-3.5" /> Delete page
+                    </button>
+                  )}
                 </div>
-              </div>
-
-              {/* Save bar */}
-              <div className="mt-6 flex items-center justify-between gap-3 border-t border-[#8b5cf6]/20 pt-5">
-                <span className="text-[11px] font-semibold text-[#94a3b8]">
-                  {autosaveLabel === "Saved" ? "✓ All changes saved" : autosaveLabel.includes("Saving") ? "Saving…" : "Unsaved changes"}
-                </span>
-                <button
-                  onClick={handleSaveDraft}
-                  className="flex items-center gap-2 rounded-xl bg-[#8b5cf6] px-5 py-2.5 text-[13px] font-semibold text-white shadow-md shadow-[#8b5cf6]/30 transition-all duration-200 ease-out hover:-translate-y-0.5 hover:bg-purple-600"
-                >
-                  <Save className="size-4" />
-                  Save Entry
-                </button>
-              </div>
-            </section>
+              </section>
+            </div>
           </div>
-        </div>
-      )}
+        );
+      })()}
 
       {/* ═══════════════ NON-JOURNAL VIEW ═══════════════ */}
       {assignmentType !== "journal" && (

@@ -5,6 +5,8 @@ const authTeacher = require('../middleware/authTeacher');
 const StudentUser = require('../models/StudentUser');
 const StudentHealthLog = require('../models/StudentHealthLog');
 const StudentHealthIntervention = require('../models/StudentHealthIntervention');
+const StudentJournalEntry = require('../models/StudentJournalEntry');
+const TryoutResult = require('../models/TryoutResult');
 const { buildTeacherAllocationScope, studentIsWithinTeacherScope } = require('../utils/teacherAllocationScope');
 
 const DATE_RE = /^\d{4}-\d{2}-\d{2}$/;
@@ -48,11 +50,31 @@ router.get('/logs', authTeacher, async (req, res) => {
     const ids = await assertStudentsInScope(req, String(req.query.studentIds || '').split(',').filter(Boolean));
     const days = Math.min(Math.max(Number(req.query.days) || 30, 1), 365);
     const from = new Date(Date.now() - (days - 1) * 86400000).toISOString().slice(0, 10);
-    const [logs, interventions] = await Promise.all([
+    const [logs, interventions, diaryMoods] = await Promise.all([
       StudentHealthLog.find({ schoolId: req.schoolId, studentId: { $in: ids }, date: { $gte: from } }).sort({ date: -1 }).lean(),
       StudentHealthIntervention.find({ schoolId: req.schoolId, studentId: { $in: ids } }).sort({ createdAt: -1 }).limit(1000).lean(),
+      // Moods students picked in their own diary. Only the mood and when — never the
+      // diary title or text, which stay private to the student.
+      StudentJournalEntry.find({ schoolId: req.schoolId, studentId: { $in: ids }, createdAt: { $gte: new Date(`${from}T00:00:00.000Z`) } })
+        .select('studentId mood createdAt -_id')
+        .sort({ createdAt: -1 })
+        .limit(5000)
+        .lean(),
     ]);
-    return res.json({ success: true, data: { logs, interventions } });
+    const studentMoods = diaryMoods.map((m) => ({ studentId: String(m.studentId), mood: m.mood || 'Neutral', at: m.createdAt }));
+
+    // Engagement: tryout / practice attempts in the same window (count + average auto-marked score %).
+    const tryoutAgg = await TryoutResult.aggregate([
+      { $match: { schoolId: new mongoose.Types.ObjectId(String(req.schoolId)), studentId: { $in: ids.map((id) => new mongoose.Types.ObjectId(id)) }, createdAt: { $gte: new Date(`${from}T00:00:00.000Z`) } } },
+      { $group: { _id: '$studentId', attempts: { $sum: 1 }, avgScore: { $avg: '$autoScore' }, lastAt: { $max: '$createdAt' } } },
+    ]);
+    const tryoutStats = tryoutAgg.map((t) => ({
+      studentId: String(t._id),
+      attempts: t.attempts,
+      avgScore: t.avgScore === null || t.avgScore === undefined ? null : Math.round(t.avgScore),
+      lastAt: t.lastAt,
+    }));
+    return res.json({ success: true, data: { logs, interventions, studentMoods, tryoutStats } });
   } catch (err) {
     return sendError(res, err);
   }

@@ -1,12 +1,14 @@
-import React, { useCallback, useEffect, useMemo, useState } from 'react';
+import React, { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import {
   AlertTriangle, ArrowRight, Bell, Calendar, CheckCircle2, ChevronDown, ChevronLeft, ChevronRight, ClipboardList,
   FileText, Heart, HeartPulse, Home, Leaf, Loader2, Lock, MessageCircle, Plus, RefreshCcw, Save, Search, Shield,
-  Smile, TrendingUp, UserRound, Users, Wrench, X, Clock, AlertCircle, Activity,
+  Smile, TrendingUp, UserRound, Users, Wrench, X, Clock, AlertCircle, Activity, Filter,
 } from 'lucide-react';
 import { motion as Motion, AnimatePresence } from 'framer-motion';
 import toast from 'react-hot-toast';
+import MoodIcon from '../components/MoodIcon';
+import { moodEmoji, moodTone, moodScore } from '../utils/moods';
 
 const API_BASE = (import.meta.env.VITE_API_URL || 'http://localhost:5000').replace(/\/$/, '');
 
@@ -33,7 +35,6 @@ const TABS = [
   { key: 'trends', label: 'Trends', icon: TrendingUp },
   { key: 'parent', label: 'Parent', icon: UserRound },
   { key: 'intervention', label: 'Intervention', icon: Wrench },
-  { key: 'confidential', label: 'Confidential', icon: Lock },
 ];
 const PAGE_SIZE = 10;
 const NOTE_LIMIT = 200;
@@ -55,24 +56,59 @@ const parseSortNumber = (value) => {
 
 const toneOf = (score) => (score >= 70 ? 'good' : score >= 40 ? 'moderate' : 'risk');
 const TONE = {
-  good: { label: 'Good', pill: 'bg-emerald-50 text-emerald-600', score: 'bg-emerald-50 text-emerald-600', bar: 'bg-emerald-500' },
-  moderate: { label: 'Moderate', pill: 'bg-amber-50 text-amber-600', score: 'bg-amber-50 text-amber-600', bar: 'bg-amber-400' },
-  risk: { label: 'At Risk', pill: 'bg-rose-50 text-rose-600', score: 'bg-amber-50 text-amber-600', bar: 'bg-rose-500' },
+  good: { label: 'Good', pill: 'bg-emerald-600 text-white', score: 'bg-emerald-600 text-white', bar: 'bg-emerald-500' },
+  moderate: { label: 'Moderate', pill: 'bg-amber-600 text-white', score: 'bg-amber-600 text-white', bar: 'bg-amber-400' },
+  risk: { label: 'At Risk', pill: 'bg-rose-600 text-white', score: 'bg-rose-600 text-white', bar: 'bg-rose-500' },
 };
 
 // Scores come from the teacher's saved daily check-ins; when a student has no
 // check-ins yet we fall back to an attendance-derived baseline.
+// Scores (0–100):
+//  Mood       — the student's own diary moods (last 30 days); teacher-entered mood
+//               scores are blended in when there are any.
+//  Behaviour  — teacher behaviour scores, blended with the diary mood (a happy,
+//               settled student usually behaves well; a stressed one may not).
+//  Health     — teacher health entries (status − issue penalty).
+//  Engagement — tryout / practice attempts: average auto-marked score, plus a
+//               bonus for practising often (up to 10 attempts in 30 days).
+//  Wellbeing  — mood 30% · behaviour 25% · health 20% · engagement 25%
+//               (missing parts are left out and the rest re-weighted).
 const computeMetrics = (student) => {
   const logs = student.logs || [];
-  if (!logs.length) {
-    const base = student.baseline;
-    return { mood: base, behavior: base, health: base, wellbeing: base, hasData: false };
-  }
-  const mood = avg(logs.map((l) => l.mood ?? STATUS_SCORE[l.overallStatus] ?? 60));
-  const behavior = avg(logs.map((l) => l.behavior ?? student.baseline));
-  const health = avg(logs.map((l) => Math.max(0, (STATUS_SCORE[l.overallStatus] ?? 60) - (ISSUE_PENALTY[l.issueToday] || 0))));
-  const wellbeing = Math.round(mood * 0.35 + behavior * 0.35 + health * 0.3);
-  return { mood, behavior, health, wellbeing, hasData: true };
+  const diary = Object.values(student.diaryMoods || {});
+  const tryouts = student.tryouts || null;
+
+  const diaryMood = diary.length ? avg(diary.map((m) => moodScore(m.mood))) : null;
+  const teacherMoods = logs.map((l) => l.mood).filter((v) => v !== null && v !== undefined);
+  const teacherMood = teacherMoods.length ? avg(teacherMoods) : (logs.length ? avg(logs.map((l) => STATUS_SCORE[l.overallStatus] ?? 60)) : null);
+  const mood = diaryMood !== null && teacherMood !== null ? Math.round(diaryMood * 0.6 + teacherMood * 0.4)
+    : diaryMood ?? teacherMood;
+
+  const teacherBehaviours = logs.map((l) => l.behavior).filter((v) => v !== null && v !== undefined);
+  const teacherBehaviour = teacherBehaviours.length ? avg(teacherBehaviours) : null;
+  const behavior = teacherBehaviour !== null && mood !== null ? Math.round(teacherBehaviour * 0.6 + mood * 0.4)
+    : teacherBehaviour ?? mood;
+
+  const health = logs.length ? avg(logs.map((l) => Math.max(0, (STATUS_SCORE[l.overallStatus] ?? 60) - (ISSUE_PENALTY[l.issueToday] || 0)))) : null;
+
+  const engagement = tryouts && tryouts.attempts > 0
+    ? Math.round(Math.min(100, (tryouts.avgScore ?? 50) * 0.75 + Math.min(tryouts.attempts, 10) * 2.5))
+    : null;
+
+  const parts = [[mood, 0.3], [behavior, 0.25], [health, 0.2], [engagement, 0.25]].filter(([v]) => v !== null && v !== undefined);
+  const hasData = parts.length > 0;
+  const base = student.baseline;
+  const weight = parts.reduce((n, [, w]) => n + w, 0);
+  const wellbeing = hasData ? Math.round(parts.reduce((n, [v, w]) => n + v * w, 0) / weight) : base;
+  return {
+    mood: mood ?? base,
+    behavior: behavior ?? base,
+    health: health ?? base,
+    engagement: engagement ?? null,
+    wellbeing,
+    hasData,
+    sources: { diaryDays: diary.length, teacherEntries: logs.length, tryoutAttempts: tryouts?.attempts || 0 },
+  };
 };
 
 const Avatar = ({ name, profilePic, className = 'size-9 text-xs' }) => {
@@ -142,6 +178,22 @@ const Modal = ({ open, onClose, children, width = 'max-w-5xl' }) => {
       )}
     </AnimatePresence>,
     document.body,
+  );
+};
+
+// Mood the student picked in their own diary ("Today I feel").
+const MOOD_TONE_CLS = {
+  good: 'border-emerald-200 bg-emerald-50 text-emerald-700',
+  okay: 'border-slate-200 bg-slate-50 text-slate-700',
+  tough: 'border-rose-200 bg-rose-50 text-rose-700',
+};
+const StudentMoodChip = ({ mood, at, size = 'sm' }) => {
+  if (!mood) return <span className="text-[10.5px] text-slate-400">Not shared</span>;
+  const time = at ? new Date(at).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' }) : '';
+  return (
+    <span title={time ? `Shared at ${time}` : undefined} className={`inline-flex items-center gap-1 rounded-full border font-semibold ${MOOD_TONE_CLS[moodTone(mood)]} ${size === 'lg' ? 'px-3 py-1 text-sm' : 'px-2 py-0.5 text-[10.5px]'}`}>
+      <MoodIcon emoji={moodEmoji(mood)} label={mood} size={size === 'lg' ? 20 : 14} /> {mood}
+    </span>
   );
 };
 
@@ -261,6 +313,7 @@ const BulkEntryModal = ({ open, onClose, students, onSaved }) => {
                       <div className="min-w-0">
                         <p className="truncate font-semibold text-[#14234b]">{s.name}</p>
                         <p className="text-[10px] text-slate-500">Roll {s.roll || '—'} · {s.className}</p>
+                        {s.diaryMoods?.[date] && <div className="mt-0.5"><StudentMoodChip mood={s.diaryMoods[date].mood} at={s.diaryMoods[date].at} /></div>}
                       </div>
                     </div>
                   </td>
@@ -308,7 +361,42 @@ const HealthUpdatesAdvanced = () => {
   const [students, setStudents] = useState([]);
   const [logs, setLogs] = useState([]);
   const [interventions, setInterventions] = useState([]);
+  const [studentMoods, setStudentMoods] = useState([]); // [{ studentId, mood, at }] from student diaries
+  const [tryoutStats, setTryoutStats] = useState([]); // [{ studentId, attempts, avgScore, lastAt }]
   const [selectedId, setSelectedId] = useState(null);
+  const [detailOpen, setDetailOpen] = useState(false);
+  const [searchOpen, setSearchOpen] = useState(false);
+  const [filterOpen, setFilterOpen] = useState(false);
+  const searchInputRef = useRef(null);
+  useEffect(() => { if (searchOpen) searchInputRef.current?.focus(); }, [searchOpen]);
+  const closeSearch = () => { setSearchOpen(false); setSearch(''); };
+
+  // The page fits the screen (no page scroll): the root takes the height left
+  // below it, and the table shows as many rows per page as fit.
+  const rootRef = useRef(null);
+  const tableBoxRef = useRef(null);
+  const [rootHeight, setRootHeight] = useState(null);
+  const [pageSize, setPageSize] = useState(PAGE_SIZE);
+  useLayoutEffect(() => {
+    const measure = () => {
+      const root = rootRef.current;
+      if (root && window.innerWidth >= 768) {
+        setRootHeight(Math.max(420, Math.floor(window.innerHeight - root.getBoundingClientRect().top - 16)));
+      } else {
+        setRootHeight(null);
+      }
+      const box = tableBoxRef.current;
+      if (box) {
+        const ROW = 49; const HEAD = 34;
+        setPageSize(Math.max(3, Math.floor((box.clientHeight - HEAD) / ROW)));
+      }
+    };
+    measure();
+    window.addEventListener('resize', measure);
+    const ro = typeof ResizeObserver !== 'undefined' && tableBoxRef.current ? new ResizeObserver(measure) : null;
+    if (ro) ro.observe(tableBoxRef.current);
+    return () => { window.removeEventListener('resize', measure); ro?.disconnect(); };
+  }, []);
   const [loadingStudents, setLoadingStudents] = useState(true);
   const [loadError, setLoadError] = useState('');
   const [sessionOptions, setSessionOptions] = useState([]);
@@ -366,12 +454,14 @@ const HealthUpdatesAdvanced = () => {
         const results = await Promise.all(chunks.map(async (chunk) => {
           const r = await fetch(`${API_BASE}/api/health-records/logs?days=30&studentIds=${chunk.join(',')}`, { headers: { Authorization: `Bearer ${token}` } });
           const p = await r.json().catch(() => ({}));
-          return r.ok ? p.data : { logs: [], interventions: [] };
+          return r.ok ? p.data : { logs: [], interventions: [], studentMoods: [], tryoutStats: [] };
         }));
         if (cancelled) return;
         setStudents(mapped);
         setLogs(results.flatMap((r) => r?.logs || []));
         setInterventions(results.flatMap((r) => r?.interventions || []));
+        setStudentMoods(results.flatMap((r) => r?.studentMoods || []));
+        setTryoutStats(results.flatMap((r) => r?.tryoutStats || []));
         setSessionOptions(Array.isArray(payload?.options?.sessions) ? payload.options.sessions : []);
         setClassOptions(Array.isArray(payload?.options?.classes) ? payload.options.classes : []);
         setSectionOptions(Array.isArray(payload?.options?.sections) ? payload.options.sections : []);
@@ -396,13 +486,22 @@ const HealthUpdatesAdvanced = () => {
     logs.forEach((l) => { (logsBy[String(l.studentId)] ||= []).push(l); });
     const actionsBy = {};
     interventions.forEach((a) => { (actionsBy[String(a.studentId)] ||= []).push(a); });
+    const moodsBy = {};
+    studentMoods.forEach((m) => {
+      const day = localDateKey(new Date(m.at));
+      const byDay = (moodsBy[String(m.studentId)] ||= {});
+      if (!byDay[day] || new Date(m.at) > new Date(byDay[day].at)) byDay[day] = { mood: m.mood, at: m.at };
+    });
+    const today = localDateKey();
+    const tryoutsBy = Object.fromEntries(tryoutStats.map((t) => [String(t.studentId), t]));
     return students.map((s) => {
       const studentLogs = (logsBy[s.id] || []).sort((a, b) => b.date.localeCompare(a.date));
-      const withLogs = { ...s, logs: studentLogs, interventions: actionsBy[s.id] || [] };
+      const diaryMoods = moodsBy[s.id] || {};
+      const withLogs = { ...s, logs: studentLogs, interventions: actionsBy[s.id] || [], diaryMoods, todayMood: diaryMoods[today] || null, tryouts: tryoutsBy[s.id] || null };
       const metrics = computeMetrics(withLogs);
       return { ...withLogs, metrics, tone: toneOf(metrics.wellbeing) };
     });
-  }, [students, logs, interventions]);
+  }, [students, logs, interventions, studentMoods, tryoutStats]);
 
   const directory = useMemo(() => {
     const q = search.trim().toLowerCase();
@@ -413,20 +512,21 @@ const HealthUpdatesAdvanced = () => {
   }, [enriched, search, statusFilter]);
 
   useEffect(() => { setPage(1); }, [search, statusFilter, selectedSession, selectedClass, selectedSection]);
-  const totalPages = Math.max(1, Math.ceil(directory.length / PAGE_SIZE));
+  const totalPages = Math.max(1, Math.ceil(directory.length / pageSize));
   const currentPage = Math.min(page, totalPages);
-  const pageStart = (currentPage - 1) * PAGE_SIZE;
-  const pageRows = directory.slice(pageStart, pageStart + PAGE_SIZE);
+  const pageStart = (currentPage - 1) * pageSize;
+  const pageRows = directory.slice(pageStart, pageStart + pageSize);
 
   const selected = useMemo(() => enriched.find((s) => s.id === selectedId) || null, [enriched, selectedId]);
   const todayKey = localDateKey();
   const checkedIn = enriched.filter((s) => s.logs.some((l) => l.date === todayKey)).length;
+  const moodsSharedToday = enriched.filter((s) => s.todayMood).length;
+  const toughMoodsToday = enriched.filter((s) => s.todayMood && moodTone(s.todayMood.mood) === 'tough').length;
   const counts = {
     good: enriched.filter((s) => s.tone === 'good').length,
     moderate: enriched.filter((s) => s.tone === 'moderate').length,
     risk: enriched.filter((s) => s.tone === 'risk').length,
   };
-  const atRisk = useMemo(() => enriched.filter((s) => s.tone !== 'good').sort((a, b) => a.metrics.wellbeing - b.metrics.wellbeing), [enriched]);
   const frequentIssues = useMemo(() => {
     const map = {};
     logs.forEach((l) => { if (l.issueTag && l.issueTag !== 'none') map[l.issueTag] = (map[l.issueTag] || 0) + 1; });
@@ -496,33 +596,60 @@ const HealthUpdatesAdvanced = () => {
   }, [selected, range]);
 
   const total = enriched.length || 1;
-  const stats = [
-    { value: enriched.length, label: 'Students', hint: 'Total in this class', icon: Users, card: 'border-blue-100 bg-blue-50/50', iconBox: 'bg-blue-100 text-blue-600' },
-    { value: checkedIn, label: 'Checked In', hint: 'Health entry submitted', icon: CheckCircle2, card: 'border-emerald-100 bg-emerald-50/50', iconBox: 'bg-emerald-100 text-emerald-600' },
-    { value: Math.max(enriched.length - checkedIn, 0), label: 'Pending', hint: 'Yet to submit', icon: Clock, card: 'border-amber-100 bg-amber-50/50', iconBox: 'bg-amber-100 text-amber-500' },
-    { value: counts.risk, label: 'At Risk', hint: 'Score 0 – 39', icon: AlertTriangle, card: 'border-rose-100 bg-rose-50/50', iconBox: 'bg-rose-100 text-rose-600', valueCls: 'text-rose-700' },
-  ];
 
   const metricCards = selected ? [
     { label: 'Mood', value: selected.metrics.mood, icon: Smile, iconCls: 'text-emerald-500' },
     { label: 'Behavior', value: selected.metrics.behavior, icon: Users, iconCls: 'text-blue-600' },
     { label: 'Health', value: selected.metrics.health, icon: Heart, iconCls: 'text-rose-500' },
+    { label: 'Engagement', value: selected.metrics.engagement, icon: TrendingUp, iconCls: 'text-violet-600', empty: 'No tryouts yet' },
     { label: 'Wellbeing', value: selected.metrics.wellbeing, icon: Leaf, iconCls: 'text-emerald-600' },
   ] : [];
 
   const panelCls = 'rounded-xl border border-[#eef2f7] bg-white p-4 shadow-[0_2px_10px_rgba(0,20,30,0.03)]';
 
   return (
-    <Motion.div initial={{ opacity: 0, y: 14 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.4 }} className="mx-auto w-full max-w-[1400px] space-y-4 rounded-2xl border border-[#eaedf0] bg-[#fbfcff] p-4 text-[#14234b] shadow-[0_4px_20px_rgba(0,20,30,0.05)] sm:p-5">
+    <Motion.div initial={{ opacity: 0, y: 14 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.4 }} ref={rootRef} style={rootHeight ? { height: rootHeight } : undefined} className="mx-auto flex w-full max-w-[1400px] flex-col gap-4 overflow-hidden rounded-2xl border border-[#eaedf0] bg-[#fbfcff] p-4 text-[#14234b] shadow-[0_4px_20px_rgba(0,20,30,0.05)] sm:p-5">
       <header className="flex flex-wrap items-start justify-between gap-3">
         <div className="flex items-center gap-3">
           <span className="flex size-11 items-center justify-center rounded-xl bg-blue-50 text-blue-600"><HeartPulse className="size-6" /></span>
           <div>
             <h1 className="text-xl font-bold">Student Health &amp; Wellbeing</h1>
             <p className="text-xs text-[#4a5a85]">Track students' mood, behavior, health and overall wellbeing.</p>
+            {enriched.length > 0 && (
+              <p className="mt-1 text-[11px] font-semibold text-[#4a5a85]">
+                Today: {moodsSharedToday} of {enriched.length} students shared their mood in their diary
+                {toughMoodsToday > 0 && <span className="ml-1.5 rounded-full bg-rose-50 px-2 py-0.5 text-rose-700">{toughMoodsToday} feeling low</span>}
+              </p>
+            )}
           </div>
         </div>
-        <div className="flex gap-2">
+        <div className="relative flex items-center gap-2">
+          {/* search: icon that slides open into a box */}
+          <label aria-hidden={!searchOpen} className={`relative block overflow-hidden p-0.5 transition-all duration-300 ease-out ${searchOpen ? 'w-56 opacity-100' : 'w-0 opacity-0'}`}>
+            <span className="sr-only">Search student</span>
+            <Search className="pointer-events-none absolute left-3 top-1/2 size-3.5 -translate-y-1/2 text-slate-400" />
+            <input ref={searchInputRef} tabIndex={searchOpen ? 0 : -1} value={search} onChange={(e) => setSearch(e.target.value)} onKeyDown={(e) => { if (e.key === 'Escape') closeSearch(); }} placeholder="Search by name or roll…" className="w-full rounded-full border border-[#e2e8f0] bg-white py-1.5 pl-8 pr-3 text-xs outline-none focus:border-blue-300" />
+          </label>
+          <button type="button" onClick={() => (searchOpen ? closeSearch() : setSearchOpen(true))} aria-label={searchOpen ? 'Close search' : 'Search students'} title={searchOpen ? 'Close search' : 'Search'} className="flex size-9 shrink-0 items-center justify-center rounded-full border border-blue-200 bg-white text-blue-600 hover:bg-blue-50">
+            {searchOpen ? <X className="size-4" /> : <Search className="size-4" />}
+          </button>
+          {/* status filter */}
+          <button type="button" onClick={() => setFilterOpen((v) => !v)} aria-expanded={filterOpen} aria-label="Filter by status" title="Filter by status" className={`relative flex size-9 shrink-0 items-center justify-center rounded-full border transition ${statusFilter !== 'all' ? 'border-blue-600 bg-blue-600 text-white' : 'border-blue-200 bg-white text-blue-600 hover:bg-blue-50'}`}>
+            <Filter className="size-4" />
+          </button>
+          {filterOpen && (
+            <>
+              <div className="fixed inset-0 z-20" onClick={() => setFilterOpen(false)} aria-hidden="true" />
+              <div role="menu" aria-label="Status filter" className="absolute right-0 top-full z-30 mt-2 w-48 overflow-hidden rounded-xl border border-slate-200 bg-white py-1 shadow-xl">
+                <p className="px-3 py-1.5 text-[10px] font-bold uppercase tracking-wide text-slate-400">Status</p>
+                {[['all', 'All students'], ['good', 'Good'], ['moderate', 'Moderate'], ['risk', 'At Risk']].map(([value, label]) => (
+                  <button key={value} type="button" role="menuitemradio" aria-checked={statusFilter === value} onClick={() => { setStatusFilter(value); setFilterOpen(false); }} className={`flex w-full items-center justify-between px-3 py-2 text-left text-xs font-semibold ${statusFilter === value ? 'bg-blue-50 text-blue-700' : 'text-slate-700 hover:bg-slate-50'}`}>
+                    {label} {statusFilter === value && <CheckCircle2 className="size-3.5" />}
+                  </button>
+                ))}
+              </div>
+            </>
+          )}
           <button type="button" onClick={refresh} disabled={loadingStudents} className="inline-flex items-center gap-1.5 rounded-lg border border-blue-200 bg-white px-3 py-2 text-xs font-semibold text-blue-600 hover:bg-blue-50 disabled:opacity-50">
             {loadingStudents ? <Loader2 className="size-3.5 animate-spin" /> : <RefreshCcw className="size-3.5" />} Refresh
           </button>
@@ -532,60 +659,32 @@ const HealthUpdatesAdvanced = () => {
         </div>
       </header>
 
-      <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-[repeat(4,minmax(0,1fr))_minmax(0,1.2fr)]">
-        {stats.map(({ value, label, hint, icon: Icon, card, iconBox, valueCls }) => (
-          <div key={label} className={`flex items-center gap-3 rounded-xl border p-3 ${card}`}>
-            <span className={`flex size-11 shrink-0 items-center justify-center rounded-lg ${iconBox}`}><Icon className="size-5" /></span>
-            <div className="min-w-0">
-              <p className={`text-xl font-bold leading-tight ${valueCls || ''}`}>{loadingStudents ? '–' : value}</p>
-              <p className="text-xs font-medium text-[#2a3a60]">{label}</p>
-              <p className="truncate text-[10px] text-[#6a7896]">{hint}</p>
-            </div>
-          </div>
-        ))}
-        <div className="flex flex-col justify-center gap-1.5 rounded-xl border border-[#eef2f7] bg-white p-3 sm:col-span-2 xl:col-span-1">
-          {[['Good (70–100)', counts.good, 'bg-emerald-500'], ['Moderate (40–69)', counts.moderate, 'bg-amber-400'], ['At Risk (0–39)', counts.risk, 'bg-rose-500']].map(([label, n, color]) => (
-            <div key={label} className="flex items-center gap-2 text-[11px]">
-              <span className={`size-2 rounded-full ${color}`} />
-              <span className="w-24 shrink-0 text-[#2a3a60]">{label}</span>
-              <div className="h-1.5 flex-1 overflow-hidden rounded-full bg-slate-100"><div className={`h-full rounded-full ${color}`} style={{ width: `${(n / total) * 100}%` }} /></div>
-              <span className="w-6 text-right text-[#2a3a60]">{n}</span>
-            </div>
-          ))}
-        </div>
-      </div>
-
-      <div className="grid gap-4 lg:grid-cols-[minmax(0,420px)_minmax(0,1fr)]">
-        {/* Student Directory */}
-        <section className={`${panelCls} flex flex-col`}>
-          <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
+      <div className="flex min-h-0 flex-1 flex-col">
+        {/* Student Directory (full width) — click a student to open their wellbeing in a modal */}
+        <section className={`${panelCls} flex min-h-0 flex-1 flex-col`}>
+          <div className="mb-3 flex shrink-0 items-center justify-between gap-2">
             <h2 className="text-sm font-bold">Student Directory</h2>
-            <div className="relative min-w-[160px] flex-1 sm:max-w-[220px]">
-              <Search className="pointer-events-none absolute left-3 top-1/2 size-3.5 -translate-y-1/2 text-slate-400" />
-              <input value={search} onChange={(e) => setSearch(e.target.value)} placeholder="Search student..." className="w-full rounded-lg border border-[#e2e8f0] py-2 pl-8 pr-3 text-xs outline-none focus:border-blue-300" />
-            </div>
-          </div>
-          <div className="mb-3 grid grid-cols-2 gap-2 sm:grid-cols-4">
-            <SelectBox value={selectedSession} onChange={(e) => setSelectedSession(e.target.value)}><option value="">All Years</option>{sessionOptions.map((o) => <option key={o} value={o}>{o}</option>)}</SelectBox>
-            <SelectBox value={selectedClass} onChange={(e) => setSelectedClass(e.target.value)}><option value="">All Classes</option>{classOptions.map((o) => <option key={o} value={o}>{o}</option>)}</SelectBox>
-            <SelectBox value={selectedSection} onChange={(e) => setSelectedSection(e.target.value)}><option value="">All Sections</option>{sectionOptions.map((o) => <option key={o} value={o}>{o}</option>)}</SelectBox>
-            <SelectBox value={statusFilter} onChange={(e) => setStatusFilter(e.target.value)}><option value="all">All Status</option><option value="good">Good</option><option value="moderate">Moderate</option><option value="risk">At Risk</option></SelectBox>
+            {statusFilter !== 'all' && (
+              <button type="button" onClick={() => setStatusFilter('all')} className="inline-flex items-center gap-1 rounded-full bg-blue-50 px-2.5 py-1 text-[11px] font-semibold text-blue-700 hover:bg-blue-100">
+                Status: {{ good: 'Good', moderate: 'Moderate', risk: 'At Risk' }[statusFilter]} <X className="size-3" />
+              </button>
+            )}
           </div>
 
-          <div className="flex-1 overflow-x-auto">
+          <div ref={tableBoxRef} className="min-h-0 flex-1 overflow-x-auto overflow-y-hidden">
             <table className="w-full text-xs">
               <thead className="bg-[#f3f6fd] text-left text-[11px] font-semibold text-[#2a3a60]">
-                <tr><th className="w-8 px-2 py-2 text-center">#</th><th className="px-2 py-2">Student</th><th className="px-2 py-2 text-center">Score</th><th className="px-2 py-2 text-center">Status</th></tr>
+                <tr><th className="w-8 px-2 py-2 text-center">#</th><th className="px-2 py-2">Student</th><th className="px-2 py-2 text-center" title="Mood the student shared in their diary today">Today's mood</th><th className="px-2 py-2 text-center">Score</th><th className="px-2 py-2 text-center">Status</th></tr>
               </thead>
               <tbody>
-                {loadingStudents && <tr><td colSpan={4} className="py-10 text-center text-slate-400"><Loader2 className="mx-auto size-5 animate-spin text-blue-500" /></td></tr>}
-                {!loadingStudents && loadError && <tr><td colSpan={4} className="p-3"><div className="rounded-lg bg-rose-50 p-3 text-rose-600">{loadError}</div></td></tr>}
-                {!loadingStudents && !loadError && !pageRows.length && <tr><td colSpan={4} className="py-10 text-center text-slate-400">No students match the current filters.</td></tr>}
+                {loadingStudents && <tr><td colSpan={5} className="py-10 text-center text-slate-400"><Loader2 className="mx-auto size-5 animate-spin text-blue-500" /></td></tr>}
+                {!loadingStudents && loadError && <tr><td colSpan={5} className="p-3"><div className="rounded-lg bg-rose-50 p-3 text-rose-600">{loadError}</div></td></tr>}
+                {!loadingStudents && !loadError && !pageRows.length && <tr><td colSpan={5} className="py-10 text-center text-slate-400">No students match the current filters.</td></tr>}
                 {!loadingStudents && pageRows.map((s, i) => {
                   const t = TONE[s.tone];
                   const active = s.id === selectedId;
                   return (
-                    <tr key={s.id} onClick={() => setSelectedId(s.id)} className={`cursor-pointer border-t border-[#eef2f7] transition ${active ? 'bg-blue-50/70 outline outline-1 -outline-offset-1 outline-blue-200' : 'hover:bg-[#fafbff]'}`}>
+                    <tr key={s.id} onClick={() => { setSelectedId(s.id); setDetailOpen(true); }} className={`cursor-pointer border-t border-[#eef2f7] transition ${active && detailOpen ? 'bg-blue-50/70 outline outline-1 -outline-offset-1 outline-blue-200' : 'hover:bg-[#fafbff]'}`}>
                       <td className="px-2 py-2 text-center text-[#4a5a85]">{pageStart + i + 1}</td>
                       <td className="px-2 py-2">
                         <div className="flex items-center gap-2">
@@ -596,22 +695,28 @@ const HealthUpdatesAdvanced = () => {
                           </div>
                         </div>
                       </td>
-                      <td className="px-2 py-2 text-center"><span className={`inline-block min-w-[36px] rounded-md px-1.5 py-1 font-semibold ${t.score}`}>{s.metrics.wellbeing}</span></td>
-                      <td className="px-2 py-2 text-center"><span className={`inline-flex items-center gap-1 rounded-md px-2 py-1 text-[10.5px] font-medium ${t.pill}`}>{s.tone === 'risk' && <span className="size-1.5 rounded-full bg-rose-500" />}{t.label}</span></td>
+                      <td className="px-2 py-2 text-center">{s.todayMood ? <StudentMoodChip mood={s.todayMood.mood} at={s.todayMood.at} /> : <span className="text-[10.5px] text-slate-300">—</span>}</td>
+                      <td className="px-2 py-2 text-center"><span className={`inline-block min-w-[40px] rounded-full px-2.5 py-1 font-semibold ${t.score}`}>{s.metrics.wellbeing}</span></td>
+                      <td className="px-2 py-2 text-center"><span className={`inline-flex items-center gap-1 rounded-full px-3 py-1 text-[10.5px] font-medium ${t.pill}`}>{s.tone === 'risk' && <span className="size-1.5 rounded-full bg-white" />}{t.label}</span></td>
                     </tr>
                   );
                 })}
               </tbody>
             </table>
           </div>
-          <div className="mt-3 flex flex-wrap items-center justify-between gap-2 text-[11px] text-[#4a5a85]">
-            <p>Showing {directory.length ? pageStart + 1 : 0} to {Math.min(pageStart + PAGE_SIZE, directory.length)} of {directory.length} students</p>
+          <div className="mt-3 flex shrink-0 flex-wrap items-center justify-between gap-2 text-[11px] text-[#4a5a85]">
+            <p>Showing {directory.length ? pageStart + 1 : 0} to {Math.min(pageStart + pageSize, directory.length)} of {directory.length} students</p>
             <Pager page={currentPage} totalPages={totalPages} onPage={setPage} />
           </div>
         </section>
 
-        {/* Student detail */}
-        <section className={`${panelCls} space-y-4`}>
+        {/* Student detail — opens in a modal */}
+        <Modal open={detailOpen && Boolean(selected)} onClose={() => setDetailOpen(false)} width="max-w-6xl">
+        <div className="flex shrink-0 items-center justify-between border-b border-slate-100 px-5 py-3">
+          <p className="text-sm font-bold text-[#14234b]">Student wellbeing</p>
+          <button type="button" onClick={() => setDetailOpen(false)} aria-label="Close" className="rounded-lg p-1.5 text-slate-400 hover:bg-slate-100 hover:text-slate-700"><X className="size-4" /></button>
+        </div>
+        <section className="min-h-0 flex-1 space-y-4 overflow-y-auto p-5">
           {!selected ? (
             <div className="flex min-h-[300px] items-center justify-center text-sm text-slate-400">{loadingStudents ? 'Loading…' : 'Select a student to view wellbeing.'}</div>
           ) : (
@@ -624,27 +729,58 @@ const HealthUpdatesAdvanced = () => {
                     <p className="text-xs text-[#6a7896]">{selected.className} · Roll {selected.roll || '—'} · Sec {selected.section || '—'}</p>
                   </div>
                 </div>
-                <button type="button" onClick={() => setTab('entries')} className="inline-flex items-center gap-1.5 rounded-lg border border-blue-200 bg-blue-50/50 px-3 py-2 text-xs font-semibold text-blue-600 hover:bg-blue-50"><FileText className="size-3.5" /> View Full Report</button>
               </div>
 
-              <div className="flex gap-1 overflow-x-auto rounded-xl border border-[#eef2f7] bg-white p-1">
+              <div className="flex gap-1 overflow-x-auto rounded-full border border-[#eef2f7] bg-white p-1">
                 {TABS.map(({ key, label, icon: Icon }) => (
-                  <button key={key} type="button" onClick={() => setTab(key)} className={`inline-flex flex-1 shrink-0 items-center justify-center gap-1.5 whitespace-nowrap rounded-lg px-3 py-2 text-xs font-medium transition ${tab === key ? 'bg-blue-600 text-white shadow-sm' : 'text-[#2a3a60] hover:bg-slate-50'}`}><Icon className="size-3.5" />{label}</button>
+                  <button key={key} type="button" onClick={() => setTab(key)} className={`inline-flex flex-1 shrink-0 items-center justify-center gap-1.5 whitespace-nowrap rounded-full px-3 py-2 text-xs font-medium transition ${tab === key ? 'bg-blue-600 text-white shadow-sm' : 'text-[#2a3a60] hover:bg-slate-50'}`}><Icon className="size-3.5" />{label}</button>
                 ))}
               </div>
 
-              <div className="grid grid-cols-2 gap-3 xl:grid-cols-4">
-                {metricCards.map(({ label, value, icon: Icon, iconCls }) => (
+              {/* Mood the student shared in their diary */}
+              <div className="rounded-xl border border-[#eef2f7] bg-white p-3">
+                <div className="flex flex-wrap items-center gap-3">
+                  <div className="min-w-0 flex-1">
+                    <p className="text-[11px] font-semibold text-[#4a5a85]">Today's mood <span className="font-normal text-slate-400">· shared by the student in their diary</span></p>
+                    <div className="mt-1.5">
+                      {selected.todayMood
+                        ? <StudentMoodChip mood={selected.todayMood.mood} at={selected.todayMood.at} size="lg" />
+                        : <span className="text-xs text-slate-400">{selected.name.split(' ')[0]} hasn't written in their diary today.</span>}
+                    </div>
+                  </div>
+                  <div className="flex items-end gap-1.5" aria-label="Moods over the last 7 days">
+                    {Array.from({ length: 7 }, (_, i) => {
+                      const d = new Date(Date.now() - (6 - i) * 86400000);
+                      const m = selected.diaryMoods[localDateKey(d)];
+                      return (
+                        <div key={i} className="flex w-9 flex-col items-center gap-1" title={m ? `${d.toLocaleDateString([], { weekday: 'long', day: 'numeric', month: 'short' })}: ${m.mood}` : 'Not shared'}>
+                          <span className={`flex size-8 items-center justify-center rounded-full border ${m ? MOOD_TONE_CLS[moodTone(m.mood)] : 'border-dashed border-slate-200 bg-white'}`}>
+                            {m ? <MoodIcon emoji={moodEmoji(m.mood)} label={m.mood} size={18} /> : <span className="text-[10px] text-slate-300">—</span>}
+                          </span>
+                          <span className={`text-[9.5px] font-semibold ${i === 6 ? 'text-blue-600' : 'text-slate-400'}`}>{i === 6 ? 'Today' : d.toLocaleDateString([], { weekday: 'short' })}</span>
+                        </div>
+                      );
+                    })}
+                  </div>
+                </div>
+              </div>
+
+              <div className="grid grid-cols-2 gap-3 md:grid-cols-3 xl:grid-cols-5">
+                {metricCards.map(({ label, value, icon: Icon, iconCls, empty }) => (
                   <div key={label} className="rounded-xl border border-[#eef2f7] bg-white p-3">
                     <div className="flex items-center gap-3">
                       <Icon className={`size-6 ${iconCls}`} />
-                      <div><p className="text-[11px] text-[#4a5a85]">{label}</p><p className="text-lg font-bold leading-tight">{value}</p></div>
+                      <div><p className="text-[11px] text-[#4a5a85]">{label}</p><p className="text-lg font-bold leading-tight">{value === null || value === undefined ? <span className="text-xs font-medium text-slate-400">{empty || '—'}</span> : `${value}%`}</p></div>
                     </div>
-                    <div className="mt-2 h-1.5 overflow-hidden rounded-full bg-slate-100"><div className={`h-full rounded-full ${TONE[toneOf(value)].bar}`} style={{ width: `${value}%` }} /></div>
+                    <div className="mt-2 h-1.5 overflow-hidden rounded-full bg-slate-100"><div className={`h-full rounded-full ${TONE[toneOf(value ?? 0)].bar}`} style={{ width: `${value ?? 0}%` }} /></div>
                   </div>
                 ))}
               </div>
-              {!selected.metrics.hasData && <p className="-mt-2 text-[10.5px] text-slate-400">No health entries yet — scores are estimated from attendance until the first entry is saved.</p>}
+              <p className="-mt-2 text-[10.5px] text-slate-400">
+                {selected.metrics.hasData
+                  ? `Based on ${selected.metrics.sources.diaryDays} diary mood day${selected.metrics.sources.diaryDays === 1 ? '' : 's'}, ${selected.metrics.sources.teacherEntries} health entr${selected.metrics.sources.teacherEntries === 1 ? 'y' : 'ies'} and ${selected.metrics.sources.tryoutAttempts} tryout attempt${selected.metrics.sources.tryoutAttempts === 1 ? '' : 's'} in the last 30 days.`
+                  : 'No diary moods, health entries or tryouts yet — scores are estimated from attendance.'}
+              </p>
 
               <AnimatePresence mode="wait" initial={false}>
                 <Motion.div key={tab} initial={{ opacity: 0, y: 6 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: -4 }} transition={{ duration: 0.18 }}>
@@ -697,31 +833,6 @@ const HealthUpdatesAdvanced = () => {
                       </div>
 
                       <div className="space-y-4">
-                        <div className={panelCls}>
-                          <div className="mb-2 flex items-start justify-between gap-2">
-                            <div className="flex items-center gap-2.5">
-                              <span className="flex size-9 items-center justify-center rounded-lg bg-rose-50 text-rose-600"><AlertTriangle className="size-4" /></span>
-                              <div><h3 className="text-sm font-bold">At Risk Students</h3><p className="text-xs text-rose-600">{atRisk.length} students</p></div>
-                            </div>
-                            <button type="button" onClick={() => setStatusFilter('risk')} className="rounded-lg border border-blue-200 px-2.5 py-1 text-[11px] font-semibold text-blue-600 hover:bg-blue-50">View All</button>
-                          </div>
-                          {atRisk.length ? (
-                            <>
-                              <ul className="divide-y divide-[#eef2f7] text-xs">
-                                {atRisk.slice(0, 5).map((s, i) => (
-                                  <li key={s.id}>
-                                    <button type="button" onClick={() => setSelectedId(s.id)} className="flex w-full items-center gap-3 py-1.5 text-left hover:bg-slate-50">
-                                      <span className="w-4 text-[#6a7896]">{i + 1}</span>
-                                      <span className="flex-1 truncate font-medium">{s.name}</span>
-                                      <span className={`rounded-md px-1.5 py-0.5 text-[11px] font-semibold ${s.tone === 'risk' ? 'bg-rose-50 text-rose-600' : 'bg-amber-50 text-amber-600'}`}>{s.metrics.wellbeing}</span>
-                                    </button>
-                                  </li>
-                                ))}
-                              </ul>
-                              {atRisk.length > 5 && <button type="button" onClick={() => setStatusFilter('risk')} className="mt-2 inline-flex items-center gap-1 text-[11px] font-semibold text-blue-600">View all {atRisk.length} at-risk students <ArrowRight className="size-3" /></button>}
-                            </>
-                          ) : <p className="text-xs text-slate-400">No at-risk students.</p>}
-                        </div>
 
                         <div className={panelCls}>
                           <div className="flex items-start gap-2.5">
@@ -760,7 +871,7 @@ const HealthUpdatesAdvanced = () => {
                       {selected.logs.length ? (
                         <div className="overflow-x-auto">
                           <table className="w-full text-xs">
-                            <thead className="bg-[#f3f6fd] text-left text-[11px] font-semibold text-[#2a3a60]"><tr><th className="px-3 py-2">Date</th><th className="px-3 py-2">Status</th><th className="px-3 py-2">Issue</th><th className="px-3 py-2">Mood</th><th className="px-3 py-2">Behavior</th><th className="px-3 py-2">Notes</th></tr></thead>
+                            <thead className="bg-[#f3f6fd] text-left text-[11px] font-semibold text-[#2a3a60]"><tr><th className="px-3 py-2">Date</th><th className="px-3 py-2">Status</th><th className="px-3 py-2">Issue</th><th className="px-3 py-2" title="Mood the student picked in their diary that day">Mood</th><th className="px-3 py-2">Behavior</th><th className="px-3 py-2">Notes</th></tr></thead>
                             <tbody>
                               {selected.logs.map((l) => {
                                 const opt = STATUS_OPTIONS.find((o) => o.value === l.overallStatus);
@@ -769,7 +880,11 @@ const HealthUpdatesAdvanced = () => {
                                     <td className="px-3 py-2">{formatDate(l.date)}</td>
                                     <td className="px-3 py-2"><span className={`rounded-md border px-2 py-0.5 text-[11px] font-medium ${opt?.active || ''}`}>{opt?.label}</span></td>
                                     <td className="px-3 py-2">{l.issueToday === 'no' ? 'No' : `${l.issueToday === 'maybe' ? 'Maybe' : 'Yes'} · ${ISSUE_LABEL[l.issueTag] || '—'}`}</td>
-                                    <td className="px-3 py-2">{l.mood ?? '—'}</td>
+                                    <td className="px-3 py-2">
+                                      {selected.diaryMoods[l.date]
+                                        ? <StudentMoodChip mood={selected.diaryMoods[l.date].mood} at={selected.diaryMoods[l.date].at} />
+                                        : l.mood ?? <span className="text-slate-300">—</span>}
+                                    </td>
                                     <td className="px-3 py-2">{l.behavior ?? '—'}</td>
                                     <td className="px-3 py-2 text-[#4a5a85]">{l.notes || '—'}</td>
                                   </tr>
@@ -807,11 +922,10 @@ const HealthUpdatesAdvanced = () => {
                       </div>
                       <textarea value={action.notes} maxLength={1000} onChange={(e) => setAction((a) => ({ ...a, notes: e.target.value }))} rows={3} placeholder="Action notes..." className="w-full resize-none rounded-lg border border-[#e2e8f0] px-3 py-2 text-xs outline-none focus:border-blue-300" />
                       <div className="flex flex-wrap items-center justify-between gap-2">
-                        <label className="flex items-center gap-2 text-xs text-[#4a5a85]"><input type="checkbox" checked={action.confidential} onChange={(e) => setAction((a) => ({ ...a, confidential: e.target.checked }))} className="accent-blue-600" /> Confidential note</label>
                         <button type="button" onClick={saveIntervention} disabled={savingAction} className="inline-flex items-center gap-1.5 rounded-lg bg-blue-600 px-4 py-2 text-xs font-semibold text-white hover:bg-blue-700 disabled:opacity-60">{savingAction ? <Loader2 className="size-3.5 animate-spin" /> : <Save className="size-3.5" />} Save Action</button>
                       </div>
                       <div className="space-y-2">
-                        {selected.interventions.filter((a) => !a.confidential).map((a) => (
+                        {selected.interventions.map((a) => (
                           <div key={a._id} className="rounded-lg border border-[#eef2f7] bg-slate-50 p-2.5 text-xs">
                             <p className="font-semibold">{a.type} <span className="font-normal text-slate-500">· {formatDate(a.date)}{a.followUpDate ? ` · Follow-up ${formatDate(a.followUpDate)}` : ''}</span></p>
                             {a.notes && <p className="mt-0.5 text-[#4a5a85]">{a.notes}</p>}
@@ -821,19 +935,12 @@ const HealthUpdatesAdvanced = () => {
                     </div>
                   )}
 
-                  {tab === 'confidential' && (
-                    <div className={`${panelCls} text-xs`}>
-                      <h3 className="mb-2 flex items-center gap-2 text-sm font-bold"><Lock className="size-4 text-blue-600" /> Confidential Notes</h3>
-                      {selected.interventions.some((a) => a.confidential) ? selected.interventions.filter((a) => a.confidential).map((a) => (
-                        <div key={a._id} className="mb-2 rounded-lg bg-slate-50 p-2.5"><p className="text-[10.5px] text-slate-500">{formatDate(a.date)} · {a.type}</p><p className="mt-0.5">{a.notes || '—'}</p></div>
-                      )) : <p className="text-slate-400">No confidential notes yet.</p>}
-                    </div>
-                  )}
                 </Motion.div>
               </AnimatePresence>
             </>
           )}
         </section>
+        </Modal>
       </div>
 
       <BulkEntryModal open={bulkOpen} onClose={() => setBulkOpen(false)} students={directory} onSaved={refresh} />

@@ -5,7 +5,7 @@ import { Bot, GraduationCap, ClipboardList, BookOpen, Play, Route } from 'lucide
 import { TooltipProvider } from '@/components/ui/tooltip';
 import { AiTutorPanel } from './AITutorHomeScreen';
 import AILearningCoursesLanding from './AILearningCoursesLanding';
-import PracticePapersPortal from './PracticePapersPortal';
+import PracticeTryouts from './PracticeTryouts';
 import StudyMaterials from './StudyMaterials';
 import TeacherLearningPaths from './TeacherLearningPaths';
 import {
@@ -106,7 +106,7 @@ const LearningHub = () => {
   // Subject chapters and topic readers provide their own navigation.
   const isSubjectDetail = activeTab.key === 'subjects' && /\/subject\/[^/]+/.test(location.pathname);
   const isSubjectsOverview = activeTab.key === 'subjects' && !isSubjectDetail;
-  const isContainedPage = isSubjectsOverview || activeTab.key === 'materials';
+  const isContainedPage = isSubjectsOverview || activeTab.key === 'materials' || activeTab.key === 'practice';
 
   // Snapshot the last activity once per mount so the card offers where the
   // student left off previously, not the page they are currently on.
@@ -189,11 +189,12 @@ const LearningHub = () => {
       {activeTab.key === 'practice' && (
         <Motion.div
           key="practice"
+          className="flex min-h-0 flex-1 flex-col overflow-hidden"
           initial={{ opacity: 0, y: 6 }}
           animate={{ opacity: 1, y: 0 }}
           transition={{ duration: 0.3, ease: [0.4, 0, 0.2, 1] }}
         >
-          <PracticePapersPortal />
+          <PracticeTryouts />
         </Motion.div>
       )}
       {activeTab.key === 'materials' && (

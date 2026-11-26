@@ -28,6 +28,7 @@ const Assignment = require('../models/Assignment');
 const Notification = require('../models/Notification');
 const { logStudentPortalEvent, logStudentPortalError } = require('../utils/studentPortalLogger');
 const TryoutResult = require('../models/TryoutResult');
+const { smartLearningMapCache, invalidateSmartLearningMapOnContentWrite } = require('../utils/responseCache');
 const { getAttachmentDownloadUrl, signAttachmentUrls, parseS3Uri } = require('../utils/s3Storage');
 const { buildCloudinaryAttachmentUrl } = require('../utils/cloudinaryUpload');
 const { queueVectorDeletion } = require('../services/vectorDeletionService');
@@ -1082,6 +1083,9 @@ const resolvePlanPayload = async ({ schoolId, campusId, payload, forcedTeacherId
     },
   };
 };
+
+// Teacher/admin lesson-plan writes change what students see in the learning map.
+router.use(invalidateSmartLearningMapOnContentWrite);
 
 router.get('/admin/options', adminAuth, async (req, res) => {
   try {
@@ -2207,7 +2211,7 @@ router.delete('/teacher/smart-learning/chapter', authTeacher, async (req, res) =
 });
 
 
-router.get('/student/smart-learning-map', authStudent, async (req, res) => {
+router.get('/student/smart-learning-map', authStudent, smartLearningMapCache.cache, async (req, res) => {
   try {
     const schoolId = resolveSchoolId(req);
     const campusId = resolveCampusId(req);

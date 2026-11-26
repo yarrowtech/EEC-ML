@@ -9,9 +9,9 @@ import { useLocation, useNavigate } from 'react-router-dom';
 import { Reorder } from 'framer-motion';
 import { slugifyForUrl, deslugifyFromUrl } from '../utils/urlSlug';
 import { useStudentDashboard } from './StudentDashboardContext';
+import { loadSmartLearningSubjects, peekSmartLearningSubjects } from '../utils/smartLearningMap';
 
 const API_BASE = (import.meta.env.VITE_API_URL || 'http://localhost:5000').replace(/\/$/, '');
-const SMART_LEARNING_MAP_ENDPOINT = `${API_BASE}/api/lesson-plans/student/smart-learning-map`;
 const SUBMIT_ENDPOINT = `${API_BASE}/api/lesson-plans/student/tryout-submit`;
 const RESULTS_ENDPOINT = `${API_BASE}/api/lesson-plans/student/tryout-results`;
 
@@ -931,7 +931,9 @@ const TryoutQuestion = ({ question, index, onAnswer }) => {
   );
 };
 
-const AILearningTryoutSection = forwardRef(({ assignedSubjectName = '', assignedTopicName = '', onBack, onQuestionsLoaded }, ref) => {
+// autoStart: skip the intro and open the full-screen exam as soon as questions load
+// (used by the Practice page's "Practice now"). Exiting the exam then calls onBack.
+const AILearningTryoutSection = forwardRef(({ assignedSubjectName = '', assignedTopicName = '', onBack, onQuestionsLoaded, autoStart = false }, ref) => {
   const navigate = useNavigate();
   const location = useLocation();
   const { profile } = useStudentDashboard() || {};
@@ -939,9 +941,11 @@ const AILearningTryoutSection = forwardRef(({ assignedSubjectName = '', assigned
   const topicMatch = location.pathname.match(/\/topic\/([^/]+)/);
   const subjectSlug = assignedSubjectName || (subjectMatch?.[1] ? deslugifyFromUrl(subjectMatch[1]) : 'subject');
   const topicSlug = assignedTopicName || (topicMatch?.[1] ? deslugifyFromUrl(topicMatch[1]) : 'topic');
-  const [loading, setLoading] = useState(true);
+  // Seeded from the shared map cache so a cached tryout opens instantly.
+  const [mapSeed] = useState(() => peekSmartLearningSubjects());
+  const [loading, setLoading] = useState(() => !mapSeed);
   const [error, setError] = useState('');
-  const [subjects, setSubjects] = useState([]);
+  const [subjects, setSubjects] = useState(() => mapSeed?.subjects || []);
   const [submitting, setSubmitting] = useState(false);
   const [submitted, setSubmitted] = useState(false);
   const [submitResult, setSubmitResult] = useState(null);
@@ -964,6 +968,7 @@ const AILearningTryoutSection = forwardRef(({ assignedSubjectName = '', assigned
 
   // answers keyed by question index
   const answersRef = useRef({});
+  const autoStartedRef = useRef(false);
 
   const storageKey = useMemo(
     () => `tryout-progress-${normalize(subjectSlug)}-${normalize(topicSlug)}`,
@@ -973,7 +978,7 @@ const AILearningTryoutSection = forwardRef(({ assignedSubjectName = '', assigned
   useEffect(() => {
     const loadAssignedTryouts = async () => {
       try {
-        setLoading(true);
+        if (!mapSeed) setLoading(true);
         setError('');
         const token = localStorage.getItem('token');
         const userType = localStorage.getItem('userType');
@@ -981,13 +986,7 @@ const AILearningTryoutSection = forwardRef(({ assignedSubjectName = '', assigned
           setSubjects([]);
           return;
         }
-
-        const response = await fetch(SMART_LEARNING_MAP_ENDPOINT, {
-          headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
-        });
-        const data = await response.json().catch(() => ({}));
-        if (!response.ok) throw new Error(data?.error || 'Failed to load assigned tryouts');
-        setSubjects(Array.isArray(data?.subjects) ? data.subjects : []);
+        setSubjects(await loadSmartLearningSubjects());
       } catch (err) {
         setError(err?.message || 'Failed to load assigned tryouts');
       } finally {
@@ -1185,6 +1184,12 @@ const AILearningTryoutSection = forwardRef(({ assignedSubjectName = '', assigned
     exitBrowserFullscreen();
   };
 
+  // ✕ in the exam header: with autoStart there is no intro to fall back to.
+  const exitExam = () => {
+    closeExam();
+    if (autoStart && onBack) onBack();
+  };
+
   // Let a parent "choose your format" list (built from the same assigned
   // questions) know what's here, and give it a way to jump straight to the
   // first question of a given type without re-deriving this data itself.
@@ -1262,6 +1267,15 @@ const AILearningTryoutSection = forwardRef(({ assignedSubjectName = '', assigned
     setAttemptKey((k) => k + 1);
   };
 
+  useEffect(() => {
+    if (!autoStart || autoStartedRef.current || loading || checkingExisting || assignedTryouts.length === 0) return;
+    // Start a fresh attempt straight away (even if an earlier attempt exists).
+    autoStartedRef.current = true;
+    if (submitted) startNewAttempt();
+    openExam(0);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [autoStart, loading, checkingExisting, assignedTryouts.length]);
+
   if (submitted) {
     return (
       <div className="w-full min-h-screen bg-[#f8fafc] p-4 text-slate-900 sm:p-6 md:p-8">
@@ -1280,6 +1294,11 @@ const AILearningTryoutSection = forwardRef(({ assignedSubjectName = '', assigned
               <RotateCcw size={16} /> Practice again
             </button>
             <p className="mt-2 text-xs text-slate-400">You can practise as many times as you like. Every attempt is saved.</p>
+            {onBack && (
+              <button type="button" onClick={onBack} className="mt-4 inline-flex items-center gap-1.5 text-sm font-semibold text-slate-500 hover:text-slate-800">
+                <ArrowLeft size={15} /> Back to tryouts
+              </button>
+            )}
           </div>
         </div>
       </div>
@@ -1512,7 +1531,7 @@ const AILearningTryoutSection = forwardRef(({ assignedSubjectName = '', assigned
           <p className="font-mono text-sm font-bold tabular-nums">{fmtTime(elapsed)}</p>
         </div>
         <span className="font-mono text-xs font-bold tabular-nums sm:hidden">{fmtTime(elapsed)}</span>
-        <button type="button" onClick={closeExam} aria-label="Exit practice" title="Exit practice" className="flex h-8 w-8 items-center justify-center rounded-full bg-white/15 hover:bg-white/25">
+        <button type="button" onClick={exitExam} aria-label="Exit practice" title="Exit practice" className="flex h-8 w-8 items-center justify-center rounded-full bg-white/15 hover:bg-white/25">
           <X size={16} />
         </button>
       </header>

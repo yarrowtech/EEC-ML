@@ -1597,14 +1597,21 @@ router.get('/journal', authStudent, async (req, res) => {
     if (!req.schoolId) {
       return res.status(400).json({ error: 'schoolId is required' });
     }
-    const entries = await StudentJournalEntry.find({
-      studentId: req.user.id,
-      schoolId: req.schoolId,
-      campusId: req.campusId,
-    })
-      .sort({ updatedAt: -1 })
-      .lean();
-    res.json({ entries });
+    const [entries, activeYear] = await Promise.all([
+      StudentJournalEntry.find({
+        studentId: req.user.id,
+        schoolId: req.schoolId,
+        campusId: req.campusId,
+      })
+        .sort({ updatedAt: -1 })
+        .lean(),
+      // The diary index lists the months of the current session (start → today).
+      AcademicYear.findOne({ schoolId: req.schoolId, isActive: true }).select('name startDate endDate').lean(),
+    ]);
+    const session = activeYear
+      ? { name: activeYear.name, startDate: activeYear.startDate || null, endDate: activeYear.endDate || null }
+      : null;
+    res.json({ entries, session });
     logStudentPortalEvent(req, {
       feature: 'assignments_journal',
       action: 'journal.fetch',

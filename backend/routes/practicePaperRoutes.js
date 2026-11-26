@@ -1,6 +1,8 @@
 const express = require('express');
 const { logger } = require('../utils/logger');
 const router = express.Router();
+const { invalidateSmartLearningMapOnContentWrite } = require('../utils/responseCache');
+router.use(invalidateSmartLearningMapOnContentWrite);
 const mongoose = require('mongoose');
 const PracticePaper = require('../models/PracticePaper');
 const Class = require('../models/Class');

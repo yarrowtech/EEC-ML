@@ -6,6 +6,8 @@
 
 const express = require('express');
 const router = express.Router();
+const { invalidateSmartLearningMapOnContentWrite } = require('../utils/responseCache');
+router.use(invalidateSmartLearningMapOnContentWrite);
 const mongoose = require('mongoose');
 const axios = require('axios');
 const TeachingMaterial = require('../models/TeachingMaterial');
