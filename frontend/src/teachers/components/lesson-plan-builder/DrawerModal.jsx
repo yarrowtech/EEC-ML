@@ -49,6 +49,7 @@ import { Textarea } from '@/components/ui/textarea';
 import RichTextEditor from './RichTextEditor';
 import CloudSaveStatus from './CloudSaveStatus';
 import { stepStatus } from './chapterProgress';
+import LabExperimentBuilder from './LabExperimentBuilder';
 import { getDidYouKnowFacts } from '../../../components/LessonFacts';
 // re-exported for existing importers
 export { getDidYouKnowFacts };
@@ -194,6 +195,9 @@ const DrawerModal = ({
   chapterOptions = [],
 }) => {
   const [currentStep, setCurrentStep] = useState(0);
+  // Theory = the normal lesson-plan steps; Practical = virtual lab experiments.
+  const [lessonMode, setLessonMode] = useState('theory');
+  const labExperiments = Array.isArray(chapter?.labExperiments) ? chapter.labExperiments : [];
   const [customDurationSelected, setCustomDurationSelected] = useState(() => (
     Boolean(chapter.duration) && !(durations || []).includes(chapter.duration)
   ));
@@ -1710,6 +1714,20 @@ const DrawerModal = ({
             <span className={`shrink-0 rounded-full px-2.5 py-0.5 text-[11px] font-semibold ${isPublished ? 'bg-emerald-100 text-emerald-700' : 'bg-blue-100 text-blue-700'}`}>
               {isPublished ? 'Published' : 'Draft'}
             </span>
+            <div role="tablist" aria-label="Lesson type" className="flex shrink-0 rounded-full bg-slate-100 p-0.5 dark:bg-slate-800">
+              {[['theory', 'Theory'], ['practical', `Practical (Lab)${labExperiments.length ? ` · ${labExperiments.length}` : ''}`]].map(([key, text]) => (
+                <button
+                  key={key}
+                  type="button"
+                  role="tab"
+                  aria-selected={lessonMode === key}
+                  onClick={() => setLessonMode(key)}
+                  className={`rounded-full px-3 py-1 text-xs font-semibold transition ${lessonMode === key ? (key === 'practical' ? 'bg-emerald-600 text-white shadow-sm' : 'bg-blue-600 text-white shadow-sm') : 'text-slate-600 hover:text-slate-900 dark:text-slate-300'}`}
+                >
+                  {text}
+                </button>
+              ))}
+            </div>
 
             <div className="ml-auto flex flex-wrap items-center gap-2">
               {autosaveStatus && (
@@ -1743,6 +1761,22 @@ const DrawerModal = ({
             </div>
           </div>
 
+          {lessonMode === 'practical' ? (
+            <div className="min-h-0 flex-1 overflow-y-auto bg-slate-50 p-4 sm:p-6 dark:bg-slate-900">
+              <div className="mb-4">
+                <h4 className="text-base font-bold text-slate-900 dark:text-white">Virtual Lab experiments</h4>
+                <p className="text-xs text-slate-500">Add experiments for this chapter. After you publish the chapter, students find them in <b>Virtual Lab</b> → subject → chapter → topic.</p>
+              </div>
+              <LabExperimentBuilder
+                key={chapter?.id || 'chapter'}
+                experiments={labExperiments}
+                onChange={(list) => onUpdate({ ...chapter, labExperiments: list })}
+                classLabel={classDisplayName}
+                subjectName={subjectName}
+              />
+            </div>
+          ) : (
+          <>
           {/* ── Body: vertical stepper + step content ── */}
           <div className="flex min-h-0 flex-1 flex-col bg-white lg:flex-row lg:overflow-hidden dark:bg-slate-900">
             {/* Stepper (laptop / desktop) */}
@@ -1863,6 +1897,16 @@ const DrawerModal = ({
               )}
             </div>
           </div>
+          </>
+          )}
+          {lessonMode === 'practical' && (
+            <div className="sticky bottom-0 z-10 flex items-center justify-between gap-3 border-t border-slate-200/80 bg-white/95 px-3 py-2 backdrop-blur sm:px-5 lg:static dark:border-slate-800 dark:bg-slate-900/95">
+              <span className="text-xs text-slate-500">Experiments save with the chapter draft. Publish so students can see them.</span>
+              <button type="button" onClick={onPublishChapter} disabled={isPublishing} className="inline-flex h-9 shrink-0 items-center gap-1.5 rounded-full bg-emerald-600 px-4 text-sm font-semibold text-white shadow-lg shadow-emerald-600/30 transition hover:bg-emerald-700 disabled:opacity-50 sm:px-5">
+                {isPublishing ? (isPublished ? 'Updating...' : 'Publishing...') : <><Send className="size-4" /> {isPublished ? 'Update' : 'Publish'}</>}
+              </button>
+            </div>
+          )}
         </motion.section>
       )}
 

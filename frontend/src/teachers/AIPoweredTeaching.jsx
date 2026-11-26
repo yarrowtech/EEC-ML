@@ -76,6 +76,7 @@ const enrichChapter = (chapter) => ({
   assessments: Array.isArray(chapter.assessments) ? chapter.assessments : [],
   history: chapter.history || [],
   tryouts: chapter.tryouts || [],
+  labExperiments: Array.isArray(chapter.labExperiments) ? chapter.labExperiments : [],
 });
 
 const toIdString = (value) => String(value || '').trim();
@@ -184,6 +185,10 @@ const normalizeLoadedChapter = (chapter, plan, index) => {
     tryouts: Array.isArray(source.tryouts) && source.tryouts.length
       ? source.tryouts
       : (Array.isArray(firstSubTopic.tryoutSections) ? firstSubTopic.tryoutSections : []),
+    // Virtual lab experiments ("Practical" mode) — from the draft, else the published plan.
+    labExperiments: Array.isArray(source.labExperiments) && source.labExperiments.length
+      ? source.labExperiments
+      : (Array.isArray(firstSubTopic.labExperiments) ? firstSubTopic.labExperiments : []),
   });
 };
 
@@ -1153,6 +1158,7 @@ const AIPoweredTeaching = ({ initialSelection = null } = {}) => {
             worksheets: (chapter.worksheetFiles || []).map(serializeResourceRef).filter(Boolean),
             referenceMaterials: chapter.teacherNotes ? [stripHtml(chapter.teacherNotes)] : [],
             tryoutSections: chapter.tryouts || [],
+            labExperiments: chapter.labExperiments || [],
             selfAssessments: chapter.recap ? [stripHtml(chapter.recap)] : [],
           }],
         }],

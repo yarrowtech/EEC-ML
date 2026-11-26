@@ -28,6 +28,7 @@ const Assignment = require('../models/Assignment');
 const Notification = require('../models/Notification');
 const { logStudentPortalEvent, logStudentPortalError } = require('../utils/studentPortalLogger');
 const TryoutResult = require('../models/TryoutResult');
+const LabResult = require('../models/LabResult');
 const { smartLearningMapCache, invalidateSmartLearningMapOnContentWrite } = require('../utils/responseCache');
 const { getAttachmentDownloadUrl, signAttachmentUrls, parseS3Uri } = require('../utils/s3Storage');
 const { buildCloudinaryAttachmentUrl } = require('../utils/cloudinaryUpload');
@@ -833,6 +834,8 @@ const sanitizePlannerContent = (value) => {
               worksheets: normalizeStringList(subTopic?.worksheets),
               referenceMaterials: normalizeStringList(subTopic?.referenceMaterials),
               tryoutSections: normalizeTryoutList(subTopic?.tryoutSections),
+              // Virtual lab experiments ("Practical" mode of the chapter).
+              labExperiments: normalizeTryoutList(subTopic?.labExperiments),
               selfAssessments: normalizeStringList(subTopic?.selfAssessments),
               questionPapers: {
                 basic: normalizeString(subTopic?.questionPapers?.basic),
@@ -2772,6 +2775,7 @@ router.get('/student/smart-learning-map', authStudent, smartLearningMapCache.cac
           }
           const topicEntry = subjectEntry.topics.get(subjectTopicKey);
           if (!Array.isArray(topicEntry.tryoutSections)) topicEntry.tryoutSections = [];
+          if (!Array.isArray(topicEntry.labExperiments)) topicEntry.labExperiments = [];
           const chapterTopicEntry = chapterEntry.topics.get(topicKey);
           (topic.subTopics || []).forEach((sub) => {
             const subTitle = normalizeString(sub.title);
@@ -2796,6 +2800,9 @@ router.get('/student/smart-learning-map', authStudent, smartLearningMapCache.cac
             } else if (subTitle && chapterTopicEntry) {
               const subTopicEntry = chapterTopicEntry.subtopics.get(subTopicId);
               subTopicEntry.worksheetUploads = worksheetUploads;
+            }
+            if (Array.isArray(sub.labExperiments)) {
+              topicEntry.labExperiments.push(...sub.labExperiments.filter((e) => e && typeof e === 'object'));
             }
             if (Array.isArray(sub.tryoutSections)) {
               topicEntry.tryoutSections.push(...sub.tryoutSections);
@@ -2837,6 +2844,7 @@ router.get('/student/smart-learning-map', authStudent, smartLearningMapCache.cac
         title: topic.title,
         subtopics: Array.from(topic.subtopics),
         tryoutSections: topic.tryoutSections,
+        labExperiments: topic.labExperiments || [],
       })),
     }));
 
@@ -2846,8 +2854,12 @@ router.get('/student/smart-learning-map', authStudent, smartLearningMapCache.cac
     // an empty Practice → Tryout tab.
     subjects.forEach((subject) => {
       const tryoutsByTopic = new Map();
+      const labsByTopic = new Map();
       subject.topics.forEach((topic) => {
         const key = normalizeLower(topic.title);
+        if (Array.isArray(topic.labExperiments) && topic.labExperiments.length) {
+          labsByTopic.set(key, [...(labsByTopic.get(key) || []), ...topic.labExperiments]);
+        }
         if (!Array.isArray(topic.tryoutSections) || !topic.tryoutSections.length) return;
         tryoutsByTopic.set(key, [...(tryoutsByTopic.get(key) || []), ...topic.tryoutSections]);
       });
@@ -2855,6 +2867,7 @@ router.get('/student/smart-learning-map', authStudent, smartLearningMapCache.cac
         title: topic.title,
         subtopics: topic.subtopics.map((subtopic) => subtopic.title).filter(Boolean),
         tryoutSections: tryoutsByTopic.get(normalizeLower(topic.title)) || [],
+        labExperiments: labsByTopic.get(normalizeLower(topic.title)) || [],
       })));
     });
     await resolveSmartLearningLinks(subjects);
@@ -3549,6 +3562,54 @@ router.post('/student/tryout-submit', authStudent, async (req, res) => {
     });
 
     return res.status(201).json({ success: true, result: { _id: result._id, attemptNumber: result.attemptNumber, autoScore, autoGradedCount: autoGradedAnswers.length, totalQuestions: questions.length } });
+  } catch (err) {
+    return res.status(500).json({ error: err.message });
+  }
+});
+
+// POST /api/lesson-plans/student/lab-submit — save one run of a Virtual Lab experiment
+router.post('/student/lab-submit', authStudent, async (req, res) => {
+  try {
+    const schoolId = req.schoolId;
+    const studentId = req.user?.id || req.userId;
+    const body = req.body || {};
+    const experimentId = normalizeString(body.experimentId).slice(0, 120);
+    if (!experimentId) return res.status(400).json({ error: 'experimentId is required' });
+    const clampInt = (v, max) => Math.max(0, Math.min(max, Math.round(Number(v) || 0)));
+    const quizTotal = clampInt(body.quizTotal, 50);
+    const observations = (Array.isArray(body.observations) ? body.observations : [])
+      .slice(0, 50)
+      .map((o) => ({ day: clampInt(o?.day, 365), text: normalizeString(o?.text).slice(0, 1000) }))
+      .filter((o) => o.text);
+    const result = await LabResult.create({
+      studentId,
+      schoolId,
+      experimentId,
+      title: normalizeString(body.title).slice(0, 200),
+      subjectName: normalizeString(body.subjectName).slice(0, 120),
+      chapterTitle: normalizeString(body.chapterTitle).slice(0, 200),
+      topicTitle: normalizeString(body.topicTitle).slice(0, 200),
+      completed: Boolean(body.completed),
+      observations,
+      quizTotal,
+      quizCorrect: Math.min(quizTotal, clampInt(body.quizCorrect, 50)),
+      xp: clampInt(body.xp, 300),
+    });
+    return res.status(201).json({ success: true, result: { _id: result._id, xp: result.xp, createdAt: result.createdAt } });
+  } catch (err) {
+    return res.status(500).json({ error: err.message });
+  }
+});
+
+// GET /api/lesson-plans/student/lab-results — the student's own lab runs (newest first)
+router.get('/student/lab-results', authStudent, async (req, res) => {
+  try {
+    const results = await LabResult.find({ schoolId: req.schoolId, studentId: req.user?.id || req.userId })
+      .select('experimentId title subjectName chapterTitle topicTitle completed quizCorrect quizTotal xp createdAt')
+      .sort({ createdAt: -1 })
+      .limit(500)
+      .lean();
+    return res.json({ success: true, results });
   } catch (err) {
     return res.status(500).json({ error: err.message });
   }

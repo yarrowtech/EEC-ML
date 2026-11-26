@@ -15,6 +15,7 @@ import useDocumentTitle from '../hooks/useDocumentTitle';
 const AttendanceView = lazy(() => import('./AttendanceView'));
 const RoutineView = lazy(() => import('./RoutineView'));
 const AssignmentView = lazy(() => import('./AssignmentView'));
+const VirtualLab = lazy(() => import('./VirtualLab'));
 const CoursesView = lazy(() => import('./CoursesView'));
 const ResultsView = lazy(() => import('./ResultsView'));
 const AchievementsView = lazy(() => import('./AchievementsView'));
@@ -163,7 +164,6 @@ const normalizeViewFromPath = (pathname) => {
 // remounted the whole page — the constant "refreshing" flash.
 const SchoolAssignmentView = (props) => <AssignmentView {...props} defaultType="school" />;
 const PracticeAssignmentView = (props) => <AssignmentView {...props} defaultType="eec" />;
-const LabAssignmentView = (props) => <AssignmentView {...props} defaultType="lab" />;
 const FlashcardAssignmentView = (props) => <AssignmentView {...props} defaultType="flashcard" />;
 const JournalAssignmentView = React.forwardRef((props, ref) => (
   <AssignmentView {...props} ref={ref} defaultType="journal" />
@@ -210,7 +210,7 @@ const DashboardContent = () => {
   const isTopicReaderPath = location.pathname.includes('/smart-learning-courses/subject/') && location.pathname.includes('/topic/') && !location.pathname.includes('/assessment/');
   const isSubjectChaptersPath = /\/smart-learning-courses\/subject\/[^/]+\/?$/.test(location.pathname);
   const isSubjectsOverviewPath = /\/student\/smart-learning-courses\/?$/.test(location.pathname);
-  const isContainedLearningPage = isSubjectsOverviewPath || /\/student\/(study-materials|practice-papers|routine)\/?$/.test(location.pathname);
+  const isContainedLearningPage = isSubjectsOverviewPath || /\/student\/(study-materials|practice-papers|routine|assignments-lab)\/?$/.test(location.pathname);
   const isAiTutorPath = /\/student\/(learning|smart-learning|smart-learning-tutor)\/?$/.test(location.pathname);
   // Community Wall has its own page header — hide the portal header there.
   const isCommunityWallPath = /\/student\/assignments-academic-alcove\/?$/.test(location.pathname);
@@ -309,7 +309,8 @@ const DashboardContent = () => {
     'long-answer': LongAnswerAssessment,
     'assignments-journal': JournalAssignmentView,
     'assignments-practice': PracticeAssignmentView,
-    'assignments-lab': LabAssignmentView,
+    // Teacher-made experiments: subjects → chapters → topics → experiments.
+    'assignments-lab': VirtualLab,
     'assignments-flashcards': FlashcardAssignmentView,
     'assignments-academic-alcove': StudentCommunityWall,
     'study-materials': LearningHub,
