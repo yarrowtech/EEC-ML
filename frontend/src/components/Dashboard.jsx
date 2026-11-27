@@ -344,6 +344,17 @@ const DashboardContent = () => {
     }
   }, [effectiveView, location.pathname, navigate]);
 
+  // Upright tablet (768–1023px): full-width top bar above the icon rail.
+  const TABLET_PORTRAIT_QUERY = '(min-width: 768px) and (max-width: 1023.98px)';
+  const [isTabletPortrait, setIsTabletPortrait] = useState(() => typeof window !== 'undefined' && typeof window.matchMedia === 'function' && window.matchMedia(TABLET_PORTRAIT_QUERY).matches);
+  useEffect(() => {
+    if (typeof window === 'undefined' || typeof window.matchMedia !== 'function') return undefined;
+    const mq = window.matchMedia(TABLET_PORTRAIT_QUERY);
+    const onChange = () => setIsTabletPortrait(mq.matches);
+    mq.addEventListener?.('change', onChange);
+    return () => mq.removeEventListener?.('change', onChange);
+  }, []);
+
   const renderContent = () => {
     const Component = viewComponents[effectiveView];
 
@@ -363,21 +374,33 @@ const DashboardContent = () => {
 
   return (
     <>
-      <div className="h-dvh min-h-dvh w-full bg-gray-200/80 flex relative overflow-hidden">
+      <div className="flex h-dvh min-h-dvh w-full flex-col overflow-hidden bg-gray-200/80">
+        {/* Upright tablet: the top bar runs the full width of the screen, edge to edge,
+            above the icon rail and the page (a divider underneath). */}
+        {isTabletPortrait && effectiveView !== 'chat' && !isChatBoxOpen && !isTopicReaderPath && !isSubjectChaptersPath && !isAiTutorPath && !isCommunityWallPath && effectiveView !== 'assignments-journal' && (
+          <div className="relative z-40 shrink-0">
+            <Header
+              sidebarOpen={sidebarOpen}
+              setSidebarOpen={setSidebarOpen}
+              onOpenProfile={() => navigate('/student/profile')}
+            />
+          </div>
+        )}
+        <div className="relative flex min-h-0 w-full flex-1">
         <Sidebar
           activeView={effectiveView}
           isOpen={sidebarOpen}
           setIsOpen={setSidebarOpen}
         />
         <div
-          className={`flex-1 flex flex-col h-dvh min-w-0 transition-all duration-300 ${sidebarOpen ? '' : ''
+          className={`flex-1 flex flex-col h-full min-h-0 min-w-0 transition-all duration-300 ${sidebarOpen ? '' : ''
             } ${isFullscreenView || isContainedLearningPage ? 'overflow-hidden' : 'overflow-y-auto custom-scrollbar'}`}
         >
           {/* The sticky element must be the header's wrapper (a direct child of
               the scroll container) — sticky on <header> alone did nothing
               because its parent was exactly the header's height. */}
           {/* The topic reader is a focused full-height view — no portal header. */}
-          {effectiveView !== 'chat' && !isChatBoxOpen && !isTopicReaderPath && !isSubjectChaptersPath && !isAiTutorPath && !isCommunityWallPath && effectiveView !== 'assignments-journal' && (
+          {!isTabletPortrait && effectiveView !== 'chat' && !isChatBoxOpen && !isTopicReaderPath && !isSubjectChaptersPath && !isAiTutorPath && !isCommunityWallPath && effectiveView !== 'assignments-journal' && (
             <div className={`sticky top-0 z-40 ${isChatView ? 'hidden lg:block' : ''}`}>
               <Header
                 sidebarOpen={sidebarOpen}
@@ -405,9 +428,10 @@ const DashboardContent = () => {
               </Suspense>
             </Motion.div>
             {!isFullscreenView && (
-              <div className="h-16 sm:h-18 lg:hidden shrink-0" style={{ marginBottom: 'env(safe-area-inset-bottom, 0px)' }} aria-hidden="true" />
+              <div className="h-16 sm:h-18 md:hidden shrink-0" style={{ marginBottom: 'env(safe-area-inset-bottom, 0px)' }} aria-hidden="true" />
             )}
           </main>
+        </div>
         </div>
         {!isChatBoxOpen && (
           <MobileBottomNav activeView={effectiveView} onSaveJournal={handleSaveJournal} />

@@ -196,7 +196,8 @@ const Sidebar = ({ activeView, isOpen, setIsOpen }) => {
         />
       )}
 
-      {/* ── Sidebar shell — a soft white card on desktop, a flush drawer on mobile ── */}
+      {/* ── Sidebar shell ──
+          phone + upright tablet: hidden — the ☰ button in the top bar slides it in · desktop: a soft card. */}
       <div
         className={`sidebar fixed inset-y-0 left-0 z-[60] flex h-dvh shrink-0 flex-col overflow-hidden border-r border-slate-100 bg-white shadow-2xl select-none transition-all duration-300 ease-in-out
           lg:relative lg:inset-auto lg:z-50 lg:my-3 lg:ml-3 lg:h-[calc(100dvh-1.5rem)] lg:rounded-2xl lg:border lg:shadow-[0_20px_40px_-12px_rgba(0,0,0,0.06),0_8px_24px_-6px_rgba(0,0,0,0.02)]

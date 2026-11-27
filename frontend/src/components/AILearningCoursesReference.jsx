@@ -6,6 +6,7 @@
 
 import React, { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
+import { createPortal } from 'react-dom';
 import { useLocation, useNavigate } from 'react-router-dom';
 import {
   ArrowLeft,
@@ -44,11 +45,13 @@ import {
   Newspaper,
   NotebookText,
   Image as ImageIcon,
+  ChevronDown,
 } from 'lucide-react';
 import { fetchCachedJson } from '../utils/studentApiCache';
 import { PaperclipHorizontalIcon } from '@phosphor-icons/react';
 import { slugifyForUrl, deslugifyFromUrl } from '../utils/urlSlug';
 import A4Pages from './A4Pages';
+import FileTypeIcon, { fileKindOf, fileKindName } from './FileTypeIcon';
 import { DidYouKnowHeader, FactCard } from './LessonFacts';
 
 // Split teacher HTML into top-level blocks (so it can flow across A4 pages),
@@ -171,6 +174,23 @@ const detectMaterialKind = (material) => {
 // dead control that just surfaces an error on tap.
 const FULLSCREEN_SUPPORTED = typeof document !== 'undefined'
   && Boolean(document.fullscreenEnabled || document.webkitFullscreenEnabled);
+
+// Phones / tablets (incl. iPad): the browser's own fullscreen shows a system
+// close (X) button, keeps the status bar, and drops out on a scroll swipe.
+// There we use an in-app "focus mode" that covers the whole app instead.
+const prefersInAppFullscreen = () => typeof window !== 'undefined'
+  && typeof window.matchMedia === 'function'
+  && window.matchMedia('(max-width: 1023.98px), (pointer: coarse)').matches;
+// iPhone/iPad Safari never lets a web page hide its own address/tab bar; only
+// the Home Screen app (standalone) is truly full screen.
+const isAppleSafariTab = () => typeof navigator !== 'undefined' && typeof window !== 'undefined'
+  && (/iPad|iPhone|iPod/.test(navigator.userAgent) || (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1))
+  && !(window.navigator.standalone || window.matchMedia?.('(display-mode: standalone)').matches);
+// Tablets (incl. iPad, either orientation) get no fullscreen button at all.
+const isTabletDevice = () => typeof window !== 'undefined' && typeof window.matchMedia === 'function'
+  && (window.matchMedia('(min-width: 768px) and (max-width: 1023.98px)').matches
+    || window.matchMedia('(min-width: 768px) and (pointer: coarse)').matches);
+const READER_FULLSCREEN_AVAILABLE = (FULLSCREEN_SUPPORTED || prefersInAppFullscreen()) && !isTabletDevice();
 
 const MaterialQuickActions = ({ material, onRead }) => {
   if (!material?.url && !material?.content) return null;
@@ -333,6 +353,8 @@ const AILearningCoursesReference = () => {
   const [activeFlowStepId, setActiveFlowStepId] = useState(null);
   const [savedScrollTop, setSavedScrollTop] = useState(0);
   const [isFullscreen, setIsFullscreen] = useState(false);
+  const [readerFocusMode, setReaderFocusMode] = useState(false);
+  const [showHomeScreenTip, setShowHomeScreenTip] = useState(false);
   const [downloadingPdf, setDownloadingPdf] = useState(false);
   const [activeMaterial, setActiveMaterial] = useState(null);
   const moduleRef = useRef(null);
@@ -792,6 +814,10 @@ const AILearningCoursesReference = () => {
     navigate(`/student/smart-learning-courses/subject/${normalizedSubjectSlug}`);
   };
   const toggleDetailsFullscreen = async () => {
+    if (readerFocusMode || prefersInAppFullscreen()) {
+      setReaderFocusMode((v) => { if (!v && isAppleSafariTab()) setShowHomeScreenTip(true); return !v; });
+      return;
+    }
     try {
       const target = (detailTab === 'read' && a4PageRef.current) || detailsViewRef.current;
       if (!document.fullscreenElement && target) {
@@ -822,6 +848,23 @@ const AILearningCoursesReference = () => {
   // Topic page tabs: read | files | practice, and the practice sub-section.
   const [detailTab, setDetailTab] = useState('read');
   const [practiceTab, setPracticeTab] = useState('tryout');
+  const [practiceMenuOpen, setPracticeMenuOpen] = useState(false);
+  const practiceMenuRef = useRef(null);
+  // Close the Practice menu on any tap/click outside it (or Escape)
+  useEffect(() => {
+    if (!practiceMenuOpen) return undefined;
+    const onDown = (e) => {
+      if (practiceMenuRef.current && !practiceMenuRef.current.contains(e.target)) setPracticeMenuOpen(false);
+    };
+    const onKey = (e) => { if (e.key === 'Escape') setPracticeMenuOpen(false); };
+    document.addEventListener('pointerdown', onDown);
+    document.addEventListener('keydown', onKey);
+    return () => {
+      document.removeEventListener('pointerdown', onDown);
+      document.removeEventListener('keydown', onKey);
+    };
+  }, [practiceMenuOpen]);
+  const [readingSessionActive, setReadingSessionActive] = useState(false);
   useEffect(() => { if (isPracticeMode) setDetailTab('practice'); }, [isPracticeMode]);
   // Populated by the embedded AILearningTryoutSection once it loads the
   // assigned questions, so the "Choose Your Format" list above it can group
@@ -1094,7 +1137,7 @@ const AILearningCoursesReference = () => {
   const markTopicComplete = () => setTopicCompleted((previous) => !previous);
 
   if (isDetailsView) {
-    return (
+    const detailsPage = (
       <>
         <style>{`
           @keyframes rdr-pulse-dot { 0%,100% { opacity:0.3; transform:scale(0.8); } 50% { opacity:1; transform:scale(1.2); } }
@@ -1104,7 +1147,7 @@ const AILearningCoursesReference = () => {
         <div
           ref={(node) => { detailsViewRef.current = node; detailsScrollRef.current = node; }}
           onScroll={handleDetailsScroll}
-          className={`w-full overflow-x-hidden overflow-y-auto overscroll-contain p-3 sm:p-5 ${isFullscreen ? 'h-screen' : 'min-h-screen lg:min-h-0'}`}
+          className={`w-full overflow-x-hidden overflow-y-auto overscroll-contain px-3 pb-3 pt-0 sm:px-5 sm:pb-5 ${readerFocusMode ? 'fixed inset-0 z-[9999] h-dvh bg-[#f8f9ff] pt-[env(safe-area-inset-top)]' : isFullscreen ? 'h-screen' : 'h-dvh lg:h-auto lg:min-h-0'}`}
           style={LESSON_CONTENT_STYLE}
           {...LESSON_COPY_GUARDS}
         >
@@ -1132,36 +1175,99 @@ const AILearningCoursesReference = () => {
 
             return (
               <div className="mx-auto max-w-[1200px]">
-                {/* ── Top bar ── */}
-                <div className="mb-3 flex flex-wrap items-center gap-2">
+                {/* ── Top bar + tabs: stay pinned under the header while scrolling ── */}
+                <div className={`sticky top-0 z-30 -mx-3 mb-3 bg-[#f8f9ff]/95 px-3 py-2 backdrop-blur sm:-mx-5 sm:px-5 ${detailTab === 'practice' && (practiceTab === 'reading' || practiceTab === 'writing') && readingSessionActive ? 'hidden' : ''}`}>
+                {readerFocusMode && showHomeScreenTip && (
+                  <div className="mb-2 flex items-start gap-2 rounded-xl bg-[#eff4ff] px-3 py-2 text-xs text-[#321ed2] ring-1 ring-[#c7c4ff]">
+                    <span className="flex-1">For true full screen on iPad/iPhone: tap <b>Share</b> → <b>Add to Home Screen</b>, then open Electronic Educare from the Home Screen icon.</span>
+                    <button type="button" onClick={() => setShowHomeScreenTip(false)} aria-label="Dismiss tip" className="shrink-0 rounded-full px-1.5 font-bold">✕</button>
+                  </div>
+                )}
+                <div className="flex flex-wrap items-center gap-2 sm:flex-nowrap">
                   <button
                     type="button"
                     onClick={closeDetailsPage}
-                    className="inline-flex items-center gap-1.5 rounded-full bg-white px-3 py-1.5 text-xs font-semibold text-[#493ee5] shadow-sm ring-1 ring-[#e2e8ff] transition-colors hover:bg-[#eff4ff]"
+                    aria-label="Back to Chapters"
+                    className="inline-flex shrink-0 items-center gap-1.5 rounded-full bg-white px-3 py-1.5 text-xs font-semibold text-[#493ee5] shadow-sm ring-1 ring-[#e2e8ff] transition-colors hover:bg-[#eff4ff] sm:py-2.5 sm:text-sm"
                   >
-                    <ArrowLeft size={15} /> Back to Chapters
+                    <ArrowLeft size={15} /> Back
                   </button>
-                  <div className="ml-auto flex items-center gap-1.5">
+                  {/* ── Tabs (phone / tablet) ── */}
+                  <div ref={practiceMenuRef} className="relative order-last w-full min-w-0 sm:order-none sm:w-auto sm:flex-1 lg:hidden">
+                    <div role="tablist" aria-label="Topic sections" className="mx-auto grid max-w-md grid-cols-3 gap-1 rounded-full bg-white p-1 shadow-sm ring-1 ring-[#e2e8ff] sm:max-w-xl">
+                      {tabs.map(({ key, label, icon: Icon, count }) => {
+                        const active = detailTab === key;
+                        return (
+                          <button
+                            key={key}
+                            type="button"
+                            role="tab"
+                            aria-selected={active}
+                            aria-haspopup={key === 'practice' ? 'menu' : undefined}
+                            aria-expanded={key === 'practice' ? practiceMenuOpen : undefined}
+                            onClick={() => { if (key === 'practice') { setPracticeMenuOpen((v) => !v); } else { setPracticeMenuOpen(false); goTab(key); } }}
+                            className={`flex items-center justify-center gap-1.5 rounded-full px-2 py-1.5 text-xs font-bold transition-colors sm:py-2.5 sm:text-sm ${active ? 'bg-[#493ee5] text-white shadow' : 'text-[#464555] hover:bg-[#eff4ff]'}`}
+                          >
+                            <span className={`flex h-5 w-5 shrink-0 items-center justify-center rounded-full text-[10px] ${active ? 'bg-white/25' : 'bg-[#eff4ff] text-[#493ee5]'}`}>{tabs.findIndex((t) => t.key === key) + 1}</span>
+                            <Icon size={14} className="hidden sm:block" />
+                            <span>{key === 'files' ? 'Files' : label}</span>
+                            {count != null && count > 0 && (
+                              <span className={`rounded-full px-1.5 py-0.5 text-[10px] leading-none ${active ? 'bg-white/25 text-white' : 'bg-[#eff4ff] text-[#493ee5]'}`}>{count}</span>
+                            )}
+                            {key === 'practice' && <ChevronDown size={14} className={`transition-transform ${practiceMenuOpen ? 'rotate-180' : ''}`} />}
+                          </button>
+                        );
+                      })}
+                    </div>
+                    {practiceMenuOpen && (
+                      <>
+                        <div role="menu" aria-label="Practice" className="absolute right-0 top-full z-50 mt-2 w-[min(20rem,100%)] overflow-hidden rounded-2xl bg-white p-1.5 shadow-xl ring-1 ring-[#e2e8ff] sm:right-[max(0px,calc(50%-18rem))]">
+                          {practiceTabs.map(({ key, label, hint, icon: Icon }) => {
+                            const current = detailTab === 'practice' && practiceTab === key;
+                            return (
+                              <button
+                                key={key}
+                                type="button"
+                                role="menuitem"
+                                onClick={() => { setPracticeTab(key); setPracticeMenuOpen(false); goTab('practice'); }}
+                                className={`flex w-full items-center gap-3 rounded-xl px-3 py-2.5 text-left transition-colors ${current ? 'bg-[#eff4ff]' : 'hover:bg-[#f8f9ff]'}`}
+                              >
+                                <span className={`flex h-9 w-9 shrink-0 items-center justify-center rounded-lg ${current ? 'bg-[#493ee5] text-white' : 'bg-[#eff4ff] text-[#493ee5]'}`}><Icon size={17} /></span>
+                                <span className="min-w-0">
+                                  <span className={`block text-sm font-bold ${current ? 'text-[#493ee5]' : 'text-[#0d1c2e]'}`}>{label}</span>
+                                  <span className="block truncate text-xs text-[#64748b]">{hint}</span>
+                                </span>
+                              </button>
+                            );
+                          })}
+                        </div>
+                      </>
+                    )}
+                  </div>
+  
+                    <div className="ml-auto flex shrink-0 items-center gap-1.5">
                     {detailTab === 'read' && (
                       <div className="flex items-center gap-0.5 rounded-full bg-white p-1 shadow-sm ring-1 ring-[#e2e8ff]" aria-label="Text size">
                         <button type="button" onClick={() => setReaderFontScale(1)} aria-label="Normal text size" className={`rounded-full px-3 py-1 text-xs font-bold ${readerFontScale === 1 ? 'bg-[#493ee5] text-white' : 'text-[#464555] hover:bg-[#eff4ff]'}`}>A</button>
                         <button type="button" onClick={() => setReaderFontScale(1.15)} aria-label="Larger text size" className={`rounded-full px-3 py-1 text-sm font-bold ${readerFontScale === 1.15 ? 'bg-[#493ee5] text-white' : 'text-[#464555] hover:bg-[#eff4ff]'}`}>A+</button>
+                        <button type="button" onClick={() => setReaderFontScale(1.3)} aria-label="Largest text size" className={`rounded-full px-3 py-1 text-base font-bold ${readerFontScale === 1.3 ? 'bg-[#493ee5] text-white' : 'text-[#464555] hover:bg-[#eff4ff]'}`}>A++</button>
                       </div>
                     )}
-                    {FULLSCREEN_SUPPORTED && (
-                      <button type="button" onClick={toggleDetailsFullscreen} aria-label={isFullscreen ? 'Exit fullscreen' : 'Fullscreen'} className="rounded-full bg-white p-2 text-[#464555] shadow-sm ring-1 ring-[#e2e8ff] hover:bg-[#eff4ff]">
-                        {isFullscreen ? <Minimize2 size={15} /> : <Maximize2 size={15} />}
+                    {READER_FULLSCREEN_AVAILABLE && (
+                      <button type="button" onClick={toggleDetailsFullscreen} aria-label={isFullscreen || readerFocusMode ? 'Exit fullscreen' : 'Fullscreen'} className="rounded-full bg-white p-2 text-[#464555] shadow-sm ring-1 ring-[#e2e8ff] hover:bg-[#eff4ff]">
+                        {isFullscreen || readerFocusMode ? <Minimize2 size={15} /> : <Maximize2 size={15} />}
                       </button>
                     )}
                   </div>
+                </div>
                 </div>
 
                 {/* Page title for screen readers (the visual header was removed) */}
                 <h1 className="sr-only"><span>✦ Topic Reader</span> {String(topicSlug || '').replace(/[_-]+/g, ' ')}</h1>
 
                 {/* ── Body: sidebar navigation (laptop/desktop) + content ── */}
-                <div className="mt-4 lg:grid lg:grid-cols-[230px_minmax(0,1fr)] lg:items-start lg:gap-5">
-                  <aside className="hidden lg:sticky lg:top-0 lg:block">
+                <div className="lg:grid lg:grid-cols-[230px_minmax(0,1fr)] lg:items-start lg:gap-5">
+                  <aside className="hidden lg:sticky lg:top-14 lg:block">
                     <nav aria-label="Topic navigation" className="max-h-[calc(100vh-5rem)] overflow-y-auto overscroll-contain rounded-2xl bg-white shadow-sm ring-1 ring-[#e2e8ff] [scrollbar-width:thin] [scrollbar-color:#c7c4ff_transparent] [&::-webkit-scrollbar]:w-1.5 [&::-webkit-scrollbar-thumb]:rounded-full [&::-webkit-scrollbar-thumb]:bg-[#c7c4ff] [&::-webkit-scrollbar-track]:bg-transparent">
                       {/* Learn */}
                       <div className="border-b border-[#eef2ff] px-2 py-1.5">
@@ -1216,31 +1322,6 @@ const AILearningCoursesReference = () => {
                   </aside>
 
                   <div className="min-w-0">
-                {/* ── Tabs (phone / tablet) ── */}
-                <div className="sticky top-0 z-20 -mx-3 mt-0 lg:hidden bg-[#f8f9ff]/95 px-3 py-2 backdrop-blur sm:-mx-5 sm:px-5">
-                  <div role="tablist" aria-label="Topic sections" className="mx-auto grid max-w-md grid-cols-3 gap-1 rounded-full bg-white p-1 shadow-sm ring-1 ring-[#e2e8ff]">
-                    {tabs.map(({ key, label, icon: Icon, count }) => {
-                      const active = detailTab === key;
-                      return (
-                        <button
-                          key={key}
-                          type="button"
-                          role="tab"
-                          aria-selected={active}
-                          onClick={() => goTab(key)}
-                          className={`flex items-center justify-center gap-1.5 rounded-full px-2 py-1.5 text-xs font-bold transition-colors ${active ? 'bg-[#493ee5] text-white shadow' : 'text-[#464555] hover:bg-[#eff4ff]'}`}
-                        >
-                          <Icon size={14} />
-                          <span>{label}</span>
-                          {count != null && count > 0 && (
-                            <span className={`rounded-full px-1.5 py-0.5 text-[10px] leading-none ${active ? 'bg-white/25 text-white' : 'bg-[#eff4ff] text-[#493ee5]'}`}>{count}</span>
-                          )}
-                        </button>
-                      );
-                    })}
-                  </div>
-                </div>
-
                 {/* ══════════ READ ══════════ */}
                 {detailTab === 'read' && (
                   <div
@@ -1248,18 +1329,20 @@ const AILearningCoursesReference = () => {
                     className="mt-2 lg:mt-0 [&:fullscreen]:overflow-y-auto [&:fullscreen]:bg-slate-600 [&:fullscreen]:px-4 [&:fullscreen]:py-8"
                   >
                     {detailSections.length > 1 && (
-                      <nav aria-label="In this lesson" className="mx-auto mb-3 max-w-[210mm] rounded-xl bg-white p-3 shadow-sm lg:hidden">
-                        <p className="mb-2 text-xs font-bold uppercase tracking-wide text-[#493ee5]">In this lesson</p>
-                        <ol className="grid gap-1 sm:grid-cols-2">
+                      <nav aria-label="In this lesson" className="relative z-0 mx-auto mb-3 scroll-mt-32 max-w-[210mm] lg:hidden">
+                        <p className="mb-1.5 px-1 text-[11px] font-bold uppercase tracking-wide text-[#64748b]">In this lesson · {Math.max(1, detailSections.findIndex((x) => x.id === activeDetailSection) + 1)} of {detailSections.length}</p>
+                        <ol className="-mx-1 flex gap-1.5 overflow-x-auto px-1 pb-1 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
                           {detailSections.map((section, i) => (
                             <li key={section.id}>
                               <button
                                 type="button"
                                 onClick={() => setActiveDetailSection(section.id)}
-                                className={`flex w-full items-center gap-2 rounded-lg px-2 py-1 text-left text-[13px] transition-colors ${activeDetailSection === section.id ? 'bg-[#eff4ff] font-semibold text-[#493ee5]' : 'text-[#464555] hover:bg-[#f8f9ff]'}`}
+                                aria-current={activeDetailSection === section.id ? 'step' : undefined}
+                                ref={activeDetailSection === section.id ? (el) => { const strip = el?.closest('ol'); if (strip) strip.scrollTo?.({ left: Math.max(0, el.offsetLeft - 8), behavior: 'smooth' }); } : undefined}
+                                className={`flex shrink-0 items-center gap-1.5 whitespace-nowrap rounded-full px-3 py-1.5 text-[13px] font-semibold shadow-sm ring-1 transition-colors ${activeDetailSection === section.id ? 'bg-[#493ee5] text-white ring-[#493ee5]' : 'bg-white text-[#464555] ring-[#e2e8ff] hover:bg-[#f8f9ff]'}`}
                               >
-                                <span className="flex h-5 w-5 shrink-0 items-center justify-center rounded-full bg-[#e2dfff] text-[10px] font-bold text-[#321ed2]">{i + 1}</span>
-                                <span className="truncate">{section.title}</span>
+                                <span className={`flex h-5 w-5 shrink-0 items-center justify-center rounded-full text-[10px] font-bold ${activeDetailSection === section.id ? 'bg-white/25 text-white' : 'bg-[#e2dfff] text-[#321ed2]'}`}>{i + 1}</span>
+                                <span>{section.title}</span>
                               </button>
                             </li>
                           ))}
@@ -1384,15 +1467,15 @@ const AILearningCoursesReference = () => {
                             <p className="text-[10px] font-bold uppercase tracking-widest text-[#493ee5]">{String(subjectSlug || '').replace(/[_-]+/g, ' ')}</p>
                             <p className="truncate text-base font-extrabold text-[#0d1c2e] sm:text-lg">{String(topicSlug || '').replace(/[_-]+/g, ' ')}</p>
                           </div>
-                          {pageIndex === 0 && FULLSCREEN_SUPPORTED && (
+                          {pageIndex === 0 && READER_FULLSCREEN_AVAILABLE && (
                             <button
                               type="button"
                               onClick={toggleDetailsFullscreen}
-                              aria-label={isFullscreen ? 'Exit fullscreen' : 'Open page in fullscreen'}
-                              title={isFullscreen ? 'Exit fullscreen' : 'Fullscreen'}
+                              aria-label={isFullscreen || readerFocusMode ? 'Exit fullscreen' : 'Open page in fullscreen'}
+                              title={isFullscreen || readerFocusMode ? 'Exit fullscreen' : 'Fullscreen'}
                               className="shrink-0 rounded-full p-2 text-[#64748b] transition-colors hover:bg-[#eff4ff] hover:text-[#493ee5]"
                             >
-                              {isFullscreen ? <Minimize2 size={16} /> : <Maximize2 size={16} />}
+                              {isFullscreen || readerFocusMode ? <Minimize2 size={16} /> : <Maximize2 size={16} />}
                             </button>
                           )}
                         </div>
@@ -1447,6 +1530,7 @@ const AILearningCoursesReference = () => {
                           const meta = MATERIAL_KIND_META[kind];
                           const Icon = meta.icon;
                           const materialUrl = material.url || material.downloadUrl;
+                          const fileKind = fileKindOf({ type: material.mimeType || material.fileType || material.type || '', name: material.fileName || material.originalName || material.title || '', url: materialUrl || '' });
                           const categoryLabels = {
                             'study materials': 'PDF / Documents',
                             presentations: 'Presentations & Slides',
@@ -1460,10 +1544,10 @@ const AILearningCoursesReference = () => {
                           return (
                             <div key={`${material.title || 'material'}-${idx}`} className="flex min-w-0 flex-col gap-4 rounded-xl border border-[#e2e8ff] p-4 transition-shadow hover:shadow-md">
                               <div className="flex items-start gap-3">
-                                <div className={`flex h-9 w-9 shrink-0 items-center justify-center rounded-lg ${meta.tile}`}><Icon size={17} /></div>
+                                {fileKind !== 'file' ? <FileTypeIcon kind={fileKind} size={44} /> : <div className={`flex h-11 w-11 shrink-0 items-center justify-center rounded-lg ${meta.tile}`}><Icon size={20} /></div>}
                                 <div className="min-w-0">
                                   <p className="line-clamp-2 text-sm font-bold text-[#0d1c2e]">{category}</p>
-                                  <span className="mt-0.5 text-xs font-semibold uppercase tracking-wide bg-gray-400 text-white py-0.5 px-2 rounded-full">{meta.label || kind}</span>
+                                  <span className="mt-0.5 text-xs font-semibold uppercase tracking-wide bg-gray-400 text-white py-0.5 px-2 rounded-full">{fileKind !== 'file' ? fileKindName(fileKind) : (meta.label || kind)}</span>
                                 </div>
                               </div>
                               <div className="mt-auto flex flex-wrap items-center gap-2 pt-1">
@@ -1492,7 +1576,7 @@ const AILearningCoursesReference = () => {
                 {/* ══════════ PRACTICE ══════════ */}
                 {detailTab === 'practice' && (
                   <div className="mt-2 space-y-3 lg:mt-0">
-                    <div className="grid grid-cols-2 gap-2 lg:hidden">
+                    <div className="hidden">
                       {practiceTabs.map(({ key, label, hint, icon: Icon }) => {
                         const active = practiceTab === key;
                         return (
@@ -1526,17 +1610,13 @@ const AILearningCoursesReference = () => {
 
                     {practiceTab === 'reading' && (
                       <div className="rounded-2xl bg-white p-4 shadow-sm sm:p-5">
-                        <h2 className="text-base font-bold text-[#0d1c2e]">Reading skills</h2>
-                        <p className="mb-4 text-xs text-[#64748b]">Pick a passage, read it aloud and get instant feedback.</p>
-                        <ReadingPracticePage topics={topicFilters} />
+                        <ReadingPracticePage topics={topicFilters} onSessionChange={setReadingSessionActive} heading="Reading skills" subheading="Pick a passage, read it aloud and get instant feedback." />
                       </div>
                     )}
 
                     {practiceTab === 'writing' && (
                       <div className="rounded-2xl bg-white p-4 shadow-sm sm:p-5">
-                        <h2 className="text-base font-bold text-[#0d1c2e]">Writing skills</h2>
-                        <p className="mb-4 text-xs text-[#64748b]">Choose a prompt, write your answer and get feedback.</p>
-                        <WritingPracticePage topics={topicFilters} />
+                        <WritingPracticePage topics={topicFilters} onSessionChange={setReadingSessionActive} heading="Writing skills" subheading="Choose a prompt, write your answer and get feedback." />
                       </div>
                     )}
                   </div>
@@ -1568,6 +1648,7 @@ const AILearningCoursesReference = () => {
         )}
       </>
     );
+    return readerFocusMode && typeof document !== 'undefined' ? createPortal(detailsPage, document.body) : detailsPage;
   }
 
   // A step is locked until the step directly before it has been completed —

@@ -281,7 +281,7 @@ const Header = ({ sidebarOpen, setSidebarOpen, onOpenProfile }) => {
     {/* On desktop the header floats like the sidebar: inset from the screen edges, rounded, with its own border/shadow. */}
     <header className="relative z-40 w-full bg-white/80 backdrop-blur-xl border-b border-gray-100 lg:mx-3 lg:mt-3 lg:w-auto lg:rounded-2xl lg:border lg:border-gray-100 lg:bg-white/90 lg:shadow-[0_20px_40px_-12px_rgba(0,0,0,0.06),0_8px_24px_-6px_rgba(0,0,0,0.02)]">
       <div className="px-3 sm:px-5">
-        <div className="flex items-center justify-between h-14 sm:h-16 gap-2 sm:gap-4">
+        <div className="relative flex items-center justify-between h-14 sm:h-16 gap-2 sm:gap-4">
 
           {/* Left: Sidebar toggle + Greeting */}
           <div className="flex min-w-0 items-center gap-2 sm:gap-3 lg:shrink-0">
@@ -313,8 +313,9 @@ const Header = ({ sidebarOpen, setSidebarOpen, onOpenProfile }) => {
             </div>
           </div>
 
-          {/* Mobile/tablet: school short name in the centre */}
-          <div className="flex min-w-0 flex-1 items-center justify-center gap-2 lg:hidden">
+          {/* Mobile/tablet: school logo + short name, centred on the whole bar (not just the
+              space between the ☰ and the right-hand buttons, which are different widths). */}
+          <div className="pointer-events-none absolute left-1/2 top-1/2 flex max-w-[calc(100%-11rem)] -translate-x-1/2 -translate-y-1/2 items-center justify-center gap-2 md:max-w-[calc(100%-22rem)] lg:hidden">
             {studentData.schoolLogo && (
               <img
                 src={studentData.schoolLogo}
@@ -485,14 +486,16 @@ const Header = ({ sidebarOpen, setSidebarOpen, onOpenProfile }) => {
             </div>
 
             {/* Divider */}
-            <div className="hidden lg:block w-px h-6 bg-gray-200" />
+            <div className="hidden md:block w-px h-6 bg-gray-200" />
 
-            {/* Profile — desktop only; mobile reaches it from the bottom nav */}
-            <div className="relative hidden lg:block" ref={profileRef}>
+            {/* Profile menu (photo → My Profile / Logout) — tablets and desktops; phones use the bottom nav */}
+            <div className="relative hidden md:block" ref={profileRef}>
               <button
                 className="flex items-center gap-2 rounded-xl p-1.5 bg-gray-100 hover:bg-gray-200 active:scale-95 transition-all"
                 onClick={toggleProfile}
                 aria-label="Profile menu"
+                aria-expanded={profileOpen}
+                aria-haspopup="menu"
               >
                 {hasProfileImage ? (
                   <img
@@ -508,11 +511,11 @@ const Header = ({ sidebarOpen, setSidebarOpen, onOpenProfile }) => {
                     {initialsLabel}
                   </div>
                 )}
-                <div className="hidden md:block text-left">
+                <div className="hidden lg:block text-left">
                   <p className="text-xs font-semibold text-gray-800 leading-tight">{studentData.name?.split(' ')[0] || 'Student'}</p>
                   <p className="text-[10px] text-gray-400">Student</p>
                 </div>
-                <ChevronDown size={14} className={`hidden md:block text-gray-400 transition-transform duration-200 ${profileOpen ? 'rotate-180' : ''}`} />
+                <ChevronDown size={14} className={`text-gray-400 transition-transform duration-200 ${profileOpen ? 'rotate-180' : ''}`} />
               </button>
 
               {profileOpen && (
@@ -551,7 +554,7 @@ const Header = ({ sidebarOpen, setSidebarOpen, onOpenProfile }) => {
                       className="w-full flex items-center gap-3 px-4 py-2.5 text-sm text-red-600 hover:bg-red-50 transition-colors"
                     >
                       <LogOut size={15} className="text-red-400" />
-                      Sign out
+                      Logout
                     </button>
                   </div>
                 </div>

@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react';
+import { createPortal } from 'react-dom';
 import { motion as Motion, AnimatePresence } from 'framer-motion';
 import {
   Mic, MicOff, Play, Pause, Square, Clock, BookOpen,
@@ -11,9 +12,9 @@ import ReadingScoreCard from './ReadingScoreCard';
 const API_BASE = (import.meta.env.VITE_API_URL || 'http://localhost:5000').replace(/\/$/, '');
 
 const DIFFICULTY_COLORS = {
-  easy: 'bg-emerald-100 text-emerald-700',
-  medium: 'bg-amber-100 text-amber-700',
-  hard: 'bg-red-100 text-red-700',
+  easy: 'bg-emerald-600 text-white',
+  medium: 'bg-amber-600 text-white',
+  hard: 'bg-red-600 text-white',
 };
 
 const TYPE_LABELS = {
@@ -23,39 +24,9 @@ const TYPE_LABELS = {
   article: 'Article',
   dialogue: 'Dialogue',
 };
+// Bar heights (%) for the footer waveform — loud in the middle, quiet at the edges
+const FOOTER_WAVE = [30, 40, 35, 45, 55, 70, 60, 85, 65, 50, 75, 90, 70, 55, 80, 100, 75, 60, 85, 70, 55, 65, 90, 60, 50, 75, 95, 70, 55, 45, 60, 40, 35, 45, 30];
 
-// Animated bar visualizer (matches the HTML design)
-const BarVisualizer = ({ active, color = '#4f46e5' }) => {
-  const delays = [0, 0.15, 0.3, 0.45, 0.6, 0.75];
-  return (
-    <div className="flex items-end gap-1" style={{ height: 28 }}>
-      {delays.map((delay, i) => (
-        <Motion.span
-          key={i}
-          style={{
-            display: 'inline-block',
-            width: 4,
-            borderRadius: 4,
-            background: active ? '#f59e0b' : color,
-            transformOrigin: 'bottom',
-          }}
-          animate={active
-            ? { scaleY: [0.15, 0.95, 0.5, 0.15], height: 28 }
-            : { scaleY: 0.2, height: 28 }}
-          transition={active ? {
-            duration: 0.9,
-            repeat: Infinity,
-            repeatType: 'mirror',
-            delay,
-            ease: 'easeInOut',
-          } : { duration: 0.3 }}
-        />
-      ))}
-    </div>
-  );
-};
-
-// Legacy waveform kept for history display
 const Waveform = ({ active }) => (
   <div className="flex items-center gap-0.5 h-8">
     {Array.from({ length: 20 }).map((_, i) => (
@@ -97,29 +68,19 @@ const MaterialCard = ({ material, onStart }) => (
         </div>
         <ChevronRight className="w-5 h-5 text-gray-300 group-hover:text-indigo-500 transition-colors shrink-0 mt-0.5" />
       </div>
-      <div className="flex flex-wrap gap-2">
+      <div className="flex flex-wrap items-center gap-x-3 gap-y-1.5">
         {material.difficulty && (
-          <span className={`text-xs px-2 py-0.5 rounded-full font-medium ${DIFFICULTY_COLORS[material.difficulty]}`}>
+          <span className={`text-xs px-2 py-0.5 rounded-full font-semibold capitalize ${DIFFICULTY_COLORS[material.difficulty] || 'bg-slate-600 text-white'}`}>
             {material.difficulty}
           </span>
         )}
-        {material.subject && (
-          <span className="text-xs px-2 py-0.5 rounded-full bg-indigo-50 text-indigo-700 font-medium">
-            {material.subject}
-          </span>
-        )}
-        {material.chapter && (
-          <span className="text-xs px-2 py-0.5 rounded-full bg-gray-100 text-gray-600">
-            {material.chapter}
-          </span>
-        )}
-      </div>
-      <div className="flex items-center gap-4 mt-3 text-xs text-gray-400">
+        <span className="flex items-center gap-3 text-xs text-gray-400">
         <span className="flex items-center gap-1">
           <FileText className="w-3.5 h-3.5" /> {material.wordCount || 0} words
         </span>
         <span className="flex items-center gap-1">
           <Clock className="w-3.5 h-3.5" /> ~{material.estimatedReadingTime || 1} min
+        </span>
         </span>
       </div>
     </div>
@@ -141,6 +102,89 @@ const ReadingSession = ({ material, token, onCancel }) => {
   const timerRef = useRef(null);
   const startTimeRef = useRef(null);
   const recognitionRef = useRef(null);
+  // live speech + voice meter
+  const finalTextRef = useRef('');
+  const listeningRef = useRef(false);
+  const audioCtxRef = useRef(null);
+  const meterRafRef = useRef(null);
+  const barRefs = useRef([]);
+  const syllablesRef = useRef(0); // speech bursts counted from the mic — WPM fallback
+  const pausedRef = useRef(false);
+  useEffect(() => { pausedRef.current = isPaused; }, [isPaused]);
+
+  // Moves the waveform bars with the real loudness of the student's voice.
+  // Below a small noise floor the bars stay flat (silence = no movement).
+  const stopVoiceMeter = useCallback(() => {
+    if (meterRafRef.current) cancelAnimationFrame(meterRafRef.current);
+    meterRafRef.current = null;
+    audioCtxRef.current?.close?.().catch(() => {});
+    audioCtxRef.current = null;
+    barRefs.current.forEach((el) => { if (el) el.style.transform = 'scaleY(0.12)'; });
+  }, []);
+
+  const startVoiceMeter = useCallback((stream) => {
+    const Ctx = window.AudioContext || window.webkitAudioContext;
+    if (!Ctx) return;
+    stopVoiceMeter();
+    try {
+      const ctx = new Ctx();
+      const analyser = ctx.createAnalyser();
+      analyser.fftSize = 256;
+      analyser.smoothingTimeConstant = 0.75;
+      ctx.createMediaStreamSource(stream).connect(analyser);
+      audioCtxRef.current = ctx;
+      ctx.resume?.().catch(() => {});
+      const freq = new Uint8Array(analyser.frequencyBinCount);
+      const wave = new Uint8Array(analyser.fftSize);
+      const usable = Math.floor(freq.length * 0.45); // voice lives in the lower part of the spectrum
+      const n = FOOTER_WAVE.length;
+      const mid = (n - 1) / 2;
+      const FLAT = 'scaleY(0.12)';
+      let noiseFloor = 0.02;   // learns the room's background level
+      let level = 0;           // smoothed loudness
+      let inBurst = false;
+      let lastBurstAt = 0;
+      syllablesRef.current = 0;
+      const tick = () => {
+        analyser.getByteTimeDomainData(wave);
+        let sum = 0;
+        for (let k = 0; k < wave.length; k += 1) { const x = (wave[k] - 128) / 128; sum += x * x; }
+        const rms = Math.sqrt(sum / wave.length);
+        level = level * 0.6 + rms * 0.4;
+
+        // background noise tracker: drops fast to quiet levels, rises very slowly
+        noiseFloor = level < noiseFloor ? noiseFloor * 0.9 + level * 0.1 : noiseFloor + (level - noiseFloor) * 0.0015;
+        const threshold = Math.max(0.025, noiseFloor * 2.5);
+        const speaking = !pausedRef.current && level > threshold;
+
+        // count speech bursts (≈ syllables) for a words/min estimate
+        const now = performance.now();
+        if (speaking && !inBurst && level > threshold * 1.3 && now - lastBurstAt > 140) {
+          inBurst = true; lastBurstAt = now; syllablesRef.current += 1;
+        } else if (inBurst && level < threshold * 1.1) {
+          inBurst = false;
+        }
+
+        if (!speaking) {
+          for (let i = 0; i < n; i += 1) { const el = barRefs.current[i]; if (el) el.style.transform = FLAT; }
+        } else {
+          analyser.getByteFrequencyData(freq);
+          let peak = 1;
+          for (let k = 2; k < usable; k += 1) peak = Math.max(peak, freq[k]);
+          const loud = Math.min(1, (level - threshold) / 0.12 + 0.25);
+          for (let i = 0; i < n; i += 1) {
+            const el = barRefs.current[i];
+            if (!el) continue;
+            const bin = 2 + Math.floor((Math.abs(i - mid) / (mid || 1)) * (usable - 3));
+            const v = (freq[bin] / peak) * loud;
+            el.style.transform = 'scaleY(' + (0.12 + Math.min(1, v) * 0.88).toFixed(3) + ')';
+          }
+        }
+        meterRafRef.current = requestAnimationFrame(tick);
+      };
+      tick();
+    } catch { /* meter is decorative — recording still works */ }
+  }, [stopVoiceMeter]);
 
   const formatTime = (s) => `${String(Math.floor(s / 60)).padStart(2, '0')}:${String(s % 60).padStart(2, '0')}`;
 
@@ -159,9 +203,18 @@ const ReadingSession = ({ material, token, onCancel }) => {
         if (e.results[i].isFinal) final += t + ' ';
         else interim += t;
       }
-      setLiveTranscript((prev) => (prev + final).slice(-600) + interim);
+      if (final) finalTextRef.current = (finalTextRef.current + final).slice(-4000);
+      setLiveTranscript(finalTextRef.current + interim);
     };
-    rec.start();
+    // Browsers end recognition after a silence — restart while still recording
+    rec.onend = () => {
+      if (listeningRef.current && recognitionRef.current === rec) {
+        try { rec.start(); } catch { /* already started */ }
+      }
+    };
+    rec.onerror = () => {};
+    listeningRef.current = true;
+    try { rec.start(); } catch { /* ignore */ }
     recognitionRef.current = rec;
   }, []);
 
@@ -207,6 +260,10 @@ const ReadingSession = ({ material, token, onCancel }) => {
 
       recorder.start(500);
       mediaRecorderRef.current = recorder;
+      finalTextRef.current = '';
+      setLiveTranscript('');
+      setWordsPerMinute(0);
+      startVoiceMeter(stream);
       startTimeRef.current = Date.now();
       setIsPaused(false);
       setElapsed(0);
@@ -215,8 +272,6 @@ const ReadingSession = ({ material, token, onCancel }) => {
       timerRef.current = setInterval(() => {
         const secs = Math.floor((Date.now() - startTimeRef.current) / 1000);
         setElapsed(secs);
-        const wordsSpoken = liveTranscript.trim().split(/\s+/).filter(Boolean).length;
-        if (secs > 0) setWordsPerMinute(Math.round((wordsSpoken / secs) * 60));
       }, 1000);
 
       startLiveSpeech();
@@ -243,11 +298,20 @@ const ReadingSession = ({ material, token, onCancel }) => {
       setErrorMsg(msg);
       setPhase('error');
     }
-  }, [startLiveSpeech, liveTranscript]);
+  }, [startLiveSpeech, startVoiceMeter]);
+
+  // Words per minute from what speech recognition has heard so far
+  useEffect(() => {
+    if (phase !== 'recording' || elapsed <= 0) return;
+    const heard = liveTranscript.trim().split(/\s+/).filter(Boolean).length;
+    const words = heard > 0 ? heard : syllablesRef.current / 1.5;
+    setWordsPerMinute(Math.round((words / elapsed) * 60));
+  }, [liveTranscript, elapsed, phase]);
 
   const pauseRecording = () => {
     if (mediaRecorderRef.current?.state === 'recording') {
       mediaRecorderRef.current.pause();
+      listeningRef.current = false;
       recognitionRef.current?.stop();
       clearInterval(timerRef.current);
       setIsPaused(true);
@@ -268,7 +332,9 @@ const ReadingSession = ({ material, token, onCancel }) => {
 
   const finishRecording = useCallback(async () => {
     clearInterval(timerRef.current);
+    listeningRef.current = false;
     recognitionRef.current?.stop();
+    stopVoiceMeter();
 
     const recorder = mediaRecorderRef.current;
     if (!recorder) return;
@@ -331,11 +397,32 @@ const ReadingSession = ({ material, token, onCancel }) => {
     } finally {
       clearTimeout(timeoutId);
     }
-  }, [material, token, elapsed]);
+  }, [material, token, elapsed, stopVoiceMeter]);
+
+  // Restart: throw away this attempt and release the microphone
+  const restartRecording = () => {
+    clearInterval(timerRef.current);
+    listeningRef.current = false;
+    recognitionRef.current?.stop();
+    stopVoiceMeter();
+    const rec = mediaRecorderRef.current;
+    if (rec) {
+      rec.ondataavailable = null;
+      if (rec.state !== 'inactive') rec.stop();
+      rec.stream?.getTracks().forEach((t) => t.stop());
+      mediaRecorderRef.current = null;
+    }
+    audioChunksRef.current = [];
+    finalTextRef.current = '';
+    setPhase('preview'); setElapsed(0); setLiveTranscript(''); setWordsPerMinute(0); setAssessment(null); setIsPaused(false);
+  };
 
   useEffect(() => () => {
     clearInterval(timerRef.current);
+    listeningRef.current = false;
     recognitionRef.current?.stop();
+    if (meterRafRef.current) cancelAnimationFrame(meterRafRef.current);
+    audioCtxRef.current?.close?.().catch(() => {});
     mediaRecorderRef.current?.stream?.getTracks().forEach((t) => t.stop());
   }, []);
 
@@ -369,20 +456,22 @@ const ReadingSession = ({ material, token, onCancel }) => {
 
   if (phase === 'processing') {
     return (
-      <div className="max-w-3xl mx-auto flex items-center justify-center min-h-64">
+      <div className="max-w-3xl mx-auto">
+        <div className="flex items-center justify-center min-h-64">
         <Motion.div
           initial={{ opacity: 0, scale: 0.95 }}
           animate={{ opacity: 1, scale: 1 }}
-          className="bg-white rounded-3xl shadow-xl border border-white/50 p-12 text-center w-full"
+          className="bg-white rounded-3xl shadow-xl border border-white/50 p-8 sm:p-12 text-center w-full"
         >
           <div className="w-16 h-16 bg-indigo-50 rounded-full flex items-center justify-center mx-auto mb-5">
             <Loader2 className="w-8 h-8 text-indigo-600 animate-spin" />
           </div>
           <h3 className="font-bold text-gray-900 text-lg mb-2">Analysing your reading…</h3>
           <p className="text-sm text-gray-500 max-w-sm mx-auto">
-            Transcribing audio and evaluating pronunciation, fluency, and grammar. This may take up to 60 seconds.
+            We’re listening to your recording and checking your pronunciation, speed and accuracy. This can take up to a minute — please stay on this page.
           </p>
         </Motion.div>
+        </div>
       </div>
     );
   }
@@ -393,12 +482,12 @@ const ReadingSession = ({ material, token, onCancel }) => {
         <Motion.div
           initial={{ opacity: 0, scale: 0.95 }}
           animate={{ opacity: 1, scale: 1 }}
-          className="bg-white rounded-3xl shadow-xl border border-red-100 p-12 text-center w-full"
+          className="bg-white rounded-3xl shadow-xl border border-red-100 p-8 sm:p-12 text-center w-full"
         >
           <div className="w-16 h-16 bg-red-50 rounded-full flex items-center justify-center mx-auto mb-5">
             <AlertCircle className="w-8 h-8 text-red-500" />
           </div>
-          <h3 className="font-bold text-gray-900 text-lg mb-2">Evaluation failed</h3>
+          <h3 className="font-bold text-gray-900 text-lg mb-2">We couldn’t check your reading</h3>
           <p className="text-sm text-gray-500 max-w-sm mx-auto mb-7">
             {errorMsg || 'Something went wrong on the server. Your recording was not lost.'}
           </p>
@@ -431,55 +520,26 @@ const ReadingSession = ({ material, token, onCancel }) => {
     );
   }
 
-  const isActive = phase === 'recording' && !isPaused;
 
   return (
     <div className="max-w-3xl mx-auto">
-      {/* Back link */}
-      <button
-        onClick={onCancel}
-        className="flex items-center gap-1.5 text-sm text-gray-500 hover:text-gray-700 transition-colors mb-5"
-      >
-        <ArrowLeft className="w-4 h-4" /> Back to materials
-      </button>
 
       {/* ── Main card ── */}
       <Motion.div
         initial={{ opacity: 0, y: 20, scale: 0.97 }}
         animate={{ opacity: 1, y: 0, scale: 1 }}
         transition={{ type: 'spring', stiffness: 260, damping: 22 }}
-        className="bg-white rounded-[28px] shadow-xl border border-white/50 px-10 py-9 transition-all duration-300"
+        className="bg-white rounded-[28px] shadow-xl border border-white/50 px-4 py-5 sm:px-8 sm:py-7 lg:px-10 lg:py-9 transition-all duration-300"
         style={{
           boxShadow: phase === 'recording'
             ? '0 24px 60px rgba(15,23,42,0.12), 0 0 0 2px #4f46e5, 0 0 0 6px rgba(79,70,229,0.12)'
             : '0 24px 60px rgba(15,23,42,0.08)',
         }}
       >
-        {/* Top row: chip + meta */}
-        <div className="flex items-center justify-between flex-wrap gap-3 mb-4">
-          <span className="inline-flex items-center gap-2 text-xs font-semibold uppercase tracking-wide text-slate-600 bg-indigo-100/80 px-4 py-1.5 rounded-full border border-indigo-100">
-            <span className="w-1.5 h-1.5 rounded-full bg-indigo-600 inline-block" />
-            Read aloud
-          </span>
-          <div className="flex items-center gap-3 flex-wrap">
-            <span className="flex items-center gap-1.5 text-xs font-medium text-slate-500 bg-slate-100 px-3 py-1 rounded-full">
-              <FileText className="w-3.5 h-3.5" /> {material.wordCount || 0} words
-            </span>
-            <span className="flex items-center gap-1.5 text-xs font-medium text-slate-500 bg-slate-100 px-3 py-1 rounded-full">
-              <Clock className="w-3.5 h-3.5" /> ~{material.estimatedReadingTime || 1} min
-            </span>
-            {material.difficulty && (
-              <span className={`text-xs px-3 py-1 rounded-full font-medium ${DIFFICULTY_COLORS[material.difficulty] || 'bg-gray-100 text-gray-600'}`}>
-                {material.difficulty}
-              </span>
-            )}
-          </div>
-        </div>
-
-        {/* Title */}
+        {/* Title, then type + tags on one line */}
         <div className="mb-5">
           <h1
-            className="text-3xl font-semibold leading-tight tracking-tight"
+            className="text-2xl sm:text-3xl font-semibold leading-tight tracking-tight"
             style={{
               fontFamily: "'Source Serif 4', Georgia, serif",
               background: 'linear-gradient(135deg, #4f46e5, #0ea5e9)',
@@ -490,20 +550,31 @@ const ReadingSession = ({ material, token, onCancel }) => {
           >
             {material.title}
           </h1>
-          <p className="text-sm text-slate-500 mt-1 flex items-center gap-2">
-            <span>{TYPE_LABELS[material.contentType] || material.contentType}</span>
-            {material.subject && <><span className="opacity-30">·</span><span>{material.subject}</span></>}
-            {material.chapter && <><span className="opacity-30">·</span><span className="text-slate-400">{material.chapter}</span></>}
-          </p>
+          <div className="mt-2 flex flex-wrap items-center gap-2">
+            {(TYPE_LABELS[material.contentType] || material.contentType) && (
+              <span className="text-sm font-medium text-slate-500">{TYPE_LABELS[material.contentType] || material.contentType}</span>
+            )}
+            {material.difficulty && (
+              <span className={`text-xs px-3 py-1 rounded-full font-semibold capitalize ${DIFFICULTY_COLORS[material.difficulty] || 'bg-slate-600 text-white'}`}>
+                {material.difficulty}
+              </span>
+            )}
+            <span className="flex items-center gap-1.5 text-xs font-medium text-slate-500 bg-slate-100 px-3 py-1 rounded-full">
+              <FileText className="w-3.5 h-3.5" /> {material.wordCount || 0} words
+            </span>
+            <span className="flex items-center gap-1.5 text-xs font-medium text-slate-500 bg-slate-100 px-3 py-1 rounded-full">
+              <Clock className="w-3.5 h-3.5" /> ~{material.estimatedReadingTime || 1} min
+            </span>
+          </div>
         </div>
 
         {/* Passage */}
         <div
-          className="rounded-2xl px-8 py-7 mb-7 transition-all duration-500"
+          className="rounded-2xl px-4 py-5 sm:px-8 sm:py-7 mb-6 transition-all duration-500"
           style={{
             fontFamily: "'Source Serif 4', Georgia, serif",
-            fontSize: '1.08rem',
-            lineHeight: 1.9,
+            fontSize: '1.15rem',
+            lineHeight: 1.95,
             color: '#0f172a',
             background: phase === 'recording' ? '#fffbeb' : '#f8fafc',
             borderLeft: `5px solid ${phase === 'recording' ? '#f59e0b' : '#4f46e5'}`,
@@ -527,7 +598,7 @@ const ReadingSession = ({ material, token, onCancel }) => {
               className="overflow-hidden mb-5"
             >
               <div className="bg-slate-50 rounded-xl px-5 py-4 border border-slate-100">
-                <p className="text-xs font-semibold text-slate-400 uppercase tracking-wide mb-2">Live Transcript</p>
+                <p className="text-xs font-semibold text-slate-400 uppercase tracking-wide mb-2">What we heard so far</p>
                 <p className="text-sm text-slate-700 leading-relaxed">{liveTranscript}</p>
               </div>
             </Motion.div>
@@ -535,109 +606,120 @@ const ReadingSession = ({ material, token, onCancel }) => {
         </AnimatePresence>
 
         {/* Controls */}
-        <div className="flex items-center justify-between flex-wrap gap-4">
-          {/* Status + visualizer */}
-          <div className="flex items-center gap-3">
-            {/* Status dot */}
-            <Motion.span
-              className="inline-block w-3.5 h-3.5 rounded-full shrink-0"
-              style={{
-                background: phase === 'recording'
-                  ? (isPaused ? '#f59e0b' : '#ef4444')
-                  : '#94a3b8',
-              }}
-              animate={phase === 'recording' && !isPaused
-                ? { boxShadow: ['0 0 0 0px rgba(239,68,68,0.4)', '0 0 0 8px rgba(239,68,68,0)', '0 0 0 0px rgba(239,68,68,0.4)'] }
-                : { boxShadow: '0 0 0 0px transparent' }}
-              transition={{ duration: 1.2, repeat: Infinity, ease: 'easeInOut' }}
-            />
+        {/* Controls: compact floating bar fixed to the bottom of the screen */}
+        <div className="h-24" aria-hidden="true" />
+        {typeof document !== 'undefined' && createPortal(
+          <div className="pointer-events-none fixed inset-x-0 bottom-[calc(4.5rem+env(safe-area-inset-bottom))] z-[55] flex justify-center px-3 md:bottom-[calc(1rem+env(safe-area-inset-bottom))]">
+          <div className="pointer-events-auto flex w-full max-w-3xl items-center gap-2 rounded-2xl border border-slate-100 bg-white px-2.5 py-2 shadow-[0_10px_30px_rgba(15,23,42,0.12)] sm:gap-3 sm:px-3">
+          {/* Back */}
+          <button
+            type="button"
+            onClick={onCancel}
+            disabled={phase === 'recording' && !isPaused}
+            className="inline-flex h-10 shrink-0 items-center gap-1.5 rounded-full border border-slate-200 px-4 text-sm font-semibold text-slate-800 transition-colors hover:bg-slate-50 disabled:opacity-40 disabled:pointer-events-none"
+          >
+            <ArrowLeft className="w-4 h-4" /> <span className="hidden sm:inline">Back</span>
+          </button>
+          <span className="hidden h-8 w-px shrink-0 bg-slate-200 sm:block" aria-hidden="true" />
 
-            {/* Status text */}
-            <span className="text-sm font-medium text-slate-600">
-              {phase === 'recording'
-                ? isPaused
-                  ? <><strong className="text-slate-800">Paused</strong> — {formatTime(elapsed)}</>
-                  : <><strong className="text-slate-800">Recording</strong> — speak clearly · {formatTime(elapsed)} · {wordsPerMinute} WPM</>
-                : <><strong className="text-slate-800">Ready</strong> to read</>
-              }
-            </span>
-
-            {/* Bar visualizer */}
-            <div aria-hidden="true">
-              <BarVisualizer active={isActive} />
-            </div>
+          {/* Status */}
+          <div className={phase === 'recording' ? 'min-w-0 shrink-0' : 'min-w-0 flex-1'}>
+            <p className={`flex items-center gap-1.5 text-sm font-bold text-slate-900 ${phase === 'recording' ? '' : 'justify-center'}`}>
+              <Motion.span
+                className="inline-block h-2.5 w-2.5 shrink-0 rounded-full"
+                style={{ background: phase === 'recording' ? (isPaused ? '#f59e0b' : '#ef4444') : '#94a3b8' }}
+                animate={phase === 'recording' && !isPaused
+                  ? { boxShadow: ['0 0 0 0px rgba(239,68,68,0.4)', '0 0 0 6px rgba(239,68,68,0)', '0 0 0 0px rgba(239,68,68,0.4)'] }
+                  : { boxShadow: '0 0 0 0px transparent' }}
+                transition={{ duration: 1.2, repeat: Infinity, ease: 'easeInOut' }}
+              />
+              {phase === 'recording' ? (isPaused ? 'Paused' : 'Listening…') : 'Ready when you are'}
+            </p>
+            {phase === 'recording' && (
+              <p className="mt-0.5 flex items-center gap-2 text-[11px] font-medium text-slate-500">
+                <span className="flex items-center gap-1"><Clock className="h-3 w-3" /> {formatTime(elapsed)}</span>
+                <span className="hidden h-3 w-px bg-slate-200 sm:block" aria-hidden="true" />
+                <span className="hidden items-center gap-1 sm:flex"><Gauge className="h-3 w-3" /> {wordsPerMinute} words/min</span>
+              </p>
+            )}
           </div>
+
+          {/* Waveform: only once recording has started */}
+          {phase === 'recording' ? (
+          <div className="flex h-10 min-w-0 flex-1 items-center justify-center gap-[3px] overflow-hidden rounded-xl bg-rose-50 px-2" aria-hidden="true">
+            {FOOTER_WAVE.map((h, i) => (
+              <span
+                key={i}
+                ref={(el) => { barRefs.current[i] = el; }}
+                className="w-[3px] shrink-0 rounded-full bg-rose-400 transition-transform duration-75 ease-out"
+                style={{ height: `${Math.max(55, h)}%`, opacity: isPaused ? 0.4 : 1, transform: 'scaleY(0.12)' }}
+              />
+            ))}
+          </div>
+          ) : null}
+
+          <span className="hidden h-8 w-px shrink-0 bg-slate-200 sm:block" aria-hidden="true" />
 
           {/* Action buttons */}
-          <div className="flex items-center gap-3 flex-wrap">
-            {/* Pause / Resume (only during recording) */}
-            <AnimatePresence>
-              {phase === 'recording' && (
-                <Motion.button
-                  key="pause-resume"
-                  initial={{ opacity: 0, scale: 0.9 }}
-                  animate={{ opacity: 1, scale: 1 }}
-                  exit={{ opacity: 0, scale: 0.9 }}
-                  onClick={isPaused ? resumeRecording : pauseRecording}
-                  className={`flex items-center gap-2 px-5 py-2.5 rounded-full text-sm font-semibold border transition-all hover:-translate-y-0.5 ${
-                    isPaused
-                      ? 'bg-green-50 text-green-700 border-green-200 hover:bg-green-100'
-                      : 'bg-amber-50 text-amber-700 border-amber-200 hover:bg-amber-100'
-                  }`}
-                >
-                  {isPaused ? <Play className="w-4 h-4" /> : <Pause className="w-4 h-4" />}
-                  {isPaused ? 'Resume' : 'Pause'}
-                </Motion.button>
-              )}
-            </AnimatePresence>
+          <div className="flex shrink-0 items-center gap-1.5 sm:gap-2">
+            {phase === 'recording' && (
+              <button
+                type="button"
+                onClick={isPaused ? resumeRecording : pauseRecording}
+                aria-label={isPaused ? 'Resume' : 'Pause'}
+                title={isPaused ? 'Resume' : 'Pause'}
+                className={`inline-flex h-10 w-10 items-center justify-center rounded-full border transition-colors ${isPaused ? 'border-green-400 text-green-600 hover:bg-green-50' : 'border-amber-400 text-amber-600 hover:bg-amber-50'}`}
+              >
+                {isPaused ? <Play className="w-4 h-4" fill="currentColor" /> : <Pause className="w-4 h-4" fill="currentColor" />}
+              </button>
+            )}
 
-            {/* Reset (disabled while recording) */}
-            <button
-              onClick={() => { setPhase('preview'); setElapsed(0); setLiveTranscript(''); setAssessment(null); }}
-              disabled={phase === 'recording' && !isPaused}
-              className="flex items-center gap-2 px-5 py-2.5 rounded-full text-sm font-semibold border border-slate-200 text-slate-600 hover:bg-slate-50 hover:border-slate-400 hover:-translate-y-0.5 transition-all disabled:opacity-40 disabled:pointer-events-none"
-            >
-              <svg className="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2.2}>
-                <path d="M3 12a9 9 0 1 0 9-9m0 0v6m0-6h-6" />
-              </svg>
-              Reset
-            </button>
+            {/* Restart: only once a recording has begun (usable while paused) */}
+            {phase === 'recording' && (
+              <button
+                type="button"
+                onClick={restartRecording}
+                disabled={!isPaused}
+                className="inline-flex h-10 items-center gap-1.5 rounded-xl border border-slate-300 px-3 text-sm font-semibold text-slate-800 transition-colors hover:bg-slate-50 disabled:opacity-40 disabled:pointer-events-none"
+              >
+                <svg className="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2.2}>
+                  <path d="M3 12a9 9 0 1 0 9-9m0 0v6m0-6h-6" />
+                </svg>
+                <span className="hidden sm:inline">Restart</span>
+              </button>
+            )}
 
-            {/* Primary: Start / Finish */}
-            <Motion.button
-              whileHover={{ y: -2 }}
-              whileTap={{ y: 0 }}
-              onClick={phase === 'recording' ? finishRecording : startRecording}
-              className="flex items-center gap-2 px-7 py-2.5 rounded-full text-sm font-semibold text-white transition-all"
-              style={{
-                background: phase === 'recording'
-                  ? 'linear-gradient(135deg, #dc2626, #ef4444)'
-                  : 'linear-gradient(135deg, #4f46e5, #0ea5e9)',
-                boxShadow: phase === 'recording'
-                  ? '0 4px 20px rgba(239,68,68,0.4)'
-                  : '0 4px 20px rgba(79,70,229,0.35)',
-              }}
-            >
-              {phase === 'recording' ? (
-                <>
-                  <Square className="w-4 h-4" />
-                  Finish Reading
-                </>
-              ) : (
-                <>
-                  <Mic className="w-4 h-4" />
-                  Start Reading
-                </>
-              )}
-            </Motion.button>
+            {/* Primary: Start / I'm done (icon only) */}
+            {phase === 'recording' ? (
+              <button
+                type="button"
+                onClick={finishRecording}
+                aria-label="I’m done"
+                title="I’m done"
+                className="inline-flex h-10 w-12 items-center justify-center rounded-xl bg-red-600 text-white shadow-[0_4px_14px_rgba(220,38,38,0.35)] transition-colors hover:bg-red-700"
+              >
+                <Square className="w-4 h-4" fill="currentColor" />
+              </button>
+            ) : (
+              <button
+                type="button"
+                onClick={startRecording}
+                className="inline-flex h-10 items-center gap-1.5 rounded-full bg-indigo-600 px-5 text-sm font-bold text-white shadow-[0_4px_14px_rgba(79,70,229,0.35)] transition-colors hover:bg-indigo-700"
+              >
+                <Mic className="w-4 h-4" /> Start
+              </button>
+            )}
           </div>
-        </div>
+          </div>
+          </div>,
+          document.body,
+        )}
 
         {/* Footer */}
         <div className="mt-7 pt-5 border-t border-slate-100 flex items-center justify-between flex-wrap gap-2 text-xs text-slate-400">
-          <span>Read clearly · Press <kbd className="px-1.5 py-0.5 bg-slate-100 rounded text-slate-500 font-mono">Space</kbd> to start / stop</span>
+          <span className="hidden lg:inline">Tip: press <kbd className="px-1.5 py-0.5 bg-slate-100 rounded text-slate-500 font-mono">Space</kbd> to start / stop</span>
           <span className="flex items-center gap-1">
-            <Volume2 className="w-3.5 h-3.5" /> Audio is analysed by AI — not stored permanently
+            <Volume2 className="w-3.5 h-3.5" /> Your voice is only used to give you feedback — it isn’t kept
           </span>
         </div>
       </Motion.div>
@@ -729,7 +811,7 @@ const filterByTopics = (items, topics) => {
   return items.filter((x) => wanted.includes(normTopic(x.chapter)) || wanted.includes(normTopic(x.topic)));
 };
 
-const ReadingPracticePage = ({ topics } = {}) => {
+const ReadingPracticePage = ({ topics, heading, subheading, onSessionChange } = {}) => {
   const token = localStorage.getItem('token');
   const [view, setView] = useState('list'); // list | session | history
   const [materials, setMaterials] = useState([]);
@@ -748,6 +830,12 @@ const ReadingPracticePage = ({ topics } = {}) => {
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [token, (topics || []).join('|')]);
 
+  const inSession = view === 'session' && Boolean(selectedMaterial);
+  useEffect(() => {
+    onSessionChange?.(inSession);
+  }, [inSession, onSessionChange]);
+  useEffect(() => () => onSessionChange?.(false), [onSessionChange]);
+
   if (view === 'session' && selectedMaterial) {
     return (
       <ReadingSession
@@ -761,20 +849,34 @@ const ReadingPracticePage = ({ topics } = {}) => {
 
   return (
     <div className="space-y-6">
-      {/* Sub-tab: Browse / History */}
-      <div className="flex gap-1 bg-gray-100 rounded-xl p-1 w-fit">
-        {['browse', 'history'].map((t) => (
+      {activeTab === 'history' ? (
+        /* History: Back on the left, "My History" centred */
+        <div className="relative flex min-h-9 items-center justify-center">
           <button
-            key={t}
-            onClick={() => setActiveTab(t)}
-            className={`px-4 py-1.5 rounded-lg text-sm font-semibold transition-all capitalize ${
-              activeTab === t ? 'bg-white text-indigo-700 shadow-sm' : 'text-gray-500 hover:text-gray-700'
-            }`}
+            type="button"
+            onClick={() => setActiveTab('browse')}
+            className="absolute left-0 top-1/2 inline-flex -translate-y-1/2 items-center gap-1.5 rounded-full bg-indigo-50 px-3 py-1.5 text-sm font-semibold text-indigo-700 transition-colors hover:bg-indigo-100"
           >
-            {t === 'browse' ? 'Browse Passages' : 'My History'}
+            <ArrowLeft className="w-4 h-4" /> Back
           </button>
-        ))}
-      </div>
+          <h2 className="text-base font-bold text-[#0d1c2e]">My History</h2>
+        </div>
+      ) : (
+        /* Heading on the left, History on the right */
+        <div className="flex items-start justify-between gap-3">
+          <div className="min-w-0">
+            {heading && <h2 className="text-base font-bold text-[#0d1c2e]">{heading}</h2>}
+            {subheading && <p className="text-xs text-[#64748b]">{subheading}</p>}
+          </div>
+          <button
+            type="button"
+            onClick={() => setActiveTab('history')}
+            className="ml-auto inline-flex shrink-0 items-center gap-1.5 rounded-full bg-indigo-50 px-4 py-1.5 text-sm font-semibold text-indigo-700 transition-colors hover:bg-indigo-100"
+          >
+            <Clock className="w-4 h-4" /> History
+          </button>
+        </div>
+      )}
 
       {activeTab === 'browse' ? (
         <>
