@@ -109,6 +109,8 @@ jest.mock('../middleware/adminAuth', () => (req, res, next) => {
 jest.mock('../middleware/rateLimit', () => () => (req, res, next) => next());
 
 jest.mock('../models/StudentUser', () => mockStudentUser);
+jest.mock('../models/AcademicYear', () => ({ findOne: jest.fn() }));
+jest.mock('../models/Holiday', () => ({ find: jest.fn() }));
 jest.mock('../models/ParentUser', () => mockParentUser);
 jest.mock('../models/Class', () => mockClassModel);
 jest.mock('../models/Timetable', () => mockTimetable);
@@ -195,6 +197,31 @@ const getRouteHandler = (router, method, path) => {
 };
 
 describe('student portal logger coverage', () => {
+  test('attendance uses the promoted class session and excludes earlier session records', async () => {
+    const AcademicYear = require('../models/AcademicYear');
+    const Holiday = require('../models/Holiday');
+    AcademicYear.findOne.mockImplementation(({ name }) => makeQuery(name?.test('2025-2026') ? {
+      name: '2025-2026', startDate: new Date(2025, 3, 1), endDate: new Date(2026, 2, 31),
+    } : null));
+    Holiday.find.mockReturnValue(makeQuery([]));
+    mockStudentUser.findById.mockReturnValue(makeQuery({
+      _id: 'student-1', grade: '6', academicYear: '2025-26',
+      attendance: [
+        { date: new Date(2025, 2, 31), status: 'absent' },
+        { date: new Date(2025, 3, 1), status: 'present' },
+        { date: new Date(2026, 3, 1), status: 'absent' },
+      ],
+    }));
+
+    const response = await request(app).get('/student-route/attendance');
+    expect(response.status).toBe(200);
+    expect(response.body.session).toEqual({
+      name: '2025-2026', className: '6', startDate: '2025-04-01', endDate: '2026-03-31',
+    });
+    expect(response.body.attendance.map(({ dateKey }) => dateKey)).toEqual(['2025-04-01']);
+    expect(response.body.summary).toMatchObject({ presentDays: 1, absentDays: 0 });
+  });
+
   beforeEach(() => {
     jest.clearAllMocks();
     process.env.JWT_SECRET = 'test-secret';

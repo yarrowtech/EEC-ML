@@ -1,19 +1,9 @@
-import React, { useState, useMemo, useCallback, useEffect } from "react";
-import { motion, AnimatePresence } from "framer-motion";
+import React, { useCallback, useEffect, useMemo, useState } from "react";
+import { useLocation } from "react-router-dom";
+import { motion } from "framer-motion";
 import {
-  Calendar as CalendarIcon,
-  CheckCircle2,
-  XCircle,
-  RefreshCw,
-  ChevronLeft,
-  ChevronRight,
-  ChevronDown,
-  List,
-  BarChart2,
-  Flame,
-  AlertCircle,
-  BookOpen,
-  Eye,
+  BarChart2, Check,
+  ChevronLeft, ChevronRight, List, RefreshCw, X,
 } from "lucide-react";
 
 const API_BASE = (import.meta.env.VITE_API_URL || "http://localhost:5000").replace(/\/$/, "");
@@ -25,17 +15,19 @@ async function fetchStudentAttendance() {
   // (routes/studentRoute.js), even though it's a data read, not an auth action.
   const res = await fetch(`${API_BASE}/api/student/auth/attendance`, {
     headers: { Authorization: `Bearer ${token}` },
+    cache: "no-store",
   });
   if (!res.ok) throw new Error("Unable to load attendance.");
   const data = await res.json();
-  // Backend tracks one present/absent/leave status per day (StudentUser.attendance),
-  // not per subject/period — there is no per-subject breakdown to fetch, so
-  // `subject` is intentionally omitted (processAttendance() defaults it to "General").
-  return (data.attendance || []).map((r, i) => ({
-    _id: r._id || `${r.date}-${i}`,
-    date: r.date ? new Date(r.date).toISOString().slice(0, 10) : r.date,
-    status: r.status,
-  }));
+  return {
+    summary: data.summary,
+    session: data.session,
+    records: (data.attendance || []).flatMap((record) => {
+      const date = new Date(record.date);
+      if (!record.date || Number.isNaN(date.getTime())) return [];
+      return [{ date: record.dateKey || date.toISOString().slice(0, 10), status: normalizeStatus(record.status) }];
+    }),
+  };
 }
 
 const MONTH_NAMES = [
@@ -44,11 +36,6 @@ const MONTH_NAMES = [
 ];
 const DAY_NAMES = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
 
-/* ════════════════════════════════════════════════════════════
-   PURE HELPERS
-   Kept outside the component so they don't get recreated on
-   every render, and so they're easy to unit-test in isolation.
-   ════════════════════════════════════════════════════════════ */
 function toLocalDateKey(date) {
   const d = date instanceof Date ? date : new Date(date);
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(
@@ -73,662 +60,123 @@ function fmtDateLong(dateStr) {
 }
 
 function normalizeStatus(value) {
-  return String(value || "").toLowerCase() === "absent" ? "absent" : "present";
+  return String(value || "").toLowerCase();
 }
 
-// Turns the raw record list into every derived shape the UI needs.
-// This is the React equivalent of the old `processData()` function —
-// the difference is it's a pure function fed to useMemo, not a
-// function that mutates module-level globals.
-function processAttendance(rawRecords) {
-  const records = rawRecords.map((r) => ({
-    id: r._id || `${r.date}-${r.subject}`,
-    date: r.date,
-    subject: r.subject || "General",
-    status: normalizeStatus(r.status),
-  }));
+const PANEL = "min-w-0 rounded-2xl border border-[#e0e7f5] bg-white/90 shadow-[0_3px_8px_#213a7410]";
+const PRESENT = "bg-green-100 text-green-800";
+const ABSENT = "bg-red-100 text-red-800";
 
-  const total = records.length;
-  const present = records.filter((r) => r.status === "present").length;
-  const absent = total - present;
-  const stats = {
-    totalClasses: total,
-    attended: present,
+function countAttendance(records) {
+  const present = records.filter((record) => record.status === "present").length;
+  const absent = records.filter((record) => record.status === "absent").length;
+  const total = present + absent;
+  return {
+    present,
     absent,
+    total,
     percentage: total ? Math.round((present / total) * 100) : 0,
   };
-
-  const byDate = {};
-  records.forEach((r) => {
-    if (!byDate[r.date]) byDate[r.date] = [];
-    byDate[r.date].push(r);
-  });
-
-  const subMap = {};
-  records.forEach((r) => {
-    if (!subMap[r.subject]) subMap[r.subject] = { total: 0, present: 0 };
-    subMap[r.subject].total += 1;
-    if (r.status === "present") subMap[r.subject].present += 1;
-  });
-  const subjectStats = Object.entries(subMap)
-    .map(([subject, s]) => ({
-      subject,
-      ...s,
-      pct: s.total ? Math.round((s.present / s.total) * 100) : 0,
-    }))
-    .sort((a, b) => a.pct - b.pct);
-
-  const weeks = {};
-  records.forEach((r) => {
-    const d = new Date(r.date + "T00:00:00");
-    const weekStart = new Date(d);
-    weekStart.setDate(weekStart.getDate() - d.getDay());
-    const weekKey = toLocalDateKey(weekStart);
-    if (!weeks[weekKey]) weeks[weekKey] = { start: weekStart, records: [], present: 0, absent: 0 };
-    weeks[weekKey].records.push(r);
-    if (r.status === "present") weeks[weekKey].present += 1;
-    else weeks[weekKey].absent += 1;
-  });
-  const weeklyData = Object.entries(weeks)
-    .map(([key, w]) => {
-      const end = new Date(w.start);
-      end.setDate(end.getDate() + 6);
-      return {
-        key,
-        start: w.start,
-        end,
-        total: w.records.length,
-        present: w.present,
-        absent: w.absent,
-        pct: w.records.length ? Math.round((w.present / w.records.length) * 100) : 0,
-        records: w.records,
-      };
-    })
-    .sort((a, b) => b.key.localeCompare(a.key));
-
-  return { records, stats, byDate, subjectStats, weeklyData };
 }
 
-function computeStreak(records, byDate) {
-  const uniqueDates = [...new Set(records.map((r) => r.date))].sort().reverse();
-  let streak = 0;
-  for (const d of uniqueDates) {
-    const dayRecords = byDate[d] || [];
-    const allPresent = dayRecords.length > 0 && dayRecords.every((r) => r.status === "present");
-    if (allPresent) streak += 1;
-    else break;
-  }
-  return streak;
-}
-
-/* ════════════════════════════════════════════════════════════
-   SMALL PRESENTATIONAL PIECES
-   ════════════════════════════════════════════════════════════ */
-function StatCard({ icon: Icon, iconBg, iconColor, label, value, sub }) {
+function TotalAttendance({ stats, onRefresh, onViewAll, isRefreshing }) {
+  const presentShare = stats.total ? Math.min(100, (stats.present / stats.total) * 100) : 0;
+  const markedShare = stats.total ? Math.min(100, ((stats.present + stats.absent) / stats.total) * 100) : 0;
+  const rows = [
+    ["Present", stats.present, "text-green-600"],
+    ["Absent", stats.absent, "text-red-600"],
+    ["Total Classes", stats.total, "text-slate-700"],
+  ];
   return (
-    <div className="rounded-2xl bg-white p-5 border border-slate-200/80 shadow-[0_2px_8px_-2px_rgba(0,0,0,0.04)] flex items-start gap-4">
-      <div
-        className={`w-11 h-11 rounded-xl flex items-center justify-center shrink-0 border ${iconBg}`}
-      >
-        <Icon className={`w-5 h-5 ${iconColor}`} strokeWidth={1.8} />
-      </div>
-      <div>
-        <p className="text-xs font-semibold tracking-wide text-slate-500 uppercase">{label}</p>
-        <p className="text-2xl font-bold text-slate-800 mt-1">{value}</p>
-        {sub && <p className="text-xs text-slate-400 mt-0.5">{sub}</p>}
-      </div>
-    </div>
-  );
-}
-
-function SubjectPill({ subject, status }) {
-  const isPresent = status === "present";
-  return (
-    <span
-      className={`text-[10px] px-2 py-0.5 rounded-full font-medium border ${
-        isPresent
-          ? "bg-emerald-50 text-emerald-700 border-emerald-200"
-          : "bg-rose-50 text-rose-700 border-rose-200"
-      }`}
-    >
-      {isPresent ? "✓" : "✕"} {subject}
-    </span>
-  );
-}
-
-/* ════════════════════════════════════════════════════════════
-   HEADER
-   ════════════════════════════════════════════════════════════ */
-function Header({ streak, lastSynced, onRefresh, isRefreshing, overallPct }) {
-  const onTrack = overallPct >= 75;
-  return (
-    <header
-      className="relative overflow-hidden rounded-3xl bg-white p-6 sm:p-8 shadow-[0_2px_12px_-4px_rgba(0,0,0,0.04)] border"
-      style={{
-        background:
-          "linear-gradient(135deg, rgb(245,243,255) 0%, rgb(250,245,255) 50%, rgb(253,244,255) 100%)",
-        borderColor: "rgba(196,181,253,0.45)",
-      }}
-    >
-      <div className="relative z-10 flex flex-col md:flex-row md:items-center justify-between gap-6">
-        <div className="flex items-start gap-4">
-          <div className="flex items-center justify-center w-12 h-12 rounded-2xl bg-indigo-500/10 border border-indigo-200/50 shadow-sm text-indigo-600 shrink-0">
-            <CalendarIcon className="w-6 h-6" strokeWidth={1.8} />
-          </div>
-          <div>
-            <div className="flex items-center gap-3 flex-wrap">
-              <h1 className="text-2xl sm:text-3xl font-bold tracking-tight text-slate-800">
-                My Attendance
-              </h1>
-              <AnimatePresence>
-                {streak > 0 && (
-                  <motion.span
-                    initial={{ opacity: 0, scale: 0.8 }}
-                    animate={{ opacity: 1, scale: 1 }}
-                    exit={{ opacity: 0, scale: 0.8 }}
-                    className="inline-flex items-center gap-1 rounded-full border border-orange-200 bg-orange-50 px-2.5 py-0.5 text-xs font-semibold text-orange-700"
-                  >
-                    <Flame className="w-3.5 h-3.5" /> {streak} day streak
-                  </motion.span>
-                )}
-              </AnimatePresence>
-            </div>
-            <p className="mt-1 text-sm text-slate-500">
-              Track your overall, daily, and weekly attendance in one place.
-            </p>
-            <p className="mt-3 text-xs text-slate-400 flex items-center gap-1.5 font-medium">
-              <span className="w-1.5 h-1.5 rounded-full bg-slate-400" />
-              {lastSynced
-                ? `Last updated ${lastSynced.toLocaleString(undefined, {
-                    month: "short",
-                    day: "numeric",
-                    hour: "numeric",
-                    minute: "2-digit",
-                  })}`
-                : "Loading…"}
-            </p>
-          </div>
-        </div>
-
-        <div className="flex flex-row md:flex-col items-start md:items-end justify-between gap-3 self-stretch md:self-auto border-t md:border-t-0 pt-4 md:pt-0 border-slate-200/80">
-          <span
-            className={`inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-medium border ${
-              onTrack
-                ? "bg-emerald-50 text-emerald-600 border-emerald-200/60"
-                : "bg-amber-50 text-amber-600 border-amber-200/60"
-            }`}
-          >
-            <span
-              className={`w-1.5 h-1.5 rounded-full animate-pulse ${
-                onTrack ? "bg-emerald-500" : "bg-amber-500"
-              }`}
-            />
-            {onTrack ? "On Track" : "Needs Attention"}
-          </span>
-          <button
-            onClick={onRefresh}
-            disabled={isRefreshing}
-            className="inline-flex items-center gap-2 px-3.5 py-1.5 rounded-xl bg-slate-50 hover:bg-slate-100 text-xs font-medium text-slate-700 transition-colors border border-slate-200/80 shadow-sm active:scale-95 duration-150 disabled:opacity-60"
-          >
-            <motion.span
-              animate={isRefreshing ? { rotate: 360 } : { rotate: 0 }}
-              transition={isRefreshing ? { repeat: Infinity, duration: 0.8, ease: "linear" } : {}}
-              className="flex"
-            >
-              <RefreshCw className="w-3.5 h-3.5 text-slate-500" />
-            </motion.span>
-            {isRefreshing ? "Refreshing..." : "Refresh data"}
+    <section className={`${PANEL} flex flex-col lg:max-h-full lg:min-h-0 lg:overflow-y-auto`}>
+      <div className="flex flex-wrap items-center justify-between gap-2 border-b border-[#e5ebf5] px-3 py-2.5">
+        <h2 className="flex items-center gap-2 text-base font-extrabold sm:text-lg">
+          <BarChart2 className="size-5 text-green-700" aria-hidden="true" />
+          Total Attendance
+        </h2>
+        <div className="ml-auto flex shrink-0 items-center gap-2">
+          <button type="button" onClick={onViewAll} className="rounded-md px-1 py-1 text-xs font-semibold text-blue-700 hover:underline">View All</button>
+          <button type="button" onClick={onRefresh} disabled={isRefreshing} aria-busy={isRefreshing} aria-label="Refresh attendance" title="Refresh attendance" className="inline-grid size-8 place-items-center rounded-full border border-blue-100 bg-blue-50 text-blue-700 hover:bg-blue-100 disabled:opacity-50">
+            <RefreshCw size={16} aria-hidden="true" className={isRefreshing ? "animate-spin" : ""} />
           </button>
         </div>
       </div>
-    </header>
-  );
-}
-
-/* ════════════════════════════════════════════════════════════
-   TAB NAV — uses a shared layoutId so the active pill glides
-   between buttons instead of just swapping classes.
-   ════════════════════════════════════════════════════════════ */
-const TABS = [
-  { id: "overview", label: "Overview", icon: Eye },
-  { id: "calendar", label: "Calendar", icon: CalendarIcon },
-  { id: "daily", label: "Daily", icon: List },
-  { id: "weekly", label: "Weekly", icon: BarChart2 },
-];
-
-function TabNav({ activeTab, setActiveTab }) {
-  return (
-    <nav className="bg-white p-1.5 rounded-full border border-slate-200/80 shadow-[0_2px_8px_-2px_rgba(0,0,0,0.03)] flex flex-wrap items-center gap-1.5 justify-center">
-      {TABS.map(({ id, label, icon: Icon }) => {
-        const active = activeTab === id;
-        return (
-          <button
-            key={id}
-            onClick={() => setActiveTab(id)}
-            className={`relative inline-flex items-center gap-2 px-4 py-2 rounded-xl text-xs font-semibold transition-colors ${
-              active ? "text-white" : "text-slate-600 hover:bg-slate-100"
-            }`}
-          >
-            {active && (
-              <motion.span
-                layoutId="tab-pill"
-                className="absolute inset-0 rounded-full bg-gradient-to-br from-indigo-500 to-purple-500 shadow-[0_4px_12px_-2px_rgba(99,102,241,0.35)]"
-                transition={{ type: "spring", bounce: 0.2, duration: 0.5 }}
-              />
-            )}
-            <span className="relative flex items-center gap-2">
-              <Icon className="w-4 h-4" strokeWidth={2} />
-              <span className="hidden sm:inline">{label}</span>
-            </span>
-          </button>
-        );
-      })}
-    </nav>
-  );
-}
-
-/* ════════════════════════════════════════════════════════════
-   OVERVIEW TAB
-   ════════════════════════════════════════════════════════════ */
-function CircularProgress({ pct }) {
-  const circumference = 2 * Math.PI * 15.9155;
-  const color = pct >= 75 ? "#10b981" : pct >= 50 ? "#f59e0b" : "#ef4444";
-  return (
-    <div className="relative flex items-center justify-center my-6">
-      <svg className="w-48 h-48" viewBox="0 0 36 36">
-        <path
-          className="fill-none stroke-slate-100"
-          strokeWidth="2.8"
-          d="M18 2.0845 a 15.9155 15.9155 0 0 1 0 31.831 a 15.9155 15.9155 0 0 1 0 -31.831"
-        />
-        <motion.path
-          d="M18 2.0845 a 15.9155 15.9155 0 0 1 0 31.831 a 15.9155 15.9155 0 0 1 0 -31.831"
-          fill="none"
-          strokeWidth="2.8"
-          strokeLinecap="round"
-          stroke={color}
-          strokeDasharray={`${circumference}, ${circumference}`}
-          initial={{ strokeDashoffset: circumference }}
-          animate={{ strokeDashoffset: circumference - (pct / 100) * circumference }}
-          transition={{ duration: 0.8, ease: "easeOut" }}
-        />
-      </svg>
-      <div className="absolute flex flex-col items-center justify-center text-center">
-        <span className="text-4xl font-extrabold text-slate-800 tracking-tight">{pct}%</span>
-        <span className="text-[11px] font-semibold text-slate-400 uppercase tracking-widest mt-0.5">
-          Overall
-        </span>
+      <div className="flex flex-1 flex-col items-center justify-center gap-4 p-4 sm:gap-5 md:max-[1025px]:portrait:flex-row md:max-[1025px]:portrait:gap-7">
+        <div
+          className="grid size-32 shrink-0 place-items-center rounded-full p-3.5 sm:size-36 sm:p-4 lg:size-[clamp(7rem,23dvh,11rem)] lg:p-5"
+          style={{ background: `conic-gradient(#16a34a 0 ${presentShare}%, #dc2626 ${presentShare}% ${markedShare}%, #e2e8f0 ${markedShare}% 100%)` }}
+        >
+          <div className="grid size-full content-center rounded-full bg-white text-center">
+            <strong className="text-2xl font-extrabold sm:text-3xl lg:text-4xl md:max-[1025px]:portrait:text-4xl">{stats.percentage}%</strong>
+            <span className="text-[10px] sm:text-xs lg:text-sm md:max-[1025px]:portrait:text-sm">Attendance</span>
+          </div>
+        </div>
+        <dl className="grid w-full max-w-sm grid-cols-3 gap-1.5 text-center sm:gap-2 lg:max-w-md lg:gap-3">
+          {rows.map(([label, value, tone]) => (
+            <div key={label} className="relative px-1 py-2 text-xs after:absolute after:top-1/2 after:-right-1 after:h-6 after:w-px after:-translate-y-1/2 after:bg-slate-300 last:after:hidden lg:px-2 lg:py-2.5 lg:text-sm lg:after:-right-1.5 md:max-[1025px]:portrait:text-sm">
+              <dt className="font-medium text-black">{label}</dt>
+              <dd className="mt-0.5 text-slate-700"><strong className={`text-base lg:text-xl md:max-[1025px]:portrait:text-[22px]! ${tone}`}>{value}</strong> Days</dd>
+            </div>
+          ))}
+        </dl>
       </div>
-    </div>
+    </section>
   );
 }
 
-function OverviewTab({ stats, streak, currentDate, records, subjectStats }) {
-  const onTrack = stats.percentage >= 75;
-
-  const monthKey = `${currentDate.getFullYear()}-${String(currentDate.getMonth() + 1).padStart(2, "0")}`;
-  const monthlyRecords = records.filter((r) => r.date.startsWith(monthKey));
-  const mPresent = monthlyRecords.filter((r) => r.status === "present").length;
-  const mAbsent = monthlyRecords.length - mPresent;
-  const mPct = monthlyRecords.length ? Math.round((mPresent / monthlyRecords.length) * 100) : 0;
+function MonthCalendar({ monthDate, setMonthDate, byDate, today, session }) {
+  const [selectedDate, setSelectedDate] = useState(null);
+  const year = monthDate.getFullYear();
+  const month = monthDate.getMonth();
+  const startDay = new Date(year, month, 1).getDay();
+  const dayCount = new Date(year, month + 1, 0).getDate();
+  const monthLabel = `${MONTH_NAMES[month]} ${year}`;
+  const monthKey = toLocalDateKey(monthDate).slice(0, 7);
+  const currentMonth = toLocalDateKey(today).slice(0, 7);
+  const canGoBack = !session?.startDate || monthKey > session.startDate.slice(0, 7);
+  const canAdvance = monthKey < currentMonth && (!session?.endDate || monthKey < session.endDate.slice(0, 7));
+  const moveMonth = (offset) => {
+    setSelectedDate(null);
+    setMonthDate(new Date(year, month + offset, 1));
+  };
+  const arrowClass = "grid size-9 shrink-0 place-items-center rounded-full border border-[#e0e7f5] bg-white hover:bg-blue-50 sm:size-10";
 
   return (
-    <motion.div
-      key="overview"
-      initial={{ opacity: 0, y: 6 }}
-      animate={{ opacity: 1, y: 0 }}
-      exit={{ opacity: 0, y: -6 }}
-      transition={{ duration: 0.2 }}
-      className="space-y-5"
-    >
-      <div className="grid grid-cols-1 lg:grid-cols-12 gap-5">
-        {/* Left: circular progress */}
-        <section className="lg:col-span-4 rounded-3xl p-6 sm:p-7 border border-slate-200/80 shadow-[0_2px_12px_-4px_rgba(0,0,0,0.04)] flex flex-col items-center justify-between text-center bg-gradient-to-br from-indigo-50/70 to-slate-50">
-          <div className="w-full flex items-center justify-between">
-            <span className="text-xs font-semibold uppercase tracking-wider text-slate-400 text-center">
-              Total Rate
-            </span>
-            {/* <span className="inline-block w-2 h-2 rounded-full bg-slate-300" /> */}
-          </div>
-          <CircularProgress pct={stats.percentage} />
-          <div className="w-full space-y-3">
-            <div>
-              <h3 className="text-base font-semibold text-slate-800">Overall Attendance</h3>
-              <p className="text-xs text-slate-500 mt-0.5">
-                {stats.attended} of {stats.totalClasses} classes attended
-              </p>
-            </div>
-            <div className="pt-2">
-              <span
-                className={`inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-medium border ${
-                  onTrack
-                    ? "bg-emerald-50 text-emerald-700 border-emerald-100"
-                    : "bg-rose-50 text-rose-700 border-rose-100"
-                }`}
-              >
-                {onTrack ? "Healthy attendance trend" : "Needs attention this term"}
-              </span>
-            </div>
-          </div>
-        </section>
-
-        {/* Right: metrics */}
-        <section className="lg:col-span-8 flex flex-col gap-5">
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-            <StatCard
-              icon={BookOpen}
-              iconBg="bg-indigo-500/10 border-indigo-200/50"
-              iconColor="text-indigo-600"
-              label="Total Classes"
-              value={stats.totalClasses}
-            />
-            <StatCard
-              icon={CheckCircle2}
-              iconBg="bg-emerald-500/10 border-emerald-200/50"
-              iconColor="text-emerald-600"
-              label="Present"
-              value={stats.attended}
-            />
-            <StatCard
-              icon={XCircle}
-              iconBg="bg-rose-500/10 border-rose-200/50"
-              iconColor="text-rose-600"
-              label="Absent"
-              value={stats.absent}
-            />
-            <StatCard
-              icon={Flame}
-              iconBg="bg-amber-500/10 border-amber-200/50"
-              iconColor="text-amber-600"
-              label="Current Streak"
-              value={`${streak} days`}
-            />
-          </div>
-
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-            <div className="bg-white rounded-2xl p-4 sm:p-5 border border-slate-200/80 shadow-[0_1px_4px_rgba(0,0,0,0.02)]">
-              <div className="flex items-center gap-1.5 text-slate-400 mb-2">
-                <CalendarIcon className="w-3.5 h-3.5" />
-                <span className="text-[11px] font-bold uppercase tracking-wider text-slate-500">
-                  This Month
-                </span>
-              </div>
-              <h4 className="text-base font-semibold text-slate-800">
-                {MONTH_NAMES[currentDate.getMonth()]} {currentDate.getFullYear()}
-              </h4>
-              <p className="text-xs text-slate-400 mt-1">{monthlyRecords.length} classes recorded</p>
-            </div>
-            <div className="bg-white rounded-2xl p-4 sm:p-5 border border-slate-200/80 shadow-[0_1px_4px_rgba(0,0,0,0.02)]">
-              <div className="flex items-center gap-1.5 text-emerald-600 mb-2">
-                <span className="w-1.5 h-1.5 rounded-full bg-emerald-500" />
-                <span className="text-[11px] font-bold uppercase tracking-wider text-slate-500">
-                  Present Days
-                </span>
-              </div>
-              <h4 className="text-2xl font-bold text-slate-800">{mPresent}</h4>
-              <p className="text-xs text-slate-400 mt-1">Absences this month: {mAbsent}</p>
-            </div>
-            <div className="bg-white rounded-2xl p-4 sm:p-5 border border-slate-200/80 shadow-[0_1px_4px_rgba(0,0,0,0.02)]">
-              <div className="flex items-center gap-1.5 text-amber-600 mb-2">
-                <span className="w-1.5 h-1.5 rounded-full bg-amber-500" />
-                <span className="text-[11px] font-bold uppercase tracking-wider text-slate-500">
-                  Monthly Rate
-                </span>
-              </div>
-              <h4 className="text-2xl font-bold text-slate-800">{mPct}%</h4>
-              <p className="text-xs text-slate-400 mt-1">Based on current month records</p>
-            </div>
-          </div>
-        </section>
+    <section className={`${PANEL} flex flex-col p-3 sm:p-4 lg:max-h-full lg:min-h-0 lg:overflow-y-auto`}>
+      <div className="mb-3 flex items-center justify-between gap-2 border-b border-slate-100 pb-2.5">
+        {canGoBack ? (
+          <button type="button" aria-label="Previous month" className={arrowClass} onClick={() => moveMonth(-1)}><ChevronLeft size={21} /></button>
+        ) : <span className="size-9 shrink-0 sm:size-10" aria-hidden="true" />}
+        <h2 aria-live="polite" className="text-center text-lg font-extrabold sm:text-xl">{monthLabel}</h2>
+        {canAdvance ? (
+          <button type="button" aria-label="Next month" className={arrowClass} onClick={() => moveMonth(1)}><ChevronRight size={21} /></button>
+        ) : <span className="size-9 shrink-0 sm:size-10" aria-hidden="true" />}
       </div>
-
-      {subjectStats.length > 0 && (
-        <div className="bg-white rounded-2xl border border-slate-200/80 shadow-sm p-5">
-          <div className="mb-4 flex items-center justify-between gap-3">
-            <div className="flex items-center gap-2">
-              <BookOpen className="h-4 w-4 text-indigo-600" />
-              <h2 className="font-semibold text-slate-900 text-sm">Subject-wise Attendance</h2>
-            </div>
-            <span className="text-xs font-medium text-slate-400">
-              {subjectStats.length} subjects
-            </span>
-          </div>
-          <div className="space-y-4">
-            {subjectStats.map((s) => {
-              const barColor =
-                s.pct >= 75 ? "bg-emerald-500" : s.pct >= 50 ? "bg-amber-500" : "bg-rose-500";
-              const textColor =
-                s.pct >= 75 ? "text-emerald-600" : s.pct >= 50 ? "text-amber-600" : "text-rose-600";
-              return (
-                <div key={s.subject} className="rounded-2xl border border-slate-100 bg-slate-50/70 p-4">
-                  <div className="mb-2 flex items-center justify-between gap-3">
-                    <span className="text-sm font-semibold text-slate-800">{s.subject}</span>
-                    <span className="text-xs text-slate-500">
-                      {s.present}/{s.total} classes ·{" "}
-                      <span className={`font-semibold ${textColor}`}>{s.pct}%</span>
-                    </span>
-                  </div>
-                  <div className="h-2 w-full rounded-full bg-slate-200">
-                    <motion.div
-                      className={`h-2 rounded-full ${barColor}`}
-                      initial={{ width: 0 }}
-                      animate={{ width: `${s.pct}%` }}
-                      transition={{ duration: 0.5, ease: "easeOut" }}
-                    />
-                  </div>
-                </div>
-              );
-            })}
-          </div>
-        </div>
-      )}
-
-      <footer className="bg-white/90 border border-slate-200/80 rounded-2xl p-4 sm:px-5 flex items-center gap-3 text-slate-600 text-xs shadow-sm">
-        <div className="flex items-center justify-center w-8 h-8 rounded-full bg-amber-50 text-amber-600 border border-amber-200/60 shrink-0">
-          <AlertCircle className="w-4 h-4" />
-        </div>
-        <p className="leading-relaxed text-slate-600">
-          <span className="font-semibold text-slate-700">Aim to maintain 75%+ attendance.</span> If
-          any entry looks incorrect, please contact your class teacher.
-        </p>
-      </footer>
-    </motion.div>
+      <div className="grid shrink-0 grid-cols-7 gap-x-1 gap-y-1.5 sm:gap-2">
+        {DAY_NAMES.map((day, index) => <span key={day} className={`pb-1 text-center text-[11px] font-semibold sm:text-sm ${index === 0 ? "text-red-700" : index === 6 ? "text-blue-700" : "text-slate-600"}`}>{day}</span>)}
+        {Array.from({ length: startDay }, (_, index) => <span key={`blank-${index}`} aria-hidden="true" />)}
+        {Array.from({ length: dayCount }, (_, index) => {
+          const date = new Date(year, month, index + 1);
+          const key = toLocalDateKey(date);
+          if ((session?.startDate && key < session.startDate) || (session?.endDate && key > session.endDate)) {
+            return <span key={key} aria-hidden="true" />;
+          }
+          const stats = countAttendance(byDate[key] || []);
+          const status = stats.absent ? "Absent" : stats.present ? "Present" : byDate[key]?.some((record) => record.status === "leave") ? "Leave" : "No class recorded";
+          const tone = stats.absent ? ABSENT : stats.present ? PRESENT : date.getDay() === 0 ? "bg-[#fff1ef] text-red-600" : date.getDay() === 6 ? "bg-[#eaf3ff] text-blue-700" : "bg-[#f0f2f7] text-slate-700";
+          return (
+            <button key={key} type="button" aria-label={`${fmtDateLong(key)}: ${status}`} aria-pressed={key === selectedDate} onClick={() => setSelectedDate(key === selectedDate ? null : key)}
+              className={`flex h-9 flex-col items-center justify-center gap-0.5 rounded-lg text-xs font-semibold tabular-nums transition-colors hover:brightness-95 focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-blue-700 sm:h-11 sm:text-sm lg:h-[clamp(1.75rem,5dvh,2.75rem)] ${tone} ${key === toLocalDateKey(today) ? "ring-1 ring-inset ring-green-600" : ""} ${key === selectedDate ? "outline-2 -outline-offset-2 outline-blue-600" : ""}`}>
+              {index + 1}
+              {stats.absent ? <X size={14} strokeWidth={3} aria-hidden="true" /> : stats.present ? <Check size={14} strokeWidth={3} aria-hidden="true" /> : null}
+            </button>
+          );
+        })}
+      </div>
+    </section>
   );
 }
 
-/* ════════════════════════════════════════════════════════════
-   CALENDAR TAB
-   ════════════════════════════════════════════════════════════ */
-function CalendarTab({ currentDate, setCurrentDate, byDate, selectedDate, setSelectedDate }) {
-  const year = currentDate.getFullYear();
-  const month = currentDate.getMonth();
-  const monthKey = `${year}-${String(month + 1).padStart(2, "0")}`;
-  const monthly = Object.entries(byDate)
-    .filter(([date]) => date.startsWith(monthKey))
-    .flatMap(([, recs]) => recs);
-  const mPresent = monthly.filter((r) => r.status === "present").length;
-  const mAbsent = monthly.length - mPresent;
-  const mPct = monthly.length ? Math.round((mPresent / monthly.length) * 100) : 0;
-
-  const firstDay = new Date(year, month, 1);
-  const gridStart = new Date(firstDay);
-  gridStart.setDate(gridStart.getDate() - firstDay.getDay());
-  const todayKey = toLocalDateKey(new Date());
-
-  const cells = [];
-  const cursor = new Date(gridStart);
-  for (let i = 0; i < 42; i++) {
-    const key = toLocalDateKey(cursor);
-    cells.push({
-      key,
-      dayNum: cursor.getDate(),
-      isCurrentMonth: cursor.getMonth() === month,
-      isToday: key === todayKey,
-      records: byDate[key] || [],
-    });
-    cursor.setDate(cursor.getDate() + 1);
-  }
-
-  const selectedRecords = selectedDate ? byDate[selectedDate] || [] : [];
-
-  return (
-    <motion.div
-      key="calendar"
-      initial={{ opacity: 0, y: 6 }}
-      animate={{ opacity: 1, y: 0 }}
-      exit={{ opacity: 0, y: -6 }}
-      transition={{ duration: 0.2 }}
-      className="space-y-5"
-    >
-      <div className="rounded-2xl border border-slate-200 bg-white shadow-sm overflow-hidden">
-        <div className="flex items-center justify-between border-b border-slate-100 p-4">
-          <button
-            onClick={() => setCurrentDate(new Date(year, month - 1, 1))}
-            className="rounded-lg p-2 hover:bg-slate-100 transition"
-            aria-label="Previous month"
-          >
-            <ChevronLeft className="h-4 w-4 text-slate-700" />
-          </button>
-          <div className="text-center">
-            <h2 className="font-semibold text-slate-900">
-              {MONTH_NAMES[month]} {year}
-            </h2>
-            <p className="text-xs text-slate-400">
-              {mPresent} present · {mAbsent} absent · {mPct}%
-            </p>
-          </div>
-          <button
-            onClick={() => setCurrentDate(new Date(year, month + 1, 1))}
-            className="rounded-lg p-2 hover:bg-slate-100 transition"
-            aria-label="Next month"
-          >
-            <ChevronRight className="h-4 w-4 text-slate-700" />
-          </button>
-        </div>
-
-        <div className="p-2 sm:p-4">
-          <div className="mb-2 grid grid-cols-7 gap-1 sm:gap-1.5">
-            {DAY_NAMES.map((d) => (
-              <div key={d} className="py-1 text-center text-xs font-semibold text-slate-400">
-                {d}
-              </div>
-            ))}
-          </div>
-          <div className="grid grid-cols-7 gap-1 sm:gap-1.5">
-            {cells.map((cell) => {
-              const hasAbsent = cell.records.some((r) => r.status === "absent");
-              const hasPresent = cell.records.some((r) => r.status === "present");
-              const isSelected = cell.key === selectedDate;
-              return (
-                <button
-                  key={cell.key}
-                  disabled={!cell.isCurrentMonth}
-                  onClick={() => setSelectedDate(cell.key)}
-                  className={`aspect-square flex flex-col items-center justify-center rounded-xl border transition-colors ${
-                    cell.isCurrentMonth ? "cursor-pointer hover:bg-slate-100" : "cursor-default text-slate-300"
-                  } ${cell.isToday ? "border-amber-300 bg-amber-50" : "border-transparent"} ${
-                    isSelected ? "border-indigo-400 bg-indigo-50 ring-2 ring-indigo-200" : ""
-                  }`}
-                >
-                  <span className={`text-xs font-medium ${cell.isToday ? "text-amber-600" : ""}`}>
-                    {cell.dayNum}
-                  </span>
-                  {hasAbsent ? (
-                    <span className="w-1.5 h-1.5 rounded-full mt-0.5 bg-rose-500" />
-                  ) : hasPresent ? (
-                    <span className="w-1.5 h-1.5 rounded-full mt-0.5 bg-emerald-500" />
-                  ) : null}
-                </button>
-              );
-            })}
-          </div>
-          <div className="mt-3 flex items-center gap-4 text-xs text-slate-500">
-            <div className="flex items-center gap-1.5">
-              <span className="h-2.5 w-2.5 rounded-full bg-emerald-500" /> Present
-            </div>
-            <div className="flex items-center gap-1.5">
-              <span className="h-2.5 w-2.5 rounded-full bg-rose-500" /> Absent
-            </div>
-            <div className="flex items-center gap-1.5">
-              <span className="h-2.5 w-2.5 rounded-full bg-amber-200 ring-1 ring-amber-300" /> Today
-            </div>
-          </div>
-        </div>
-      </div>
-
-      <AnimatePresence>
-        {selectedDate && selectedRecords.length > 0 && (
-          <motion.div
-            initial={{ opacity: 0, height: 0 }}
-            animate={{ opacity: 1, height: "auto" }}
-            exit={{ opacity: 0, height: 0 }}
-            transition={{ duration: 0.25 }}
-            className="overflow-hidden"
-          >
-            <div className="rounded-2xl border border-amber-200 bg-amber-50/30 p-5 shadow-sm">
-              <h3 className="mb-3 text-sm font-semibold text-slate-900 flex items-center gap-2">
-                <CalendarIcon className="h-4 w-4 text-amber-600" />
-                {fmtDateLong(selectedDate)}
-              </h3>
-              <div className="space-y-2">
-                {selectedRecords.map((r) => {
-                  const isPresent = r.status === "present";
-                  return (
-                    <div
-                      key={r.id}
-                      className="flex items-center justify-between rounded-xl bg-white border border-slate-200 px-4 py-3"
-                    >
-                      <div className="flex items-center gap-3">
-                        <div
-                          className={`flex h-8 w-8 items-center justify-center rounded-lg ${
-                            isPresent ? "bg-emerald-100" : "bg-rose-100"
-                          }`}
-                        >
-                          {isPresent ? (
-                            <CheckCircle2 className="h-4 w-4 text-emerald-600" />
-                          ) : (
-                            <XCircle className="h-4 w-4 text-rose-600" />
-                          )}
-                        </div>
-                        <span className="text-sm font-medium text-slate-800">{r.subject}</span>
-                      </div>
-                      <span
-                        className={`rounded-full px-2.5 py-0.5 text-xs font-semibold ${
-                          isPresent ? "bg-emerald-100 text-emerald-700" : "bg-rose-100 text-rose-700"
-                        }`}
-                      >
-                        {isPresent ? "Present" : "Absent"}
-                      </span>
-                    </div>
-                  );
-                })}
-              </div>
-            </div>
-          </motion.div>
-        )}
-      </AnimatePresence>
-
-      <div className="grid grid-cols-3 gap-4">
-        <div className="rounded-xl border border-slate-200 bg-white p-4 text-center">
-          <p className="text-2xl font-bold text-slate-900">{monthly.length}</p>
-          <p className="text-xs text-slate-500">Monthly Classes</p>
-        </div>
-        <div className="rounded-xl border border-slate-200 bg-white p-4 text-center">
-          <p className="text-2xl font-bold text-emerald-600">{mPresent}</p>
-          <p className="text-xs text-slate-500">Present</p>
-        </div>
-        <div className="rounded-xl border border-slate-200 bg-white p-4 text-center">
-          <p className="text-2xl font-bold text-amber-600">{mPct}%</p>
-          <p className="text-xs text-slate-500">Rate</p>
-        </div>
-      </div>
-    </motion.div>
-  );
-}
-
-/* ════════════════════════════════════════════════════════════
-   DAILY TAB
-   ════════════════════════════════════════════════════════════ */
 function DailyTab({ records, byDate, dailyFilter, setDailyFilter }) {
   const sortedDates = [...new Set(records.map((r) => r.date))].sort().reverse();
   const filtered = sortedDates.filter((d) => {
@@ -745,18 +193,21 @@ function DailyTab({ records, byDate, dailyFilter, setDailyFilter }) {
       animate={{ opacity: 1, y: 0 }}
       exit={{ opacity: 0, y: -6 }}
       transition={{ duration: 0.2 }}
+      className="lg:flex lg:min-h-0 lg:flex-1 lg:flex-col"
     >
-      <div className="rounded-2xl border border-slate-200 bg-white shadow-sm overflow-hidden">
-        <div className="flex flex-wrap items-center justify-between gap-3 border-b border-slate-100 p-4">
+      <div className="overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm lg:flex lg:min-h-0 lg:flex-1 lg:flex-col">
+        <div className="flex shrink-0 flex-wrap items-center justify-between gap-3 border-b border-slate-100 p-4">
           <h2 className="font-semibold text-slate-900 flex items-center gap-2">
             <List className="h-4 w-4 text-indigo-600" />
             Day-by-Day Attendance
-            <span className="text-xs font-normal text-slate-400">({filtered.length} days)</span>
+            <span className="text-xs font-normal text-slate-400">({filtered.length} {filtered.length === 1 ? "day" : "days"})</span>
           </h2>
           <div className="flex rounded-lg border border-slate-200 p-0.5 text-xs">
             {["all", "present", "absent"].map((f) => (
               <button
                 key={f}
+                type="button"
+                aria-pressed={dailyFilter === f}
                 onClick={() => setDailyFilter(f)}
                 className={`rounded-md px-2.5 py-1 font-semibold capitalize transition ${
                   dailyFilter === f
@@ -770,7 +221,7 @@ function DailyTab({ records, byDate, dailyFilter, setDailyFilter }) {
           </div>
         </div>
 
-        <div className="divide-y divide-slate-100 max-h-[600px] overflow-y-auto">
+        <div className="max-h-[600px] divide-y divide-slate-100 overflow-y-auto lg:min-h-0 lg:max-h-none lg:flex-1">
           {filtered.length === 0 ? (
             <p className="p-6 text-center text-sm text-slate-400">
               No records match the current filter.
@@ -778,9 +229,8 @@ function DailyTab({ records, byDate, dailyFilter, setDailyFilter }) {
           ) : (
             filtered.map((date) => {
               const recs = byDate[date] || [];
-              const presentCount = recs.filter((r) => r.status === "present").length;
-              const absentCount = recs.length - presentCount;
-              const allPresent = absentCount === 0;
+              const { present: presentCount, absent: absentCount } = countAttendance(recs);
+              const allPresent = presentCount === recs.length;
               const dayNum = new Date(date + "T00:00:00").getDate();
 
               return (
@@ -811,13 +261,8 @@ function DailyTab({ records, byDate, dailyFilter, setDailyFilter }) {
                         allPresent ? "bg-emerald-100 text-emerald-700" : "bg-rose-100 text-rose-700"
                       }`}
                     >
-                      {allPresent ? "Full Attendance" : `${absentCount} Absent`}
+                      {allPresent ? "Full Attendance" : absentCount ? `${absentCount} Absent` : "Leave"}
                     </div>
-                  </div>
-                  <div className="mt-2 flex flex-wrap gap-1.5 pl-12">
-                    {recs.map((r) => (
-                      <SubjectPill key={r.id} subject={r.subject} status={r.status} />
-                    ))}
                   </div>
                 </div>
               );
@@ -829,174 +274,25 @@ function DailyTab({ records, byDate, dailyFilter, setDailyFilter }) {
   );
 }
 
-/* ════════════════════════════════════════════════════════════
-   WEEKLY TAB
-   ════════════════════════════════════════════════════════════ */
-function WeeklyTab({ weeklyData, expandedWeek, setExpandedWeek }) {
-  return (
-    <motion.div
-      key="weekly"
-      initial={{ opacity: 0, y: 6 }}
-      animate={{ opacity: 1, y: 0 }}
-      exit={{ opacity: 0, y: -6 }}
-      transition={{ duration: 0.2 }}
-      className="space-y-3"
-    >
-      <div className="flex items-center gap-2 px-1">
-        <BarChart2 className="h-4 w-4 text-indigo-600" />
-        <h2 className="font-semibold text-slate-900">Weekly Breakdown</h2>
-        <span className="text-xs text-slate-400">({weeklyData.length} weeks)</span>
-      </div>
-
-      {weeklyData.length === 0 ? (
-        <p className="rounded-xl border border-slate-200 bg-white p-6 text-center text-sm text-slate-400">
-          No attendance records available.
-        </p>
-      ) : (
-        weeklyData.map((week) => {
-          const isExpanded = expandedWeek === week.key;
-          const pctColor =
-            week.pct >= 75
-              ? "bg-emerald-100 text-emerald-700"
-              : week.pct >= 50
-              ? "bg-amber-100 text-amber-700"
-              : "bg-rose-100 text-rose-700";
-          const startLabel = fmtDate(toLocalDateKey(week.start), { month: "short", day: "numeric" });
-          const endLabel = fmtDate(toLocalDateKey(week.end), { month: "short", day: "numeric" });
-          const sortedRecords = [...week.records].sort(
-            (a, b) => a.date.localeCompare(b.date) || a.subject.localeCompare(b.subject)
-          );
-
-          return (
-            <div
-              key={week.key}
-              className="rounded-2xl border border-slate-200 bg-white shadow-sm overflow-hidden"
-            >
-              <button
-                type="button"
-                onClick={() => setExpandedWeek(isExpanded ? null : week.key)}
-                className="flex w-full items-center justify-between p-4 hover:bg-slate-50 transition text-left"
-              >
-                <div className="flex items-center gap-3">
-                  <div
-                    className={`flex h-10 w-10 items-center justify-center rounded-xl text-sm font-bold ${pctColor}`}
-                  >
-                    {week.pct}%
-                  </div>
-                  <div>
-                    <p className="text-sm font-medium text-slate-800">
-                      {startLabel} — {endLabel}
-                    </p>
-                    <p className="text-[11px] text-slate-400">
-                      {week.total} classes · {week.present} present · {week.absent} absent
-                    </p>
-                  </div>
-                </div>
-                <div className="flex items-center gap-3">
-                  <div className="hidden sm:flex items-center gap-0.5">
-                    {sortedRecords.slice(0, 20).map((r) => (
-                      <div
-                        key={r.id}
-                        className={`h-5 w-1.5 rounded-full ${
-                          r.status === "present" ? "bg-emerald-400" : "bg-rose-400"
-                        }`}
-                      />
-                    ))}
-                  </div>
-                  <motion.span animate={{ rotate: isExpanded ? 180 : 0 }} transition={{ duration: 0.2 }}>
-                    <ChevronDown className="h-4 w-4 text-slate-400" />
-                  </motion.span>
-                </div>
-              </button>
-
-              <AnimatePresence>
-                {isExpanded && (
-                  <motion.div
-                    initial={{ opacity: 0, height: 0 }}
-                    animate={{ opacity: 1, height: "auto" }}
-                    exit={{ opacity: 0, height: 0 }}
-                    transition={{ duration: 0.25 }}
-                    className="overflow-hidden border-t border-slate-100"
-                  >
-                    <div className="divide-y divide-slate-50">
-                      {sortedRecords.map((r) => {
-                        const isPresent = r.status === "present";
-                        return (
-                          <div
-                            key={r.id}
-                            className="flex items-center justify-between px-4 py-2.5 bg-slate-50/50"
-                          >
-                            <div className="flex items-center gap-2.5">
-                              <div
-                                className={`h-2 w-2 rounded-full ${
-                                  isPresent ? "bg-emerald-500" : "bg-rose-500"
-                                }`}
-                              />
-                              <span className="text-sm text-slate-700">{r.subject}</span>
-                            </div>
-                            <div className="flex items-center gap-3">
-                              <span className="text-xs text-slate-400">
-                                {fmtDate(r.date, { weekday: "short", month: "short", day: "numeric" })}
-                              </span>
-                              <span
-                                className={`rounded-full px-2 py-0.5 text-[10px] font-semibold ${
-                                  isPresent
-                                    ? "bg-emerald-100 text-emerald-700"
-                                    : "bg-rose-100 text-rose-700"
-                                }`}
-                              >
-                                {isPresent ? "Present" : "Absent"}
-                              </span>
-                            </div>
-                          </div>
-                        );
-                      })}
-                    </div>
-                  </motion.div>
-                )}
-              </AnimatePresence>
-            </div>
-          );
-        })
-      )}
-    </motion.div>
-  );
-}
-
-/* ════════════════════════════════════════════════════════════
-   ROOT COMPONENT
-   ════════════════════════════════════════════════════════════ */
 export default function AttendanceDashboard() {
-  // Loads the same font the original design used. Safe to delete
-  // this effect if you'd rather just use the Tailwind default sans stack.
-  useEffect(() => {
-    const link = document.createElement("link");
-    link.href =
-      "https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&display=swap";
-    link.rel = "stylesheet";
-    document.head.appendChild(link);
-    return () => document.head.removeChild(link);
-  }, []);
-
-  const [rawRecords, setRawRecords] = useState([]);
-  const [currentDate, setCurrentDate] = useState(new Date());
-  const [selectedDate, setSelectedDate] = useState(null);
-  const [activeTab, setActiveTab] = useState("overview");
-  const [dailyFilter, setDailyFilter] = useState("all");
-  const [expandedWeek, setExpandedWeek] = useState(null);
+  const { search } = useLocation();
+  const requestedFilter = new URLSearchParams(search).get("filter");
+  const hasDailyFilter = requestedFilter === "present" || requestedFilter === "absent" || requestedFilter === "all";
+  const [showDaily, setShowDaily] = useState(hasDailyFilter);
+  const [dailyFilter, setDailyFilter] = useState(hasDailyFilter ? requestedFilter : "all");
+  const [today] = useState(() => new Date());
+  const [monthDate, setMonthDate] = useState(today);
+  const [attendance, setAttendance] = useState(null);
   const [isRefreshing, setIsRefreshing] = useState(true);
-  const [lastSynced, setLastSynced] = useState(null);
-  const [loadError, setLoadError] = useState(null);
+  const [loadError, setLoadError] = useState("");
 
   const loadAttendance = useCallback(async () => {
     setIsRefreshing(true);
-    setLoadError(null);
+    setLoadError("");
     try {
-      const records = await fetchStudentAttendance();
-      setRawRecords(records);
-      setLastSynced(new Date());
-    } catch (err) {
-      setLoadError(err.message || "Unable to load attendance.");
+      setAttendance(await fetchStudentAttendance());
+    } catch (error) {
+      setLoadError(error.message || "Unable to load attendance.");
     } finally {
       setIsRefreshing(false);
     }
@@ -1006,79 +302,70 @@ export default function AttendanceDashboard() {
     loadAttendance();
   }, [loadAttendance]);
 
-  // Derived data — recomputed only when the raw records actually change,
-  // not on every render (tab switches, date selection, etc).
-  const { records, stats, byDate, subjectStats, weeklyData } = useMemo(
-    () => processAttendance(rawRecords),
-    [rawRecords]
-  );
-  const streak = useMemo(() => computeStreak(records, byDate), [records, byDate]);
-
-  const handleRefresh = useCallback(() => {
-    loadAttendance();
-  }, [loadAttendance]);
+  const { records, byDate, totals } = useMemo(() => {
+    const records = attendance?.records || [];
+    const byDate = Object.create(null);
+    for (const record of records) (byDate[record.date] ??= []).push(record);
+    const recorded = countAttendance(records);
+    const summary = attendance?.summary;
+    return {
+      records,
+      byDate,
+      totals: {
+        present: summary?.presentDays ?? recorded.present,
+        absent: summary?.absentDays ?? recorded.absent,
+        total: summary?.totalClasses ?? recorded.total,
+        percentage: summary?.attendancePercentage ?? recorded.percentage,
+      },
+    };
+  }, [attendance]);
+  const session = attendance?.session;
+  const sessionUpcoming = session?.startDate && session.startDate > toLocalDateKey(today);
+  const monthKey = toLocalDateKey(monthDate).slice(0, 7);
+  const firstMonth = session?.startDate?.slice(0, 7);
+  const lastMonth = session?.endDate?.slice(0, 7);
+  const displayedMonth = firstMonth && monthKey < firstMonth
+    ? new Date(`${firstMonth}-01T00:00:00`)
+    : lastMonth && monthKey > lastMonth
+      ? new Date(`${lastMonth}-01T00:00:00`)
+      : monthDate;
 
   return (
-    <div
-      className="min-h-screen py-6 px-4 sm:px-6 lg:px-8 flex justify-center"
-      style={{ backgroundColor: "#f8fafc", fontFamily: "'Plus Jakarta Sans', sans-serif" }}
-    >
-      <div className="w-full max-w-5xl space-y-5">
-        <Header
-          streak={streak}
-          lastSynced={lastSynced}
-          onRefresh={handleRefresh}
-          isRefreshing={isRefreshing}
-          overallPct={stats.percentage}
-        />
-        <TabNav activeTab={activeTab} setActiveTab={setActiveTab} />
-
+    <div className="min-h-full p-3 pb-20 text-[#101437] sm:p-4 lg:flex lg:min-h-0 lg:flex-1 lg:flex-col lg:overflow-hidden">
+      <div className="mx-auto flex w-full max-w-[1080px] flex-col gap-3 lg:min-h-0 lg:flex-1">
+        <h1 className="sr-only">Attendance</h1>
         {loadError && (
-          <div className="rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">
+          <div role="alert" className="flex items-center justify-between gap-2 rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-800">
             {loadError}
+            <button type="button" onClick={loadAttendance} className="shrink-0 font-semibold underline">Retry</button>
           </div>
         )}
-        {!loadError && !isRefreshing && records.length === 0 && (
-          <div className="rounded-xl border border-gray-200 bg-white px-4 py-6 text-center text-sm text-gray-500">
-            No attendance has been recorded for you yet.
-          </div>
+        {!attendance && isRefreshing ? (
+          <p role="status" className={`${PANEL} p-6 text-center text-sm text-slate-600`}>Loading attendance…</p>
+        ) : showDaily ? (
+          <>
+            <button type="button" onClick={() => setShowDaily(false)} className="inline-flex shrink-0 items-center gap-1 self-start rounded-full border border-[#dce5f5] bg-white px-3 py-2 text-sm font-semibold text-blue-700">
+              <ChevronLeft size={16} aria-hidden="true" /> Back to overview
+            </button>
+            <DailyTab records={records} byDate={byDate} dailyFilter={dailyFilter} setDailyFilter={setDailyFilter} />
+          </>
+        ) : attendance && (
+          <>
+            <div className="grid gap-3 lg:min-h-0 lg:grid-cols-2 lg:grid-rows-[minmax(0,auto)] lg:items-start lg:max-[1025px]:portrait:grid-cols-1! lg:max-[1025px]:portrait:grid-rows-none!">
+              <TotalAttendance
+                stats={totals}
+                onRefresh={loadAttendance}
+                onViewAll={() => { setDailyFilter("all"); setShowDaily(true); }}
+                isRefreshing={isRefreshing}
+              />
+              {sessionUpcoming ? (
+                <p className={`${PANEL} p-4 text-sm text-slate-600`}>This session begins {fmtDateLong(session.startDate)}.</p>
+              ) : (
+                <MonthCalendar key={session?.startDate} monthDate={displayedMonth} setMonthDate={setMonthDate} byDate={byDate} today={today} session={session} />
+              )}
+            </div>
+          </>
         )}
-
-        <AnimatePresence mode="wait">
-          {activeTab === "overview" && (
-            <OverviewTab
-              stats={stats}
-              streak={streak}
-              currentDate={currentDate}
-              records={records}
-              subjectStats={subjectStats}
-            />
-          )}
-          {activeTab === "calendar" && (
-            <CalendarTab
-              currentDate={currentDate}
-              setCurrentDate={setCurrentDate}
-              byDate={byDate}
-              selectedDate={selectedDate}
-              setSelectedDate={setSelectedDate}
-            />
-          )}
-          {activeTab === "daily" && (
-            <DailyTab
-              records={records}
-              byDate={byDate}
-              dailyFilter={dailyFilter}
-              setDailyFilter={setDailyFilter}
-            />
-          )}
-          {activeTab === "weekly" && (
-            <WeeklyTab
-              weeklyData={weeklyData}
-              expandedWeek={expandedWeek}
-              setExpandedWeek={setExpandedWeek}
-            />
-          )}
-        </AnimatePresence>
       </div>
     </div>
   );

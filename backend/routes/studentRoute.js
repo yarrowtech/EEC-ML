@@ -1,5 +1,5 @@
 const express = require('express');
-const { computeSessionAttendance, summarizeStudentAttendance } = require('../utils/sessionAttendance');
+const { computeSessionAttendance, summarizeStudentAttendance, resolveSessionWindow, dayKey } = require('../utils/sessionAttendance');
 const router = express.Router();
 const { studentDashboardCache } = require('../utils/responseCache');
 const mongoose = require('mongoose');
@@ -1934,7 +1934,7 @@ router.get('/attendance', authStudent, async (req, res) => {
       targetId: req.user?.id,
     });
     const student = await StudentUser.findById(req.user.id)
-      .select('attendance attendanceSummary name grade section')
+      .select('attendance attendanceSummary name grade section academicYear')
       .lean();
 
     if (!student) {
@@ -1949,9 +1949,15 @@ router.get('/attendance', authStudent, async (req, res) => {
       return res.status(404).json({ error: 'Student not found' });
     }
 
-    const attendance = student.attendance || [];
-    // Academic-year basis: present days ÷ school days of the active session.
-    const yearSummary = (await summarizeStudentAttendance([student], { schoolId: req.schoolId, campusId: req.campusId || null }))
+    const window = await resolveSessionWindow(req.schoolId, student.academicYear);
+    const startDate = dayKey(window.start);
+    const endDate = dayKey(window.end);
+    const today = dayKey(new Date());
+    const attendance = (student.attendance || [])
+      .filter((record) => record.date && Number.isFinite(new Date(record.date).getTime()))
+      .map((record) => ({ ...record, dateKey: dayKey(new Date(record.date)) }))
+      .filter(({ dateKey }) => dateKey >= startDate && dateKey <= endDate && dateKey <= today);
+    const yearSummary = (await summarizeStudentAttendance([student], { schoolId: req.schoolId, campusId: req.campusId || null, window }))
       .get(String(student._id)) || {};
     const totalClasses = yearSummary.schoolDays || 0;
     const presentDays = yearSummary.presentDays || 0;
@@ -1960,7 +1966,8 @@ router.get('/attendance', authStudent, async (req, res) => {
     const attendancePercentage = yearSummary.percentage ?? 0;
 
     res.json({
-      attendance: attendance.sort((a, b) => new Date(b.date) - new Date(a.date)),
+      attendance: attendance.sort((a, b) => b.dateKey.localeCompare(a.dateKey)),
+      session: { name: window.name, startDate, endDate, className: student.grade || '' },
       summary: {
         totalClasses,
         presentDays,

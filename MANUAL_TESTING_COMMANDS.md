@@ -617,6 +617,18 @@ Before opening an attachment, check that you can scroll to the last subject on t
 3. Open a standalone attachment without lesson-plan metadata and verify it is still available.
 4. Verify topics show their chapter and topic numbers, such as `1.1 Introduction to Computers`, and keep the same number after searching. Check that attachments show “Posted by” and that Download saves a stored file while Open previews it.
 
+## Student attendance dashboard
+
+On a portrait tablet, verify the day counts sit beside the attendance chart with the calendar below. On desktop, verify both panels end near their content.
+
+After promoting a student to a new academic session, open Attendance as that student. Confirm prior-session dates are absent from the calendar, totals, and View All history.
+
+Verify the calendar ends at the current month. Open a past month and use Next month to return to the current month.
+
+At desktop and laptop widths, verify Attendance stays within the viewport and the page itself does not scroll. Open View All and scroll the history inside its panel.
+
+Open Attendance on desktop and mobile. Verify Total Attendance appears before the calendar, with the chart centered above the day counts. Switch calendar months and confirm the totals remain the same. Select a marked day and verify it highlights without showing a date summary. Use View All to open the attendance history.
+
 ## Student diary navigation
 
 Open My Diary on a tablet in portrait orientation. Verify Back appears before the diary icon and title and returns to the previous page. Open the diary directly in a fresh tab and verify Back opens the student dashboard. Rotate to landscape and verify Back is hidden.

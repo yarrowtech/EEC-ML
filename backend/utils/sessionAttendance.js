@@ -21,15 +21,25 @@ const startOfDay = (v) => {
   return d;
 };
 
-// Session window: the active academic year, else April → March around today.
-const resolveSessionWindow = async (schoolId) => {
-  const year = schoolId
-    ? await AcademicYear.findOne({ schoolId, isActive: true }).select('name startDate endDate').lean()
-    : null;
-  const start = year?.startDate ? startOfDay(year.startDate) : null;
-  const end = year?.endDate ? startOfDay(year.endDate) : null;
-  if (start && end && !Number.isNaN(start.getTime()) && !Number.isNaN(end.getTime())) {
-    return { name: year.name || '', start, end };
+// Prefer the supplied student session, then the active year, then April → March.
+const resolveSessionWindow = async (schoolId, sessionName) => {
+  const findWindow = async (filter) => {
+    const year = await AcademicYear.findOne({ schoolId, ...filter }).select('name startDate endDate').lean();
+    if (!year?.startDate || !year?.endDate) return null;
+    const start = startOfDay(year.startDate);
+    const end = startOfDay(year.endDate);
+    return start <= end ? { name: year.name || '', start, end } : null;
+  };
+  if (schoolId) {
+    const name = String(sessionName || '').trim();
+    const range = name.match(/^(\d{4})\s*[-/]\s*(\d{2}|\d{4})$/);
+    const yearName = range
+      ? new RegExp(`^\\s*${range[1]}\\s*[-/]\\s*(?:${range[2].slice(-2)}|${range[2].length === 4 ? range[2] : range[1].slice(0, 2) + range[2]})\\s*$`)
+      : name;
+    const assigned = name && await findWindow({ name: yearName });
+    if (assigned) return assigned;
+    const active = await findWindow({ isActive: true });
+    if (active) return active;
   }
   const now = new Date();
   const y = now.getMonth() >= 3 ? now.getFullYear() : now.getFullYear() - 1;
@@ -132,15 +142,16 @@ const buildAttendanceSummary = async ({ attendance = [], schoolId, campusId = nu
  * Students must be loaded with `attendance` and `attendanceSummary`.
  * @returns {Promise<Map<string, object>>} studentId -> stored-summary shape
  */
-const summarizeStudentAttendance = async (students = [], { schoolId, campusId = null, awaitWrite = false } = {}) => {
+const summarizeStudentAttendance = async (students = [], { schoolId, campusId = null, awaitWrite = false, window: assignedWindow } = {}) => {
   const result = new Map();
   if (!students.length) return result;
-  const window = await resolveSessionWindow(schoolId);
+  const window = assignedWindow || await resolveSessionWindow(schoolId);
   const today = dayKey(new Date());
   const sessionStart = window.start.getTime();
   const stale = students.filter((st) => {
     const sum = st.attendanceSummary;
-    const fresh = sum && sum.computedFor === today && sum.sessionStart && new Date(sum.sessionStart).getTime() === sessionStart;
+    const fresh = sum && sum.computedFor === today && sum.sessionName === window.name && sum.sessionStart && sum.sessionEnd
+      && new Date(sum.sessionStart).getTime() === sessionStart && new Date(sum.sessionEnd).getTime() === window.end.getTime();
     if (fresh) result.set(String(st._id), sum);
     return !fresh;
   });
@@ -157,7 +168,8 @@ const summarizeStudentAttendance = async (students = [], { schoolId, campusId = 
     result.set(String(st._id), summary);
     writes.push({ updateOne: { filter: { _id: st._id }, update: { $set: { attendanceSummary: summary } } } });
   }
-  if (writes.length) {
+  // An explicitly assigned session can differ from the shared active-year summary.
+  if (writes.length && !assignedWindow) {
     // Best-effort persistence; reads never depend on it succeeding. Jobs pass
     // awaitWrite so the refresh is finished before they report.
     const write = require('../models/StudentUser').bulkWrite(writes, { ordered: false });
@@ -171,6 +183,6 @@ const summarizeStudentAttendance = async (students = [], { schoolId, campusId = 
 const attendancePercentOf = (summaryMap, studentId) => summaryMap.get(String(studentId))?.percentage ?? null;
 
 module.exports = {
-  computeSessionAttendance, resolveSessionWindow, loadHolidayKeys,
+  computeSessionAttendance, resolveSessionWindow, loadHolidayKeys, dayKey,
   buildAttendanceSummary, summarizeStudentAttendance, attendancePercentOf,
 };

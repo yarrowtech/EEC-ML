@@ -1,101 +1,80 @@
 import React from 'react';
-import { render, screen, waitFor } from '@testing-library/react';
+import { fireEvent, render, screen } from '@testing-library/react';
 import { MemoryRouter } from 'react-router-dom';
 import AttendanceView from '../AttendanceView';
 
-const cacheStore = new Map();
-const mockReadCacheEntry = jest.fn((key) => cacheStore.get(key) || null);
-const mockWriteCacheEntry = jest.fn((key, value) => {
-  cacheStore.set(key, { data: value, timestamp: Date.now() });
-});
-const mockClearCacheEntry = jest.fn((key) => cacheStore.delete(key));
-
-jest.mock('../../utils/studentCache', () => ({
-  readCacheEntry: (...args) => mockReadCacheEntry(...args),
-  writeCacheEntry: (...args) => mockWriteCacheEntry(...args),
-  clearCacheEntry: (...args) => mockClearCacheEntry(...args),
-}));
-
-const renderWithRouter = (initialPath = '/student/attendance') =>
-  render(
-    <MemoryRouter initialEntries={[initialPath]}>
-      <AttendanceView />
-    </MemoryRouter>
-  );
-
-const createLocalStorage = (initialData = {}) => {
-  const store = { ...initialData };
-  return {
-    getItem: jest.fn((key) => (key in store ? store[key] : null)),
-    setItem: jest.fn((key, value) => {
-      store[key] = value;
-    }),
-    removeItem: jest.fn((key) => {
-      delete store[key];
-    }),
-    clear: jest.fn(() => {
-      Object.keys(store).forEach((key) => delete store[key]);
-    }),
-  };
-};
+const renderAttendance = (path = '/student/attendance') => render(
+  <MemoryRouter initialEntries={[path]}>
+    <AttendanceView />
+  </MemoryRouter>
+);
 
 describe('AttendanceView', () => {
   beforeEach(() => {
-    cacheStore.clear();
-    jest.clearAllMocks();
-    global.fetch = jest.fn();
-    const storage = createLocalStorage({ token: 'student-token', userType: 'Student' });
-    global.localStorage = storage;
-    window.localStorage = storage;
-  });
-
-  test('renders cached stats and refreshes from API', async () => {
-    mockReadCacheEntry.mockReturnValue({
-      data: {
-        stats: { totalClasses: 10, attended: 8, absent: 2, percentage: 80 },
-        records: [],
-      },
-      timestamp: Date.now(),
-    });
-
-    const apiPayload = {
-      summary: { totalClasses: 12, presentDays: 10, absentDays: 2, attendancePercentage: 83 },
-      attendance: [
-        { _id: 'a1', date: '2025-02-01T00:00:00.000Z', subject: 'Mathematics', status: 'present' },
-        { _id: 'a2', date: '2025-02-02T00:00:00.000Z', subject: 'Science', status: 'absent' },
-      ],
-    };
-
-    global.fetch.mockResolvedValueOnce({
+    localStorage.setItem('token', 'student-token');
+    const today = new Date();
+    const month = String(today.getMonth() + 1).padStart(2, '0');
+    const date = (day) => today.getFullYear() + '-' + month + '-' + day + 'T00:00:00.000Z';
+    global.fetch = jest.fn().mockResolvedValue({
       ok: true,
-      json: async () => apiPayload,
-    });
-
-    renderWithRouter();
-
-    expect(await screen.findByText(/8 of 10 classes/i)).toBeInTheDocument();
-  });
-
-  test('respects daily filter query parameter', async () => {
-    mockReadCacheEntry.mockReturnValue({
-      data: {
-        stats: { totalClasses: 2, attended: 2, absent: 0, percentage: 100 },
-        records: [
-          { id: 'd1', date: '2025-03-01', subject: 'Math', status: 'present' },
-          { id: 'd2', date: '2025-03-02', subject: 'Chemistry', status: 'present' },
+      json: async () => ({
+        summary: { totalClasses: 20, presentDays: 18, absentDays: 2, attendancePercentage: 90 },
+        attendance: [
+          { date: date('01'), status: 'present' },
+          { date: date('02'), status: 'absent' },
         ],
-      },
-      timestamp: Date.now(),
+      }),
     });
+  });
 
+  afterEach(() => localStorage.clear());
+
+  test('shows total attendance before the calendar', async () => {
+    renderAttendance();
+    expect(await screen.findByRole('heading', { name: 'Total Attendance' })).toBeInTheDocument();
+    expect(screen.getByText('90%')).toBeInTheDocument();
+    expect(screen.getAllByRole('heading', { level: 2 }).map((heading) => heading.textContent.trim()))
+      .toEqual(['Total Attendance', expect.any(String)]);
+    const absentDay = screen.getByRole('button', { name: /: Absent$/ });
+    fireEvent.click(absentDay);
+    expect(absentDay).toHaveAttribute('aria-pressed', 'true');
+    expect(screen.queryByText('0 present, 1 absent')).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Next month' })).not.toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: 'Previous month' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Next month' }));
+    expect(screen.queryByRole('button', { name: 'Next month' })).not.toBeInTheDocument();
+    expect(screen.getByRole('heading', { name: 'Total Attendance' })).toBeInTheDocument();
+    expect(screen.getByText('90%')).toBeInTheDocument();
+  });
+
+  test('opens the attendance history and respects the daily filter query', async () => {
+    renderAttendance('/student/attendance?filter=present');
+    expect(await screen.findByRole('heading', { name: /Day-by-Day Attendance/ })).toHaveTextContent('(1 day)');
+    expect(screen.getByRole('button', { name: /^present$/i })).toHaveAttribute('aria-pressed', 'true');
+    fireEvent.click(screen.getByRole('button', { name: 'Back to overview' }));
+    fireEvent.click(screen.getByRole('button', { name: 'View All' }));
+    expect(screen.getByRole('heading', { name: /Day-by-Day Attendance/ })).toHaveTextContent('(2 days)');
+  });
+
+  test('limits calendar navigation to the assigned class session', async () => {
     global.fetch.mockResolvedValueOnce({
       ok: true,
-      json: async () => ({ summary: {}, attendance: [] }),
+      json: async () => ({
+        session: { name: '2024-2025', className: '6', startDate: '2024-04-02', endDate: '2025-03-28' },
+        attendance: [{ date: '2025-03-28T00:00:00.000Z', dateKey: '2025-03-28', status: 'present' }],
+      }),
     });
+    renderAttendance();
 
-    renderWithRouter('/student/attendance?filter=present');
-
-    expect(await screen.findByText(/Day-by-Day Attendance/i)).toBeInTheDocument();
-    expect(screen.getByRole('button', { name: 'Present' })).toHaveClass('bg-amber-600');
+    expect(await screen.findByRole('heading', { name: 'March 2025' })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Refresh attendance' })).toHaveTextContent(/^$/);
+    expect(screen.getByRole('button', { name: /Mar 28, 2025: Present/ })).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: /Mar 29, 2025/ })).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Next month' })).not.toBeInTheDocument();
+    for (let month = 0; month < 11; month += 1) {
+      fireEvent.click(screen.getByRole('button', { name: 'Previous month' }));
+    }
+    expect(screen.getByRole('heading', { name: 'April 2024' })).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Previous month' })).not.toBeInTheDocument();
   });
 });

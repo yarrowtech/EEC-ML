@@ -396,7 +396,7 @@ const DashboardContent = () => {
         />
         <div
           className={`flex-1 flex flex-col h-full min-h-0 min-w-0 transition-all duration-300 ${sidebarOpen ? '' : ''
-            } ${isFullscreenView || isContainedLearningPage ? 'overflow-hidden' : 'overflow-y-auto custom-scrollbar'}`}
+            } ${isFullscreenView || isContainedLearningPage ? 'overflow-hidden' : 'overflow-y-auto custom-scrollbar'} ${effectiveView === 'attendance' ? 'lg:overflow-hidden lg:max-[1025px]:portrait:overflow-y-auto' : ''}`}
         >
           {/* The sticky element must be the header's wrapper (a direct child of
               the scroll container) — sticky on <header> alone did nothing
@@ -417,7 +417,7 @@ const DashboardContent = () => {
               initial={{ opacity: 0, y: 6 }}
               animate={{ opacity: 1, y: 0 }}
               transition={{ duration: 0.38, ease: [0.4, 0, 0.2, 1] }}
-              className={`w-full flex flex-col ${isFullscreenView || isContainedLearningPage ? 'flex-1 min-h-0' : ''}`}
+              className={`w-full flex flex-col ${isFullscreenView || isContainedLearningPage ? 'flex-1 min-h-0' : ''} ${effectiveView === 'attendance' ? 'lg:min-h-0 lg:flex-1 lg:max-[1025px]:portrait:flex-none' : ''}`}
             >
               <Suspense
                 fallback={
