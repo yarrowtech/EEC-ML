@@ -1,23 +1,17 @@
-import React, { useEffect, useMemo, useState } from 'react';
-import { useLocation, useNavigate } from 'react-router-dom';
+import React, { useEffect, useMemo } from 'react';
+import { useLocation } from 'react-router-dom';
 import { motion as Motion } from 'framer-motion';
-import { Bot, GraduationCap, ClipboardList, BookOpen, Play, Route } from 'lucide-react';
+import { Bot, GraduationCap, ClipboardList, BookOpen, Route } from 'lucide-react';
 import { TooltipProvider } from '@/components/ui/tooltip';
 import { AiTutorPanel } from './AITutorHomeScreen';
 import AILearningCoursesLanding from './AILearningCoursesLanding';
-import PracticeTryouts from './PracticeTryouts';
+import PracticePapersPortal from './PracticePapersPortal';
 import StudyMaterials from './StudyMaterials';
 import TeacherLearningPaths from './TeacherLearningPaths';
 import {
   saveLearningActivity,
   getLearningActivity,
-  formatActivityAge,
 } from '../utils/learningContinuity';
-
-// Glassmorphism panel recipe for the nav bar + continue card — frosted
-// translucent white over the page's soft radial-gradient backdrop, matching
-// Ref's Glassmorphism Learning Dashboard mockup 1:1.
-const GLASS_PANEL = 'border border-white/70 bg-white/[0.55] shadow-[0_4px_6px_-1px_rgba(0,0,0,0.02),0_2px_4px_-1px_rgba(0,0,0,0.02)] backdrop-blur-[20px] backdrop-saturate-[1.8]';
 
 // One learning surface for students. Every tool the portal used to spread
 // across two sidebar groups lives behind exactly four verbs; each tab keeps
@@ -81,22 +75,8 @@ const viewSegmentFromPath = (pathname) => {
   return match?.[2] || 'learning';
 };
 
-const prettifySlug = (raw) => {
-  const text = decodeURIComponent(String(raw || '')).replace(/[-_]+/g, ' ').trim();
-  return text.replace(/\b\w/g, (ch) => ch.toUpperCase());
-};
-
-// Human-readable detail for deep subject/topic URLs, e.g.
-// /student/smart-learning-courses/subject/physics/topic/motion → "Physics · Motion"
-const detailFromPath = (pathname) => {
-  const subject = pathname.match(/\/subject\/([^/]+)/)?.[1];
-  const topic = pathname.match(/\/topic\/([^/]+)/)?.[1];
-  return [subject, topic].filter(Boolean).map(prettifySlug).join(' · ');
-};
-
 const LearningHub = () => {
   const location = useLocation();
-  const navigate = useNavigate();
 
   const activeTab = useMemo(() => {
     const segment = viewSegmentFromPath(location.pathname);
@@ -105,63 +85,32 @@ const LearningHub = () => {
 
   // Subject chapters and topic readers provide their own navigation.
   const isSubjectDetail = activeTab.key === 'subjects' && /\/subject\/[^/]+/.test(location.pathname);
-  const isSubjectsOverview = activeTab.key === 'subjects' && !isSubjectDetail;
-  // One subject's chapter list (…/subject/computer) — not a topic reader. It scrolls inside its card.
-  const isSubjectChapters = activeTab.key === 'subjects' && /\/subject\/[^/]+\/?$/.test(location.pathname);
-  const isContainedPage = isSubjectsOverview || isSubjectChapters || activeTab.key === 'materials' || activeTab.key === 'practice';
+  const usesSubjectScroller = activeTab.key === 'subjects' && (
+    !isSubjectDetail || /\/subject\/[^/]+\/?$/.test(location.pathname)
+  );
+  const subjectScrollLayout = 'flex min-h-0 flex-1 flex-col overflow-hidden';
 
-  // Snapshot the last activity once per mount so the card offers where the
-  // student left off previously, not the page they are currently on.
-  const [lastActivity] = useState(() => getLearningActivity());
+  const isSubjectTopic = activeTab.key === 'subjects' && /\/subject\/[^/]+\/topic\/[^/]+/.test(location.pathname);
+  const lastActivity = getLearningActivity();
 
   useEffect(() => {
+    if (!isSubjectTopic) return;
     saveLearningActivity({
-      path: location.pathname,
+      path: location.pathname + location.search,
       label: activeTab.label,
-      detail: detailFromPath(location.pathname),
     });
-  }, [location.pathname, activeTab.label]);
-
-  // Show saved activity on Subjects without an age or different-page gate.
-  const showContinue = Boolean(
-    activeTab.key === 'subjects' &&
-    !isSubjectDetail &&
-    lastActivity
-  );
-
-  const continueCard = (showContinue && (
-          <button
-            type="button"
-            onClick={() => navigate(lastActivity.path)}
-            className={`group flex w-full flex-col items-start justify-between gap-5 rounded-3xl bg-white/[0.65] px-6 py-5 text-left transition-shadow hover:shadow-[0_10px_15px_-3px_rgba(0,0,0,0.05),0_4px_6px_-2px_rgba(0,0,0,0.025)] sm:flex-row sm:items-center ${GLASS_PANEL}`}
-          >
-            <span className="flex min-w-0 items-center gap-5">
-              <span className="flex size-12 shrink-0 items-center justify-center rounded-full bg-[#8b5cf6] text-white shadow-[0_4px_14px_rgba(139,92,246,0.3)] transition-transform group-hover:scale-105">
-                <Play className="ml-0.5 size-4 fill-white stroke-none" />
-              </span>
-              <span className="flex min-w-0 flex-col gap-1">
-                <span className="text-[0.7rem] font-bold uppercase tracking-[0.05em] text-[#8b5cf6]">
-                  Continue where you left off
-                </span>
-                <span className="flex flex-wrap items-center gap-2 truncate text-[0.95rem] font-medium text-[#0f172a]">
-                  {lastActivity.label}
-                  {lastActivity.detail ? ` — ${lastActivity.detail}` : ''}
-                  <span className="text-[0.85rem] font-normal text-[#64748b]">{formatActivityAge(lastActivity.at)}</span>
-                </span>
-              </span>
-            </span>
-            <span className="w-full shrink-0 rounded-xl bg-[#10b981] px-6 py-3 text-center text-sm font-semibold text-white shadow-[0_4px_12px_rgba(16,185,129,0.2)] transition-all group-hover:-translate-y-0.5 group-hover:bg-[#059669] group-hover:shadow-[0_6px_16px_rgba(16,185,129,0.3)] sm:w-auto">
-              Continue
-            </span>
-          </button>
-        ));
+  }, [isSubjectTopic, location.pathname, location.search, activeTab.label]);
 
   return (
     <div
-      className={isContainedPage ? 'flex min-h-0 w-full flex-1 flex-col overflow-hidden' : 'min-h-full w-full'}
+      className={usesSubjectScroller ? `w-full ${subjectScrollLayout}` : 'min-h-full w-full'}
+      style={{
+        backgroundColor: '#ffffff',
+        // backgroundImage: 'radial-gradient(at 0% 0%, rgba(139, 92, 246, 0.05) 0px, transparent 50%), radial-gradient(at 100% 100%, rgba(16, 185, 129, 0.05) 0px, transparent 50%)',
+      }}
     >
       {activeTab.key === 'tutor' && (
-      <div className="flex w-full flex-col gap-3 p-3">
+      <div className="flex w-full flex-col gap-3 p-4 sm:px-5 sm:py-4">
         {activeTab.key === 'tutor' && (
           <Motion.div
             key="tutor"
@@ -170,7 +119,7 @@ const LearningHub = () => {
             transition={{ duration: 0.3, ease: [0.4, 0, 0.2, 1] }}
           >
             <TooltipProvider delayDuration={150}>
-              <AiTutorPanel fullHeight />
+              <AiTutorPanel />
             </TooltipProvider>
           </Motion.div>
         )}
@@ -180,29 +129,27 @@ const LearningHub = () => {
       {activeTab.key === 'subjects' && (
         <Motion.div
           key="subjects"
-          className={isSubjectsOverview || isSubjectChapters ? 'flex min-h-0 flex-1 flex-col overflow-hidden' : undefined}
+          className={usesSubjectScroller ? subjectScrollLayout : undefined}
           initial={{ opacity: 0, y: 6 }}
           animate={{ opacity: 1, y: 0 }}
           transition={{ duration: 0.3, ease: [0.4, 0, 0.2, 1] }}
         >
-          <AILearningCoursesLanding continueCard={continueCard} />
+          <AILearningCoursesLanding resumePath={lastActivity?.path} />
         </Motion.div>
       )}
       {activeTab.key === 'practice' && (
         <Motion.div
           key="practice"
-          className="flex min-h-0 flex-1 flex-col overflow-hidden"
           initial={{ opacity: 0, y: 6 }}
           animate={{ opacity: 1, y: 0 }}
           transition={{ duration: 0.3, ease: [0.4, 0, 0.2, 1] }}
         >
-          <PracticeTryouts />
+          <PracticePapersPortal />
         </Motion.div>
       )}
       {activeTab.key === 'materials' && (
         <Motion.div
           key="materials"
-          className="flex min-h-0 flex-1 flex-col overflow-hidden"
           initial={{ opacity: 0, y: 6 }}
           animate={{ opacity: 1, y: 0 }}
           transition={{ duration: 0.3, ease: [0.4, 0, 0.2, 1] }}

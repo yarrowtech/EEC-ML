@@ -578,6 +578,11 @@ npm test -- --runInBand src/components/__tests__/StudentFamilyServices.test.jsx 
 
 ## Student smart learning attachments
 
+Open a topic, then return to My Subjects. Confirm “Where you left off” and the bold subject and chapter number appear before the green Continue button, and that the button reopens the same topic.
+With a fresh session and no saved topic, confirm Continue opens the first available chapter topic.
+
+Before opening an attachment, check that you can scroll to the last subject on the Smart Learning Courses landing page and to the last chapter on a subject page. Repeat at phone and desktop widths with enough items to overflow.
+
 - Open a topic's Attachments tab at mobile, tablet, and desktop widths. Check that cards fit without horizontal overflow, titles wrap cleanly, and action rows align at the bottom with equal-height buttons.
 - Check materials with text only, a file only, and both: Read here stays on one line and opens the reader; Open, individual downloads, and Download all still work.
 - Publish a chapter containing PDF, PPTX, JFIF, and worksheet uploads. Verify every file appears once in student Attachments with its filename, file-type icon, and teacher upload category, including when a published material contains multiple attachments.

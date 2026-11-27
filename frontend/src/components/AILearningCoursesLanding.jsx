@@ -376,9 +376,9 @@ const SubjectTopicsView = ({ subject, onBack, style = DEFAULT_STYLE }) => {
         <button
           type="button"
           onClick={onBack}
-          className="inline-flex items-center gap-1.5 rounded-lg border border-slate-200 bg-white px-3 py-1.5 text-xs font-bold text-slate-600 shadow-sm transition hover:border-violet-300 hover:text-violet-700"
+          className="inline-flex items-center gap-1.5 rounded-full border border-slate-200 bg-white px-3 py-1.5 text-xs font-bold text-slate-600 shadow-sm transition hover:border-violet-300 hover:text-violet-700"
         >
-          <ArrowLeft size={14} /> Back to Subjects
+          <ArrowLeft size={14} /> Back
         </button>
         {profile?.academicYear && (
           <span className="inline-flex items-center gap-1.5 text-[11px] font-bold uppercase tracking-wide text-slate-400">
@@ -537,7 +537,7 @@ const SubjectTopicsView = ({ subject, onBack, style = DEFAULT_STYLE }) => {
   );
 };
 
-const AILearningCoursesLanding = ({ continueCard = null }) => {
+const AILearningCoursesLanding = ({ resumePath = null }) => {
   const navigate = useNavigate();
   const location = useLocation();
   const [loading, setLoading] = useState(true);
@@ -740,6 +740,33 @@ const AILearningCoursesLanding = ({ continueCard = null }) => {
     }
   }, [topicSlug, subjectKey, selectedSubject, loading, curriculumLoading, navigate]);
 
+  const resumeMatch = resumePath?.match(/^\/student\/(?:smart-learning|smart-learning-courses)\/subject\/([^/?#]+)\/topic\/([^/?#]+)/);
+  const resumeSubject = resumeMatch && assignedSubjects.find(
+    (subject) => normalize(slugifyForUrl(subject.key)) === normalize(resumeMatch[1])
+      || String(subject.subjectId) === resumeMatch[1]
+  );
+  const resumeChapterIndex = resumeSubject?.chapters.findIndex((chapter) =>
+    chapter.topics?.some((topic) => normalize(slugifyForUrl(topic.title)) === normalize(resumeMatch[2]))
+  ) ?? -1;
+  const resumeChapterNumber = resumeChapterIndex >= 0
+    ? resumeSubject.chapters[resumeChapterIndex].meta?.unitNumber || resumeChapterIndex + 1
+    : null;
+  const firstSubjectWithChapters = assignedSubjects.find((subject) =>
+    subject.chapters.some((chapter) => chapter.topics?.some((topic) => topic?.title))
+  );
+  const firstChapterIndex = firstSubjectWithChapters?.chapters.findIndex((chapter) =>
+    chapter.topics?.some((topic) => topic?.title)
+  );
+  const firstChapter = firstSubjectWithChapters?.chapters[firstChapterIndex];
+  const firstTopic = firstChapter?.topics.find((topic) => topic?.title);
+  const continueSubject = resumeSubject || firstSubjectWithChapters;
+  const continueChapterNumber = resumeSubject
+    ? resumeChapterNumber
+    : firstChapter?.meta?.unitNumber || (firstTopic ? firstChapterIndex + 1 : null);
+  const continuePath = resumeSubject
+    ? resumePath
+    : firstTopic && `/student/smart-learning-courses/subject/${slugifyForUrl(continueSubject.key)}/topic/${slugifyForUrl(firstTopic.title)}?view=details`;
+
   // If on a topic page, show the learning content (only if subject exists)
   if (topicSlug && subjectKey && assessmentSlug === 'practice-paper') {
     return <AILearningPracticePaperPage />;
@@ -763,12 +790,26 @@ const AILearningCoursesLanding = ({ continueCard = null }) => {
           />
         ) : (
           <>
-            <div className="mb-4 flex flex-col gap-1">
-              <h1 className="text-xl font-bold tracking-tight sm:text-2xl">Your Subjects</h1>
-              <p className="text-xs text-slate-600 sm:text-sm">Showing only subjects assigned to your class timetable.</p>
+            <div className="mb-4 grid shrink-0 grid-cols-[auto_minmax(0,1fr)] items-center gap-x-3 gap-y-1">
+              <h1 className="whitespace-nowrap text-xl font-bold tracking-tight sm:text-2xl">My Subjects</h1>
+              {continuePath && (
+                <div className="flex min-w-0 flex-wrap items-center justify-end gap-x-3 gap-y-1">
+                  <p className="min-w-0 text-right text-xs text-slate-600">
+                    Where you left off{' '}
+                    <strong className="text-slate-900">
+                      {continueSubject.title}{continueChapterNumber != null && ` — Chapter ${continueChapterNumber}`}
+                    </strong>
+                  </p>
+                  <button
+                    type="button"
+                    onClick={() => navigate(continuePath, { state: { smartLearningSubject: continueSubject } })}
+                    className="inline-flex shrink-0 items-center gap-1.5 rounded-full bg-emerald-700 px-3 py-1.5 text-sm font-semibold text-white transition-colors hover:bg-emerald-800"
+                  >
+                    <PlayCircle size={16} aria-hidden="true" /> Continue
+                  </button>
+                </div>
+              )}
             </div>
-
-            {continueCard && <div className="mb-4">{continueCard}</div>}
 
             {error && (
               <div className="mb-6 flex flex-col gap-3 rounded-xl border border-red-200 bg-red-50 p-3 text-sm text-red-700 sm:flex-row sm:items-center sm:justify-between">
@@ -786,7 +827,7 @@ const AILearningCoursesLanding = ({ continueCard = null }) => {
               </div>
             )}
 
-            <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain pr-2 pb-2 custom-scrollbar" role="region" aria-label="Your subjects" tabIndex={0}>
+            <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain pr-2 pb-2 custom-scrollbar" role="region" aria-label="My subjects" tabIndex={0}>
             {loading ? (
               <div className="grid grid-cols-[repeat(auto-fit,minmax(min(100%,240px),1fr))] gap-3">
                 {[1, 2, 3].map((i) => (
