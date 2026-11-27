@@ -33,6 +33,7 @@ export default function TutorEmptyState({
   onChooseSubject,
   onChooseTopic,
   onChooseStarter,
+  typingExample = '',
 }) {
   const needsSubject = !selectedSubject;
   const needsTopic = selectedSubject && !selectedTopic && topics.length > 0;
@@ -52,7 +53,7 @@ export default function TutorEmptyState({
     description = 'This keeps diagrams, examples, and explanations inside the correct lesson.';
   } else if (selectedSubject) {
     title = `Ready for ${selectedTopic || selectedSubject.title}`;
-    description = 'Pick how you want to learn, or write your own question below.';
+    description = 'Tap an idea below to start, or type your own question in the box at the bottom.';
   }
 
   return (
@@ -102,9 +103,10 @@ export default function TutorEmptyState({
         ))}
       </div>
 
-      {(needsTopic || (needsSubject && !loadingSubjects && !curriculumUnavailable)) && (
-        <p className="mt-4 text-center text-xs text-[#8D968F]">
-          Prefer a general question? You can type it below without completing these steps.
+      {/* Moving example questions (typewriter) — ideas for what to ask */}
+      {!loadingSubjects && typingExample && (
+        <p className="mt-4 min-h-5 text-center text-xs text-[#8D968F]" aria-hidden="true">
+          Try asking: <span className="font-semibold text-[#B45309]">{typingExample}</span>
         </p>
       )}
     </Motion.div>

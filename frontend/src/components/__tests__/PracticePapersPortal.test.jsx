@@ -1,17 +1,27 @@
 /* eslint-disable no-undef, react/display-name */
 import React from 'react';
-import { render, screen, waitFor } from '@testing-library/react';
+import { render, screen } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
-import { MemoryRouter } from 'react-router-dom';
+import { MemoryRouter, Route, Routes } from 'react-router-dom';
 import PracticePapersPortal from '../PracticePapersPortal';
+import AILearningCoursesLanding from '../AILearningCoursesLanding';
 
-jest.mock('../ReadingPracticePage', () => () => <div>Reading practice</div>);
-jest.mock('../WritingPracticePage', () => () => <div>Writing practice</div>);
 
 const jsonResponse = (body, ok = true) => Promise.resolve({
   ok,
   json: () => Promise.resolve(body),
 });
+
+const renderPracticeRoutes = () => {
+  render(
+    <MemoryRouter initialEntries={['/student/practice-papers']}>
+      <Routes>
+        <Route path="/student/practice-papers" element={<PracticePapersPortal />} />
+        <Route path="/student/smart-learning-courses/*" element={<AILearningCoursesLanding />} />
+      </Routes>
+    </MemoryRouter>
+  );
+};
 
 describe('PracticePapersPortal', () => {
   beforeEach(() => {
@@ -30,31 +40,33 @@ describe('PracticePapersPortal', () => {
             subjectId: 'subject-1',
             title: 'Mathematics',
             chapters: [{
+              id: 'lesson-3',
+              title: 'Fractions',
+              meta: { unitNumber: 2, unitTitle: 'Fractions' },
+              topics: [{ id: 'topic-3', title: 'Equivalent Fractions' }],
+            }, {
               id: 'chapter-1',
               title: 'Numbers',
+              meta: { unitNumber: 1, unitTitle: 'Computer Basics' },
               topics: [{ id: 'topic-1', title: 'Living Things' }],
+            }, {
+              id: 'lesson-2',
+              title: 'Counting',
+              meta: { unitNumber: 1, unitTitle: 'Computer Basics' },
+              topics: [{ id: 'topic-2', title: 'Counting' }],
             }],
             topics: [{
               title: 'Living Things',
-              tryoutSections: [{ type: 'mcq', question: 'What is life?' }],
+              tryoutSections: [
+                { type: 'mcq', question: 'What is life?' },
+                { type: 'plain_text', question: 'Describe a living thing.' },
+              ],
+            }, {
+              title: 'Equivalent Fractions',
+              tryoutSections: [{ type: 'mcq', question: 'Which fractions are equivalent?' }],
             }],
           }],
         });
-      }
-      if (url.includes('/api/practice/student/questions') && url.includes('type=blank')) {
-        return jsonResponse({ questions: [{ id: 'blank-1', type: 'blank', question: 'Two plus two is ___.' }] });
-      }
-      if (url.includes('/api/practice/student/questions')) {
-        return jsonResponse({ questions: [{ id: 'mcq-1', type: 'mcq', question: 'What is 2 + 2?', options: ['3', '4'] }] });
-      }
-      if (url.includes('/api/reading-assessment/student/materials')) {
-        // Teachers tag these by chapter in practice — subject is usually blank.
-        return jsonResponse({ success: true, data: [{ _id: 'rm-1', subject: '', chapter: 'Numbers', title: 'Numbers Passage' }] });
-      }
-      if (url.includes('/api/writing-assessment/student/prompts')) {
-        // No writing prompt published for the "Numbers" chapter — Writing
-        // Practice should stay unavailable rather than defaulting to "on".
-        return jsonResponse({ success: true, data: [{ _id: 'wp-1', subject: '', chapter: 'A Different Chapter', title: 'Explain photosynthesis' }] });
       }
       return jsonResponse({});
     });
@@ -65,68 +77,44 @@ describe('PracticePapersPortal', () => {
     jest.clearAllMocks();
   });
 
-  test('lets a student pick a subject and shows what they can practice', async () => {
+  test('merges chapter tryouts by question type in one test', async () => {
     const user = userEvent.setup();
-    render(<MemoryRouter><PracticePapersPortal /></MemoryRouter>);
+    renderPracticeRoutes();
+    await user.click(await screen.findByRole('button', { name: /Mathematics/ }));
+    await user.click(screen.getByRole('button', { name: /Practice whole subject/ }));
 
-    expect(await screen.findByText('Choose Your Tryout Format')).toBeInTheDocument();
-    expect(await screen.findByText('Pick a subject above to see what you can practice.')).toBeInTheDocument();
-
-    await screen.findByRole('option', { name: 'Mathematics' });
-    await user.selectOptions(screen.getByRole('combobox', { name: 'Select Subject' }), 'subject-1');
-
-    // MCQ, blanks, True/False and Matching each report a count of 1 from the mocked question bank.
-    expect(await screen.findAllByText('1 question available')).toHaveLength(4);
-    expect(screen.getByRole('button', { name: 'Start MCQ' })).toBeInTheDocument();
-    expect(screen.getByRole('button', { name: 'Start Blanks' })).toBeInTheDocument();
-  });
-
-  test('opens a teacher MCQ inside the practice-papers page', async () => {
-    const user = userEvent.setup();
-    render(<MemoryRouter><PracticePapersPortal /></MemoryRouter>);
-
-    await screen.findByRole('option', { name: 'Mathematics' });
-    await user.selectOptions(screen.getByRole('combobox', { name: 'Select Subject' }), 'subject-1');
-    await user.click(await screen.findByRole('button', { name: 'Start MCQ' }));
-
-    await waitFor(() => expect(screen.getByText('What is 2 + 2?')).toBeInTheDocument());
-    expect(screen.getByRole('button', { name: 'Back to activities' })).toBeInTheDocument();
+    expect(await screen.findByText('What is life?')).toBeInTheDocument();
+    await user.click(screen.getByRole('button', { name: /Save & Next/ }));
+    expect(screen.getByText('Which fractions are equivalent?')).toBeInTheDocument();
+    await user.click(screen.getByRole('button', { name: /Save & Next/ }));
+    expect(screen.getByText('Describe a living thing.')).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Save & Finish' })).toBeInTheDocument();
+    global.fetch.mockClear();
+    await user.click(screen.getByRole('button', { name: 'Exit practice' }));
+    expect(await screen.findByRole('button', { name: /Chapter 1 Computer Basics/ })).toBeVisible();
+    expect(global.fetch.mock.calls.some(([url]) =>
+      /student\/meta|student\/smart-learning-map/.test(String(url))
+    )).toBe(false);
   });
 
   test('opens an assigned tryout once a subject and topic are selected', async () => {
     const user = userEvent.setup();
-    render(<MemoryRouter initialEntries={['/student/practice-papers']}><PracticePapersPortal /></MemoryRouter>);
+    renderPracticeRoutes();
 
-    await screen.findByRole('option', { name: 'Mathematics' });
-    await user.selectOptions(screen.getByRole('combobox', { name: 'Select Subject' }), 'subject-1');
-    await screen.findByRole('option', { name: 'Numbers' });
-    await user.selectOptions(screen.getByRole('combobox', { name: 'Select Chapter' }), 'chapter-1');
-    await user.selectOptions(await screen.findByRole('combobox', { name: 'Select Topic' }), 'topic-1');
-    await user.click(await screen.findByRole('button', { name: 'Start Tryout' }));
-
+    await user.click(await screen.findByRole('button', { name: /Mathematics/ }));
+    expect(screen.getAllByRole('heading', { level: 2 }).map((heading) => heading.textContent))
+      .toEqual([expect.stringMatching(/Computer Basics/), expect.stringMatching(/Fractions/)]);
+    expect(screen.getByRole('button', { name: /1\.2 Counting/ })).toBeVisible();
+    expect(screen.getByRole('button', { name: /2\.1 Equivalent Fractions/ })).toBeVisible();
+    await user.click(await screen.findByRole('button', { name: /1\.1 Living Things/ }));
+    expect(screen.getByRole('button', { name: /Written Response.*1 question available/ })).toBeVisible();
+    expect(screen.queryByRole('button', { name: /Start Blanks/ })).toBeNull();
+    await user.click(await screen.findByRole('button', { name: /Multiple Choice.*1 question available/ }));
     expect(await screen.findByText('What is life?')).toBeInTheDocument();
-    expect(screen.getByRole('button', { name: /Back to Activities/i })).toBeInTheDocument();
-  });
-
-  test('gates Reading/Writing Practice on real published materials instead of always showing available', async () => {
-    const user = userEvent.setup();
-    render(<MemoryRouter><PracticePapersPortal /></MemoryRouter>);
-
-    await screen.findByRole('option', { name: 'Mathematics' });
-    await user.selectOptions(screen.getByRole('combobox', { name: 'Select Subject' }), 'subject-1');
-    await screen.findByRole('option', { name: 'Numbers' });
-    await user.selectOptions(screen.getByRole('combobox', { name: 'Select Chapter' }), 'chapter-1');
-
-    // A reading passage is published for Mathematics — the card is enabled.
-    const startReading = await screen.findByRole('button', { name: 'Start Reading' });
-    expect(startReading).toBeEnabled();
-
-    // No writing prompt is published for Mathematics (only for Science) —
-    // the card must stay disabled rather than being assumed available.
-    expect(screen.getByRole('button', { name: 'Start Writing' })).toBeDisabled();
-
-    await user.click(startReading);
-    expect(await screen.findByText('Reading practice')).toBeInTheDocument();
+    expect(screen.queryByText('Describe a living thing.')).toBeNull();
+    await user.click(screen.getByRole('button', { name: 'Exit practice' }));
+    expect(await screen.findByRole('button', { name: /Multiple Choice.*1 question available/ })).toBeVisible();
+    expect(screen.getByRole('button', { name: /Written Response.*1 question available/ })).toBeVisible();
   });
 
   test('still lists a chapter that has no Topic Tryout assigned', async () => {
@@ -155,9 +143,9 @@ describe('PracticePapersPortal', () => {
 
     render(<MemoryRouter><PracticePapersPortal /></MemoryRouter>);
 
-    await screen.findByRole('option', { name: 'Mathematics' });
-    await userEvent.setup().selectOptions(screen.getByRole('combobox', { name: 'Select Subject' }), 'subject-1');
+    await userEvent.setup().click(await screen.findByRole('button', { name: /Mathematics/ }));
 
-    expect(await screen.findByRole('option', { name: 'Fractions' })).toBeInTheDocument();
+    expect(await screen.findByRole('button', { name: /^Chapter 1 Fractions/ })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: /1\.1 Basic Fractions/ })).toBeVisible();
   });
 });

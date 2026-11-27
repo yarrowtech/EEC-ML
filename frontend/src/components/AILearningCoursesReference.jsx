@@ -916,6 +916,65 @@ const AILearningCoursesReference = () => {
     };
   }, [isDetailsView, loading]);
 
+  useEffect(() => {
+    const reader = detailsScrollRef.current;
+    if (!isDetailsView || !reader || !window.matchMedia) return undefined;
+
+    const reducedMotion = window.matchMedia('(prefers-reduced-motion: reduce)');
+    let frame = 0;
+    let target = 0;
+    let previousTime = 0;
+
+    const stop = () => {
+      window.cancelAnimationFrame(frame);
+      frame = 0;
+    };
+    const animate = (time) => {
+      target = Math.min(target, Math.max(0, reader.scrollHeight - reader.clientHeight));
+      const remaining = target - reader.scrollTop;
+      if (Math.abs(remaining) < 1) {
+        reader.scrollTop = target;
+        frame = 0;
+        return;
+      }
+      const elapsed = Math.min(32, time - previousTime);
+      previousTime = time;
+      const distance = Math.max(1, Math.abs(remaining) * (1 - Math.exp(-elapsed / 55)));
+      reader.scrollTop += Math.sign(remaining) * Math.min(Math.abs(remaining), Math.ceil(distance));
+      frame = window.requestAnimationFrame(animate);
+    };
+    const onWheel = (event) => {
+      if (reducedMotion.matches || event.ctrlKey || event.shiftKey || !event.cancelable ||
+          Math.abs(event.deltaX) >= Math.abs(event.deltaY)) return;
+
+      for (let node = event.target; node instanceof Element && node !== reader; node = node.parentElement) {
+        if (node.scrollHeight > node.clientHeight && /^(auto|scroll)$/.test(window.getComputedStyle(node).overflowY)) return;
+      }
+
+      const max = reader.scrollHeight - reader.clientHeight;
+      if (max <= 0) return;
+      const scale = event.deltaMode === 1 ? 16 : event.deltaMode === 2 ? reader.clientHeight : 1;
+      target = Math.max(0, Math.min(max, (frame ? target : reader.scrollTop) + event.deltaY * scale));
+      event.preventDefault();
+      if (!frame) {
+        previousTime = window.performance.now();
+        frame = window.requestAnimationFrame(animate);
+      }
+    };
+
+    reader.addEventListener('wheel', onWheel, { passive: false });
+    reader.addEventListener('pointerdown', stop);
+    reader.addEventListener('keydown', stop);
+    reducedMotion.addEventListener('change', stop);
+    return () => {
+      stop();
+      reader.removeEventListener('wheel', onWheel);
+      reader.removeEventListener('pointerdown', stop);
+      reader.removeEventListener('keydown', stop);
+      reducedMotion.removeEventListener('change', stop);
+    };
+  }, [isDetailsView, loading]);
+
   const scrollSaveTimerRef = useRef(null);
   const handleDetailsScroll = () => {
     const container = detailsScrollRef.current;
@@ -1174,16 +1233,16 @@ const AILearningCoursesReference = () => {
             };
 
             return (
-              <div className="mx-auto max-w-[1200px]">
+              <div className={`mx-auto max-w-[1200px] ${detailTab === 'read' ? 'lg:max-w-[calc(250px+210mm)]' : ''}`}>
                 {/* ── Top bar + tabs: stay pinned under the header while scrolling ── */}
-                <div className={`sticky top-0 z-30 -mx-3 mb-3 bg-[#f8f9ff]/95 px-3 py-2 backdrop-blur sm:-mx-5 sm:px-5 ${detailTab === 'practice' && (practiceTab === 'reading' || practiceTab === 'writing') && readingSessionActive ? 'hidden' : ''}`}>
+                <div className={`sticky top-0 z-30 -mx-3 mb-3 bg-[#f8f9ff]/95 px-3 py-2 backdrop-blur sm:-mx-5 sm:px-5 lg:mx-0 lg:bg-transparent lg:px-0 lg:backdrop-blur-none ${detailTab === 'practice' && (practiceTab === 'reading' || practiceTab === 'writing') && readingSessionActive ? 'hidden' : ''}`}>
                 {readerFocusMode && showHomeScreenTip && (
                   <div className="mb-2 flex items-start gap-2 rounded-xl bg-[#eff4ff] px-3 py-2 text-xs text-[#321ed2] ring-1 ring-[#c7c4ff]">
                     <span className="flex-1">For true full screen on iPad/iPhone: tap <b>Share</b> → <b>Add to Home Screen</b>, then open Electronic Educare from the Home Screen icon.</span>
                     <button type="button" onClick={() => setShowHomeScreenTip(false)} aria-label="Dismiss tip" className="shrink-0 rounded-full px-1.5 font-bold">✕</button>
                   </div>
                 )}
-                <div className="flex flex-wrap items-center gap-2 sm:flex-nowrap">
+                <div className="flex flex-wrap items-center gap-2 sm:flex-nowrap lg:gap-4 lg:rounded-xl lg:border lg:border-slate-200 lg:bg-white lg:px-3 lg:py-1.5 lg:shadow-sm">
                   <button
                     type="button"
                     onClick={closeDetailsPage}
@@ -1192,6 +1251,7 @@ const AILearningCoursesReference = () => {
                   >
                     <ArrowLeft size={15} /> Back
                   </button>
+                  <h1 className="sr-only lg:not-sr-only lg:min-w-0 lg:flex-1 lg:truncate lg:text-sm lg:font-semibold lg:text-slate-900">{prettyTopic}</h1>
                   {/* ── Tabs (phone / tablet) ── */}
                   <div ref={practiceMenuRef} className="relative order-last w-full min-w-0 sm:order-none sm:w-auto sm:flex-1 lg:hidden">
                     <div role="tablist" aria-label="Topic sections" className="mx-auto grid max-w-md grid-cols-3 gap-1 rounded-full bg-white p-1 shadow-sm ring-1 ring-[#e2e8ff] sm:max-w-xl">
@@ -1262,12 +1322,9 @@ const AILearningCoursesReference = () => {
                 </div>
                 </div>
 
-                {/* Page title for screen readers (the visual header was removed) */}
-                <h1 className="sr-only"><span>✦ Topic Reader</span> {String(topicSlug || '').replace(/[_-]+/g, ' ')}</h1>
-
                 {/* ── Body: sidebar navigation (laptop/desktop) + content ── */}
                 <div className="lg:grid lg:grid-cols-[230px_minmax(0,1fr)] lg:items-start lg:gap-5">
-                  <aside className="hidden lg:sticky lg:top-14 lg:block">
+                  <aside className="hidden lg:sticky lg:top-[4.5rem] lg:block">
                     <nav aria-label="Topic navigation" className="max-h-[calc(100vh-5rem)] overflow-y-auto overscroll-contain rounded-2xl bg-white shadow-sm ring-1 ring-[#e2e8ff] [scrollbar-width:thin] [scrollbar-color:#c7c4ff_transparent] [&::-webkit-scrollbar]:w-1.5 [&::-webkit-scrollbar-thumb]:rounded-full [&::-webkit-scrollbar-thumb]:bg-[#c7c4ff] [&::-webkit-scrollbar-track]:bg-transparent">
                       {/* Learn */}
                       <div className="border-b border-[#eef2ff] px-2 py-1.5">

@@ -73,16 +73,18 @@ export const saveTutorConversation = async ({ id, messages, subjectTitle = '', t
   }
 };
 
+/** Deletes a saved chat. Resolves true when the server confirmed it. */
 export const deleteTutorConversation = async (id) => {
   try {
     const token = localStorage.getItem('token');
-    if (!token || !id) return;
-    await fetch(`${API_BASE}/api/student/auth/tutor-conversations/${encodeURIComponent(id)}`, {
+    if (!token || !id) return false;
+    const res = await fetch(`${API_BASE}/api/student/auth/tutor-conversations/${encodeURIComponent(id)}`, {
       method: 'DELETE',
       headers: authHeaders(),
     });
+    return res.ok;
   } catch {
-    // ignore — best-effort
+    return false;
   }
 };
 

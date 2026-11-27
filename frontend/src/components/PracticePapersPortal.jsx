@@ -1,216 +1,123 @@
 import React, { useState, useEffect, useMemo } from 'react';
 import {
-  BookOpen, Loader, NotebookPen,
-  Mic, PenLine, ListChecks, Puzzle, ChevronRight, ChevronDown,
-  ToggleLeft, Shuffle, FileEdit, ArrowLeft, RotateCcw,
+  BookOpen, Loader, Puzzle, ChevronRight, ChevronDown, ArrowLeft, GraduationCap,
 } from 'lucide-react';
-import ReadingPracticePage from './ReadingPracticePage';
-import WritingPracticePage from './WritingPracticePage';
-import QuickPracticeRunner from './QuickPracticeRunner';
-import AILearningTryoutSection from './AILearningTryoutSection';
+import { useLocation, useNavigate } from 'react-router-dom';
+import { normalizeQuestionType, typeMeta } from './AILearningTryoutSection';
+import { slugifyForUrl } from '../utils/urlSlug';
+import { groupLessonsByUnit } from '../teachers/components/lesson-plan-builder/chapterGroups';
+import { fetchCachedJson, peekCachedJson } from '../utils/studentApiCache';
+import { loadSmartLearningSubjects, peekSmartLearningSubjects } from '../utils/smartLearningMap';
+import { PRACTICE_META_URL, PRACTICE_META_TTL_MS } from '../utils/studentDashboardPrefetch';
 
-// Order the launch queue is always run in, regardless of check order.
-const QUEUE_ORDER = ['mcq', 'blank', 'true_false', 'matching', 'tryout'];
+const normalizeTag = (value) => String(value || '').trim().toLowerCase();
+const subjectsFromMeta = (data) => Array.isArray(data?.subjects) ? data.subjects : [];
+
+const groupChapters = (chapters = []) => groupLessonsByUnit(chapters.map((chapter) => ({
+  chapter,
+  unitNumber: chapter.meta?.unitNumber,
+  unitTitle: chapter.meta?.unitTitle,
+})));
 
 // Inter, matching the type family already applied to the Learning hub and
 // Smart Learning subject cards — this page previously fell back to the
 // browser default sans-serif.
 const PORTAL_FONT = { fontFamily: "'Inter', ui-sans-serif, system-ui, sans-serif" };
 
-const FORMAT_DEFS = [
-  {
-    key: 'mcq', name: 'Multiple Choice (MCQ)', icon: ListChecks, tone: 'indigo', queueable: true,
-    description: 'Single and multi-select questions your teacher has published for this subject.',
-    shortLabel: 'MCQ',
-  },
-  {
-    key: 'blank', name: 'Fill in the Blanks', icon: PenLine, tone: 'violet', queueable: true,
-    description: 'Type the missing word or value directly into each statement.',
-    shortLabel: 'Blanks',
-  },
-  {
-    key: 'tryout', name: 'Topic Tryout', icon: Puzzle, tone: 'purple', queueable: true,
-    description: 'Interactive activities generated from your teacher’s lesson plan for this topic.',
-    shortLabel: 'Tryout',
-  },
-  {
-    key: 'reading', name: 'Reading Practice', icon: Mic, tone: 'emerald', queueable: false,
-    description: 'Read a passage aloud and get real-time pronunciation and fluency feedback.',
-    shortLabel: 'Reading',
-  },
-  {
-    key: 'writing', name: 'Writing Practice', icon: FileEdit, tone: 'amber', queueable: false,
-    description: 'Write a response to a prompt and get AI rubric-based evaluation.',
-    shortLabel: 'Writing',
-  },
-  {
-    key: 'true_false', name: 'True or False', icon: ToggleLeft, tone: 'indigo', queueable: true, shortLabel: 'True/False',
-    description: 'Decide whether each statement is true or false.',
-  },
-  {
-    key: 'matching', name: 'Match the Following', icon: Shuffle, tone: 'violet', queueable: true, shortLabel: 'Matching',
-    description: 'Pair each term with its matching concept.',
-  },
+// Same colour families as the Materials page
+const SUBJECT_TONES = [
+  { strip: 'from-violet-500 to-indigo-500', badge: 'bg-violet-700' },
+  { strip: 'from-emerald-500 to-teal-500', badge: 'bg-emerald-700' },
+  { strip: 'from-sky-500 to-blue-500', badge: 'bg-sky-700' },
+  { strip: 'from-amber-400 to-orange-500', badge: 'bg-amber-700' },
 ];
 
-const TONE_CLASSES = {
-  indigo: 'bg-indigo-100 text-indigo-700',
-  violet: 'bg-violet-100 text-violet-700',
-  purple: 'bg-purple-100 text-purple-700',
-  emerald: 'bg-emerald-100 text-emerald-700',
-  amber: 'bg-amber-100 text-amber-700',
-  slate: 'bg-slate-100 text-slate-400',
-};
-
-// Wraps a self-contained full page (Reading/Writing practice) with a local
-// back button, since those pages have no onBack prop of their own.
-const FormatPageWrapper = ({ title, onBack, children }) => (
-  <div className="min-h-screen bg-gradient-to-br from-blue-50 to-indigo-100 p-4 sm:p-8" style={PORTAL_FONT}>
-    <div className="max-w-6xl mx-auto">
-      <button
-        onClick={onBack}
-        className="mb-6 px-4 py-2 text-sm font-medium border rounded-lg hover:bg-gray-50 flex items-center gap-2 bg-white"
-      >
-        <ArrowLeft className="w-4 h-4" /> Back to Practice & Activities
-      </button>
-      <h1 className="sr-only">{title}</h1>
-      {children}
-    </div>
-  </div>
-);
-
 const PracticePapersPortal = () => {
-  const API_BASE = (import.meta.env.VITE_API_URL || 'http://localhost:5000').replace(/\/$/, '');
-  const token = localStorage.getItem('token');
-
-  // State
-  const [quickPractice, setQuickPractice] = useState(null);
-  const [selectedTryout, setSelectedTryout] = useState(null);
-  const [activeFormatView, setActiveFormatView] = useState(null); // null | 'reading' | 'writing'
-  const [practiceActivities, setPracticeActivities] = useState([]);
-  const [tryoutActivities, setTryoutActivities] = useState([]);
-  const [readingMaterials, setReadingMaterials] = useState([]);
-  const [writingPrompts, setWritingPrompts] = useState([]);
-  const [activitiesLoading, setActivitiesLoading] = useState(true);
+  const navigate = useNavigate();
+  const { state } = useLocation();
+  const tryoutSelection = state?.tryoutSelection;
+  const [practiceData, setPracticeData] = useState(() => {
+    const meta = peekCachedJson(PRACTICE_META_URL);
+    const map = peekSmartLearningSubjects();
+    return meta && map ? { subjects: subjectsFromMeta(meta.data), mapSubjects: map.subjects } : null;
+  });
   const [activitiesError, setActivitiesError] = useState('');
 
   // Subject → Chapter → Topic context selectors
-  const [subjects, setSubjects] = useState([]);
-  const [mapSubjects, setMapSubjects] = useState([]);
-  const [subjectFilter, setSubjectFilter] = useState('all');
-  const [chapterFilter, setChapterFilter] = useState('all');
-  const [topicFilter, setTopicFilter] = useState('all');
+  const subjects = practiceData?.subjects;
+  const mapSubjects = practiceData?.mapSubjects;
+  const [subjectFilter, setSubjectFilter] = useState(tryoutSelection?.subjectId ?? 'all');
+  const [chapterFilter, setChapterFilter] = useState(tryoutSelection?.chapterId ?? 'all');
+  const [topicFilter, setTopicFilter] = useState(tryoutSelection?.topicId ?? 'all');
+  const [step, setStep] = useState(tryoutSelection?.topicId ? 'formats' : tryoutSelection ? 'chapters' : 'subjects');
+  const [collapsedChapterIds, setCollapsedChapterIds] = useState([]);
 
-  // Multi-format launch queue
-  const [selectedFormats, setSelectedFormats] = useState([]);
-  const [queue, setQueue] = useState(null);
-  const [queuePos, setQueuePos] = useState(0);
-
-  const authHeaders = useMemo(() => ({
-    'Authorization': `Bearer ${token}`,
-    'Content-Type': 'application/json'
-  }), [token]);
-
-  // Teacher question-bank activities (MCQ and fill-in-the-blank) are stored
-  // separately from full practice papers, and the lesson-plan map gives us
-  // the subject → chapter → topic tree plus which topics have tryouts.
   useEffect(() => {
     const controller = new AbortController();
     const fetchTeacherActivities = async () => {
-      setActivitiesLoading(true);
-      setActivitiesError('');
       try {
-        const [metaResponse, mapResponse, readingResponse, writingResponse] = await Promise.all([
-          fetch(`${API_BASE}/api/practice/student/meta`, { headers: authHeaders, signal: controller.signal }),
-          fetch(`${API_BASE}/api/lesson-plans/student/smart-learning-map`, { headers: authHeaders, signal: controller.signal }),
-          fetch(`${API_BASE}/api/reading-assessment/student/materials`, { headers: authHeaders, signal: controller.signal }),
-          fetch(`${API_BASE}/api/writing-assessment/student/prompts`, { headers: authHeaders, signal: controller.signal }),
+        const [{ data }, mapSubjects] = await Promise.all([
+          fetchCachedJson(PRACTICE_META_URL, {
+            ttlMs: PRACTICE_META_TTL_MS,
+            fetchOptions: { signal: controller.signal },
+          }),
+          loadSmartLearningSubjects({ signal: controller.signal }),
         ]);
-        const metaData = await metaResponse.json().catch(() => ({}));
-        const mapData = await mapResponse.json().catch(() => ({}));
-        const readingData = await readingResponse.json().catch(() => ({}));
-        const writingData = await writingResponse.json().catch(() => ({}));
-        if (!metaResponse.ok) throw new Error(metaData?.error || 'Unable to load teacher activities');
-
-        setReadingMaterials(Array.isArray(readingData?.data) ? readingData.data : []);
-        setWritingPrompts(Array.isArray(writingData?.data) ? writingData.data : []);
-
-        const metaSubjects = Array.isArray(metaData?.subjects) ? metaData.subjects : [];
-        setSubjects(metaSubjects);
-        const questionRequests = metaSubjects.flatMap((subject) => ['mcq', 'blank', 'true_false', 'matching'].map(async (type) => {
-          const params = new URLSearchParams({ subjectId: String(subject.id), type });
-          const response = await fetch(`${API_BASE}/api/practice/student/questions?${params}`, {
-            headers: authHeaders,
-            signal: controller.signal,
-          });
-          const data = await response.json().catch(() => ({}));
-          if (!response.ok) return null;
-          const count = Array.isArray(data?.questions) ? data.questions.length : 0;
-          return count > 0 ? { ...subject, type, count } : null;
-        }));
-        const questionGroups = await Promise.all(questionRequests);
-        setPracticeActivities(questionGroups.filter(Boolean));
-
-        if (mapResponse.ok) {
-          const mapSubjectList = Array.isArray(mapData?.subjects) ? mapData.subjects : [];
-          setMapSubjects(mapSubjectList);
-
-          const tryoutMap = new Map();
-          mapSubjectList.forEach((subject) => {
-            (Array.isArray(subject?.topics) ? subject.topics : []).forEach((topic) => {
-              const questions = Array.isArray(topic?.tryoutSections) ? topic.tryoutSections : [];
-              if (!questions.length) return;
-              const subjectName = subject.title || subject.key || 'Subject';
-              const topicName = topic.title || 'Topic';
-              const key = `${subjectName.toLowerCase()}::${topicName.toLowerCase()}`;
-              tryoutMap.set(key, {
-                id: key,
-                subjectName,
-                topicName,
-                count: questions.length,
-              });
-            });
-          });
-          setTryoutActivities(Array.from(tryoutMap.values()));
+        if (!controller.signal.aborted) {
+          setPracticeData({ subjects: subjectsFromMeta(data), mapSubjects });
         }
       } catch (err) {
-        if (err.name !== 'AbortError') setActivitiesError(err.message || 'Unable to load teacher activities');
-      } finally {
-        if (!controller.signal.aborted) setActivitiesLoading(false);
+        if (!controller.signal.aborted) setActivitiesError(err.message || 'Unable to load teacher activities');
       }
     };
     fetchTeacherActivities();
     return () => controller.abort();
-  }, [API_BASE, authHeaders]);
-
-  // Reset dependent selectors whenever an ancestor changes.
-  useEffect(() => {
-    setChapterFilter('all');
-    setTopicFilter('all');
-  }, [subjectFilter]);
-  useEffect(() => {
-    setTopicFilter('all');
-  }, [chapterFilter]);
-  // Availability of each format shifts with context — drop any selection
-  // that's no longer valid instead of silently launching the wrong thing.
-  useEffect(() => {
-    setSelectedFormats([]);
-  }, [subjectFilter, chapterFilter, topicFilter]);
+  }, []);
 
   const selectedSubjectName = useMemo(
-    () => subjects.find((s) => String(s.id) === subjectFilter)?.name || '',
+    () => subjects?.find((s) => String(s.id) === subjectFilter)?.name || '',
     [subjects, subjectFilter]
   );
 
   const selectedSubjectMapEntry = useMemo(() => {
     if (subjectFilter === 'all') return null;
-    return mapSubjects.find((s) => (
+    return mapSubjects?.find((s) => (
       (s.subjectId && String(s.subjectId) === subjectFilter)
       || (selectedSubjectName && String(s.title || '').toLowerCase() === selectedSubjectName.toLowerCase())
     )) || null;
   }, [mapSubjects, subjectFilter, selectedSubjectName]);
 
-  const chapters = selectedSubjectMapEntry?.chapters || [];
+  // Chapters in ascending order: by their number (order / unit number / "Chapter N" in the title), then by title
+  const chapters = useMemo(() => {
+    const list = Array.isArray(selectedSubjectMapEntry?.chapters) ? selectedSubjectMapEntry.chapters : [];
+    const numberOf = (c) => {
+      const n = Number(c?.order ?? c?.unitNumber ?? c?.chapterNumber ?? c?.number);
+      if (Number.isFinite(n) && n > 0) return n;
+      const m = String(c?.title || '').match(/^\s*(?:chapter|unit|lesson)?\s*(\d+)/i);
+      return m ? Number(m[1]) : Infinity;
+    };
+    const grouped = groupChapters(list);
+    const chapterList = grouped.flatMap(({ key, unitNumber, unitTitle, lessons }) => {
+      if (key === '__none__') return lessons.map(({ chapter }) => chapter);
+      const topicsById = new Map();
+      lessons.forEach(({ chapter }) => {
+        (chapter.topics || []).forEach((topic) => {
+          const topicKey = topic.id || topic.title;
+          if (!topicsById.has(topicKey)) topicsById.set(topicKey, { ...topic, id: topicKey });
+        });
+      });
+      return [{
+        id: `unit:${key}`,
+        title: unitTitle || lessons[0].chapter.title,
+        unitNumber,
+        topics: Array.from(topicsById.values()),
+      }];
+    });
+    return chapterList
+      .map((c, i) => ({ c, i, n: numberOf(c) }))
+      .sort((a, b) => (a.n - b.n) || String(a.c?.title || '').localeCompare(String(b.c?.title || ''), undefined, { numeric: true }) || (a.i - b.i))
+      .map(({ c }) => c);
+  }, [selectedSubjectMapEntry]);
   const selectedChapterEntry = useMemo(
     () => chapters.find((c) => c.id === chapterFilter) || null,
     [chapters, chapterFilter]
@@ -223,302 +130,200 @@ const PracticePapersPortal = () => {
   const selectedChapterTitle = selectedChapterEntry?.title || '';
   const selectedTopicTitle = selectedTopicEntry?.title || '';
 
-  // Real content lookups behind each format card — no card claims to work
-  // unless there's an actual published set/topic behind it.
-  const mcqActivity = useMemo(
-    () => practiceActivities.find((a) => a.type === 'mcq' && String(a.id) === subjectFilter) || null,
-    [practiceActivities, subjectFilter]
-  );
-  const blankActivity = useMemo(
-    () => practiceActivities.find((a) => a.type === 'blank' && String(a.id) === subjectFilter) || null,
-    [practiceActivities, subjectFilter]
-  );
-  const tryoutActivity = useMemo(() => {
-    if (!selectedSubjectName || !selectedTopicTitle) return null;
-    const key = `${selectedSubjectName.toLowerCase()}::${selectedTopicTitle.toLowerCase()}`;
-    return tryoutActivities.find((t) => t.id === key) || null;
-  }, [tryoutActivities, selectedSubjectName, selectedTopicTitle]);
-
-  // Reading/writing materials are tagged by chapter (subject is usually left
-  // blank by teachers) — only claim a card is available once a chapter is
-  // selected and a matching published item is actually found for it.
-  const normalizeTag = (value) => String(value || '').trim().toLowerCase();
-  const matchesSelectedChapter = (item) => {
-    if (chapterFilter === 'all' || !selectedChapterTitle) return false;
-    const chapterMatches = normalizeTag(item.chapter) === normalizeTag(selectedChapterTitle);
-    const subjectMatches = !item.subject || normalizeTag(item.subject) === normalizeTag(selectedSubjectName);
-    return chapterMatches && subjectMatches;
-  };
-  const readingActivity = useMemo(
-    () => readingMaterials.find(matchesSelectedChapter) || null,
-    [readingMaterials, chapterFilter, selectedChapterTitle, selectedSubjectName]
-  );
-  const writingActivity = useMemo(
-    () => writingPrompts.find(matchesSelectedChapter) || null,
-    [writingPrompts, chapterFilter, selectedChapterTitle, selectedSubjectName]
-  );
-
-  const trueFalseActivity = practiceActivities.find((a) => a.type === 'true_false' && String(a.id) === subjectFilter);
-  const matchingActivity = practiceActivities.find((a) => a.type === 'matching' && String(a.id) === subjectFilter);
-
-  const formatAvailability = {
-    true_false: Boolean(trueFalseActivity),
-    matching: Boolean(matchingActivity),
-    mcq: Boolean(mcqActivity),
-    blank: Boolean(blankActivity),
-    tryout: Boolean(tryoutActivity),
-    reading: Boolean(readingActivity),
-    writing: Boolean(writingActivity),
-  };
-  const formatCounts = {
-    true_false: trueFalseActivity?.count || 0,
-    matching: matchingActivity?.count || 0,
-    mcq: mcqActivity?.count || 0,
-    blank: blankActivity?.count || 0,
-    tryout: tryoutActivity?.count || 0,
-  };
-
-  const launchFormat = (key) => {
-    if (key === 'true_false' && trueFalseActivity) setQuickPractice(trueFalseActivity);
-    else if (key === 'matching' && matchingActivity) setQuickPractice(matchingActivity);
-    else if (key === 'mcq' && mcqActivity) setQuickPractice(mcqActivity);
-    else if (key === 'blank' && blankActivity) setQuickPractice(blankActivity);
-    else if (key === 'tryout' && tryoutActivity) setSelectedTryout({ subjectName: selectedSubjectName, topicName: selectedTopicTitle });
-    else if (key === 'reading' && readingActivity) setActiveFormatView('reading');
-    else if (key === 'writing' && writingActivity) setActiveFormatView('writing');
-  };
-
-  const startSingleFormat = (key) => {
-    setQueue(null);
-    setQueuePos(0);
-    launchFormat(key);
-  };
-
-  const toggleFormatSelection = (key) => {
-    if (!formatAvailability[key]) return;
-    setSelectedFormats((prev) => (prev.includes(key) ? prev.filter((k) => k !== key) : [...prev, key]));
-  };
-
-  const launchQueue = () => {
-    const ordered = QUEUE_ORDER.filter((k) => selectedFormats.includes(k));
-    if (!ordered.length) return;
-    setQueue(ordered);
-    setQueuePos(0);
-    launchFormat(ordered[0]);
-  };
-
-  const resetSelection = () => setSelectedFormats([]);
-
-  // Shared "close this format's runner" handler — advances to the next
-  // queued format if one is waiting, otherwise returns to the picker.
-  const handleRunnerBack = () => {
-    setQuickPractice(null);
-    setSelectedTryout(null);
-    if (queue && queuePos < queue.length - 1) {
-      const nextPos = queuePos + 1;
-      setQueuePos(nextPos);
-      launchFormat(queue[nextPos]);
-    } else {
-      setQueue(null);
-      setQueuePos(0);
-    }
-  };
-
-  if (quickPractice) {
-    return <QuickPracticeRunner key={`${quickPractice.id}-${quickPractice.type}`} subject={quickPractice} initialType={quickPractice.type} onBack={handleRunnerBack} />;
+  const lessonTryoutTypes = new Map();
+  const lessonTryouts = selectedSubjectMapEntry?.topics?.find(
+    (topic) => normalizeTag(topic.title) === normalizeTag(selectedTopicTitle)
+  )?.tryoutSections;
+  for (const question of Array.isArray(lessonTryouts) ? lessonTryouts : []) {
+    const type = normalizeQuestionType(question?.type);
+    if (type) lessonTryoutTypes.set(type, (lessonTryoutTypes.get(type) || 0) + 1);
   }
 
-  if (selectedTryout) {
-    return (
-      <AILearningTryoutSection
-        assignedSubjectName={selectedTryout.subjectName}
-        assignedTopicName={selectedTryout.topicName}
-        onBack={handleRunnerBack}
-      />
-    );
-  }
+  const openTryout = (type) => {
+    const subjectSlug = slugifyForUrl(selectedSubjectMapEntry.key || selectedSubjectName);
+    const topicSlug = slugifyForUrl(type ? selectedTopicTitle : 'All chapters');
+    const query = new URLSearchParams(type ? { type } : { scope: 'chapters' });
+    navigate(`/student/smart-learning-courses/subject/${subjectSlug}/topic/${topicSlug}/assessment/tryout-section?${query}`, {
+      state: {
+        tryoutSelection: {
+          subjectId: subjectFilter,
+          chapterId: type ? chapterFilter : undefined,
+          topicId: type ? topicFilter : undefined,
+        },
+      },
+    });
+  };
 
-  if (activeFormatView === 'reading') {
-    return (
-      <FormatPageWrapper title="Reading Practice" onBack={() => setActiveFormatView(null)}>
-        <ReadingPracticePage />
-      </FormatPageWrapper>
-    );
-  }
+  // ── Step navigation: Subjects → Chapters & lessons → Available practice ──
+  const openSubjectStep = (id) => {
+    setSubjectFilter(String(id));
+    setChapterFilter('all');
+    setTopicFilter('all');
+    setCollapsedChapterIds([]);
+    setStep('chapters');
+  };
+  const openPractice = (chapterId = 'all', topicId = 'all') => {
+    setChapterFilter(chapterId);
+    setTopicFilter(topicId);
+    setStep('formats');
+  };
+  const goBack = () => {
+    if (step === 'formats') setStep('chapters');
+    else { setStep('subjects'); setSubjectFilter('all'); setChapterFilter('all'); setTopicFilter('all'); }
+  };
 
-  if (activeFormatView === 'writing') {
-    return (
-      <FormatPageWrapper title="Writing Practice" onBack={() => setActiveFormatView(null)}>
-        <WritingPracticePage />
-      </FormatPageWrapper>
-    );
-  }
+  const subjectTone = (name) => SUBJECT_TONES[Array.from(String(name || '')).reduce((sum, c) => sum + c.charCodeAt(0), 0) % SUBJECT_TONES.length];
+  const tone = subjectTone(selectedSubjectName);
+  const availableFormats = Array.from(lessonTryoutTypes, ([key, count]) => {
+    const { label, icon } = typeMeta(key);
+    return { key, count, name: label, icon };
+  });
+  const chapterNo = selectedChapterEntry?.unitNumber || chapters.indexOf(selectedChapterEntry) + 1;
+  const topicNo = selectedTopicEntry ? topics.findIndex((t) => t.id === selectedTopicEntry.id) + 1 : 0;
 
-  const selectedQueueableCount = selectedFormats.length;
+  const headerTitle = step === 'subjects' ? 'Practice' : selectedSubjectName || 'Practice';
+  const headerSub = step === 'formats'
+    ? (selectedTopicEntry ? `${chapterNo}.${topicNo} ${selectedTopicTitle}` : selectedChapterEntry ? `Chapter ${chapterNo} · ${selectedChapterTitle}` : 'Whole subject')
+    : step === 'chapters' ? 'Choose a chapter or topic' : '';
 
   // Main list view
   return (
-    <div className="min-h-screen bg-gradient-to-br from-blue-50 to-indigo-100 p-4 sm:p-8 pb-28" style={PORTAL_FONT}>
-      <div className="max-w-7xl mx-auto">
-        {/* ── Subject / Chapter / Topic context bar ── */}
-        <div className="mb-6 rounded-2xl border border-white/80 bg-white/80 backdrop-blur-xl p-3 sm:p-4 shadow-sm">
-          <div className="flex flex-wrap items-center gap-2 sm:gap-3">
-            <span className="text-xs font-semibold uppercase tracking-wide text-slate-400 shrink-0">Browsing</span>
-            <div className="relative min-w-[190px] flex-1 sm:flex-initial">
-              <BookOpen className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 size-4 text-indigo-500" />
-              <select
-                aria-label="Select Subject"
-                value={subjectFilter}
-                onChange={(e) => setSubjectFilter(e.target.value)}
-                className="w-full appearance-none rounded-lg border border-slate-200 bg-slate-50 py-2 pl-9 pr-8 text-sm font-medium text-slate-700 hover:bg-slate-100 focus:outline-none focus:ring-2 focus:ring-indigo-500/30"
-              >
-                <option value="all">All Subjects</option>
-                {subjects.map((subject) => (
-                  <option key={subject.id} value={String(subject.id)}>{subject.name}</option>
-                ))}
-              </select>
-              <ChevronDown className="pointer-events-none absolute right-2.5 top-1/2 -translate-y-1/2 size-4 text-slate-400" />
-            </div>
-            <div className="relative min-w-[220px] flex-1 sm:flex-initial">
-              <NotebookPen className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 size-4 text-violet-500" />
-              <select
-                aria-label="Select Chapter"
-                value={chapterFilter}
-                onChange={(e) => setChapterFilter(e.target.value)}
-                disabled={subjectFilter === 'all' || chapters.length === 0}
-                className="w-full appearance-none rounded-lg border border-slate-200 bg-slate-50 py-2 pl-9 pr-8 text-sm font-medium text-slate-700 hover:bg-slate-100 focus:outline-none focus:ring-2 focus:ring-indigo-500/30 disabled:cursor-not-allowed disabled:opacity-50"
-              >
-                <option value="all">{chapters.length ? 'All Chapters' : 'No chapters yet'}</option>
-                {chapters.map((chapter) => (
-                  <option key={chapter.id} value={chapter.id}>{chapter.title}</option>
-                ))}
-              </select>
-              <ChevronDown className="pointer-events-none absolute right-2.5 top-1/2 -translate-y-1/2 size-4 text-slate-400" />
-            </div>
-            <div className="relative min-w-[210px] flex-1 sm:flex-initial">
-              <span className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-purple-500 font-bold text-sm">#</span>
-              <select
-                aria-label="Select Topic"
-                value={topicFilter}
-                onChange={(e) => setTopicFilter(e.target.value)}
-                disabled={chapterFilter === 'all' || topics.length === 0}
-                className="w-full appearance-none rounded-lg border border-slate-200 bg-slate-50 py-2 pl-9 pr-8 text-sm font-medium text-slate-700 hover:bg-slate-100 focus:outline-none focus:ring-2 focus:ring-indigo-500/30 disabled:cursor-not-allowed disabled:opacity-50"
-              >
-                <option value="all">{topics.length ? 'All Topics' : 'No topics yet'}</option>
-                {topics.map((topic) => (
-                  <option key={topic.id} value={topic.id}>{topic.title}</option>
-                ))}
-              </select>
-              <ChevronDown className="pointer-events-none absolute right-2.5 top-1/2 -translate-y-1/2 size-4 text-slate-400" />
-            </div>
-          </div>
-          {/* Breadcrumb */}
-          <div className="mt-3 flex flex-wrap items-center gap-1.5 text-xs font-medium text-slate-500">
-            <span className="text-slate-400">Showing:</span>
-            <span className="rounded-full bg-indigo-50 px-2 py-0.5 text-indigo-700 font-semibold">
-              {subjectFilter === 'all' ? 'All subjects' : selectedSubjectName}
-            </span>
-            {chapterFilter !== 'all' && selectedChapterTitle && (<>
-              <ChevronRight className="size-3 text-slate-300" />
-              <span className="rounded-full bg-violet-50 px-2 py-0.5 text-violet-700 font-semibold">{selectedChapterTitle}</span>
-            </>)}
-            {topicFilter !== 'all' && selectedTopicTitle && (<>
-              <ChevronRight className="size-3 text-slate-300" />
-              <span className="rounded-full bg-purple-50 px-2 py-0.5 text-purple-700 font-semibold">{selectedTopicTitle}</span>
-            </>)}
-          </div>
+    <main className="m-3 flex min-h-0 flex-1 flex-col overflow-hidden rounded-2xl border border-slate-200/80 bg-[#f8f9fd] p-4 text-slate-900 shadow-sm sm:rounded-3xl sm:px-5" style={PORTAL_FONT}>
+      {/* Header */}
+      <div className="mb-5 flex shrink-0 flex-wrap items-center gap-3">
+        {step !== 'subjects' && (
+          <button type="button" onClick={goBack} className="inline-flex shrink-0 items-center gap-1.5 rounded-full border border-slate-200 bg-white px-3 py-2 text-xs font-semibold text-slate-700 shadow-sm hover:bg-slate-50">
+            <ArrowLeft size={14} /> {step === 'formats' ? 'Chapters' : 'All subjects'}
+          </button>
+        )}
+        <div className="min-w-0 flex-1 basis-28">
+          <h1 className="truncate text-xl font-bold tracking-tight sm:text-2xl">{headerTitle}</h1>
+          {headerSub && <p className="truncate text-xs font-medium text-slate-500">{headerSub}</p>}
         </div>
+        {step === 'chapters' && chapters.length > 0 && (
+          <button
+            type="button"
+            onClick={() => openTryout()}
+            className="ml-auto inline-flex shrink-0 items-center gap-1.5 rounded-full bg-violet-700 px-3 py-2 text-xs font-semibold text-white shadow-sm hover:bg-violet-800 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-violet-600"
+          >
+            Practice whole subject <ChevronRight size={15} aria-hidden="true" />
+          </button>
+        )}
+      </div>
 
-        {/* ── Choose Your Tryout Format ── */}
-        <section className="mb-8">
-          <div className="mb-4 flex items-center justify-between gap-3">
-            <h2 className="text-xl font-bold tracking-tight text-slate-900">Choose Your Tryout Format</h2>
-            {selectedQueueableCount > 0 && (
-              <button type="button" onClick={resetSelection} className="inline-flex items-center gap-1 text-xs font-semibold text-slate-400 hover:text-slate-600">
-                <RotateCcw className="size-3.5" /> Clear selection
-              </button>
-            )}
-          </div>
-
-          {activitiesLoading ? (
-            <div className="flex justify-center rounded-2xl border border-white/80 bg-white/60 py-12"><Loader className="size-7 animate-spin text-indigo-600" /></div>
-          ) : activitiesError ? (
-            <div className="mb-4 rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-700">{activitiesError}</div>
-          ) : <>
-          {subjectFilter === 'all' && (
-            <div className="mb-4 rounded-xl border border-dashed border-indigo-200 bg-indigo-50/60 px-4 py-3 text-sm text-indigo-700">
-              Pick a subject above to see what you can practice.
+      <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain pr-2 pb-2 custom-scrollbar" role="region" aria-label="Practice" tabIndex={0}>
+        {!practiceData && activitiesError ? (
+          <div role="alert" className="rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-700">{activitiesError}</div>
+        ) : !practiceData ? (
+          <div role="status" className="flex items-center justify-center gap-2 py-16 text-sm text-slate-500"><Loader className="h-5 w-5 animate-spin" />Loading your practice…</div>
+        ) : step === 'subjects' ? (
+          /* ── 1. Subjects ── */
+          subjects.length === 0 ? (
+            <div className="rounded-xl border border-dashed border-slate-300 bg-white p-10 text-center">
+              <BookOpen className="mx-auto mb-3 h-8 w-8 text-violet-400" />
+              <h2 className="font-semibold">No subjects yet</h2>
+              <p className="mt-1 text-sm text-slate-500">Practice from your teachers will appear here.</p>
             </div>
-          )}
-
-          <div className="flex flex-col gap-3">
-            {FORMAT_DEFS.map((fmt) => {
-              const Icon = fmt.icon;
-              const available = !fmt.comingSoon && formatAvailability[fmt.key];
-              const checked = selectedFormats.includes(fmt.key);
-              const count = formatCounts[fmt.key];
-              return (
-                <div
-                  key={fmt.key}
-                  onClick={() => { if (fmt.queueable && available) toggleFormatSelection(fmt.key); }}
-                  className={`group rounded-xl bg-white p-4 sm:p-5 shadow-sm transition-all flex flex-col md:flex-row md:items-center justify-between gap-4 ${
-                    fmt.comingSoon ? 'opacity-60' : available ? 'cursor-pointer hover:shadow-md' : 'opacity-50'
-                  } ${checked ? 'ring-2 ring-indigo-400/40' : ''}`}
-                >
-                  <div className="flex items-start gap-4 min-w-0 flex-1">
-                    <div className={`w-12 h-12 rounded-xl flex items-center justify-center shrink-0 ${TONE_CLASSES[fmt.tone]}`}>
-                      <Icon className="size-6" />
-                    </div>
-                    <div className="flex flex-col gap-1 min-w-0">
-                      <div className="flex flex-wrap items-center gap-2">
-                        <h4 className="font-bold tracking-tight text-slate-900">{fmt.name}</h4>
-                        {fmt.comingSoon ? (
-                          <span className="rounded-full bg-slate-100 px-2 py-0.5 text-[11px] font-semibold uppercase tracking-wide text-slate-400">Coming soon</span>
-                        ) : fmt.queueable ? (
-                          <span className="text-xs font-semibold text-slate-500">
-                            {available ? `${count} question${count === 1 ? '' : 's'} available` : 'Not available for this selection'}
-                          </span>
-                        ) : null}
+          ) : (
+            <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-3">
+              {subjects.map((subject) => {
+                const t = subjectTone(subject.name);
+                const mapEntry = mapSubjects.find((s) => (s.subjectId && String(s.subjectId) === String(subject.id)) || String(s.title || '').toLowerCase() === String(subject.name || '').toLowerCase());
+                const chapterCount = groupChapters(mapEntry?.chapters || []).reduce(
+                  (count, group) => count + (group.key === '__none__' ? group.lessons.length : 1), 0
+                );
+                return (
+                  <button key={subject.id} type="button" onClick={() => openSubjectStep(subject.id)} className="group overflow-hidden rounded-2xl border border-slate-200/80 bg-white text-left shadow-sm transition duration-200 hover:-translate-y-0.5 hover:shadow-lg hover:shadow-indigo-950/5 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-indigo-600">
+                    <div className={`h-1 bg-gradient-to-r ${t.strip}`} />
+                    <div className="flex items-center gap-3 p-4">
+                      <div className={`flex h-11 w-11 shrink-0 items-center justify-center rounded-full ${t.badge} text-white shadow-sm`}><GraduationCap size={22} /></div>
+                      <div className="min-w-0 flex-1">
+                        <h2 className="truncate text-base font-bold">{subject.name}</h2>
+                        <p className="mt-0.5 text-xs text-slate-500">{chapterCount} chapter{chapterCount === 1 ? '' : 's'}</p>
                       </div>
-                      <p className="text-sm leading-relaxed text-slate-500">{fmt.description}</p>
+                      <ChevronRight size={18} className="shrink-0 text-slate-400 transition group-hover:translate-x-0.5 group-hover:text-indigo-600" />
                     </div>
-                  </div>
-                  <div className="flex items-center justify-between md:justify-end gap-4 shrink-0 border-t md:border-t-0 pt-3 md:pt-0 border-slate-100">
-                    {!fmt.comingSoon && (
-                      <button
-                        type="button"
-                        disabled={!available}
-                        onClick={(e) => { e.stopPropagation(); startSingleFormat(fmt.key); }}
-                        className="inline-flex items-center gap-1 px-3 py-1.5 rounded-lg text-indigo-700 hover:bg-indigo-50 font-semibold tracking-tight text-sm transition-colors disabled:cursor-not-allowed disabled:opacity-40 disabled:hover:bg-transparent"
-                      >
-                        Start {fmt.shortLabel} <ChevronRight className="size-4" />
+                  </button>
+                );
+              })}
+            </div>
+          )
+        ) : step === 'chapters' ? (
+          /* ── 2. Chapters & lessons ── */
+          <div className="grid grid-cols-1 items-start gap-4">
+            {chapters.length === 0 ? (
+              <div className="rounded-xl border border-dashed border-slate-300 bg-white p-8 text-center text-sm text-slate-500">No chapters published for this subject yet.</div>
+            ) : chapters.map((chapter, ci) => {
+              const expanded = !collapsedChapterIds.includes(chapter.id);
+              const chapterNumber = chapter.unitNumber || ci + 1;
+              const chapterTopics = Array.isArray(chapter.topics) ? chapter.topics : [];
+              return (
+                <article key={chapter.id} className="overflow-hidden rounded-2xl border border-slate-200/80 bg-white shadow-sm">
+                  <div className={`h-1 bg-gradient-to-r ${tone.strip}`} />
+                  <h2>
+                    <button type="button" aria-expanded={expanded} onClick={() => setCollapsedChapterIds((ids) => expanded ? [...ids, chapter.id] : ids.filter((id) => id !== chapter.id))} className="flex w-full items-center gap-x-4 px-4 py-3 text-left hover:bg-indigo-50/50">
+                      <span className={`shrink-0 rounded-full ${tone.badge} px-2.5 py-1.5 text-xs font-bold text-white shadow-sm`}>Chapter {chapterNumber}</span>
+                      <span className="min-w-0 flex-1 break-words text-sm font-bold">{chapter.title}</span>
+                      <span className="text-xs font-medium text-slate-500">{chapterTopics.length} {chapterTopics.length === 1 ? 'topic' : 'topics'}</span>
+                      <ChevronDown size={16} aria-hidden="true" className={`text-indigo-700 ${expanded ? 'rotate-180' : ''}`} />
+                    </button>
+                  </h2>
+                  {expanded && (
+                    <div className="space-y-2 border-t border-indigo-100 bg-indigo-50/30 p-3">
+                      <button type="button" onClick={() => openTryout()} className="flex w-full items-center gap-3 rounded-xl border border-indigo-100 bg-white px-3 py-3 text-left text-sm font-bold hover:bg-indigo-50/50">
+                        <span className="min-w-0 flex-1">Whole chapter</span>
+                        <ChevronRight size={16} className="shrink-0 text-indigo-700" />
                       </button>
-                    )}
-                    {fmt.queueable && (
-                      <label className="flex items-center p-1" onClick={(e) => e.stopPropagation()}>
-                        <input
-                          type="checkbox"
-                          aria-label={`Include ${fmt.name}`}
-                          checked={checked}
-                          disabled={!available}
-                          onChange={() => toggleFormatSelection(fmt.key)}
-                          className="w-5 h-5 accent-indigo-600 rounded cursor-pointer disabled:cursor-not-allowed"
-                        />
-                      </label>
-                    )}
-                  </div>
-                </div>
+                      {chapterTopics.map((topic, ti) => (
+                        <button key={topic.id || topic.title} type="button" onClick={() => openPractice(chapter.id, topic.id)} className="flex w-full items-center gap-3 rounded-xl border border-indigo-100 bg-white px-3 py-3 text-left text-sm font-bold hover:bg-indigo-50/50">
+                          <span className="min-w-0 flex-1 break-words">{chapterNumber}.{ti + 1} {topic.title}</span>
+                          <ChevronRight size={16} className="shrink-0 text-indigo-700" />
+                        </button>
+                      ))}
+                    </div>
+                  )}
+                </article>
               );
             })}
           </div>
-          </>}
-        </section>
+        ) : (
+          /* ── 3. Available practice ── */
+          availableFormats.length === 0 ? (
+            <div className="rounded-xl border border-dashed border-slate-300 bg-white p-10 text-center">
+              <Puzzle className="mx-auto mb-3 h-8 w-8 text-violet-400" />
+              <h2 className="font-semibold">Nothing to practise here yet</h2>
+              <p className="mt-1 text-sm text-slate-500">Try another chapter or topic.</p>
+              <button type="button" onClick={goBack} className="mt-4 rounded-full bg-indigo-700 px-4 py-2 text-xs font-semibold text-white hover:bg-indigo-800">Choose another</button>
+            </div>
+          ) : (
+            <div className="grid grid-cols-1 gap-3 md:grid-cols-2 lg:landscape:grid-cols-3">
+              {availableFormats.map(({ key, name, icon: Icon, count }) => (
+                <button
+                  key={key}
+                  type="button"
+                  onClick={() => openTryout(key)}
+                  className="flex items-center gap-3 rounded-xl border border-l-4 border-slate-200 border-l-violet-500 bg-white p-4 text-left shadow-sm transition hover:bg-violet-50 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-violet-600"
+                >
+                  <span className="flex size-11 shrink-0 items-center justify-center rounded-lg bg-violet-100 text-violet-700">
+                    <Icon size={21} aria-hidden="true" />
+                  </span>
+                  <span className="min-w-0 flex-1">
+                    <span className="block font-bold text-slate-900">{name}</span>
+                    <span className="mt-1 block text-xs text-slate-600">
+                      {count} {count === 1 ? 'question' : 'questions'} available
+                    </span>
+                  </span>
+                  <span className="flex size-8 shrink-0 items-center justify-center rounded-full bg-violet-100 text-violet-700" aria-hidden="true">
+                    <ChevronRight size={18} />
+                  </span>
+                </button>
+              ))}
+            </div>
+          )
+        )}
       </div>
 
-      {selectedQueueableCount > 0 && <div className="sticky bottom-3 rounded-xl bg-white p-4 shadow-lg">
-        <button type="button" onClick={launchQueue} className="rounded-lg bg-indigo-700 px-4 py-2 text-white">Start selected formats ({selectedQueueableCount})</button>
-      </div>}
-    </div>
+    </main>
   );
 };
 

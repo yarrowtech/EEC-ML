@@ -933,14 +933,15 @@ const TryoutQuestion = ({ question, index, onAnswer }) => {
 
 // autoStart: skip the intro and open the full-screen exam as soon as questions load
 // (used by the Practice page's "Practice now"). Exiting the exam then calls onBack.
-const AILearningTryoutSection = forwardRef(({ assignedSubjectName = '', assignedTopicName = '', onBack, onQuestionsLoaded, autoStart = false }, ref) => {
+const AILearningTryoutSection = forwardRef(({ assignedSubjectName = '', assignedTopicName = '', onBack, onQuestionsLoaded, autoStart = false, questionType = '', includeAllChapters = false }, ref) => {
   const navigate = useNavigate();
   const location = useLocation();
   const { profile } = useStudentDashboard() || {};
+  const selectedType = normalizeQuestionType(questionType);
   const subjectMatch = location.pathname.match(/\/subject\/([^/]+)/);
   const topicMatch = location.pathname.match(/\/topic\/([^/]+)/);
   const subjectSlug = assignedSubjectName || (subjectMatch?.[1] ? deslugifyFromUrl(subjectMatch[1]) : 'subject');
-  const topicSlug = assignedTopicName || (topicMatch?.[1] ? deslugifyFromUrl(topicMatch[1]) : 'topic');
+  const topicSlug = includeAllChapters ? 'All chapters' : assignedTopicName || (topicMatch?.[1] ? deslugifyFromUrl(topicMatch[1]) : 'topic');
   // Seeded from the shared map cache so a cached tryout opens instantly.
   const [mapSeed] = useState(() => peekSmartLearningSubjects());
   const [loading, setLoading] = useState(() => !mapSeed);
@@ -971,8 +972,8 @@ const AILearningTryoutSection = forwardRef(({ assignedSubjectName = '', assigned
   const autoStartedRef = useRef(false);
 
   const storageKey = useMemo(
-    () => `tryout-progress-${normalize(subjectSlug)}-${normalize(topicSlug)}`,
-    [subjectSlug, topicSlug],
+    () => `tryout-progress-${normalize(subjectSlug)}-${normalize(topicSlug)}${includeAllChapters ? '-combined' : selectedType ? `-type-${selectedType}` : ''}`,
+    [subjectSlug, topicSlug, selectedType, includeAllChapters],
   );
 
   useEffect(() => {
@@ -1014,7 +1015,8 @@ const AILearningTryoutSection = forwardRef(({ assignedSubjectName = '', assigned
         if (!res.ok) return;
 
         const mine = asArray(data?.results).filter(
-          (r) => normalize(r.subjectName) === normalize(subjectSlug) && normalize(r.topicTitle) === normalize(topicSlug),
+          (r) => normalize(r.subjectName) === normalize(subjectSlug) && normalize(r.topicTitle) === normalize(topicSlug) &&
+            (!selectedType || (r.answers?.length > 0 && r.answers.every((answer) => normalizeQuestionType(answer.questionType) === selectedType))),
         );
         const scores = mine.map((r) => r.autoScore).filter((v) => typeof v === 'number');
         if (scores.length) setBestScore(Math.max(...scores));
@@ -1030,7 +1032,7 @@ const AILearningTryoutSection = forwardRef(({ assignedSubjectName = '', assigned
     };
 
     checkExistingSubmission();
-  }, [subjectSlug, topicSlug]);
+  }, [subjectSlug, topicSlug, selectedType, storageKey]);
 
   // Restore any locally auto-saved progress for this tryout.
   useEffect(() => {
@@ -1054,9 +1056,27 @@ const AILearningTryoutSection = forwardRef(({ assignedSubjectName = '', assigned
 
   const assignedTryouts = useMemo(() => {
     const subject = subjects.find((item) => normalize(item.key || item.title) === normalize(subjectSlug));
+    if (includeAllChapters) {
+      const chapterTopics = new Set(asArray(subject?.chapters).flatMap((chapter) =>
+        asArray(chapter.topics).map((topic) => normalize(topic.title))
+      ));
+      const questionsByType = new Map();
+      for (const topic of asArray(subject?.topics)) {
+        if (!chapterTopics.has(normalize(topic.title))) continue;
+        for (const question of asArray(topic.tryoutSections)) {
+          const type = normalizeQuestionType(question?.type);
+          if (!type) continue;
+          if (!questionsByType.has(type)) questionsByType.set(type, []);
+          questionsByType.get(type).push(question);
+        }
+      }
+      return Array.from(questionsByType.values()).flat();
+    }
     const topic = asArray(subject?.topics).find((item) => normalize(item.title) === normalize(topicSlug));
-    return asArray(topic?.tryoutSections).filter((item) => item && typeof item === 'object');
-  }, [subjects, subjectSlug, topicSlug]);
+    return asArray(topic?.tryoutSections).filter((item) =>
+      item && typeof item === 'object' && (!selectedType || normalizeQuestionType(item.type) === selectedType)
+    );
+  }, [subjects, subjectSlug, topicSlug, selectedType, includeAllChapters]);
 
   // Also get chapter title from the subjects map for the submission payload
   const chapterTitle = useMemo(() => {

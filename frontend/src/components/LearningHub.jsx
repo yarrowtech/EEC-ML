@@ -103,7 +103,7 @@ const LearningHub = () => {
 
   return (
     <div
-      className={usesSubjectScroller || activeTab.key === 'tutor' ? `w-full ${subjectScrollLayout}` : 'min-h-full w-full'}
+      className={usesSubjectScroller || activeTab.key === 'tutor' || activeTab.key === 'practice' ? `w-full ${subjectScrollLayout}` : 'min-h-full w-full'}
       style={{
         // Subjects / chapters: a card on the portal background (like Materials); tutor stays white
         backgroundColor: 'transparent',
@@ -142,6 +142,7 @@ const LearningHub = () => {
       {activeTab.key === 'practice' && (
         <Motion.div
           key="practice"
+          className="flex min-h-0 flex-1 flex-col overflow-y-auto"
           initial={{ opacity: 0, y: 6 }}
           animate={{ opacity: 1, y: 0 }}
           transition={{ duration: 0.3, ease: [0.4, 0, 0.2, 1] }}

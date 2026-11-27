@@ -83,7 +83,7 @@ describe('AILearningCoursesReference loading', () => {
       </MemoryRouter>
     );
 
-    expect(screen.getByText('✦ Topic Reader')).toBeInTheDocument();
+    expect(screen.getByRole('heading', { level: 1, name: 'Engish Chapter 007' })).toBeInTheDocument();
     expect(screen.queryByText('Loading published learning data…')).not.toBeInTheDocument();
   });
 });

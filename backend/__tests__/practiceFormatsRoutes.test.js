@@ -10,7 +10,10 @@ jest.mock('../models/PracticeAttempt', () => mockAttempt);
 jest.mock('../models/StudentUser', () => ({ findOne: () => mockQuery({ grade: '5', section: 'A' }) }));
 jest.mock('../models/Class', () => ({ findOne: () => mockQuery({ _id: id, name: '5' }) }));
 jest.mock('../models/Section', () => ({ findOne: () => mockQuery({ _id: id, name: 'A' }) }));
-jest.mock('../models/Subject', () => ({ findOne: () => mockQuery({ _id: id, classId: id }) }));
+jest.mock('../models/Subject', () => ({
+  findOne: () => mockQuery({ _id: id, classId: id }),
+  find: () => mockQuery([{ _id: id, name: 'Computer' }]),
+}));
 jest.mock('../models/TeacherAllocation', () => ({ findOne: () => mockQuery({ _id: id }) }));
 jest.mock('../middleware/authStudent', () => (req, res, next) => { req.user = { id: 'student' }; req.schoolId = 'school'; next(); });
 jest.mock('../middleware/authTeacher', () => (req, res, next) => { req.user = { id: 'teacher' }; req.schoolId = 'school'; next(); });
@@ -18,6 +21,15 @@ jest.mock('../utils/studentPortalLogger', () => ({ logStudentPortalEvent: jest.f
 jest.mock('../services/errorClassifier', () => ({ recordErrors: jest.fn().mockResolvedValue([]) }));
 const app = express(); app.use(express.json()); app.use('/practice', require('../routes/practiceRoutes'));
 beforeEach(() => { jest.clearAllMocks(); mockAttempt.insertMany.mockResolvedValue([]); });
+test('caches authenticated practice metadata after the first request', async () => {
+  const first = await request(app).get('/practice/student/meta');
+  const second = await request(app).get('/practice/student/meta');
+
+  expect(first.status).toBe(200);
+  expect(first.headers['x-cache']).toBe('MISS');
+  expect(second.headers['x-cache']).toBe('HIT');
+  expect(second.body).toEqual(first.body);
+});
 test('teacher creates a matching question; student receives no answer key', async () => {
   mockQuestion.create.mockImplementation(async (value) => ({ _id: id, ...value }));
   const result = await request(app).post('/practice/teacher/questions').send({ classId: id, sectionId: id, subjectId: id, type: 'matching', question: 'Match', matchingLeft: ['Sun', 'Earth'], correctAnswer: '["Star","Planet"]' });

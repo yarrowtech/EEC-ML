@@ -5,6 +5,8 @@
  */
 
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { createPortal } from 'react-dom';
+import toast from 'react-hot-toast';
 import { motion as Motion, useInView, AnimatePresence } from 'framer-motion';
 import {
   BookOpen,
@@ -62,8 +64,10 @@ import {
   RotateCw,
   History,
   Trash2,
+  MoreVertical,
   MessageSquarePlus,
   Images,
+  X as XIcon,
 } from 'lucide-react';
 
 import { Card, CardContent } from '@/components/ui/card';
@@ -79,13 +83,6 @@ import {
 import { ScrollArea, ScrollBar } from '@/components/ui/scroll-area';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Textarea } from '@/components/ui/textarea';
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from '@/components/ui/select';
 import { cn } from '@/lib/utils';
 import mermaid from 'mermaid';
 import { fetchCachedJson } from '@/utils/studentApiCache';
@@ -3681,6 +3678,18 @@ function AiTutorPanel({ onGeneratedStudyItem = () => {}, fullHeight = false, fil
   const [topicTitle, setTopicTitle] = useState('');
   const [question, setQuestion] = useState('');
   const [activeChip, setActiveChip] = useState('Custom Chat');
+  const [toolsOpen, setToolsOpen] = useState(false);
+  const [toolsView, setToolsView] = useState('root'); // root | subjects | topics | tools
+  useEffect(() => { if (!toolsOpen) setToolsView('root'); }, [toolsOpen]);
+  const toolsMenuRef = useRef(null);
+  useEffect(() => {
+    if (!toolsOpen) return undefined;
+    const onDown = (e) => { if (toolsMenuRef.current && !toolsMenuRef.current.contains(e.target)) setToolsOpen(false); };
+    const onKey = (e) => { if (e.key === 'Escape') setToolsOpen(false); };
+    document.addEventListener('pointerdown', onDown);
+    document.addEventListener('keydown', onKey);
+    return () => { document.removeEventListener('pointerdown', onDown); document.removeEventListener('keydown', onKey); };
+  }, [toolsOpen]);
   const [quizDifficulty, setQuizDifficulty] = useState('medium');
   const [visualDepth, setVisualDepth] = useState('detailed');
   const [visualGoal, setVisualGoal] = useState('understand');
@@ -3697,6 +3706,8 @@ function AiTutorPanel({ onGeneratedStudyItem = () => {}, fullHeight = false, fil
   const [showJump, setShowJump] = useState(false);
   const [historyOpen, setHistoryOpen] = useState(false);
   const [savedConversations, setSavedConversations] = useState([]);
+  const [historyMenuFor, setHistoryMenuFor] = useState(null); // conversation id whose ⋮ menu is open
+  const [pendingDelete, setPendingDelete] = useState(null);   // conversation waiting for confirmation
   const [showAllHistory, setShowAllHistory] = useState(false);
   const [historyLoading, setHistoryLoading] = useState(false);
   const conversationIdRef = useRef(null);
@@ -3809,16 +3820,26 @@ function AiTutorPanel({ onGeneratedStudyItem = () => {}, fullHeight = false, fil
     setHistoryOpen(false);
   };
   const removeConversation = async (e, id) => {
-    e.stopPropagation();
+    e?.stopPropagation?.();
+    const removed = savedConversations.find((c) => c.id === id);
     setSavedConversations((prev) => prev.filter((c) => c.id !== id));
     if (conversationIdRef.current === id) conversationIdRef.current = null;
-    await deleteTutorConversation(id);
+    const ok = await deleteTutorConversation(id);
+    if (ok) {
+      toast.success('Chat deleted');
+    } else {
+      // put it back so the list matches what's really saved
+      if (removed) setSavedConversations((prev) => (prev.some((c) => c.id === id) ? prev : [...prev, removed].sort((a, b) => Number(b.updatedAt || 0) - Number(a.updatedAt || 0))));
+      toast.error('Couldn’t delete the chat. Please try again.');
+    }
   };
 
   // Close the history panel on outside click.
   useEffect(() => {
     if (!historyOpen) return;
     const onPointerDown = (e) => {
+      if (e.target.closest?.('[data-tutor-confirm]')) return;
+      if (!e.target.closest?.('[data-history-menu]')) setHistoryMenuFor(null);
       if (historyPanelRef.current && !historyPanelRef.current.contains(e.target)) {
         setHistoryOpen(false);
       }
@@ -3868,6 +3889,12 @@ function AiTutorPanel({ onGeneratedStudyItem = () => {}, fullHeight = false, fil
     (selectedSubject.topics || []).forEach((topic) => addOption(topic?.title, 'Topic', ''));
     return options;
   }, [selectedSubject]);
+
+  // Menu list: just the chapters, numbered 1, 2, 3… (topics if a subject has no chapters)
+  const numberedTopics = useMemo(() => {
+    const chapters = topics.filter((t) => t.type === 'Chapter');
+    return (chapters.length ? chapters : topics).map((t, i) => ({ ...t, label: String(i + 1) }));
+  }, [topics]);
 
   const chooseTopic = (value) => {
     const selected = topics.find((topic) => topic.title === value);
@@ -4121,53 +4148,17 @@ function AiTutorPanel({ onGeneratedStudyItem = () => {}, fullHeight = false, fil
           </div>
 
           <div className="flex items-center gap-2">
-            <Select
-              value={subjectKey || undefined}
-              onValueChange={(value) => { setSubjectKey(value); setTopicTitle(''); setChapterTitle(''); }}
-            >
-              <SelectTrigger className="h-9 w-[128px] rounded-lg border-[#E7E3D9] bg-white text-xs text-[#26332E] shadow-sm sm:w-[150px]">
-                <SelectValue
-                  placeholder={curriculumStatus === 'loading' ? 'Loading…' : curriculumStatus === 'empty' || curriculumStatus === 'error' ? 'No subjects' : 'Subject'}
-                />
-              </SelectTrigger>
-              <SelectContent>
-                {subjects.map((s) => <SelectItem key={s.key} value={s.key}>{s.title}</SelectItem>)}
-              </SelectContent>
-            </Select>
-            <AnimatePresence initial={false}>
-              {subjectKey && (
-                <Motion.div
-                  initial={{ opacity: 0, width: 0 }}
-                  animate={{ opacity: 1, width: 'auto' }}
-                  exit={{ opacity: 0, width: 0 }}
-                  transition={{ duration: 0.2, ease: 'easeOut' }}
-                  className="overflow-hidden"
-                >
-                  <Select
-                    value={topicTitle || undefined}
-                    onValueChange={chooseTopic}
-                  >
-                    <SelectTrigger className="h-9 w-[128px] rounded-lg border-[#E7E3D9] bg-white text-xs text-[#26332E] shadow-sm sm:w-[150px]">
-                      <SelectValue placeholder="Chapter / topic" />
-                    </SelectTrigger>
-                    <SelectContent>
-                      {topics.map((t) => <SelectItem key={`${t.type}-${t.title}`} value={t.title}>{t.type}: {t.title}</SelectItem>)}
-                    </SelectContent>
-                  </Select>
-                </Motion.div>
-              )}
-            </AnimatePresence>
             <div className="relative" ref={historyPanelRef}>
               <Tooltip>
                 <TooltipTrigger asChild>
                   <Button
                     variant="ghost"
-                    size="icon"
+                    size="sm"
                     onClick={() => (historyOpen ? setHistoryOpen(false) : openHistory())}
-                    className={`size-9 shrink-0 rounded-lg text-[#5c655f] hover:bg-[#FEF3C7] hover:text-[#B45309] ${historyOpen ? 'bg-[#FEF3C7] text-[#B45309]' : ''}`}
+                    className={`h-9 shrink-0 gap-1.5 rounded-lg px-2.5 text-xs font-semibold text-[#5c655f] hover:bg-[#FEF3C7] hover:text-[#B45309] ${historyOpen ? 'bg-[#FEF3C7] text-[#B45309]' : ''}`}
                     aria-label="Chat history"
                   >
-                    <History className="size-4.5" />
+                    <History className="size-4" /> History
                   </Button>
                 </TooltipTrigger>
                 <TooltipContent>Chat history</TooltipContent>
@@ -4223,14 +4214,30 @@ function AiTutorPanel({ onGeneratedStudyItem = () => {}, fullHeight = false, fil
                                     </p>
                                   </div>
                                 </button>
-                                <button
-                                  type="button"
-                                  onClick={(e) => removeConversation(e, conversation.id)}
-                                  className="absolute right-2 top-1/2 -translate-y-1/2 rounded-lg p-1.5 text-[#a3aaa2] opacity-0 transition-opacity hover:bg-rose-50 hover:text-rose-500 group-hover:opacity-100"
-                                  aria-label="Delete conversation"
-                                >
-                                  <Trash2 className="size-3.5" />
-                                </button>
+                                <div data-history-menu className="absolute right-1.5 top-1/2 -translate-y-1/2">
+                                  <button
+                                    type="button"
+                                    onClick={(e) => { e.stopPropagation(); setHistoryMenuFor((cur) => (cur === conversation.id ? null : conversation.id)); }}
+                                    aria-haspopup="menu"
+                                    aria-expanded={historyMenuFor === conversation.id}
+                                    aria-label="More options"
+                                    className={`rounded-lg p-1.5 text-[#78827B] transition-colors hover:bg-[#FEF3C7] hover:text-[#26332E] ${historyMenuFor === conversation.id ? 'bg-[#FEF3C7] text-[#26332E]' : ''}`}
+                                  >
+                                    <MoreVertical className="size-4" />
+                                  </button>
+                                  {historyMenuFor === conversation.id && (
+                                    <div role="menu" className="absolute right-0 top-full z-10 mt-1 w-32 overflow-hidden rounded-xl border border-[#E7E3D9] bg-white py-1 shadow-lg">
+                                      <button
+                                        type="button"
+                                        role="menuitem"
+                                        onClick={(e) => { e.stopPropagation(); setHistoryMenuFor(null); setPendingDelete(conversation); }}
+                                        className="flex w-full items-center gap-2 px-3 py-2 text-left text-sm font-semibold text-rose-600 hover:bg-rose-50"
+                                      >
+                                        <Trash2 className="size-4" /> Delete
+                                      </button>
+                                    </div>
+                                  )}
+                                </div>
                               </li>
                             ))}
                           </ul>
@@ -4257,7 +4264,7 @@ function AiTutorPanel({ onGeneratedStudyItem = () => {}, fullHeight = false, fil
                 onClick={clearConversation}
                 className="h-9 shrink-0 rounded-lg px-2.5 text-xs font-semibold text-[#78827B] hover:bg-[#FEF3C7] hover:text-[#B45309]"
               >
-                Clear
+                New chat
               </Button>
             )}
           </div>
@@ -4445,6 +4452,7 @@ function AiTutorPanel({ onGeneratedStudyItem = () => {}, fullHeight = false, fil
                   topics={topics}
                   selectedTopic={topicTitle}
                   starters={STARTER_PROMPTS}
+                  typingExample={typedPlaceholder}
                   onChooseSubject={(value) => { setSubjectKey(value); setTopicTitle(''); setChapterTitle(''); }}
                   onChooseTopic={chooseTopic}
                   onChooseStarter={applyStarter}
@@ -4469,59 +4477,6 @@ function AiTutorPanel({ onGeneratedStudyItem = () => {}, fullHeight = false, fil
 
         {/* Composer */}
         <div className="border-t border-[#E7E3D9] bg-[#FBF9F4] px-4 py-3 sm:px-5">
-          {/* Action selector */}
-          <div className="mb-2.5 flex min-w-0 items-center gap-2">
-            <span className="hidden shrink-0 items-center gap-1 text-[11px] font-bold uppercase tracking-wide text-[#78827B] sm:inline-flex">
-              <Sparkles className="size-3.5 text-[#F59E0B]" /> Do
-            </span>
-            {canScrollChipsLeft && (
-              <button
-                type="button"
-                onClick={() => scrollChips(-1)}
-                className="flex size-7 shrink-0 items-center justify-center rounded-full border border-[#E7E3D9] bg-white text-[#5c655f] shadow-sm hover:bg-[#FEF3C7] hover:text-[#26332E]"
-                aria-label="Scroll actions left"
-              >
-                <ChevronLeft className="size-4" />
-              </button>
-            )}
-            <div
-              ref={chipsScrollRef}
-              className="flex min-w-0 flex-1 items-center gap-2 overflow-x-auto scroll-smooth whitespace-nowrap py-0.5 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden"
-            >
-              {COMPANION_CHIPS.map((chip) => {
-                const Icon = chip.icon;
-                const active = activeChip === chip.label;
-                return (
-                  <Motion.button
-                    key={chip.label}
-                    whileTap={{ scale: 0.96 }}
-                    onClick={() => setActiveChip(chip.label)}
-                    aria-pressed={active}
-                    className={cn(
-                      'inline-flex shrink-0 items-center gap-1.5 rounded-full border px-3 py-1.5 text-xs font-medium transition-colors',
-                      active
-                        ? 'border-[#F59E0B] bg-[#F59E0B] text-white shadow-sm'
-                        : 'border-[#E7E3D9] bg-white text-[#5c655f] hover:bg-[#FEF3C7]'
-                    )}
-                  >
-                    <Icon className={cn('size-3.5', active ? 'text-white' : 'text-[#F59E0B]')} />
-                    {chip.label}
-                  </Motion.button>
-                );
-              })}
-            </div>
-            {canScrollChipsRight && (
-              <button
-                type="button"
-                onClick={() => scrollChips(1)}
-                className="flex size-7 shrink-0 items-center justify-center rounded-full border border-[#E7E3D9] bg-white text-[#5c655f] shadow-sm hover:bg-[#FEF3C7] hover:text-[#26332E]"
-                aria-label="Scroll actions right"
-              >
-                <ChevronRight className="size-4" />
-              </button>
-            )}
-          </div>
-
           <AnimatePresence>
             {activeChip === 'Visual Explain' && (
               <Motion.div
@@ -4636,19 +4591,152 @@ function AiTutorPanel({ onGeneratedStudyItem = () => {}, fullHeight = false, fil
           </AnimatePresence>
 
           <div ref={composerRef} className="flex min-h-14 items-end gap-2 rounded-full border border-[#E7E3D9] bg-white p-2 shadow-sm transition-shadow focus-within:border-[#F59E0B] focus-within:ring-2 focus-within:ring-amber-100">
-            {/* <Tooltip>
-              <TooltipTrigger asChild>
-                <Button
-                  size="icon"
-                  variant="ghost"
-                  onClick={openAttachmentPicker}
-                  className="size-9 shrink-0 rounded-xl text-[#5c655f] hover:bg-[#FEF3C7] hover:text-[#26332E]"
-                >
-                  <Plus className="size-5" />
-                </Button>
-              </TooltipTrigger>
-              <TooltipContent>Attach notes or homework</TooltipContent>
-            </Tooltip> */}
+            {/* Tools: "+" opens the list; the chosen tool sits in the box as a chip with ✕ */}
+            <div ref={toolsMenuRef} className="relative flex h-10 shrink-0 items-center">
+              <button
+                type="button"
+                onClick={() => setToolsOpen((v) => !v)}
+                aria-haspopup="menu"
+                aria-expanded={toolsOpen}
+                aria-label="Tools"
+                title="Tools"
+                className={`flex size-10 items-center justify-center rounded-full bg-[#F59E0B] text-white shadow-sm transition-colors hover:bg-[#D97706] ${toolsOpen ? 'bg-[#D97706]' : ''}`}
+              >
+                <Plus className={`size-5 transition-transform ${toolsOpen ? 'rotate-45' : ''}`} />
+              </button>
+              <AnimatePresence>
+                {toolsOpen && (
+                  <Motion.div
+                    role="menu"
+                    aria-label="Tools"
+                    initial={{ opacity: 0, y: 6, scale: 0.98 }}
+                    animate={{ opacity: 1, y: 0, scale: 1 }}
+                    exit={{ opacity: 0, y: 6, scale: 0.98 }}
+                    transition={{ duration: 0.15 }}
+                    className="absolute bottom-full left-0 z-50 mb-3 max-h-[min(22rem,60vh)] w-64 overflow-y-auto rounded-2xl border border-[#E7E3D9] bg-white p-1.5 shadow-xl"
+                  >
+                    {toolsView === 'subjects' && (
+                      <>
+                        <button type="button" onClick={() => setToolsView('root')} className="mb-1 flex w-full items-center gap-1.5 rounded-xl px-2.5 py-2 text-left text-xs font-bold text-[#78827B] hover:bg-[#FBF9F4]">
+                          <ChevronLeft className="size-4" /> Subjects
+                        </button>
+                        {subjects.length === 0 ? (
+                          <p className="px-2.5 py-3 text-xs text-[#8D968F]">{curriculumStatus === 'loading' ? 'Loading your subjects…' : 'No subjects allocated yet.'}</p>
+                        ) : subjects.map((sub) => (
+                          <button
+                            key={sub.key}
+                            type="button"
+                            role="menuitem"
+                            onClick={() => { setSubjectKey(sub.key); setTopicTitle(''); setChapterTitle(''); setToolsView('topics'); }}
+                            className={`flex w-full items-center gap-2.5 rounded-xl px-2.5 py-2 text-left text-sm transition-colors ${subjectKey === sub.key ? 'bg-[#FEF3C7] font-semibold text-[#B45309]' : 'text-[#26332E] hover:bg-[#FBF9F4]'}`}
+                          >
+                            <BookOpen className="size-4 shrink-0 text-[#F59E0B]" />
+                            <span className="min-w-0 flex-1 truncate">{sub.title}</span>
+                            <ChevronRight className="size-4 shrink-0 text-[#C9C2B4]" />
+                          </button>
+                        ))}
+                      </>
+                    )}
+
+                    {toolsView === 'topics' && (
+                      <>
+                        <button type="button" onClick={() => setToolsView('subjects')} className="mb-1 flex w-full items-center gap-1.5 rounded-xl px-2.5 py-2 text-left text-xs font-bold text-[#78827B] hover:bg-[#FBF9F4]">
+                          <ChevronLeft className="size-4" /> <span className="truncate">{selectedSubject?.title || 'Topics'}</span>
+                        </button>
+                        {topics.length === 0 ? (
+                          <button type="button" onClick={() => setToolsOpen(false)} className="w-full rounded-xl px-2.5 py-3 text-left text-xs text-[#8D968F] hover:bg-[#FBF9F4]">
+                            No chapters published yet — ask about the whole subject.
+                          </button>
+                        ) : numberedTopics.map((t) => (
+                          <button
+                            key={`${t.type}-${t.title}`}
+                            type="button"
+                            role="menuitem"
+                            onClick={() => { chooseTopic(t.title); setToolsOpen(false); }}
+                            className={`flex w-full items-center gap-2.5 rounded-xl py-2 pr-2.5 text-left text-sm transition-colors pl-2.5 ${topicTitle === t.title ? 'bg-[#FEF3C7] font-semibold text-[#B45309]' : 'text-[#26332E] hover:bg-[#FBF9F4]'}`}
+                          >
+                            <span className="flex size-6 shrink-0 items-center justify-center rounded-full bg-[#F59E0B] text-[11px] font-bold text-white">{t.label}</span>
+                            <span className="min-w-0 truncate">{t.title}</span>
+                          </button>
+                        ))}
+                      </>
+                    )}
+
+                    {toolsView === 'root' && (
+                    <>
+                    <button
+                      type="button"
+                      role="menuitem"
+                      onClick={() => setToolsView('subjects')}
+                      className="flex w-full items-center gap-2.5 rounded-xl px-2.5 py-2 text-left text-sm text-[#26332E] transition-colors hover:bg-[#FBF9F4]"
+                    >
+                      <BookOpen className="size-4 shrink-0 text-[#F59E0B]" />
+                      <span className="min-w-0 flex-1">
+                        <span className="block font-semibold">Subject</span>
+                        <span className="block truncate text-[11px] text-[#8D968F]">{selectedSubject ? `${selectedSubject.title}${topicTitle ? ` · ${topicTitle}` : ''}` : 'Choose a subject & topic'}</span>
+                      </span>
+                      <ChevronRight className="size-4 shrink-0 text-[#C9C2B4]" />
+                    </button>
+                    <button
+                      type="button"
+                      role="menuitem"
+                      onClick={() => setToolsView('tools')}
+                      className="flex w-full items-center gap-2.5 rounded-xl px-2.5 py-2 text-left text-sm text-[#26332E] transition-colors hover:bg-[#FBF9F4]"
+                    >
+                      <Sparkles className="size-4 shrink-0 text-[#F59E0B]" />
+                      <span className="min-w-0 flex-1">
+                        <span className="block font-semibold">Tools</span>
+                        <span className="block truncate text-[11px] text-[#8D968F]">{activeChip !== 'Custom Chat' ? activeChip : 'Quiz, flashcards, mind map…'}</span>
+                      </span>
+                      <ChevronRight className="size-4 shrink-0 text-[#C9C2B4]" />
+                    </button>
+                    </>
+                    )}
+
+                    {toolsView === 'tools' && (
+                    <>
+                    <button type="button" onClick={() => setToolsView('root')} className="mb-1 flex w-full items-center gap-1.5 rounded-xl px-2.5 py-2 text-left text-xs font-bold text-[#78827B] hover:bg-[#FBF9F4]">
+                      <ChevronLeft className="size-4" /> Tools
+                    </button>
+                    {COMPANION_CHIPS.filter((chip) => chip.label !== 'Custom Chat').map((chip) => {
+                      const Icon = chip.icon;
+                      const active = activeChip === chip.label;
+                      return (
+                        <button
+                          key={chip.label}
+                          type="button"
+                          role="menuitem"
+                          onClick={() => { setActiveChip(chip.label); setToolsOpen(false); }}
+                          className={`flex w-full items-center gap-2.5 rounded-xl px-2.5 py-2 text-left text-sm transition-colors ${active ? 'bg-[#FEF3C7] font-semibold text-[#B45309]' : 'text-[#26332E] hover:bg-[#FBF9F4]'}`}
+                        >
+                          <Icon className="size-4 shrink-0 text-[#F59E0B]" />
+                          <span className="truncate">{chip.label}</span>
+                        </button>
+                      );
+                    })}
+                    </>
+                    )}
+                  </Motion.div>
+                )}
+              </AnimatePresence>
+            </div>
+
+            {activeChip !== 'Custom Chat' && (
+              <span className="flex h-10 shrink-0 items-center">
+                <span className="inline-flex max-w-[11rem] items-center gap-1.5 rounded-full bg-[#FEF3C7] py-1 pl-2.5 pr-1 text-xs font-semibold text-[#B45309]">
+                  <activeChipMeta.icon className="size-3.5 shrink-0" />
+                  <span className="truncate">{activeChip}</span>
+                  <button
+                    type="button"
+                    onClick={() => setActiveChip('Custom Chat')}
+                    aria-label={`Remove ${activeChip}`}
+                    className="flex size-5 shrink-0 items-center justify-center rounded-full hover:bg-[#F59E0B]/20"
+                  >
+                    <XIcon className="size-3.5" />
+                  </button>
+                </span>
+              </span>
+            )}
 
             <Textarea
               value={question}
@@ -4659,7 +4747,7 @@ function AiTutorPanel({ onGeneratedStudyItem = () => {}, fullHeight = false, fil
                   handleSend();
                 }
               }}
-              placeholder={listening ? 'Listening…' : (typedPlaceholder || `${activeChipMeta.label} — type your question…`)}
+              placeholder={listening ? 'Listening…' : 'Ask whatever you’re thinking…'}
               rows={1}
               aria-label="Your question"
               className="max-h-32 min-h-10 min-w-0 flex-1 resize-none overflow-y-auto rounded-none border-0 bg-transparent px-3 py-2 text-sm leading-6 text-slate-800 shadow-none placeholder:text-slate-400 focus-visible:ring-0"
@@ -4681,6 +4769,43 @@ function AiTutorPanel({ onGeneratedStudyItem = () => {}, fullHeight = false, fil
           </div>
         </div>
       </Panel>
+
+      {pendingDelete && typeof document !== 'undefined' && createPortal(
+        <div data-tutor-confirm className="fixed inset-0 z-[100] flex items-center justify-center bg-slate-900/50 p-4" onClick={() => setPendingDelete(null)}>
+          <Motion.div
+            role="alertdialog"
+            aria-modal="true"
+            aria-labelledby="tutor-delete-title"
+            aria-describedby="tutor-delete-desc"
+            initial={{ opacity: 0, scale: 0.95, y: 8 }}
+            animate={{ opacity: 1, scale: 1, y: 0 }}
+            transition={{ duration: 0.15 }}
+            onClick={(e) => e.stopPropagation()}
+            className="w-full max-w-sm rounded-2xl bg-white p-5 text-center shadow-2xl"
+          >
+            <div className="mx-auto mb-3 flex size-12 items-center justify-center rounded-full bg-rose-50">
+              <Trash2 className="size-5 text-rose-600" />
+            </div>
+            <h3 id="tutor-delete-title" className="text-base font-bold text-[#26332E]">Delete this chat?</h3>
+            <p id="tutor-delete-desc" className="mt-1 text-sm text-[#78827B]">
+              “<span className="font-semibold text-[#26332E]">{pendingDelete.title}</span>” will be removed from your history. This can’t be undone.
+            </p>
+            <div className="mt-5 grid grid-cols-2 gap-2">
+              <button type="button" autoFocus onClick={() => setPendingDelete(null)} className="rounded-full border border-[#E7E3D9] py-2.5 text-sm font-semibold text-[#5c655f] hover:bg-[#FBF9F4]">
+                Cancel
+              </button>
+              <button
+                type="button"
+                onClick={() => { const id = pendingDelete.id; setPendingDelete(null); removeConversation(null, id); }}
+                className="rounded-full border border-rose-300 bg-white py-2.5 text-sm font-semibold text-rose-600 hover:bg-rose-50"
+              >
+                Delete
+              </button>
+            </div>
+          </Motion.div>
+        </div>,
+        document.body,
+      )}
     </Section>
   );
 }

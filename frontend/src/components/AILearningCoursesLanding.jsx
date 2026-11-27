@@ -775,7 +775,22 @@ const AILearningCoursesLanding = ({ resumePath = null }) => {
     return <AILearningPracticePaperPage />;
   }
   if (topicSlug && subjectKey && assessmentSlug === 'tryout-section') {
-    return <AILearningTryoutSection />;
+    const query = new URLSearchParams(location.search);
+    const questionType = query.get('type') || '';
+    const includeAllChapters = query.get('scope') === 'chapters';
+    const tryoutSelection = location.state?.tryoutSelection;
+    return (
+      <AILearningTryoutSection
+        key={location.pathname + location.search}
+        questionType={questionType}
+        includeAllChapters={includeAllChapters}
+        autoStart={includeAllChapters || Boolean(questionType)}
+        onBack={tryoutSelection ? () => navigate('/student/practice-papers', {
+          replace: true,
+          state: { tryoutSelection },
+        }) : undefined}
+      />
+    );
   }
 
   if (topicSlug && subjectKey) {

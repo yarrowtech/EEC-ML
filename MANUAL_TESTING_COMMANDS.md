@@ -576,7 +576,21 @@ npm test -- --runInBand src/components/__tests__/StudentFamilyServices.test.jsx 
 - Check student table headers and all data are centered on desktop and mobile.
 - Clicking a student name or photo should do nothing; the separate View Details button should still open details. Verify selection and other actions still work.
 
+## Student practice paper chapters
+
+Open Practice Papers once, then leave and return within a minute. Verify the subject list appears from the browser cache. Repeat the authenticated practice metadata and Smart Learning map requests directly and check for an `X-Cache: HIT` response.
+
+Open a subject with at least two numbered textbook chapters. Verify Chapter 1 appears before Chapter 2 and each chapter initially displays its topics as separate numbered rows.
+Click Whole chapter for a subject with MCQs in two chapters and fill-in-the-blank questions in only one. Verify the test groups both chapters' MCQs together and includes exactly the published fill-in-the-blank questions. Exit and verify the subject's chapter list reappears.
+Click Practice whole subject on the right side of the chapter header and verify it opens the same combined test.
+Open a lesson tryout from Practice Papers and click Exit practice. Verify the same lesson's tryout cards reappear.
+Open a topic with two assigned tryout types. Verify only its assigned types appear, then start one and confirm the Smart Learning Courses test contains only questions of the chosen type.
+
 ## Student smart learning attachments
+
+At laptop and desktop widths, open a topic and verify the sticky toolbar aligns with the sidebar and lesson content. Check the Back, text-size, and fullscreen controls while scrolling.
+
+Open a long topic in the lesson reader. Scroll with a mouse wheel and verify the movement eases to a stop. Check that the sidebar and touch scrolling still respond normally, and that enabling reduced motion restores native wheel scrolling.
 
 Open a topic, then return to My Subjects. Confirm “Where you left off” and the bold subject and chapter number appear before the green Continue button, and that the button reopens the same topic.
 With a fresh session and no saved topic, confirm Continue opens the first available chapter topic.
@@ -603,6 +617,10 @@ Before opening an attachment, check that you can scroll to the last subject on t
 3. Open a standalone attachment without lesson-plan metadata and verify it is still available.
 4. Verify topics show their chapter and topic numbers, such as `1.1 Introduction to Computers`, and keep the same number after searching. Check that attachments show “Posted by” and that Download saves a stored file while Open previews it.
 
+## Student diary navigation
+
+Open My Diary on a tablet in portrait orientation. Verify Back appears before the diary icon and title and returns to the previous page. Open the diary directly in a fresh tab and verify Back opens the student dashboard. Rotate to landscape and verify Back is hidden.
+
 ## Student profile cover photo
 
 1. Set a school cover photo and open `/student/profile` as one of its students. Verify the blurred cover fills the banner at desktop and phone widths and that the profile text and photo controls remain readable.
@@ -621,6 +639,11 @@ Before opening an attachment, check that you can scroll to the last subject on t
 3. Open a class with only a legacy room number and verify the number still appears, with “To be announced” for the building and floor. Open a break and verify it has no location fields.
 
 ## Student exams
+
+Open Student Results on a phone or tablet. Verify each exam appears as a selectable card and assignments appear in a table. Open an exam card to see its scorecard, then use All results to return.
+Expand a subject heading in Assignments. Verify its table shows all graded assignments for that subject and collapses when you tap the heading again.
+Expand a subject with many assignments. Verify the table scrolls inside the expanded section with its headers visible, and check horizontal scrolling on narrow phones.
+Check that Sl No stays on one line and the Results filter displays only class names.
 
 1. Open `/student/exams` at desktop and phone widths. Verify the schedule spans the available content width, uses row dividers, and starts without summary tiles.
 2. Switch between All exams, Scheduled, and Completed. Search by subject and filter by term. Verify Clear filters restores the full list.

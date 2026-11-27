@@ -289,19 +289,28 @@ const ResultsView = ({ portal = 'student', studentId = '' } = {}) => {
   const [downloadingId, setDownloadingId] = useState('');
   const [pick, setPick] = useState(null);
   const [mobileDetail, setMobileDetail] = useState(false);
+  const [useResultCards, setUseResultCards] = useState(false);
+  useLayoutEffect(() => {
+    if (isParent || typeof window.matchMedia !== 'function') return undefined;
+    const media = window.matchMedia('(max-width: 1023.98px), (max-width: 1366px) and (pointer: coarse)');
+    const update = () => setUseResultCards(media.matches);
+    update();
+    media.addEventListener?.('change', update);
+    return () => media.removeEventListener?.('change', update);
+  }, [isParent]);
   // One bordered panel that fills the screen; the lists scroll inside it.
   const shellRef = useRef(null);
   const [shellHeight, setShellHeight] = useState(null);
   useLayoutEffect(() => {
     const measure = () => {
       const el = shellRef.current;
-      if (!el || window.innerWidth < 1024) { setShellHeight(null); return; }
+      if (!el || useResultCards || window.innerWidth < 1024) { setShellHeight(null); return; }
       setShellHeight(Math.max(520, window.innerHeight - el.getBoundingClientRect().top - 16));
     };
     measure();
     window.addEventListener('resize', measure);
     return () => window.removeEventListener('resize', measure);
-  }, [loading]);
+  }, [loading, useResultCards]);
 
   const fetchRequestIdRef = useRef(0);
 
@@ -498,7 +507,7 @@ const ResultsView = ({ portal = 'student', studentId = '' } = {}) => {
     const addSession = (session, className) => {
       const key = sessionKey(session);
       if (!key) return;
-      const option = options.get(key) || { key, label: String(session).trim(), classes: new Set() };
+      const option = options.get(key) || { key, classes: new Set() };
       const name = displayClassName(className);
       if (name) option.classes.add(name);
       options.set(key, option);
@@ -508,7 +517,7 @@ const ResultsView = ({ portal = 'student', studentId = '' } = {}) => {
     academicContext?.history?.forEach(entry => addSession(entry.session, entry.className));
     return [...options.values()].map(option => ({
       key: option.key,
-      label: [option.label, [...option.classes].join(', ')].filter(Boolean).join(' · '),
+      label: [...option.classes].join(', ') || 'Class unavailable',
     }));
   }, [groupsWithSession, activeAcademicSession, academicContext, reportCard?.grade]);
 
@@ -604,6 +613,7 @@ const ResultsView = ({ portal = 'student', studentId = '' } = {}) => {
     : (firstExamId || (assignmentResults.length ? 'assignments' : null));
   const activeGroup = activePick && activePick !== 'assignments' ? filteredGroups.find((g) => String(g._id) === activePick) : null;
   const activeEntry = activeGroup ? entriesById.get(String(activeGroup._id)) : null;
+  const showCardDetail = mobileDetail && activeGroup && activePick === pick;
 
   const stats = [
     { label: 'Exams published', value: overview.examsTaken, icon: Award, tone: 'text-blue-600 bg-blue-50' },
@@ -624,20 +634,21 @@ const ResultsView = ({ portal = 'student', studentId = '' } = {}) => {
           <span className="flex size-10 items-center justify-center rounded-xl bg-amber-100 text-amber-600"><Trophy className="size-5" /></span>
           <div className="min-w-0 flex-1">
             <h1 className="text-[17px] font-bold leading-tight text-slate-900">My Results</h1>
-            <p className="text-[12px] text-slate-500">Pick an exam on the left to see your marks for every subject.</p>
+            <p className="text-[12px] text-slate-500">{useResultCards
+              ? 'Choose an exam to see its scorecard, or view assignment marks below.'
+              : 'Pick an exam on the left to see your marks for every subject.'}</p>
           </div>
           <div className="flex w-full max-w-full items-center gap-2 sm:w-auto">
             {sessionOptions.length > 0 && (
               <details className="relative min-w-0">
                 <summary className="flex cursor-pointer list-none items-center gap-2 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-xs font-semibold text-amber-800 focus-visible:outline-amber-500">
                   <span className="truncate">
-                    {selectedOptions.length === 1 ? `Session ${selectedOptions[0].label}`
-                      : selectedOptions.length > 1 ? `${selectedOptions.length} sessions selected` : 'Select sessions'}
+                    {[...new Set(selectedOptions.map((option) => option.label))].join(', ') || 'Select classes'}
                   </span>
                   <ChevronDown size={14} aria-hidden="true" className="shrink-0" />
                 </summary>
                 <fieldset className="absolute left-0 z-20 mt-2 max-h-56 w-64 max-w-[calc(100vw-4rem)] space-y-1 overflow-y-auto rounded-xl border border-slate-200 bg-white p-2 shadow-lg sm:left-auto sm:right-0">
-                  <legend className="sr-only">Filter results by session</legend>
+                  <legend className="sr-only">Filter results by class</legend>
                   {sessionOptions.map(option => (
                     <label key={option.key} className="flex cursor-pointer items-center gap-2 rounded-lg px-2 py-2 text-sm text-slate-700 hover:bg-slate-50">
                       <input type="checkbox" checked={selectedSessionKeys.includes(option.key)} className="accent-amber-600"
@@ -682,9 +693,35 @@ const ResultsView = ({ portal = 'student', studentId = '' } = {}) => {
         )}
 
         {/* ── Body: list | details ── */}
-        <div className="grid min-h-0 flex-1 lg:grid-cols-[minmax(0,1fr)_minmax(0,3fr)]">
+        <div className={`grid min-h-0 flex-1 grid-cols-1 ${useResultCards ? '' : 'lg:grid-cols-[minmax(0,1fr)_minmax(0,3fr)]'}`}>
+          {useResultCards && !showCardDetail && (
+            <div className="space-y-5 p-4">
+              <section aria-labelledby="result-exam-list">
+                <h2 id="result-exam-list" className="mb-2 text-sm font-bold text-slate-900">Exams</h2>
+                {filteredGroups.length ? (
+                  <div className="grid gap-3 sm:grid-cols-2">
+                    {filteredGroups.map((group) => (
+                      <ResultPickerCard
+                        key={group._id}
+                        title={group.title || 'Exam'}
+                        subtitle={group.sessionLabel}
+                        icon={Trophy}
+                        onClick={() => { setPick(String(group._id)); setMobileDetail(true); }}
+                      />
+                    ))}
+                  </div>
+                ) : <p className="text-sm text-slate-500">No exam results published yet.</p>}
+              </section>
+              <section aria-labelledby="result-assignment-list">
+                <h2 id="result-assignment-list" className="mb-2 text-sm font-bold text-slate-900">Assignments</h2>
+                {assignmentResults.length ? (
+                  <AssignmentResultsTable results={assignmentResults} />
+                ) : <p className="text-sm text-slate-500">No assignment results published yet.</p>}
+              </section>
+            </div>
+          )}
           {/* left rail */}
-          <aside className={`min-h-0 flex-col border-slate-200 lg:flex lg:border-r ${mobileDetail ? 'hidden' : 'flex'}`}>
+          {!useResultCards && <aside className={`min-h-0 flex-col border-slate-200 lg:flex lg:border-r ${mobileDetail ? 'hidden' : 'flex'}`}>
             <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain p-2">
               <p className="px-2 pb-1.5 pt-1 text-[10.5px] font-bold uppercase tracking-wide text-slate-400">Exams</p>
               {filteredGroups.length === 0 ? (
@@ -732,11 +769,11 @@ const ResultsView = ({ portal = 'student', studentId = '' } = {}) => {
                 </>
               )}
             </div>
-          </aside>
+          </aside>}
 
           {/* right: details */}
-          <section className={`min-h-0 flex-col lg:flex ${mobileDetail ? 'flex' : 'hidden'}`}>
-            <button type="button" onClick={() => setMobileDetail(false)} className="m-3 mb-0 inline-flex items-center gap-1 self-start text-[12px] font-semibold text-amber-700 lg:hidden">
+          {(!useResultCards || showCardDetail) && <section className={`min-h-0 flex-col ${useResultCards ? 'flex' : `lg:flex ${mobileDetail ? 'flex' : 'hidden'}`}`}>
+            <button type="button" onClick={() => setMobileDetail(false)} className={`m-3 mb-0 inline-flex items-center gap-1 self-start text-[12px] font-semibold text-amber-700 ${useResultCards ? '' : 'lg:hidden'}`}>
               <ChevronLeft className="size-4" /> All results
             </button>
             <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain p-4">
@@ -762,48 +799,83 @@ const ResultsView = ({ portal = 'student', studentId = '' } = {}) => {
                 <p className="rounded-xl bg-slate-50 p-6 text-center text-[12.5px] text-slate-500">No published result for {activeGroup?.title || 'this exam'}.</p>
               )}
             </div>
-          </section>
+          </section>}
         </div>
       </div>
     </div>
   );
 };
 
-// Assignment results as a simple table (one row per graded assignment).
-const AssignmentResultsTable = ({ results = [] }) => (
-  <div className="overflow-hidden rounded-xl border border-slate-200">
-    <div className="overflow-x-auto">
-      <table className="w-full min-w-[560px] text-left text-[12.5px]">
-        <thead className="bg-slate-50 text-[11px] font-semibold uppercase tracking-wide text-slate-500">
-          <tr>
-            <th className="w-12 px-3 py-2.5">Sl No</th>
-            <th className="px-3 py-2.5">Assignment</th>
-            <th className="px-3 py-2.5">Subject</th>
-            <th className="px-3 py-2.5">Submitted</th>
-            <th className="px-3 py-2.5">Marks</th>
-            <th className="px-3 py-2.5">Teacher Feedback</th>
-          </tr>
-        </thead>
-        <tbody className="divide-y divide-slate-100">
-          {results.map((result, idx) => {
-            const obtained = toNumber(result?.obtainedMarks, 0);
-            const total = toNumber(result?.totalMarks, 0);
-            return (
-              <tr key={result._id || idx} className="align-top transition hover:bg-slate-50/70">
-                <td className="px-3 py-2.5 font-semibold text-slate-500">{idx + 1}</td>
-                <td className="max-w-[200px] px-3 py-2.5"><p className="truncate font-semibold capitalize text-slate-900" title={result?.examName}>{result?.examName || 'Assignment'}</p></td>
-                <td className="px-3 py-2.5"><span className="rounded-full bg-indigo-50 px-2 py-0.5 text-[11px] font-semibold text-indigo-700">{result?.subject || 'Assignment'}</span></td>
-                <td className="whitespace-nowrap px-3 py-2.5 text-slate-600">{result?.date ? formatDate(result.date) : '—'}</td>
-                <td className="whitespace-nowrap px-3 py-2.5 text-slate-500"><span className="font-bold text-slate-900">{obtained}</span> / {total} marks</td>
-                <td className="max-w-[240px] px-3 py-2.5 text-slate-700">{result?.remarks ? <p className="line-clamp-2" title={result.remarks}>{result.remarks}</p> : <span className="text-slate-400">—</span>}</td>
-              </tr>
-            );
-          })}
-        </tbody>
-      </table>
-    </div>
-  </div>
+const ResultPickerCard = ({ title, subtitle, icon: Icon, onClick }) => (
+  <button
+    type="button"
+    onClick={onClick}
+    className="flex w-full items-center gap-3 rounded-xl border border-l-4 border-slate-200 border-l-violet-500 bg-white p-4 text-left shadow-sm transition hover:bg-violet-50 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-violet-600"
+  >
+    <span className="flex size-10 shrink-0 items-center justify-center rounded-lg bg-violet-100 text-violet-700">
+      <Icon size={20} aria-hidden="true" />
+    </span>
+    <span className="min-w-0 flex-1">
+      <span className="block break-words text-sm font-bold text-slate-900">{title}</span>
+      {subtitle && <span className="mt-1 block text-xs text-slate-600">{subtitle}</span>}
+    </span>
+    <span className="flex size-8 shrink-0 items-center justify-center rounded-full bg-violet-100 text-violet-700">
+      <ChevronRight size={18} aria-hidden="true" />
+    </span>
+  </button>
 );
+
+// Assignment results as a simple table (one row per graded assignment).
+const assignmentSubject = (result) => String(result?.subject || '').trim() || 'Unspecified subject';
+
+const AssignmentResultsTable = ({ results = [] }) => {
+  const bySubject = new Map();
+  for (const result of results) {
+    const subject = assignmentSubject(result);
+    if (!bySubject.has(subject)) bySubject.set(subject, []);
+    bySubject.get(subject).push(result);
+  }
+  const subjects = Array.from(bySubject.keys()).sort((a, b) => a.localeCompare(b));
+
+  return (
+    <div className="min-w-0 space-y-3">
+      {subjects.map((subject) => (
+        <details key={subject} className="group overflow-hidden rounded-xl border border-slate-200 bg-white">
+          <summary className="flex cursor-pointer list-none items-center justify-between gap-3 bg-slate-50 px-4 py-3 text-sm font-semibold text-slate-900 hover:bg-violet-50 focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-violet-600 [&::-webkit-details-marker]:hidden">
+            {subject}
+            <ChevronDown size={17} className="shrink-0 text-violet-600 transition-transform group-open:rotate-180" aria-hidden="true" />
+          </summary>
+          <div role="region" aria-label={`${subject} assignment marks`} tabIndex={0} className="max-h-[50dvh] overflow-auto border-t border-slate-200 focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-violet-600">
+            <table className="w-full min-w-[360px] text-left text-[12.5px]">
+              <thead className="sticky top-0 bg-slate-50 text-[11px] font-semibold uppercase tracking-wide text-slate-500">
+                <tr>
+                  <th className="w-12 whitespace-nowrap px-3 py-2.5">Sl No</th>
+                  <th className="px-3 py-2.5">Assignment</th>
+                  <th className="px-3 py-2.5">Marks</th>
+                  <th className="px-3 py-2.5">Teacher Feedback</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-slate-100">
+                {bySubject.get(subject).map((result, idx) => {
+                  const obtained = toNumber(result?.obtainedMarks, 0);
+                  const total = toNumber(result?.totalMarks, 0);
+                  return (
+                    <tr key={result._id || idx} className="align-top transition hover:bg-slate-50/70">
+                      <td className="px-3 py-2.5 font-semibold text-slate-500">{idx + 1}</td>
+                      <td className="max-w-[200px] px-3 py-2.5"><p className="truncate font-semibold capitalize text-slate-900" title={result?.examName}>{result?.examName || 'Assignment'}</p></td>
+                      <td className="whitespace-nowrap px-3 py-2.5 text-slate-500"><span className="font-bold text-slate-900">{obtained}</span> / {total} marks</td>
+                      <td className="max-w-[240px] px-3 py-2.5 text-slate-700">{result?.remarks ? <p className="line-clamp-2" title={result.remarks}>{result.remarks}</p> : <span className="text-slate-400">—</span>}</td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          </div>
+        </details>
+      ))}
+    </div>
+  );
+};
 
 const AssignmentResultCard = ({ result }) => {
   const obtainedMarks = toNumber(result?.obtainedMarks, 0);

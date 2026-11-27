@@ -1,9 +1,12 @@
 import { prefetchJson } from './studentApiCache';
+import { loadSmartLearningSubjects } from './smartLearningMap';
 
 // Must match the base DashboardHome / StudentDashboardContext build their URLs
 // with, otherwise the prefetched cache keys would never be hit.
 export const STUDENT_API_BASE = (import.meta.env.VITE_API_URL || 'http://localhost:5000').replace(/\/+$/, '');
 export const STUDENT_DASHBOARD_TTL_MS = 5 * 60 * 1000;
+export const PRACTICE_META_URL = `${STUDENT_API_BASE}/api/practice/student/meta`;
+export const PRACTICE_META_TTL_MS = 60 * 1000;
 
 export const STUDENT_DASHBOARD_URLS = [
   '/api/student/auth/dashboard',
@@ -23,4 +26,6 @@ export const STUDENT_DASHBOARD_URLS = [
 export const prefetchStudentDashboard = () => {
   import('../components/Dashboard').catch(() => {});
   prefetchJson(STUDENT_DASHBOARD_URLS, { ttlMs: STUDENT_DASHBOARD_TTL_MS });
+  prefetchJson([PRACTICE_META_URL], { ttlMs: PRACTICE_META_TTL_MS });
+  loadSmartLearningSubjects().catch(() => {});
 };

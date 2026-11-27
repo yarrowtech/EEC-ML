@@ -2,7 +2,7 @@ import React, { useEffect, useState, useRef, useMemo, forwardRef, useImperativeH
 import { useNavigate } from "react-router-dom";
 import {
   Plus, Trash2, BookOpen, FlaskConical, Layers, PenLine, GraduationCap,
-  ChevronRight, Clock, Search, CheckCircle2, X, Maximize2, Minimize2,
+  ArrowLeft, ChevronRight, Clock, Search, CheckCircle2, X, Maximize2, Minimize2,
 } from "lucide-react";
 import PointsBadge from "./PointsBadge";
 import MoodIcon from "./MoodIcon";
@@ -271,6 +271,16 @@ const AssignmentView = forwardRef(({ defaultType = "school" }, ref) => {
           <div ref={diaryRef} className={`flex min-h-0 flex-col overflow-hidden bg-white text-[#0f172a] ${diaryFullscreen ? "h-full w-full" : "m-3 h-[calc(100%-1.5rem)] rounded-2xl border border-slate-200/80 shadow-sm sm:rounded-3xl"}`}>
             {/* ── Top bar ── */}
             <header className="flex shrink-0 items-center gap-3 border-b border-slate-200 px-4 py-3 sm:px-6">
+              <button
+                type="button"
+                onClick={() => {
+                  if (window.history.state?.idx > 0) navigate(-1);
+                  else navigate("/student", { replace: true });
+                }}
+                className="hidden shrink-0 items-center gap-1.5 rounded-full border border-violet-200 bg-white px-3 py-2 text-xs font-semibold text-violet-700 shadow-sm hover:bg-violet-50 md:max-[1025px]:portrait:inline-flex"
+              >
+                <ArrowLeft size={15} aria-hidden="true" /> Back
+              </button>
               <span className="flex size-10 shrink-0 items-center justify-center rounded-full bg-[#8b5cf6] text-white shadow-sm">
                 <BookOpen className="size-5" />
               </span>

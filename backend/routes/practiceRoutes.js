@@ -13,6 +13,7 @@ const Section = require('../models/Section');
 const Subject = require('../models/Subject');
 const Timetable = require('../models/Timetable');
 const { logStudentPortalEvent, logStudentPortalError } = require('../utils/studentPortalLogger');
+const { studentDashboardCache } = require('../utils/responseCache');
 
 const router = express.Router();
 const { TYPES, normalizeQuestion, gradeAnswer } = require('../utils/practiceFormats');
@@ -302,7 +303,7 @@ router.delete('/teacher/questions/:id', authTeacher, async (req, res) => {
 });
 
 // Student: meta (class/section/subjects)
-router.get('/student/meta', authStudent, async (req, res) => {
+router.get('/student/meta', authStudent, studentDashboardCache.cache, async (req, res) => {
   try {
     const schoolId = req.schoolId;
     const campusId = req.campusId || null;

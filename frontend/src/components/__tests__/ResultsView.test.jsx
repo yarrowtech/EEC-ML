@@ -32,6 +32,13 @@ describe('student published results', () => {
             grade: 'A+',
             status: 'pass',
             remarks: 'Clear working and explanation.',
+          }, {
+            _id: 'submission-2',
+            examName: 'Keyboard worksheet',
+            subject: 'Computer',
+            resultType: 'assignment',
+            obtainedMarks: 9,
+            totalMarks: 10,
           }],
         });
       }
@@ -55,11 +62,20 @@ describe('student published results', () => {
     );
 
     expect(await screen.findByText('Published Assignment Results')).toBeInTheDocument();
+    const subjectHeading = screen.getByText('Mathematics');
+    expect(subjectHeading.closest('details')).not.toHaveAttribute('open');
+    fireEvent.click(subjectHeading);
     expect(screen.getByText('Fractions homework')).toBeInTheDocument();
-    expect(screen.getByText('Mathematics')).toBeInTheDocument();
     expect(screen.getByText('18')).toBeInTheDocument();
     expect(screen.getByText('/ 20 marks')).toBeInTheDocument();
     expect(screen.getByText('Clear working and explanation.')).toBeInTheDocument();
+    const table = within(subjectHeading.closest('details')).getByRole('table');
+    expect(within(table).queryByRole('columnheader', { name: 'Subject' })).not.toBeInTheDocument();
+    expect(within(table).queryByRole('columnheader', { name: 'Submitted' })).not.toBeInTheDocument();
+    expect(within(table).getByText('Fractions homework')).toBeInTheDocument();
+    expect(within(table).queryByText('Keyboard worksheet')).not.toBeInTheDocument();
+    fireEvent.click(subjectHeading);
+    expect(subjectHeading.closest('details')).not.toHaveAttribute('open');
 
     await waitFor(() => {
       expect(global.fetch).toHaveBeenCalledWith(
@@ -69,6 +85,41 @@ describe('student published results', () => {
         })
       );
     });
+  });
+
+  test('opens exam scorecards and displays assignment marks in a table on compact screens', async () => {
+    const originalMatchMedia = window.matchMedia;
+    window.matchMedia = jest.fn(() => ({
+      matches: true,
+      addEventListener: jest.fn(),
+      removeEventListener: jest.fn(),
+    }));
+    const fetchOtherResults = global.fetch.getMockImplementation();
+    global.fetch.mockImplementation((url, options) => String(url).includes('/api/exam/results/me')
+      ? jsonResponse({ academicContext: { activeSession: '2026-2027', className: '5' }, data: [{
+        _id: 'result-1',
+        examId: { _id: 'exam-1', groupId: 'group-1', term: 'Final', subject: 'Computer', marks: 100, date: '2026-11-18T12:00:00Z' },
+        examGroupSchedule: { startDate: '2026-11-16', endDate: '2026-11-20' },
+        marks: 80,
+        published: true,
+      }] })
+      : fetchOtherResults(url, options));
+
+    try {
+      render(<MemoryRouter initialEntries={['/student/results']}><ResultsView /></MemoryRouter>);
+      const exam = await screen.findByRole('button', { name: /Final/ });
+      expect(screen.queryByRole('article')).not.toBeInTheDocument();
+      fireEvent.click(exam);
+      expect(within(screen.getByRole('article')).getByRole('heading', { name: 'Final' })).toBeInTheDocument();
+
+      fireEvent.click(screen.getByRole('button', { name: 'All results' }));
+      fireEvent.click(screen.getByText('Mathematics'));
+      const assignments = within(screen.getByText('Mathematics').closest('details'));
+      expect(assignments.getByText('Fractions homework')).toBeInTheDocument();
+      expect(assignments.getByText('Clear working and explanation.')).toBeInTheDocument();
+    } finally {
+      window.matchMedia = originalMatchMedia;
+    }
   });
 
   test('shows a published exam summary and subject marks in the same card', async () => {
@@ -114,13 +165,13 @@ describe('student published results', () => {
     })));
 
     expect(screen.queryByRole('button', { name: /Annual/ })).not.toBeInTheDocument();
-    fireEvent.click(screen.getByText('Session 2026-2027 · Class 5'));
-    const active = screen.getByLabelText('2026-2027 · Class 5');
-    const previous = screen.getByLabelText('2025-2026 · Class 4');
+    fireEvent.click(screen.getByText('Class 5', { selector: 'summary span' }));
+    const active = screen.getByLabelText('Class 5');
+    const previous = screen.getByLabelText('Class 4');
     expect(active).toBeChecked();
     expect(previous).not.toBeChecked();
     fireEvent.click(previous);
-    expect(screen.getByText('2 sessions selected')).toBeInTheDocument();
+    expect(screen.getByText('Class 5, Class 4')).toBeInTheDocument();
     expect(screen.getByRole('button', { name: /Annual/ })).toBeInTheDocument();
 
     fireEvent.click(screen.getByRole('button', { name: 'Refresh results' }));
@@ -129,6 +180,6 @@ describe('student published results', () => {
       expect.objectContaining({ cache: 'no-store' })
     ));
     await waitFor(() => expect(screen.getByRole('button', { name: 'Refresh results' })).toBeEnabled());
-    expect(screen.getByText('2 sessions selected')).toBeInTheDocument();
+    expect(screen.getByText('Class 5, Class 4')).toBeInTheDocument();
   });
 });
