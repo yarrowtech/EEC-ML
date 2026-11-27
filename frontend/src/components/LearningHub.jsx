@@ -103,23 +103,25 @@ const LearningHub = () => {
 
   return (
     <div
-      className={usesSubjectScroller ? `w-full ${subjectScrollLayout}` : 'min-h-full w-full'}
+      className={usesSubjectScroller || activeTab.key === 'tutor' ? `w-full ${subjectScrollLayout}` : 'min-h-full w-full'}
       style={{
-        backgroundColor: '#ffffff',
+        // Subjects / chapters: a card on the portal background (like Materials); tutor stays white
+        backgroundColor: 'transparent',
         // backgroundImage: 'radial-gradient(at 0% 0%, rgba(139, 92, 246, 0.05) 0px, transparent 50%), radial-gradient(at 100% 100%, rgba(16, 185, 129, 0.05) 0px, transparent 50%)',
       }}
     >
       {activeTab.key === 'tutor' && (
-      <div className="flex w-full flex-col gap-3 p-4 sm:px-5 sm:py-4">
+      <div className="flex min-h-0 w-full flex-1 flex-col p-3 sm:p-4">
         {activeTab.key === 'tutor' && (
           <Motion.div
             key="tutor"
+            className="flex min-h-0 flex-1 flex-col"
             initial={{ opacity: 0, y: 6 }}
             animate={{ opacity: 1, y: 0 }}
             transition={{ duration: 0.3, ease: [0.4, 0, 0.2, 1] }}
           >
             <TooltipProvider delayDuration={150}>
-              <AiTutorPanel />
+              <AiTutorPanel fill />
             </TooltipProvider>
           </Motion.div>
         )}

@@ -34,11 +34,14 @@ const TYPE_COLORS = {
   creative: 'bg-orange-600 text-white',
 };
 
-const PromptCard = ({ prompt, onStart }) => (
+// Left accent colour, cycled per card
+const CARD_ACCENTS = ['border-l-indigo-500', 'border-l-emerald-500', 'border-l-amber-500', 'border-l-rose-500', 'border-l-sky-500', 'border-l-violet-500'];
+
+const PromptCard = ({ prompt, onStart, index = 0 }) => (
   <Motion.div
     initial={{ opacity: 0, y: 8 }}
     animate={{ opacity: 1, y: 0 }}
-    className="bg-white rounded-2xl border border-gray-100 shadow-sm hover:shadow-md transition-all cursor-pointer group"
+    className={`bg-white rounded-2xl border border-gray-100 border-l-[5px] ${CARD_ACCENTS[index % CARD_ACCENTS.length]} shadow-sm hover:shadow-md transition-all cursor-pointer group`}
     onClick={() => onStart(prompt)}
   >
     <div className="p-5">
@@ -451,9 +454,10 @@ const WritingPracticePage = ({ topics, heading, subheading, onSessionChange } = 
             </div>
           ) : (
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-              {prompts.map((p) => (
+              {prompts.map((p, i) => (
                 <PromptCard
                   key={p._id}
+                  index={i}
                   prompt={p}
                   onStart={(pr) => { setSelectedPrompt(pr); setView('editor'); }}
                 />

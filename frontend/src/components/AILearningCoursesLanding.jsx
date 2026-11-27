@@ -94,6 +94,9 @@ const DEFAULT_STYLE = CARD_STYLES[4]; // amber — fallback while a subject's gr
 // Chapter status tiers for the "chapters overview" page — a chapter's
 // position in the list plus its own progress decide which tier it lands in
 // (see chapterStats in SubjectTopicsView). Purely presentational.
+// Left accent colour for each lesson card, cycled
+const LESSON_ACCENTS = ['border-l-indigo-500', 'border-l-emerald-500', 'border-l-amber-500', 'border-l-rose-500', 'border-l-sky-500', 'border-l-violet-500'];
+
 const CHAPTER_STATUS_META = {
   completed: { chip: 'bg-emerald-600 text-white', label: 'Done', tile: 'bg-emerald-50 text-emerald-700', bar: 'bg-emerald-500' },
   'almost-done': { chip: 'bg-violet-50 text-violet-700', label: 'Almost done', tile: 'bg-violet-50 text-violet-700', bar: 'bg-violet-500' },
@@ -489,7 +492,7 @@ const SubjectTopicsView = ({ subject, onBack, style = DEFAULT_STYLE }) => {
                   aria-label={firstTopic ? `Open ${chapter.title}` : undefined}
                   onClick={() => firstTopic && openTopic(firstTopic)}
                   onKeyDown={(e) => { if (firstTopic && (e.key === 'Enter' || e.key === ' ') && e.target === e.currentTarget) { e.preventDefault(); openTopic(firstTopic); } }}
-                  className={`group overflow-hidden rounded-xl border border-slate-200 bg-white p-3.5 shadow-sm transition-all duration-200 ${firstTopic ? 'cursor-pointer hover:border-violet-400 hover:shadow-md focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-violet-500' : 'opacity-70'}`}
+                  className={`group overflow-hidden rounded-xl border border-slate-200 border-l-[5px] ${LESSON_ACCENTS[originalIndex % LESSON_ACCENTS.length]} bg-white p-3.5 shadow-sm transition-all duration-200 ${firstTopic ? 'cursor-pointer hover:border-violet-400 hover:shadow-md focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-violet-500' : 'opacity-70'}`}
                 >
                   <div className="flex items-center gap-3 sm:gap-4">
                     <div className="flex min-w-0 flex-1 items-start gap-3 sm:items-center sm:gap-3.5">
@@ -780,7 +783,7 @@ const AILearningCoursesLanding = ({ resumePath = null }) => {
   }
 
   return (
-    <div className={`m-3 rounded-2xl border border-slate-200/80 bg-[#f8f9fd] px-4 py-4 text-slate-900 shadow-sm sm:m-4 sm:rounded-3xl sm:px-5 flex min-h-0 flex-1 flex-col overflow-hidden`}>
+    <div className={`m-3 rounded-2xl border border-slate-200/80 bg-[#f8f9fd] px-4 py-4 text-slate-900 shadow-sm sm:rounded-3xl sm:px-5 flex min-h-0 flex-1 flex-col overflow-hidden`}>
       <div className={selectedSubject ? 'min-h-0 w-full flex-1 overflow-y-auto overscroll-contain pr-1 custom-scrollbar' : 'flex min-h-0 w-full flex-1 flex-col'}>
         {selectedSubject ? (
           <SubjectTopicsView

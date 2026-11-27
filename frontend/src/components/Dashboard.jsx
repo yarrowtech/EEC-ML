@@ -210,8 +210,10 @@ const DashboardContent = () => {
   const isTopicReaderPath = location.pathname.includes('/smart-learning-courses/subject/') && location.pathname.includes('/topic/') && !location.pathname.includes('/assessment/');
   const isSubjectChaptersPath = /\/smart-learning-courses\/subject\/[^/]+\/?$/.test(location.pathname);
   const isSubjectsOverviewPath = /\/student\/smart-learning-courses\/?$/.test(location.pathname);
-  const isContainedLearningPage = isSubjectsOverviewPath || isSubjectChaptersPath || /\/student\/(study-materials|practice-papers|routine|assignments-lab)\/?$/.test(location.pathname);
   const isAiTutorPath = /\/student\/(learning|smart-learning|smart-learning-tutor)\/?$/.test(location.pathname);
+  // AI tutor: the portal top bar only on phones/tablets (desktop tutor has its own header)
+  const hideHeaderForTutor = isAiTutorPath && typeof window !== 'undefined' && window.innerWidth >= 1024;
+  const isContainedLearningPage = isSubjectsOverviewPath || isSubjectChaptersPath || isAiTutorPath || /\/student\/(study-materials|practice-papers|routine|assignments-lab)\/?$/.test(location.pathname);
   // Community Wall has its own page header — hide the portal header there.
   const isCommunityWallPath = /\/student\/assignments-academic-alcove\/?$/.test(location.pathname);
   const isFullscreenView = effectiveView === 'excuse-letter'
@@ -377,7 +379,7 @@ const DashboardContent = () => {
       <div className="flex h-dvh min-h-dvh w-full flex-col overflow-hidden bg-gray-200/80">
         {/* Upright tablet: the top bar runs the full width of the screen, edge to edge,
             above the icon rail and the page (a divider underneath). */}
-        {isTabletPortrait && effectiveView !== 'chat' && !isChatBoxOpen && !isTopicReaderPath && !isSubjectChaptersPath && !isAiTutorPath && !isCommunityWallPath && effectiveView !== 'assignments-journal' && (
+        {isTabletPortrait && effectiveView !== 'chat' && !isChatBoxOpen && !isTopicReaderPath && !hideHeaderForTutor && !isCommunityWallPath && effectiveView !== 'assignments-journal' && (
           <div className="relative z-40 shrink-0">
             <Header
               sidebarOpen={sidebarOpen}
@@ -400,7 +402,7 @@ const DashboardContent = () => {
               the scroll container) — sticky on <header> alone did nothing
               because its parent was exactly the header's height. */}
           {/* The topic reader is a focused full-height view — no portal header. */}
-          {!isTabletPortrait && effectiveView !== 'chat' && !isChatBoxOpen && !isTopicReaderPath && !isSubjectChaptersPath && !isAiTutorPath && !isCommunityWallPath && effectiveView !== 'assignments-journal' && (
+          {!isTabletPortrait && effectiveView !== 'chat' && !isChatBoxOpen && !isTopicReaderPath && !hideHeaderForTutor && !isCommunityWallPath && effectiveView !== 'assignments-journal' && (
             <div className={`sticky top-0 z-40 ${isChatView ? 'hidden lg:block' : ''}`}>
               <Header
                 sidebarOpen={sidebarOpen}

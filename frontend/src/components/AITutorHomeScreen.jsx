@@ -3673,7 +3673,7 @@ function useStudentCurriculum() {
   return { subjects, status };
 }
 
-function AiTutorPanel({ onGeneratedStudyItem = () => {}, fullHeight = false }) {
+function AiTutorPanel({ onGeneratedStudyItem = () => {}, fullHeight = false, fill = false }) {
   const { profile } = useStudentDashboard();
   const studentFirstName = String(profile?.name || '').trim().split(/\s+/)[0] || 'there';
   const { subjects, status: curriculumStatus } = useStudentCurriculum();
@@ -4086,8 +4086,8 @@ function AiTutorPanel({ onGeneratedStudyItem = () => {}, fullHeight = false }) {
   };
 
   return (
-    <Section>
-      <Panel className={cn('flex flex-col overflow-hidden p-0', fullHeight ? 'h-[calc(100dvh-6rem)] lg:h-[calc(100dvh-1.5rem)] lg:rounded-2xl' : 'h-[min(760px,calc(82vh-4.5rem))] lg:h-[min(760px,82vh)]')}>
+    <Section className={fill ? 'flex min-h-0 flex-1 flex-col' : undefined}>
+      <Panel className={cn('flex flex-col overflow-hidden p-0', fill ? 'min-h-0 flex-1' : fullHeight ? 'h-[calc(100dvh-6rem)] lg:h-[calc(100dvh-1.5rem)] lg:rounded-2xl' : 'h-[min(760px,calc(82vh-4.5rem))] lg:h-[min(760px,82vh)]')}>
         {/* Header — tutor identity, context, controls */}
         <div className="flex flex-wrap items-center gap-3 border-b border-[#E7E3D9] bg-[#FBF9F4] px-4 py-3 sm:px-5">
           <div className="relative">
