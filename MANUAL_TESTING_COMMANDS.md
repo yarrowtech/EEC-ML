@@ -657,7 +657,7 @@ Expand a subject heading in Assignments. Verify its table shows all graded assig
 Expand a subject with many assignments. Verify the table scrolls inside the expanded section with its headers visible, and check horizontal scrolling on narrow phones.
 Check that Sl No stays on one line and the Results filter displays only class names.
 
-1. Open `/student/exams` at desktop and phone widths. Verify the schedule spans the available content width, uses row dividers, and starts without summary tiles.
+1. Open `/student/exams` on desktop and laptop. Select an exam in the left list and verify its schedule appears on the right. On a tablet, open an exam card and use All exams to return to the list.
 2. Switch between All exams, Scheduled, and Completed. Search by subject and filter by term. Verify Clear filters restores the full list.
 3. Verify a published exam shows all subjects, including groups with more than five, with dates, times, and venues where available. Check that Download schedule opens the PDF download and Practice test opens the named subject's mock exam.
 4. Verify unpublished exams explain when subject dates and rooms will appear. Follow View results and confirm it opens the student Results page.

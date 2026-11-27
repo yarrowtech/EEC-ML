@@ -1,6 +1,8 @@
-import React, { useCallback, useEffect, useMemo, useState } from 'react';
+import React, { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { motion as Motion, AnimatePresence } from 'framer-motion';
-import { Calendar, FileText, Loader2, Clock, CheckCircle2, Sparkles, Users, Search as SearchIcon, AlertCircle, PlayCircle } from 'lucide-react';
+import { Calendar, FileText, Loader2, Clock, CheckCircle2, Sparkles, ChevronLeft, ChevronRight, Search as SearchIcon, AlertCircle, PlayCircle } from 'lucide-react';
+import { Link } from 'react-router-dom';
+import { ResultPickerCard, useCompactExamLayout } from './StudentExamPickerCard';
 import toast from 'react-hot-toast';
 import { useStudentDashboard } from './StudentDashboardContext';
 import { fetchCachedJson } from '../utils/studentApiCache';
@@ -15,24 +17,13 @@ const STUDENT_EXAMS_CACHE_TTL_MS = 2 * 60 * 1000;
 const TERM_OPTIONS = ['all', 'Class Test', 'Unit Test', 'Monthly Test', 'Term 1', 'Term 2', 'Term 3', 'Half Yearly', 'Annual', 'Final'];
 const STATUS_OPTIONS = ['all', 'scheduled', 'completed'];
 
-// ── Shared glass tokens ─────────────────────────────────────────────────────
-const GLASS_CARD = 'rounded-2xl border border-[rgba(139,92,246,0.35)] bg-white/60 backdrop-blur-[20px] backdrop-saturate-[180%] shadow-[0_4px_24px_rgba(15,23,42,0.05)]';
-const GLASS_HOVER = 'transition-all duration-200 ease-out hover:-translate-y-0.5 hover:shadow-[0_10px_32px_rgba(15,23,42,0.08)]';
-const GLASS_INPUT = 'w-full rounded-xl border border-[rgba(139,92,246,0.25)] bg-white/70 text-sm text-[#0f172a] placeholder:text-[#8e9aaf] transition focus:border-[#8b5cf6] focus:bg-white focus:outline-none focus:ring-2 focus:ring-[#8b5cf6]/20';
+const FILTER_INPUT = 'min-w-0 rounded-lg border border-slate-200 bg-white px-3 py-2 text-xs font-medium text-slate-700 focus-visible:outline-2 focus-visible:outline-amber-600';
 
-// ── Helpers ──────────────────────────────────────────────────────────────────
 const formatDate = (value) => {
   if (!value) return '—';
   const d = new Date(value);
   if (Number.isNaN(d.getTime())) return '—';
   return d.toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' });
-};
-
-const formatFullDate = (value) => {
-  if (!value) return '—';
-  const d = new Date(value);
-  if (Number.isNaN(d.getTime())) return '—';
-  return d.toLocaleDateString('en-IN', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' });
 };
 
 const parseExamDateTime = (dateStr, timeStr) => {
@@ -56,34 +47,6 @@ const parseExamDateTime = (dateStr, timeStr) => {
     }
   }
   return d;
-};
-
-const calcTimeLeft = (target) => {
-  const diff = new Date(target).getTime() - Date.now();
-  if (diff <= 0) return null;
-  return {
-    days:    Math.floor(diff / 86400000),
-    hours:   Math.floor((diff % 86400000) / 3600000),
-    minutes: Math.floor((diff % 3600000) / 60000),
-    seconds: Math.floor((diff % 60000) / 1000),
-  };
-};
-
-const useCountdown = (target) => {
-  const compute = useCallback(() => calcTimeLeft(target), [target]);
-  const [t, setT] = useState(compute);
-  useEffect(() => {
-    const next = compute();
-    setT(next);
-    if (next === null) return undefined;
-    const id = setInterval(() => {
-      const updated = compute();
-      if (updated === null) clearInterval(id);
-      setT(updated);
-    }, 1000);
-    return () => clearInterval(id);
-  }, [compute]);
-  return t;
 };
 
 const daysUntil = (value) => {
@@ -114,151 +77,92 @@ const CountdownBadge = ({ date }) => {
   );
 };
 
-// ── Flip Digit Unit ───────────────────────────────────────────────────────────
-const FlipUnit = ({ value, label }) => {
-  const padded = String(value).padStart(2, '0');
-  return (
-    <div className="flex flex-col items-center gap-2">
-      <div className="relative flex h-16 w-14 items-center justify-center overflow-hidden rounded-2xl border border-white/25 bg-white/15 shadow-inner backdrop-blur-sm sm:h-20 sm:w-16">
-        {/* top/bottom split line */}
-        <div className="pointer-events-none absolute inset-x-0 top-1/2 z-10 h-px bg-black/20" />
-        <AnimatePresence mode="popLayout" initial={false}>
-          <Motion.span
-            key={padded}
-            initial={{ y: '-60%', opacity: 0, scale: 0.85 }}
-            animate={{ y: 0, opacity: 1, scale: 1 }}
-            exit={{ y: '60%', opacity: 0, scale: 0.85 }}
-            transition={{ duration: 0.28, ease: [0.4, 0, 0.2, 1] }}
-            className="absolute select-none text-3xl font-black tabular-nums tracking-tight text-white sm:text-4xl"
-          >
-            {padded}
-          </Motion.span>
-        </AnimatePresence>
-      </div>
-      <span className="text-[10px] font-bold uppercase tracking-[0.15em] text-white/70">{label}</span>
-    </div>
-  );
-};
+const examTitle = (group) => group.title || group.term || 'Exam schedule';
+const examSubject = (exam) => exam.subjectId?.name || exam.subject || exam.title || 'Subject';
+const examSubjects = (group) => Array.isArray(group.subjects) ? group.subjects : [];
 
-// ── Hero Countdown Card ───────────────────────────────────────────────────────
-const HeroCountdownCard = ({ group }) => {
-  const target = useMemo(
-    () => parseExamDateTime(group.startDate, group.startTime),
-    [group.startDate, group.startTime]
-  );
-  const t = useCountdown(target);
-
-  if (!target) return null;
-
-  const isToday = daysUntil(group.startDate) === 0;
-  const isStarted = !t;
+const ExamScheduleCard = ({ group, downloading, onDownload, onPractice }) => {
+  const status = String(group.status || 'scheduled').toLowerCase();
+  const completed = status === 'completed';
+  const published = status === 'published' || completed;
+  const subjects = examSubjects(group);
+  const className = group.classId?.name || group.grade;
+  const sectionName = group.sectionId?.name || group.section;
+  const dateLabel = [group.startDate, group.endDate].filter(Boolean).map(formatDate).join(' – ');
 
   return (
-    <Motion.div
-      initial={{ opacity: 0, y: 16 }}
-      animate={{ opacity: 1, y: 0 }}
-      transition={{ duration: 0.45, ease: [0.4, 0, 0.2, 1] }}
-      className="relative overflow-hidden rounded-2xl border border-[rgba(139,92,246,0.35)] bg-gradient-to-br from-[#8b5cf6] via-[#7c3aed] to-[#6d28d9] p-5 shadow-[0_16px_40px_rgba(124,58,237,0.28)] sm:p-7"
-    >
-      {/* decorative blobs */}
-      <div className="pointer-events-none absolute -right-10 -top-10 h-44 w-44 rounded-full bg-white/10 blur-2xl" />
-      <div className="pointer-events-none absolute -bottom-12 -left-8 h-36 w-36 rounded-full bg-white/10 blur-xl" />
-      <div className="pointer-events-none absolute bottom-0 right-1/3 h-24 w-24 rounded-full bg-white/10 blur-lg" />
-
-      <div className="relative z-10">
-        {/* label row */}
-        <div className="mb-4 flex items-center gap-2">
-          <div className="flex h-8 w-8 items-center justify-center rounded-xl bg-white/20 backdrop-blur-sm">
-            <Clock className="h-4 w-4 text-white" />
-          </div>
-          <div>
-            <p className="text-[11px] font-bold uppercase tracking-widest text-white/60">Next Exam Countdown</p>
-            <p className="text-sm font-bold leading-tight text-white">{group.title || group.term}</p>
-          </div>
-          {isToday && (
-            <Motion.span
-              animate={{ scale: [1, 1.06, 1] }}
-              transition={{ repeat: Infinity, duration: 1.5 }}
-              className="ml-auto rounded-full bg-rose-500 px-2.5 py-1 text-[11px] font-black text-white shadow-lg"
-            >
-              TODAY
-            </Motion.span>
+    <article className="overflow-hidden rounded-2xl border border-slate-200 bg-white">
+      <div className="flex flex-wrap items-start justify-between gap-3 border-b border-slate-200 px-4 py-3 sm:px-5">
+        <div className="min-w-0">
+          <h2 className="text-xl font-bold text-slate-950">{examTitle(group)}</h2>
+          {(className || sectionName) && (
+            <p className="mt-1 text-sm text-slate-600">
+              {[className && (/^class\b/i.test(className) ? className : `Class ${className}`), sectionName && `Section ${sectionName}`].filter(Boolean).join(' · ')}
+            </p>
           )}
+          {dateLabel && <p className="mt-1 text-xs text-slate-500">{dateLabel}</p>}
         </div>
-
-        {isStarted ? (
-          <Motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} className="flex items-center gap-3 py-4">
-            <div className="flex h-12 w-12 items-center justify-center rounded-2xl bg-emerald-400/20">
-              <CheckCircle2 className="h-7 w-7 text-emerald-300" />
-            </div>
-            <div>
-              <p className="text-xl font-black text-white">Exam In Progress</p>
-              <p className="text-sm text-white/70">Good luck! Do your best.</p>
-            </div>
-          </Motion.div>
-        ) : (
-          <div className="flex items-center justify-center gap-3 py-2 sm:gap-4">
-            <FlipUnit value={t.days}    label="Days"    />
-            <span className="mb-6 text-2xl font-black text-white/40 sm:text-3xl">:</span>
-            <FlipUnit value={t.hours}   label="Hours"   />
-            <span className="mb-6 text-2xl font-black text-white/40 sm:text-3xl">:</span>
-            <FlipUnit value={t.minutes} label="Minutes" />
-            <span className="mb-6 text-2xl font-black text-white/40 sm:text-3xl">:</span>
-            <FlipUnit value={t.seconds} label="Seconds" />
+        <div className="flex flex-wrap items-center gap-2">
+          <span className={`rounded-full px-2.5 py-1 text-xs font-bold capitalize ${completed ? 'bg-green-600 text-white' : 'bg-amber-500 text-white'}`}>{status}</span>
+          {!completed && <CountdownBadge date={group.startDate} />}
+        </div>
+      </div>
+      {published ? (
+        <>
+          <div className="flex flex-wrap gap-2 border-b border-slate-100 px-4 py-3 sm:px-5">
+            <button type="button" disabled={downloading} onClick={onDownload}
+              className="inline-flex items-center gap-1.5 rounded-full bg-violet-700 px-3 py-2 text-xs font-semibold text-white hover:bg-violet-800 disabled:opacity-60">
+              {downloading ? <Loader2 size={14} className="animate-spin" /> : <FileText size={14} />}
+              {downloading ? 'Preparing…' : 'Download routine'}
+            </button>
+            {subjects[0]?._id && (
+              <button type="button" onClick={() => onPractice(subjects[0])} className="inline-flex items-center gap-1.5 rounded-full border border-emerald-200 bg-emerald-600 px-3 py-2 text-xs font-semibold text-white hover:bg-emerald-800">
+                <PlayCircle size={14} /> Practice Mock
+              </button>
+            )}
+            {completed && <Link to="/student/results" className="inline-flex items-center rounded-full border border-slate-200 px-3 py-2 text-xs font-semibold text-slate-700 hover:bg-slate-50">View results</Link>}
           </div>
-        )}
-
-        {/* date + time footer */}
-        <div className="mt-3 flex flex-wrap items-center gap-x-3 gap-y-1">
-          <span className="flex items-center gap-1.5 text-xs font-semibold text-white/70">
-            <Calendar className="h-3.5 w-3.5" />
-            {formatFullDate(group.startDate)}
-          </span>
-          {group.startTime && (
-            <span className="flex items-center gap-1.5 text-xs font-semibold text-white/70">
-              <Clock className="h-3.5 w-3.5" />
-              {group.startTime}
-            </span>
-          )}
-        </div>
-      </div>
-    </Motion.div>
+          <div className="p-4 sm:p-5">
+            <h3 className="mb-2 text-sm font-semibold text-slate-900">Subject schedule ({subjects.length})</h3>
+            {subjects.length ? (
+              <div className="overflow-x-auto rounded-xl border border-slate-200">
+                <table className="w-full min-w-[29rem] text-left text-xs text-slate-600">
+                  <thead className="bg-slate-50 text-slate-700">
+                    <tr>{['Subject', 'Date', 'Time', 'Duration', 'Marks', 'Room'].map((label) => <th key={label} scope="col" className="px-3 py-2.5">{label}</th>)}</tr>
+                  </thead>
+                  <tbody className="divide-y divide-slate-100">
+                    {subjects.map((exam, index) => (
+                      <tr key={exam._id || index}>
+                        <th scope="row" className="px-3 py-2.5 font-semibold text-slate-900">{examSubject(exam)}</th>
+                        <td className="whitespace-nowrap px-3 py-2.5">{formatDate(exam.date)}</td>
+                        <td className="whitespace-nowrap px-3 py-2.5">{exam.time || '—'}</td>
+                        <td className="whitespace-nowrap px-3 py-2.5">{exam.duration ? `${exam.duration} min` : '—'}</td>
+                        <td className="px-3 py-2.5">{exam.marks ?? '—'}</td>
+                        <td className="px-3 py-2.5">{buildRoomLabel(exam)}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            ) : <p className="text-sm text-slate-500">No subjects are listed for this exam.</p>}
+          </div>
+        </>
+      ) : (
+        <p className="m-4 flex items-start gap-2 rounded-xl bg-amber-50 p-3 text-sm text-amber-800">
+          <AlertCircle size={16} className="mt-0.5 shrink-0" aria-hidden="true" /> The subject schedule will appear once your school publishes the exam routine.
+        </p>
+      )}
+    </article>
   );
 };
 
-// ── Subject palette (dot colour only — rows stay neutral/glass) ─────────────
-const SUBJECT_DOTS = ['bg-indigo-500', 'bg-sky-500', 'bg-emerald-500', 'bg-fuchsia-500', 'bg-rose-500', 'bg-violet-500', 'bg-teal-500', 'bg-orange-500'];
-const getSubjectDot = (name) => {
-  let hash = 0;
-  for (let i = 0; i < String(name || '').length; i++) hash = (hash * 31 + String(name).charCodeAt(i)) >>> 0;
-  return SUBJECT_DOTS[hash % SUBJECT_DOTS.length];
-};
-
-// ── Stat Tile ─────────────────────────────────────────────────────────────────
-const StatTile = ({ icon, label, value, sub, iconBg, iconColor, delay = 0 }) => {
-  const Icon = icon;
-  return (
-    <Motion.div
-      initial={{ opacity: 0, y: 14 }}
-      animate={{ opacity: 1, y: 0 }}
-      transition={{ duration: 0.35, delay, ease: [0.4, 0, 0.2, 1] }}
-      className={`${GLASS_CARD} ${GLASS_HOVER} p-3.5 md:p-4`}
-    >
-      <div className="flex items-start justify-between">
-        <p className="text-[11px] font-semibold uppercase tracking-wide text-[#64748b]">{label}</p>
-        <div className={`flex h-8 w-8 shrink-0 items-center justify-center rounded-xl ${iconBg}`}>
-          <Icon className={`h-4 w-4 ${iconColor}`} />
-        </div>
-      </div>
-      <p className="mt-1.5 truncate text-lg font-bold leading-tight text-[#0f172a] md:text-xl">{value}</p>
-      {sub && <p className="mt-1 truncate text-[11px] text-[#8e9aaf]">{sub}</p>}
-    </Motion.div>
-  );
-};
-
-// ── Main View ─────────────────────────────────────────────────────────────────
 const StudentExamsView = () => {
-  const { profile } = useStudentDashboard();
+  const { profile } = useStudentDashboard() || {};
+  const compact = useCompactExamLayout();
+  const shellRef = useRef(null);
+  const [shellHeight, setShellHeight] = useState(null);
+  const [selectedId, setSelectedId] = useState(null);
+  const [showDetail, setShowDetail] = useState(false);
   const [groups, setGroups] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
@@ -296,12 +200,12 @@ const StudentExamsView = () => {
     return groups.filter((g) => {
       const termMatches   = termFilter   === 'all' || String(g?.term   || '') === termFilter;
       const statusMatches = statusFilter === 'all' || String(g?.status || '').toLowerCase() === statusFilter;
-      const queryMatches  = !q || [g?.title, g?.term, g?.grade, g?.section].some((v) => String(v || '').toLowerCase().includes(q));
+      const queryMatches  = !q || [g?.title, g?.term, g?.grade, g?.section, ...examSubjects(g).map(examSubject)].some((v) => String(v || '').toLowerCase().includes(q));
       return termMatches && statusMatches && queryMatches;
     });
   }, [groups, search, statusFilter, termFilter]);
 
-  const { stats, nextGroup } = useMemo(() => {
+  const stats = useMemo(() => {
     const total     = groups.length;
     const completed = groups.filter((g) => String(g?.status || '').toLowerCase() === 'completed').length;
     const scheduled = total - completed;
@@ -310,10 +214,7 @@ const StudentExamsView = () => {
       .map((g) => ({ g, dt: parseExamDateTime(g.startDate, g.startTime) }))
       .filter((e) => e.dt && e.dt > new Date())
       .sort((a, b) => a.dt - b.dt);
-    return {
-      stats: { total, completed, scheduled, next: upcoming[0]?.g || null },
-      nextGroup: upcoming[0]?.g || null,
-    };
+    return { total, completed, scheduled, next: upcoming[0]?.g || null };
   }, [groups]);
 
   const pdfHeader = useMemo(() => ({
@@ -335,234 +236,139 @@ const StudentExamsView = () => {
     }
   };
 
+
+  useLayoutEffect(() => {
+    const measure = () => {
+      const shell = shellRef.current;
+      setShellHeight(shell && !compact && window.innerWidth >= 1024
+        ? Math.max(480, window.innerHeight - shell.getBoundingClientRect().top - 16)
+        : null);
+    };
+    measure();
+    window.addEventListener('resize', measure);
+    return () => window.removeEventListener('resize', measure);
+  }, [compact]);
+
+  const selectedGroup = filteredGroups.find((group) => String(group._id) === selectedId);
+  const activeGroup = selectedGroup || filteredGroups[0];
+  const showingCompactDetail = compact && showDetail && selectedGroup;
+  const chooseExam = (group) => {
+    setSelectedId(String(group._id));
+    setShowDetail(true);
+  };
+  const resetFilters = () => {
+    setSearch('');
+    setTermFilter('all');
+    setStatusFilter('all');
+  };
+  const tiles = [
+    { label: 'Total Exams', value: stats.total, icon: FileText, tone: 'bg-blue-50 text-blue-600' },
+    { label: 'Scheduled', value: stats.scheduled, icon: Clock, tone: 'bg-amber-50 text-amber-600' },
+    { label: 'Completed', value: stats.completed, icon: CheckCircle2, tone: 'bg-emerald-50 text-emerald-600' },
+    { label: 'Next Exam', value: stats.next?.title || stats.next?.term || 'None', icon: Sparkles, tone: 'bg-violet-50 text-violet-600' },
+  ];
+
   return (
     <>
-    <div className="min-h-screen space-y-5 bg-slate-100 p-4 pb-8 md:p-6">
-      {/* page header */}
-      <Motion.div
-        initial={{ opacity: 0, y: 12 }}
-        animate={{ opacity: 1, y: 0 }}
-        transition={{ duration: 0.35, ease: [0.4, 0, 0.2, 1] }}
-        className={`${GLASS_CARD} p-5 sm:p-6`}
-      >
-        <div className="flex items-center gap-3">
-          <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl border border-[rgba(139,92,246,0.35)] bg-violet-50">
-            <Calendar className="h-5 w-5 text-[#8b5cf6]" />
-          </div>
-          <div>
-            <h1 className="text-xl font-bold text-[#0f172a] sm:text-2xl">Exams</h1>
-            <p className="text-sm text-[#64748b]">View your exam schedule and download the routine</p>
-          </div>
-        </div>
-      </Motion.div>
+      <div className="p-3 pb-24 md:p-4">
+        <div ref={shellRef} style={shellHeight ? { height: shellHeight } : undefined} className="flex min-h-[480px] flex-col overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm">
+          <header className="flex shrink-0 flex-wrap items-center gap-3 border-b border-slate-200 px-4 py-3">
+            <span className="grid size-10 shrink-0 place-items-center rounded-xl bg-amber-100 text-amber-600">
+              <Calendar size={20} aria-hidden="true" />
+            </span>
+            <div className="min-w-0 flex-1">
+              <h1 className="text-[17px] font-bold leading-tight text-slate-900">Exams</h1>
+              <p className="text-xs text-slate-500">Choose an exam to see its schedule.</p>
+            </div>
+            <div className="grid w-full grid-cols-2 gap-2 sm:w-auto sm:grid-cols-[minmax(9rem,1fr)_auto_auto]">
+              <div className="relative col-span-2 sm:col-span-1">
+                <SearchIcon size={15} className="pointer-events-none absolute left-2.5 top-1/2 -translate-y-1/2 text-slate-400" aria-hidden="true" />
+                <input aria-label="Search exams" value={search} onChange={(event) => setSearch(event.target.value)}
+                  placeholder="Search exams or subjects" className={`${FILTER_INPUT} w-full pl-8`} />
+              </div>
+              <select aria-label="Exam term" value={termFilter} onChange={(event) => setTermFilter(event.target.value)} className={FILTER_INPUT}>
+                {TERM_OPTIONS.map((term) => <option key={term} value={term}>{term === 'all' ? 'All terms' : term}</option>)}
+              </select>
+              <select aria-label="Exam status" value={statusFilter} onChange={(event) => setStatusFilter(event.target.value)} className={FILTER_INPUT}>
+                {STATUS_OPTIONS.map((status) => <option key={status} value={status}>{status === 'all' ? 'All statuses' : status.charAt(0).toUpperCase() + status.slice(1)}</option>)}
+              </select>
+            </div>
+          </header>
 
-      {/* stat tiles */}
-      <div className="grid grid-cols-2 gap-3 md:grid-cols-4">
-        <StatTile icon={FileText}     label="Total Exams" value={stats.total}     iconBg="bg-blue-50"    iconColor="text-blue-600"    delay={0.02} />
-        <StatTile icon={Clock}        label="Scheduled"   value={stats.scheduled} iconBg="bg-[#fffbeb]"  iconColor="text-amber-600"   delay={0.06} />
-        <StatTile icon={CheckCircle2} label="Completed"   value={stats.completed} iconBg="bg-emerald-50" iconColor="text-emerald-600" delay={0.10} />
-        <StatTile
-          icon={Sparkles}
-          label="Next Exam"
-          value={stats.next ? (stats.next.title || stats.next.term || 'Exam') : 'None'}
-          sub={stats.next ? (() => { const d = daysUntil(stats.next.startDate); return d === 0 ? 'Starts today' : d != null && d >= 0 ? `In ${d}d` : ''; })() : 'No upcoming exam'}
-          iconBg="bg-violet-50"
-          iconColor="text-[#8b5cf6]"
-          delay={0.14}
-        />
-      </div>
-
-      {/* ── Hero Countdown ── */}
-      {!loading && nextGroup && <HeroCountdownCard group={nextGroup} />}
-
-      {/* filters */}
-      <Motion.div
-        initial={{ opacity: 0, y: 12 }}
-        animate={{ opacity: 1, y: 0 }}
-        transition={{ duration: 0.35, delay: 0.05, ease: [0.4, 0, 0.2, 1] }}
-        className={`${GLASS_CARD} p-4`}
-      >
-        <div className="grid grid-cols-1 gap-3 md:grid-cols-4">
-          <div className="relative md:col-span-2">
-            <SearchIcon className="pointer-events-none absolute left-3.5 top-1/2 h-4 w-4 -translate-y-1/2 text-[#8e9aaf]" />
-            <input
-              value={search}
-              onChange={(e) => setSearch(e.target.value)}
-              placeholder="Search exam…"
-              className={`${GLASS_INPUT} py-2.5 pl-9 pr-3`}
-            />
-          </div>
-          <select
-            value={termFilter}
-            onChange={(e) => setTermFilter(e.target.value)}
-            className={`${GLASS_INPUT} px-3 py-2.5`}
-          >
-            {TERM_OPTIONS.map((t) => <option key={t} value={t}>{t === 'all' ? 'All Terms' : t}</option>)}
-          </select>
-          <select
-            value={statusFilter}
-            onChange={(e) => setStatusFilter(e.target.value)}
-            className={`${GLASS_INPUT} px-3 py-2.5`}
-          >
-            {STATUS_OPTIONS.map((s) => <option key={s} value={s}>{s === 'all' ? 'All Status' : s.charAt(0).toUpperCase() + s.slice(1)}</option>)}
-          </select>
-        </div>
-      </Motion.div>
-
-      {/* list */}
-      {loading ? (
-        <div className={`${GLASS_CARD} flex items-center gap-2 p-8 text-sm text-[#64748b]`}>
-          <Loader2 size={16} className="animate-spin text-[#8b5cf6]" /> Loading exam schedule…
-        </div>
-      ) : error ? (
-        <div className="flex items-center gap-2 rounded-2xl border border-rose-200/70 bg-rose-50/80 p-4 text-sm text-rose-700 backdrop-blur-[20px]">
-          <AlertCircle size={15} /> {error}
-        </div>
-      ) : filteredGroups.length === 0 ? (
-        <div className="rounded-2xl border-2 border-dashed border-[rgba(139,92,246,0.35)] bg-white/40 p-10 text-center backdrop-blur-[20px]">
-          <div className="mx-auto flex h-12 w-12 items-center justify-center rounded-full bg-violet-50">
-            <Calendar className="h-5 w-5 text-[#8b5cf6]" />
-          </div>
-          <p className="mt-3 text-sm font-semibold text-[#0f172a]">No exams found</p>
-          <p className="mt-1 text-xs text-[#8e9aaf]">Try adjusting your filters, or check back later for your schedule.</p>
-        </div>
-      ) : (
-        <div className="flex flex-wrap justify-center gap-4">
-          {filteredGroups.map((group, index) => {
-            const classLabel = group?.classId?.name || group?.grade || '—';
-            const sectionLabel = group?.sectionId?.name || group?.section || '—';
-            const statusLabel = String(group?.status || 'Scheduled');
-            const normalizedStatus = statusLabel.toLowerCase();
-            const isCompleted = normalizedStatus === 'completed';
-            const isPublished = normalizedStatus === 'published' || isCompleted;
-            const statusClass = isCompleted
-              ? 'border-emerald-200/70 bg-emerald-50 text-emerald-700'
-              : 'border-amber-200/70 bg-[#fffbeb] text-amber-700';
-            const days = daysUntil(group?.startDate);
-            const subjects = group?.subjects || [];
-
-            return (
-              <Motion.div
-                key={group._id}
-                initial={{ opacity: 0, y: 16 }}
-                animate={{ opacity: 1, y: 0 }}
-                transition={{ duration: 0.35, delay: Math.min(index * 0.05, 0.4), ease: [0.4, 0, 0.2, 1] }}
-                className={`w-full self-start md:w-[48%] ${GLASS_CARD} ${GLASS_HOVER}`}
-              >
-                <div className="space-y-4 p-4 md:p-5">
-                  <div className="flex flex-col gap-3 md:flex-row md:items-start md:justify-between">
-                    <div>
-                      <span className="inline-flex items-center rounded-full border border-[rgba(139,92,246,0.3)] bg-violet-50 px-2.5 py-1 text-xs font-bold uppercase tracking-wide text-[#7c3aed]">
-                        {group?.term || 'Exam'}
-                      </span>
-                      <h3 className="mt-1.5 text-lg font-bold text-[#0f172a]">{group?.title || 'Exam Schedule'}</h3>
-                      <p className="mt-1 flex items-center gap-1.5 text-sm text-[#64748b]">
-                        <Users size={14} className="text-[#8e9aaf]" />
-                        Class {classLabel} · Section {sectionLabel}
-                      </p>
-                      <p className="mt-1 flex items-center gap-1.5 text-xs text-[#8e9aaf]">
-                        <Calendar size={12} />
-                        {formatDate(group?.startDate)} - {formatDate(group?.endDate)}
-                      </p>
-                    </div>
-                    <div className="flex flex-wrap items-center gap-2">
-                      <span className={`rounded-full border px-2.5 py-1 text-xs font-bold ${statusClass}`}>
-                        {statusLabel}
-                      </span>
-                      {!isCompleted && days !== null && days >= 0 && (
-                        <CountdownBadge date={group?.startDate} />
-                      )}
-                      {isPublished ? (
-                        <span className="rounded-full border border-slate-200/70 bg-slate-50 px-2.5 py-1 text-xs font-bold text-[#64748b]">
-                          {subjects.length} Subjects
-                        </span>
-                      ) : (
-                        <span className="rounded-full border border-amber-200/70 bg-amber-50 px-2.5 py-1 text-xs font-bold text-amber-700">
-                          Routine not published yet
-                        </span>
-                      )}
-                    </div>
-                  </div>
-
-                  {isPublished ? (
-                    <>
-                      {/* action buttons */}
-                      <div className="flex flex-wrap gap-2">
-                        <button
-                          type="button"
-                          onClick={() => handleDownload(group)}
-                          disabled={downloadingGroupId === String(group._id)}
-                          className="inline-flex items-center gap-2 rounded-xl bg-[#8b5cf6] px-3.5 py-1.5 text-xs font-semibold text-white shadow-sm shadow-violet-200 transition-colors hover:bg-[#7c3aed] disabled:cursor-not-allowed disabled:opacity-60"
-                        >
-                          {downloadingGroupId === String(group._id) ? <Loader2 size={13} className="animate-spin" /> : <FileText size={13} />}
-                          {downloadingGroupId === String(group._id) ? 'Preparing…' : 'Download Routine'}
-                        </button>
-                        {subjects[0]?._id && (
-                          <button
-                            type="button"
-                            onClick={() => setMockExamOpen({
-                              examId: String(subjects[0]._id),
-                              examTitle: `${group.title} — Practice Mock`,
-                              durationMinutes: subjects[0]?.duration || 60,
-                              isMock: true,
-                            })}
-                            className="inline-flex items-center gap-1.5 rounded-xl border border-emerald-200/70 bg-emerald-50/70 px-3.5 py-1.5 text-xs font-semibold text-emerald-700 transition-colors hover:bg-emerald-100/70"
-                          >
-                            <PlayCircle size={13} /> Practice Mock
-                          </button>
-                        )}
-                      </div>
-
-                      {/* subject rows */}
-                      <div className="space-y-2 rounded-xl border border-[rgba(139,92,246,0.15)] bg-white/40 p-2">
-                        {subjects.slice(0, 5).map((exam) => {
-                          const subjectName = exam?.subjectId?.name || exam?.subject || exam?.title || 'Subject';
-                          const dot = getSubjectDot(subjectName);
-                          const room = buildRoomLabel(exam);
-                          return (
-                            <Motion.div
-                              key={exam?._id || subjectName}
-                              initial={{ opacity: 0, x: -6 }}
-                              animate={{ opacity: 1, x: 0 }}
-                              transition={{ duration: 0.2 }}
-                              className="flex items-center justify-between gap-3 rounded-lg bg-white/60 px-3 py-2.5"
-                            >
-                              <div className="flex min-w-0 items-center gap-2.5">
-                                <span className={`h-2 w-2 shrink-0 rounded-full ${dot}`} />
-                                <p className="truncate text-sm font-semibold text-[#0f172a]">{subjectName}</p>
-                              </div>
-                              <div className="flex shrink-0 flex-wrap items-center gap-2 text-xs text-[#64748b]">
-                                {exam?.date && <span>{formatDate(exam.date)}</span>}
-                                {exam?.time && (
-                                  <span className="flex items-center gap-1 text-[#8e9aaf]">
-                                    <Clock size={10} /> {exam.time}
-                                  </span>
-                                )}
-                                {exam?.duration && <span className="hidden text-[#8e9aaf] sm:inline">{exam.duration} min</span>}
-                                {exam?.marks && <span className="hidden font-semibold text-[#64748b] sm:inline">{exam.marks} marks</span>}
-                                {room !== '—' && <span className="hidden text-[#8e9aaf] sm:inline">Room {room}</span>}
-                              </div>
-                            </Motion.div>
-                          );
-                        })}
-                        {subjects.length > 5 && (
-                          <p className="pl-1 text-xs font-medium text-[#8e9aaf]">+{subjects.length - 5} more subjects</p>
-                        )}
-                      </div>
-                    </>
-                  ) : (
-                    <div className="flex items-center gap-2 rounded-xl border border-amber-200/70 bg-amber-50/70 px-3.5 py-3 text-xs font-medium text-amber-700">
-                      <AlertCircle size={14} className="shrink-0" />
-                      The subject-wise routine isn&apos;t published yet — check back once your school publishes it.
-                    </div>
-                  )}
+          <div className="grid shrink-0 grid-cols-2 divide-x divide-y divide-slate-200 border-b border-slate-200 md:grid-cols-4 md:divide-y-0">
+            {tiles.map(({ label, value, icon: Icon, tone }) => (
+              <div key={label} className="flex min-w-0 items-center gap-3 px-4 py-3">
+                <span className={`grid size-9 shrink-0 place-items-center rounded-lg ${tone}`}><Icon size={18} aria-hidden="true" /></span>
+                <div className="min-w-0">
+                  <p className="truncate text-base font-bold leading-tight text-slate-900" title={String(value)}>{value}</p>
+                  <p className="mt-1 text-[11px] text-slate-500">{label}</p>
                 </div>
-              </Motion.div>
-            );
-          })}
+              </div>
+            ))}
+          </div>
+
+          {loading ? (
+            <p role="status" className="flex items-center gap-2 p-5 text-sm text-slate-600"><Loader2 size={15} className="animate-spin" /> Loading exam schedule…</p>
+          ) : error ? (
+            <p role="alert" className="flex items-center gap-2 bg-red-50 p-4 text-sm text-red-700"><AlertCircle size={15} /> {error}</p>
+          ) : !activeGroup ? (
+            <div className="p-6 text-center text-sm text-slate-600">
+              <p>No exams found.</p>
+              {(search || termFilter !== 'all' || statusFilter !== 'all') && <button type="button" onClick={resetFilters} className="mt-2 font-semibold text-amber-800 underline">Clear filters</button>}
+            </div>
+          ) : (
+            <div className={`grid min-h-0 flex-1 grid-cols-1 ${compact ? '' : 'lg:grid-cols-[minmax(0,1fr)_minmax(0,3fr)]'}`}>
+              {compact
+                ? !showingCompactDetail && (
+                  <div className="grid content-start gap-3 p-4 sm:grid-cols-2">
+                    {filteredGroups.map((group) => (
+                      <ResultPickerCard key={group._id} title={examTitle(group)} subtitle={formatDate(group.startDate)} icon={Calendar} onClick={() => chooseExam(group)} />
+                    ))}
+                  </div>
+                )
+                : (
+                  <aside aria-label="Exam schedules" className="min-h-0 overflow-y-auto border-r border-slate-200 p-2">
+                    <p className="px-2 pb-1.5 pt-1 text-[11px] font-bold uppercase tracking-wide text-slate-500">Exams</p>
+                    {filteredGroups.map((group) => {
+                      const active = group === activeGroup;
+                      return (
+                        <button key={group._id} type="button" aria-pressed={active} onClick={() => chooseExam(group)}
+                          className={`relative mb-1 flex w-full items-center gap-2 rounded-xl px-3 py-2.5 text-left ${active ? 'bg-amber-50 ring-1 ring-inset ring-amber-200' : 'hover:bg-slate-50'}`}>
+                          {active && <span className="absolute inset-y-2 left-0 w-1 rounded-r-full bg-amber-500" />}
+                          <span className="min-w-0 flex-1">
+                            <span className="block truncate text-[13px] font-semibold text-slate-900">{examTitle(group)}</span>
+                            <span className="block truncate text-[11px] text-slate-500">{formatDate(group.startDate)}</span>
+                          </span>
+                          <ChevronRight size={15} className="shrink-0 text-slate-400" aria-hidden="true" />
+                        </button>
+                      );
+                    })}
+                  </aside>
+                )}
+              {(!compact || showingCompactDetail) && (
+                <section aria-label="Exam schedule details" className="min-h-0 min-w-0 overflow-y-auto p-4">
+                  {compact && (
+                    <button type="button" onClick={() => setShowDetail(false)} className="mb-3 inline-flex items-center gap-1 text-xs font-semibold text-amber-800">
+                      <ChevronLeft size={16} aria-hidden="true" /> All exams
+                    </button>
+                  )}
+                  <ExamScheduleCard
+                    group={activeGroup}
+                    downloading={downloadingGroupId === String(activeGroup._id)}
+                    onDownload={() => handleDownload(activeGroup)}
+                    onPractice={(exam) => setMockExamOpen({
+                      examId: String(exam._id),
+                      examTitle: `${examTitle(activeGroup)} — Practice Mock`,
+                      durationMinutes: exam.duration || 60,
+                      isMock: true,
+                    })}
+                  />
+                </section>
+              )}
+            </div>
+          )}
         </div>
-      )}
-    </div>
+      </div>
 
     {/* Mock Exam Modal */}
     <AnimatePresence>
