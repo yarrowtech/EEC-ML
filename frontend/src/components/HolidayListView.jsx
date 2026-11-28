@@ -1,28 +1,34 @@
 import React, { useEffect, useState } from 'react';
 import { jsPDF } from 'jspdf';
-import { CalendarDays, Download, Loader2 } from 'lucide-react';
+import { ArrowRight, CalendarDays, ChevronLeft, ChevronRight, Download, Loader2 } from 'lucide-react';
 import { useStudentDashboard } from './StudentDashboardContext';
 import { fetchCachedJson } from '../utils/studentApiCache';
 
-const API_BASE = import.meta.env.VITE_API_URL || 'http://localhost:5000';
+const API_BASE = (import.meta.env.VITE_API_URL || 'http://localhost:5000').replace(/\/+$/, '');
 const STUDENT_HOLIDAYS_ENDPOINT = `${API_BASE}/api/holidays/student`;
+const STUDENT_EXAMS_ENDPOINT = `${API_BASE}/api/exam/groups/student-schedule`;
 const STUDENT_HOLIDAYS_CACHE_TTL_MS = 10 * 60 * 1000;
 
-// ─── Helpers (unchanged) ──────────────────────────────────────────
+const calendarDate = (value) => {
+  const datePart = typeof value === 'string' && /^(\d{4})-(\d{2})-(\d{2})(?:T|$)/.exec(value);
+  if (datePart) return new Date(+datePart[1], +datePart[2] - 1, +datePart[3]);
+  return new Date(value ?? NaN);
+};
+
 const formatDate = (value) => {
-  const dt = new Date(value);
+  const dt = calendarDate(value);
   if (Number.isNaN(dt.getTime())) return '—';
   return dt.toLocaleDateString(undefined, { weekday: 'long', year: 'numeric', month: 'short', day: 'numeric' });
 };
 
 const formatCompactDate = (value) => {
-  const dt = new Date(value);
+  const dt = calendarDate(value);
   if (Number.isNaN(dt.getTime())) return '—';
   return dt.toLocaleDateString(undefined, { day: '2-digit', month: 'short', year: 'numeric' });
 };
 
 const formatWeekday = (value) => {
-  const dt = new Date(value);
+  const dt = calendarDate(value);
   if (Number.isNaN(dt.getTime())) return '—';
   return dt.toLocaleDateString(undefined, { weekday: 'long' });
 };
@@ -44,8 +50,8 @@ const toBase64Image = async (url) => {
 };
 
 const overlapsYear = (startValue, endValue, year) => {
-  const start = new Date(startValue);
-  const end = new Date(endValue || startValue);
+  const start = calendarDate(startValue);
+  const end = calendarDate(endValue || startValue);
   if (Number.isNaN(start.getTime()) || Number.isNaN(end.getTime())) return false;
   const yearStart = new Date(year, 0, 1);
   const yearEnd = new Date(year, 11, 31, 23, 59, 59, 999);
@@ -60,18 +66,18 @@ const formatDateRange = (startValue, endValue) => {
 };
 
 const getHolidayDuration = (startValue, endValue) => {
-  const start = new Date(startValue);
-  const end = new Date(endValue || startValue);
+  const start = calendarDate(startValue);
+  const end = calendarDate(endValue || startValue);
   if (Number.isNaN(start.getTime()) || Number.isNaN(end.getTime())) return 1;
   const dayMs = 24 * 60 * 60 * 1000;
-  return Math.max(1, Math.floor((end - start) / dayMs) + 1);
+  return Math.max(1, Math.round((end - start) / dayMs) + 1);
 };
 
 const getHolidayStatus = (startValue, endValue) => {
   const now = new Date();
   const today = new Date(now.getFullYear(), now.getMonth(), now.getDate());
-  const start = new Date(startValue);
-  const end = new Date(endValue || startValue);
+  const start = calendarDate(startValue);
+  const end = calendarDate(endValue || startValue);
   const startDay = new Date(start.getFullYear(), start.getMonth(), start.getDate());
   const endDay = new Date(end.getFullYear(), end.getMonth(), end.getDate());
   if (Number.isNaN(startDay.getTime()) || Number.isNaN(endDay.getTime())) return 'Unknown';
@@ -81,68 +87,98 @@ const getHolidayStatus = (startValue, endValue) => {
 };
 
 const toSortableDate = (value) => {
-  const dt = new Date(value);
+  const dt = calendarDate(value);
   if (Number.isNaN(dt.getTime())) return Number.MAX_SAFE_INTEGER;
   return dt.getTime();
 };
 
-const STATUS_TONE = {
-  Upcoming: {
-    badge: 'bg-emerald-100 text-emerald-700',
-    accent: 'border-l-emerald-400',
-    dateHeader: 'bg-emerald-500',
-    dateBody: 'bg-emerald-50',
-    dateText: 'text-emerald-700',
-    dateBorder: 'border-emerald-200',
-  },
-  Ongoing: {
-    badge: 'bg-sky-100 text-sky-700',
-    accent: 'border-l-sky-400',
-    dateHeader: 'bg-sky-500',
-    dateBody: 'bg-sky-50',
-    dateText: 'text-sky-700',
-    dateBorder: 'border-sky-200',
-  },
-  Past: {
-    badge: 'bg-slate-100 text-slate-500',
-    accent: 'border-l-slate-300',
-    dateHeader: 'bg-slate-400',
-    dateBody: 'bg-slate-50',
-    dateText: 'text-slate-500',
-    dateBorder: 'border-slate-200',
-  },
-  Unknown: {
-    badge: 'bg-slate-100 text-slate-500',
-    accent: 'border-l-slate-300',
-    dateHeader: 'bg-slate-400',
-    dateBody: 'bg-slate-50',
-    dateText: 'text-slate-500',
-    dateBorder: 'border-slate-200',
-  },
+const TABS = [
+  ['Overview', '🗓️'],
+  ['Holidays', '🏖️'],
+  ['Events', '⭐'],
+  ['Calendar', '📅'],
+];
+const WEEKDAYS = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
+const PANEL = 'rounded-2xl border border-indigo-100 bg-white/75 p-3 shadow-sm shadow-indigo-100/70 sm:p-4';
+const dayTime = (value) => {
+  if (!value) return NaN;
+  const date = calendarDate(value);
+  return date.setHours(0, 0, 0, 0);
 };
 
-const STATUS_FILTERS = [
-  { key: 'all', label: 'All', activeClass: 'bg-indigo-600 border-indigo-600' },
-  { key: 'Upcoming', label: 'Upcoming', activeClass: 'bg-emerald-500 border-emerald-500' },
-  { key: 'Ongoing', label: 'Ongoing', activeClass: 'bg-sky-500 border-sky-500' },
-  { key: 'Past', label: 'Past', activeClass: 'bg-slate-400 border-slate-400' },
-];
+const EventRows = ({ entries, emptyMessage }) => entries.length ? (
+  <ul className="space-y-2">
+    {entries.map(({ key, name, start, end, type }) => {
+      const date = calendarDate(start);
+      const tone = type === 'Holiday' ? 'bg-rose-100 text-rose-800' : 'bg-violet-100 text-violet-800';
+      return (
+        <li key={key} className="flex items-center gap-3 rounded-xl border border-indigo-50 bg-white p-2.5 shadow-sm shadow-indigo-100/50">
+          <div className={`flex w-13 shrink-0 flex-col items-center rounded-xl px-2 py-1.5 font-bold leading-tight ${tone}`}>
+            <span className="text-xs">{date.toLocaleDateString(undefined, { month: 'short' })}</span>
+            <span className="text-xl">{date.getDate()}</span>
+          </div>
+          <div className="min-w-0 flex-1">
+            <p className="flex flex-wrap items-center gap-x-2 gap-y-0.5 font-bold">
+              {name}
+              <span className={`rounded-full px-2 py-0.5 text-xs font-semibold ${tone}`}>{type}</span>
+            </p>
+            <p className="mt-0.5 text-xs text-slate-600">{formatDateRange(start, end)}</p>
+          </div>
+          <span className="hidden shrink-0 text-2xl sm:block" aria-hidden="true">{type === 'Holiday' ? '🎉' : '📋'}</span>
+        </li>
+      );
+    })}
+  </ul>
+) : <p className="py-3 text-sm text-slate-500">{emptyMessage}</p>;
 
-// ─── Stats Tile (simplified, white) ─────────────────────────────
-const StatTile = ({ label, value, accentColor }) => (
-  <div className={`rounded-xl border border-slate-200 bg-white p-4 shadow-sm transition-all hover:shadow-md hover:-translate-y-0.5`}>
-    <p className="text-xs font-medium text-slate-400 uppercase tracking-wider">{label}</p>
-    <p className={`mt-1 text-2xl font-bold ${accentColor}`}>{value}</p>
-  </div>
-);
+const MonthCalendar = ({ month, setMonth, entries, today }) => {
+  const year = month.getFullYear();
+  const monthIndex = month.getMonth();
+  const startOffset = new Date(year, monthIndex, 1).getDay();
+  const dayCount = new Date(year, monthIndex + 1, 0).getDate();
+  return (
+    <section className={PANEL} aria-label="Monthly calendar">
+      <div className="mb-3 flex items-center justify-between gap-2">
+        <button type="button" aria-label="Previous month" onClick={() => setMonth(new Date(year, monthIndex - 1, 1))} className="rounded-lg p-1.5 text-violet-700 hover:bg-violet-50"><ChevronLeft size={20} /></button>
+        <h2 className="text-center text-lg font-extrabold sm:text-xl" aria-live="polite">{month.toLocaleDateString(undefined, { month: 'long', year: 'numeric' })}</h2>
+        <button type="button" aria-label="Next month" onClick={() => setMonth(new Date(year, monthIndex + 1, 1))} className="rounded-lg p-1.5 text-violet-700 hover:bg-violet-50"><ChevronRight size={20} /></button>
+      </div>
+      <div className="grid grid-cols-7 justify-items-center gap-y-1.5 text-sm">
+        {WEEKDAYS.map((day) => <span key={day} className={day === 'Sun' ? 'font-semibold text-red-600' : 'font-semibold'}>{day}</span>)}
+        {Array.from({ length: startOffset }, (_, index) => <span key={`blank-${index}`} />)}
+        {Array.from({ length: dayCount }, (_, index) => {
+          const day = index + 1;
+          const time = +new Date(year, monthIndex, day);
+          const matches = entries.filter((entry) => time >= dayTime(entry.start) && time <= dayTime(entry.end));
+          const holiday = matches.some((entry) => entry.type === 'Holiday');
+          const exam = matches.some((entry) => entry.type === 'Exam');
+          const tone = time === today ? 'bg-violet-700 text-white' : holiday ? 'bg-rose-200 text-rose-900' : exam ? 'bg-violet-200 text-violet-900' : (index + startOffset) % 7 === 0 ? 'text-red-600' : '';
+          const label = [formatDate(time), ...matches.map((entry) => entry.name)].join(', ');
+          return <time key={day} aria-current={time === today ? 'date' : undefined} aria-label={label} title={label} className={`relative grid h-8 w-8 place-items-center rounded-full font-semibold ${tone}`}>{day}{holiday && exam && <span className="absolute bottom-0 right-0 h-2 w-2 rounded-full bg-violet-400" />}</time>;
+        })}
+      </div>
+      <div className="mt-3 flex flex-wrap justify-center gap-x-4 gap-y-1 border-t border-indigo-100 pt-2.5 text-xs font-medium sm:text-sm">
+        {[
+          ['Holiday', 'bg-rose-200'],
+          ['Exam', 'bg-violet-200'],
+          ['Today', 'bg-violet-700'],
+        ].map(([label, color]) => <span key={label} className="inline-flex items-center gap-1.5"><span className={`h-3 w-3 rounded-full ${color}`} />{label}</span>)}
+      </div>
+    </section>
+  );
+};
 
-// ─── Main Component ───────────────────────────────────────────────
 const HolidayListView = () => {
   const { profile } = useStudentDashboard();
   const [holidays, setHolidays] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
   const [downloading, setDownloading] = useState(false);
+  const [activeTab, setActiveTab] = useState('Overview');
+  const [month, setMonth] = useState(() => new Date());
+  const [exams, setExams] = useState([]);
+  const [examsLoading, setExamsLoading] = useState(true);
+  const [examsError, setExamsError] = useState('');
   const [statusFilter, setStatusFilter] = useState('all');
 
   const sortedHolidays = [...holidays].sort((a, b) => {
@@ -151,26 +187,25 @@ const HolidayListView = () => {
     return aDate - bDate;
   });
 
-  const filteredHolidays = sortedHolidays.filter((item) => {
-    if (statusFilter === 'all') return true;
-    const start = item.startDate || item.date;
-    const end = item.endDate || item.startDate || item.date;
-    return getHolidayStatus(start, end) === statusFilter;
-  });
-
-  const stats = sortedHolidays.reduce(
-    (acc, item) => {
-      const start = item.startDate || item.date;
-      const end = item.endDate || item.startDate || item.date;
-      const status = getHolidayStatus(start, end);
-      acc.total += 1;
-      if (status === 'Upcoming') acc.upcoming += 1;
-      if (status === 'Ongoing') acc.ongoing += 1;
-      if (status === 'Past') acc.past += 1;
-      return acc;
-    },
-    { total: 0, upcoming: 0, ongoing: 0, past: 0 }
-  );
+  const today = dayTime(new Date());
+  const holidayEntries = sortedHolidays.map((item) => ({
+    key: 'holiday-' + item._id,
+    name: item.name,
+    start: item.startDate || item.date,
+    end: item.endDate || item.startDate || item.date,
+    type: 'Holiday',
+  }));
+  const examEntries = exams.filter((exam) => ['published', 'completed'].includes(String(exam.status).toLowerCase())).map((exam) => ({
+    key: 'exam-' + exam._id,
+    name: exam.name || exam.title || 'Exam',
+    start: exam.startDate,
+    end: exam.endDate || exam.startDate,
+    type: 'Exam',
+  })).filter((exam) => Number.isFinite(dayTime(exam.start)));
+  const calendarEntries = [...holidayEntries, ...examEntries].sort((a, b) => toSortableDate(a.start) - toSortableDate(b.start));
+  const upcoming = calendarEntries.filter((entry) => dayTime(entry.end) >= today);
+  const activeHolidays = holidayEntries.filter((entry) => dayTime(entry.end) >= today);
+  const nextHoliday = activeHolidays.find((entry) => dayTime(entry.start) >= today) || activeHolidays[0];
 
   useEffect(() => {
     const load = async () => {
@@ -201,6 +236,14 @@ const HolidayListView = () => {
       }
     };
     load();
+    if (!localStorage.getItem('token') || localStorage.getItem('userType') !== 'Student') {
+      setExamsLoading(false);
+      return;
+    }
+    fetchCachedJson(STUDENT_EXAMS_ENDPOINT)
+      .then(({ data }) => setExams(Array.isArray(data) ? data : []))
+      .catch(() => setExamsError('Unable to load the exam schedule.'))
+      .finally(() => setExamsLoading(false));
   }, []);
 
   const handleDownloadPdf = async () => {
@@ -352,147 +395,115 @@ const HolidayListView = () => {
     }
   };
 
-  // ─── New UI ──────────────────────────────────────────────────────
+  const calendar = <MonthCalendar month={month} setMonth={setMonth} entries={calendarEntries} today={today} />;
+  const actionClass = 'inline-flex shrink-0 items-center gap-1 text-xs font-bold text-violet-700 hover:text-violet-900 sm:text-sm';
 
   return (
-    <div className="min-h-screen bg-white p-4 md:p-6 flex justify-center">
-      <div className="w-full max-w-4xl">
-        {/* Floating Card */}
-        <div className="bg-white rounded-3xl border border-slate-200 shadow-lg hover:shadow-xl transition-shadow duration-300 p-6 md:p-8">
-          {/* Header */}
-          <div className="flex flex-wrap items-start justify-between gap-4">
-            <div className="flex items-start gap-3">
-              <div className="w-12 h-12 rounded-2xl bg-indigo-50 flex items-center justify-center shrink-0">
-                <CalendarDays className="h-6 w-6 text-indigo-600" />
-              </div>
-              <div>
-                <h1 className="text-2xl font-bold text-slate-900 tracking-tight">Holiday Calendar</h1>
-                <p className="text-sm text-slate-400 mt-0.5">Track upcoming and completed holidays</p>
-              </div>
-            </div>
+    <main aria-label="School holidays" className="mx-auto w-full max-w-6xl space-y-4 bg-linear-to-b from-white to-indigo-50/50 p-3 text-slate-950 sm:p-4">
+      <div className="flex flex-wrap items-center justify-between gap-2.5">
+        <nav aria-label="Holiday views" className="flex flex-wrap gap-1.5">
+          {TABS.map(([tab, icon]) => (
             <button
+              key={tab}
               type="button"
-              onClick={handleDownloadPdf}
-              disabled={loading || !sortedHolidays.length || downloading}
-              className="inline-flex items-center gap-1.5 rounded-full bg-indigo-600 px-4 py-2 text-sm font-semibold text-white shadow-sm transition-colors hover:bg-indigo-700 disabled:opacity-50 disabled:cursor-not-allowed"
+              aria-pressed={activeTab === tab}
+              onClick={() => setActiveTab(tab)}
+              className={`inline-flex items-center gap-1.5 rounded-full border px-3 py-2 text-xs font-bold shadow-sm shadow-indigo-100 sm:text-sm ${activeTab === tab ? 'border-violet-700 bg-linear-to-r from-violet-700 to-indigo-600 text-white' : 'border-indigo-50 bg-white hover:bg-indigo-50'}`}
             >
-              <Download className="h-4 w-4" />
-              {downloading ? 'Preparing…' : 'Download PDF'}
+              <span aria-hidden="true">{icon}</span>{tab}
             </button>
-          </div>
-
-          {/* Error */}
-          {error && (
-            <div className="mt-4 flex items-center gap-2 bg-red-50 border border-red-200 text-red-600 text-sm rounded-xl px-4 py-3">
-              <span className="shrink-0">⚠️</span>
-              {error}
-            </div>
-          )}
-
-          {/* Stats */}
-          {!loading && !error && sortedHolidays.length > 0 && (
-            <div className="mt-6 grid grid-cols-2 gap-3 sm:grid-cols-4">
-              <StatTile label="Total" value={stats.total} accentColor="text-slate-800" />
-              <StatTile label="Upcoming" value={stats.upcoming} accentColor="text-emerald-600" />
-              <StatTile label="Ongoing" value={stats.ongoing} accentColor="text-sky-600" />
-              <StatTile label="Past" value={stats.past} accentColor="text-slate-400" />
-            </div>
-          )}
-
-          {/* Filters */}
-          {!loading && !error && sortedHolidays.length > 0 && (
-            <div className="mt-4 flex flex-wrap gap-2 border-t border-slate-100 pt-4">
-              {STATUS_FILTERS.map(({ key, label, activeClass }) => (
-                <button
-                  key={key}
-                  type="button"
-                  onClick={() => setStatusFilter(key)}
-                  className={`px-4 py-1.5 text-sm font-semibold rounded-full border transition ${
-                    statusFilter === key
-                      ? `${activeClass} text-white shadow-sm`
-                      : 'bg-white border-slate-200 text-slate-600 hover:bg-slate-50'
-                  }`}
-                >
-                  {label}
-                </button>
-              ))}
-            </div>
-          )}
-        </div>
-
-        {/* Loading / Content */}
-        {loading ? (
-          <div className="mt-6 flex items-center gap-2 rounded-2xl border border-slate-200 bg-white p-4 text-sm text-slate-500 shadow-sm">
-            <Loader2 className="h-4 w-4 animate-spin" />
-            Loading holidays…
-          </div>
-        ) : error ? (
-          <div className="mt-6 rounded-2xl border border-rose-200 bg-rose-50 p-4">
-            <p className="text-sm font-medium text-rose-700">{error}</p>
-          </div>
-        ) : sortedHolidays.length === 0 ? (
-          <div className="mt-6 rounded-2xl border border-dashed border-slate-200 bg-white p-8 text-center shadow-sm">
-            <p className="text-sm text-slate-500">No holidays announced yet.</p>
-          </div>
-        ) : filteredHolidays.length === 0 ? (
-          <div className="mt-6 rounded-2xl border border-dashed border-slate-200 bg-white p-8 text-center shadow-sm">
-            <p className="text-sm text-slate-500">No {statusFilter.toLowerCase()} holidays right now.</p>
-          </div>
-        ) : (
-          <div className="mt-6 space-y-3">
-            {filteredHolidays.map((item) => {
-              const start = item.startDate || item.date;
-              const end = item.endDate || item.startDate || item.date;
-              const status = getHolidayStatus(start, end);
-              const duration = getHolidayDuration(start, end);
-              const tone = STATUS_TONE[status] || STATUS_TONE.Unknown;
-              const isPast = status === 'Past';
-              const startDt = new Date(start);
-              const hasValidStart = !Number.isNaN(startDt.getTime());
-              const monthLabel = hasValidStart ? startDt.toLocaleDateString(undefined, { month: 'short' }).toUpperCase() : '—';
-              const dayLabel = hasValidStart ? startDt.getDate() : '—';
-
-              return (
-                <div
-                  key={item._id}
-                  className={`flex items-center gap-3 rounded-2xl border border-slate-200 bg-white p-3 shadow-sm transition-all hover:shadow-md hover:-translate-y-0.5 sm:p-4`}
-                >
-                  {/* Date block */}
-                  <div className={`flex w-14 shrink-0 flex-col items-center overflow-hidden rounded-xl border ${tone.dateBorder}`}>
-                    <div className={`w-full py-1 text-center text-[10px] font-bold text-white ${tone.dateHeader}`}>
-                      {monthLabel}
-                    </div>
-                    <div className={`w-full py-1.5 text-center text-lg font-black ${tone.dateText} ${tone.dateBody}`}>
-                      {dayLabel}
-                    </div>
-                  </div>
-                  {/* Details */}
-                  <div className="min-w-0 flex-1">
-                    <div className="flex flex-wrap items-center gap-2">
-                      <p className={`font-semibold ${isPast ? 'text-slate-400 line-through' : 'text-slate-900'}`}>
-                        {item.name}
-                      </p>
-                      <span className={`inline-flex shrink-0 rounded-full px-2 py-0.5 text-[10px] font-bold ${tone.badge}`}>
-                        {status}
-                      </span>
-                    </div>
-                    <p className={`mt-1 text-xs ${isPast ? 'text-slate-400' : 'text-slate-500'}`}>
-                      {formatDateRange(start, end)} · {duration} day{duration > 1 ? 's' : ''}
-                    </p>
-                  </div>
-                </div>
-              );
-            })}
-
-            <p className="pt-1 text-sm font-semibold text-slate-700">
-              {statusFilter === 'all'
-                ? `Total Holidays: ${sortedHolidays.length}`
-                : `Showing ${filteredHolidays.length} of ${sortedHolidays.length} holidays`}
-            </p>
-          </div>
-        )}
+          ))}
+        </nav>
+        <button
+          type="button"
+          onClick={handleDownloadPdf}
+          disabled={loading || !sortedHolidays.length || downloading}
+          className="inline-flex items-center gap-2 rounded-xl bg-linear-to-r from-violet-700 to-indigo-600 px-3 py-2 text-xs font-bold text-white shadow-sm shadow-indigo-200 hover:brightness-110 disabled:opacity-50 sm:text-sm"
+        >
+          <Download size={16} aria-hidden="true" />
+          {downloading ? 'Preparing…' : 'Download Holiday List'}
+          <span className="rounded-full bg-white px-2 py-0.5 text-[10px] text-violet-800">PDF</span>
+        </button>
       </div>
-    </div>
+
+      {error && <p role="alert" className="rounded-xl bg-rose-50 p-3 text-sm text-rose-800">{error}</p>}
+      {examsError && activeTab !== 'Holidays' && <p role="alert" className="rounded-xl bg-amber-50 p-3 text-sm text-amber-900">{examsError}</p>}
+      {(loading || (examsLoading && activeTab !== 'Holidays')) && (
+        <p role="status" className="flex items-center gap-2 text-sm text-slate-600"><Loader2 className="animate-spin" size={16} />Loading calendar…</p>
+      )}
+
+      {activeTab === 'Overview' && (
+        <>
+          <div className="grid items-start gap-3 lg:grid-cols-[0.9fr_1.15fr]">
+            {calendar}
+            <section className={PANEL}>
+              <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
+                <h2 className="text-lg font-extrabold sm:text-xl"><span aria-hidden="true" className="mr-2">📣</span>Upcoming Events &amp; Holidays</h2>
+                <button type="button" onClick={() => setActiveTab('Events')} className={actionClass}>View All <ArrowRight size={15} /></button>
+              </div>
+              <EventRows entries={upcoming.slice(0, 3)} emptyMessage={loading || examsLoading ? '' : 'No upcoming events or holidays.'} />
+            </section>
+          </div>
+          <div className="grid items-start gap-3 lg:grid-cols-[0.9fr_1.15fr]">
+            <section className={PANEL}>
+              <div className="flex items-center justify-between gap-2 rounded-xl bg-linear-to-br from-rose-50 to-pink-100 p-3">
+                <div className="min-w-0">
+                  <h2 className="text-lg font-extrabold"><span aria-hidden="true" className="mr-2">🏖️</span>Next Holiday</h2>
+                  {nextHoliday ? (
+                    <>
+                      <p className="mt-2 text-xl font-extrabold">{nextHoliday.name}</p>
+                      <p className="mt-1 flex items-center gap-1.5 text-xs font-medium"><CalendarDays size={15} className="shrink-0 text-rose-700" />{formatDateRange(nextHoliday.start, nextHoliday.end)}</p>
+                      <span className="mt-2 inline-flex rounded-full bg-rose-200 px-2.5 py-1 text-xs font-bold text-rose-900">School Closed</span>
+                    </>
+                  ) : <p className="mt-2 text-sm text-slate-600">{loading ? 'Loading holidays…' : 'No upcoming holidays.'}</p>}
+                </div>
+                {nextHoliday && <div aria-hidden="true" className="hidden shrink-0 rotate-6 overflow-hidden rounded-xl bg-white text-center shadow-md shadow-rose-200 sm:block">
+                  <div className="bg-rose-500 px-4 py-0.5 text-xs font-bold uppercase text-white">{calendarDate(nextHoliday.start).toLocaleDateString(undefined, { month: 'short' })}</div>
+                  <div className="px-4 py-1 text-3xl font-black">{calendarDate(nextHoliday.start).getDate()}</div>
+                </div>}
+              </div>
+            </section>
+            <section className={PANEL}>
+              <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
+                <h2 className="text-lg font-extrabold sm:text-xl"><span aria-hidden="true" className="mr-2">🌴</span>Holidays at a Glance</h2>
+                <button type="button" onClick={() => setActiveTab('Holidays')} className={actionClass}>View Full List <ArrowRight size={15} /></button>
+              </div>
+              <dl className="grid grid-cols-3 gap-2">
+                {[
+                  ['Total Holidays', holidayEntries.length, '🗓️', 'bg-emerald-50'],
+                  ['Upcoming & Ongoing', activeHolidays.length, '🎉', 'bg-rose-50'],
+                  ['Past Holidays', holidayEntries.length - activeHolidays.length, '📅', 'bg-blue-50'],
+                ].map(([label, count, icon, tone]) => (
+                  <div key={label} className={`rounded-xl p-2.5 sm:p-3 ${tone}`}>
+                    <dt className="flex flex-wrap items-center gap-x-1 text-xs font-semibold"><span aria-hidden="true">{icon}</span>{label}</dt>
+                    <dd className="mt-0.5 text-xl font-black sm:text-2xl">{loading || error ? '—' : count}</dd>
+                  </div>
+                ))}
+              </dl>
+            </section>
+          </div>
+        </>
+      )}
+
+      {activeTab === 'Holidays' && (
+        <section className={`max-w-2xl ${PANEL}`}>
+          <h2 className="mb-2 text-lg font-extrabold">Holidays</h2>
+          <div className="mb-3 flex flex-wrap gap-1.5">
+            {['all', 'Upcoming', 'Ongoing', 'Past'].map((status) => (
+              <button key={status} type="button" aria-pressed={statusFilter === status} onClick={() => setStatusFilter(status)} className={`rounded-full px-3 py-1 text-xs font-semibold ${statusFilter === status ? 'bg-violet-700 text-white' : 'bg-violet-50 text-violet-800 hover:bg-violet-100'}`}>{status === 'all' ? 'All' : status}</button>
+            ))}
+          </div>
+          {!loading && !error && <EventRows entries={holidayEntries.filter((entry) => statusFilter === 'all' || getHolidayStatus(entry.start, entry.end) === statusFilter)} emptyMessage="No holidays in this view." />}
+        </section>
+      )}
+      {activeTab === 'Events' && (
+        <section className={`max-w-2xl ${PANEL}`}>
+          <h2 className="mb-3 text-lg font-extrabold">Upcoming Events &amp; Holidays</h2>
+          {!loading && !examsLoading && <EventRows entries={upcoming} emptyMessage="No upcoming events or holidays." />}
+        </section>
+      )}
+      {activeTab === 'Calendar' && <div className="max-w-lg">{calendar}</div>}
+    </main>
   );
 };
 

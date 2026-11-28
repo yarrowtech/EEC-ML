@@ -29,7 +29,7 @@ const Notification = require('../models/Notification');
 const { logStudentPortalEvent, logStudentPortalError } = require('../utils/studentPortalLogger');
 const TryoutResult = require('../models/TryoutResult');
 const LabResult = require('../models/LabResult');
-const { smartLearningMapCache, invalidateSmartLearningMapOnContentWrite } = require('../utils/responseCache');
+const { studentSyllabusCache, smartLearningMapCache, invalidateSmartLearningMapOnContentWrite } = require('../utils/responseCache');
 const { getAttachmentDownloadUrl, signAttachmentUrls, parseS3Uri } = require('../utils/s3Storage');
 const { buildCloudinaryAttachmentUrl } = require('../utils/cloudinaryUpload');
 const { queueVectorDeletion } = require('../services/vectorDeletionService');
@@ -1109,6 +1109,7 @@ const resolvePlanPayload = async ({ schoolId, campusId, payload, forcedTeacherId
 
 // Teacher/admin lesson-plan writes change what students see in the learning map.
 router.use(invalidateSmartLearningMapOnContentWrite);
+router.use(studentSyllabusCache.invalidateOnWrite);
 
 router.get('/admin/options', adminAuth, async (req, res) => {
   try {
@@ -1662,7 +1663,69 @@ router.delete('/teacher/:lessonPlanId/status/:statusId', authTeacher, async (req
   }
 });
 
-router.get('/student/status', authStudent, async (req, res) => {
+const buildStudentSessionPlanFilter = async ({ schoolId, campusId, student }) => {
+  const activeYear = await AcademicYear.findOne({ schoolId, isActive: true }).select('_id startDate endDate').lean();
+  if (!activeYear) return null;
+  const campusOr = campusId ? { $or: [{ campusId }, { campusId: null }, { campusId: { $exists: false } }] } : {};
+
+  // Class of the active session: the student's own class if it belongs to it,
+  // otherwise the same-named class inside the active session.
+  let classDoc = student.classId
+    ? await ClassModel.findOne({ _id: student.classId, schoolId }).select('_id academicYearId name').lean()
+    : null;
+  if (!classDoc || String(classDoc.academicYearId) !== String(activeYear._id)) {
+    classDoc = await ClassModel.findOne({
+      schoolId,
+      name: classNameRegex(normalizeLower(student.grade || classDoc?.name)),
+      academicYearId: activeYear._id,
+      ...(campusId ? { campusId } : {}),
+    }).select('_id').lean();
+  }
+  if (!classDoc) return null;
+  let sectionId = null;
+  if (student.sectionId) {
+    const own = await Section.findOne({ _id: student.sectionId, schoolId, classId: classDoc._id }).select('_id').lean();
+    sectionId = own?._id || null;
+  }
+  if (!sectionId && student.section) {
+    const sectionDoc = await Section.findOne({
+      schoolId,
+      classId: classDoc._id,
+      name: { $regex: '^' + escapeRegex(normalizeLower(student.section)) + '$', $options: 'i' },
+    }).select('_id').lean();
+    sectionId = sectionDoc?._id || null;
+  }
+  if (!sectionId) return null;
+
+  const allocations = await TeacherAllocation.find({
+    schoolId, classId: classDoc._id, sectionId, subjectId: { $ne: null }, ...campusOr,
+  }).select('teacherId subjectId').lean();
+  const allocatedPairs = allocations.filter((a) => a.teacherId && a.subjectId)
+    .map((a) => ({ teacherId: a.teacherId, subjectId: a.subjectId }));
+  if (!allocatedPairs.length) {
+    const timetables = await Timetable.find({ schoolId, classId: classDoc._id, sectionId, ...campusOr }).select('entries').lean();
+    timetables.forEach((t) => (t.entries || []).forEach((e) => {
+      if (e.teacherId && e.subjectId && !e.isBreak) allocatedPairs.push({ teacherId: e.teacherId, subjectId: e.subjectId });
+    }));
+  }
+  if (!allocatedPairs.length) return null;
+
+  const start = activeYear.startDate && toDayStart(activeYear.startDate);
+  const end = activeYear.endDate && toDayStart(activeYear.endDate);
+  if (end) end.setHours(23, 59, 59, 999);
+  return {
+    schoolId,
+    status: 'published',
+    isDraft: false,
+    classId: classDoc._id,
+    sectionId,
+    $or: allocatedPairs,
+    ...(campusId ? { campusId } : {}),
+    ...(start || end ? { date: { ...(start ? { $gte: start } : {}), ...(end ? { $lte: end } : {}) } } : {}),
+  };
+};
+
+router.get('/student/status', authStudent, studentSyllabusCache.cache, async (req, res) => {
   try {
     logStudentPortalEvent(req, {
       feature: 'lesson_plan_status',
@@ -1688,9 +1751,9 @@ router.get('/student/status', authStudent, async (req, res) => {
       .lean();
     if (!student) return res.status(404).json({ error: 'Student not found' });
 
-    const className = normalizeLower(student.grade);
-    const sectionName = normalizeLower(student.section);
-    if (!className || !sectionName) {
+    // Active session + allocated teachers + published plans only
+    const planFilter = await buildStudentSessionPlanFilter({ schoolId, campusId, student });
+    if (!planFilter) {
       logStudentPortalEvent(req, {
         feature: 'lesson_plan_status',
         action: 'lesson_plan_status.fetch',
@@ -1702,28 +1765,13 @@ router.get('/student/status', authStudent, async (req, res) => {
       });
       return res.json([]);
     }
-
-    const planFilter = {
-      schoolId,
-      className: classNameRegex(className),
-      sectionName: { $regex: `^${escapeRegex(sectionName)}$`, $options: 'i' },
-    };
-    if (campusId) planFilter.campusId = campusId;
-    if (req.query?.fromDate || req.query?.toDate) {
-      planFilter.date = {};
-      if (req.query?.fromDate) {
-        const from = toDayStart(req.query.fromDate);
-        if (from) planFilter.date.$gte = from;
-      }
-      if (req.query?.toDate) {
-        const to = toDayStart(req.query.toDate);
-        if (to) {
-          to.setHours(23, 59, 59, 999);
-          planFilter.date.$lte = to;
-        }
-      }
-      if (!Object.keys(planFilter.date).length) delete planFilter.date;
-    }
+    const dateRange = { ...planFilter.date };
+    const from = toDayStart(req.query?.fromDate);
+    const to = toDayStart(req.query?.toDate);
+    if (to) to.setHours(23, 59, 59, 999);
+    if (from && (!dateRange.$gte || from > dateRange.$gte)) dateRange.$gte = from;
+    if (to && (!dateRange.$lte || to < dateRange.$lte)) dateRange.$lte = to;
+    if (Object.keys(dateRange).length) planFilter.date = dateRange;
 
     const plans = await LessonPlan.find(planFilter).sort({ date: -1, createdAt: -1 }).lean();
     if (!plans.length) {
@@ -1742,26 +1790,21 @@ router.get('/student/status', authStudent, async (req, res) => {
     const planIds = plans.map((plan) => plan._id);
     const statusFilter = { schoolId, lessonPlanId: { $in: planIds } };
     if (campusId) statusFilter.campusId = campusId;
-    if (req.query?.fromDate || req.query?.toDate) {
-      statusFilter.date = {};
-      if (req.query?.fromDate) {
-        const from = toDayStart(req.query.fromDate);
-        if (from) statusFilter.date.$gte = from;
-      }
-      if (req.query?.toDate) {
-        const to = toDayStart(req.query.toDate);
-        if (to) {
-          to.setHours(23, 59, 59, 999);
-          statusFilter.date.$lte = to;
-        }
-      }
-      if (!Object.keys(statusFilter.date).length) {
-        delete statusFilter.date;
-      }
-    }
+    if (planFilter.date) statusFilter.date = planFilter.date;
 
     const statuses = await LessonPlanCompletion.find(statusFilter).sort({ date: -1, createdAt: -1 }).lean();
     const planById = new Map(plans.map((plan) => [String(plan._id), plan]));
+    // Textbook chapter each lesson belongs to (Chapter N — "Computer Basics"), so students can see progress chapter-wise
+    const chapterMetaOf = (plan) => {
+      const first = Array.isArray(plan?.plannerContent?.chapters) ? plan.plannerContent.chapters[0] : null;
+      const unitNumber = Number(first?.unitNumber) > 0 ? Math.floor(Number(first.unitNumber)) : null;
+      return {
+        unitNumber,
+        unitTitle: String(first?.unitTitle || '').trim(),
+        lessonTitle: String(first?.title || plan?.title || '').trim(),
+        planCreatedAt: plan?.createdAt || null,
+      };
+    };
     const statusKeySet = new Set(
       statuses.map((row) => `${String(row.lessonPlanId)}::${toDayStart(row.date)?.toISOString() || ''}`)
     );
@@ -1779,6 +1822,7 @@ router.get('/student/status', authStudent, async (req, res) => {
           className: plan.className,
           sectionName: plan.sectionName,
           teacherName: plan.teacherName,
+          ...chapterMetaOf(plan),
           date,
           status: 'pending',
           isCompleted: false,
@@ -1797,6 +1841,7 @@ router.get('/student/status', authStudent, async (req, res) => {
         className: row.className || plan?.className || '',
         sectionName: row.sectionName || plan?.sectionName || '',
         teacherName: row.teacherName || plan?.teacherName || 'Teacher',
+        ...chapterMetaOf(plan),
       };
     });
 

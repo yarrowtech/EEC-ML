@@ -109,6 +109,7 @@ const teacherAchievementsCache = createResponseCache({ ttlMs: 60 * 1000, maxEntr
 // assignments). Keyed per student. Cleared by teacher/admin writes to lesson plans,
 // teaching materials, assignments and practice papers; TTL bounds the rest.
 const smartLearningMapCache = createResponseCache({ ttlMs: 60 * 1000, maxEntries: 20000 });
+const studentSyllabusCache = createResponseCache({ ttlMs: 30 * 1000, maxEntries: 2000 });
 
 // Like invalidateOnWrite, but student writes (tryout submits, hinge/exit-quiz
 // answers) don't clear everyone's map — they don't change its content.
@@ -120,4 +121,4 @@ const invalidateSmartLearningMapOnContentWrite = (req, res, next) => {
   return next();
 };
 
-module.exports = { smartLearningMapCache, invalidateSmartLearningMapOnContentWrite, createResponseCache, teacherAchievementsCache, studentDashboardCache, parentAttendanceCache, userNotificationsCache, parentFeesCache, teacherAnalyticsCache, chatCache, holidayCache };
+module.exports = { studentSyllabusCache, smartLearningMapCache, invalidateSmartLearningMapOnContentWrite, createResponseCache, teacherAchievementsCache, studentDashboardCache, parentAttendanceCache, userNotificationsCache, parentFeesCache, teacherAnalyticsCache, chatCache, holidayCache };

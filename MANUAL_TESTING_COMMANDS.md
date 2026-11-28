@@ -661,3 +661,17 @@ Check that Sl No stays on one line and the Results filter displays only class na
 2. Switch between All exams, Scheduled, and Completed. Search by subject and filter by term. Verify Clear filters restores the full list.
 3. Verify a published exam shows all subjects, including groups with more than five, with dates, times, and venues where available. Check that Download schedule opens the PDF download and Practice test opens the named subject's mock exam.
 4. Verify unpublished exams explain when subject dates and rooms will appear. Follow View results and confirm it opens the student Results page.
+
+## Student syllabus by academic session
+
+1. Configure the active academic session with start and end dates. For the student's class, section, and assigned teacher, prepare published plans dated before, within, and after that session, plus a draft dated within it.
+2. Sign in as the student, open /student/lesson-plan-status, and select the subject. Verify that the overview and chapter list include only published plans dated within the active session, including plans on its first and last days.
+3. Switch the active session and select Refresh in Syllabus. Verify that the subject list and progress reflect the newly active session.
+4. While viewing a subject, publish another plan for it and select Refresh. Verify that the button is disabled during loading and the new lesson appears in the selected subject.
+5. Navigate away and reopen Syllabus within 30 seconds. Verify that the existing lessons render immediately without a new status request. In the browser Network panel, verify that Refresh sends `Cache-Control: no-cache` and the API responds with `X-Cache: MISS`. A normal request for the same student and URL within 30 seconds should return `X-Cache: HIT`.
+
+## Student holidays
+
+1. Open /student/holidays on desktop and mobile. Check that the compact Overview cards sit side by side on desktop and stack without horizontal scrolling on mobile.
+2. Move through the calendar months and verify that holiday ranges, published exam dates, and today are highlighted. Open View All for the upcoming list and View Full List for the holiday filters.
+3. Download the Holiday List PDF and verify that it contains the school's holidays and date ranges.

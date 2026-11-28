@@ -1,10 +1,7 @@
-import React, { useEffect, useMemo, useState } from 'react';
-import { BookOpenCheck, Calendar, Search, CheckCircle2, Clock, Circle, BookOpen, ChevronRight, Sparkles, Layers3 } from 'lucide-react';
-import { fetchCachedJson } from '../utils/studentApiCache';
-
-const API_BASE = (import.meta.env.VITE_API_URL || 'http://localhost:5000').replace(/\/$/, '');
-const STUDENT_LESSON_PLAN_STATUS_ENDPOINT = `${API_BASE}/api/lesson-plans/student/status`;
-const STUDENT_LESSON_PLAN_STATUS_CACHE_TTL_MS = 2 * 60 * 1000;
+import React, { useCallback, useEffect, useMemo, useState } from 'react';
+import { BookOpenCheck, Calendar, CheckCircle2, Clock, Circle, BookOpen, ChevronRight, ChevronLeft, PlayCircle, Check, Play, LayoutGrid, List, Atom, FlaskConical, Pi, Leaf, Code2, Globe2, Languages, ArrowUp, RefreshCw } from 'lucide-react';
+import { fetchCachedJson, peekCachedJson } from '../utils/studentApiCache';
+import { STUDENT_SYLLABUS_URL, STUDENT_SYLLABUS_TTL_MS } from '../utils/studentDashboardPrefetch';
 
 const STATUS_CONFIG = {
   completed:   { label: 'Completed',   tone: 'bg-emerald-100 text-emerald-700 border-emerald-200', dot: 'bg-emerald-500',  icon: CheckCircle2 },
@@ -14,15 +11,27 @@ const STATUS_CONFIG = {
 
 const cfg = (status) => STATUS_CONFIG[status] || STATUS_CONFIG.pending;
 
-/* Progress bar with animated fill */
-const ProgressBar = ({ value, color = 'bg-blue-500' }) => (
-  <div className="h-2 w-full rounded-full bg-gray-100 overflow-hidden">
-    <div
-      className={`h-full rounded-full transition-all duration-700 ${color}`}
-      style={{ width: `${Math.min(100, Math.max(0, value))}%` }}
-    />
-  </div>
-);
+// Subject → icon + soft tile colour
+const SUBJECT_META = [
+  { test: /phys/i, icon: Atom, tile: 'bg-violet-500 text-white' },
+  { test: /chem/i, icon: FlaskConical, tile: 'bg-sky-500 text-white' },
+  { test: /math/i, icon: Pi, tile: 'bg-amber-500 text-white' },
+  { test: /bio|science|evs|environment/i, icon: Leaf, tile: 'bg-emerald-500 text-white' },
+  { test: /english|literature/i, icon: BookOpen, tile: 'bg-rose-500 text-white' },
+  { test: /hindi|bengali|sanskrit|language|french|urdu/i, icon: Languages, tile: 'bg-orange-500 text-white' },
+  { test: /comput|coding|ict|informat/i, icon: Code2, tile: 'bg-indigo-500 text-white' },
+  { test: /hist|geo|social|civics|econ/i, icon: Globe2, tile: 'bg-teal-500 text-white' },
+];
+const subjectMeta = (name) => SUBJECT_META.find((m) => m.test.test(String(name || ''))) || { icon: BookOpen, tile: 'bg-slate-500 text-white' };
+
+// Bar colour + pace label from completion %
+const barColor = (p) => (p >= 60 ? 'bg-green-500' : p >= 30 ? 'bg-amber-400' : 'bg-violet-400');
+const paceBadge = (p, stat = {}) => {
+  if (p >= 80) return { label: 'Ahead', icon: ArrowUp, cls: 'bg-sky-500 text-white' };
+  if (p >= 60) return { label: 'On Track', icon: CheckCircle2, cls: 'bg-green-600 text-white' };
+  if (p > 0 || stat.inProgress) return { label: 'In Progress', icon: Clock, cls: 'bg-amber-500 text-white' };
+  return { label: 'Not Started', icon: Circle, cls: 'bg-slate-500 text-white' };
+};
 
 /* Circular ring indicator */
 const Ring = ({ percent, size = 56, stroke = 5, color = '#3b82f6' }) => {
@@ -40,14 +49,18 @@ const Ring = ({ percent, size = 56, stroke = 5, color = '#3b82f6' }) => {
 };
 
 const LessonPlanStatusView = () => {
-  const [items, setItems]       = useState([]);
-  const [loading, setLoading]   = useState(false);
+  const [items, setItems]       = useState(() => {
+    if (!localStorage.getItem('token') || localStorage.getItem('userType') !== 'Student') return [];
+    const cached = peekCachedJson(STUDENT_SYLLABUS_URL)?.data;
+    return Array.isArray(cached) ? cached : [];
+  });
+  const [loading, setLoading]   = useState(true);
   const [error, setError]       = useState('');
-  const [query, setQuery]       = useState('');
   const [activeSubject, setActiveSubject] = useState('all');
+  const [view, setView] = useState('list'); // list | grid
 
   /* ── Fetch ──────────────────────────────────────────────────────────── */
-  const loadStatus = async () => {
+  const loadStatus = useCallback(async (forceRefresh = false) => {
     try {
       setLoading(true);
       setError('');
@@ -59,22 +72,29 @@ const LessonPlanStatusView = () => {
         return;
       }
 
-      const { data } = await fetchCachedJson(STUDENT_LESSON_PLAN_STATUS_ENDPOINT, {
-        ttlMs: STUDENT_LESSON_PLAN_STATUS_CACHE_TTL_MS,
+      const { data } = await fetchCachedJson(STUDENT_SYLLABUS_URL, {
+        ttlMs: STUDENT_SYLLABUS_TTL_MS,
+        forceRefresh,
         fetchOptions: {
-          headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+          headers: {
+            Authorization: `Bearer ${token}`,
+            ...(forceRefresh ? { 'Cache-Control': 'no-cache' } : {}),
+          },
         },
       });
-      setItems(Array.isArray(data) ? data : []);
+      const nextItems = Array.isArray(data) ? data : [];
+      setItems(nextItems);
+      setActiveSubject((subject) =>
+        nextItems.some((item) => (item.subject || 'Unknown') === subject) ? subject : 'all'
+      );
     } catch (err) {
       setError(err.message || 'Failed to load syllabus status');
-      setItems([]);
     } finally {
       setLoading(false);
     }
-  };
+  }, []);
 
-  useEffect(() => { loadStatus(); }, []);
+  useEffect(() => { loadStatus(); }, [loadStatus]);
 
   /* ── Derived data ───────────────────────────────────────────────────── */
 
@@ -116,274 +136,247 @@ const LessonPlanStatusView = () => {
     return { total, completed, inProgress, pending: total - completed - inProgress, avgPercent };
   }, [items]);
 
-  /* filtered list for active tab + search */
-  const filteredItems = useMemo(() => {
-    let list = activeSubject === 'all' ? items : items.filter((i) => (i.subject || 'Unknown') === activeSubject);
-    const q = query.trim().toLowerCase();
-    if (q) list = list.filter((i) => [i.title, i.subject, i.teacherName].filter(Boolean).some((v) => String(v).toLowerCase().includes(q)));
-    return list;
-  }, [items, activeSubject, query]);
-
-  /* active subject stats for the progress header */
-  const activeStat = activeSubject === 'all' ? overallStats : (subjectStats[activeSubject] || { total: 0, completed: 0, inProgress: 0, pending: 0, avgPercent: 0 });
-
-  /* ring colour per completion */
-  const ringColor = (p) => p >= 80 ? '#10b981' : p >= 50 ? '#f59e0b' : '#3b82f6';
+  /* Selected subject → chapters in ascending order, each with its lessons in order.
+     A lesson can have several date updates: keep its furthest progress. */
+  const subjectChapters = useMemo(() => {
+    if (activeSubject === 'all') return [];
+    const lessons = new Map();
+    items.forEach((item) => {
+      if ((item.subject || 'Unknown') !== activeSubject) return;
+      const key = String(item.lessonPlanId || item._id);
+      const prev = lessons.get(key);
+      const pct = item.completionPercent || 0;
+      const rank = { completed: 2, in_progress: 1, pending: 0 };
+      if (!prev) {
+        lessons.set(key, { ...item, completionPercent: pct, firstDate: item.date, lastDate: item.date });
+        return;
+      }
+      const better = pct > prev.completionPercent || (rank[item.status] || 0) > (rank[prev.status] || 0);
+      const next = better ? { ...prev, ...item, completionPercent: Math.max(pct, prev.completionPercent) } : prev;
+      const t = new Date(item.date).getTime();
+      if (t < new Date(prev.firstDate).getTime()) next.firstDate = item.date;
+      if (t > new Date(prev.lastDate).getTime()) next.lastDate = item.date;
+      lessons.set(key, next);
+    });
+    const chapters = new Map();
+    lessons.forEach((lesson) => {
+      const key = lesson.unitNumber ? `n:${lesson.unitNumber}` : lesson.unitTitle ? `t:${lesson.unitTitle.toLowerCase()}` : `l:${lesson.lessonPlanId || lesson._id}`;
+      if (!chapters.has(key)) {
+        chapters.set(key, {
+          key,
+          number: lesson.unitNumber || null,
+          title: lesson.unitTitle || (lesson.unitNumber ? '' : (lesson.lessonTitle || lesson.title || 'Lesson')),
+          lessons: [],
+        });
+      }
+      chapters.get(key).lessons.push(lesson);
+    });
+    const byStart = (a, b) => new Date(a.firstDate || 0) - new Date(b.firstDate || 0);
+    const list = Array.from(chapters.values()).map((ch) => {
+      ch.lessons.sort(byStart);
+      ch.percent = ch.lessons.length ? Math.round(ch.lessons.reduce((n, l) => n + (l.completionPercent || 0), 0) / ch.lessons.length) : 0;
+      ch.firstDate = ch.lessons[0]?.firstDate;
+      return ch;
+    });
+    // numbered chapters by number, then un-numbered ones by when they were taught
+    list.sort((a, b) => (a.number && b.number ? a.number - b.number : a.number ? -1 : b.number ? 1 : byStart(a, b)));
+    let seq = 0;
+    return list.map((ch) => { seq = ch.number || seq + 1; return { ...ch, displayNumber: ch.number || seq }; });
+  }, [items, activeSubject]);
 
   /* ── Render ─────────────────────────────────────────────────────────── */
-  return (
-    <div className="min-h-screen bg-[radial-gradient(circle_at_top_left,_rgba(59,130,246,0.10),_transparent_24%),radial-gradient(circle_at_top_right,_rgba(16,185,129,0.10),_transparent_22%),linear-gradient(180deg,_#f8fafc_0%,_#eff6ff_100%)] p-4 md:p-6 space-y-5">
+  const pctOf = (n) => (overallStats.total ? Math.round((n / overallStats.total) * 100) : 0);
+  const selected = activeSubject !== 'all' ? activeSubject : null;
+  const selectedStat = selected ? (subjectStats[selected] || {}) : null;
 
-      {/* ── Header ──────────────────────────────────────────────────────── */}
-      <div className="relative overflow-hidden rounded-[28px] border border-slate-200 bg-white p-5 shadow-sm">
-        <div className="absolute inset-0 bg-[radial-gradient(circle_at_top_left,_rgba(59,130,246,0.10),_transparent_24%),radial-gradient(circle_at_bottom_right,_rgba(16,185,129,0.10),_transparent_22%)]" />
-        <div className="relative flex flex-wrap items-center justify-between gap-4">
-          <div className="flex items-center gap-3">
-            <div className="p-3 bg-blue-50 rounded-2xl">
-              <BookOpenCheck className="w-6 h-6 text-blue-600" />
-            </div>
-            <div>
-              <div className="inline-flex items-center gap-1.5 rounded-full border border-sky-200 bg-sky-50 px-2.5 py-1 text-[11px] font-semibold uppercase tracking-[0.16em] text-sky-700">
-                <Sparkles className="w-3.5 h-3.5" />
-                Progress Tracker
-              </div>
-              <h1 className="mt-3 text-2xl font-bold tracking-tight text-gray-900">Syllabus Completion</h1>
-              <p className="text-sm text-gray-500 mt-1">Date-wise lesson progress updates from your teachers</p>
-            </div>
+  return (
+    <main className="m-3 flex min-h-0 flex-1 flex-col overflow-hidden rounded-2xl border border-slate-200/80 bg-[#f8f9fd] p-4 text-slate-900 shadow-sm sm:rounded-3xl sm:px-5">
+        {/* ── Header ── */}
+        <div className="mb-4 flex shrink-0 flex-wrap items-center gap-3">
+          {/* <BookOpen className="h-7 w-7 shrink-0 text-violet-600" strokeWidth={1.8} /> */}
+          <div className="min-w-0 flex-1">
+            <h1 className="truncate text-xl font-bold tracking-tight sm:text-2xl">Syllabus Completion Status</h1>
+            <p className="mt-0.5 text-sm text-slate-500">Track your syllabus progress for each subject</p>
           </div>
-          <div className="relative w-full sm:w-72">
-            <Search className="w-4 h-4 absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" />
-            <input
-              type="text"
-              value={query}
-              onChange={(e) => setQuery(e.target.value)}
-              placeholder="Search lesson or subject…"
-              className="w-full pl-9 pr-4 py-3 border border-gray-200 rounded-2xl text-sm bg-white/80 focus:bg-white focus:ring-2 focus:ring-blue-400 focus:border-blue-400 outline-none transition"
-            />
-          </div>
+          <button
+            type="button"
+            onClick={() => loadStatus(true)}
+            disabled={loading}
+            className="inline-flex shrink-0 items-center gap-1.5 rounded-full border border-slate-200 bg-white px-3 py-2 text-xs font-semibold text-slate-700 shadow-sm hover:bg-slate-50 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-violet-600 disabled:opacity-60"
+          >
+            <RefreshCw aria-hidden="true" className={loading ? 'h-4 w-4 animate-spin' : 'h-4 w-4'} />
+            {loading ? 'Refreshing…' : 'Refresh'}
+          </button>
         </div>
 
-        {/* Overall summary chips */}
-        {!loading && items.length > 0 && (
-          <div className="relative mt-5 grid grid-cols-2 gap-3 lg:grid-cols-4">
-            {[
-              { label: 'Total lessons', value: overallStats.total, color: 'border-blue-200 bg-blue-50 text-blue-700' },
-              { label: 'Completed',     value: overallStats.completed, color: 'border-emerald-200 bg-emerald-50 text-emerald-700' },
-              { label: 'In progress',   value: overallStats.inProgress, color: 'border-amber-200 bg-amber-50 text-amber-700' },
-              { label: 'Pending',       value: overallStats.pending, color: 'border-slate-200 bg-slate-50 text-slate-700' },
-            ].map((c) => (
-              <div key={c.label} className={`rounded-2xl border px-4 py-3 ${c.color}`}>
-                <p className="text-[11px] font-semibold uppercase tracking-[0.16em] opacity-80">{c.label}</p>
-                <p className="mt-2 text-2xl font-bold">{c.value}</p>
-              </div>
-            ))}
+        <div className="min-h-0 flex-1 space-y-4 overflow-y-auto overscroll-contain pr-2 pb-2 custom-scrollbar" role="region" aria-label="Syllabus progress" tabIndex={0}>
+        {error && <div className="rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-600">{error}</div>}
+
+        {loading && items.length === 0 ? (
+          <div className="space-y-3" role="status" aria-label="Loading syllabus status">
+            <div className="h-36 animate-pulse rounded-2xl bg-white shadow-sm" />
+            {[0, 1, 2, 3].map((i) => <div key={i} className="h-14 animate-pulse rounded-2xl bg-white shadow-sm" />)}
           </div>
-        )}
-      </div>
-
-      {error && (
-        <div className="text-sm text-red-600 bg-red-50 border border-red-200 rounded-xl px-4 py-3">{error}</div>
-      )}
-
-      {/* ── Subject Tabs ─────────────────────────────────────────────────── */}
-      {!loading && subjects.length > 0 && (
-        <div className="bg-white border border-gray-200 rounded-[28px] shadow-sm overflow-hidden">
-
-          {/* Tab strip */}
-          <div className="overflow-x-auto border-b border-gray-100 px-4 pt-4 bg-slate-50/80">
-            <div className="flex gap-2 min-w-max pb-3">
-              {/* "All" tab */}
-              <button
-                onClick={() => setActiveSubject('all')}
-                className={`relative flex items-center gap-2 px-4 py-2.5 text-sm font-semibold rounded-2xl transition-colors border ${
-                  activeSubject === 'all'
-                    ? 'border-blue-200 text-blue-700 bg-blue-50 shadow-sm'
-                    : 'border-transparent text-gray-500 hover:text-gray-700 hover:bg-white'
-                }`}
-              >
-                <Layers3 className="w-4 h-4" />
-                All Subjects
-                <span className={`px-1.5 py-0.5 rounded-full text-xs font-bold ${
-                  activeSubject === 'all' ? 'bg-blue-100 text-blue-700' : 'bg-gray-100 text-gray-500'
-                }`}>{items.length}</span>
-              </button>
-
-              {/* One tab per subject */}
-              {subjects.map((subj) => {
-                const stat = subjectStats[subj] || {};
-                const pct = stat.avgPercent || 0;
-                const isActive = activeSubject === subj;
-                const badgeColor = pct >= 80 ? 'bg-emerald-100 text-emerald-700' : pct >= 50 ? 'bg-amber-100 text-amber-700' : 'bg-gray-100 text-gray-500';
-                return (
-                  <button
-                    key={subj}
-                    onClick={() => setActiveSubject(subj)}
-                    className={`relative flex items-center gap-2 px-4 py-2.5 text-sm font-semibold rounded-2xl transition-colors border whitespace-nowrap ${
-                      isActive
-                        ? 'border-blue-200 text-blue-700 bg-blue-50 shadow-sm'
-                        : 'border-transparent text-gray-500 hover:text-gray-700 hover:bg-white'
-                    }`}
-                  >
-                    {subj}
-                    <span className={`px-1.5 py-0.5 rounded-full text-xs font-bold ${isActive ? 'bg-blue-100 text-blue-700' : badgeColor}`}>
-                      {pct}%
-                    </span>
-                  </button>
-                );
-              })}
+        ) : items.length === 0 ? (
+          !error && (
+            <div className="flex flex-col items-center gap-2 rounded-2xl border border-dashed border-slate-300 bg-white py-14 text-center">
+              <BookOpenCheck className="h-9 w-9 text-slate-300" />
+              <p className="text-sm font-semibold text-slate-600">No syllabus updates yet</p>
+              <p className="text-xs text-slate-400">Your teachers haven&apos;t posted any lesson progress.</p>
             </div>
-          </div>
-
-          {/* ── Subject Completion Summary ──────────────────────────────── */}
-          <div className="p-5 border-b border-gray-100 bg-[linear-gradient(180deg,_rgba(248,250,252,0.85),_rgba(255,255,255,1))]">
-            <div className="flex flex-col gap-5 xl:flex-row xl:items-center">
-              {/* Ring */}
-              <div className="relative shrink-0 flex items-center justify-center rounded-3xl border border-slate-200 bg-white p-4 shadow-sm">
-                <Ring percent={activeStat.avgPercent} size={88} stroke={7} color={ringColor(activeStat.avgPercent)} />
-                <span className="absolute text-base font-extrabold text-gray-800">{activeStat.avgPercent}%</span>
-              </div>
-
-              {/* Text stats */}
-              <div className="flex-1 space-y-3">
-                <div className="flex items-center justify-between text-sm">
-                  <span className="font-semibold text-gray-700">
-                    {activeSubject === 'all' ? 'Overall Completion' : `${activeSubject} — Completion`}
-                  </span>
-                  <span className="text-xs text-gray-400">{activeStat.total} lesson{activeStat.total !== 1 ? 's' : ''}</span>
+          )
+        ) : (
+          <>
+            {/* ── Overall card ── */}
+            <div className="relative overflow-hidden rounded-2xl border border-slate-200/80 bg-white shadow-sm p-4 sm:p-5">
+              <div className="pointer-events-none absolute -bottom-10 right-24 h-28 w-56 rounded-full bg-violet-50" />
+              <div className="relative flex flex-col gap-4 sm:flex-row sm:items-center">
+                <div className="flex items-center gap-4 sm:flex-1">
+                  <div className="relative flex shrink-0 items-center justify-center">
+                    <Ring percent={overallStats.avgPercent} size={104} stroke={11} color="#22c55e" />
+                    <span className="absolute text-2xl font-bold text-slate-900">{overallStats.avgPercent}%</span>
+                  </div>
+                  <div className="min-w-0">
+                    <h2 className="text-base font-bold leading-tight sm:text-lg">Overall Syllabus Completion</h2>
+                    <p className="mt-1 text-sm text-slate-500">{overallStats.avgPercent}% completed</p>
+                  </div>
                 </div>
-                <ProgressBar
-                  value={activeStat.avgPercent}
-                  color={activeStat.avgPercent >= 80 ? 'bg-emerald-500' : activeStat.avgPercent >= 50 ? 'bg-amber-400' : 'bg-blue-500'}
-                />
-                <div className="flex flex-wrap gap-4 mt-1">
+                <div className="hidden h-20 w-px bg-slate-200 sm:block" />
+                <ul className="grid grid-cols-2 gap-2 sm:block sm:space-y-2.5 sm:pl-2">
                   {[
-                    { label: 'Completed',   value: activeStat.completed,  color: 'text-emerald-600', dot: 'bg-emerald-500' },
-                    { label: 'In Progress', value: activeStat.inProgress, color: 'text-amber-600',   dot: 'bg-amber-400'  },
-                    { label: 'Pending',     value: activeStat.pending,    color: 'text-gray-500',    dot: 'bg-gray-300'   },
-                  ].map((s) => (
-                    <div key={s.label} className="flex items-center gap-1.5 text-xs">
-                      <span className={`w-2 h-2 rounded-full shrink-0 ${s.dot}`} />
-                      <span className={`font-bold ${s.color}`}>{s.value}</span>
-                      <span className="text-gray-400">{s.label}</span>
-                    </div>
+                    { label: 'Completed', value: pctOf(overallStats.completed), icon: Check, cls: 'bg-emerald-500' },
+                    { label: 'In Progress', value: pctOf(overallStats.inProgress), icon: Play, cls: 'bg-violet-500' },
+                  ].map(({ label, value, icon: Icon, cls }) => (
+                    <li key={label} className="flex flex-col items-center gap-1 text-center text-sm sm:flex-row sm:gap-2.5 sm:text-left">
+                      <span className={`flex h-6 w-6 shrink-0 items-center justify-center rounded-full text-white ${cls}`}><Icon className="h-3.5 w-3.5" strokeWidth={3} fill={Icon === Play ? 'currentColor' : 'none'} /></span>
+                      <span className="text-slate-600 sm:w-24">{label}:</span>
+                      <span className="font-bold text-slate-900">{value}%</span>
+                    </li>
                   ))}
-                </div>
+                </ul>
               </div>
+            </div>
 
-              {/* Per-subject mini grid (only on All tab) */}
-              {activeSubject === 'all' && subjects.length > 1 && (
-                <div className="xl:ml-4 flex flex-wrap gap-2 xl:max-w-sm">
-                  {subjects.slice(0, 6).map((s) => {
-                    const pct = subjectStats[s]?.avgPercent || 0;
+            {selected ? (
+              /* ── One subject: its lessons ── */
+              <div className="space-y-3">
+                <div className="flex items-center gap-2">
+                  <button type="button" onClick={() => setActiveSubject('all')} className="inline-flex items-center gap-1 rounded-full border border-slate-200 bg-white px-3 py-1.5 text-xs font-semibold text-slate-700 shadow-sm hover:bg-slate-50">
+                    <ChevronLeft className="h-4 w-4" /> All subjects
+                  </button>
+                  <h2 className="min-w-0 truncate text-base font-bold sm:text-lg">{selected}</h2>
+                  <span className="ml-auto text-sm font-bold text-slate-700">{selectedStat.avgPercent || 0}%</span>
+                </div>
+                {subjectChapters.length === 0 ? (
+                  <p className="rounded-xl border border-dashed border-slate-300 bg-white py-10 text-center text-sm text-slate-500">No updates yet for this subject.</p>
+                ) : (
+                  <div className="space-y-3">
+                    {subjectChapters.map((ch) => (
+                      <section key={ch.key} className="overflow-hidden rounded-2xl border border-slate-200/80 bg-white shadow-sm">
+                        <div className="h-1 bg-linear-to-r from-violet-500 to-indigo-500" />
+                        <div className="flex items-center gap-3 border-b border-slate-100 px-4 py-3">
+                          <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-violet-700 text-sm font-bold text-white shadow-sm" aria-label={`Chapter ${ch.displayNumber}`}>{ch.displayNumber}</span>
+                          <div className="min-w-0 flex-1">
+                            <h3 className="truncate text-sm font-bold text-slate-900">{ch.title ? `Chapter ${ch.displayNumber} · ${ch.title}` : `Chapter ${ch.displayNumber}`}</h3>
+                            <p className="text-xs text-slate-500">{ch.lessons.length} lesson{ch.lessons.length === 1 ? '' : 's'}</p>
+                          </div>
+                          <div className="flex w-28 items-center gap-2 sm:w-40">
+                            <div className="h-2 flex-1 overflow-hidden rounded-full bg-slate-100"><div className={`h-full rounded-full ${barColor(ch.percent)}`} style={{ width: `${ch.percent}%` }} /></div>
+                            <span className="w-9 text-right text-xs font-bold text-slate-700">{ch.percent}%</span>
+                          </div>
+                        </div>
+                        <ol className="divide-y divide-slate-100">
+                          {ch.lessons.map((item, li) => {
+                            const c = cfg(item.status);
+                            const pct = item.completionPercent || 0;
+                            return (
+                              <li key={item.lessonPlanId || item._id} className="flex flex-wrap items-center gap-3 px-4 py-3">
+                                <div className="min-w-0 flex-1">
+                                  <p className="truncate text-sm font-semibold text-slate-900">{ch.displayNumber}.{li + 1} {item.lessonTitle || item.title || 'Lesson'}</p>
+                                  <p className="mt-0.5 flex flex-wrap items-center gap-x-2 text-xs text-slate-400">
+                                    {item.teacherName && <span>{item.teacherName}</span>}
+                                    <span className="inline-flex items-center gap-1"><Calendar className="h-3 w-3" />{item.lastDate ? new Date(item.lastDate).toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' }) : '—'}</span>
+                                  </p>
+                                </div>
+                                <div className="flex w-full items-center gap-3 sm:w-48">
+                                  <div className="h-2 flex-1 overflow-hidden rounded-full bg-slate-100"><div className={`h-full rounded-full ${barColor(pct)}`} style={{ width: `${pct}%` }} /></div>
+                                  <span className="w-9 text-right text-xs font-bold text-slate-700">{pct}%</span>
+                                </div>
+                                <span className={`rounded-full border px-2 py-0.5 text-[11px] font-semibold ${c.tone}`}>{c.label}</span>
+                              </li>
+                            );
+                          })}
+                        </ol>
+                      </section>
+                    ))}
+                  </div>
+                )}
+              </div>
+            ) : (
+              /* ── Subject-wise completion ── */
+              <div className="space-y-3">
+                <div className="flex items-center justify-between gap-3">
+                  <h2 className="text-base font-bold sm:text-lg">Subject-wise Completion</h2>
+                  <div className="flex rounded-xl border border-slate-200 bg-white p-0.5" role="group" aria-label="View">
+                    <button type="button" onClick={() => setView('grid')} aria-pressed={view === 'grid'} aria-label="Grid view" className={`rounded-lg p-1.5 ${view === 'grid' ? 'bg-violet-600 text-white' : 'text-slate-600 hover:bg-slate-50'}`}><LayoutGrid className="h-4 w-4" /></button>
+                    <button type="button" onClick={() => setView('list')} aria-pressed={view === 'list'} aria-label="List view" className={`rounded-lg p-1.5 ${view === 'list' ? 'bg-violet-600 text-white' : 'text-slate-600 hover:bg-slate-50'}`}><List className="h-4 w-4" /></button>
+                  </div>
+                </div>
+
+                <div className={view === 'grid' ? 'grid grid-cols-1 gap-3 sm:grid-cols-2' : 'space-y-2'}>
+                  {subjects.map((subj) => {
+                    const stat = subjectStats[subj] || {};
+                    const pct = stat.avgPercent || 0;
+                    const meta = subjectMeta(subj);
+                    const Icon = meta.icon;
+                    const badge = paceBadge(pct, stat);
+                    const BadgeIcon = badge.icon;
                     return (
-                      <button key={s}
-                        onClick={() => setActiveSubject(s)}
-                        className="flex items-center gap-1.5 px-3 py-2 rounded-2xl border border-gray-200 bg-white hover:border-blue-400 hover:bg-blue-50 transition text-xs font-semibold text-gray-700">
-                        <span className={`w-2 h-2 rounded-full ${pct >= 80 ? 'bg-emerald-500' : pct >= 50 ? 'bg-amber-400' : 'bg-blue-400'}`} />
-                        {s}
-                        <ChevronRight className="w-3 h-3 text-gray-400" />
+                      <button
+                        key={subj}
+                        type="button"
+                        onClick={() => setActiveSubject(subj)}
+                        className={`group w-full overflow-hidden rounded-2xl border border-slate-200/80 bg-white shadow-sm text-left transition duration-200 hover:-translate-y-0.5 hover:shadow-lg hover:shadow-indigo-950/5 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-indigo-600 ${view === 'grid' ? 'p-4' : 'flex items-center gap-3 px-3 py-2.5 sm:gap-4'}`}
+                      >
+                        {view === 'grid' ? (
+                          <>
+                            <div className="-mx-4 -mt-4 mb-3 h-1 bg-linear-to-r from-violet-500 to-indigo-500" />
+                            <div className="flex items-center gap-3">
+                              <span className={`flex h-10 w-10 shrink-0 items-center justify-center rounded-full ${meta.tile}`}><Icon className="h-5 w-5" /></span>
+                              <span className="min-w-0 flex-1">
+                                <span className="block truncate font-bold text-slate-900">{subj}</span>
+                                <span className="block text-xs text-slate-500">{stat.total || 0} lesson{stat.total === 1 ? '' : 's'}</span>
+                              </span>
+                              <ChevronRight className="h-4 w-4 shrink-0 text-slate-400" />
+                            </div>
+                            <div className="mt-3 flex items-center gap-3">
+                              <div className="h-2 flex-1 overflow-hidden rounded-full bg-slate-100"><div className={`h-full rounded-full ${barColor(pct)}`} style={{ width: `${pct}%` }} /></div>
+                              <span className="text-sm font-bold text-slate-900">{pct}%</span>
+                            </div>
+                            <span className={`mt-3 inline-flex items-center gap-1 rounded-full px-2.5 py-1 text-xs font-semibold ${badge.cls}`}><BadgeIcon className="h-3.5 w-3.5" />{badge.label}</span>
+                          </>
+                        ) : (
+                          <>
+                            <span className={`flex h-9 w-9 shrink-0 items-center justify-center rounded-full ${meta.tile}`}><Icon className="h-4 w-4" /></span>
+                            <span className="min-w-0 flex-1 truncate font-bold text-slate-900 sm:w-36 sm:flex-none">{subj}</span>
+                            <span className="hidden h-6 w-px bg-slate-200 sm:block" />
+                            <span className="hidden w-20 shrink-0 text-sm text-slate-500 sm:block">{stat.total || 0} lesson{stat.total === 1 ? '' : 's'}</span>
+                            <span className="hidden h-2 flex-1 overflow-hidden rounded-full bg-slate-100 sm:block"><span className={`block h-full rounded-full ${barColor(pct)}`} style={{ width: `${pct}%` }} /></span>
+                            <span className="w-10 shrink-0 text-right text-sm font-bold text-slate-900">{pct}%</span>
+                            <span className={`hidden shrink-0 items-center gap-1 rounded-full px-2.5 py-1 text-xs font-semibold md:inline-flex ${badge.cls}`}><BadgeIcon className="h-3.5 w-3.5" />{badge.label}</span>
+                            <ChevronRight className="h-4 w-4 shrink-0 text-slate-400 transition group-hover:translate-x-0.5" />
+                          </>
+                        )}
                       </button>
                     );
                   })}
-                  {subjects.length > 6 && (
-                    <span className="flex items-center px-3 py-1.5 text-xs text-gray-400">+{subjects.length - 6} more</span>
-                  )}
                 </div>
-              )}
-            </div>
-          </div>
-
-          {/* ── Lesson List ────────────────────────────────────────────── */}
-          <div className="p-3 border-b border-gray-100">
-            <p className="text-xs text-gray-400 font-medium px-2">
-              {loading ? 'Loading…' : `${filteredItems.length} lesson plan${filteredItems.length !== 1 ? 's' : ''}`}
-            </p>
-          </div>
-
-          {loading ? (
-            <div className="flex flex-col items-center justify-center py-14 gap-3">
-              <div className="animate-spin rounded-full h-8 w-8 border-2 border-blue-500 border-t-transparent" />
-              <p className="text-sm text-gray-400">Loading lesson plans…</p>
-            </div>
-          ) : filteredItems.length === 0 ? (
-            <div className="flex flex-col items-center justify-center py-14 gap-3 text-center">
-              <div className="p-4 bg-gray-100 rounded-2xl">
-                <BookOpenCheck className="w-8 h-8 text-gray-400" />
               </div>
-              <p className="text-sm font-semibold text-gray-500">No lesson plans found</p>
-              <p className="text-xs text-gray-400">
-                {query ? 'Try clearing your search' : 'No updates yet for this subject'}
-              </p>
-            </div>
-          ) : (
-            <div className="divide-y divide-gray-100">
-              {filteredItems.map((item) => {
-                const c = cfg(item.status);
-                const StatusIcon = c.icon;
-                const pct = item.completionPercent || 0;
-                return (
-                  <div key={item._id} className="px-5 py-4 hover:bg-blue-50/20 transition">
-                    <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
-                      {/* Left: icon + title/meta */}
-                      <div className="flex items-start gap-3 flex-1 min-w-0">
-                        <div className={`p-2.5 rounded-2xl shrink-0 mt-0.5 ${c.tone}`}>
-                          <StatusIcon className="w-4 h-4" />
-                        </div>
-                        <div className="min-w-0">
-                          <p className="font-semibold text-gray-900 text-sm truncate">{item.title || 'Lesson Plan'}</p>
-                          <div className="flex flex-wrap items-center gap-x-3 gap-y-0.5 mt-0.5">
-                            <span className="text-xs text-gray-500">{item.subject || 'Subject'}</span>
-                            {item.teacherName && (
-                              <>
-                                <span className="text-gray-300">·</span>
-                                <span className="text-xs text-gray-400">{item.teacherName}</span>
-                              </>
-                            )}
-                            <span className="text-gray-300">·</span>
-                            <span className="inline-flex items-center gap-1 text-xs text-gray-400">
-                              <Calendar className="w-3 h-3" />
-                              {item.date ? new Date(item.date).toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' }) : '—'}
-                            </span>
-                          </div>
-                          {item.remarks && <p className="mt-1.5 text-xs text-gray-500 italic line-clamp-2">{item.remarks}</p>}
-                        </div>
-                      </div>
-
-                      {/* Right: status badge + mini progress */}
-                      <div className="flex items-center gap-3 shrink-0 ml-11 sm:ml-0">
-                        <div className="flex flex-col items-end gap-1.5 min-w-[120px]">
-                          <div className="flex items-center justify-between w-full">
-                            <span className={`px-2 py-0.5 rounded-full border text-xs font-semibold ${c.tone}`}>
-                              {c.label}
-                            </span>
-                            <span className="text-xs font-bold text-gray-700 ml-2">{pct}%</span>
-                          </div>
-                          <ProgressBar
-                            value={pct}
-                            color={pct >= 80 ? 'bg-emerald-500' : pct >= 50 ? 'bg-amber-400' : 'bg-blue-400'}
-                          />
-                        </div>
-                      </div>
-                    </div>
-                  </div>
-                );
-              })}
-            </div>
-          )}
+            )}
+          </>
+        )}
         </div>
-      )}
-
-      {/* empty state when no items at all */}
-      {!loading && items.length === 0 && !error && (
-        <div className="bg-white border border-gray-200 rounded-2xl shadow-sm flex flex-col items-center justify-center py-16 gap-3 text-center">
-          <div className="p-4 bg-gray-100 rounded-2xl">
-            <BookOpenCheck className="w-10 h-10 text-gray-400" />
-          </div>
-          <p className="text-base font-semibold text-gray-500">No syllabus updates yet</p>
-          <p className="text-sm text-gray-400">Your teachers haven't posted any lesson progress.</p>
-        </div>
-      )}
-    </div>
+    </main>
   );
 };
 

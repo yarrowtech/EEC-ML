@@ -213,7 +213,7 @@ const DashboardContent = () => {
   const isAiTutorPath = /\/student\/(learning|smart-learning|smart-learning-tutor)\/?$/.test(location.pathname);
   // AI tutor: the portal top bar only on phones/tablets (desktop tutor has its own header)
   const hideHeaderForTutor = isAiTutorPath && typeof window !== 'undefined' && window.innerWidth >= 1024;
-  const isContainedLearningPage = isSubjectsOverviewPath || isSubjectChaptersPath || isAiTutorPath || /\/student\/(study-materials|practice-papers|routine|assignments-lab)\/?$/.test(location.pathname);
+  const isContainedLearningPage = isSubjectsOverviewPath || isSubjectChaptersPath || isAiTutorPath || /\/student\/(study-materials|practice-papers|routine|assignments-lab|lesson-plan-status)\/?$/.test(location.pathname);
   // Community Wall has its own page header — hide the portal header there.
   const isCommunityWallPath = /\/student\/assignments-academic-alcove\/?$/.test(location.pathname);
   const isFullscreenView = effectiveView === 'excuse-letter'

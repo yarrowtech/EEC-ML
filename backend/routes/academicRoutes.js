@@ -31,8 +31,10 @@ const resyncChatGroupsForSchool = (schoolId) => {
 };
 const Exam = require('../models/Exam');
 const { buildInvoiceSnapshotsForStudent } = require('../utils/feeHeadPolicy');
+const { studentSyllabusCache } = require('../utils/responseCache');
 
 const router = express.Router();
+router.use(studentSyllabusCache.invalidateOnWrite);
 
 // In-memory progress store for the "Move to Next Session" copy-setup job.
 // The job runs on the same server instance that accepted the POST, and the
