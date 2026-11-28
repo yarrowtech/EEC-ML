@@ -14,6 +14,10 @@ const examGroupSchema = new mongoose.Schema({
   grade:     { type: String, default: '' },
   section:   { type: String, default: '' },
   status:    { type: String, default: 'Scheduled' },
+  // formal     — term / final exams: rooms, seating plans and admit cards
+  // class_test — quiz / class test held in the class's own room: no room
+  //              allocation, no seating plan, no admit card
+  examMode:  { type: String, enum: ['formal', 'class_test'], default: 'formal' },
   startDate: { type: String, default: '' },
   endDate:   { type: String, default: '' },
   startTime: { type: String, default: '' },

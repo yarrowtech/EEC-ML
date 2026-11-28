@@ -24,7 +24,8 @@ const AdmitCards = ({ setShowAdminHeader }) => {
         }, navigate);
         const data = await res.json().catch(() => []);
         if (!res.ok) throw new Error(data?.error || 'Unable to load exams');
-        setGroups(Array.isArray(data) ? data : []);
+        // Class tests / quizzes don't use admit cards
+        setGroups((Array.isArray(data) ? data : []).filter((g) => g?.examMode !== 'class_test'));
       } catch (err) {
         setError(err.message || 'Unable to load admit card status');
       } finally {

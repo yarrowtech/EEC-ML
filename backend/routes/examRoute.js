@@ -885,7 +885,8 @@ router.get('/groups/student-admit-cards', authStudent, admitCardsCache.cache, as
 
     const filter = { schoolId, ...(campusId ? { campusId } : {}) };
     const [groups, exams, school, principal] = await Promise.all([
-      ExamGroup.find(filter)
+      // class tests / quizzes have no admit card
+      ExamGroup.find({ ...filter, examMode: { $ne: 'class_test' } })
         .populate({ path: 'classId', select: 'name academicYearId', populate: { path: 'academicYearId', select: 'name isActive' } })
         .populate('sectionId', 'name classId')
         .sort({ startDate: 1, createdAt: -1 })
@@ -1110,7 +1111,8 @@ router.get('/groups/parent-admit-cards', authParent, admitCardsCache.cache, asyn
 
     const filter = { schoolId, ...(campusId ? { campusId } : {}) };
     const [groups, exams, school, principal] = await Promise.all([
-      ExamGroup.find(filter)
+      // class tests / quizzes have no admit card
+      ExamGroup.find({ ...filter, examMode: { $ne: 'class_test' } })
         .populate({ path: 'classId', select: 'name academicYearId', populate: { path: 'academicYearId', select: 'name isActive' } })
         .populate('sectionId', 'name classId')
         .sort({ startDate: 1, createdAt: -1 })
@@ -1167,13 +1169,20 @@ router.get('/groups/parent-admit-cards', authParent, admitCardsCache.cache, asyn
   }
 });
 // POST /groups — create group
+const EXAM_MODES = new Set(['formal', 'class_test']);
+const OWN_CLASSROOM_VENUE = 'Own classroom';
+const normalizeExamMode = (value) => (EXAM_MODES.has(String(value || '').trim()) ? String(value).trim() : null);
+
 router.post('/groups', adminAuth, async (req, res) => {
   try {
     const schoolId = resolveSchoolId(req, res);
     if (!schoolId) return;
     const campusId = resolveCampusId(req);
-    const { title, term, classId, sectionId, status, startDate, endDate, startTime } = req.body || {};
+    const { title, term, classId, sectionId, status, startDate, endDate, startTime, examMode } = req.body || {};
     const normalizedGroupStatus = status ? String(status).trim() : 'Scheduled';
+    if (examMode !== undefined && !normalizeExamMode(examMode)) {
+      return res.status(400).json({ error: 'examMode must be formal or class_test' });
+    }
 
     if (!title?.trim()) return res.status(400).json({ error: 'Exam group title is required' });
     if (!EXAM_GROUP_STATUS_OPTIONS.has(normalizedGroupStatus)) {
@@ -1203,6 +1212,7 @@ router.post('/groups', adminAuth, async (req, res) => {
       grade:   classDoc?.name  || '',
       section: sectionDoc?.name || '',
       status: normalizedGroupStatus,
+      examMode: normalizeExamMode(examMode) || 'formal',
       startDate: startDate || '',
       endDate:   endDate   || '',
       startTime: startTime || '',
@@ -1272,11 +1282,16 @@ router.put('/groups/:groupId', adminAuth, async (req, res) => {
     const schoolId = resolveSchoolId(req, res);
     if (!schoolId) return;
     const campusId = resolveCampusId(req);
-    const { title, term, classId, sectionId, status, startDate, endDate, startTime, attachment } = req.body || {};
+    const { title, term, classId, sectionId, status, startDate, endDate, startTime, attachment, examMode } = req.body || {};
 
     const updates = {};
     if (title !== undefined) updates.title = title.trim();
     if (term !== undefined) updates.term = term;
+    if (examMode !== undefined) {
+      const mode = normalizeExamMode(examMode);
+      if (!mode) return res.status(400).json({ error: 'examMode must be formal or class_test' });
+      updates.examMode = mode;
+    }
     let isPublishing = false;
     if (status !== undefined) {
       const normalizedGroupStatus = String(status).trim();
@@ -1658,13 +1673,19 @@ router.post("/add", adminAuth, async (req, res) => {
         if (academicContext.error) {
           return res.status(400).json({ error: academicContext.error });
         }
-        const roomResult = await resolveExamRoom({ schoolId, campusId, roomId });
+        const parentGroup = groupId && mongoose.isValidObjectId(groupId)
+          ? await ExamGroup.findOne({ _id: groupId, schoolId }).select('examMode').lean()
+          : null;
+        const isClassTest = parentGroup?.examMode === 'class_test';
+        const roomResult = isClassTest ? { roomDoc: null } : await resolveExamRoom({ schoolId, campusId, roomId });
         if (roomResult.error) {
           return res.status(400).json({ error: roomResult.error });
         }
-        const roomVenue = roomResult.roomDoc
-          ? `${roomResult.roomDoc.floorId?.buildingId?.name || 'Building'} / ${roomResult.roomDoc.floorId?.name || 'Floor'} / ${roomResult.roomDoc.roomNumber}`
-          : '';
+        const roomVenue = isClassTest
+          ? OWN_CLASSROOM_VENUE
+          : roomResult.roomDoc
+            ? `${roomResult.roomDoc.floorId?.buildingId?.name || 'Building'} / ${roomResult.roomDoc.floorId?.name || 'Floor'} / ${roomResult.roomDoc.roomNumber}`
+            : '';
         const { classDoc, sectionDoc, subjectDoc } = academicContext;
         const computedStudentCount = await resolveExamStudentCount({
           schoolId,

@@ -156,7 +156,16 @@ const formatDateTimeChip = (value) => {
 };
 
 
-const EMPTY_GROUP = { title: '', term: 'Term 1', classId: '', sectionId: '', status: 'Scheduled', startDate: '', endDate: '' };
+const EMPTY_GROUP = { title: '', term: 'Term 1', classId: '', sectionId: '', status: 'Scheduled', startDate: '', endDate: '', examMode: 'formal' };
+
+// Exam kind: formal exams use rooms, seating & admit cards; class tests/quizzes
+// are taken in the class's own room with none of that.
+const EXAM_MODE_OPTIONS = [
+  { value: 'formal', title: 'Formal exam', text: 'Term / half-yearly / final exams. Rooms, seating plan and admit cards.' },
+  { value: 'class_test', title: 'Class test / Quiz', text: 'Short test in the class’s own room. No room allocation, no admit card.' },
+];
+const CLASS_TEST_TERMS = new Set(['Class Test', 'Unit Test', 'Monthly Test']);
+const examModeLabel = (mode) => (mode === 'class_test' ? 'Class test / Quiz' : 'Formal exam');
 const EMPTY_SUBJECT = { subjectId: '', marks: '100', date: '', time: '', duration: '', buildingId: '', floorId: '', roomId: '', venue: '', primaryInstructor: '', secondaryInstructor: '', status: 'Scheduled' };
 
 const inp = 'w-full rounded-xl border border-slate-200 bg-slate-50 px-3 py-2.5 text-sm text-slate-800 focus:border-indigo-400 focus:bg-white focus:outline-none focus:ring-2 focus:ring-indigo-100 transition placeholder:text-slate-400';
@@ -582,7 +591,7 @@ const ExaminationManagement = ({ setShowAdminHeader }) => {
   const [subjectForm, setSubjectForm] = useState(EMPTY_SUBJECT);
 
   /* ── create-exam wizard ── */
-  const EMPTY_WIZARD_DETAILS = { title: '', term: 'Term 1', yearId: '', status: 'Scheduled', startDate: '', endDate: '', skipSaturdays: false, blockedDates: [] };
+  const EMPTY_WIZARD_DETAILS = { title: '', term: 'Term 1', yearId: '', status: 'Scheduled', startDate: '', endDate: '', skipSaturdays: false, blockedDates: [], examMode: 'formal' };
   const [blockedDateDraft, setBlockedDateDraft] = useState('');
   const [showWizard, setShowWizard] = useState(false);
   // Lock the page's own scrollbar while the Create Exam wizard is open — it's
@@ -873,6 +882,7 @@ const ExaminationManagement = ({ setShowAdminHeader }) => {
           key,
           title: g.title,
           term: g.term,
+          examMode: g.examMode || 'formal',
           status: g.status,
           startDate: g.startDate,
           endDate: g.endDate,
@@ -3575,7 +3585,7 @@ const ExaminationManagement = ({ setShowAdminHeader }) => {
     const classId = g.classId?._id || g.classId || '';
     const classItem = classes.find((item) => String(item._id) === String(classId));
     setGroupYearId(String(classItem?.academicYearId || ''));
-    setGroupForm({ title: g.title || '', term: g.term || 'Term 1', classId, sectionId: g.sectionId?._id || g.sectionId || '', status: g.status || 'Scheduled', startDate: g.startDate || '', endDate: g.endDate || '' });
+    setGroupForm({ title: g.title || '', term: g.term || 'Term 1', classId, sectionId: g.sectionId?._id || g.sectionId || '', status: g.status || 'Scheduled', startDate: g.startDate || '', endDate: g.endDate || '', examMode: g.examMode || 'formal' });
     setShowGroupModal(true);
   };
 
@@ -4348,7 +4358,7 @@ const ExaminationManagement = ({ setShowAdminHeader }) => {
       if (e.secondaryInstructor) teacherNamesUsed.add(e.secondaryInstructor);
     });
 
-    const routineFullyConfigured = allScheduleEntries.length > 0 && allScheduleEntries.every((e) => e.date && e.time && e.roomId);
+    const routineFullyConfigured = allScheduleEntries.length > 0 && allScheduleEntries.every((e) => e.date && e.time && (e.roomId || wizardDetails.examMode === 'class_test'));
 
     return {
       totalClasses, totalSections, totalStudents, totalSubjectEntries, classesMissingSubjects,
@@ -4356,7 +4366,7 @@ const ExaminationManagement = ({ setShowAdminHeader }) => {
       buildingsUsedNames, floorsUsedNames, roomsUsedLabels,
       teacherNamesUsed: Array.from(teacherNamesUsed), routineFullyConfigured,
     };
-  }, [wizardSelectedClasses, wizardSelections, wizardClassSubjects, wizardSchedule, students, buildings, floors, rooms, wizardDetails.startDate, wizardDetails.endDate]);
+  }, [wizardSelectedClasses, wizardSelections, wizardClassSubjects, wizardSchedule, students, buildings, floors, rooms, wizardDetails.startDate, wizardDetails.endDate, wizardDetails.examMode]);
 
   const addRoutineSubject = (classId, subjectId) => {
     if (!subjectId) return;
@@ -4854,6 +4864,7 @@ const ExaminationManagement = ({ setShowAdminHeader }) => {
             body: JSON.stringify({
               title: wizardDetails.title.trim(),
               term: wizardDetails.term,
+              examMode: wizardDetails.examMode || 'formal',
               classId: sel.classId,
               sectionId: sel.sectionId,
               status: wizardDetails.status,
@@ -4871,7 +4882,7 @@ const ExaminationManagement = ({ setShowAdminHeader }) => {
 
       // Persist the seating plan Auto-Schedule built (if any) — fire-and-forget,
       // it's independent of subject creation and shouldn't slow the modal down.
-      if (wizardSeatingRooms.length) {
+      if (wizardSeatingRooms.length && wizardDetails.examMode !== 'class_test') {
         const seatingGroupIds = groupResults.map((g) => g.groupId).filter(Boolean);
         fetch(`${API_BASE}/api/exam/seating-plans`, {
           method: 'POST',
@@ -4909,7 +4920,7 @@ const ExaminationManagement = ({ setShowAdminHeader }) => {
                 date: schedule.date,
                 time: schedule.time,
                 duration: schedule.duration === '' ? undefined : Number(schedule.duration),
-                roomId: schedule.roomId || undefined,
+                roomId: wizardDetails.examMode === 'class_test' ? undefined : (schedule.roomId || undefined),
                 status: schedule.status || 'Scheduled',
                 instructor,
               }),
@@ -5198,6 +5209,7 @@ const ExaminationManagement = ({ setShowAdminHeader }) => {
                       <div className="flex items-center gap-2 flex-wrap">
                         <h2 className="text-lg font-bold text-slate-900">{selectedBatch.title}</h2>
                         <StatusPill status={displayStatusFor(selectedBatch)} />
+                        {selectedBatch.examMode === 'class_test' && <span className="rounded-full bg-sky-100 px-2.5 py-0.5 text-xs font-semibold text-sky-700">Class test / Quiz</span>}
                       </div>
                       <p className="text-xs text-slate-400 mt-0.5">{selectedBatch.term} Examination for Classes {selectedBatch.classRangeLabel}</p>
                     </div>
@@ -5695,6 +5707,11 @@ const ExaminationManagement = ({ setShowAdminHeader }) => {
                 {TERM_OPTIONS.map(t => <option key={t} value={t}>{t}</option>)}
               </select>
             </Field>
+            <Field label="Exam Kind">
+              <select value={groupForm.examMode || 'formal'} onChange={e => setGroupForm(p => ({ ...p, examMode: e.target.value }))} className={inp}>
+                {EXAM_MODE_OPTIONS.map(o => <option key={o.value} value={o.value}>{o.title}</option>)}
+              </select>
+            </Field>
             <Field label="Status">
               {/* Once published, the routine table/PDF itself is only ever
                   changed via Republish — but the exam still needs to move to
@@ -5902,12 +5919,31 @@ const ExaminationManagement = ({ setShowAdminHeader }) => {
 
               {wizardStep === 1 && (
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                  <div className="sm:col-span-2">
+                    <p className="mb-2 text-sm font-semibold text-slate-800">Exam kind</p>
+                    <div role="radiogroup" aria-label="Exam kind" className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+                      {EXAM_MODE_OPTIONS.map((o) => {
+                        const active = (wizardDetails.examMode || 'formal') === o.value;
+                        return (
+                          <button key={o.value} type="button" role="radio" aria-checked={active}
+                            onClick={() => setWizardDetails((p) => ({ ...p, examMode: o.value }))}
+                            className={`rounded-2xl border-2 p-3.5 text-left transition-colors ${active ? 'border-indigo-600 bg-indigo-50' : 'border-slate-200 hover:border-indigo-300'}`}>
+                            <span className="flex items-center gap-2 text-sm font-semibold text-slate-900">
+                              <span className={`flex h-4 w-4 items-center justify-center rounded-full border-2 ${active ? 'border-indigo-600' : 'border-slate-300'}`}>{active && <span className="h-2 w-2 rounded-full bg-indigo-600" />}</span>
+                              {o.title}
+                            </span>
+                            <span className="mt-1 block text-xs text-slate-500">{o.text}</span>
+                          </button>
+                        );
+                      })}
+                    </div>
+                  </div>
                   <WizardField label="Exam Title" required>
                     <input value={wizardDetails.title} onChange={e => setWizardDetails(p => ({ ...p, title: e.target.value }))}
                       className={inp} placeholder="e.g. Summative Assessment – Term 1" />
                   </WizardField>
                   <WizardField label="Exam Type / Term" required>
-                    <WizardSelect value={wizardDetails.term} onChange={e => setWizardDetails(p => ({ ...p, term: e.target.value }))}>
+                    <WizardSelect value={wizardDetails.term} onChange={e => { const term = e.target.value; setWizardDetails(p => ({ ...p, term, examMode: CLASS_TEST_TERMS.has(term) ? 'class_test' : 'formal' })); }}>
                       {TERM_OPTIONS.map(t => <option key={t} value={t}>{t}</option>)}
                     </WizardSelect>
                   </WizardField>
@@ -6386,6 +6422,9 @@ const ExaminationManagement = ({ setShowAdminHeader }) => {
                                                   );
                                                 })()}
                                               </td>
+                                              {wizardDetails.examMode === 'class_test' ? (
+                                              <td className="px-2 py-1.5 text-xs font-medium text-slate-500">Own classroom</td>
+                                              ) : (
                                               <td className="px-2 py-1.5 space-y-1">
                                                 <WizardSelect dense value={schedule.buildingId} onChange={(e) => setWizardScheduleField(sel.classId, sel.sectionId, subjectId, { buildingId: e.target.value, floorId: '', roomId: '' })}>
                                                   <option value="">Building —</option>
@@ -6402,6 +6441,7 @@ const ExaminationManagement = ({ setShowAdminHeader }) => {
                                                   </WizardSelect>
                                                 </div>
                                               </td>
+                                              )}
                                               <td className="px-2 py-1.5 space-y-1">
                                                 <WizardSelect dense value={schedule.primaryInstructor} onChange={(e) => setWizardScheduleField(sel.classId, sel.sectionId, subjectId, { primaryInstructor: e.target.value })}>
                                                   <option value="">Teacher —</option>
@@ -6510,6 +6550,7 @@ const ExaminationManagement = ({ setShowAdminHeader }) => {
                       <ReviewCard icon={Edit2} iconColor="bg-indigo-600" title="1. Exam Details" onEdit={() => setWizardStep(1)}>
                         <ReviewRow label="Exam Title" value={wizardDetails.title || '—'} />
                         <ReviewRow label="Exam Type / Term" value={wizardDetails.term} />
+                        <ReviewRow label="Exam Kind" value={examModeLabel(wizardDetails.examMode)} />
                         <ReviewRow label="Academic Year" value={`${selectedYear?.name || '—'}${selectedYear?.isActive ? ' (Active)' : ''}`} />
                         <ReviewRow label="Status" value={
                           <span className={`inline-flex px-2.5 py-0.5 rounded-full text-xs font-semibold ${STATUS_COLORS[wizardDetails.status] || 'bg-slate-100 text-slate-600'}`}>{wizardDetails.status}</span>
