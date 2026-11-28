@@ -390,6 +390,7 @@ export const generateAdmitCardPdf = async ({ student = {}, group = {}, pdfHeader
     return end === null ? fmt12(start) : `${fmt12(start)} - ${fmt12(end)}`;
   };
   const building = (s) => clean(s?.roomId?.floorId?.buildingId?.name || s?.roomId?.buildingId?.name) || '—';
+  const floor = (s) => clean(s?.roomId?.floorId?.name) || '—';
   const room = (s) => clean(s?.roomId?.roomNumber || s?.venue) || '—';
 
   const [logo, photo] = await Promise.all([toDataUrl(pdfHeader.logoUrl), toDataUrl(student.profilePic || student.photo)]);
@@ -482,8 +483,8 @@ export const generateAdmitCardPdf = async ({ student = {}, group = {}, pdfHeader
   doc.text('EXAMINATION SCHEDULE', W / 2, y + 5.6, { align: 'center', charSpace: 0.5 });
   y += 9.5;
   const cols = [
-    { h: 'Date', w: 34 }, { h: 'Day', w: 36 }, { h: 'Subject', w: 74 }, { h: 'Time', w: 52 },
-    { h: 'Building', w: 42 }, { h: 'Room No.', w: W - 2 * M - 238 },
+    { h: 'Date', w: 34 }, { h: 'Day', w: 32 }, { h: 'Subject', w: 62 }, { h: 'Time', w: 48 },
+    { h: 'Building', w: 40 }, { h: 'Floor', w: 34 }, { h: 'Room No.', w: W - 2 * M - 250 },
   ];
   const headH = 7;
   const instructionsH = 40;
@@ -496,7 +497,7 @@ export const generateAdmitCardPdf = async ({ student = {}, group = {}, pdfHeader
   y += headH;
   const fs = Math.max(7, Math.min(9.5, rowH * 1.3));
   subjects.forEach((s, i) => {
-    const cells = [fmtDate(s?.date), dayName(s?.date), clean(s?.subject) || '—', timeRange(s), building(s), room(s)];
+    const cells = [fmtDate(s?.date), dayName(s?.date), clean(s?.subject) || '—', timeRange(s), building(s), floor(s), room(s)];
     x = M;
     doc.setDrawColor(...line); doc.setLineWidth(0.25);
     cols.forEach((c, ci) => {
@@ -520,10 +521,7 @@ export const generateAdmitCardPdf = async ({ student = {}, group = {}, pdfHeader
   doc.setFillColor(240, 245, 253); doc.setDrawColor(...line);
   doc.roundedRect(M, iy, W - 2 * M, instructionsH, 2, 2, 'FD');
   doc.setFont('helvetica', 'bold'); doc.setFontSize(11); doc.setTextColor(...ink);
-  doc.text('INSTRUCTIONS FOR CANDIDATES', M + 18, iy + 8);
-  // small document glyph
-  doc.setDrawColor(...ink); doc.setLineWidth(0.35); doc.rect(M + 8, iy + 4, 5, 6.5, 'S');
-  [6, 7.6, 9].forEach((d) => doc.line(M + 9, iy + d, M + 12, iy + d));
+  doc.text('INSTRUCTIONS FOR CANDIDATES', M + 8, iy + 8);
   const tips = [
     'This admit card must be carried to the examination hall every day.',
     'Report to the examination centre at least 30 minutes before the start time.',
@@ -532,7 +530,7 @@ export const generateAdmitCardPdf = async ({ student = {}, group = {}, pdfHeader
     'Follow all instructions given by the invigilator and maintain discipline in the examination hall.',
   ];
   doc.setFont('helvetica', 'normal'); doc.setFontSize(8.8); doc.setTextColor(...ink);
-  tips.forEach((t, i) => doc.text(`${i + 1}.  ${t}`, M + 18, iy + 14.5 + i * 5.2, { maxWidth: 150 }));
+  tips.forEach((t, i) => doc.text(`${i + 1}.  ${t}`, M + 8, iy + 14.5 + i * 5.2, { maxWidth: 160 }));
   // divider
   doc.setDrawColor(...line); doc.line(W - M - 80, iy + 5, W - M - 80, iy + instructionsH - 5);
   // signature
