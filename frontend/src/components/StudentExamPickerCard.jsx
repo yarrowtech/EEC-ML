@@ -14,7 +14,7 @@ export function useCompactExamLayout(enabled = true) {
   return enabled && compact;
 }
 
-export const ResultPickerCard = ({ title, subtitle, icon: Icon, onClick }) => (
+export const ResultPickerCard = ({ title, subtitle, icon: Icon, onClick, tags = null }) => (
   <button
     type="button"
     onClick={onClick}
@@ -26,6 +26,7 @@ export const ResultPickerCard = ({ title, subtitle, icon: Icon, onClick }) => (
     <span className="min-w-0 flex-1">
       <span className="block break-words text-sm font-bold text-slate-900">{title}</span>
       {subtitle && <span className="mt-1 block text-xs text-slate-600">{subtitle}</span>}
+      {tags && <span className="mt-2 flex flex-wrap items-center gap-1.5">{tags}</span>}
     </span>
     <span className="flex size-8 shrink-0 items-center justify-center rounded-full bg-violet-100 text-violet-700">
       <ChevronRight size={18} aria-hidden="true" />

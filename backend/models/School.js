@@ -132,6 +132,13 @@ const schoolSchema = new mongoose.Schema(
       analytics: { type: Boolean, default: false }
     },
 
+    // How teachers take student attendance:
+    //  subject_wise — every subject period is marked separately (default, previous behaviour)
+    //  day_wise     — one attendance per day (taken in the first class); no subject
+    studentAttendanceSettings: {
+      mode: { type: String, enum: ['subject_wise', 'day_wise'], default: 'subject_wise' },
+    },
+
     teacherAttendanceSettings: {
       entryTime: { type: String, default: '09:00' }, // HH:mm
       exitTime: { type: String, default: '17:00' }, // HH:mm

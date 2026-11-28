@@ -115,7 +115,8 @@ const PracticePapersPortal = () => {
     });
     return chapterList
       .map((c, i) => ({ c, i, n: numberOf(c) }))
-      .sort((a, b) => (a.n - b.n) || String(a.c?.title || '').localeCompare(String(b.c?.title || ''), undefined, { numeric: true }) || (a.i - b.i))
+      // numbered chapters by number; otherwise keep the teacher's curriculum order (never alphabetical)
+      .sort((a, b) => (Number.isFinite(a.n) && Number.isFinite(b.n) && a.n !== b.n ? a.n - b.n : a.i - b.i))
       .map(({ c }) => c);
   }, [selectedSubjectMapEntry]);
   const selectedChapterEntry = useMemo(

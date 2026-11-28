@@ -7,6 +7,7 @@ const { parentAttendanceCache } = require('../utils/responseCache');
 // Any write here clears the parent attendance screen's response cache.
 router.use(parentAttendanceCache.invalidateOnWrite);
 const StudentUser = require('../models/StudentUser');
+const School = require('../models/School');
 const ParentUser = require('../models/ParentUser');
 const TeacherUser = require('../models/TeacherUser');
 const Timetable = require('../models/Timetable');
@@ -1068,6 +1069,49 @@ const buildStudentAttendancePayload = (
 // and admins. Allowing a student to POST their own "present" entry was an
 // integrity hole with no teacher reconciliation step. Attendance is now written
 // only through the teacher/admin endpoints below.
+// ── Student attendance format chosen by the school admin ───────────────────
+const ATTENDANCE_MODES = new Set(['subject_wise', 'day_wise']);
+const getStudentAttendanceMode = async (schoolId) => {
+  if (!schoolId) return 'subject_wise';
+  try {
+    const school = await School.findById(schoolId).select('studentAttendanceSettings').lean();
+    const mode = school?.studentAttendanceSettings?.mode;
+    return ATTENDANCE_MODES.has(mode) ? mode : 'subject_wise';
+  } catch {
+    return 'subject_wise';
+  }
+};
+
+// GET /admin/settings — current attendance format
+router.get('/admin/settings', adminAuth, async (req, res) => {
+  // #swagger.tags = ['Attendance']
+  try {
+    const schoolId = req.schoolId || req.admin?.schoolId || null;
+    if (!schoolId) return res.status(400).json({ error: 'schoolId is required' });
+    const mode = await getStudentAttendanceMode(schoolId);
+    res.json({ success: true, data: { mode } });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// PUT /admin/settings — { mode: 'subject_wise' | 'day_wise' }
+router.put('/admin/settings', adminAuth, async (req, res) => {
+  // #swagger.tags = ['Attendance']
+  try {
+    const schoolId = req.schoolId || req.admin?.schoolId || null;
+    if (!schoolId) return res.status(400).json({ error: 'schoolId is required' });
+    const mode = normalizeText(req.body?.mode);
+    if (!ATTENDANCE_MODES.has(mode)) {
+      return res.status(400).json({ error: 'mode must be subject_wise or day_wise' });
+    }
+    await School.updateOne({ _id: schoolId }, { $set: { 'studentAttendanceSettings.mode': mode } });
+    res.json({ success: true, data: { mode }, message: 'Attendance format updated' });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
 router.post('/mark', authStudent, (req, res) => {
   // #swagger.tags = ['Attendance']
   logStudentPortalEvent(req, {
@@ -1102,7 +1146,7 @@ router.get('/teacher/students', authTeacher, async (req, res) => {
       search,
       month,
       date,
-      subject,
+      subject: subjectParam,
       substitute,
     } = req.query || {};
     const monthRange = resolveMonthRange(month);
@@ -1114,6 +1158,9 @@ router.get('/teacher/students', authTeacher, async (req, res) => {
     const requestedClassKey = normalizeClassName(requestedClass);
     const requestedSectionKey = requestedSection.toLowerCase();
     const isSubstituteMode = parseBoolean(substitute);
+    const attendanceMode = await getStudentAttendanceMode(schoolId);
+    // Day-wise: one attendance per day, no subject
+    const subject = attendanceMode === 'day_wise' ? '' : subjectParam;
 
     const baseFilter = { schoolId };
     if (campusId) baseFilter.campusId = campusId;
@@ -1233,6 +1280,7 @@ router.get('/teacher/students', authTeacher, async (req, res) => {
       month: monthRange.key,
       selectedDate: selectedDate.toISOString(),
       activeSession: activeSessionName,
+      attendanceMode,
       filters: {
         session: normalizeText(session),
         className: requestedClass,
@@ -1274,7 +1322,9 @@ router.post('/teacher/bulk-upsert', authTeacher, async (req, res) => {
     const targetDate = parseDateValue(req.body?.date);
     const entries = Array.isArray(req.body?.entries) ? req.body.entries : [];
     const isSubstituteMode = parseBoolean(req.body?.substitute);
-    const requestSubject = normalizeText(req.body?.subject);
+    const attendanceMode = await getStudentAttendanceMode(schoolId);
+    const isDayWise = attendanceMode === 'day_wise';
+    const requestSubject = isDayWise ? '' : normalizeText(req.body?.subject);
     const substituteSession = normalizeText(req.body?.session);
     const substituteClassName = normalizeText(req.body?.className || req.body?.class);
     const substituteSection = normalizeText(req.body?.section);
@@ -1312,7 +1362,7 @@ router.post('/teacher/bulk-upsert', authTeacher, async (req, res) => {
     for (const item of entries) {
       const studentId = item?.studentId;
       const status = normalizeStatus(item?.status);
-      const concreteSubject = normalizeText(item?.subject) || requestSubject;
+      const concreteSubject = isDayWise ? '' : (normalizeText(item?.subject) || requestSubject);
       const subject = isSubstituteMode ? encodeSubstituteSubject(concreteSubject) : concreteSubject;
 
       if (!studentId || !VALID_STATUSES.has(status)) {

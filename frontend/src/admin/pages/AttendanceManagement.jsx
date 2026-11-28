@@ -1,5 +1,6 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { UserCheck, Search, Calendar, Download, Users, Clock, Loader2 } from 'lucide-react';
+import AttendanceFormatSettings from '../components/AttendanceFormatSettings';
 import * as XLSX from 'xlsx';
 
 const API_BASE = (import.meta.env.VITE_API_URL || 'http://localhost:5000').replace(/\/$/, '');
@@ -377,6 +378,8 @@ const AttendanceManagement = ({ setShowAdminHeader }) => {
           <UserCheck className="w-12 h-12 text-yellow-200" />
         </div>
       </div>
+
+      <div className="mb-6"><AttendanceFormatSettings /></div>
 
       <div className="bg-white rounded-xl p-6 mb-6 shadow-sm">
         <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-5 gap-3">

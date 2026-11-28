@@ -730,6 +730,9 @@ const { createResponseCache } = require('../utils/responseCache');
 // Parent exam schedule: 60s per-parent cache; any exam write here clears it.
 const parentScheduleCache = createResponseCache({ ttlMs: 60 * 1000 });
 router.use(parentScheduleCache.invalidateOnWrite);
+// Admit cards change only when exams are edited here (any write clears it) — keep them 5 min
+const admitCardsCache = createResponseCache({ ttlMs: 5 * 60 * 1000 });
+router.use(admitCardsCache.invalidateOnWrite);
 const teacherExamCache = createResponseCache({ ttlMs: 15 * 1000, maxEntries: 200 });
 router.use(teacherExamCache.invalidateOnWrite);
 
@@ -865,7 +868,7 @@ router.get('/groups/student-schedule', authStudent, async (req, res) => {
 });
 
 // GET /groups/student-admit-cards - published exam routines for the logged-in student's admit cards
-router.get('/groups/student-admit-cards', authStudent, parentScheduleCache.cache, async (req, res) => {
+router.get('/groups/student-admit-cards', authStudent, admitCardsCache.cache, async (req, res) => {
   try {
     const schoolId = req.schoolId || req.user?.schoolId || null;
     if (!schoolId) return res.status(400).json({ error: 'schoolId is required' });
@@ -1079,7 +1082,7 @@ router.get('/groups/parent-schedule', authParent, parentScheduleCache.cache, asy
 });
 
 // GET /groups/parent-admit-cards - published admit cards for every linked child
-router.get('/groups/parent-admit-cards', authParent, parentScheduleCache.cache, async (req, res) => {
+router.get('/groups/parent-admit-cards', authParent, admitCardsCache.cache, async (req, res) => {
   try {
     const parent = await ParentUser.findById(req.user.id).select('schoolId campusId childrenIds children').lean();
     if (!parent) return res.status(404).json({ error: 'Parent not found' });

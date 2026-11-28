@@ -31,7 +31,9 @@ const createResponseCache = ({ ttlMs = 30 * 1000, maxEntries = 1000 } = {}) => {
   const cache = (req, res, next) => {
     const key = keyOf(req);
     const hit = store.get(key);
-    if (hit && hit.expires > Date.now()) {
+    // A client "refresh" (Cache-Control: no-cache) skips the cached copy but still re-fills it
+    const bypass = /no-cache/i.test(String(req.get?.('cache-control') || ''));
+    if (!bypass && hit && hit.expires > Date.now()) {
       res.set('X-Cache', 'HIT');
       return res.json(hit.body);
     }

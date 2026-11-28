@@ -779,13 +779,15 @@ const AILearningCoursesLanding = ({ resumePath = null }) => {
     const questionType = query.get('type') || '';
     const includeAllChapters = query.get('scope') === 'chapters';
     const tryoutSelection = location.state?.tryoutSelection;
+    // Opened from another page (e.g. Exams → Practice Mock): close goes back there
+    const returnTo = location.state?.returnTo;
     return (
       <AILearningTryoutSection
         key={location.pathname + location.search}
         questionType={questionType}
         includeAllChapters={includeAllChapters}
         autoStart={includeAllChapters || Boolean(questionType)}
-        onBack={tryoutSelection ? () => navigate('/student/practice-papers', {
+        onBack={returnTo ? () => navigate(returnTo, { replace: true }) : tryoutSelection ? () => navigate('/student/practice-papers', {
           replace: true,
           state: { tryoutSelection },
         }) : undefined}

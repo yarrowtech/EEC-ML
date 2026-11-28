@@ -1,5 +1,6 @@
 import { prefetchJson } from './studentApiCache';
 import { loadSmartLearningSubjects } from './smartLearningMap';
+import { prefetchAdmitCards } from './admitCardsCache';
 
 // Must match the base DashboardHome / StudentDashboardContext build their URLs
 // with, otherwise the prefetched cache keys would never be hit.
@@ -28,4 +29,5 @@ export const prefetchStudentDashboard = () => {
   prefetchJson(STUDENT_DASHBOARD_URLS, { ttlMs: STUDENT_DASHBOARD_TTL_MS });
   prefetchJson([PRACTICE_META_URL], { ttlMs: PRACTICE_META_TTL_MS });
   loadSmartLearningSubjects().catch(() => {});
+  prefetchAdmitCards('student');
 };

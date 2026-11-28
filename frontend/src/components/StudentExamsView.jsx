@@ -1,12 +1,14 @@
 import React, { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
+import { createPortal } from 'react-dom';
 import { motion as Motion, AnimatePresence } from 'framer-motion';
-import { Calendar, FileText, Loader2, Clock, CheckCircle2, Sparkles, ChevronLeft, ChevronRight, Search as SearchIcon, AlertCircle, PlayCircle } from 'lucide-react';
-import { Link } from 'react-router-dom';
+import { Calendar, FileText, Loader2, Clock, CheckCircle2, Sparkles, ChevronLeft, ChevronRight, Search as SearchIcon, AlertCircle, PlayCircle, RefreshCw } from 'lucide-react';
+import { Link, useNavigate } from 'react-router-dom';
+import { slugifyForUrl } from '../utils/urlSlug';
 import { ResultPickerCard, useCompactExamLayout } from './StudentExamPickerCard';
 import toast from 'react-hot-toast';
 import { useStudentDashboard } from './StudentDashboardContext';
 import { fetchCachedJson } from '../utils/studentApiCache';
-import { generateExamSchedulePdf, buildRoomLabel } from '../utils/examRoutinePdf';
+import { generateExamSchedulePdf, buildFullVenueLabel } from '../utils/examRoutinePdf';
 import MockExamView from './MockExamView';
 import WrongAnswerReviewView from './WrongAnswerReviewView';
 
@@ -60,13 +62,13 @@ const daysUntil = (value) => {
 };
 
 // ── Days-until pill ─────────────────────────────────────────────────────────
-const CountdownBadge = ({ date }) => {
+const CountdownBadge = ({ date, small = false }) => {
   const days = daysUntil(date);
   if (days === null || days < 0) return null;
   const label = days === 0 ? 'Today' : days === 1 ? 'Tomorrow' : `In ${days} days`;
   return (
     <span
-      className={`rounded-full border px-2.5 py-1 text-xs font-bold ${
+      className={`rounded-full border font-bold ${small ? 'px-2 py-0.5 text-[10.5px]' : 'px-2.5 py-1 text-xs'} ${
         days <= 1
           ? 'border-rose-200/70 bg-rose-50 text-rose-600'
           : 'border-[rgba(139,92,246,0.3)] bg-violet-50 text-[#7c3aed]'
@@ -78,17 +80,61 @@ const CountdownBadge = ({ date }) => {
 };
 
 const examTitle = (group) => group.title || group.term || 'Exam schedule';
+
+// Where an exam is right now: upcoming → ongoing → completed
+const examPhase = (group) => {
+  if (String(group?.status || '').toLowerCase() === 'completed') return 'completed';
+  const start = parseExamDateTime(group?.startDate, group?.startTime);
+  const end = parseExamDateTime(group?.endDate || group?.startDate);
+  const now = new Date();
+  if (start && start > now) return 'upcoming';
+  if (end) {
+    const endOfDay = new Date(end);
+    endOfDay.setHours(23, 59, 59, 999);
+    if (endOfDay < now) return 'completed';
+  }
+  return start ? 'ongoing' : 'upcoming';
+};
+const PHASE_META = {
+  upcoming: { label: 'Upcoming', cls: 'bg-amber-500 text-white' },
+  ongoing: { label: 'Ongoing', cls: 'bg-sky-600 text-white' },
+  completed: { label: 'Completed', cls: 'bg-emerald-600 text-white' },
+};
+const ExamTags = ({ group }) => {
+  const phase = examPhase(group);
+  const meta = PHASE_META[phase];
+  return (
+    <>
+      <span className={`rounded-full px-2 py-0.5 text-[10.5px] font-bold ${meta.cls}`}>{meta.label}</span>
+      {phase === 'upcoming' && <CountdownBadge date={group.startDate} small />}
+    </>
+  );
+};
 const examSubject = (exam) => exam.subjectId?.name || exam.subject || exam.title || 'Subject';
 const examSubjects = (group) => Array.isArray(group.subjects) ? group.subjects : [];
 
+// This class/section's exam window: first to last subject paper date (falls back to the exam's own dates)
+const examDateRange = (group) => {
+  const times = examSubjects(group)
+    .map((exam) => new Date(exam?.date).getTime())
+    .filter((t) => Number.isFinite(t));
+  const start = times.length ? new Date(Math.min(...times)) : group.startDate;
+  const end = times.length ? new Date(Math.max(...times)) : (group.endDate || group.startDate);
+  const a = formatDate(start);
+  const b = formatDate(end);
+  return a === b || b === '—' ? a : `${a} – ${b}`;
+};
+
 const ExamScheduleCard = ({ group, downloading, onDownload, onPractice }) => {
+  const [pickSubject, setPickSubject] = useState(false);
   const status = String(group.status || 'scheduled').toLowerCase();
   const completed = status === 'completed';
   const published = status === 'published' || completed;
   const subjects = examSubjects(group);
   const className = group.classId?.name || group.grade;
   const sectionName = group.sectionId?.name || group.section;
-  const dateLabel = [group.startDate, group.endDate].filter(Boolean).map(formatDate).join(' – ');
+  // This class/section's own first–last paper dates
+  const dateLabel = examDateRange(group);
 
   return (
     <article className="overflow-hidden rounded-2xl border border-slate-200 bg-white">
@@ -100,35 +146,81 @@ const ExamScheduleCard = ({ group, downloading, onDownload, onPractice }) => {
               {[className && (/^class\b/i.test(className) ? className : `Class ${className}`), sectionName && `Section ${sectionName}`].filter(Boolean).join(' · ')}
             </p>
           )}
-          {dateLabel && <p className="mt-1 text-xs text-slate-500">{dateLabel}</p>}
+          {dateLabel && dateLabel !== '—' && <p className="mt-1 text-xs text-slate-500">{dateLabel}</p>}
         </div>
-        <div className="flex flex-wrap items-center gap-2">
-          <span className={`rounded-full px-2.5 py-1 text-xs font-bold capitalize ${completed ? 'bg-green-600 text-white' : 'bg-amber-500 text-white'}`}>{status}</span>
-          {!completed && <CountdownBadge date={group.startDate} />}
+        <div className="flex flex-col items-start gap-2 sm:items-end">
+          <div className="flex flex-wrap items-center gap-2">
+            <span className={`rounded-full px-2.5 py-1 text-xs font-bold ${PHASE_META[examPhase(group)].cls}`}>{PHASE_META[examPhase(group)].label}</span>
+            {examPhase(group) === 'upcoming' && <CountdownBadge date={group.startDate} />}
+          </div>
+          {published && (
+          <div className="flex flex-wrap gap-2 sm:justify-end">
+              <button type="button" disabled={downloading} onClick={onDownload}
+                className="inline-flex items-center gap-1.5 rounded-full bg-violet-700 px-3 py-2 text-xs font-semibold text-white hover:bg-violet-800 disabled:opacity-60">
+                {downloading ? <Loader2 size={14} className="animate-spin" /> : <FileText size={14} />}
+                {downloading ? 'Preparing…' : 'Download routine'}
+              </button>
+              {subjects.length > 0 && (
+                <button
+                  type="button"
+                  aria-haspopup="dialog"
+                  onClick={() => setPickSubject(true)}
+                  className="inline-flex items-center gap-1.5 rounded-full border border-emerald-200 bg-emerald-600 px-3 py-2 text-xs font-semibold text-white hover:bg-emerald-800"
+                >
+                  <PlayCircle size={14} /> Practice Mock
+                </button>
+              )}
+              {completed && <Link to="/student/results" className="inline-flex items-center rounded-full border border-slate-200 px-3 py-2 text-xs font-semibold text-slate-700 hover:bg-slate-50">View results</Link>}
+          </div>
+          )}
         </div>
       </div>
       {published ? (
         <>
-          <div className="flex flex-wrap gap-2 border-b border-slate-100 px-4 py-3 sm:px-5">
-            <button type="button" disabled={downloading} onClick={onDownload}
-              className="inline-flex items-center gap-1.5 rounded-full bg-violet-700 px-3 py-2 text-xs font-semibold text-white hover:bg-violet-800 disabled:opacity-60">
-              {downloading ? <Loader2 size={14} className="animate-spin" /> : <FileText size={14} />}
-              {downloading ? 'Preparing…' : 'Download routine'}
-            </button>
-            {subjects[0]?._id && (
-              <button type="button" onClick={() => onPractice(subjects[0])} className="inline-flex items-center gap-1.5 rounded-full border border-emerald-200 bg-emerald-600 px-3 py-2 text-xs font-semibold text-white hover:bg-emerald-800">
-                <PlayCircle size={14} /> Practice Mock
-              </button>
-            )}
-            {completed && <Link to="/student/results" className="inline-flex items-center rounded-full border border-slate-200 px-3 py-2 text-xs font-semibold text-slate-700 hover:bg-slate-50">View results</Link>}
-          </div>
+          {pickSubject && typeof document !== 'undefined' && createPortal(
+            <div className="fixed inset-0 z-[80] flex items-center justify-center bg-slate-900/50 p-4" onClick={() => setPickSubject(false)}>
+              <div
+                role="dialog"
+                aria-modal="true"
+                aria-labelledby="practice-mock-title"
+                onClick={(e) => e.stopPropagation()}
+                className="w-full max-w-md overflow-hidden rounded-2xl bg-white shadow-2xl"
+              >
+                <div className="flex items-center justify-between gap-3 border-b border-slate-200 px-5 py-4">
+                  <div className="min-w-0">
+                    <h3 id="practice-mock-title" className="text-base font-bold text-slate-900">Practice Mock</h3>
+                    <p className="text-xs text-slate-500">Choose a subject — questions from all its chapters, mixed.</p>
+                  </div>
+                  <button type="button" onClick={() => setPickSubject(false)} aria-label="Close" className="rounded-full p-1.5 text-slate-500 hover:bg-slate-100">✕</button>
+                </div>
+                <div className="max-h-[60vh] space-y-2 overflow-y-auto p-4">
+                  {subjects.map((exam, index) => (
+                    <button
+                      key={exam._id || index}
+                      type="button"
+                      onClick={() => { setPickSubject(false); onPractice(exam); }}
+                      className="flex w-full items-center gap-3 rounded-xl border border-slate-200 bg-white px-4 py-3 text-left transition-colors hover:border-emerald-300 hover:bg-emerald-50"
+                    >
+                      <span className="flex size-9 shrink-0 items-center justify-center rounded-lg bg-emerald-100 text-emerald-700"><PlayCircle size={18} /></span>
+                      <span className="min-w-0 flex-1">
+                        <span className="block truncate text-sm font-bold text-slate-900">{examSubject(exam)}</span>
+                        {exam.date && <span className="block text-xs text-slate-500">Exam on {formatDate(exam.date)}</span>}
+                      </span>
+                      <ChevronRight size={16} className="shrink-0 text-slate-400" />
+                    </button>
+                  ))}
+                </div>
+              </div>
+            </div>,
+            document.body,
+          )}
           <div className="p-4 sm:p-5">
             <h3 className="mb-2 text-sm font-semibold text-slate-900">Subject schedule ({subjects.length})</h3>
             {subjects.length ? (
               <div className="overflow-x-auto rounded-xl border border-slate-200">
-                <table className="w-full min-w-[29rem] text-left text-xs text-slate-600">
+                <table className="w-full min-w-[22rem] text-left text-xs text-slate-600">
                   <thead className="bg-slate-50 text-slate-700">
-                    <tr>{['Subject', 'Date', 'Time', 'Duration', 'Marks', 'Room'].map((label) => <th key={label} scope="col" className="px-3 py-2.5">{label}</th>)}</tr>
+                    <tr>{['Subject', 'Date', 'Time', 'Building / Floor / Room'].map((label) => <th key={label} scope="col" className="px-3 py-2.5">{label}</th>)}</tr>
                   </thead>
                   <tbody className="divide-y divide-slate-100">
                     {subjects.map((exam, index) => (
@@ -136,9 +228,7 @@ const ExamScheduleCard = ({ group, downloading, onDownload, onPractice }) => {
                         <th scope="row" className="px-3 py-2.5 font-semibold text-slate-900">{examSubject(exam)}</th>
                         <td className="whitespace-nowrap px-3 py-2.5">{formatDate(exam.date)}</td>
                         <td className="whitespace-nowrap px-3 py-2.5">{exam.time || '—'}</td>
-                        <td className="whitespace-nowrap px-3 py-2.5">{exam.duration ? `${exam.duration} min` : '—'}</td>
-                        <td className="px-3 py-2.5">{exam.marks ?? '—'}</td>
-                        <td className="px-3 py-2.5">{buildRoomLabel(exam)}</td>
+                        <td className="px-3 py-2.5">{buildFullVenueLabel(exam)}</td>
                       </tr>
                     ))}
                   </tbody>
@@ -158,6 +248,15 @@ const ExamScheduleCard = ({ group, downloading, onDownload, onPractice }) => {
 
 const StudentExamsView = () => {
   const { profile } = useStudentDashboard() || {};
+  const navigate = useNavigate();
+  // Practice Mock = the subject's whole-subject tryout (questions from every chapter, mixed);
+  // closing it comes back here.
+  const openSubjectPractice = (exam) => {
+    const subjectSlug = slugifyForUrl(examSubject(exam));
+    navigate(`/student/smart-learning-courses/subject/${subjectSlug}/topic/${slugifyForUrl('All chapters')}/assessment/tryout-section?scope=chapters`, {
+      state: { returnTo: '/student/exams' },
+    });
+  };
   const compact = useCompactExamLayout();
   const shellRef = useRef(null);
   const [shellHeight, setShellHeight] = useState(null);
@@ -173,27 +272,35 @@ const StudentExamsView = () => {
   const [mockExamOpen, setMockExamOpen] = useState(null); // { examId, examTitle, durationMinutes }
   const [reviewExam, setReviewExam] = useState(null);     // { examId, examTitle }
 
+  const [refreshing, setRefreshing] = useState(false);
+
+  const load = async ({ force = false } = {}) => {
+    const token = localStorage.getItem('token');
+    if (!token) { setError('Please login as student.'); setLoading(false); return; }
+    if (force) setRefreshing(true); else setLoading(true);
+    setError('');
+    try {
+      const { data } = await fetchCachedJson(STUDENT_EXAMS_ENDPOINT, {
+        ttlMs: STUDENT_EXAMS_CACHE_TTL_MS,
+        forceRefresh: force,
+        fetchOptions: { headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' } },
+      });
+      setGroups(Array.isArray(data) ? data : []);
+      if (force) toast.success('Exams updated');
+    } catch (err) {
+      setError(err.message || 'Failed to load exam schedule');
+      if (!force) setGroups([]);
+    } finally {
+      setLoading(false);
+      setRefreshing(false);
+    }
+  };
+
   useEffect(() => {
-    const load = async () => {
-      const token = localStorage.getItem('token');
-      if (!token) { setError('Please login as student.'); setLoading(false); return; }
-      setLoading(true);
-      setError('');
-      try {
-        const { data } = await fetchCachedJson(STUDENT_EXAMS_ENDPOINT, {
-          ttlMs: STUDENT_EXAMS_CACHE_TTL_MS,
-          fetchOptions: { headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' } },
-        });
-        setGroups(Array.isArray(data) ? data : []);
-      } catch (err) {
-        setError(err.message || 'Failed to load exam schedule');
-        setGroups([]);
-      } finally {
-        setLoading(false);
-      }
-    };
     load();
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
+
 
   const filteredGroups = useMemo(() => {
     const q = search.trim().toLowerCase();
@@ -202,6 +309,14 @@ const StudentExamsView = () => {
       const statusMatches = statusFilter === 'all' || String(g?.status || '').toLowerCase() === statusFilter;
       const queryMatches  = !q || [g?.title, g?.term, g?.grade, g?.section, ...examSubjects(g).map(examSubject)].some((v) => String(v || '').toLowerCase().includes(q));
       return termMatches && statusMatches && queryMatches;
+    }).sort((a, b) => {
+      const rank = { ongoing: 0, upcoming: 1, completed: 2 };
+      const pa = examPhase(a);
+      const pb = examPhase(b);
+      if (rank[pa] !== rank[pb]) return rank[pa] - rank[pb];
+      const da = parseExamDateTime(a.startDate, a.startTime)?.getTime() || 0;
+      const db = parseExamDateTime(b.startDate, b.startTime)?.getTime() || 0;
+      return pa === 'completed' ? db - da : da - db;
     });
   }, [groups, search, statusFilter, termFilter]);
 
@@ -280,18 +395,17 @@ const StudentExamsView = () => {
               <h1 className="text-[17px] font-bold leading-tight text-slate-900">Exams</h1>
               <p className="text-xs text-slate-500">Choose an exam to see its schedule.</p>
             </div>
-            <div className="grid w-full grid-cols-2 gap-2 sm:w-auto sm:grid-cols-[minmax(9rem,1fr)_auto_auto]">
-              <div className="relative col-span-2 sm:col-span-1">
-                <SearchIcon size={15} className="pointer-events-none absolute left-2.5 top-1/2 -translate-y-1/2 text-slate-400" aria-hidden="true" />
-                <input aria-label="Search exams" value={search} onChange={(event) => setSearch(event.target.value)}
-                  placeholder="Search exams or subjects" className={`${FILTER_INPUT} w-full pl-8`} />
-              </div>
-              <select aria-label="Exam term" value={termFilter} onChange={(event) => setTermFilter(event.target.value)} className={FILTER_INPUT}>
-                {TERM_OPTIONS.map((term) => <option key={term} value={term}>{term === 'all' ? 'All terms' : term}</option>)}
-              </select>
-              <select aria-label="Exam status" value={statusFilter} onChange={(event) => setStatusFilter(event.target.value)} className={FILTER_INPUT}>
-                {STATUS_OPTIONS.map((status) => <option key={status} value={status}>{status === 'all' ? 'All statuses' : status.charAt(0).toUpperCase() + status.slice(1)}</option>)}
-              </select>
+            <div className="ml-auto flex items-center gap-2">
+              <button
+                type="button"
+                onClick={() => load({ force: true })}
+                disabled={refreshing || loading}
+                aria-label="Refresh"
+                title="Refresh"
+                className="grid size-9 shrink-0 place-items-center rounded-full border border-slate-200 bg-white text-slate-600 hover:bg-slate-50 hover:text-slate-900 disabled:opacity-50"
+              >
+                <RefreshCw size={16} className={refreshing ? 'animate-spin' : ''} />
+              </button>
             </div>
           </header>
 
@@ -322,7 +436,7 @@ const StudentExamsView = () => {
                 ? !showingCompactDetail && (
                   <div className="grid content-start gap-3 p-4 sm:grid-cols-2">
                     {filteredGroups.map((group) => (
-                      <ResultPickerCard key={group._id} title={examTitle(group)} subtitle={formatDate(group.startDate)} icon={Calendar} onClick={() => chooseExam(group)} />
+                      <ResultPickerCard key={group._id} title={examTitle(group)} subtitle={examDateRange(group)} icon={Calendar} onClick={() => chooseExam(group)} tags={<ExamTags group={group} />} />
                     ))}
                   </div>
                 )
@@ -338,6 +452,7 @@ const StudentExamsView = () => {
                           <span className="min-w-0 flex-1">
                             <span className="block truncate text-[13px] font-semibold text-slate-900">{examTitle(group)}</span>
                             <span className="block truncate text-[11px] text-slate-500">{formatDate(group.startDate)}</span>
+                            <span className="mt-1 flex flex-wrap items-center gap-1"><ExamTags group={group} /></span>
                           </span>
                           <ChevronRight size={15} className="shrink-0 text-slate-400" aria-hidden="true" />
                         </button>
@@ -356,12 +471,7 @@ const StudentExamsView = () => {
                     group={activeGroup}
                     downloading={downloadingGroupId === String(activeGroup._id)}
                     onDownload={() => handleDownload(activeGroup)}
-                    onPractice={(exam) => setMockExamOpen({
-                      examId: String(exam._id),
-                      examTitle: `${examTitle(activeGroup)} — Practice Mock`,
-                      durationMinutes: exam.duration || 60,
-                      isMock: true,
-                    })}
+                    onPractice={openSubjectPractice}
                   />
                 </section>
               )}

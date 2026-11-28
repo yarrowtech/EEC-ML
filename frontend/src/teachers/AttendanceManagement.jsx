@@ -135,6 +135,9 @@ const AttendanceManagement = () => {
   const [classOptions, setClassOptions] = useState([]);
   const [sectionOptions, setSectionOptionsList] = useState([]);
   const [subjectOptions, setSubjectOptions] = useState([]);
+  // School's attendance format (set by admin): 'subject_wise' | 'day_wise'
+  const [attendanceMode, setAttendanceMode] = useState('subject_wise');
+  const isDayWise = attendanceMode === 'day_wise';
   const [attendanceData, setAttendanceData] = useState({});
   const [lessonPlanContext, setLessonPlanContext] = useState(null);
   // Desktop: the page fills the screen exactly (no page scroll); the student
@@ -215,7 +218,7 @@ const AttendanceManagement = () => {
       if (selectedSession) query.set('session', selectedSession);
       if (selectedClass) query.set('className', selectedClass);
       if (selectedSection) query.set('section', selectedSection);
-      if (subject.trim()) query.set('subject', subject.trim());
+      if (subject.trim() && !isDayWise) query.set('subject', subject.trim());
       if (isSubstituteMode) query.set('substitute', 'true');
       if (searchTerm.trim()) query.set('search', searchTerm.trim());
 
@@ -247,6 +250,7 @@ const AttendanceManagement = () => {
       setClassOptions(Array.isArray(data?.options?.classes) ? data.options.classes : []);
       setSectionOptionsList(Array.isArray(data?.options?.sections) ? data.options.sections : []);
       setSubjectOptions(Array.isArray(data?.options?.subjects) ? data.options.subjects : []);
+      setAttendanceMode(data?.attendanceMode === 'day_wise' ? 'day_wise' : 'subject_wise');
       setLessonPlanContext(data?.lessonPlanContext || null);
 
       const nextState = {};
@@ -260,7 +264,7 @@ const AttendanceManagement = () => {
     } finally {
       if (!isStale()) setLoading(false);
     }
-  }, [selectedMonth, selectedDate, selectedSession, selectedClass, selectedSection, subject, isSubstituteMode, searchTerm, hasRequiredHierarchyFilters]);
+  }, [selectedMonth, selectedDate, selectedSession, selectedClass, selectedSection, subject, isSubstituteMode, searchTerm, hasRequiredHierarchyFilters, isDayWise]);
 
   useEffect(() => {
     if (!selectedSession && sessionOptions.length > 0) {
@@ -302,10 +306,14 @@ const AttendanceManagement = () => {
   // Once the teacher's real allocated subjects load, default to the first
   // one instead of sitting on the generic "All Subjects" view.
   useEffect(() => {
+    if (isDayWise) {
+      if (subject) setSubject('');
+      return;
+    }
     if (!subject && subjectOptions.length > 0) {
       setSubject(subjectOptions[0]);
     }
-  }, [subject, subjectOptions]);
+  }, [subject, subjectOptions, isDayWise]);
 
   useEffect(() => {
     const loadSchoolMeta = async () => {
@@ -420,7 +428,7 @@ const AttendanceManagement = () => {
     try {
       const payload = {
         date: selectedDate,
-        subject: subject.trim(),
+        subject: isDayWise ? '' : subject.trim(),
         substitute: isSubstituteMode,
         session: selectedSession,
         className: selectedClass,
@@ -428,7 +436,7 @@ const AttendanceManagement = () => {
         entries: students.map((student) => ({
           studentId: student._id,
           status: attendanceData[student._id] || STATUS.ABSENT,
-          subject: subject.trim(),
+          subject: isDayWise ? '' : subject.trim(),
         })),
       };
 
@@ -698,12 +706,14 @@ const AttendanceManagement = () => {
                     </select>
                   </FilterBox>
                   </div>
+                  {!isDayWise && (
                   <FilterBox label="Subject">
                     <select value={subject} onChange={(e) => setSubject(e.target.value)} className={selectCls} aria-label="Subject">
                       {subjectOptions.length === 0 && <option value="">All Subjects</option>}
                       {subjectTabs.map((tab) => <option key={tab} value={tab}>{tab}</option>)}
                     </select>
                   </FilterBox>
+                  )}
                 </div>
               </Motion.div>
             )}
@@ -713,8 +723,8 @@ const AttendanceManagement = () => {
         {/* Lesson plan */}
         <div className="border-t border-slate-100 pt-3">
           <p className="mb-2 flex items-center gap-2 text-[12.5px] font-semibold text-slate-800"><BookOpen className="size-4 text-blue-600" /> Lesson plan for today</p>
-          {isSubstituteMode || !subject.trim() ? (
-            <p className="rounded-xl bg-slate-50 px-3 py-4 text-center text-[12px] text-slate-500">{isSubstituteMode ? 'Lesson plans are not shown in substitute mode.' : 'Pick a subject to see its lesson plan.'}</p>
+          {isSubstituteMode || isDayWise || !subject.trim() ? (
+            <p className="rounded-xl bg-slate-50 px-3 py-4 text-center text-[12px] text-slate-500">{isSubstituteMode ? 'Lesson plans are not shown in substitute mode.' : isDayWise ? 'Your school takes attendance once a day, so it isn’t linked to a subject’s lesson plan.' : 'Pick a subject to see its lesson plan.'}</p>
           ) : !lessonPlanContext?.plans?.length ? (
             <p className="rounded-xl bg-slate-50 px-3 py-4 text-center text-[12px] text-slate-500">No lesson plan for this date/subject.</p>
           ) : (
@@ -741,7 +751,7 @@ const AttendanceManagement = () => {
           <div className="flex min-w-0 items-center gap-3">
             <div className="min-w-0">
               <h2 className="truncate text-[16px] font-semibold text-slate-900">Today&apos;s Attendance</h2>
-              <p className="truncate text-[12px] text-slate-500">{subject.trim() || 'All subjects'}</p>
+              <p className="truncate text-[12px] text-slate-500">{isDayWise ? 'Day-wise attendance · once per day (first class)' : (subject.trim() || 'All subjects')}</p>
             </div>
           </div>
 

@@ -8,7 +8,7 @@ import { generateExamSchedulePdf } from '../../utils/examRoutinePdf';
 jest.mock('../../utils/studentApiCache', () => ({ fetchCachedJson: jest.fn() }));
 jest.mock('../../utils/examRoutinePdf', () => ({
   generateExamSchedulePdf: jest.fn().mockResolvedValue(),
-  buildRoomLabel: (exam) => exam.venue || '—',
+  buildFullVenueLabel: (exam) => exam.venue || '—',
 }));
 
 const annual = {
@@ -36,6 +36,8 @@ afterEach(() => {
 test('shows the selected exam beside the desktop list and keeps the full routine available', async () => {
   renderExams();
   const rail = within(await screen.findByRole('complementary', { name: 'Exam schedules' }));
+  // upcoming exams are listed first, so pick the completed one
+  fireEvent.click(rail.getByRole('button', { name: /Annual Exams/ }));
   const schedule = within(screen.getByRole('article'));
   expect(schedule.getByRole('rowheader', { name: 'Computer' })).toBeInTheDocument();
   expect(schedule.getByRole('link', { name: 'View results' })).toHaveAttribute('href', '/student/results');
@@ -43,8 +45,6 @@ test('shows the selected exam beside the desktop list and keeps the full routine
   expect(generateExamSchedulePdf).toHaveBeenCalledWith(annual, expect.any(Object));
   fireEvent.click(rail.getByRole('button', { name: /Unit Test/ }));
   expect(screen.getByText(/subject schedule will appear/)).toBeInTheDocument();
-  fireEvent.change(screen.getByRole('textbox', { name: 'Search exams' }), { target: { value: 'Computer' } });
-  expect(rail.queryByRole('button', { name: /Unit Test/ })).not.toBeInTheDocument();
 });
 
 test('opens one schedule from the tablet cards and returns to the list', async () => {

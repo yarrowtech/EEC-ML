@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { AnimatePresence, motion } from 'framer-motion';
 import {
@@ -9,11 +9,13 @@ import {
   FileBadge,
   FileText,
   Loader2,
+  RefreshCw,
   School,
   User,
   Users,
 } from 'lucide-react';
 import toast from 'react-hot-toast';
+import { readAdmitCache, writeAdmitCache, admitEndpoint } from '../utils/admitCardsCache';
 import { useNavigate } from 'react-router-dom';
 
 import { apiFetch } from '../utils/authSession';
@@ -22,9 +24,6 @@ import ChildSwitcher, {
   useSharedChildSelection,
 } from '../parents/ChildSwitcher';
 
-const API_BASE = (
-  import.meta.env.VITE_API_URL || 'http://localhost:5000'
-).replace(/\/$/, '');
 
 /* =========================================================
    EXAM COLORS
@@ -226,6 +225,22 @@ const getExamStartDate = (group) => {
   if (!dates.length) return null;
 
   return dates.sort((a, b) => a - b)[0];
+};
+
+// Finished exams don't need an admit card: marked completed, or every paper is before today
+const isExamFinished = (group) => {
+  const status = String(group?.status || '').toLowerCase();
+  if (status === 'completed') return true;
+  const dates = (Array.isArray(group?.subjects) ? group.subjects : [])
+    .map((subject) => new Date(subject?.date))
+    .filter((date) => !Number.isNaN(date.getTime()));
+  const fallback = new Date(group?.endDate || group?.startDate || '');
+  const last = dates.length ? new Date(Math.max(...dates)) : (Number.isNaN(fallback.getTime()) ? null : fallback);
+  if (!last) return false;
+  const today = new Date();
+  today.setHours(0, 0, 0, 0);
+  last.setHours(0, 0, 0, 0);
+  return last < today;
 };
 
 /* =========================================================
@@ -461,27 +476,6 @@ const MetaItem = ({
    MAIN COMPONENT
 ========================================================= */
 
-// Client cache (memory + sessionStorage, per login & portal) → instant visits.
-const ADMIT_CACHE_MAX_AGE = 10 * 60 * 1000;
-const admitCacheKey = (mode) => {
-  let t = '';
-  try { t = localStorage.getItem('token') || ''; } catch { /* ignore */ }
-  return `admit-cards:v1:${mode}:${t.slice(-16)}`;
-};
-const admitMem = new Map();
-const readAdmitCache = (mode) => {
-  const key = admitCacheKey(mode);
-  let entry = admitMem.get(key);
-  if (!entry) { try { entry = JSON.parse(sessionStorage.getItem(key) || 'null'); } catch { entry = null; } }
-  return entry && Date.now() - entry.at < ADMIT_CACHE_MAX_AGE ? entry.data : null;
-};
-const writeAdmitCache = (mode, data) => {
-  const key = admitCacheKey(mode);
-  const entry = { at: Date.now(), data };
-  admitMem.set(key, entry);
-  try { sessionStorage.setItem(key, JSON.stringify(entry)); } catch { /* quota */ }
-};
-
 const AdmitCardsView = ({
   mode = 'student',
 }) => {
@@ -509,8 +503,9 @@ const AdmitCardsView = ({
      LOAD DATA
   ======================================================= */
 
-  useEffect(() => {
-    const load = async () => {
+  const [refreshing, setRefreshing] = useState(false);
+
+  const load = useCallback(async ({ force = false } = {}) => {
       const token =
         localStorage.getItem('token');
 
@@ -524,23 +519,21 @@ const AdmitCardsView = ({
         return;
       }
 
-      const cached = readAdmitCache(mode);
-      if (!cached) setLoading(true);
+      const cached = force ? null : readAdmitCache(mode);
+      if (force) setRefreshing(true);
+      else if (!cached) setLoading(true);
       setError('');
 
       try {
-        const endpoint =
-          mode === 'parent'
-            ? '/api/exam/groups/parent-admit-cards'
-            : '/api/exam/groups/student-admit-cards';
-
         const res = await apiFetch(
-          `${API_BASE}${endpoint}`,
+          admitEndpoint(mode),
           {
             headers: {
               'Content-Type':
                 'application/json',
               authorization: `Bearer ${token}`,
+              // Refresh: skip the server's short-lived cache as well
+              ...(force ? { 'Cache-Control': 'no-cache' } : {}),
             },
           },
           navigate
@@ -560,19 +553,23 @@ const AdmitCardsView = ({
 
         setPayload(data);
         writeAdmitCache(mode, data);
+        if (force) toast.success('Admit cards refreshed');
       } catch (err) {
-        // Keep cached admit cards visible if the background refresh fails.
-        if (!cached) setError(
-          err.message ||
-            'Unable to load admit cards'
-        );
+        if (force) {
+          toast.error(err.message || 'Unable to refresh admit cards');
+        } else if (!cached) {
+          // Keep cached admit cards visible if the background refresh fails.
+          setError(err.message || 'Unable to load admit cards');
+        }
       } finally {
         setLoading(false);
+        setRefreshing(false);
       }
-    };
-
-    load();
   }, [mode, navigate]);
+
+  useEffect(() => {
+    load();
+  }, [load]);
 
   /* =======================================================
      CHILDREN
@@ -656,7 +653,7 @@ const AdmitCardsView = ({
       ? selectedChild.groups
       : [];
 
-    return [...items].sort(
+    return items.filter((group) => !isExamFinished(group)).sort(
       (a, b) => {
         const dateA =
           getExamStartDate(a);
@@ -775,12 +772,42 @@ const AdmitCardsView = ({
 
   if (loading) {
     return (
-      <div className="mx-auto flex w-full max-w-[1250px] items-center gap-2 px-4 py-5 text-sm text-slate-600">
-        <Loader2
-          className="h-4 w-4 animate-spin text-blue-600"
-        />
-
-        Loading admit cards...
+      // Skeleton: page header + two admit-card placeholders (same layout as the real page)
+      <div role="status" aria-label="Loading admit cards" className="mx-auto w-full max-w-[1250px] animate-pulse space-y-4 px-3 py-3 sm:px-4 sm:py-4">
+        <div className="flex items-center gap-3">
+          <div className="h-11 w-11 shrink-0 rounded-full bg-slate-200" />
+          <div className="min-w-0 flex-1 space-y-2">
+            <div className="h-5 w-40 rounded-md bg-slate-200" />
+            <div className="h-3 w-64 max-w-full rounded-md bg-slate-100" />
+          </div>
+          <div className="h-9 w-9 shrink-0 rounded-full bg-slate-200 sm:w-24" />
+        </div>
+        {[0, 1].map((i) => (
+          <div key={i} className="overflow-hidden rounded-xl border border-slate-200 bg-white shadow-sm">
+            <div className="h-1.5 bg-slate-200" />
+            <div className="grid gap-4 p-4 lg:grid-cols-[minmax(0,1fr)_14rem] lg:items-center">
+              <div className="space-y-3">
+                <div className="flex items-center gap-2">
+                  <div className="h-5 w-48 rounded-md bg-slate-200" />
+                  <div className="h-5 w-20 rounded-full bg-slate-100" />
+                </div>
+                <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
+                  {[0, 1, 2, 3].map((k) => (
+                    <div key={k} className="space-y-1.5">
+                      <div className="h-2.5 w-14 rounded bg-slate-100" />
+                      <div className="h-3.5 w-24 rounded bg-slate-200" />
+                    </div>
+                  ))}
+                </div>
+              </div>
+              <div className="grid grid-cols-2 gap-2 lg:flex lg:flex-col">
+                <div className="h-9 rounded-lg bg-slate-200 sm:h-10" />
+                <div className="h-9 rounded-lg bg-slate-300/70 sm:h-10" />
+              </div>
+            </div>
+          </div>
+        ))}
+        <span className="sr-only">Loading admit cards…</span>
       </div>
     );
   }
@@ -818,7 +845,27 @@ const AdmitCardsView = ({
             </p>
           </div>
 
+          <button
+            type="button"
+            onClick={() => load({ force: true })}
+            disabled={refreshing || loading}
+            aria-label="Refresh"
+            title="Refresh"
+            className="ml-auto grid h-9 w-9 shrink-0 place-items-center rounded-full border border-slate-200 bg-white text-slate-600 shadow-sm hover:bg-slate-50 hover:text-slate-900 disabled:opacity-50 sm:hidden"
+          >
+            <RefreshCw size={16} className={refreshing ? 'animate-spin' : ''} />
+          </button>
+
         </div>
+
+        <button
+          type="button"
+          onClick={() => load({ force: true })}
+          disabled={refreshing || loading}
+          className="hidden shrink-0 items-center gap-1.5 rounded-full border border-slate-200 bg-white px-3.5 py-2 text-xs font-semibold text-slate-700 shadow-sm hover:bg-slate-50 disabled:opacity-50 sm:inline-flex"
+        >
+          <RefreshCw size={15} className={refreshing ? 'animate-spin' : ''} /> Refresh
+        </button>
 
         {/* Child Selector */}
 
@@ -877,11 +924,11 @@ const AdmitCardsView = ({
             <CalendarDays className="mx-auto h-9 w-9 text-violet-300" />
 
             <p className="mt-3 text-sm font-semibold text-slate-800">
-              No admit card available yet
+              No upcoming exam admit cards
             </p>
 
             <p className="mx-auto mt-1 max-w-md text-xs text-slate-500">
-              Admit cards will appear here once
+              Admit cards for upcoming exams will appear here once
               the school publishes them.
             </p>
 
@@ -1023,7 +1070,7 @@ const AdmitCardsView = ({
                                   font-bold
                                   ${
                                     available
-                                      ? 'border border-emerald-200 bg-emerald-50 text-emerald-700'
+                                      ? 'bg-green-600 text-white'
                                       : 'border border-slate-200 bg-slate-100 text-slate-500'
                                   }
                                 `}
@@ -1127,7 +1174,7 @@ const AdmitCardsView = ({
                           ACTIONS
                       ================================= */}
 
-                      <div className="relative isolate flex flex-col gap-2">
+                      <div className="relative isolate grid grid-cols-2 gap-2 lg:flex lg:flex-col">
 
                         {/* Decorative circles behind the buttons */}
                         <span aria-hidden="true" className="pointer-events-none absolute -right-6 -top-8 -z-10 h-24 w-24 rounded-full bg-violet-200/40" />
@@ -1243,7 +1290,7 @@ const AdmitCardsView = ({
                             />
                           )}
 
-                          Download PDF
+                          Download Admit
 
                         </button>
 

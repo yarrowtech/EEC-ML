@@ -34,6 +34,7 @@ const Support = lazy(() => import('./pages/Support'));
 const NoticeManagement = lazy(() => import('./pages/NoticeManagement'));
 const NoticeDetail = lazy(() => import('./pages/NoticeDetail'));
 const AdminSettings = lazy(() => import('./pages/AdminSettings'));
+const AttendanceSettingsPage = lazy(() => import('./pages/AttendanceSettingsPage'));
 const PaymentGatewaySettings = lazy(() => import('./pages/PaymentGatewaySettings'));
 const StudentPromotion = lazy(() => import('./pages/StudentPromotion'));
 const LeftStudents = lazy(() => import('./pages/LeftStudents'));
@@ -403,6 +404,7 @@ const AdminApp = () => {
           <Route path="roles-access" element={teamAccess || isSuperAdmin ? <Navigate to="/admin/dashboard" replace /> : <RolesAccess setShowAdminHeader={setShowAdminHeader} />} />
           <Route path="community-wall" element={<CommunityWall role="admin" />} />
           <Route path="settings" element={<AdminSettings setShowAdminHeader={setShowAdminHeader} onSettingsUpdated={handleSettingsUpdated} />} />
+          <Route path="settings/attendance" element={<AttendanceSettingsPage setShowAdminHeader={setShowAdminHeader} />} />
           <Route path="settings/payment-gateway" element={<PaymentGatewaySettings setShowAdminHeader={setShowAdminHeader} />} />
           <Route path="promotion" element={<StudentPromotion setShowAdminHeader={setShowAdminHeader} />} />
           <Route path="left-students" element={<LeftStudents setShowAdminHeader={setShowAdminHeader} />} />

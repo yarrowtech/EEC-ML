@@ -1,5 +1,6 @@
 import {
   ScanLine,
+  ClipboardCheck,
   Home,
   BarChart3,
   Users,
@@ -199,6 +200,7 @@ export const ADMIN_MENU_ITEMS = [
     submenu: [
       { icon: UserRound, label: 'Profile & School', path: '/admin/settings' },
       { icon: CreditCard, label: 'Payment Gateway', path: '/admin/settings/payment-gateway' },
+      { icon: ClipboardCheck, label: 'Attendance Settings', path: '/admin/settings/attendance' },
       { icon: UserCog, label: 'Roles & Access', path: '/admin/roles-access', ownerOnly: true }
     ]
   },
@@ -231,6 +233,6 @@ export const ADMIN_MENU_SECTIONS = [
   { section: 'CAMPUS', items: ['Floor & Rooms'] },
   { section: 'HUMAN RESOURCES', items: ['HR'] },
   { section: 'SUPPORT', items: ['Support'] },
-  { section: 'SETTINGS', items: ['Profile & School', 'Payment Gateway', 'Roles & Access'] },
+  { section: 'SETTINGS', items: ['Profile & School', 'Payment Gateway', 'Attendance Settings', 'Roles & Access'] },
 ];
 
